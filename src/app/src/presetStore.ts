@@ -34,6 +34,8 @@ export interface RecipeOptions {
   vllm_backend?: string;
   vllm_args?: string;
   flm_args?: string;
+  voice?: string;
+  speed?: number;
   merge_args?: boolean;
 }
 
@@ -261,6 +263,10 @@ export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelC
     ? modelCapability === 'image'
     : caps.includes('all') || caps.includes('image');
   const hasImageValues = hasOwnPreviewValue(ro.steps) || hasOwnPreviewValue(ro.cfg_scale);
+  const showTts = modelCapability
+    ? modelCapability === 'tts'
+    : caps.includes('all') || caps.includes('tts');
+  const hasTtsValues = hasOwnPreviewValue(ro.voice) || hasOwnPreviewValue(ro.speed);
   const lines: string[] = [];
 
   if (showChat) {
@@ -268,6 +274,11 @@ export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelC
   }
   if (showImage && (hasImageValues || !showChat)) {
     lines.push(`${formatDash(ro.steps)} steps · cfg ${formatDash(ro.cfg_scale, 1)}`);
+  }
+  if (showTts && (hasTtsValues || (!showChat && !showImage))) {
+    const voice = String(ro.voice || '---');
+    const speed = hasOwnPreviewValue(ro.speed) ? ` · speed ${formatDash(ro.speed, 2)}` : '';
+    lines.push(`voice ${voice}${speed}`);
   }
   return lines.length ? lines : ['---'];
 }
@@ -293,6 +304,10 @@ export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefine
 
   if (capability === 'image') {
     return [`${formatDash(steps)} steps · cfg ${formatDash(cfg, 1)}`];
+  }
+  if (capability === 'tts') {
+    const voice = String((model as Record<string, unknown>).voice || (model as Record<string, unknown>).default_voice || '---');
+    return [`voice ${voice}`];
   }
   if (isChatPreviewCapability(capability)) {
     return [`temp ${formatDash(temperature, 2)} · ctx ${formatDash(ctx)}`];
@@ -497,7 +512,7 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
     case 'tts':
-      return pickRecipeOptions(options, ['merge_args']);
+      return pickRecipeOptions(options, ['voice', 'speed', 'merge_args']);
     case 'embedding':
     case 'reranking':
     case 'chat':

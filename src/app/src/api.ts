@@ -134,6 +134,21 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+export interface CloudProviderRow {
+  name: string;
+  base_url: string;
+  env_var: string;
+  env_var_set: boolean;
+  runtime_key_set: boolean;
+  models_discovered: number;
+}
+
+export interface DirectorySettings {
+  modelsDir: string;
+  extraModelsDir: string;
+  canPersist: boolean;
+}
+
 export interface ChatCompletionStats {
   content: string;
   reasoning: string;
@@ -391,6 +406,35 @@ function mergeConnectionSettings(settings: unknown, baseUrl: string, apiKey: str
   };
 }
 
+function mergeDirectorySettings(settings: unknown, modelsDir: string, extraModelsDir: string): Record<string, unknown> {
+  const current = isObject(settings) ? { ...settings } : {};
+  const modelsDirSetting = typedStringSetting(modelsDir);
+  const extraModelsDirSetting = typedStringSetting(extraModelsDir);
+  return {
+    ...current,
+    // Keep both camelCase and snake_case keys so the redesign can interoperate
+    // with host settings bridges while the server-side naming settles.
+    modelsDir: modelsDirSetting,
+    models_dir: modelsDirSetting,
+    extraModelsDir: extraModelsDirSetting,
+    extra_models_dir: extraModelsDirSetting,
+  };
+}
+
+function normalizeCloudProviderRow(value: unknown): CloudProviderRow | null {
+  if (!isObject(value)) return null;
+  const name = String(value.name || '').trim();
+  if (!name) return null;
+  return {
+    name,
+    base_url: typeof value.base_url === 'string' ? value.base_url : '',
+    env_var: typeof value.env_var === 'string' ? value.env_var : '',
+    env_var_set: value.env_var_set === true,
+    runtime_key_set: value.runtime_key_set === true,
+    models_discovered: typeof value.models_discovered === 'number' ? value.models_discovered : 0,
+  };
+}
+
 export interface ConnectionSettingsSaveResult {
   apiKeyPersisted: boolean;
 }
@@ -517,6 +561,29 @@ class LemonadeAPI {
       const currentSettings = await hostApi.getSettings();
       await hostApi.saveSettings(mergeConnectionSettings(currentSettings, '', ''));
     }
+  }
+
+  async loadDirectorySettings(): Promise<DirectorySettings> {
+    const hostApi = await waitForHostSettingsApi();
+    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
+      return { modelsDir: '', extraModelsDir: '', canPersist: false };
+    }
+    const settings = await hostApi.getSettings();
+    return {
+      modelsDir: typedSettingString(settings, 'modelsDir') || typedSettingString(settings, 'models_dir'),
+      extraModelsDir: typedSettingString(settings, 'extraModelsDir') || typedSettingString(settings, 'extra_models_dir'),
+      canPersist: true,
+    };
+  }
+
+  async saveDirectorySettings(modelsDir: string, extraModelsDir: string): Promise<DirectorySettings> {
+    const hostApi = await waitForHostSettingsApi();
+    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
+      return { modelsDir, extraModelsDir, canPersist: false };
+    }
+    const currentSettings = await hostApi.getSettings();
+    await hostApi.saveSettings(mergeDirectorySettings(currentSettings, modelsDir, extraModelsDir));
+    return { modelsDir, extraModelsDir, canPersist: true };
   }
 
   setSessionApiKey(key: string): void {
@@ -843,6 +910,48 @@ class LemonadeAPI {
     const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
     this._systemInfoData = data;
     return data;
+  }
+
+
+  async cloudProviders(): Promise<CloudProviderRow[]> {
+    const info = await this.systemInfo();
+    const cloud = isObject(info.cloud) ? info.cloud : {};
+    const providers = Array.isArray(cloud.providers) ? cloud.providers : [];
+    return providers.map(normalizeCloudProviderRow).filter((row): row is CloudProviderRow => Boolean(row));
+  }
+
+  async installCloudProvider(provider: string, baseUrl: string, apiKey?: string): Promise<Record<string, unknown>> {
+    const body: Record<string, string> = {
+      backend: 'cloud',
+      provider: provider.trim(),
+      base_url: baseUrl.trim(),
+    };
+    if (apiKey?.trim()) body.api_key = apiKey.trim();
+    const result = await this._json<Record<string, unknown>>('/api/v1/install', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async setCloudProviderAuth(provider: string, apiKey: string): Promise<Record<string, unknown>> {
+    const result = await this._json<Record<string, unknown>>('/api/v1/cloud/auth', {
+      method: 'POST',
+      body: { provider: provider.trim(), api_key: apiKey.trim() },
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async clearCloudProviderAuth(provider: string): Promise<void> {
+    await this._fetch(`/api/v1/cloud/auth/${encodeURIComponent(provider.trim())}`, { method: 'DELETE' });
+    this._notifyModelsChanged();
+  }
+
+  async uninstallCloudProvider(provider: string): Promise<void> {
+    await this._fetch('/api/v1/uninstall', {
+      method: 'POST',
+      body: { backend: 'cloud', provider: provider.trim() },
+    });
+    this._notifyModelsChanged();
   }
 
   // ── Capability-specific inference endpoints ────────────────────

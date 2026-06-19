@@ -29,6 +29,7 @@ import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComp
 import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { PRESET_STORE_EVENT, activePresetForModel, systemPromptTextForPreset, systemPromptNameForPreset } from '../presetStore';
+import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -566,6 +567,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [audioLevel, setAudioLevel] = useState(0);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [presetVersion, setPresetVersion] = useState(0);
+  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(storageScope));
   const [railExpanded, setRailExpanded] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
@@ -598,6 +600,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const liveTranscriptRef = useRef('');
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
+  const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
 
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name === currentModel) || null,
@@ -656,6 +659,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
     return () => window.removeEventListener(PRESET_STORE_EVENT, updatePresetVersion);
   }, []);
+
+  useEffect(() => {
+    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(storageScope));
+    reloadTtsSettings();
+    window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+    return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+  }, [storageScope]);
+
   const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
 
   useEffect(() => {
@@ -840,6 +851,47 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
   }, [updateConversation]);
 
+  const stopAutoSpeech = useCallback(() => {
+    const current = autoSpeechRef.current;
+    if (!current) return;
+    current.audio.pause();
+    current.audio.src = '';
+    URL.revokeObjectURL(current.url);
+    autoSpeechRef.current = null;
+  }, []);
+
+  useEffect(() => () => stopAutoSpeech(), [stopAutoSpeech]);
+
+  const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
+    const trimmed = text.trim();
+    const modelName = ttsPlaybackSettings.modelName;
+    if (!trimmed || !modelName) return;
+    if (!force) {
+      if (ttsPlaybackSettings.playbackMode !== 'always') return;
+      if (source === 'user' && !ttsPlaybackSettings.speakUserText) return;
+    }
+    try {
+      const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
+      if (!isLoaded) {
+        await api.loadModel(modelName, undefined, findModelInfoByName(knownModelInfos, modelName) || null);
+      }
+      const voice = ttsVoiceFromRecipeOptions(activePresetForModel(modelName).recipe_options);
+      const audio = await api.textToSpeech(modelName, trimmed, voice);
+      stopAutoSpeech();
+      const player = new Audio(audio.url);
+      autoSpeechRef.current = { audio: player, url: audio.url };
+      player.onended = () => {
+        if (autoSpeechRef.current?.url === audio.url) {
+          URL.revokeObjectURL(audio.url);
+          autoSpeechRef.current = null;
+        }
+      };
+      await player.play();
+    } catch (err) {
+      console.warn(`Could not play ${source} text with TTS model:`, err);
+    }
+  }, [knownModelInfos, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
     const model = streamModelsRef.current[convoId] || null;
@@ -852,11 +904,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       : generatedAudio
         ? 'Generated speech audio from your text.'
         : '';
+    const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, {
         role: 'assistant',
-        content: stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls),
+        content: assistantContent,
         thinking: stats.reasoning || undefined,
         toolCalls,
         stats,
@@ -867,7 +920,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       }],
       updatedAt: Date.now(),
     }));
-  }, [updateConversation]);
+    if (!generatedAudio && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
+  }, [speakWithPinnedTts, updateConversation]);
 
   const handleStreamError = useCallback((convoId: string, message: string) => {
     const model = streamModelsRef.current[convoId] || null;
@@ -1255,7 +1309,8 @@ ${finalText}`
         });
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
-        const audio = await api.textToSpeech(model.name, text);
+        const voice = ttsVoiceFromRecipeOptions(activePresetForModel(model.name).recipe_options);
+        const audio = await api.textToSpeech(model.name, text, voice);
         appendAssistantMessage(convoId, {
           content: 'Generated speech audio from your text.',
           audioUrl: audio.url,
@@ -1270,6 +1325,7 @@ ${finalText}`
           content: transcript,
           model,
         });
+        void speakWithPinnedTts(transcript, 'assistant');
       } else {
         throw new Error(`${capabilityLabel(model.capability)} models cannot be used from the chat composer yet.`);
       }
@@ -1283,7 +1339,7 @@ ${finalText}`
     } finally {
       setCapabilityBusy(false);
     }
-  }, [appendAssistantMessage, imageMode, imageSettings, onRefresh]);
+  }, [appendAssistantMessage, imageMode, imageSettings, onRefresh, presetVersion, speakWithPinnedTts]);
 
   const startAssistantResponse = useCallback(async (
     convoId: string,
@@ -1306,6 +1362,7 @@ ${finalText}`
         title: c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : c.title,
         updatedAt: Date.now(),
       }));
+      void speakWithPinnedTts(text, 'user');
     }
 
     thinkingSticky.current = true;
@@ -1474,6 +1531,7 @@ ${finalText}`
     modeSupportsTools,
     canUseAudioInput,
     runCapabilityRequest,
+    speakWithPinnedTts,
     streaming,
     updateConversation,
     useTools,
@@ -1561,6 +1619,12 @@ ${finalText}`
       false,
     );
   }, [activeId, appendAssistantMessage, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
+
+  const handleSpeakAssistantMessage = useCallback((text: string) => {
+    void speakWithPinnedTts(text, 'assistant', true);
+  }, [speakWithPinnedTts]);
+
+  const canReadAssistantMessages = Boolean(ttsPlaybackSettings.modelName);
 
   const handleEditUserMessage = useCallback(async (messageIndex: number, revisedContent: string) => {
     const text = revisedContent.trim();
@@ -1914,6 +1978,7 @@ ${finalText}`
                   userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                  onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
                   onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
                 />
               ))}
@@ -2449,7 +2514,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onEditUser }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
@@ -2566,6 +2631,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           >
             <Icon name="copy" size={13} /> Copy
           </button>
+          {onSpeak && (
+            <button type="button" className="message__action" onClick={onSpeak}>
+              <Icon name="tts" size={13} /> Read aloud
+            </button>
+          )}
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
               ↻ Retry

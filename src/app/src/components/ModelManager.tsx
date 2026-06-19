@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
-import type { AccountSession } from '../features/accounts/accountStore';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -356,33 +357,255 @@ const RECIPE_BADGES: Record<string, string> = {
   'collection.omni': 'Omni Collection',
 };
 
-type CustomRecipeOption = { value: string; label: string; hint: string };
+type CustomRecipeOption = { value: string; recipe: string; backend?: string; label: string; hint: string };
+type CustomCheckpointExample = { key: string; label: string; checkpoint: string; note: string };
+
+function supportsVisionProjectorField(capability: CustomModelCapability): boolean {
+  return capability === 'chat' || capability === 'omni';
+}
+type CustomRecipeSuggestion = { checkpoint: string; note: string; extraCheckpoints?: CustomCheckpointExample[] };
+
+const CUSTOM_LLM_RECIPE_ORDER = ['llamacpp', 'flm', 'ryzenai-llm', 'vllm'];
+
+const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
+  llamacpp: {
+    checkpoint: 'unsloth/Qwen3-8B-GGUF:Q4_K_M',
+    note: 'GGUF repo plus quantization suffix; Lemonade can download the selected quantization.',
+    extraCheckpoints: [
+      {
+        key: 'mmproj',
+        label: 'Vision projector (mmproj)',
+        checkpoint: 'ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf',
+        note: 'Optional for llama.cpp vision models; leave empty for text-only GGUFs.',
+      },
+    ],
+  },
+  vllm: {
+    checkpoint: 'Qwen/Qwen3-4B',
+    note: 'Upstream Hugging Face transformer checkpoint; vLLM loads the repo directly.',
+  },
+  flm: {
+    checkpoint: 'qwen3-0.6b-FLM',
+    note: 'FastFlowLM model id or local FastFlowLM artifact path for supported AMD NPU models.',
+  },
+  'ryzenai-llm': {
+    checkpoint: 'amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid',
+    note: 'RyzenAI-compatible ONNX/HF checkpoint or local path.',
+  },
+  'sd-cpp': {
+    checkpoint: 'unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf',
+    note: 'Primary diffusion checkpoint. Extra fields below cover multi-file image models.',
+    extraCheckpoints: [
+      {
+        key: 'text_encoder',
+        label: 'Text encoder checkpoint',
+        checkpoint: 'unsloth/Qwen3-8B-GGUF:Qwen3-8B-Q8_0.gguf',
+        note: 'Optional text encoder checkpoint for Flux/Qwen-style image pipelines.',
+      },
+      {
+        key: 'vae',
+        label: 'VAE checkpoint',
+        checkpoint: 'Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors',
+        note: 'Optional VAE checkpoint for image models that split the VAE from the main model.',
+      },
+    ],
+  },
+  whispercpp: {
+    checkpoint: 'ggerganov/whisper.cpp:ggml-base.bin',
+    note: 'Whisper.cpp checkpoint repo plus .bin model file.',
+  },
+  moonshine: {
+    checkpoint: 'UsefulSensors/moonshine-streaming:onnx/tiny',
+    note: 'Moonshine streaming checkpoint repo plus ONNX variant path.',
+  },
+  kokoro: {
+    checkpoint: 'mikkoph/kokoro-onnx',
+    note: 'Kokoro ONNX model repository or local model path.',
+  },
+};
+
+const CheckpointExampleCard: React.FC<{ title: string; checkpoint: string; note?: string }> = ({ title, checkpoint, note }) => (
+  <div className="custom-model-form__checkpoint-example" aria-label={title}>
+    <strong>{title}</strong>
+    <span><code title={checkpoint}>{checkpoint}</code></span>
+    {note ? <small>{note}</small> : <small aria-hidden="true">&nbsp;</small>}
+  </div>
+);
+
+function optionValue(recipe: string, backend?: string): string {
+  return backend ? `${recipe}:${backend}` : recipe;
+}
+
+function optionRecipe(value: string): string {
+  return String(value || '').split(':')[0] || value;
+}
+
+function customRecipeOption(recipe: string, label: string, hint: string, backend?: string): CustomRecipeOption {
+  return { value: optionValue(recipe, backend), recipe, backend, label, hint };
+}
 
 const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
-  { value: 'llamacpp', label: 'llama.cpp', hint: 'Local GGUF / llama.cpp backend' },
-  { value: 'vllm', label: 'vLLM', hint: 'vLLM backend for compatible models' },
-  { value: 'flm', label: 'FastFlowLM', hint: 'FLM backend for supported AMD NPU models' },
-  { value: 'ryzenai-llm', label: 'RyzenAI', hint: 'RyzenAI LLM backend' },
+  customRecipeOption('llamacpp', 'llama.cpp', 'Local GGUF / llama.cpp backend'),
+  customRecipeOption('flm', 'FastFlowLM', 'FastFlowLM backend for supported AMD NPU models'),
+  customRecipeOption('ryzenai-llm', 'RyzenAI', 'RyzenAI LLM backend for compatible ONNX/quantized models'),
+  customRecipeOption('vllm', 'vLLM', 'vLLM backend for compatible HF transformer checkpoints'),
 ];
 
 const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
-  image: [{ value: 'sd-cpp', label: 'Stable Diffusion', hint: 'Stable Diffusion C++ backend' }],
+  image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
   audio: [
-    { value: 'whispercpp', label: 'Whisper', hint: 'Whisper C++ transcription backend' },
-    { value: 'moonshine', label: 'Moonshine', hint: 'CPU streaming speech-to-text backend' },
+    customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
+    customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
   ],
-  tts: [{ value: 'kokoro', label: 'Kokoro TTS', hint: 'Kokoro text-to-speech backend' }],
-  embedding: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Embedding through llama.cpp-compatible model' }],
-  reranking: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Reranking through llama.cpp-compatible model' }],
+  tts: [customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend')],
+  embedding: [customRecipeOption('llamacpp', 'llama.cpp', 'Embedding through llama.cpp-compatible model')],
+  reranking: [customRecipeOption('llamacpp', 'llama.cpp', 'Reranking through llama.cpp-compatible model')],
 };
 
 function recipeOptionsForCustomDraft(capability: CustomModelCapability, omniSource: 'single' | 'collection'): CustomRecipeOption[] {
   if (capability === 'omni' && omniSource === 'collection') {
-    return [{ value: 'collection.omni', label: 'Omni Collection', hint: 'Virtual wrapper around selected component models' }];
+    return [customRecipeOption('collection.omni', 'Omni Collection', 'Virtual wrapper around selected component models')];
   }
   return CUSTOM_RECIPE_OPTIONS[capability] || CHAT_RECIPE_OPTIONS;
+}
+
+function dedupeRecipeOptions(options: CustomRecipeOption[]): CustomRecipeOption[] {
+  const seen = new Set<string>();
+  const out: CustomRecipeOption[] = [];
+  for (const option of options) {
+    const key = option.value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(option);
+  }
+  return out;
+}
+
+const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
+  llamacpp: ['chat', 'omni', 'embedding', 'reranking'],
+  vllm: ['chat', 'omni'],
+  flm: ['chat', 'omni'],
+  'ryzenai-llm': ['chat', 'omni'],
+  'sd-cpp': ['image'],
+  whispercpp: ['audio'],
+  moonshine: ['audio'],
+  kokoro: ['tts'],
+};
+
+function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
+  const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
+  if (explicit) return explicit;
+  const key = recipe.toLowerCase();
+  if (key.includes('sd') || key.includes('diffusion') || key.includes('image')) return ['image'];
+  if (key.includes('whisper') || key.includes('moonshine') || key.includes('transcrib') || key.includes('speech-to-text')) return ['audio'];
+  if (key.includes('kokoro') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
+  if (key.includes('embed')) return ['embedding'];
+  if (key.includes('rerank')) return ['reranking'];
+  const backendText = backendNames.join(' ').toLowerCase();
+  if (backendText.includes('sd') || backendText.includes('diffusion')) return ['image'];
+  if (backendText.includes('whisper') || backendText.includes('moonshine')) return ['audio'];
+  if (backendText.includes('kokoro') || backendText.includes('tts')) return ['tts'];
+  return ['chat', 'omni'];
+}
+
+function backendState(value: unknown): string {
+  return String((value as any)?.state || '').trim().toLowerCase();
+}
+
+function backendIsExplicitlyUnsupported(info: unknown): boolean {
+  return backendState(info) === 'unsupported';
+}
+
+function systemRecipeEntries(info: Record<string, unknown> | null): Array<[string, Record<string, any>]> | null {
+  if (!info || typeof info !== 'object') return null;
+  const recipes = (info as any).recipes;
+  if (!recipes || typeof recipes !== 'object' || Array.isArray(recipes)) return null;
+  return Object.entries(recipes as Record<string, any>)
+    .filter(([, raw]) => raw && typeof raw === 'object') as Array<[string, Record<string, any>]>;
+}
+
+function rawBackendMap(raw: Record<string, any>): Record<string, unknown> {
+  return raw.backends && typeof raw.backends === 'object' && !Array.isArray(raw.backends)
+    ? raw.backends as Record<string, unknown>
+    : {};
+}
+
+function visibleBackendEntries(raw: Record<string, any>): Array<[string, unknown]> {
+  // This is intentionally the same core rule used by the Backends matrix:
+  // start from /system-info.recipes[*].backends and remove only explicit
+  // unsupported entries for this custom-model selector.
+  return Object.entries(rawBackendMap(raw)).filter(([, info]) => !backendIsExplicitlyUnsupported(info));
+}
+
+function optionSortRank(option: CustomRecipeOption): number {
+  const recipeRank = CUSTOM_LLM_RECIPE_ORDER.indexOf(option.recipe);
+  return recipeRank === -1 ? 1000 : recipeRank * 100;
+}
+
+function summarizeRecipeAvailability(backends: Array<[string, unknown]>): string {
+  const stateLabels = Array.from(new Set(
+    backends
+      .map(([, info]) => backendState(info))
+      .filter(Boolean)
+      .map(state => state.replace(/_/g, ' '))
+  ));
+  if (stateLabels.length === 0) return 'Available on this Lemonade server.';
+  if (stateLabels.length === 1) return `Available on this Lemonade server (${stateLabels[0]}).`;
+  return `Available on this Lemonade server (${stateLabels.join(', ')}).`;
+}
+
+function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Partial<Record<CustomModelCapability, CustomRecipeOption[]>> {
+  const entries = systemRecipeEntries(info);
+  if (!entries) return {};
+  const result: Partial<Record<CustomModelCapability, CustomRecipeOption[]>> = {};
+
+  for (const [recipe, raw] of entries) {
+    const visibleBackends = visibleBackendEntries(raw);
+    const backends = visibleBackends.length
+      ? visibleBackends
+      : Object.keys(rawBackendMap(raw)).length === 0
+        ? [['default', {}] as [string, unknown]]
+        : [];
+    if (!backends.length) continue;
+
+    const backendNames = backends.map(([name]) => name);
+    const capabilities = recipeCapabilities(recipe, backendNames);
+    const option = customRecipeOption(
+      recipe,
+      recipeLabel(recipe),
+      summarizeRecipeAvailability(backends),
+    );
+
+    for (const capability of capabilities) {
+      result[capability] = dedupeRecipeOptions([...(result[capability] || []), option]);
+    }
+  }
+
+  for (const [capability, options] of Object.entries(result) as Array<[CustomModelCapability, CustomRecipeOption[]]>) {
+    result[capability] = [...options].sort((a, b) => optionSortRank(a) - optionSortRank(b) || a.label.localeCompare(b.label));
+  }
+
+  return result;
+}
+
+function pinnedModelsKey(scope: string): string {
+  return scopedStorageKey(scope, 'pinned_models');
+}
+
+function loadPinnedModels(scope: string): string[] {
+  try {
+    const raw = localStorage.getItem(pinnedModelsKey(scope));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(v => String(v).trim()).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+function savePinnedModels(scope: string, names: string[]): void {
+  try {
+    localStorage.setItem(pinnedModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
+  } catch {}
 }
 
 /* ── Filter / search types ─────────────────────────────────── */
@@ -394,6 +617,9 @@ type CustomModelDraftState = {
   name: string;
   displayName: string;
   checkpoint: string;
+  mmproj: string;
+  imageTextEncoder: string;
+  imageVae: string;
   recipe: string;
   capability: CustomModelCapability;
   maxContextWindow: string;
@@ -423,9 +649,12 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     name: '',
     displayName: '',
     checkpoint: '',
+    mmproj: '',
+    imageTextEncoder: '',
+    imageVae: '',
     recipe: isOmniCollection ? 'collection.omni' : 'llamacpp',
     capability: isOmniCollection ? 'omni' : 'chat',
-    maxContextWindow: '4096',
+    maxContextWindow: '',
     labels: '',
     omniSource: isOmniCollection ? 'collection' : 'single',
     llmComponent: '',
@@ -698,7 +927,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
+  const [customJsonNotice, setCustomJsonNotice] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
+  const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
+  const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModels(accountSession.storageScope));
+  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
+  const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
@@ -712,6 +947,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const modelsSnapshotRef = useRef<string>('');
   const loadedSnapshotRef = useRef<string>('');
 
+
   useEffect(() => {
     hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0;
   }, [models.length, loadedModels.length, customModels.length]);
@@ -721,6 +957,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [accountSession.storageScope]);
 
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
+
+
+  useEffect(() => {
+    setPinnedModels(loadPinnedModels(accountSession.storageScope));
+  }, [accountSession.storageScope]);
+
+  useEffect(() => {
+    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+    reloadTtsSettings();
+    window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+    return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+  }, [accountSession.storageScope]);
+
+  const refreshCustomRecipeAvailability = useCallback(async () => {
+    if (!api.isConnected) {
+      setDynamicRecipeOptions({});
+      setCustomRecipeAvailabilityLoaded(false);
+      return;
+    }
+
+    try {
+      const info = await api.systemInfo();
+      const hasRecipeData = Boolean(systemRecipeEntries(info));
+      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
+      setCustomRecipeAvailabilityLoaded(hasRecipeData);
+    } catch {
+      setDynamicRecipeOptions({});
+      setCustomRecipeAvailabilityLoaded(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCustomRecipeAvailability();
+  }, [connectionStatus, refreshCustomRecipeAvailability]);
 
   const reloadPresetState = useCallback(() => {
     setUserPresets(loadUserPresets());
@@ -776,7 +1046,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       return;
     }
     try {
-      setServerDefaultCtxSize(await api.getDefaultContextSize() ?? DEFAULT_CONTEXT_SIZE);
+      const defaultCtxSize = await api.getDefaultContextSize();
+      setServerDefaultCtxSize(typeof defaultCtxSize === 'number' ? defaultCtxSize : DEFAULT_CONTEXT_SIZE);
     } catch {
       setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
     }
@@ -1134,6 +1405,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setCustomDraft(createEmptyCustomDraft(mode));
     setCustomError(null);
     setShowCustomForm(true);
+    void refreshCustomRecipeAvailability();
   };
 
   const closeCustomForm = () => {
@@ -1141,12 +1413,104 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setCustomError(null);
   };
 
+  const recipeOptionsForDraft = useCallback((capability: CustomModelCapability, omniSource: 'single' | 'collection') => {
+    if (capability === 'omni' && omniSource === 'collection') {
+      return recipeOptionsForCustomDraft(capability, omniSource);
+    }
+
+    const dynamic = dynamicRecipeOptions[capability] || [];
+    if (dynamic.length > 0) return dynamic;
+
+    // Fallback only when /system-info is unavailable. If /system-info.recipes
+    // was loaded and has no non-unsupported backend for this capability, keep
+    // the selector empty instead of re-introducing unsupported static options.
+    if (customRecipeAvailabilityLoaded) return [];
+
+    return recipeOptionsForCustomDraft(capability, omniSource);
+  }, [customRecipeAvailabilityLoaded, dynamicRecipeOptions]);
+
   const defaultRecipeForCapability = (capability: CustomModelCapability, omniSource: 'single' | 'collection' = customDraft.omniSource) => {
-    if (capability === 'image') return 'sd-cpp';
-    if (capability === 'audio') return 'whispercpp';
-    if (capability === 'tts') return 'kokoro';
-    if (capability === 'omni' && omniSource === 'collection') return 'collection.omni';
-    return 'llamacpp';
+    const options = recipeOptionsForDraft(capability, omniSource);
+    return options[0]?.value || 'llamacpp';
+  };
+
+  const handleExportCustomModels = () => {
+    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(accountSession.storageScope));
+    setCustomJsonNotice('Exported custom model JSON.');
+    window.setTimeout(() => setCustomJsonNotice(null), 2200);
+  };
+
+  const handleImportCustomModels = async (file: File | null | undefined) => {
+    if (!file) return;
+    setCustomError(null);
+    try {
+      const payload = JSON.parse(await file.text());
+      const result = importCustomModels(accountSession.storageScope, payload);
+      reloadCustomModels();
+      setCustomJsonNotice(`Imported ${result.imported} custom model${result.imported === 1 ? '' : 's'}${result.skipped ? `, skipped ${result.skipped}` : ''}.`);
+      if (result.errors.length) setCustomError(result.errors.slice(0, 3).join(' '));
+      window.setTimeout(() => setCustomJsonNotice(null), 3200);
+    } catch (err) {
+      setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (customJsonInputRef.current) customJsonInputRef.current.value = '';
+    }
+  };
+
+  const togglePinnedModel = (name: string) => {
+    setPinnedModels(prev => {
+      const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
+      const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
+      savePinnedModels(accountSession.storageScope, next);
+      return next;
+    });
+  };
+
+  const activeTtsModelName = ttsPlaybackSettings.modelName;
+
+  const toggleTtsSpeechModel = (name: string) => {
+    const next = activeTtsModelName === name ? null : name;
+    saveActiveTtsModel(accountSession.storageScope, next);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
+  const setSpeakUserText = (enabled: boolean) => {
+    saveSpeakUserText(accountSession.storageScope, enabled);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
+  const setTtsPlaybackMode = (mode: TtsPlaybackMode) => {
+    saveTtsPlaybackMode(accountSession.storageScope, mode);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
+  const renderPinAndSpeechControl = (name: string, isPinned: boolean, capability: ModelCapability) => {
+    const pinButton = (
+      <button
+        type="button"
+        className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
+        onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
+        title={isPinned ? 'Unpin model' : 'Pin model'}
+        aria-label={isPinned ? 'Unpin model' : 'Pin model'}
+        aria-pressed={isPinned}
+      ><Icon name="pin" size={13} /></button>
+    );
+
+    if (capability !== 'tts') return pinButton;
+    const isSpeechActive = activeTtsModelName === name;
+    return (
+      <span className="row__tts-actions" title="TTS playback controls">
+        {pinButton}
+        <button
+          type="button"
+          className={`row__speech${isSpeechActive ? ' row__speech--active' : ''}`}
+          onClick={(e) => { e.stopPropagation(); toggleTtsSpeechModel(name); }}
+          title={isSpeechActive ? 'Stop using this model for spoken replies' : 'Read assistant chat messages with this model'}
+          aria-label={isSpeechActive ? 'Disable spoken replies for this TTS model' : 'Use this TTS model for spoken replies'}
+          aria-pressed={isSpeechActive}
+        ><Icon name="speech" size={13} /></button>
+      </span>
+    );
   };
 
   const handleSaveCustomModel = (e: React.FormEvent) => {
@@ -1170,13 +1534,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       const components = customDraft.omniSource === 'collection'
         ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
         : [];
+      const availableRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
+      const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
+        || availableRecipeOptions[0];
+      if (!selectedRecipeOption) {
+        setCustomError('No compatible recipe/backend is available for this capability on the connected Lemonade server.');
+        return;
+      }
+      const selectedRecipe = selectedRecipeOption.recipe;
+      const checkpoint = customDraft.checkpoint.trim();
+      const extraCheckpoints: Record<string, string> = {};
+      if (selectedRecipe === 'llamacpp' && supportsVisionProjectorField(customDraft.capability) && customDraft.mmproj.trim()) {
+        extraCheckpoints.mmproj = customDraft.mmproj.trim();
+      }
+      if (selectedRecipe === 'sd-cpp') {
+        if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
+        if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
+      }
+      const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
+        ? { main: checkpoint, ...extraCheckpoints }
+        : undefined;
       const saved = upsertCustomModel(accountSession.storageScope, {
         name: implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
         displayName: customDraft.displayName,
-        checkpoint: customDraft.checkpoint,
-        recipe: recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource).some(option => option.value === customDraft.recipe) ? customDraft.recipe : recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource)[0]?.value || customDraft.recipe,
+        checkpoint,
+        checkpoints,
+        mmproj: selectedRecipe === 'llamacpp' ? customDraft.mmproj : undefined,
+        recipe: selectedRecipe || customDraft.recipe,
+        recipeOptions: undefined,
         capability: customDraft.capability,
-        maxContextWindow: customDraft.capability === 'omni' ? undefined : (customDraft.maxContextWindow.trim() && Number.isFinite(Number(customDraft.maxContextWindow)) ? Number(customDraft.maxContextWindow) : undefined),
+        maxContextWindow: undefined,
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
         components,
         componentRoles,
@@ -1295,6 +1682,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     [displayLoadedModels]
   );
 
+
+  const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
+
   const { downloaded, available } = useMemo(() => {
     const dl: ModelInfo[] = [];
     const av: ModelInfo[] = [];
@@ -1340,6 +1730,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const filteredDownloaded = useMemo(() => applyFilter(downloaded), [applyFilter, downloaded]);
   const filteredAvailable = useMemo(() => applyFilter(available), [applyFilter, available]);
+  const visibleFilteredDownloaded = useMemo(() => filteredDownloaded.filter(m => !pinnedNameSet.has(modelName(m).toLowerCase())), [filteredDownloaded, pinnedNameSet]);
+  const visibleFilteredAvailable = useMemo(() => filteredAvailable.filter(m => !pinnedNameSet.has(modelName(m).toLowerCase())), [filteredAvailable, pinnedNameSet]);
 
   // Filter running models by search/type too
   const filteredRunning = useMemo(() => {
@@ -1370,10 +1762,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   // Available zone: show first N unless expanded or searching
   const AVAILABLE_INITIAL = 20;
   const visibleAvailable = useMemo(() => {
-    if (showAllAvailable || searchQuery.trim() || filterTab !== 'all') return filteredAvailable;
-    return filteredAvailable.slice(0, AVAILABLE_INITIAL);
-  }, [filteredAvailable, showAllAvailable, searchQuery, filterTab]);
-  const hiddenAvailableCount = filteredAvailable.length - visibleAvailable.length;
+    if (showAllAvailable || searchQuery.trim() || filterTab !== 'all') return visibleFilteredAvailable;
+    return visibleFilteredAvailable.slice(0, AVAILABLE_INITIAL);
+  }, [visibleFilteredAvailable, showAllAvailable, searchQuery, filterTab]);
+  const hiddenAvailableCount = visibleFilteredAvailable.length - visibleAvailable.length;
 
   // HuggingFace results — exclude models already in local registry
   const filteredHfResults = useMemo(() => {
@@ -1476,6 +1868,42 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </div>
               </div>
             )}
+            {capability === 'tts' && activeTtsModelName === name && (
+              <div className="detail__field detail__field--wide detail__tts-playback">
+                <span className="detail__label">Speech playback</span>
+                <div className="detail__tts-controls">
+                  <div className="detail__tts-mode" role="group" aria-label="Speech playback mode">
+                    <span>Mode</span>
+                    <span className="detail__tts-mode-buttons">
+                      {(['demand', 'always'] as TtsPlaybackMode[]).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`detail__tts-mode-button${ttsPlaybackSettings.playbackMode === mode ? ' detail__tts-mode-button--active' : ''}`}
+                          onClick={() => setTtsPlaybackMode(mode)}
+                          aria-pressed={ttsPlaybackSettings.playbackMode === mode}
+                        >
+                          {mode === 'demand' ? 'On demand' : 'Always'}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                  <label className="detail__tts-toggle">
+                    <span>Also read user text</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={1}
+                      value={ttsPlaybackSettings.speakUserText ? 1 : 0}
+                      onChange={e => setSpeakUserText(Number(e.target.value) === 1)}
+                      aria-label="Also read user text"
+                    />
+                    <strong>{ttsPlaybackSettings.speakUserText ? 'On' : 'Off'}</strong>
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right column: checkpoint / HF link */}
@@ -1544,6 +1972,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const isActive = selectedModel === m.model_name;
     const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
     const activePreset = activePresetForName(m.model_name);
+    const isPinned = pinnedNameSet.has(m.model_name.toLowerCase());
     const isPresetHighlighted = Boolean(highlightedPresetId
       && activePreset.id === highlightedPresetId
       && (info ? canShowPresetHighlight(info) : !loadedIsVirtualOmniCollection(m)));
@@ -1567,6 +1996,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
+            {renderPinAndSpeechControl(m.model_name, isPinned, cap)}
             <CopyInlineButton text={m.model_name} />
             <span className="row__status-pill row__status-pill--running">
               <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
@@ -1637,6 +2067,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const pullPercent = pulling[name];
     const isPulling = pullPercent !== undefined;
     const activePreset = activePresetForName(name);
+    const cap = capabilityFromModelInfo(m);
+    const isPinned = pinnedNameSet.has(name.toLowerCase());
     const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
     const isPresetHighlighted = Boolean(highlightedPresetId
       && activePreset.id === highlightedPresetId
@@ -1663,6 +2095,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{expandedModel === name ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
+            {renderPinAndSpeechControl(name, isPinned, cap)}
             <CopyInlineButton text={name} />
             {isPulling ? (
               <div className="row__progress">
@@ -1955,13 +2388,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     && (hfLoading || Boolean(hfError) || filteredHfResults.length > 0);
   const showManagerEmpty = !modelsLoading
     && filteredRunning.length === 0
-    && filteredDownloaded.length === 0
-    && filteredAvailable.length === 0
+    && visibleFilteredDownloaded.length === 0
+    && visibleFilteredAvailable.length === 0
     && !hasHuggingFaceActivity;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
-  const customRecipeOptions = recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource);
+  const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
+  const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
+  const selectedCustomRecipeSuggestion = CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
+  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || 'org/model:Q4_K_M.gguf or /path/to/model.gguf';
+  const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
+  const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
+  const vaeCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'vae');
+  const showLlamacppMmprojField = !isCustomOmniCollectionDraft
+    && selectedCustomRecipeName === 'llamacpp'
+    && supportsVisionProjectorField(customDraft.capability);
+  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && selectedCustomRecipeName === 'sd-cpp';
+  const pinnedVisibleModels = useMemo(() => {
+    if (pinnedModels.length === 0) return [];
+    const map = new Map(allModels.map(m => [modelName(m).toLowerCase(), m] as const));
+    return pinnedModels
+      .map(name => map.get(name.toLowerCase()))
+      .filter((m): m is ModelInfo => Boolean(m) && !loadedNames.has(modelName(m)));
+  }, [allModels, pinnedModels, loadedNames]);
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
   const totalPulling = Object.keys(pulling).length;
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
@@ -2074,6 +2524,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <div className="manager__custom-actions">
             <button className="btn btn--ghost manager__custom-btn" onClick={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}>+ Custom model</button>
             <button className="btn btn--ghost manager__custom-btn manager__custom-btn--omni" onClick={() => openCustomForm('omni-collection')}>+ Omni collection</button>
+            <input
+              ref={customJsonInputRef}
+              className="hidden-file-input"
+              type="file"
+              accept="application/json,.json"
+              onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
+            />
           </div>
           <div className="manager__filters">
             {FILTER_TABS.map(tab => (
@@ -2099,11 +2556,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               {isCustomOmniCollectionDraft && <span className="zone__count">collection wrapper</span>}
               <span className="zone__rule" />
             </div>
+            <div className="custom-model-form__toolbar">
+              <button className="btn btn--ghost btn--tiny" type="button" onClick={handleExportCustomModels}>Export JSON</button>
+              <button className="btn btn--ghost btn--tiny" type="button" onClick={() => customJsonInputRef.current?.click()}>Import JSON</button>
+            </div>
             <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
-              <label>Name
+              <label className="custom-model-form__field">Name
                 <input value={customDraft.displayName} onChange={e => handleCustomDraftChange({ displayName: e.target.value })} placeholder="My custom model" />
+                <span className="custom-model-form__field-hint">Display name for the registered user model.</span>
               </label>
-              <label>Capability
+              <label className="custom-model-form__field">Capability
                 <select value={customDraft.capability} onChange={e => {
                   const nextCapability = e.target.value as CustomModelCapability;
                   handleCustomDraftChange({
@@ -2114,31 +2576,99 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 }}>
                   {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label} — {c.hint}</option>)}
                 </select>
+                <span className="custom-model-form__field-hint">Determines which compatible recipe/backend options are shown.</span>
+              </label>
+              <label className="custom-model-form__field">Recipe/backend
+                <select value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
+                  {customRecipeOptions.length === 0
+                    ? <option value="">No compatible recipe/backend available</option>
+                    : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <span className="custom-model-form__field-hint">{selectedCustomRecipe?.hint || 'Backend used to register and download this custom model.'}</span>
+              </label>
+              <label className="custom-model-form__field">Extra labels
+                <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
+                <span className="custom-model-form__field-hint">Optional comma-separated tags added to the model.</span>
               </label>
               {customDraft.capability === 'omni' && (
-                <label>Omni type
-                  <select value={customDraft.omniSource} onChange={e => {
-                    const omniSource = e.target.value as 'single' | 'collection';
-                    handleCustomDraftChange({ omniSource, recipe: defaultRecipeForCapability('omni', omniSource) });
-                  }}>
-                    <option value="single">Single multimodal checkpoint</option>
-                    <option value="collection">Collection wrapper from existing components</option>
-                  </select>
-                </label>
+                <>
+                  <label className="custom-model-form__field">Omni type
+                    <select value={customDraft.omniSource} onChange={e => {
+                      const omniSource = e.target.value as 'single' | 'collection';
+                      handleCustomDraftChange({ omniSource, recipe: defaultRecipeForCapability('omni', omniSource) });
+                    }}>
+                      <option value="single">Single multimodal checkpoint</option>
+                      <option value="collection">Collection wrapper from existing components</option>
+                    </select>
+                    <span className="custom-model-form__field-hint">Choose a direct checkpoint or a wrapper around component models.</span>
+                  </label>
+                  <div className="custom-model-form__field-spacer" aria-hidden="true" />
+                </>
               )}
-              <label>Recipe/backend
-                <select value={selectedCustomRecipe?.value || customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })}>
-                  {customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                {selectedCustomRecipe?.hint && <span className="custom-model-form__field-hint">{selectedCustomRecipe.hint}</span>}
-              </label>
-              <label className="custom-model-form__wide">{isCustomOmniCollectionDraft ? 'Optional collection checkpoint/alias' : 'Checkpoint, HF repo, or local path'}
+              <label className="custom-model-form__field">{isCustomOmniCollectionDraft ? 'Optional collection checkpoint/alias' : 'Checkpoint, HF repo, or local path'}
                 <input
                   value={customDraft.checkpoint}
                   onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })}
-                  placeholder={isCustomOmniCollectionDraft ? 'Optional; first component is used when left empty' : 'org/model:Q4_K_M.gguf or /path/to/model.gguf'}
+                  placeholder={isCustomOmniCollectionDraft ? 'Optional; first component is used when left empty' : primaryCheckpointPlaceholder}
                 />
+                <span className="custom-model-form__field-hint">{isCustomOmniCollectionDraft ? 'Optional alias for collection wrappers.' : 'Hugging Face id, quantized variant, or absolute local path.'}</span>
               </label>
+              {isCustomOmniCollectionDraft ? (
+                <div className="custom-model-form__field-spacer" aria-hidden="true" />
+              ) : selectedCustomRecipeSuggestion && (
+                <CheckpointExampleCard
+                  title={`${recipeLabel(selectedCustomRecipeName)} checkpoint format example`}
+                  checkpoint={selectedCustomRecipeSuggestion.checkpoint}
+                  note={selectedCustomRecipeSuggestion.note}
+                />
+              )}
+              {showLlamacppMmprojField && (
+                <>
+                  <label className="custom-model-form__field">Vision projector (mmproj)
+                    <input
+                      value={customDraft.mmproj}
+                      onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
+                      placeholder={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
+                    />
+                    <span className="custom-model-form__field-hint">Optional extra checkpoint for llama.cpp vision models; leave empty for text-only models.</span>
+                  </label>
+                  <CheckpointExampleCard
+                    title="Vision projector checkpoint format example"
+                    checkpoint={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
+                    note={mmprojCheckpointExample?.note}
+                  />
+                </>
+              )}
+              {showImageExtraCheckpointFields && (
+                <>
+                  <label className="custom-model-form__field">Text encoder checkpoint
+                    <input
+                      value={customDraft.imageTextEncoder}
+                      onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
+                      placeholder={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
+                    />
+                    <span className="custom-model-form__field-hint">Optional for image pipelines that split text encoder weights from the main checkpoint.</span>
+                  </label>
+                  <CheckpointExampleCard
+                    title="Text encoder checkpoint format example"
+                    checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
+                    note={textEncoderCheckpointExample?.note}
+                  />
+                  <label className="custom-model-form__field">VAE checkpoint
+                    <input
+                      value={customDraft.imageVae}
+                      onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
+                      placeholder={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
+                    />
+                    <span className="custom-model-form__field-hint">Optional for image pipelines that split VAE weights from the main checkpoint.</span>
+                  </label>
+                  <CheckpointExampleCard
+                    title="VAE checkpoint format example"
+                    checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
+                    note={vaeCheckpointExample?.note}
+                  />
+                </>
+              )}
               {customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && (
                 <>
                   <div className="custom-model-form__hint custom-model-form__wide">
@@ -2152,17 +2682,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <OmniComponentPicker role="speech" value={customDraft.speechComponent} options={omniComponentOptions.speech} onChange={value => updateOmniComponent('speech', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                 </>
               )}
-              {customDraft.capability !== 'omni' && (
-                <label>Context tokens
-                  <input value={customDraft.maxContextWindow} onChange={e => handleCustomDraftChange({ maxContextWindow: e.target.value })} inputMode="numeric" placeholder="4096" />
-                </label>
-              )}
-              <label>Extra labels
-                <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
-              </label>
               {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
               <div className="custom-model-form__actions">
-                <button className="btn btn--primary" type="submit">Save {isCustomOmniCollectionDraft ? 'Omni collection' : 'custom model'}</button>
+                <button className="btn btn--primary" type="submit" disabled={customRecipeOptions.length === 0}>Save {isCustomOmniCollectionDraft ? 'Omni collection' : 'custom model'}</button>
                 <button className="btn btn--ghost" type="button" onClick={closeCustomForm}>Cancel</button>
               </div>
             </form>
@@ -2182,6 +2704,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
         {shouldPinHuggingFaceZone && renderHuggingFaceZone()}
 
+        {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
+
+        {pinnedVisibleModels.length > 0 && (
+          <section className="zone zone--pinned">
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--ready" />
+              <span className="zone__title">Pinned Models</span>
+              <span className="zone__count">{pinnedVisibleModels.length}</span>
+              <span className="zone__rule" />
+            </div>
+            {pinnedVisibleModels.map(m => renderModelRow(m, downloaded.some(d => modelName(d).toLowerCase() === modelName(m).toLowerCase())))}
+          </section>
+        )}
+
         {/* Running zone */}
         {filteredRunning.length > 0 && (
           <section className="zone zone--running">
@@ -2196,25 +2732,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         )}
 
         {/* Downloaded / Ready zone */}
-        {filteredDownloaded.length > 0 && (
+        {visibleFilteredDownloaded.length > 0 && (
           <section className="zone zone--downloaded">
             <div className="zone__head">
               <span className="zone__dot zone__dot--ready" />
               <span className="zone__title">Downloaded</span>
-              <span className="zone__count">{filteredDownloaded.length}</span>
+              <span className="zone__count">{visibleFilteredDownloaded.length}</span>
               <span className="zone__rule" />
             </div>
-            {filteredDownloaded.map(m => renderModelRow(m, true))}
+            {visibleFilteredDownloaded.map(m => renderModelRow(m, true))}
           </section>
         )}
 
         {/* Available zone */}
-        {filteredAvailable.length > 0 && (
+        {visibleFilteredAvailable.length > 0 && (
           <section className="zone">
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
               <span className="zone__title">Lemonade Registry</span>
-              <span className="zone__count">{filteredAvailable.length}</span>
+              <span className="zone__count">{visibleFilteredAvailable.length}</span>
               <span className="zone__rule" />
             </div>
             {visibleAvailable.map(m => renderModelRow(m, false))}
