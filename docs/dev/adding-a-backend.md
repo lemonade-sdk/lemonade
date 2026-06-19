@@ -1,44 +1,39 @@
 # Adding a backend
 
 Lemonade backends are **self-describing**. A backend declares *what it is* in a
-plain-data **descriptor** and implements *how it runs* in a **server class**. A
-registry collects every descriptor, and the router, the CLI, `/system-info`, and
-the generated docs all read it — so there are no scattered `if (recipe == "...")`
-sites to update.
+plain-data **descriptor** and implements *how it runs* in a **server class**, and
+both live together in the backend's own folder. A registry collects every
+descriptor, and the router, the CLI, `/system-info`, and the generated docs all
+read it — so there are no scattered `if (recipe == "...")` sites to update.
 
-Adding a backend is **one folder's worth of files plus three small appends**:
+Adding a backend is **one folder plus three small appends**:
 
 | You edit | What goes there |
 |----------|-----------------|
 | `CMakeLists.txt` → `LEMON_BACKENDS` | **one line**: `"<recipe>\|<stem>"` |
-| `src/cpp/server/backends/<stem>_descriptor.cpp` + `.h` | the descriptor (plain data) |
-| `src/cpp/server/backends/<stem>_factory.cpp` + `.h` | `create()` + the `WrappedServer` subclass |
+| `src/cpp/include/lemon/backends/<stem>/<stem>.h` | the descriptor (header-only `inline const`) |
+| `src/cpp/include/lemon/backends/<stem>/<stem>_server.h` | the `WrappedServer` subclass + `create()` declaration |
+| `src/cpp/server/backends/<stem>/<stem>_server.cpp` | the implementation + `create()` definition |
 | `src/cpp/resources/backend_versions.json` | version pin(s) — skip if there's no downloaded binary (e.g. cloud) |
 | `src/cpp/resources/server_models.json` | the models |
 
 No router edits, no CLI edits, no doc edits, no support-matrix edits.
 
-## The descriptor (plain data — CLI-safe)
+Everything for one backend lives in `lemon::backends::<stem>`. The descriptor is
+header-only so it links into **both** the `lemonade` CLI and `lemond`; the server
+class and `create()` are server-only (compiled into `lemond`).
 
-The descriptor is the single object every consumer reads. It links into **both**
-the `lemonade` CLI and `lemond`, so it must not reference server classes.
+## The descriptor — `<stem>/<stem>.h`
 
-`src/cpp/include/lemon/backends/<stem>_descriptor.h`:
+Plain data. The single object the registry, CLI, `/system-info`, and docs all read.
 
 ```cpp
 #pragma once
 #include "lemon/backends/backend_descriptor.h"
-namespace lemon { namespace backends {
-extern const BackendDescriptor <stem>_descriptor;
-} }
-```
 
-`src/cpp/server/backends/<stem>_descriptor.cpp`:
+namespace lemon { namespace backends { namespace myrecipe {
 
-```cpp
-#include "lemon/backends/<stem>_descriptor.h"
-namespace lemon { namespace backends {
-const BackendDescriptor <stem>_descriptor = {
+inline const BackendDescriptor descriptor = {
     /*recipe*/          "myrecipe",
     /*display_name*/    "My Backend",
     /*binary*/          "my-server",        // "" = no subprocess (e.g. cloud)
@@ -57,47 +52,54 @@ const BackendDescriptor <stem>_descriptor = {
     /*default_labels*/  {},                 // labels injected when a model omits them
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
 };
-} }
+
+}}}  // namespace lemon::backends::myrecipe
 ```
 
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots),
 `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model
 type), `Unmetered` (never counted, never auto-evicted — cloud).
 
-## The factory + server class (server-only)
+## The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
-The factory builds the `WrappedServer` subclass. It is compiled into `lemond`
-only (it references server classes), which keeps the `lemonade` CLI link clean.
+The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`,
+and only the capability interfaces you serve (`ITranscriptionServer`,
+`IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default
+"unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend
+does not stub them. Alongside it, a free `create()` builds the instance.
 
-`src/cpp/include/lemon/backends/<stem>_factory.h`:
+`<stem>_server.h`:
 
 ```cpp
 #pragma once
-#include <memory>
-#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_registry.h"   // BackendContext
+#include "lemon/wrapped_server.h"
+
 namespace lemon { namespace backends {
-std::unique_ptr<WrappedServer> <stem>_create(const BackendContext& ctx);
-} }
+
+class MyServer : public WrappedServer, public ICompletionServer {
+    // load(), unload(), the capability methods you serve …
+};
+
+namespace myrecipe {
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx);  // server-only
+}
+
+}}  // namespace lemon::backends
 ```
 
-`src/cpp/server/backends/<stem>_factory.cpp`:
+`<stem>_server.cpp`:
 
 ```cpp
-#include "lemon/backends/<stem>_factory.h"
-#include "lemon/backends/<stem>_server.h"
-#include "lemon/wrapped_server.h"
-namespace lemon { namespace backends {
-std::unique_ptr<WrappedServer> <stem>_create(const BackendContext& ctx) {
+#include "lemon/backends/myrecipe/myrecipe_server.h"
+// … MyServer method definitions …
+
+namespace lemon { namespace backends { namespace myrecipe {
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<MyServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
-} }
+}}}  // namespace lemon::backends::myrecipe
 ```
-
-The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`,
-and only the capability interfaces you actually serve (`ITranscriptionServer`,
-`IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default
-"unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend
-does not stub them.
 
 ## Register it: one line
 
@@ -108,8 +110,8 @@ set(LEMON_BACKENDS
 )
 ```
 
-The `foreach` in `CMakeLists.txt` compiles your two sources and regenerates the
-registry headers, binding the descriptor to its `create()`.
+The `foreach` in `CMakeLists.txt` compiles `<stem>/<stem>_server.cpp` and
+regenerates the registry headers, binding `<stem>::descriptor` to `<stem>::create`.
 
 ## What you get for free
 
@@ -139,7 +141,7 @@ registry headers, binding the descriptor to its `create()`.
 
 **Moonshine** is the minimal case: a single descriptor option, no backend
 selection, CPU-only, one capability interface. See
-`src/cpp/server/backends/moonshine_descriptor.cpp` and `moonshine_factory.cpp`.
+`src/cpp/server/backends/moonshine/` and `include/lemon/backends/moonshine/`.
 
 > Note: collections (`collection.omni`) are orchestrator-driven, not
 > `WrappedServer` subprocesses, and are the one explicit exception to this model.

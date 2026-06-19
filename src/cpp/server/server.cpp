@@ -5,8 +5,8 @@
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
-#include "lemon/backends/cloud_server.h"
-#include "lemon/backends/sd_server.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"

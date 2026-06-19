@@ -607,15 +607,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
-    src/cpp/server/backends/cloud_server.cpp
-    src/cpp/server/backends/llamacpp_server.cpp
-    src/cpp/server/backends/fastflowlm_server.cpp
-    src/cpp/server/backends/ryzenaiserver.cpp
-    src/cpp/server/backends/whisper_server.cpp
-    src/cpp/server/backends/moonshine_server.cpp
-    src/cpp/server/backends/kokoro_server.cpp
-    src/cpp/server/backends/sd_server.cpp
-    src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
@@ -652,17 +643,18 @@ endif()
 # ============================================================
 # The authoritative backend list. Each entry is "<recipe>|<stem>":
 #   recipe - the recipe string used in server_models.json (may contain dashes)
-#   stem   - identifier-safe name. The backend ships two files:
-#              src/cpp/server/backends/<stem>_descriptor.cpp  (plain data; CLI-safe)
-#              src/cpp/server/backends/<stem>_factory.cpp      (create(); server-only)
-#            declaring lemon::backends::<stem>_descriptor and <stem>_create.
+#   stem   - identifier-safe name and folder. Each backend lives in its own
+#            folder, shipping (in namespace lemon::backends::<stem>):
+#              include/lemon/backends/<stem>/<stem>.h         inline const descriptor (CLI-safe data)
+#              include/lemon/backends/<stem>/<stem>_server.h  WrappedServer subclass + create() decl
+#              server/backends/<stem>/<stem>_server.cpp       implementation + create() def
 #
-# Adding a backend is one line here plus those two files. The foreach below
-# compiles the sources and regenerates the registry headers, which bind each
+# Adding a backend is one line here plus that folder. The foreach below compiles
+# the server source and regenerates the registry headers, which bind each
 # descriptor to its create(). Because this list is a tracked input, editing it
 # forces regeneration on the next build (a file(GLOB) would silently miss a
-# newly added backend). Descriptor DATA links into both the lemonade CLI and
-# lemond; only lemond links the factories (which pull in server classes).
+# newly added backend). The descriptor is a header-only inline const, so it links
+# into both the lemonade CLI and lemond; only lemond links the server sources.
 set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
@@ -680,7 +672,8 @@ set(LEMON_DESCRIPTOR_INCLUDES "")
 set(LEMON_DESCRIPTOR_ENTRIES "")
 set(LEMON_FACTORY_INCLUDES "")
 set(LEMON_FACTORY_ENTRIES "")
-# Descriptor sources are CLI-safe (data only); factory sources are server-only.
+# The data registry (descriptors, header-only) links into both binaries; the
+# factory registry + per-backend server sources are server-only.
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
 set(LEMON_BACKEND_DESCRIPTOR_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
@@ -689,18 +682,17 @@ set(LEMON_BACKEND_FACTORY_SOURCES
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
     list(GET _backend_parts 1 _backend_stem)
-    list(APPEND LEMON_BACKEND_DESCRIPTOR_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}_descriptor.cpp)
+    # The descriptor is header-only (no source); only the server source compiles.
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}_factory.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/${_backend_stem}_server.cpp)
     string(APPEND LEMON_DESCRIPTOR_INCLUDES
-        "#include \"lemon/backends/${_backend_stem}_descriptor.h\"\n")
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}.h\"\n")
     string(APPEND LEMON_DESCRIPTOR_ENTRIES
-        "        &lemon::backends::${_backend_stem}_descriptor,\n")
+        "        &lemon::backends::${_backend_stem}::descriptor,\n")
     string(APPEND LEMON_FACTORY_INCLUDES
-        "#include \"lemon/backends/${_backend_stem}_factory.h\"\n")
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
     string(APPEND LEMON_FACTORY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}_descriptor, &lemon::backends::${_backend_stem}_create },\n")
+        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create },\n")
 endforeach()
 
 configure_file(

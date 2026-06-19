@@ -9,9 +9,9 @@
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_utils.h>
-#include <lemon/backends/cloud_server.h>
+#include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/cloud_provider_registry.h>
-#include <lemon/backends/fastflowlm_server.h>
+#include <lemon/backends/fastflowlm/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
