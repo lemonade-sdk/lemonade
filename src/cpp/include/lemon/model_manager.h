@@ -110,6 +110,19 @@ struct ModelInfo {
     // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
     int moonshine_arch = -1;
 
+    // Generic per-model fields a backend declares for itself. Any server_models.json
+    // key not consumed by a typed field above lands here, so a new backend can read
+    // custom per-model config in load() without editing this shared struct.
+    std::map<std::string, json> extras;
+
+    // Look up an extra field, returning a default when absent.
+    template <typename T>
+    T extra(const std::string& key, const T& fallback) const {
+        auto it = extras.find(key);
+        if (it == extras.end() || it->second.is_null()) return fallback;
+        try { return it->second.get<T>(); } catch (...) { return fallback; }
+    }
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }

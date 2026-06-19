@@ -648,6 +648,75 @@ elseif(UNIX)
 endif()
 
 # ============================================================
+# Self-describing backends registry
+# ============================================================
+# The authoritative backend list. Each entry is "<recipe>|<stem>":
+#   recipe - the recipe string used in server_models.json (may contain dashes)
+#   stem   - identifier-safe name. The backend ships two files:
+#              src/cpp/server/backends/<stem>_descriptor.cpp  (plain data; CLI-safe)
+#              src/cpp/server/backends/<stem>_factory.cpp      (create(); server-only)
+#            declaring lemon::backends::<stem>_descriptor and <stem>_create.
+#
+# Adding a backend is one line here plus those two files. The foreach below
+# compiles the sources and regenerates the registry headers, which bind each
+# descriptor to its create(). Because this list is a tracked input, editing it
+# forces regeneration on the next build (a file(GLOB) would silently miss a
+# newly added backend). Descriptor DATA links into both the lemonade CLI and
+# lemond; only lemond links the factories (which pull in server classes).
+set(LEMON_BACKENDS
+    # "<recipe>|<stem>"
+    "llamacpp|llamacpp"
+    "whispercpp|whispercpp"
+    "moonshine|moonshine"
+    "kokoro|kokoro"
+    "sd-cpp|sdcpp"
+    "flm|fastflowlm"
+    "ryzenai-llm|ryzenai"
+    "vllm|vllm"
+    "cloud|cloud"
+)
+
+set(LEMON_DESCRIPTOR_INCLUDES "")
+set(LEMON_DESCRIPTOR_ENTRIES "")
+set(LEMON_FACTORY_INCLUDES "")
+set(LEMON_FACTORY_ENTRIES "")
+# Descriptor sources are CLI-safe (data only); factory sources are server-only.
+# Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
+set(LEMON_BACKEND_DESCRIPTOR_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
+set(LEMON_BACKEND_FACTORY_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp)
+foreach(_backend_entry ${LEMON_BACKENDS})
+    string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
+    list(GET _backend_parts 1 _backend_stem)
+    list(APPEND LEMON_BACKEND_DESCRIPTOR_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}_descriptor.cpp)
+    list(APPEND LEMON_BACKEND_FACTORY_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}_factory.cpp)
+    string(APPEND LEMON_DESCRIPTOR_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}_descriptor.h\"\n")
+    string(APPEND LEMON_DESCRIPTOR_ENTRIES
+        "        &lemon::backends::${_backend_stem}_descriptor,\n")
+    string(APPEND LEMON_FACTORY_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}_factory.h\"\n")
+    string(APPEND LEMON_FACTORY_ENTRIES
+        "        { &lemon::backends::${_backend_stem}_descriptor, &lemon::backends::${_backend_stem}_create },\n")
+endforeach()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptors_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_descriptors_generated.h
+    @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
+    @ONLY)
+
+# lemond gets both descriptor data and factories; the CLI gets only the data
+# (see src/cpp/cli/CMakeLists.txt, which reuses LEMON_BACKEND_DESCRIPTOR_SOURCES).
+list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_FACTORY_SOURCES})
+
+# ============================================================
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})

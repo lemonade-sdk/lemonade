@@ -1,4 +1,5 @@
 #include "lemon/runtime_config.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -29,22 +30,26 @@ RuntimeConfig* RuntimeConfig::global() {
     return s_global_instance.load(std::memory_order_acquire);
 }
 
-static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
-};
-
+// A valid config.json backend section is the config_section of any descriptor
+// that runs a local subprocess (binary != ""). Cloud has no binary, so it is not
+// a backend section. Derived from descriptors — no hand-maintained list.
 static bool is_backend_name(const std::string& key) {
-    return std::find(s_backend_names.begin(), s_backend_names.end(), key) != s_backend_names.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (!desc->binary.empty() && desc->effective_config_section() == key) {
+            return true;
+        }
+    }
+    return false;
 }
 
-// Backends that have a selectable "backend" key
-static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp", "vllm"
-};
-
+// A config section has a selectable "backend" key iff its descriptor opts in.
 static bool has_backend_selection(const std::string& config_section) {
-    return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
-                     config_section) != s_selectable_backends.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->selectable_backend && desc->effective_config_section() == config_section) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
@@ -71,12 +76,18 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
 }
 
 std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
-    if (config_section == "sdcpp") return "sd-cpp";
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() == config_section) {
+            return desc->recipe;
+        }
+    }
     return config_section;
 }
 
 std::string RuntimeConfig::recipe_to_config_section(const std::string& recipe) {
-    if (recipe == "sd-cpp") return "sdcpp";
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        return desc->effective_config_section();
+    }
     return recipe;
 }
 

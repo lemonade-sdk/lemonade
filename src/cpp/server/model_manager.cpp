@@ -7,6 +7,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud_server.h>
 #include <lemon/cloud_provider_registry.h>
@@ -616,6 +617,35 @@ static void parse_image_defaults(ModelInfo& info, const json& model_json) {
         info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
         info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
     }
+}
+
+// Populate ModelInfo::extras with any model-JSON key not consumed by a typed
+// ModelInfo field. This lets a new backend read custom per-model fields in load()
+// without editing the shared ModelInfo struct. Keep this set in sync with the
+// keys read by the parse blocks in build_cache().
+static void parse_extras(ModelInfo& info, const json& model_json) {
+    static const std::set<std::string> kKnownKeys = {
+        "checkpoint", "checkpoints", "components", "mmproj", "recipe", "suggested",
+        "hf_load", "source", "size", "cloud_provider", "moonshine_arch",
+        "labels", "image_defaults", "recipe_options"
+    };
+    if (!model_json.is_object()) return;
+    for (auto& [key, value] : model_json.items()) {
+        if (kKnownKeys.count(key) == 0) {
+            info.extras[key] = value;
+        }
+    }
+}
+
+// Default device for a recipe: the backend descriptor is authoritative for
+// registered backends; collection/unknown recipes fall back to the recipe map.
+// (A backend whose device depends on the chosen backend variant resolves the
+// final device at load time via WrappedServer::effective_device.)
+static DeviceType device_type_for_recipe(const std::string& recipe) {
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        return desc->default_device;
+    }
+    return get_device_type_from_recipe(recipe);
 }
 
 // Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
@@ -1276,7 +1306,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         info.downloaded = true;
         info.source = EXTRA_MODEL_SOURCE;
         info.labels.push_back("custom");
-        info.device = get_device_type_from_recipe(EXTRA_MODEL_RECIPE);
+        info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
         return info;
     };
 
@@ -2045,6 +2075,7 @@ void ModelManager::build_cache() {
         }
 
         parse_image_defaults(info, value);
+        parse_extras(info, value);
 
         // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
         if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
@@ -2053,7 +2084,7 @@ void ModelManager::build_cache() {
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
-        info.device = get_device_type_from_recipe(info.recipe);
+        info.device = device_type_for_recipe(info.recipe);
 
         try {
             resolve_all_model_paths(info);
@@ -2098,6 +2129,7 @@ void ModelManager::build_cache() {
         }
 
         parse_image_defaults(info, value);
+        parse_extras(info, value);
 
         // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
         if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
@@ -2106,7 +2138,7 @@ void ModelManager::build_cache() {
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
-        info.device = get_device_type_from_recipe(info.recipe);
+        info.device = device_type_for_recipe(info.recipe);
 
         try {
             resolve_all_model_paths(info);
@@ -2287,7 +2319,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     // Populate type and device fields (multi-model support)
     info.type = get_model_type_from_labels(info.labels);
-    info.device = get_device_type_from_recipe(info.recipe);
+    info.device = device_type_for_recipe(info.recipe);
 
     resolve_all_model_paths(info);
 
@@ -2862,16 +2894,12 @@ void ModelManager::register_user_model(const std::string& model_name,
     // loop above; this local is just for the label inference below.
     std::string recipe = model_data.value("recipe", "");
 
-    if (recipe == "sd-cpp") {
-        labels.insert("image");
-    }
-    if (recipe == "whispercpp") {
-        labels.insert("transcription");
-        labels.insert("realtime-transcription");
-    }
-    if (recipe == "moonshine") {
-        labels.insert("transcription");
-        labels.insert("realtime-transcription");
+    // Inject the backend's default labels for models that omit them (e.g. sd-cpp
+    // -> image, whispercpp/moonshine -> transcription). Sourced from the descriptor.
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        for (const auto& label : desc->default_labels) {
+            labels.insert(label);
+        }
     }
 
     model_entry["labels"] = labels;
@@ -3100,7 +3128,7 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
 
                     // Populate type and device fields (multi-model support)
                     info.type = get_model_type_from_labels(info.labels);
-                    info.device = get_device_type_from_recipe(info.recipe);
+                    info.device = device_type_for_recipe(info.recipe);
 
                     flm_models.push_back(info);
                 }

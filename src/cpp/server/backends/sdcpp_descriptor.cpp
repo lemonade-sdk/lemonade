@@ -1,0 +1,47 @@
+#include "lemon/backends/sdcpp_descriptor.h"
+
+namespace lemon {
+namespace backends {
+
+const BackendDescriptor sdcpp_descriptor = {
+    /*recipe*/          "sd-cpp",
+    /*display_name*/    "StableDiffusion.cpp",
+#ifdef _WIN32
+    /*binary*/          "sd-server.exe",
+#else
+    /*binary*/          "sd-server",
+#endif
+    /*config_section*/  "sdcpp",
+    /*default_device*/  DEVICE_CPU,
+    /*slot_policy*/     SlotPolicy::Standard,
+    /*selectable_backend*/ true,
+    /*uses_ctx_size*/   false,
+    /*dynamic_models*/  false,
+    /*options*/ {
+        {"sd-cpp_backend", "--sdcpp", "", "BACKEND",
+         "SD.cpp backend to use", "Stable Diffusion Options"},
+        {"sdcpp_args", "--sdcpp-args", "", "ARGS",
+         "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
+        // Image generation defaults (recipe-level only, not CLI flags).
+        {"steps", "", 20, "SIZE", "Number of diffusion steps", "Stable Diffusion Options"},
+        {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Stable Diffusion Options"},
+        {"width", "", 512, "SIZE", "Output image width", "Stable Diffusion Options"},
+        {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
+        {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
+        {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
+    },
+    /*support*/ {
+        {"sd-cpp", "rocm", {"windows", "linux"},
+         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}},
+        {"sd-cpp", "cuda", {"linux"},
+         {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}},
+        {"sd-cpp", "vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}},
+        {"sd-cpp", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}},
+        {"sd-cpp", "metal", {"macos"}, {{"metal", {}}}},
+    },
+    /*default_labels*/  {"image"},
+    /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
+};
+
+} // namespace backends
+} // namespace lemon

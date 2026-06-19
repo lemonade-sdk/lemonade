@@ -4329,9 +4329,8 @@ void Server::handle_bin_change(const std::string& section,
     std::string backend = bin_key.substr(0, bin_key.size() - 4);
 
     // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
-    // current install flow — find_external_backend_binary uses recipe-based
-    // section lookup and there is no recipe whose section equals "ryzenai".
-    // Skip the hot-swap rather than attempt an install that won't help.
+    // current install flow, so skip the hot-swap rather than attempt an install
+    // that won't help.
     if (backend == "server") {
         LOG(WARNING, "Server") << section << "." << bin_key
                                << " is not consumed by the install flow; "

@@ -1,0 +1,30 @@
+#include "lemon/backends/vllm_descriptor.h"
+
+namespace lemon {
+namespace backends {
+
+const BackendDescriptor vllm_descriptor = {
+    /*recipe*/          "vllm",
+    /*display_name*/    "vLLM ROCm (experimental)",
+    /*binary*/          "vllm-server",
+    /*config_section*/  "vllm",
+    /*default_device*/  DEVICE_GPU,
+    /*slot_policy*/     SlotPolicy::Standard,
+    /*selectable_backend*/ true,
+    /*uses_ctx_size*/   true,
+    /*dynamic_models*/  false,
+    /*options*/ {
+        {"vllm_backend", "--vllm", "", "BACKEND",
+         "vLLM backend to use", "vLLM Options"},
+        {"vllm_args", "--vllm-args", "", "ARGS",
+         "Custom arguments to pass to vllm-server", "vLLM Options"},
+    },
+    /*support*/ {
+        {"vllm", "rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}},
+    },
+    /*default_labels*/  {},
+    /*required_checkpoints*/ {"main"},
+};
+
+} // namespace backends
+} // namespace lemon

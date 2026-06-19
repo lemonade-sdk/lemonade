@@ -7,6 +7,8 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -404,15 +406,8 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
 // Recipe/Backend definition table - single source of truth for support matrix
 // ============================================================================
 
-// Device constraints: device_type -> set of allowed families (empty = all families)
-using DeviceConstraints = std::map<std::string, std::set<std::string>>;
-
-struct RecipeBackendDef {
-    std::string recipe;
-    std::string backend;
-    std::set<std::string> supported_os;
-    DeviceConstraints devices;
-};
+// RecipeBackendDef and DeviceConstraints are declared in lemon/recipe_backend_def.h
+// so backend descriptors can carry their own support rows.
 
 // Recipe definitions table - single source of truth for all recipe/backend support
 // Format: {recipe, backend, {supported_os}, {{device_type, {allowed_families}}}}
@@ -422,115 +417,22 @@ struct RecipeBackendDef {
 // Example: metal is listed before vulkan on macOS, vulkan before cpu elsewhere.
 //
 // Empty family set {} means "all families of that device type"
-static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference)
-    {"llamacpp", "system", {"linux"}, {
-        {"cpu", {"x86_64", "arm64"}}, // Placeholder, actual check is PATH-based
-    }},
-    {"llamacpp", "metal", {"macos"},
-    {
-        {"metal", {}},
-    }},
-    {"llamacpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
-    }},
-    {"llamacpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-        {"amd_gpu", {}},      // all AMD GPU families
-    }},
-    {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
-    }},
-    {"llamacpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-    }},
-
-    // whisper.cpp - NPU, ROCm GPU, Vulkan, CPU, Metal
-    {"whispercpp", "npu", {"windows"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-    {"whispercpp", "rocm", {"windows", "linux"}, {
-        // gfx103X omitted: lemonade-sdk/whisper.cpp-rocm publishes no gfx103X
-        // ROCm whisper build, so advertising it would yield a 404 on install.
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
-    }},
-    {"whispercpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-        {"amd_gpu", {}},
-    }},
-    {"whispercpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"whispercpp", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
-    {"kokoro", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"kokoro", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // stable-diffusion.cpp - ROCm backend for AMD GPUs
-    {"sd-cpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {
-            "gfx1150", "gfx1151", "gfx1152",
-            "gfx103X", "gfx110X", "gfx120X"
-        }},
-    }},
-
-    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Linux)
-    {"sd-cpp", "cuda", {"linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
-    }},
-
-    // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
-    {"sd-cpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-        {"amd_gpu", {}},
-        {"nvidia_gpu", {}},
-    }},
-
-    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
-    {"sd-cpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-
-    // stable-diffusion.cpp - Metal backend (macOS arm64)
-    {"sd-cpp", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // FLM - NPU (XDNA2)
-    {"flm", "npu", {"windows", "linux"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-
-    // RyzenAI LLM - Windows NPU (XDNA2)
-    {"ryzenai-llm", "npu", {"windows"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-
-    // vLLM - ROCm backend for AMD GPUs (Linux only)
-    {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
-    }},
-
-    // Moonshine - CPU-only streaming STT. Platforms match the published
-    // moonshine-server-rocm bundles (moonshine-voice wheels): Windows x64,
-    // Linux x64/arm64, macOS arm64. No Intel macOS or Windows-arm64 wheel.
-    {"moonshine", "cpu", {"windows"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"moonshine", "cpu", {"linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-    }},
-    {"moonshine", "cpu", {"macos"}, {
-        {"cpu", {"arm64"}},
-    }},
-};
+// The recipe/backend support matrix is assembled from every backend descriptor's
+// `support` rows (see lemon/backends/*_descriptor.cpp). Concatenated in registry
+// order; within a recipe, row order is the backend preference order. This is the
+// single source of truth — there is no separate hand-maintained table.
+static const std::vector<RecipeBackendDef>& recipe_defs() {
+    static const std::vector<RecipeBackendDef> defs = [] {
+        std::vector<RecipeBackendDef> v;
+        for (const auto* desc : lemon::backends::all_descriptors()) {
+            for (const auto& row : desc->support) {
+                v.push_back(row);
+            }
+        }
+        return v;
+    }();
+    return defs;
+}
 
 // ============================================================================
 // Device family to human-readable name mapping
@@ -592,7 +494,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
     std::string error;
 
     // Find the recipe/backend in RECIPE_DEFS
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         if (def.recipe == recipe && def.backend == backend) {
             // Collect all required family names
             std::vector<std::string> family_names;
@@ -1203,12 +1105,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
     std::map<std::string, std::string> configured_default_backends;
     if (auto* cfg = RuntimeConfig::global()) {
         std::set<std::string> processed_recipes;
-        for (const auto& def : RECIPE_DEFS) {
+        for (const auto& def : recipe_defs()) {
             if (!processed_recipes.insert(def.recipe).second) continue;
             std::string section = RuntimeConfig::recipe_to_config_section(def.recipe);
             std::string backend = cfg->backend_string(section, "backend");
             if (backend.empty() || backend == "auto") continue;
-            bool known = std::any_of(RECIPE_DEFS.begin(), RECIPE_DEFS.end(),
+            bool known = std::any_of(recipe_defs().begin(), recipe_defs().end(),
                 [&](const RecipeBackendDef& d) {
                     return d.recipe == def.recipe && d.backend == backend;
                 });
@@ -1268,7 +1170,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Build recipes from the definition table
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         // Skip if not supported on current OS
         if (def.supported_os.count(current_os) == 0) {
             // Helper to format OS name nicely
@@ -1599,6 +1501,50 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Enrich each recipe entry with descriptor metadata so clients (the desktop
+    // app, the docs generator) can render display names and per-recipe option
+    // schemas without hardcoding them. This is the single source the frontend
+    // reads instead of its own per-recipe TypeScript tables.
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        auto it = recipes.find(desc->recipe);
+        if (it == recipes.end()) {
+            continue;  // recipe not surfaced on this system (e.g. cloud has no support rows)
+        }
+        json& entry = it.value();
+        entry["display_name"] = desc->display_name;
+        entry["selectable_backend"] = desc->selectable_backend;
+        entry["uses_ctx_size"] = desc->uses_ctx_size;
+        // Machine-independent support matrix (OS + device families per backend),
+        // straight from the descriptor — used by the docs generator.
+        json support = json::array();
+        for (const auto& row : desc->support) {
+            json devices = json::array();
+            for (const auto& [device, families] : row.devices) {
+                devices.push_back({{"device", device},
+                                   {"families", std::vector<std::string>(families.begin(), families.end())}});
+            }
+            support.push_back({
+                {"backend", row.backend},
+                {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
+                {"devices", devices},
+            });
+        }
+        entry["support"] = support;
+        json options = json::array();
+        for (const auto& opt : desc->options) {
+            json o = {
+                {"name", opt.name},
+                {"cli_flag", opt.cli_flag},
+                {"default", opt.default_value},
+                {"type_name", opt.type_name},
+                {"help", opt.help},
+                {"group", opt.group},
+            };
+            options.push_back(o);
+        }
+        entry["options"] = options;
+    }
+
     return recipes;
 }
 
@@ -1631,7 +1577,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
     }
 
     // Collect remaining supported backends and capture first error (in preference order from RECIPE_DEFS)
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         if (def.recipe == recipe) {
             // Skip the default_backend since we already added it
             if (def.backend == default_backend) {
@@ -1660,11 +1606,12 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 }
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
-    // Cloud offload has no local hardware/OS requirements; availability is
-    // gated by the CloudProviderRegistry (config.json "cloud_providers") and
-    // a resolvable API key (env var or runtime auth), checked elsewhere in
-    // filter_models_by_backend / CloudServer::load.
-    if (recipe == "cloud") {
+    // A backend whose descriptor declares no support rows has no local
+    // hardware/OS gating (e.g. cloud offload): availability is determined at
+    // runtime (provider creds via the CloudProviderRegistry / API key), checked
+    // elsewhere in filter_models_by_backend / CloudServer::load.
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && desc->support.empty()) {
         return "";
     }
     auto result = get_supported_backends(recipe);
@@ -1685,7 +1632,7 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
 
         if (recipe_info.contains("backends") && recipe_info["backends"].is_object()) {
             // Iterate in preference order (from RECIPE_DEFS table)
-            for (const auto& def : RECIPE_DEFS) {
+            for (const auto& def : recipe_defs()) {
                 if (def.recipe != recipe_name) continue;
 
                 if (!recipe_info["backends"].contains(def.backend)) continue;
