@@ -297,20 +297,7 @@ void WhisperServer::load(const std::string& model_name,
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
 
-#ifdef __APPLE__
-    // On macOS, dyld uses DYLD_LIBRARY_PATH for dynamic library lookup.
-    std::string lib_path = exe_dir.string();
-
-    const char* existing_dyld_path = std::getenv("DYLD_LIBRARY_PATH");
-    if (existing_dyld_path && strlen(existing_dyld_path) > 0) {
-        lib_path = lib_path + ":" + std::string(existing_dyld_path);
-    }
-
-    env_vars.push_back({"DYLD_LIBRARY_PATH", lib_path});
-    if (is_debug()) {
-        std::cout << "[WhisperServer] Setting DYLD_LIBRARY_PATH=" << lib_path << std::endl;
-    }
-#elif !defined(_WIN32)
+#ifndef _WIN32
     // set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
