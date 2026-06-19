@@ -198,9 +198,11 @@ inline double get_available_memory_gb(DeviceType device_type) {
  * GGUF architecture metadata.
  *
  * Formula (from auto-tune schema):
- *   kv_bytes_per_token = block_count × head_count_kv × key_length × 2[F16] × 2[K+V]
+ *   kv_bytes_per_token = head_count_kv × key_length × 2[F16] × 2[K+V]
  *   max_ctx = floor((available_memory_gb × 1024³ - weights) / kv_bytes_per_token)
  *   ctx_size = min(model_max_context_window, max_ctx)
+ *
+ * head_count_kv is the total KV head count across all blocks (pre-computed in GGUF reader).
  *
  * When GGUF metadata is unavailable, estimates kv_bytes_per_token from model size.
  * For embedding models, the result is floored at EMBEDDING_CTX_SIZE.
@@ -224,14 +226,14 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     bool estimated = false;
 
     // Try exact GGUF metadata first
-    int64_t block_count = model_info.gguf_block_count;
-    int64_t head_count_kv = model_info.gguf_head_count_kv;
-    int64_t key_length = model_info.gguf_key_length;
+    int64_t block_count = model_info.gguf.block_count;
+    int64_t head_count_kv = model_info.gguf.head_count_kv;
+    int64_t key_length = model_info.gguf.key_length;
 
     if (block_count > 0 && head_count_kv > 0 && key_length > 0) {
-        // Exact formula: layers × kv_heads × head_dim × 2[F16] × 2[K+V]
-        kv_bytes_per_token = static_cast<double>(block_count)
-                            * static_cast<double>(head_count_kv)
+        // Exact formula: total_kv_heads × head_dim × 2[F16] × 2[K+V]
+        // head_count_kv is already the total across all blocks
+        kv_bytes_per_token = static_cast<double>(head_count_kv)
                             * static_cast<double>(key_length)
                             * 2.0  // F16 = 2 bytes per element
                             * 2.0; // K cache + V cache
