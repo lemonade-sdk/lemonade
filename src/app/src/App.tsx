@@ -60,18 +60,86 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
 const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'];
 
-function viewFromHash(): View | null {
+
+type HostNavigationPayload = string | URL | {
+  url?: string;
+  href?: string;
+  view?: string;
+  model?: string;
+  [key: string]: unknown;
+};
+
+type HostNavigateUnsubscribe = void | (() => void);
+
+type LemonadeHostApi = {
+  onNavigate?: (callback: (payload: HostNavigationPayload) => void) => HostNavigateUnsubscribe;
+  signalReady?: () => void;
+};
+
+declare global {
+  interface Window { api?: LemonadeHostApi & Record<string, unknown>; }
+}
+
+function viewFromValue(raw: unknown): View | null {
+  const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
+  return VALID_VIEWS.includes(value as View) ? value as View : null;
+}
+
+function viewFromHashValue(hash: string): View | null {
   try {
-    const hash = window.location.hash.replace(/^#\/?/, '');
-    if (hash && VALID_VIEWS.includes(hash as View)) return hash as View;
-  } catch { /* ignore */ }
-  return null;
+    const clean = hash.replace(/^#\/?/, '');
+    if (!clean) return null;
+    const params = new URLSearchParams(clean.includes('?') ? clean.slice(clean.indexOf('?') + 1) : clean);
+    return viewFromValue(params.get('view')) || viewFromValue(clean.split('?')[0]);
+  } catch { return null; }
+}
+
+function parseUrlLikeNavigation(raw: string): { view: View | null; model: string | null } {
+  const text = raw.trim();
+  if (!text) return { view: null, model: null };
+  try {
+    const url = new URL(text, window.location.origin);
+    const hashView = viewFromHashValue(url.hash || '');
+    return {
+      view: viewFromValue(url.searchParams.get('view')) || hashView || viewFromValue(url.hostname) || viewFromValue(url.pathname),
+      model: url.searchParams.get('model') || null,
+    };
+  } catch {
+    const search = text.includes('?') ? text.slice(text.indexOf('?') + 1) : text;
+    const params = new URLSearchParams(search.replace(/^#\/?/, ''));
+    return { view: viewFromValue(params.get('view')) || viewFromHashValue(text), model: params.get('model') || null };
+  }
+}
+
+function parseHostNavigation(payload: HostNavigationPayload): { view: View | null; model: string | null } {
+  if (typeof payload === 'string') return parseUrlLikeNavigation(payload);
+  if (payload instanceof URL) return parseUrlLikeNavigation(payload.href);
+  if (payload && typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>;
+    const directView = viewFromValue(obj.view);
+    const directModel = typeof obj.model === 'string' ? obj.model : null;
+    const urlLike = typeof obj.url === 'string' ? obj.url : (typeof obj.href === 'string' ? obj.href : '');
+    const parsed = urlLike ? parseUrlLikeNavigation(urlLike) : { view: null, model: null };
+    return { view: directView || parsed.view, model: directModel || parsed.model };
+  }
+  return { view: null, model: null };
+}
+
+function viewFromCurrentLocation(): View | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return viewFromValue(params.get('view')) || viewFromHashValue(window.location.hash || '');
+  } catch { return viewFromHashValue(window.location.hash || ''); }
+}
+
+function viewFromHash(): View | null {
+  return viewFromHashValue(window.location.hash || '');
 }
 
 function loadSavedView(): View {
-  // Hash takes priority, then localStorage, then default
-  const fromHash = viewFromHash();
-  if (fromHash) return fromHash;
+  // Deep-link/search/hash takes priority, then localStorage, then default
+  const fromLocation = viewFromCurrentLocation();
+  if (fromLocation) return fromLocation;
   try {
     const saved = localStorage.getItem('lemonade_current_view');
     if (saved && VALID_VIEWS.includes(saved as View)) return saved as View;
@@ -177,6 +245,40 @@ const App: React.FC = () => {
       window.history.pushState(null, '', newHash);
     }
   }, []);
+
+  // Electron/host deep-links: GUI2-compatible lemonade://?view=logs&model=... navigation.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: HostNavigateUnsubscribe;
+    let attempts = 0;
+
+    const applyNavigation = (payload: HostNavigationPayload) => {
+      const target = parseHostNavigation(payload);
+      if (target.model) setCurrentModel(target.model);
+      if (target.view) setView(target.view);
+    };
+
+    const attach = () => {
+      if (cancelled) return;
+      const hostApi = window.api;
+      if (hostApi?.onNavigate || hostApi?.signalReady) {
+        if (hostApi.onNavigate) cleanup = hostApi.onNavigate(applyNavigation);
+        try { hostApi.signalReady?.(); } catch (err) { console.warn('Host signalReady failed:', err); }
+        return;
+      }
+      attempts += 1;
+      if (attempts < 50) window.setTimeout(attach, 100);
+    };
+
+    const initialView = viewFromCurrentLocation();
+    if (initialView) setView(initialView);
+    attach();
+
+    return () => {
+      cancelled = true;
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, [setView]);
 
   // Sync view from hash on back/forward navigation
   useEffect(() => {
