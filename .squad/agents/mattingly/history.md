@@ -15,6 +15,40 @@ Leading UI POC on `feat/ui-testing`. React stays (ROI analysis showed ~300 LOC s
 
 ## Active Learnings
 
+### 2026-06-19: Presets redesign audit — screenshots + findings
+
+**Task:** Design audit of the Presets UI in response to Kyle's stakeholder feedback: "I can't even figure out how to edit the default starters" and the preset↔recipe integration gap.
+
+**Deliverables committed:**
+- `prototype/ui-redesign/docs/PRESETS_REDESIGN.md` — full audit + three-part recommendations
+- `prototype/ui-redesign/scripts/screenshot-presets.mjs` — reusable Playwright screenshot script
+- `prototype/ui-redesign/docs/screenshots/presets/*.png` — 12 screenshots (desktop + mobile)
+- `.squad/decisions/inbox/mattingly-presets-redesign-audit-2026-06-19.md` — Scribe pickup
+
+**Top findings:**
+1. `const isReadOnly = preset.starter` (PresetManager.tsx:749) makes all starter fields `disabled`. The only affordance to customize a starter is `Clone` at the bottom of a long slideover — no on-card CTA. Kyle's pain is 100% code-confirmed.
+2. `engine_hint` is present in all STARTERS but invisible to users — it never appears on cards and lives in a collapsed `<details>` labeled "Advanced engine options". A preset cannot _drive_ recipe selection.
+3. Mobile: the AutoOpt summary block with full CLI args dominates ~40% of first viewport at 390px, pushing starters below the fold.
+
+**Top recommendations:**
+1. Phase A: Add "Customize →" on-card CTA for starters (calls existing `handleClone`). S effort.
+2. Phase B: Rename `engine_hint` → `recipe_preference`, surface on cards, add recipe picker in slideover body, add mismatch dialog at apply-time.
+3. Phase A: Wrap AutoOpt summary in `<details>` collapsed by default on mobile.
+
+**Screenshot script pattern — reusable for future audits:**
+The script `scripts/screenshot-presets.mjs` establishes the standard pattern:
+- `playwright.chromium.launch()` (headless) — no need to reference `@playwright/test`'s test runner
+- Desktop context: `viewport: {width:1440, height:900}`, no isMobile
+- Mobile context: `viewport: {width:390, height:844}`, `deviceScaleFactor:2`, `isMobile:true`, **`hasTouch:true`** (required for `.tap()` calls — omitting this throws "page does not support tap")
+- Output to `docs/screenshots/<feature>/` with numeric prefixes for sort order
+- Use `page.waitForTimeout(600)` after nav clicks; `waitUntil:'networkidle'` on goto
+
+**Files changed this session (read-only audit + docs only):**
+- `prototype/ui-redesign/docs/PRESETS_REDESIGN.md` — new
+- `prototype/ui-redesign/docs/screenshots/presets/*.png` — 12 new screenshots
+- `prototype/ui-redesign/scripts/screenshot-presets.mjs` — new
+- `.squad/decisions/inbox/mattingly-presets-redesign-audit-2026-06-19.md` — new
+
 ### 2026-06-15: Regression — #2228 accidentally reverted by rebase linearization (c6529721)
 
 **What happened:** Commit `115d464f` (PR #2228) added capability badge icons (flame/wrench/brain/rocket), `reasoningElapsedMs` timing plumbing, and tool polish to `lemonadeTools.ts`. Hours after merge, a "rebase ui-mobile-layout onto ui-testing" linearization extracted prototype/ files from a merge tree that did NOT include #2228 and pushed them back onto `kpoin/ui-testing` via PR #2229 (commit `c6529721`). Result: 7 files silently reverted to a pre-#2228 state while keeping the a11y + mobile additions.
