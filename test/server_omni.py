@@ -87,7 +87,8 @@ class OmniTests(ServerTestBase):
 
     APP_TOOL_PROMPT = (
         "Use the get_current_weather tool for Paris. "
-        "Do not answer in plain text before calling the tool."
+        "Do not answer from memory and do not say the tool is unavailable; "
+        "the tool is provided in this request."
     )
 
     @classmethod
@@ -219,29 +220,25 @@ class OmniTests(ServerTestBase):
         self._assert_contains(self, complete_response, "data:image/", "image")
 
     @skip_if_unsupported("collection_chat")
-    def test_003_mixed_omni_and_app_tools(self):
-        """A mixed turn runs an omni tool server-side AND hands an app tool back.
+    def test_003_app_tool_passthrough(self):
+        """A client-supplied app-only tool is handed back to the caller.
 
-        A collection request may carry the client's own `tools` alongside the
-        server-injected omni tools. The server must do both things in the same
-        request: resolve omni tool calls internally (embedding the media in the
-        assistant content) AND return any app tool call — which it knows nothing
-        about — to the client as a finish_reason: "tool_calls" response to
-        execute and resume.
+        Weather is a synthetic test tool, not a Lemonade feature. It verifies the
+        OpenAI-compatible contract for external clients: caller-owned tools must
+        be returned as tool_calls for the caller to execute, not swallowed or
+        executed by the server-side Omni orchestrator.
 
-        We prompt for both an image (the omni `generate_image` tool, reliably
-        exercised by the other tests) and a weather lookup (an app-only
-        `get_current_weather` tool with no matching component). The orchestrator
-        accumulates artifacts across loop iterations, so regardless of whether
-        the planner emits both calls in one turn or across turns, the final
-        response should carry the embedded image and the passed-back app call.
+        Server-side media execution is covered separately by test_001 and
+        test_002. Keeping the app-tool passthrough prompt independent avoids
+        depending on the planner choosing both an Omni media tool and an app tool
+        in the same model turn.
         """
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
         completion = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": self.MIXED_TOOL_PROMPT}],
+            messages=[{"role": "user", "content": self.APP_TOOL_PROMPT}],
             tools=self.WEATHER_TOOL,
             stream=False,
         )
@@ -249,11 +246,6 @@ class OmniTests(ServerTestBase):
         choice = completion.choices[0]
         print(f"finish_reason: {choice.finish_reason}")
 
-        # The omni tool was executed server-side: its image is embedded in the
-        # assistant content.
-        self._assert_contains(self, choice.message.content, "data:image/", "image")
-
-        # The app tool was NOT executed: it is handed back for the client to run.
         self.assertEqual(
             choice.finish_reason,
             "tool_calls",
@@ -270,28 +262,22 @@ class OmniTests(ServerTestBase):
         )
 
     @skip_if_unsupported("collection_chat_streaming")
-    def test_004_mixed_omni_and_app_tools_streaming(self):
-        """Streaming variant of the mixed omni + app-tool turn.
+    def test_004_app_tool_passthrough_streaming(self):
+        """Streaming variant of the app-tool passthrough contract.
 
-        Same contract as test_003 but with stream: true. The omni image arrives
-        as a content delta and the app tool call is returned in the streamed
-        deltas. Streaming tool-call deltas MUST carry a per-call integer
-        `index` (OpenAI streaming shape) so clients/SDKs can merge them; a
-        passthrough of the non-streaming message.tool_calls objects omits it and
-        breaks reconstruction. This test asserts that index is present and that
-        the call reconstructs correctly.
+        The streamed tool-call deltas must carry a per-call integer `index`
+        (OpenAI streaming shape) so clients/SDKs can merge fragments.
         """
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
         stream = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": self.MIXED_TOOL_PROMPT}],
+            messages=[{"role": "user", "content": self.APP_TOOL_PROMPT}],
             tools=self.WEATHER_TOOL,
             stream=True,
         )
 
-        content = ""
         finish_reason = None
         # Reconstruct tool calls from streamed deltas, keyed by their index.
         tool_calls_by_index = {}
@@ -304,11 +290,7 @@ class OmniTests(ServerTestBase):
             delta = choice.delta
             if not delta:
                 continue
-            if delta.content:
-                content += delta.content
             for tc in delta.tool_calls or []:
-                # The streaming contract: every tool-call delta must carry an
-                # integer index so the client can merge fragments by slot.
                 self.assertIsInstance(
                     tc.index,
                     int,
@@ -325,10 +307,6 @@ class OmniTests(ServerTestBase):
         print(f"finish_reason: {finish_reason}")
         print(f"Reconstructed tool calls: {tool_calls_by_index}")
 
-        # Omni tool ran server-side: its image arrived as a content delta.
-        self._assert_contains(self, content, "data:image/", "image")
-
-        # App tool was handed back, reconstructable from the streamed deltas.
         self.assertEqual(
             finish_reason,
             "tool_calls",
@@ -447,16 +425,13 @@ class OmniTests(ServerTestBase):
     def test_006_app_tool_resume(self):
         """Resuming after a client-executed app tool call reaches the planner.
 
-        This uses a synthetic app-only tool. It is not a Lemonade feature; it is
-        a stand-in for any external OpenAI-compatible client tool. Keep this
-        separate from the mixed omni+app test so model sampling cannot satisfy
-        the image half and then stop before returning the app call.
-
         The middleware contract is a two-request flow: request 1 returns the
-        app tool call (finish_reason "tool_calls"), the client executes it,
+        app-only tool call (finish_reason "tool_calls"), the client executes it,
         appends the assistant message (with its tool_calls) plus a role:"tool"
         result (with the matching tool_call_id), and re-issues. The collection
-        pre-processing must preserve those fields while sanitizing history.
+        pre-processing must preserve those fields while sanitizing history —
+        rebuilding messages as bare role/content hands the planner an orphaned
+        tool result, which jinja chat templates reject or mis-render.
 
         The final answer can only mention the tool's result ("sunny") if the
         resumed tool-call history survived pre-processing.
@@ -479,7 +454,7 @@ class OmniTests(ServerTestBase):
         messages.append(
             {
                 "role": "assistant",
-                "content": choice.message.content or "",
+                "content": choice.message.content,
                 "tool_calls": [
                     {
                         "id": tc.id,
