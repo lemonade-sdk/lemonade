@@ -40,6 +40,9 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SHARED_REPO_MODEL_A_NAME,
+    SHARED_REPO_MODEL_A_CHECKPOINT,
+    SHARED_REPO_MODEL_B_NAME,
     SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -3258,6 +3261,155 @@ class EndpointTests(ServerTestBase):
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    def test_034_shared_repo_variant_resolves_after_refs_main_advances(self):
+        """Regression for #2300: two models sharing one HF repo with different
+        quants must both stay resolvable after refs/main advances past one of them.
+
+        HF refs/main is a single sticky per-repo pointer (advanced only on a
+        successful pull). When a sibling variant is pulled/updated, refs/main moves
+        to a snapshot that contains only that variant; the other variant stays in
+        the previous snapshot, so refs/main no longer covers both. On the next
+        models-cache build (i.e. after a lemond restart) the GGUF resolver, which
+        searches only the refs/main snapshot, then reports the variant not covered
+        by refs/main as not downloaded even though its file is still cached. The fix
+        broadens the resolver to fall back to all snapshots when the active one
+        lacks the requested variant.
+
+        Repro without waiting for a real upstream commit: pull both variants (they
+        land in one snapshot under the current commit), then move one variant into a
+        fresh snapshot and repoint refs/main at it, so the two variants live in
+        different snapshots. The models cache is then rebuilt by pulling an
+        unrelated model from a *different* repo (re-pulling a shared-repo model would
+        query HF and repair refs/main, masking the bug).
+        """
+        a_name = SHARED_REPO_MODEL_A_NAME
+        b_name = SHARED_REPO_MODEL_B_NAME
+        repo_id, a_file = SHARED_REPO_MODEL_A_CHECKPOINT.split(":", 1)
+        b_file = SHARED_REPO_MODEL_B_CHECKPOINT.split(":", 1)[1]
+        repo_cache_dir = "models--" + repo_id.replace("/", "--")
+        throwaway = f"user.OrphanRebuild-{uuid.uuid4().hex[:8]}"
+
+        def _pull(model_name, checkpoint):
+            r = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "recipe": "llamacpp",
+                    "checkpoints": {"main": checkpoint},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+
+        def _delete(model_name):
+            # Best-effort cleanup; ignore status so one failure does not mask others.
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+            except requests.RequestException:
+                pass
+
+        def _downloaded(model_name):
+            # GET /models/{id} -> get_model_info() -> build_cache(), so this re-runs
+            # the on-disk resolver against the staged cache state.
+            r = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+            return r.json().get("downloaded", False)
+
+        try:
+            # 1. Pull both variants of the shared repo. With a single upstream commit
+            #    both files land in the same snapshots/<commit>/ directory.
+            _pull(a_name, SHARED_REPO_MODEL_A_CHECKPOINT)
+            _pull(b_name, SHARED_REPO_MODEL_B_CHECKPOINT)
+            self.assertTrue(_downloaded(a_name), "Variant A should download")
+            self.assertTrue(_downloaded(b_name), "Variant B should download")
+
+            # Locate the server's real HF cache (handles config models_dir overrides
+            # and packaged servers running under a different user/HOME).
+            cache_root = self._server_hf_cache_root(repo_cache_dir)
+            if cache_root is None:
+                self.skipTest(
+                    "Cannot locate the server's HF cache from the test process; "
+                    "the shared-repo resolution path needs on-disk snapshot access."
+                )
+
+            repo_dir = os.path.join(cache_root, repo_cache_dir)
+            snapshots_dir = os.path.join(repo_dir, "snapshots")
+            refs_main = os.path.join(repo_dir, "refs", "main")
+
+            with open(refs_main, encoding="utf-8") as f:
+                cur_rev = f.read().strip()
+            cur_snapshot = os.path.join(snapshots_dir, cur_rev)
+            a_in_cur = os.path.join(cur_snapshot, a_file)
+            b_in_cur = os.path.join(cur_snapshot, b_file)
+            if not (os.path.exists(a_in_cur) and os.path.exists(b_in_cur)):
+                self.skipTest(
+                    "Shared-repo variants are not co-located in the active snapshot "
+                    "(upstream layout changed); cannot stage the orphan."
+                )
+
+            # 2. Simulate an upstream commit being pulled for one variant: move B
+            #    into a fresh snapshot and advance refs/main to it. This mirrors what
+            #    a real pull does — only the freshly pulled file lands in the new
+            #    snapshot, so the two variants no longer share one snapshot and
+            #    refs/main no longer covers both of them. (The repo here stores real
+            #    files in the snapshot dirs, so the file is relocated directly.)
+            new_rev = "0" * 40
+            new_snapshot = os.path.join(snapshots_dir, new_rev)
+            os.makedirs(new_snapshot, exist_ok=True)
+            os.rename(b_in_cur, os.path.join(new_snapshot, b_file))
+            os.makedirs(os.path.dirname(refs_main), exist_ok=True)
+            with open(refs_main, "w", encoding="utf-8") as f:
+                f.write(new_rev)
+
+            # Sanity: each variant now lives in a different snapshot, and refs/main
+            # points at the one that holds only B.
+            self.assertTrue(
+                os.path.exists(os.path.join(new_snapshot, b_file)),
+                "Setup error: B must be in the new refs/main snapshot",
+            )
+            self.assertFalse(
+                os.path.exists(os.path.join(new_snapshot, a_file)),
+                "Setup error: A must not be in the new refs/main snapshot",
+            )
+            self.assertTrue(
+                os.path.exists(a_in_cur),
+                "Setup error: A must remain in the previous snapshot",
+            )
+
+            # 3. Force a models-cache rebuild without touching the shared repo (this
+            #    is what a lemond restart would do). Pulling an unrelated model from a
+            #    different repo invalidates the cache so the resolver re-runs.
+            _pull(throwaway, USER_MODEL_MAIN_CHECKPOINT)
+
+            # 4. #2300: both variants are still physically cached (one in each
+            #    snapshot), so both must resolve as downloaded. Before the fix the
+            #    resolver searched only the refs/main snapshot, so the variant not
+            #    covered by refs/main was reported missing.
+            self.assertTrue(
+                _downloaded(b_name),
+                "#2300: variant B must remain downloaded after refs/main advances "
+                "(its file is still cached, in the new snapshot)",
+            )
+            self.assertTrue(
+                _downloaded(a_name),
+                "#2300: variant A must remain downloaded after refs/main advances "
+                "(its file is still cached, in the previous snapshot)",
+            )
+            print(
+                "[OK] #2300 shared-repo variants both resolve after refs/main advance"
+            )
+        finally:
+            _delete(a_name)
+            _delete(b_name)
+            _delete(throwaway)
 
 
 if __name__ == "__main__":
