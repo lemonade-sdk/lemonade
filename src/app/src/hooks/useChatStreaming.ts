@@ -160,7 +160,9 @@ export function useChatStreaming(
     const controller = new AbortController();
     controllersRef.current.set(convoId, controller);
 
-    let fullMessages = [...messages];
+    let fullMessages = runtime?.systemPrompt
+      ? [{ role: 'system' as const, content: runtime.systemPrompt }, ...messages]
+      : [...messages];
 
     let toolRound = 0;
     const allToolCalls: ToolCallEntry[] = [];

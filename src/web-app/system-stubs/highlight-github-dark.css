@@ -1,86 +1,47 @@
-/* System-node packaging fallback for GUI3's highlight.js theme import.
+/* Original system-node packaging fallback for GUI3's highlight.js theme import.
  * Debian/Ubuntu/Fedora may provide highlight.js JavaScript without npm's
- * bundled styles/github-dark.css file. Keep syntax highlighting readable
- * without adding a distro-specific CSS dependency.
+ * bundled styles/github-dark.css file. This file is intentionally minimal and
+ * is not copied from the upstream highlight.js GitHub theme.
  */
 .hljs {
   display: block;
   overflow-x: auto;
   padding: 0.75em;
-  color: #c9d1d9;
-  background: #0d1117;
+  color: inherit;
+  background: rgba(127, 127, 127, 0.12);
 }
 
 .hljs-comment,
 .hljs-quote {
-  color: #8b949e;
+  opacity: 0.72;
   font-style: italic;
 }
 
 .hljs-keyword,
 .hljs-selector-tag,
-.hljs-subst {
-  color: #ff7b72;
-}
-
-.hljs-literal,
-.hljs-number,
-.hljs-tag .hljs-attr,
-.hljs-template-variable,
-.hljs-variable {
-  color: #79c0ff;
-}
-
-.hljs-string,
-.hljs-doctag {
-  color: #a5d6ff;
-}
-
 .hljs-title,
 .hljs-section,
-.hljs-selector-id {
-  color: #d2a8ff;
-  font-weight: 600;
-}
-
-.hljs-type,
-.hljs-class .hljs-title {
-  color: #ffa657;
-}
-
-.hljs-attribute,
 .hljs-name,
-.hljs-tag {
-  color: #7ee787;
-}
-
-.hljs-regexp,
-.hljs-link {
-  color: #a5d6ff;
-}
-
-.hljs-symbol,
-.hljs-bullet {
-  color: #f2cc60;
-}
-
+.hljs-attribute,
+.hljs-string,
+.hljs-doctag,
+.hljs-number,
+.hljs-literal,
+.hljs-type,
 .hljs-built_in,
-.hljs-builtin-name {
-  color: #ffa657;
-}
-
+.hljs-builtin-name,
+.hljs-symbol,
+.hljs-bullet,
 .hljs-meta {
-  color: #8b949e;
+  color: inherit;
 }
 
 .hljs-deletion {
-  color: #ffdcd7;
-  background-color: #67060c;
+  background-color: rgba(220, 38, 38, 0.18);
 }
 
 .hljs-addition {
-  color: #aff5b4;
-  background-color: #033a16;
+  background-color: rgba(22, 163, 74, 0.18);
 }
 
 .hljs-emphasis {

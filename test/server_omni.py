@@ -78,6 +78,23 @@ class OmniTests(ServerTestBase):
         }
     ]
 
+    GUI3_IMAGE_TOOL = [
+        {
+            "type": "function",
+            "function": {
+                "name": "generate_image",
+                "description": "Generate a new image from a text prompt for GUI3 to render as an artifact.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Detailed image prompt."},
+                    },
+                    "required": ["prompt"],
+                },
+            },
+        }
+    ]
+
     WEATHER_RESULT = '{"city": "Paris", "condition": "sunny", "temperature_c": 22}'
 
     MIXED_TOOL_PROMPT = (
@@ -556,6 +573,53 @@ class OmniTests(ServerTestBase):
         )
         content, finish_reason, _ = self._collect_stream(stream)
         self._assert_resume_answer(finish_reason, content)
+
+    @skip_if_unsupported("collection_chat")
+    def test_008_gui3_owned_generate_image_tool_is_passed_back(self):
+        """GUI3-owned omni tool names must be passed back, not run server-side.
+
+        GUI3 supplies its own generate_image/text_to_speech tools so the client
+        can execute component calls and render media as structured artifacts.
+        The server-side collection orchestrator still owns omni tools for plain
+        API clients with no tools, but when a client explicitly supplies a tool
+        with the same name, that app tool must win the name collision.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Use the generate_image tool to draw a red apple on a table. "
+                        "Do not answer in plain text."
+                    ),
+                }
+            ],
+            tools=self.GUI3_IMAGE_TOOL,
+            stream=False,
+        )
+
+        choice = completion.choices[0]
+        print(f"finish_reason: {choice.finish_reason}")
+        print(f"content: {(choice.message.content or '')[:200]}")
+
+        self.assertEqual(
+            choice.finish_reason,
+            "tool_calls",
+            "Client-owned GUI3 tools must be returned to the caller for artifact rendering",
+        )
+        tool_calls = choice.message.tool_calls or []
+        called_names = [tc.function.name for tc in tool_calls]
+        print(f"Returned tool calls: {called_names}")
+        self.assertIn("generate_image", called_names)
+        self.assertNotIn(
+            "data:image/",
+            choice.message.content or "",
+            "Server-side omni orchestration must not execute a GUI3-owned tool collision",
+        )
 
 
 if __name__ == "__main__":
