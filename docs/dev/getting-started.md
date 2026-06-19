@@ -239,8 +239,9 @@ Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd6
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
-- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
-- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
+- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`, `libcpp-httplib0.41`
+- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, `libxrt-npu2` for NPU acceleration,
+  plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
