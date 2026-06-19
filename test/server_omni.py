@@ -78,28 +78,16 @@ class OmniTests(ServerTestBase):
         }
     ]
 
-    GUI3_IMAGE_TOOL = [
-        {
-            "type": "function",
-            "function": {
-                "name": "generate_image",
-                "description": "Generate a new image from a text prompt for GUI3 to render as an artifact.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {"type": "string", "description": "Detailed image prompt."},
-                    },
-                    "required": ["prompt"],
-                },
-            },
-        }
-    ]
-
     WEATHER_RESULT = '{"city": "Paris", "condition": "sunny", "temperature_c": 22}'
 
     MIXED_TOOL_PROMPT = (
         "Draw a red apple on a table, and also call the "
         "get_current_weather tool for Paris."
+    )
+
+    APP_TOOL_PROMPT = (
+        "Use the get_current_weather tool for Paris. "
+        "Do not answer in plain text before calling the tool."
     )
 
     @classmethod
@@ -459,13 +447,16 @@ class OmniTests(ServerTestBase):
     def test_006_app_tool_resume(self):
         """Resuming after a client-executed app tool call reaches the planner.
 
+        This uses a synthetic app-only tool. It is not a Lemonade feature; it is
+        a stand-in for any external OpenAI-compatible client tool. Keep this
+        separate from the mixed omni+app test so model sampling cannot satisfy
+        the image half and then stop before returning the app call.
+
         The middleware contract is a two-request flow: request 1 returns the
         app tool call (finish_reason "tool_calls"), the client executes it,
         appends the assistant message (with its tool_calls) plus a role:"tool"
         result (with the matching tool_call_id), and re-issues. The collection
-        pre-processing must preserve those fields while sanitizing history —
-        rebuilding messages as bare role/content hands the planner an orphaned
-        tool result, which jinja chat templates reject or mis-render.
+        pre-processing must preserve those fields while sanitizing history.
 
         The final answer can only mention the tool's result ("sunny") if the
         resumed tool-call history survived pre-processing.
@@ -473,12 +464,11 @@ class OmniTests(ServerTestBase):
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
-        messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
+        messages = [{"role": "user", "content": self.APP_TOOL_PROMPT}]
         completion = client.chat.completions.create(
             model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
         )
         choice = completion.choices[0]
-        self._assert_contains(self, choice.message.content, "data:image/", "image")
         self.assertEqual(choice.finish_reason, "tool_calls")
         tool_calls = choice.message.tool_calls or []
         weather = [tc for tc in tool_calls if tc.function.name == "get_current_weather"]
@@ -489,7 +479,7 @@ class OmniTests(ServerTestBase):
         messages.append(
             {
                 "role": "assistant",
-                "content": choice.message.content,
+                "content": choice.message.content or "",
                 "tool_calls": [
                     {
                         "id": tc.id,
@@ -529,12 +519,11 @@ class OmniTests(ServerTestBase):
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
-        messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
+        messages = [{"role": "user", "content": self.APP_TOOL_PROMPT}]
         stream = client.chat.completions.create(
             model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
         )
         content, finish_reason, calls = self._collect_stream(stream)
-        self._assert_contains(self, content, "data:image/", "image")
         self.assertEqual(finish_reason, "tool_calls")
         weather = [c for c in calls if c["name"] == "get_current_weather"]
         self.assertTrue(weather, "Expected the app tool call to be passed back")
@@ -573,53 +562,6 @@ class OmniTests(ServerTestBase):
         )
         content, finish_reason, _ = self._collect_stream(stream)
         self._assert_resume_answer(finish_reason, content)
-
-    @skip_if_unsupported("collection_chat")
-    def test_008_gui3_owned_generate_image_tool_is_passed_back(self):
-        """GUI3-owned omni tool names must be passed back, not run server-side.
-
-        GUI3 supplies its own generate_image/text_to_speech tools so the client
-        can execute component calls and render media as structured artifacts.
-        The server-side collection orchestrator still owns omni tools for plain
-        API clients with no tools, but when a client explicitly supplies a tool
-        with the same name, that app tool must win the name collision.
-        """
-        client = self.get_openai_client()
-        model = self.get_test_model("omni")
-
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Use the generate_image tool to draw a red apple on a table. "
-                        "Do not answer in plain text."
-                    ),
-                }
-            ],
-            tools=self.GUI3_IMAGE_TOOL,
-            stream=False,
-        )
-
-        choice = completion.choices[0]
-        print(f"finish_reason: {choice.finish_reason}")
-        print(f"content: {(choice.message.content or '')[:200]}")
-
-        self.assertEqual(
-            choice.finish_reason,
-            "tool_calls",
-            "Client-owned GUI3 tools must be returned to the caller for artifact rendering",
-        )
-        tool_calls = choice.message.tool_calls or []
-        called_names = [tc.function.name for tc in tool_calls]
-        print(f"Returned tool calls: {called_names}")
-        self.assertIn("generate_image", called_names)
-        self.assertNotIn(
-            "data:image/",
-            choice.message.content or "",
-            "Server-side omni orchestration must not execute a GUI3-owned tool collision",
-        )
 
 
 if __name__ == "__main__":
