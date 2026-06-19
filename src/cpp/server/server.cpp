@@ -4378,8 +4378,8 @@ void Server::handle_bin_change(const std::string& section,
 
     // Install the new binary. install_from_github bails early when the user's
     // value resolves to a path (find_external_backend_binary returns it). When
-    // version.txt mismatches the resolved version, the install dir is wiped
-    // and re-downloaded.
+    // version.txt mismatches the resolved version, the backend is re-downloaded
+    // and the install dir is replaced after the new archive is verified.
     try {
         backend_manager_->install_backend(recipe, backend);
     } catch (const std::exception& e) {

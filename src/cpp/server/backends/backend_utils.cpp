@@ -17,6 +17,7 @@
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/archive_platform.h"
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -24,6 +25,7 @@
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -317,9 +319,106 @@ namespace lemon::backends {
         throw std::runtime_error(spec.binary + " not found in install directory: " + install_dir);
     }
 
-    static std::string get_version_file(std::string& install_dir) {
+    static std::string get_version_file(const std::string& install_dir) {
         return (fs::path(install_dir) / "version.txt").string();
     }
+
+    static fs::path make_unique_install_sibling(const std::string& install_dir,
+                                                const std::string& suffix) {
+        fs::path active_dir(install_dir);
+#ifdef _WIN32
+        auto pid = GetCurrentProcessId();
+#else
+        auto pid = getpid();
+#endif
+        auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        std::string base_name = active_dir.filename().string() + suffix + "." +
+                                std::to_string(pid) + "." + std::to_string(stamp);
+        fs::path candidate = active_dir.parent_path() / base_name;
+        int attempt = 0;
+        while (fs::exists(candidate)) {
+            candidate = active_dir.parent_path() / (base_name + "." + std::to_string(++attempt));
+        }
+        return candidate;
+    }
+
+#ifdef _WIN32
+    static bool is_reparse_point(const fs::path& path) {
+        DWORD attrs = GetFileAttributesW(path.wstring().c_str());
+        return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT);
+    }
+#endif
+
+    static void remove_old_install_dir(const fs::path& install_dir, std::error_code& ec) {
+#ifdef _WIN32
+        if (is_reparse_point(install_dir)) {
+            fs::remove(install_dir, ec);
+            return;
+        }
+#endif
+        fs::remove_all(install_dir, ec);
+    }
+
+    static void replace_install_dir(const fs::path& staging_dir, const fs::path& install_dir) {
+        fs::path backup_dir;
+        bool backed_up_existing = false;
+        std::error_code ec;
+
+        if (fs::exists(install_dir)) {
+            backup_dir = make_unique_install_sibling(install_dir.string(), ".backup");
+            fs::rename(install_dir, backup_dir, ec);
+            if (ec) {
+                throw std::runtime_error("Failed to move existing install directory '" +
+                                         install_dir.string() + "': " + ec.message());
+            }
+            backed_up_existing = true;
+        }
+
+        fs::rename(staging_dir, install_dir, ec);
+        if (ec) {
+            if (backed_up_existing) {
+                std::error_code restore_ec;
+                fs::rename(backup_dir, install_dir, restore_ec);
+                if (restore_ec) {
+                    LOG(ERROR, "BackendUtils") << "Failed to restore previous install directory '"
+                                               << install_dir << "': " << restore_ec.message()
+                                               << std::endl;
+                }
+            }
+            throw std::runtime_error("Failed to activate new install directory '" +
+                                     install_dir.string() + "': " + ec.message());
+        }
+
+        if (backed_up_existing) {
+            std::error_code cleanup_ec;
+            remove_old_install_dir(backup_dir, cleanup_ec);
+            if (cleanup_ec) {
+                LOG(WARNING, "BackendUtils") << "Failed to remove old install directory '"
+                                             << backup_dir << "': " << cleanup_ec.message()
+                                             << std::endl;
+            }
+        }
+    }
+
+    class ScopedInstallDirCleanup {
+    public:
+        explicit ScopedInstallDirCleanup(fs::path install_dir)
+            : install_dir_(std::move(install_dir)) {}
+
+        ~ScopedInstallDirCleanup() {
+            if (!enabled_) return;
+            std::error_code cleanup_ec;
+            fs::remove_all(install_dir_, cleanup_ec);
+        }
+
+        void release() {
+            enabled_ = false;
+        }
+
+    private:
+        fs::path install_dir_;
+        bool enabled_ = true;
+    };
 
     std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
         if (backend == "system") {
@@ -403,7 +502,6 @@ namespace lemon::backends {
                     LOG(INFO, spec.log_name()) << "Upgrading " << spec.binary << " from " << installed_version
                             << " to " << expected_version << std::endl;
                     needs_install = true;
-                    fs::remove_all(install_dir);
                 }
             } else if (!needs_install && !expected_version.empty()) {
                 // If the executable exists but version.txt is missing, SystemInfo
@@ -413,7 +511,6 @@ namespace lemon::backends {
                 LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
                         << spec.binary << " version " << expected_version << std::endl;
                 needs_install = true;
-                fs::remove_all(install_dir);
             }
         }
 
@@ -421,8 +518,13 @@ namespace lemon::backends {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
-            // Create install directory
-            fs::create_directories(install_dir);
+            fs::path active_install_dir(install_dir);
+            fs::path staging_dir = make_unique_install_sibling(install_dir, ".installing");
+            std::string staging_install_dir = staging_dir.string();
+            std::string staging_version_file = get_version_file(staging_install_dir);
+
+            ScopedInstallDirCleanup staging_cleanup(staging_dir);
+            fs::create_directories(staging_dir);
 
             std::string url = "https://github.com/" + repo + "/releases/download/" +
                             expected_version + "/" + filename;
@@ -611,32 +713,30 @@ namespace lemon::backends {
                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
             // Extract
-            if (!extract_archive(zip_path, install_dir, spec.log_name())) {
+            if (!extract_archive(zip_path, staging_install_dir, spec.log_name())) {
                 fs::remove(zip_path);
-                fs::remove_all(install_dir);
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
             }
 
             // Verify extraction
-            exe_path = find_executable_in_install_dir(install_dir, spec.binary);
+            exe_path = find_executable_in_install_dir(staging_install_dir, spec.binary);
             if (exe_path.empty()) {
                 LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
                 fs::remove(zip_path);
-                fs::remove_all(install_dir);
                 throw std::runtime_error("Extraction failed: executable not found");
             }
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
 
             // Save version info
-            std::ofstream vf(version_file);
+            std::ofstream vf(staging_version_file);
             vf << expected_version;
             vf.close();
 
     #ifndef _WIN32
             // Make all binaries in bin/ executable (tar may lose permissions)
             {
-                auto bin_dir = fs::path(install_dir) / "bin";
+                auto bin_dir = staging_dir / "bin";
                 if (fs::exists(bin_dir)) {
                     for (auto& entry : fs::directory_iterator(bin_dir)) {
                         if (entry.is_regular_file()) {
@@ -648,6 +748,9 @@ namespace lemon::backends {
             // Also make the found executable itself executable
             chmod(exe_path.c_str(), 0755);
     #endif
+
+            replace_install_dir(staging_dir, active_install_dir);
+            staging_cleanup.release();
 
             // Delete ZIP file
             fs::remove(zip_path);
