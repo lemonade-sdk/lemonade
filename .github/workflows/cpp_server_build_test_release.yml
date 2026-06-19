@@ -1536,6 +1536,7 @@ jobs:
           test -f "$DIR/resources/server_models.json"
           test -f "$DIR/resources/backend_versions.json"
           test -f "$DIR/resources/defaults.json"
+          test -f "$DIR/resources/toolDefinitions.json"
           echo "All expected files present"
 
           # Verify NO forbidden files
@@ -1631,7 +1632,8 @@ jobs:
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
-              "$archiveDir\resources\defaults.json"
+              "$archiveDir\resources\defaults.json",
+              "$archiveDir\resources\toolDefinitions.json"
           )
           $failures = @()
           foreach ($f in $expected) {
