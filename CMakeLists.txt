@@ -1721,33 +1721,33 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
 endif()
 
-# ProcessManager non-mutating is_running() test (POSIX).
-set(_PM_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_manager.cpp"
-)
-set(_PM_TEST_LIBS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/process_manager.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/platform/process_unix.cpp"
-)
+# ProcessManager non-mutating is_running() test (Linux /proc-specific).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(_PM_TEST_SRC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_manager.cpp"
+    )
+    set(_PM_TEST_LIBS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/process_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/platform/process_unix.cpp"
+    )
 
-list(GET _PM_TEST_LIBS 0 _pm_lib0)
-list(GET _PM_TEST_LIBS 1 _pm_lib1)
-if(EXISTS "${_PM_TEST_SRC}" AND EXISTS "${_pm_lib0}" AND EXISTS "${_pm_lib1}")
-    add_executable(test_process_manager
-        test/cpp/test_process_manager.cpp
-        src/cpp/server/utils/process_manager.cpp
-        src/cpp/server/utils/platform/process_unix.cpp
-    )
-    target_include_directories(test_process_manager PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_BINARY_DIR}/include
-    )
-    if(UNIX)
+    list(GET _PM_TEST_LIBS 0 _pm_lib0)
+    list(GET _PM_TEST_LIBS 1 _pm_lib1)
+    if(EXISTS "${_PM_TEST_SRC}" AND EXISTS "${_pm_lib0}" AND EXISTS "${_pm_lib1}")
+        add_executable(test_process_manager
+            test/cpp/test_process_manager.cpp
+            src/cpp/server/utils/process_manager.cpp
+            src/cpp/server/utils/platform/process_unix.cpp
+        )
+        target_include_directories(test_process_manager PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        )
         target_link_libraries(test_process_manager PRIVATE pthread)
         target_link_options(test_process_manager PRIVATE -pthread)
-    endif()
 
-    # Enable testing and register the test with CTest
-    include(CTest)
-    add_test(NAME ProcessManagerTest COMMAND test_process_manager)
+        # Enable testing and register the test with CTest
+        include(CTest)
+        add_test(NAME ProcessManagerTest COMMAND test_process_manager)
+    endif()
 endif()
