@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import {
   DEFAULT_PRESET,
@@ -13,6 +13,7 @@ import {
   saveBackendApplied,
 } from '../presetStore';
 import { Icon, PresetIcon } from './Icon';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloads/downloadStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -130,6 +131,24 @@ type CellEntry = { recipe: string; backend: string; info: BackendInfo };
 
 function backendKey(recipe: string, backend: string): string {
   return `${recipe}:${backend}`;
+}
+
+function backendDownloadId(recipe: string, backend: string): string {
+  return `backend:${backendKey(recipe, backend)}`;
+}
+
+function backendDownloadName(recipe: string, backend: string): string {
+  return backendKey(recipe, backend);
+}
+
+function backendDownloadMatches(download: DownloadListItem, recipe: string, backend: string): boolean {
+  const name = backendDownloadName(recipe, backend);
+  return download.downloadType === 'backend'
+    && (download.id === backendDownloadId(recipe, backend) || download.modelName === name);
+}
+
+function backendProgressPercent(download: DownloadListItem): number {
+  return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
 }
 
 function backendCapabilitiesForRecipe(recipe: string): Capability[] {
@@ -263,6 +282,8 @@ const BackendManager: React.FC = () => {
   const [presetRailHovered, setPresetRailHovered] = useState(false);
   const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const reloadPresetState = () => {
@@ -275,9 +296,9 @@ const BackendManager: React.FC = () => {
 
   /* ── Fetch system-info ────────────────────────────────── */
 
-  const fetchInfo = useCallback(async () => {
+  const fetchInfo = useCallback(async (showSpinner = true) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
       const data = await api.systemInfo() as unknown as SystemInfoData;
@@ -285,11 +306,26 @@ const BackendManager: React.FC = () => {
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchInfo(); }, [fetchInfo]);
+  useEffect(() => { void fetchInfo(); }, [fetchInfo]);
+
+  useEffect(() => api.onModelsChanged(() => { void fetchInfo(false); }), [fetchInfo]);
+
+  useEffect(() => downloadStore.subscribe((items) => {
+    setDownloadItems(items);
+    for (const item of items) {
+      if (item.downloadType !== 'backend') continue;
+      if (isDownloadActive(item)) continue;
+      if (item.status !== 'completed' && item.status !== 'error' && item.status !== 'cancelled') continue;
+      const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
+      if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
+      terminalBackendRefreshRef.current.add(refreshKey);
+      void fetchInfo(false);
+    }
+  }), [fetchInfo]);
 
   /* ── Actions ──────────────────────────────────────────── */
 
@@ -309,14 +345,33 @@ const BackendManager: React.FC = () => {
     }
     setInstalling(key);
     toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    const downloadName = backendDownloadName(recipe, backend);
+    downloadStore.markLocal(downloadName, 'downloading', 'backend');
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
+          const percent = typeof d.percent === 'number' ? d.percent : undefined;
+          downloadStore.upsertFromPull(downloadName, {
+            ...d,
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'downloading',
+            percent: percent ?? d.percent,
+          }, 'backend');
           if (d.percent != null) {
             setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
           }
         },
         onComplete: async () => {
+          downloadStore.upsertFromPull(downloadName, {
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'completed',
+            complete: true,
+            percent: 100,
+          }, 'backend');
           toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
           try {
@@ -329,17 +384,34 @@ const BackendManager: React.FC = () => {
               }
             }
           } catch {
-            fetchInfo();
+            void fetchInfo(false);
           }
         },
         onError: (err) => {
-          toast(`${actionLabel} failed: ${err.message}`);
+          downloadStore.upsertFromPull(downloadName, {
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'error',
+            error: friendlyErrorMessage(err),
+          }, 'backend');
+          toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
           setInstalling(null);
         },
       });
+      await fetchInfo(false);
     } catch (err) {
-      toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
+      const message = friendlyErrorMessage(err);
+      downloadStore.upsertFromPull(downloadName, {
+        id: backendDownloadId(recipe, backend),
+        type: 'backend',
+        name: downloadName,
+        status: 'error',
+        error: message,
+      }, 'backend');
+      toast(`${actionLabel} failed: ${message}`);
       setInstalling(null);
+      void fetchInfo(false);
     }
   }, [fetchInfo, toast]);
 
@@ -350,7 +422,7 @@ const BackendManager: React.FC = () => {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
       toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
-      fetchInfo();
+      void fetchInfo(false);
     } catch (err) {
       toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
@@ -585,7 +657,7 @@ const BackendManager: React.FC = () => {
           <div className="banner banner--error" data-backends-error>
             <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
             <span className="banner__text">Could not load backend system info: {error}</span>
-            <button className="banner__action" onClick={fetchInfo} disabled={loading}>Retry</button>
+            <button className="banner__action" onClick={() => void fetchInfo()} disabled={loading}>Retry</button>
           </div>
         )}
 
@@ -656,6 +728,8 @@ const BackendManager: React.FC = () => {
                           const badge = stateBadge(info.state);
                           const cellKey = backendKey(recipe, backend);
                           const isInstalling = installing === cellKey;
+                          const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+                          const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
                           const activePreset = activePresetForBackendKey(cellKey);
                           const isSelectedBackend = selectedBackendKey === cellKey;
                           const isPresetHighlighted = Boolean(highlightedPresetId && activePreset.id === highlightedPresetId);
@@ -702,6 +776,20 @@ const BackendManager: React.FC = () => {
                                   </button>
                                 )}
                               </div>
+                              {showBackendProgress && backendDownload && (
+                                <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
+                                  <div className="cell__download-progress-track">
+                                    <div
+                                      className="cell__download-progress-fill"
+                                      style={{ width: `${backendProgressPercent(backendDownload)}%` }}
+                                    />
+                                  </div>
+                                  <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
+                                </div>
+                              )}
+                              {backendDownload?.status === 'error' && backendDownload.error && (
+                                <span className="cell__download-error">{backendDownload.error}</span>
+                              )}
                             </div>
                           );
                         })}

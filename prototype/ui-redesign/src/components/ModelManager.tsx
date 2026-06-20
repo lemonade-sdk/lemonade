@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage } from '../api';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloads/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -906,7 +907,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
-  const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
+  const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -951,6 +953,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   useEffect(() => {
     hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0;
   }, [models.length, loadedModels.length, customModels.length]);
+
+  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
   const reloadCustomModels = useCallback(() => {
     setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
@@ -1074,51 +1078,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   useEffect(() => {
     return api.onModelsChanged(() => { refresh(); });
   }, [refresh]);
-
-  const applyServerDownloads = useCallback((downloads: DownloadProgressEvent[]) => {
-    const active: Record<string, number> = {};
-    let sawCompletedModel = false;
-    downloads.forEach(download => {
-      const type = String(download.type || '').toLowerCase();
-      const id = String(download.id || '');
-      if (type && type !== 'model') return;
-      if (!type && id && !id.startsWith('model:')) return;
-      const name = String(download.model_name || download.name || (id.startsWith('model:') ? id.slice('model:'.length) : '')).trim();
-      if (!name) return;
-      const status = String(download.status || '').toLowerCase();
-      const isActive = download.running === true || status === 'downloading' || status === 'paused';
-      if (isActive) active[name] = typeof download.percent === 'number' ? download.percent : 0;
-      if (download.complete || status === 'completed' || status === 'error' || status === 'cancelled') sawCompletedModel = true;
-    });
-    setPulling(prev => {
-      const next: Record<string, number> = {};
-      Object.entries(prev).forEach(([name, value]) => {
-        if (pullAbortRef.current[name]) next[name] = value;
-      });
-      return { ...next, ...active };
-    });
-    if (sawCompletedModel) refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (connectionStatus !== 'connected') return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        applyServerDownloads(await api.downloads());
-      } catch {
-        // Older servers might not expose /downloads; normal SSE fallback still works.
-      }
-      if (!cancelled) timer = setTimeout(tick, 2000);
-    };
-    tick();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [applyServerDownloads, connectionStatus]);
 
   /* ── HuggingFace debounced search ────────────────────────── */
 
@@ -1270,21 +1229,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
+    downloadStore.markLocal(name, 'downloading', 'model');
 
     await ensureCustomCollectionComponentsRegistered(model);
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPulling(p => ({ ...p, [name]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(name, data, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
       },
-      onComplete: () => {
+      onComplete: (data) => {
+        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         refresh();
       },
-      onError: () => {
+      onError: (err) => {
+        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1298,6 +1259,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     pullAbortRef.current[name]?.abort();
     await api.controlDownload(`model:${name}`, 'cancel').catch(() => undefined);
     delete pullAbortRef.current[name];
+    downloadStore.markLocal(name, 'cancelled', 'model');
     setPulling(p => { const next = { ...p }; delete next[name]; return next; });
   };
 
@@ -1306,16 +1268,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
+    downloadStore.markLocal(name, 'downloading', 'model');
 
     await ensureCustomCollectionComponentsRegistered(model);
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPulling(p => ({ ...p, [name]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(name, data, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
       },
-      onComplete: async () => {
+      onComplete: async (data) => {
+        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
@@ -1332,7 +1295,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }
         setLoadingModel(null);
       },
-      onError: () => {
+      onError: (err) => {
+        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1351,19 +1315,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const ac = new AbortController();
     pullHfAbortRef.current[hfId] = ac;
     setPullingHf(p => ({ ...p, [hfId]: 0 }));
+    downloadStore.markLocal(modelName, 'downloading', 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPullingHf(p => ({ ...p, [hfId]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(modelName, data, 'model');
+        setPullingHf(p => ({ ...p, [hfId]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[hfId] ?? 0) }));
       },
-      onComplete: () => {
+      onComplete: (data) => {
+        downloadStore.upsertFromPull(modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullHfAbortRef.current[hfId];
         setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
         refresh();
       },
       onError: (err) => {
+        downloadStore.upsertFromPull(modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         console.error('HF pull failed:', err);
         delete pullHfAbortRef.current[hfId];
         setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
@@ -1380,6 +1346,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
     await api.controlDownload(`model:user.${suggestedName}`, 'cancel').catch(() => undefined);
     delete pullHfAbortRef.current[hfId];
+    downloadStore.markLocal(`user.${suggestedName}`, 'cancelled', 'model');
     setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
   };
 
@@ -2064,7 +2031,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     if (!name) return null;
     const isCollection = isCollectionModel(m);
     const isLoading = loadingModel === name;
-    const pullPercent = pulling[name];
+    const activeDownload = activeDownloadForModel(downloadItems, name);
+    const pullPercent = activeDownload?.percent ?? pulling[name];
     const isPulling = pullPercent !== undefined;
     const activePreset = activePresetForName(name);
     const cap = capabilityFromModelInfo(m);
@@ -2165,7 +2133,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const displayTags = (r.tags || [])
       .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
       .slice(0, 5);
-    const hfPullPercent = pullingHf[r.id];
+    const vdataForProgress = hfVariants[r.id];
+    const suggestedForProgress = vdataForProgress?.suggested_name || r.id.split('/').pop() || r.id;
+    const activeHfDownload = activeDownloadForModel(downloadItems, `user.${suggestedForProgress}`);
+    const hfPullPercent = activeHfDownload?.percent ?? pullingHf[r.id];
     const isHfPulling = hfPullPercent !== undefined;
 
     // Variant data from the server (fetched on expand)
@@ -2413,7 +2384,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       .filter((m): m is ModelInfo => Boolean(m) && !loadedNames.has(modelName(m)));
   }, [allModels, pinnedModels, loadedNames]);
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
-  const totalPulling = Object.keys(pulling).length;
+  const totalPulling = new Set([
+    ...Object.keys(pulling),
+    ...downloadItems.filter(item => item.downloadType === 'model' && (item.status === 'downloading' || item.status === 'paused' || item.running === true)).map(item => item.modelName),
+  ]).size;
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
