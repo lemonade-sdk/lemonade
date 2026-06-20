@@ -389,7 +389,16 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
-        return forward_multipart_request("/v1/audio/transcriptions", fields);
+        std::string response_format = request.value("response_format", "json");
+
+        return forward_multipart_request(
+            "/v1/audio/transcriptions",
+            fields,
+            0,
+            response_format == "text" ||
+            response_format == "srt" ||
+            response_format == "vtt"
+        );
 
     } catch (const std::exception& e) {
         return json{

@@ -571,8 +571,10 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     try {
         return json::parse(res.body);
     } catch (const json::parse_error&) {
-        // If response_format is not json, return it wrapped
-        return json{{"text", res.body}};
+        if (response_format == "text" || response_format == "srt" || response_format == "vtt") {
+            return json{{"text", res.body}};
+        }
+        throw;
     }
 }
 
@@ -658,7 +660,10 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     try {
         return json::parse(res.body);
     } catch (const json::parse_error&) {
-        return json{{"text", res.body}};
+        if (response_format == "text" || response_format == "srt" || response_format == "vtt") {
+            return json{{"text", res.body}};
+        }
+        throw;
     }
 }
 
