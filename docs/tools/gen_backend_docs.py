@@ -203,6 +203,45 @@ def render_readme_matrix(recipes: dict) -> str:
     return "\n".join(out)
 
 
+def _cli_default(opt: dict) -> str:
+    d = opt.get("default")
+    if opt.get("type_name") == "BACKEND" and d == "":
+        return "Auto-detected"
+    if isinstance(d, str):
+        return '`""`' if d == "" else f"`{d}`"
+    if isinstance(d, bool):
+        return f"`{str(d).lower()}`"
+    if d == -1:
+        return "auto"
+    return f"`{d}`"
+
+
+def render_cli_recipe_options(recipes: dict) -> str:
+    # Per-recipe load options, exactly as the CLI registers them from descriptors.
+    # Recipes with no CLI options (kokoro, cloud) are omitted.
+    blocks: list[str] = []
+    for recipe, info in _ordered(recipes):
+        cli_opts = [o for o in info.get("options", []) if o.get("cli_flag")]
+        if not info.get("uses_ctx_size") and not cli_opts:
+            continue
+        blocks.append(f"#### {info.get('display_name', recipe)} (`{recipe}` recipe)\n")
+        blocks.append("| Option | Description | Default |")
+        blocks.append("|--------|-------------|---------|")
+        if info.get("uses_ctx_size"):
+            blocks.append("| `--ctx-size SIZE` | Context size for the model | auto |")
+        for o in cli_opts:
+            blocks.append(
+                "| `{flag} {t}` | {h} | {d} |".format(
+                    flag=o["cli_flag"],
+                    t=o.get("type_name", ""),
+                    h=md_escape(o.get("help", "")),
+                    d=_cli_default(o),
+                )
+            )
+        blocks.append("")
+    return "\n".join(blocks).rstrip()
+
+
 def _oxford(items: list) -> str:
     items = [f"`{i}`" for i in items]
     if len(items) <= 1:
@@ -419,6 +458,12 @@ def main() -> int:
         / "configuration"
         / "multi-model.md": {
             "sections": {"npu-exclusivity": render_npu_exclusivity(recipes)},
+        },
+        REPO_ROOT
+        / "docs"
+        / "guide"
+        / "cli.md": {
+            "sections": {"cli-recipe-options": render_cli_recipe_options(recipes)},
         },
     }
 
