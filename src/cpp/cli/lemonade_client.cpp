@@ -362,6 +362,10 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
                 }
             }
 
+            if (model_item.contains("size") && model_item["size"].is_number_float()){
+                info.size = model_item["size"];
+            }
+
             if (!info.id.empty()) {
                 models.push_back(info);
             }
@@ -413,7 +417,8 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
         // Helper lambda to print a formatted table of models.
         auto print_model_table = [](const std::vector<ModelInfo>& models) {
             std::cout << std::left << std::setw(40) << "Model Name"
-                      << std::setw(12) << "Downloaded"
+                      << std::setw(15) << "Downloaded"
+                      << std::setw(15) << "Size (Gb)"
                       << "Details" << std::endl;
             std::cout << std::string(100, '-') << std::endl;
 
@@ -426,10 +431,13 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             for (const auto& model : models) {
                 std::string downloaded = model.downloaded ? "Yes" : "No";
                 std::string details = model.recipe.empty() ? "-" : model.recipe;
+                float size = model.size;
 
                 std::cout << std::left << std::setw(40) << model.id
-                          << std::setw(12) << downloaded
-                          << details << std::endl;
+                          << std::setw(15) << downloaded
+                          << std::setw(5) << std::fixed << std::setprecision(2) << std::right << size
+                          << std::setw(10) << " "
+                          << std::setw(20) << std::left << details << std::endl;
             }
 
             std::cout << std::string(100, '-') << std::endl;
