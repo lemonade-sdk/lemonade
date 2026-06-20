@@ -7,6 +7,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/rocm_arch.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -1846,8 +1847,12 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
     std::smatch gfx_match;
     // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
+    // The 3-digit/hex form intentionally also captures CDNA exact targets
+    // (gfx90a, gfx908, gfx942), which normalize_rocm_family passes through unchanged.
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
-        return gfx_match[1].str();
+        // Collapse the specific arch (gfx1100, gfx1201, ...) to its ROCm family
+        // download target (gfx110X, gfx120X) so it matches the support set (#2319).
+        return normalize_rocm_family(gfx_match[1].str());
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
@@ -1866,7 +1871,9 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
         char buf[16];
         std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
-        return std::string(buf);
+        // KFD hands the ISA through as a number (e.g. 110000 -> gfx1100); collapse
+        // it to the ROCm family target so it matches the support set (#2319).
+        return normalize_rocm_family(std::string(buf));
     }
 
     if (device_lower.find("radeon") == std::string::npos &&

@@ -1720,3 +1720,20 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     include(CTest)
     add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
 endif()
+
+# Header-only unit under test (lemon/rocm_arch.h), so no extra source files.
+set(_ROCM_ARCH_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_arch.cpp"
+)
+if(EXISTS "${_ROCM_ARCH_TEST_SRC}")
+    add_executable(test_rocm_arch
+        test/cpp/test_rocm_arch.cpp
+    )
+    target_include_directories(test_rocm_arch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # CTest is already enabled by the earlier test blocks; just register the test.
+    add_test(NAME RocmArchTest COMMAND test_rocm_arch)
+endif()
