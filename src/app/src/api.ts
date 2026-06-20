@@ -210,6 +210,65 @@ export interface DownloadProgressEvent {
   [key: string]: unknown;
 }
 
+function downloadPayloadStatus(data: unknown): string {
+  if (!isObject(data)) return '';
+  return String(data.status || '').toLowerCase();
+}
+
+function downloadPayloadErrorMessage(data: unknown): string | null {
+  if (!isObject(data)) return null;
+  const status = downloadPayloadStatus(data);
+  const message = data.message || data.detail;
+  const statusCode = Number(
+    data.status_code
+    ?? data.statusCode
+    ?? data.http_status
+    ?? data.httpStatus
+    ?? data.code
+    ?? data.error_code
+    ?? data.errorCode
+    ?? (/^\d{3}$/.test(status) ? status : NaN),
+  );
+  const messageText = typeof message === 'string' ? message.trim() : '';
+
+  const rawError = data.error;
+  let errorText = '';
+  if (typeof rawError === 'string' && rawError.trim()) {
+    errorText = rawError.trim();
+  } else if (isObject(rawError)) {
+    const nested = rawError.message || rawError.error || rawError.detail;
+    if (typeof nested === 'string' && nested.trim()) errorText = nested.trim();
+  }
+
+  const textLooksLike404 = /(^|\D)404(\D|$)|not[ _-]?found/i.test(`${status} ${messageText} ${errorText}`);
+  const failed = Boolean(errorText)
+    || status === 'error'
+    || status === 'failed'
+    || status === 'failure'
+    || status === 'not_found'
+    || status === 'not-found'
+    || data.ok === false
+    || (Number.isFinite(statusCode) && statusCode >= 400)
+    || textLooksLike404;
+
+  if (!failed) return null;
+  const detail = errorText || messageText;
+  if (Number.isFinite(statusCode) && statusCode >= 400) {
+    if (detail && !new RegExp(`(^|\\D)${statusCode}(\\D|$)`).test(detail)) {
+      return `HTTP ${statusCode}: ${detail}`;
+    }
+    return detail || `Download failed with HTTP ${statusCode}.`;
+  }
+  return detail || 'Download failed.';
+}
+
+function downloadPayloadCompleted(data: unknown): boolean {
+  if (!isObject(data)) return false;
+  if (downloadPayloadErrorMessage(data)) return false;
+  const status = downloadPayloadStatus(data);
+  return data.complete === true || status === 'completed' || status === 'complete' || status === 'success' || status === 'done';
+}
+
 export interface PullVariant {
   name: string;
   primary_file: string;
@@ -1154,39 +1213,88 @@ class LemonadeAPI {
     backend: string,
     callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void },
   ): Promise<void> {
+    const completeBackendInstall = () => {
+      callbacks?.onComplete?.();
+      this._notifyModelsChanged();
+    };
+
     try {
       const resp = await this._fetch('/api/v1/install', {
         method: 'POST',
-        body: { recipe, backend, stream: true, subscribe: true },
+        body: { recipe, backend, stream: true, subscribe: false },
+        cache: 'no-store',
       });
-      const reader = resp.body!.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop()!;
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
+        const error = downloadPayloadErrorMessage(data);
+        if (error) throw new Error(error);
+        callbacks?.onProgress?.(data);
+        if (downloadPayloadCompleted(data) || (data as any).action) {
+          completeBackendInstall();
+          return;
+        }
+      } else {
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('No response body');
+        const dec = new TextDecoder();
+        let buf = '';
+        let currentEventType = 'progress';
+        let sawTerminal = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEventType = line.substring(6).trim() || 'progress';
+              continue;
+            }
+            if (!line.startsWith('data:')) continue;
+            const d = JSON.parse(line.substring(5).trim()) as Record<string, unknown>;
+            const eventError = currentEventType === 'error'
+              ? (d.error || d.message || d.detail || 'Unknown backend install error')
+              : downloadPayloadErrorMessage(d);
+            if (eventError) throw new Error(String(eventError));
             callbacks?.onProgress?.(d);
-          } catch {}
+            if (currentEventType === 'complete' || downloadPayloadCompleted(d)) sawTerminal = true;
+          }
+        }
+
+        if (sawTerminal) {
+          completeBackendInstall();
+          return;
         }
       }
-      callbacks?.onComplete?.();
+
+      const downloadName = `${recipe}:${backend}`;
+      const match = (await this.downloads().catch(() => []))
+        .find(download => String(download.id || '') === `backend:${downloadName}` || String(download.model_name || download.name || '') === downloadName);
+      const matchError = downloadPayloadErrorMessage(match);
+      if (matchError) throw new Error(matchError);
+      if (match && downloadPayloadCompleted(match) && match.running !== true) {
+        completeBackendInstall();
+        return;
+      }
+
+      completeBackendInstall();
     } catch (err) {
       callbacks?.onError?.(err as Error);
+      this._notifyModelsChanged();
     }
   }
 
   async uninstallBackend(recipe: string, backend: string): Promise<unknown> {
-    return this._json('/api/v1/uninstall', {
+    const result = await this._json('/api/v1/uninstall', {
       method: 'POST',
       body: { recipe, backend },
     });
+    this._notifyModelsChanged();
+    return result;
   }
 
   // ── Persistent downloads ───────────────────────────────────────
@@ -1221,6 +1329,88 @@ class LemonadeAPI {
     return candidate === target || id === `model:${target}` || id.endsWith(`:${target}`);
   }
 
+
+  private async _isModelDownloadedOnServer(modelName: string): Promise<boolean> {
+    try {
+      const target = modelName.trim().toLowerCase();
+      const data = await this.models(true);
+      return data.data.some((model: ModelInfo) => {
+        const id = String((model as any).id || '').trim().toLowerCase();
+        const name = String((model as any).name || '').trim().toLowerCase();
+        const modelNameValue = String((model as any).model_name || '').trim().toLowerCase();
+        const downloaded = (model as any).downloaded === true || (model as any).installed === true || (model as any).local === true;
+        return downloaded && (id === target || name === target || modelNameValue === target);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private async _waitForModelDownloadTerminal(
+    modelName: string,
+    signal: AbortSignal | undefined,
+    onProgress: PullCallbacks['onProgress'] | undefined,
+    initialJobSeen = false,
+  ): Promise<DownloadProgressEvent | null> {
+    const started = performance.now();
+    let sawServerJob = initialJobSeen;
+    let consecutiveMissingSnapshots = 0;
+    let snapshotErrorsStartedAt: number | undefined;
+    const snapshotErrorTimeoutMs = 300_000;
+
+    while (!signal?.aborted) {
+      let downloads: DownloadProgressEvent[] = [];
+      try {
+        downloads = await this.downloads();
+        snapshotErrorsStartedAt = undefined;
+      } catch (error) {
+        const timestamp = Date.now();
+        snapshotErrorsStartedAt ??= timestamp;
+        if (timestamp - snapshotErrorsStartedAt >= snapshotErrorTimeoutMs) {
+          throw new Error(`Timed out refreshing server download state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+
+      const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
+      if (match) {
+        sawServerJob = true;
+        consecutiveMissingSnapshots = 0;
+        const matchError = downloadPayloadErrorMessage(match);
+        onProgress?.(match);
+        if (matchError) throw new Error(matchError);
+
+        const stopped = match.running !== true;
+        const status = String(match.status || '').toLowerCase();
+        if ((status === 'paused' || status === 'cancelled' || status === 'canceled') && stopped) return null;
+        if (downloadPayloadCompleted(match) && stopped) return match;
+      } else if (sawServerJob) {
+        consecutiveMissingSnapshots += 1;
+        if (consecutiveMissingSnapshots >= 10) {
+          if (await this._isModelDownloadedOnServer(modelName)) {
+            return {
+              id: `model:${modelName}`,
+              type: 'model',
+              model_name: modelName,
+              status: 'completed',
+              running: false,
+              complete: true,
+              percent: 100,
+            };
+          }
+          throw new Error(`Download for ${modelName} disappeared before completion.`);
+        }
+      } else if (performance.now() - started > 30000) {
+        throw new Error(`Download did not appear in the server download list for ${modelName}.`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    return null;
+  }
+
   // ── Pull variants (HF model file discovery) ────────────────────
 
   async pullVariants(checkpoint: string): Promise<PullVariantsResult> {
@@ -1236,86 +1426,94 @@ class LemonadeAPI {
         ...(opts || {}),
         model_name: modelName,
         stream: true,
-        // Let lemond own the download so progress survives F5/new tabs.
-        // Browser SSE is still supported below for older servers.
+        // Let lemond own the download. The UI observes /downloads, just like
+        // Lemonade main, instead of deciding completion from a renderer stream.
         subscribe: false,
       };
+
       const resp = await this._fetch('/api/v1/pull', {
         method: 'POST',
         body,
         signal,
+        cache: 'no-store',
       });
 
       const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('text/event-stream')) {
-        const initial = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
-        onProgress?.({ percent: typeof initial.percent === 'number' ? initial.percent : 0, ...initial });
-        const started = performance.now();
-        let lastMatch: DownloadProgressEvent | null = null;
-        while (!signal?.aborted) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const downloads = await this.downloads().catch(() => []);
-          const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
-          if (match) {
-            lastMatch = match;
-            const percent = typeof match.percent === 'number' ? match.percent : undefined;
-            onProgress?.({ ...match, percent });
-            if (match.error || match.status === 'error') {
-              throw new Error(String(match.error || `Download failed for ${modelName}.`));
-            }
-            if (match.status === 'cancelled') return;
-            if (match.complete || match.status === 'completed') {
-              onComplete?.({ ...match });
-              this._notifyModelsChanged();
+      if (contentType.includes('text/event-stream')) {
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const dec = new TextDecoder();
+        let buf = '';
+        let currentEventType = 'progress';
+        let terminalPayload: DownloadProgressEvent | null = null;
+
+        try {
+          while (true) {
+            if (signal?.aborted) {
+              await reader.cancel();
               return;
             }
-          } else if (lastMatch && (lastMatch.complete || lastMatch.status === 'completed')) {
-            onComplete?.({ ...lastMatch });
-            this._notifyModelsChanged();
-            return;
-          } else if (!lastMatch && performance.now() - started > 3000) {
-            // Some lemond versions only acknowledge a registration/pull that is immediately complete.
-            onComplete?.(initial);
-            this._notifyModelsChanged();
-            return;
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                currentEventType = line.substring(6).trim() || 'progress';
+                continue;
+              }
+              if (!line.startsWith('data:')) continue;
+
+              const data = JSON.parse(line.substring(5).trim()) as DownloadProgressEvent;
+              const eventError = currentEventType === 'error'
+                ? (data.error || data.message || data.detail || 'Unknown download error')
+                : downloadPayloadErrorMessage(data);
+              if (eventError) throw new Error(String(eventError));
+
+              onProgress?.(data);
+              if (currentEventType === 'complete' || downloadPayloadCompleted(data)) {
+                terminalPayload = data;
+              }
+            }
           }
+        } finally {
+          if (signal?.aborted) reader.cancel().catch(() => undefined);
+        }
+
+        // Prefer the server registry as the source of truth, so a 404/failed job
+        // cannot become completed merely because an SSE response ended.
+        const terminal = await this._waitForModelDownloadTerminal(
+          modelName,
+          signal,
+          onProgress,
+          terminalPayload != null,
+        ).catch(async error => {
+          if (terminalPayload && downloadPayloadCompleted(terminalPayload)) return terminalPayload;
+          throw error;
+        });
+        if (terminal) {
+          onComplete?.(terminal);
+          this._notifyModelsChanged();
         }
         return;
       }
 
-      const reader = resp.body!.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
+      const startedSnapshot = await resp.json().catch(() => ({} as DownloadProgressEvent)) as DownloadProgressEvent;
+      const initialError = downloadPayloadErrorMessage(startedSnapshot);
+      if (initialError) throw new Error(initialError);
+      onProgress?.(startedSnapshot);
 
-      try {
-        while (true) {
-          if (signal?.aborted) {
-            await reader.cancel();
-            break;
-          }
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop()!;
+      const terminal = downloadPayloadCompleted(startedSnapshot) && startedSnapshot.running !== true
+        ? startedSnapshot
+        : await this._waitForModelDownloadTerminal(modelName, signal, onProgress, true);
 
-          for (const line of lines) {
-            if (line.startsWith('event:')) continue;
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const d = JSON.parse(line.slice(6));
-              if (d.percent !== undefined) onProgress?.(d);
-              else onComplete?.(d);
-            } catch {}
-          }
-        }
-      } finally {
-        if (signal?.aborted) {
-          reader.cancel().catch(() => {});
-        }
-      }
-      if (!signal?.aborted) {
-        onComplete?.({});
+      if (terminal) {
+        const terminalError = downloadPayloadErrorMessage(terminal);
+        if (terminalError) throw new Error(terminalError);
+        onComplete?.(terminal);
         this._notifyModelsChanged();
       }
     } catch (err) {

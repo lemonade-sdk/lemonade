@@ -7,7 +7,7 @@ export type IconName =
   | 'sun' | 'moon' | 'paperclip' | 'mic' | 'send' | 'stop' | 'copy' | 'check'
   | 'x' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
-  | 'search' | 'search-check' | 'edit' | 'download' | 'play' | 'plug' | 'box' | 'alert' | 'clock'
+  | 'search' | 'search-check' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord';
@@ -58,6 +58,11 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'edit': return <><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z" /><path d="M14 7l3 3" /></>;
       case 'download': return <><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></>;
       case 'play': return <path d="M8 5.5v13l11-6.5-11-6.5z" />;
+      case 'pause': return <><path d="M8 5v14" /><path d="M16 5v14" /></>;
+      case 'trash': return <><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M6 6l1 15h10l1-15" /><path d="M10 11v6" /><path d="M14 11v6" /></>;
+      case 'rotate-ccw': return <><path d="M3 12a9 9 0 109-9 9.8 9.8 0 00-6.4 2.3" /><path d="M3 4v6h6" /></>;
+      case 'chevron-down': return <path d="M6 9l6 6 6-6" />;
+      case 'chevron-right': return <path d="M9 6l6 6-6 6" />;
       case 'plug': return <><path d="M8 2v5M16 2v5" /><path d="M7 7h10v4a5 5 0 01-10 0V7z" /><path d="M12 16v6" /></>;
       case 'box': return <><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z" /><path d="M3.5 8.5L12 13l8.5-4.5" /><path d="M12 13v8" /></>;
       case 'alert': return <><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.3 3.9L2.8 17a2 2 0 001.7 3h15a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /></>;
