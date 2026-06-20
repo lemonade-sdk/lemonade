@@ -122,8 +122,12 @@ regenerates the registry headers, binding `<stem>::descriptor` to `<stem>::creat
   `--<recipe>` when `selectable_backend = true`.
 - **Install/download** via the backend's `BackendSpec` (binary + install params).
 - **`/system-info`** `recipes` entry (display name, options schema, support matrix).
-- **Generated docs** — your backend appears in
-  [`backends-reference.md`](backends-reference.md) automatically.
+- **Generated docs** — your backend appears automatically in
+  [`backends-reference.md`](backends-reference.md), the README "Supported
+  Configurations" matrix, and the multi-model NPU-exclusivity list. A CI job
+  (`backend-docs-drift`) fails if the committed docs are stale. The descriptor's
+  `modality`, `experimental`, `web_display_name`, and each support row's
+  `device_summary` supply the editorial bits the matrix needs.
 
 ## Escape hatches
 

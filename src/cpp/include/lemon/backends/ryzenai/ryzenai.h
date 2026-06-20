@@ -24,10 +24,13 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"ryzenai-llm", "npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}},
+        {"ryzenai-llm", "npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
+    /*modality*/        "Text generation",
+    /*experimental*/    false,
+    /*web_display_name*/ "Ryzen AI SW NPU",
 };
 
 }  // namespace ryzenai

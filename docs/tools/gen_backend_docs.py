@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate backend reference docs from the self-describing backend descriptors.
 
-The C++ backend descriptors (src/cpp/server/backends/*_descriptor.cpp) are the
-single source of truth for what each backend is. This script boots a `lemond`
+The C++ backend descriptors (src/cpp/include/lemon/backends/<stem>/<stem>.h) are
+the single source of truth for what each backend is. This script boots a `lemond`
 server, reads the descriptor-generated ``/system-info`` ``recipes`` object and
 ``server_models.json``, and rewrites the marker-delimited regions of the target
 doc(s). A CI step runs it with ``--check`` and fails if the committed docs drift.
@@ -108,6 +108,121 @@ class Lemond:
 
 def md_escape(text: str) -> str:
     return str(text).replace("|", "\\|")
+
+
+MODALITY_ORDER = [
+    "Text generation",
+    "Speech-to-text",
+    "Text-to-speech",
+    "Image generation",
+]
+OS_LABEL = {"windows": "Windows", "linux": "Linux", "macos": "macOS"}
+OS_ORDER = ["windows", "linux", "macos"]
+
+
+def _fmt_os(os_set) -> str:
+    return ", ".join(OS_LABEL.get(o, o) for o in OS_ORDER if o in os_set)
+
+
+def _code_devices(summary: str) -> str:
+    # Light formatting: render bare arch tokens as <code>, matching the README style.
+    summary = re.sub(r"\bx86_64\b", "<code>x86_64</code>", summary)
+    summary = re.sub(r"\barm64\b", "<code>arm64</code>", summary)
+    return summary
+
+
+def _ordered(recipes: dict) -> list:
+    # Recipes in descriptor registry order (stable, deterministic doc rendering).
+    return sorted(recipes.items(), key=lambda kv: kv[1].get("order", 999))
+
+
+def render_readme_matrix(recipes: dict) -> str:
+    # Group descriptor-backed recipes by modality, in descriptor registry order.
+    by_mod: dict[str, list] = {m: [] for m in MODALITY_ORDER}
+    for recipe, info in _ordered(recipes):
+        mod = info.get("modality")
+        if not mod or mod not in by_mod:
+            continue
+        # Merge support rows sharing a (backend, device summary); union their OS.
+        merged: list[dict] = []
+        seen: dict[tuple, dict] = {}
+        for row in info.get("support", []):
+            key = (row["backend"], row.get("device_summary", ""))
+            if key in seen:
+                seen[key]["os"] |= set(row.get("os", []))
+            else:
+                d = {
+                    "backend": row["backend"],
+                    "summary": row.get("device_summary", ""),
+                    "os": set(row.get("os", [])),
+                }
+                seen[key] = d
+                merged.append(d)
+        if merged:
+            by_mod[mod].append((recipe, info, merged))
+
+    out = [
+        "<table>",
+        "  <thead>",
+        "    <tr>",
+        "      <th>Modality</th>",
+        "      <th>Engine</th>",
+        "      <th>Backend</th>",
+        "      <th>Device</th>",
+        "      <th>OS</th>",
+        "    </tr>",
+        "  </thead>",
+        "  <tbody>",
+    ]
+    for mod in MODALITY_ORDER:
+        recipes_in = by_mod[mod]
+        if not recipes_in:
+            continue
+        mod_span = sum(len(m) for _, _, m in recipes_in)
+        first_mod = True
+        for recipe, info, merged in recipes_in:
+            engine = f"<code>{recipe}</code>" + (
+                " (experimental)" if info.get("experimental") else ""
+            )
+            first_recipe = True
+            for d in merged:
+                out.append("    <tr>")
+                if first_mod:
+                    out.append(
+                        f'      <td rowspan="{mod_span}"><strong>{mod}</strong></td>'
+                    )
+                    first_mod = False
+                if first_recipe:
+                    out.append(f'      <td rowspan="{len(merged)}">{engine}</td>')
+                    first_recipe = False
+                out.append(f'      <td><code>{d["backend"]}</code></td>')
+                out.append(f"      <td>{_code_devices(d['summary'])}</td>")
+                out.append(f"      <td>{_fmt_os(d['os'])}</td>")
+                out.append("    </tr>")
+    out += ["  </tbody>", "</table>"]
+    return "\n".join(out)
+
+
+def _oxford(items: list) -> str:
+    items = [f"`{i}`" for i in items]
+    if len(items) <= 1:
+        return "".join(items)
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def render_npu_exclusivity(recipes: dict) -> str:
+    npu = [
+        r
+        for r, info in _ordered(recipes)
+        if any(
+            row.get("backend") == "npu"
+            or any(d.get("device") == "amd_npu" for d in row.get("devices", []))
+            for row in info.get("support", [])
+        )
+    ]
+    return f"- **NPU Exclusivity:** {_oxford(npu)} are mutually exclusive on the NPU."
 
 
 def render_overview(recipes: dict) -> str:
@@ -281,27 +396,55 @@ def main() -> int:
     if not recipes:
         sys.exit("/system-info returned no recipes")
 
-    sections = {
-        "backends-overview": render_overview(recipes),
-        "backends-matrix": render_support_matrix(recipes),
-        "backend-options": render_options(recipes),
-        "backend-models": render_models(recipes),
+    # Each target doc maps marker IDs -> generated content. backends-reference.md
+    # is created from a template if missing; the others must already contain their
+    # markers (the regions were added to the curated docs by hand once).
+    targets: dict = {
+        TARGET_DOC: {
+            "sections": {
+                "backends-overview": render_overview(recipes),
+                "backends-matrix": render_support_matrix(recipes),
+                "backend-options": render_options(recipes),
+                "backend-models": render_models(recipes),
+            },
+            "template": DEFAULT_TEMPLATE,
+        },
+        REPO_ROOT
+        / "README.md": {
+            "sections": {"backends-matrix": render_readme_matrix(recipes)},
+        },
+        REPO_ROOT
+        / "docs"
+        / "guide"
+        / "configuration"
+        / "multi-model.md": {
+            "sections": {"npu-exclusivity": render_npu_exclusivity(recipes)},
+        },
     }
 
-    current = TARGET_DOC.read_text() if TARGET_DOC.exists() else DEFAULT_TEMPLATE
-    updated = apply_sections(current, sections)
+    stale = []
+    for path, spec in targets.items():
+        rel = path.relative_to(REPO_ROOT)
+        current = path.read_text() if path.exists() else spec.get("template", "")
+        if not current:
+            sys.exit(f"{rel} is missing and has no template")
+        updated = apply_sections(current, spec["sections"])
+        if args.check:
+            if not path.exists() or path.read_text() != updated:
+                stale.append(str(rel))
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(updated)
+            print(f"Wrote {rel}")
 
     if args.check:
-        if not TARGET_DOC.exists() or TARGET_DOC.read_text() != updated:
+        if stale:
             sys.exit(
-                f"{TARGET_DOC.relative_to(REPO_ROOT)} is stale. Run: python docs/tools/gen_backend_docs.py"
+                "Stale generated docs: "
+                + ", ".join(stale)
+                + "\nRun: python docs/tools/gen_backend_docs.py"
             )
-        print(f"{TARGET_DOC.relative_to(REPO_ROOT)} is up to date.")
-        return 0
-
-    TARGET_DOC.parent.mkdir(parents=True, exist_ok=True)
-    TARGET_DOC.write_text(updated)
-    print(f"Wrote {TARGET_DOC.relative_to(REPO_ROOT)}")
+        print("All generated docs are up to date.")
     return 0
 
 

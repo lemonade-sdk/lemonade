@@ -31,17 +31,20 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to llama-server", "Llama.cpp Backend Options"},
     },
     /*support*/ {
-        {"llamacpp", "system", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}},
-        {"llamacpp", "metal", {"macos"}, {{"metal", {}}}},
+        {"llamacpp", "system", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},
+        {"llamacpp", "metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"llamacpp", "cuda", {"windows", "linux"},
-         {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}},
-        {"llamacpp", "vulkan", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}},
+         {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
+        {"llamacpp", "vulkan", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)"},
         {"llamacpp", "rocm", {"windows", "linux"},
-         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}},
-        {"llamacpp", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}},
+         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
+        {"llamacpp", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
+    /*modality*/        "Text generation",
+    /*experimental*/    false,
+    /*web_display_name*/ "llama.cpp GPU",
 };
 
 }  // namespace llamacpp

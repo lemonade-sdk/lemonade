@@ -25,10 +25,13 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to vllm-server", "vLLM Options"},
     },
     /*support*/ {
-        {"vllm", "rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}},
+        {"vllm", "rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
+    /*modality*/        "Text generation",
+    /*experimental*/    true,
+    /*web_display_name*/ "",
 };
 
 }  // namespace vllm

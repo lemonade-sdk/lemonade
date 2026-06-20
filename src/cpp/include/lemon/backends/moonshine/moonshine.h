@@ -23,12 +23,15 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to moonshine-server", ""},
     },
     /*support*/ {
-        {"moonshine", "cpu", {"windows"}, {{"cpu", {"x86_64"}}}},
-        {"moonshine", "cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}},
-        {"moonshine", "cpu", {"macos"}, {{"cpu", {"arm64"}}}},
+        {"moonshine", "cpu", {"windows"}, {{"cpu", {"x86_64"}}}, "x86_64/arm64 CPU"},
+        {"moonshine", "cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/arm64 CPU"},
+        {"moonshine", "cpu", {"macos"}, {{"cpu", {"arm64"}}}, "x86_64/arm64 CPU"},
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},
     /*required_checkpoints*/ {"main"},
+    /*modality*/        "Speech-to-text",
+    /*experimental*/    false,
+    /*web_display_name*/ "",
 };
 
 }  // namespace moonshine

@@ -24,10 +24,13 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"flm", "npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}},
+        {"flm", "npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
+    /*modality*/        "Text generation",
+    /*experimental*/    false,
+    /*web_display_name*/ "FastFlowLM NPU",
 };
 
 }  // namespace fastflowlm

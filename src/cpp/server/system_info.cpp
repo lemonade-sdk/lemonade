@@ -1505,17 +1505,25 @@ json SystemInfo::build_recipes_info(const json& devices) {
     // app, the docs generator) can render display names and per-recipe option
     // schemas without hardcoding them. This is the single source the frontend
     // reads instead of its own per-recipe TypeScript tables.
+    int recipe_order = 0;
     for (const auto* desc : lemon::backends::all_descriptors()) {
         auto it = recipes.find(desc->recipe);
         if (it == recipes.end()) {
+            ++recipe_order;
             continue;  // recipe not surfaced on this system (e.g. cloud has no support rows)
         }
         json& entry = it.value();
+        entry["order"] = recipe_order++;  // descriptor registry order, for deterministic doc rendering
         entry["display_name"] = desc->display_name;
         entry["selectable_backend"] = desc->selectable_backend;
         entry["uses_ctx_size"] = desc->uses_ctx_size;
-        // Machine-independent support matrix (OS + device families per backend),
-        // straight from the descriptor — used by the docs generator.
+        entry["modality"] = desc->modality;
+        entry["experimental"] = desc->experimental;
+        entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
+        entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
+        // Machine-independent support matrix (OS + device families + friendly
+        // device summary per backend), straight from the descriptor — used by the
+        // docs generator to render the README support matrix etc.
         json support = json::array();
         for (const auto& row : desc->support) {
             json devices = json::array();
@@ -1527,6 +1535,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"backend", row.backend},
                 {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
                 {"devices", devices},
+                {"device_summary", row.device_summary},
             });
         }
         entry["support"] = support;

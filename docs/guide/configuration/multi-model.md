@@ -22,7 +22,9 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ## Device Constraints
 
-- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+<!-- BEGIN GENERATED: npu-exclusivity -->
+- **NPU Exclusivity:** `whispercpp`, `flm`, and `ryzenai-llm` are mutually exclusive on the NPU.
+<!-- END GENERATED: npu-exclusivity -->
     - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
     - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.

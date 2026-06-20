@@ -22,6 +22,9 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {},             // no local gating: install/support machinery skips cloud
     /*default_labels*/  {},
     /*required_checkpoints*/ {},  // no downloaded files
+    /*modality*/        "",
+    /*experimental*/    false,
+    /*web_display_name*/ "",
 };
 
 }  // namespace cloud

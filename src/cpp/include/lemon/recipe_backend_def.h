@@ -21,6 +21,9 @@ struct RecipeBackendDef {
     std::string backend;
     std::set<std::string> supported_os;
     DeviceConstraints devices;
+    // Human-friendly device description for the generated support matrix (README).
+    // May contain footnote markers (e.g. "*") whose text lives as prose in the doc.
+    std::string device_summary = "";
 };
 
 } // namespace lemon
