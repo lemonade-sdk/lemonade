@@ -251,6 +251,12 @@ def _oxford(items: list) -> str:
     return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
+def render_recipe_values(recipes: dict) -> str:
+    # Inline list of recipe values for `--recipe`, plus the collection orchestrator.
+    rs = [r for r, _ in _ordered(recipes)] + ["collection.omni"]
+    return ", ".join(f"`{r}`" for r in rs)
+
+
 def render_npu_exclusivity(recipes: dict) -> str:
     npu = [
         r
@@ -409,11 +415,16 @@ def apply_sections(text: str, sections: dict[str, str]) -> str:
             + r" -->)",
             re.DOTALL,
         )
-        if not pattern.search(text):
+        m = pattern.search(text)
+        if not m:
             sys.exit(f"Marker region '{marker_id}' not found in target doc")
+        # Inline regions (markers mid-line, e.g. inside a table cell) get no
+        # surrounding newlines; block regions are wrapped on their own lines.
+        inline = m.start() > 0 and text[m.start() - 1] != "\n"
         # Escape backslashes and group-ref markers in the body for re.sub.
         safe_body = body.replace("\\", "\\\\")
-        replacement = r"\1" + "\n" + safe_body + "\n" + r"\2"
+        sep = "" if inline else "\n"
+        replacement = r"\1" + sep + safe_body + sep + r"\2"
         text = pattern.sub(replacement, text)
     return text
 
@@ -464,6 +475,13 @@ def main() -> int:
         / "guide"
         / "cli.md": {
             "sections": {"cli-recipe-options": render_cli_recipe_options(recipes)},
+        },
+        REPO_ROOT
+        / "docs"
+        / "guide"
+        / "configuration"
+        / "custom-models.md": {
+            "sections": {"recipe-values": render_recipe_values(recipes)},
         },
     }
 
