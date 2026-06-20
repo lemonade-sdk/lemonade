@@ -70,6 +70,23 @@ static int model_source_sort_rank(const std::string& model_name) {
     return 0;
 }
 
+//Helper function  to calculate the total size of the models in a collection.
+static float get_size_of_collection(const nlohmann::json& components, const nlohmann::json& models){
+    float collection_size = 0.0f;
+    for (const auto component : components){
+        for (const auto& model : models) {
+            if (!model.contains("id") ||  model["id"] != component || 
+                !model.contains("size") ||  !model["size"].is_number_float()) {
+                continue;
+            } else {
+                float model_size = model["size"];
+                collection_size += model_size;
+            }
+        }
+    }
+    return collection_size;
+}
+
 HttpError::HttpError(int status, std::string body, const std::string& message)
     : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
 
@@ -364,6 +381,14 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
 
             if (model_item.contains("size") && model_item["size"].is_number_float()){
                 info.size = model_item["size"];
+            } else {
+                // If it is a Cloud llm => 0.0 
+                if (info.recipe == "cloud" || !(model_item.contains("components") && model_item["components"].is_array() )) {
+                    info.size = 0.0f;
+                } else {
+                    //but if it is collection. we sum all components.
+                    info.size = get_size_of_collection(model_item["components"], json_response["data"]);
+                }
             }
 
             if (!info.id.empty()) {
@@ -430,14 +455,17 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             // column is always copy-paste-safe.
             for (const auto& model : models) {
                 std::string downloaded = model.downloaded ? "Yes" : "No";
-                std::string details = model.recipe.empty() ? "-" : model.recipe;
-                float size = model.size;
-
-                std::cout << std::left << std::setw(40) << model.id
-                          << std::setw(15) << downloaded
-                          << std::setw(5) << std::fixed << std::setprecision(2) << std::right << size
-                          << std::setw(10) << " "
-                          << std::setw(20) << std::left << details << std::endl;
+                std::string details = model.recipe.empty() ? "-" : model.recipe;      
+                std::cout   << std::left << std::setw(40) << model.id
+                            << std::setw(15) << downloaded
+                            << std::setw(5) << std::fixed << std::setprecision(2) << std::right;
+                if (model.size == 0.0f) {
+                    std::cout << "--";
+                } else {
+                    std::cout << model.size;
+                }
+                std::cout   << std::setw(10) << " "
+                            << std::setw(20) << std::left << details << std::endl;
             }
 
             std::cout << std::string(100, '-') << std::endl;
