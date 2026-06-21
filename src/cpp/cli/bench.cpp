@@ -1123,6 +1123,18 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     const std::string command_timestamp = get_timestamp_iso();
 
+    json system_info = json::object();
+    if (config.add_system_info) {
+        try {
+            std::string response = client.make_request("/v1/system-info", "GET", "", "", 10000, 10000);
+            system_info = json::parse(response);
+        } catch (const std::exception& e) {
+            std::cerr << "Error: Failed to fetch /v1/system-info for benchmark output: "
+                      << e.what() << std::endl;
+            return 1;
+        }
+    }
+
     // Preflight: ensure all requested models are available before any benchmark starts.
     // If --auto-pull is enabled, pull missing/not-downloaded models during this phase.
     std::map<std::string, json> model_info_by_name;
@@ -1311,6 +1323,9 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         if (config.json_output) {
             json output;
             output["timestamp"] = command_timestamp;
+            if (config.add_system_info) {
+                output["system-info"] = system_info;
+            }
             output["models"] = json::array();
             for (const auto& model_result : by_model) {
                 output["models"].push_back(
@@ -1333,6 +1348,9 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             if (!config.output_file.empty()) {
                 json output;
                 output["timestamp"] = command_timestamp;
+                if (config.add_system_info) {
+                    output["system-info"] = system_info;
+                }
                 output["models"] = json::array();
                 for (const auto& model_result : by_model) {
                     output["models"].push_back(
@@ -1415,6 +1433,9 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             json output;
 
             output["timestamp"] = command_timestamp;
+            if (config.add_system_info) {
+                output["system-info"] = system_info;
+            }
             output["compare_file"] = config.compare_file;
             if (!previous_timestamp.empty()) {
                 output["previous_timestamp"] = previous_timestamp;
@@ -1495,6 +1516,8 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--output", output_file, "Write results to file (in addition to stdout)")->type_name("FILE");
     cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
+    cmd->add_flag("--add-system-info", opts.add_system_info,
+        "Include system information to benchmark JSON");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
     cmd->add_flag("--no-reload", opts.no_reload, "Skip model reload between scenarios (faster but prompt cache may skew results)");
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
@@ -1525,6 +1548,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     config.scenario_file = cli.scenario_file;
     config.scenario_dir = cli.scenario_dir;
     config.auto_pull = cli.auto_pull;
+    config.add_system_info = cli.add_system_info;
     config.memory_tracking = !cli.no_memory;
     config.reload = !cli.no_reload;
     config.compare_file = cli.compare_file;
