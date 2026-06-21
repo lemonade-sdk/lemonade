@@ -21,6 +21,9 @@
 
 #ifdef __linux__
 #include <sys/prctl.h>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
 #endif
 
 #ifdef HAVE_LIBCAP
@@ -79,6 +82,45 @@ static void preserve_capabilities_for_exec() {
     }
 
     cap_free(caps);
+}
+#endif
+
+#ifdef __linux__
+// Check whether a process is a zombie by reading /proc/<pid>/stat.
+// Returns true if the process exists and is in zombie ('Z') state,
+// false otherwise (including if the proc entry doesn't exist).
+// This is non-mutating — it does not reap the child.
+static bool is_zombie_by_proc(pid_t pid) {
+    char path[64];
+    std::snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        return false;
+    }
+    std::string line;
+    if (!std::getline(f, line)) {
+        return false;
+    }
+    // /proc/<pid>/stat format: pid (comm) field3 field4 ...
+    // The comm field is enclosed in parentheses and may contain spaces,
+    // so we find both delimiters to correctly skip to the field list.
+    auto open_paren = line.find('(');
+    if (open_paren == std::string::npos) {
+        return false;
+    }
+    auto close_paren = line.rfind(')');
+    if (close_paren == std::string::npos || close_paren <= open_paren) {
+        return false;
+    }
+    // Everything after the closing ')' is the remaining fields.
+    // Field 1 after ')' is the process state character.
+    std::string rest = line.substr(close_paren + 1);
+    std::istringstream iss(rest);
+    char state;
+    if (!(iss >> state)) {
+        return false;
+    }
+    return state == 'Z';
 }
 #endif
 
@@ -366,6 +408,12 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
     }
 
     if (errno == ECHILD) {
+        return false;
+    }
+#endif
+
+#ifdef __linux__
+    if (is_zombie_by_proc(handle.pid)) {
         return false;
     }
 #endif
