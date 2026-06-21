@@ -13,7 +13,7 @@
     "vulkan": "v1.8.4",
     "rocm": "v1.8.4",
     "npu": "v1.8.4",
-    "metal": "v1.8.5"
+    "metal": "v1.8.4"
   },
   "sd-cpp": {
     "cpu": "master-672-1f9ee88",

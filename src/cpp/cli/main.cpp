@@ -157,6 +157,7 @@ struct CliConfig {
     bool save_options = false;
     std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
+    bool backends_showall = false;
     bool force = false;
     std::string output_file;
     bool downloaded = false;
@@ -534,7 +535,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         return result;
     }
 
-    return client.list_recipes();
+    return client.list_recipes(config.backends_showall);
 }
 
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
@@ -1160,8 +1161,9 @@ int main(int argc, char* argv[]) {
     CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
-    CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
     backends_cmd->alias("recipes");
+    backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");

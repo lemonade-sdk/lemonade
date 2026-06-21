@@ -35,7 +35,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
@@ -460,30 +460,35 @@ lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 
 ## Options for backends
 
-The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
+lemonade backends --all
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
 
 | Command | Description |
 |--------|-------------|
-| `lemonade backends` | List available recipes and backends |
+| `lemonade backends` | List supported recipes and backends |
+| `lemonade backends --all` | List all available recipes and backends |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
-- Available backends depend on your system and the recipe
-- Use `lemonade backends` to list all available recipes and backends
+- Supported backends depend on your system and the recipe
+- Use `lemonade backends --all` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
-# List all available recipes and backends
+# List supported recipes and backends
 lemonade backends
+
+# List all available recipes and backends
+lemonade backends --all
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
