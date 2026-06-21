@@ -19,7 +19,7 @@ class EvictionTests(ServerTestBase):
 
     _model_pulled = False
     _model2_pulled = False
-    MODEL2 = "phi-3-mini-4k-instruct-q4"
+    MODEL2 = "Phi-4-mini-instruct-GGUF"
 
     @classmethod
     def setUpClass(cls):
@@ -83,7 +83,7 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
+            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90,"max_loaded_models": 2},
             headers=headers,
         )
 
@@ -194,7 +194,7 @@ class EvictionTests(ServerTestBase):
         # Protected model loaded first (older) but with a large weight factor.
         requests.post(
             f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "evict_weight_factor": 1000.0},
+            json={"model_name": ENDPOINT_TEST_MODEL, "evict_weight_factor": 1000.0, "max_models_loaded" : 2},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         time.sleep(2)
@@ -203,6 +203,7 @@ class EvictionTests(ServerTestBase):
             json={"model_name": self.MODEL2},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        time.sleep(2)
 
         self._simulate_vram_pressure(0.95)
 
