@@ -690,6 +690,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--response-log FILE` | Write response produced by the benchmark to a JSONL logfile, for later quality evaluation. | - |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
@@ -763,6 +764,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 
