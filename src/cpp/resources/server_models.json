@@ -690,13 +690,65 @@
     },
     "Gemma-4-12B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
             "tool-calling",
+            "vision",
             "llamacpp"
         ],
-        "size": 7.12
+        "size": 7.29
+    },
+    "Gemma-4-26B-A4B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+            "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+            "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp",
+            "mtp"
+        ],
+        "size": 18.5
+    },
+    "Gemma-4-31B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+            "draft": "unsloth/gemma-4-31B-it-GGUF:mtp-gemma-4-31B-it.gguf",
+            "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp",
+            "mtp"
+        ],
+        "size": 20.0
+    },
+    "Gemma-4-12B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+            "draft": "unsloth/gemma-4-12b-it-GGUF:mtp-gemma-4-12b-it.gguf",
+            "mmproj": "unsloth/gemma-4-12b-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "llamacpp",
+            "vision",
+            "mtp"
+        ],
+        "size": 7.75
     },
     "Gemma-4-E4B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
