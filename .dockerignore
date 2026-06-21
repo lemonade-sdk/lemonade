@@ -14,6 +14,7 @@ build
 
 # Dev & CI tooling
 .devcontainer
+!.devcontainer/reinstall-cmake.sh
 .pylintrc
 
 # Docs
