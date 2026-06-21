@@ -275,8 +275,9 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -534,8 +535,9 @@ jobs:
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
