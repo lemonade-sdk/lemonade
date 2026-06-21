@@ -802,11 +802,12 @@ file(GLOB_RECURSE RESOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/*"
 )
 
-# The Omni tool definitions are authored in the frontend tree and are the single
-# source of truth (the desktop app imports them directly). Stage a copy into the
-# resources tree so the C++ server reads the same file via get_resource_path.
+# The server-side Omni tool definitions live next to the GUI3 Omni tool
+# runtime. Keep this JSON aligned with src/app/src/tools/omniTools.ts.
+# Stage a copy into the resources tree so external OpenAI-compatible clients
+# can still use server-side Omni collection orchestration.
 set(TOOL_DEFINITIONS_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/tools/toolDefinitions.json")
 
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change

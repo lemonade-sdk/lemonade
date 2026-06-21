@@ -1,0 +1,185 @@
+/* tokens.css — design tokens for the Lemonade UI redesign prototype.
+ *
+ * Theme tokens follow the public docs/website design language: a bright
+ * crystalline light theme plus the Midnight Palette dark theme. Keep the
+ * Lemonade yellow invariant across themes so product identity stays stable.
+ */
+
+:root {
+  /* ---------- Color roles (dark / Midnight Palette) ---------- */
+  --surface-base:   #0E0E0B;
+  --surface-1:      #1A1813;
+  --surface-2:      #1F1D17;
+  --surface-3:      #25221B;
+  --surface-raised: #2D2922;
+  --surface-glass:  rgba(45, 41, 33, 0.72);
+
+  --text-primary:   #F2EFE5;
+  --text-secondary: #C7C2B5;
+  --text-tertiary:  #A8A39A;
+  --text-disabled:  #7A776E;
+
+  --accent:         #FCD846;
+  --accent-hover:   #FAF972;
+  --accent-deep:    #5C4B00;
+  --accent-fg:      var(--accent);
+  --accent-soft:    rgba(252, 216, 70, 0.14);
+  --accent-strong:  rgba(252, 216, 70, 0.24);
+  --accent-on:      #000000;
+
+  --success:        #78A86B;
+  --success-soft:   rgba(120, 168, 107, 0.15);
+  --warn:           #F2B94F;
+  --warn-soft:      rgba(242, 185, 79, 0.15);
+  --danger:         #EF8D7F;
+  --danger-soft:    rgba(239, 141, 127, 0.15);
+  --info:           #88BDE9;
+  --info-soft:      rgba(136, 189, 233, 0.15);
+
+  --border:         rgba(255, 255, 255, 0.10);
+  --border-subtle:  rgba(255, 255, 255, 0.07);
+  --border-strong:  rgba(252, 216, 70, 0.18);
+
+  --bg-primary: var(--surface-base);
+  --bg-secondary: var(--surface-1);
+  --surface-0: var(--surface-base);
+  --text-muted: var(--text-tertiary);
+  --error: var(--danger);
+  --primary-yellow: var(--accent);
+  --on-primary: var(--accent-on);
+
+  /* ---------- Typography ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+               "Segoe UI", system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+
+  --text-xs:   11px;
+  --text-sm:   12.5px;
+  --text-base: 14px;
+  --text-lg:   15px;
+  --text-xl:   18px;
+  --text-2xl:  24px;
+  --text-3xl:  32px;
+
+  --weight-regular:  400;
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight:  -0.01em;
+  --tracking-caps:   0.08em;
+
+  /* ---------- Space (4px grid) ---------- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-8:  48px;
+  --space-10: 64px;
+  --space-12: 80px;
+
+  /* ---------- Radii ---------- */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-pill: 9999px;
+
+  /* ---------- Shadows ---------- */
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 1px 1px rgba(0, 0, 0, 0.12);
+  --shadow-md:
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+  --shadow-soft: var(--shadow-md);
+  --shadow-lg:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 8px 16px rgba(0, 0, 0, 0.20);
+
+  /* ---------- Motion ---------- */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --duration-fast:  150ms;
+  --duration-base:  220ms;
+  --duration-normal: 220ms;
+  --duration-slow:  380ms;
+
+  /* ---------- Layout constants ---------- */
+  --titlebar-height:    52px;
+  --rail-collapsed:     56px;
+  --rail-expanded:      280px;
+  --composer-min:       96px;
+  --max-content-width:  860px;
+  --slide-over-width:   420px;
+
+  /* ---------- Responsive breakpoints ----------
+   * Note: CSS custom properties cannot be used inside @media queries.
+   * These values are documented here for reference; use the raw px
+   * values in media query expressions.
+   *   @media (max-width: 480px)  → phone
+   *   @media (max-width: 768px)  → tablet (already used throughout)
+   *   @media (max-width: 1024px) → desktop narrow
+   */
+  --breakpoint-mobile:  480px;
+  --breakpoint-tablet:  768px;
+  --breakpoint-desktop: 1024px;
+}
+
+/* ---------- Light theme overrides ---------- */
+[data-theme="light"] {
+  --surface-base:   #FFFFFF;
+  --surface-1:      #FFFFFF;
+  --surface-2:      #F6F6F6;
+  --surface-3:      #EFEDE0;
+  --surface-raised: #FFFFFF;
+  --surface-glass:  rgba(255, 255, 255, 0.78);
+
+  --text-primary:   #000000;
+  --text-secondary: #2D2F2F;
+  --text-tertiary:  #52525B;
+  --text-disabled:  #767676;
+
+  --accent:         #FCD846;
+  --accent-hover:   #FAF972;
+  --accent-deep:    #5C4B00;
+  --accent-fg:      var(--accent-deep);
+  --accent-soft:    rgba(252, 216, 70, 0.18);
+  --accent-strong:  rgba(252, 216, 70, 0.32);
+  --accent-on:      #000000;
+
+  --success:        #3C6531;
+  --success-soft:   rgba(60, 101, 49, 0.10);
+  --warn:           #9A6A00;
+  --warn-soft:      rgba(252, 216, 70, 0.20);
+  --danger:         #B94A3D;
+  --danger-soft:    rgba(185, 74, 61, 0.10);
+  --info:           #306EA8;
+  --info-soft:      rgba(48, 110, 168, 0.10);
+
+  --border:         rgba(0, 0, 0, 0.10);
+  --border-subtle:  rgba(0, 0, 0, 0.07);
+  --border-strong:  rgba(92, 75, 0, 0.18);
+
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md:
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-soft: var(--shadow-md);
+  --shadow-lg:
+    0 18px 48px rgba(0, 0, 0, 0.12),
+    0 8px 16px rgba(0, 0, 0, 0.06);
+}

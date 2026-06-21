@@ -1,7 +1,8 @@
 {
-  "name": "lemonade-app",
-  "version": "1.0.0",
-  "description": "Lemonade Desktop App (Tauri)",
+  "name": "lemonade-ui-prototype",
+  "version": "0.1.0",
+  "description": "Lemonade UI redesign prototype",
+  "private": true,
   "scripts": {
     "dev:renderer": "webpack serve --mode development",
     "build:renderer": "webpack --mode development",
@@ -9,52 +10,48 @@
     "watch:renderer": "webpack --watch --mode development",
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "npm run build:renderer:prod",
+    "build:tauri": "tauri build",
     "build:nobundle": "tauri build --no-bundle",
     "build:mac": "tauri build --bundles app",
-    "test:custom-collections": "node ../../test/app/customCollections.test.cjs",
-    "test:downloaded-only-settings": "node ../../test/app/downloadedOnlySettings.test.cjs",
-    "test:app-settings": "node ../../test/app/appSettings.test.cjs"
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:a11y": "npx playwright test tests/a11y.spec.ts"
   },
-  "keywords": [
-    "tauri",
-    "lemonade",
-    "typescript"
-  ],
-  "author": "",
-  "license": "Apache-2.0",
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/katex": "^0.16.7",
-    "@types/node": "^20.10.5",
+    "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "css-loader": "^7.1.4",
-    "glob": ">=10.5.0",
-    "html-webpack-plugin": "^5.6.6",
-    "node-forge": ">=1.3.2",
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.4",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.3.3",
-    "webpack": "^5.105.3",
+    "webpack": "^5.102.1",
     "webpack-cli": "^6.0.1",
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
     "@tauri-apps/plugin-deep-link": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
-    "@types/markdown-it": "^14.1.2",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.7",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.25",
     "markdown-it": "^14.1.0",
     "markdown-it-texmath": "^1.0.0",
+    "mermaid": "^11.15.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "recharts": "^3.8.1"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3",
-    "lodash": "~4.17.21"
+    "@tauri-apps/api": "2.10.1"
   }
 }

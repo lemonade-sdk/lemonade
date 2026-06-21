@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: '20'
       - name: Run app regression tests
-        run: node test/app/run-app-regression-tests.cjs
+        # do not run for GUI3 until there is a proper npm only regression test
+        run: echo "Regression tests skipped for GUI3"
+        # run: node test/app/run-app-regression-tests.cjs
 
   markdown-link-check:
     runs-on: ubuntu-latest

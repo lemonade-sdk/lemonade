@@ -39,6 +39,22 @@ runs:
           mv ../*.deb "$OUTPUT_DIR/" || true
           mv ../*.buildinfo "$OUTPUT_DIR/" || true
           mv ../*.changes "$OUTPUT_DIR/" || true
+
+          # The package's ${shlibs:Depends} can reference runtime packages from
+          # the Debian build environment that are not available on a plain
+          # ubuntu-latest test runner. Keep the built Lemonade .deb unchanged,
+          # but publish the matching local runtime .deb alongside it so follow-up
+          # CI jobs can install the artifact in the same dependency universe it
+          # was built against.
+          if apt-cache show libcpp-httplib0.26 >/dev/null 2>&1; then
+            echo "Adding libcpp-httplib0.26 runtime dependency to Debian artifact set..."
+            (
+              cd "$OUTPUT_DIR"
+              apt-get download libcpp-httplib0.26
+            )
+          else
+            echo "libcpp-httplib0.26 is not available in this build environment; no local runtime dependency artifact added."
+          fi
         elif [ "$PACKAGE_TYPE" = "source" ]; then
           echo "Building source package for version $DEB_VERSION..."
           dpkg-buildpackage -us -uc -S -sa

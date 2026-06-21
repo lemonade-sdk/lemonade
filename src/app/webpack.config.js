@@ -3,67 +3,51 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
-  entry: './src/renderer/index.tsx',
+  entry: './src/index.tsx',
   target: 'web',
   devtool: argv.mode === 'production' ? false : 'source-map',
   module: {
     rules: [
       {
         test: /\.tsx?$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader',
+          options: { transpileOnly: true },
+        },
         exclude: /node_modules/,
       },
       {
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
       },
-      {
-        test: /\.svg$/,
-        type: 'asset/resource',
-      },
-      {
-        test: /\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot)$/,
-        type: 'asset/resource',
-        generator: {
-          filename: '[name][ext]'
-        }
-      },
-      {
-        test: /\.json$/,
-        type: 'json',
-      },
     ],
   },
   resolve: {
     extensions: ['.tsx', '.ts', '.js', '.jsx'],
-    fallback: {
-      "path": false,
-      "fs": false,
-      "url": false,
-      "util": false,
-      "stream": false,
-      "buffer": false,
-      "process": false,
-    },
   },
   output: {
     filename: 'renderer.bundle.js',
     path: path.resolve(__dirname, 'dist/renderer'),
+    clean: true,
   },
-  devServer: {
-    port: 9123,
-    hot: true,
-    // Serve the same static assets (styles.css, favicon) that the production
-    // build copies into dist/renderer via HtmlWebpackPlugin.
-    static: {
-      directory: __dirname,
-      publicPath: '/',
-    },
+  optimization: {
+    // GUI3 pulls in large visualization/markdown dependencies. Keep the beta
+    // renderer unminified so CI can build it reliably without changing the
+    // single-bundle entry expected by Tauri and packaging.
+    minimize: false,
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: './src/renderer/index.html',
+      template: './src/index.html',
       filename: 'index.html',
     }),
   ],
+  devServer: {
+    static: path.resolve(__dirname, 'dist/renderer'),
+    port: 9123,
+    hot: true,
+    open: false,
+    historyApiFallback: true,
+    headers: { 'Cache-Control': 'no-store' },
+  },
 });

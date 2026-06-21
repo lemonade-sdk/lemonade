@@ -28,6 +28,21 @@ module.exports = (env, argv) => {
     }
   }
 
+  const systemPackageAliases = useSystemPackages ? {
+    // These GUI3 libraries remain real npm dependencies for the Tauri/app
+    // build. The distro web-app build uses system Node modules and maps
+    // unavailable packages to conservative local fallbacks.
+    'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
+    'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
+    'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
+
+    // Debian/Ubuntu/Fedora system highlight.js packages can provide the JS
+    // module without the npm package's bundled style files. Keep the GUI3
+    // import graph unchanged and provide a small local stylesheet only for
+    // the system-node web-app build.
+    'highlight.js/styles/github-dark.css$': path.resolve(__dirname, 'system-stubs/highlight-github-dark.css'),
+  } : {};
+
   // Resolve polyfills conditionally - try to resolve them, but fall back to false if not available
   let bufferPolyfill = false;
   let processPolyfill = false;
@@ -42,7 +57,7 @@ module.exports = (env, argv) => {
     // process package not installed locally
   }
 
-  // The shared renderer source lives in ../app/src (sibling tree). The
+  // The staged GUI app source lives in ../app/src (sibling tree). The
   // web-app build resolves it directly via these relative paths instead of
   // checking in OS-level symlinks (which break Windows checkouts unless
   // core.symlinks=true and developer mode are both enabled). The CMake
@@ -50,7 +65,7 @@ module.exports = (env, argv) => {
   // src/app and src/web-app into the build directory side by side.
   const config = {
     mode: argv.mode || 'development',
-    entry: '../app/src/renderer/index.tsx',
+    entry: '../app/src/index.tsx',
     target: 'web',  // Changed from 'electron-renderer' to 'web' for browser
     devtool: argv.mode === 'production' ? false : 'source-map',
     module: {
@@ -61,6 +76,9 @@ module.exports = (env, argv) => {
             loader: 'ts-loader',
             options: {
               transpileOnly: true,  // Skip type checking for faster builds
+              configFile: path.resolve(__dirname, 'tsconfig.json'),
+              context: __dirname,
+              onlyCompileBundledFiles: true,
             }
           },
           exclude: /node_modules/,
@@ -68,7 +86,7 @@ module.exports = (env, argv) => {
         {
           test: /\.css$/,
           use: ['style-loader', 'css-loader'],
-          exclude: useSystemPackages ? /katex\.min\.css$/ : undefined,
+          exclude: useSystemKatexCss ? /katex\.min\.css$/ : undefined,
         },
         {
           test: /\.svg$/,
@@ -101,7 +119,8 @@ module.exports = (env, argv) => {
       ],
       alias: {
         ...katexAlias,
-        // The shared renderer (symlinked from ../app/src) imports @tauri-apps/*
+        ...systemPackageAliases,
+        // The staged GUI app imports @tauri-apps/*
         // modules in tauriShim.ts. The web-app intentionally excludes those
         // packages; alias each specifier to a no-op stub. The shim never calls
         // into them at runtime in pure-web mode (isTauri() is always false).
@@ -127,9 +146,14 @@ module.exports = (env, argv) => {
       filename: 'renderer.bundle.js',
       path: process.env.WEBPACK_OUTPUT_PATH || path.resolve(__dirname, 'dist/renderer'),
     },
+    optimization: {
+      // GUI3's full web entry includes large markdown/diagram/chart code.
+      // Keep packaging builds unminified so CI does not stall in Terser.
+      minimize: false,
+    },
     plugins: [
       new HtmlWebpackPlugin({
-        template: '../app/src/renderer/index.html',
+        template: '../app/src/index.html',
         filename: 'index.html',
       }),
       ...(bufferPolyfill && processPolyfill ? [

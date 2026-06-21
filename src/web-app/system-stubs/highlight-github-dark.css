@@ -1,0 +1,53 @@
+/* Original system-node packaging fallback for GUI3's highlight.js theme import.
+ * Debian/Ubuntu/Fedora may provide highlight.js JavaScript without npm's
+ * bundled styles/github-dark.css file. This file is intentionally minimal and
+ * is not copied from the upstream highlight.js GitHub theme.
+ */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0.75em;
+  color: inherit;
+  background: rgba(127, 127, 127, 0.12);
+}
+
+.hljs-comment,
+.hljs-quote {
+  opacity: 0.72;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-attribute,
+.hljs-string,
+.hljs-doctag,
+.hljs-number,
+.hljs-literal,
+.hljs-type,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-meta {
+  color: inherit;
+}
+
+.hljs-deletion {
+  background-color: rgba(220, 38, 38, 0.18);
+}
+
+.hljs-addition {
+  background-color: rgba(22, 163, 74, 0.18);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}

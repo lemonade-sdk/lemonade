@@ -31,7 +31,11 @@
     "ts-loader": "^9.5.4",
     "typescript": "^5.3.3",
     "webpack": "^5.102.1",
-    "webpack-cli": "^6.0.1"
+    "webpack-cli": "^6.0.1",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.7",
+    "mermaid": "^11.15.0",
+    "recharts": "^3.8.1"
   },
   "overrides": {
     "lodash": "~4.17.21"
