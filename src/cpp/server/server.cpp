@@ -2602,7 +2602,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 
         // Check for error in response
         if (response.contains("error")) {
-            res.status = 500;
+            set_error_response(response, res, 500);
+            return;
         }
 
         res.set_content(response.dump(), "application/json");
