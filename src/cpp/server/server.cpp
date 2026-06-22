@@ -1575,7 +1575,8 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     //   - If model is NOT downloaded: Download it from HuggingFace
     //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);

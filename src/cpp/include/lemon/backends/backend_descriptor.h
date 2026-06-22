@@ -89,6 +89,11 @@ struct BackendDescriptor {
     // default; system-managed packages (flm) accept any version >= expected.
     VersionPolicy version_policy = VersionPolicy::Exact;
 
+    // True if the backend pulls its own models on demand (flm self-pulls via its
+    // CLI) rather than being pre-downloaded from Hugging Face by the router. Such
+    // backends are skipped by the load-time auto-download path.
+    bool self_manages_downloads = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

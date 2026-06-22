@@ -216,6 +216,10 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
+    // True if the model's backend pulls its own models on demand (e.g. flm) and
+    // so should be skipped by the router's load-time auto-download path.
+    bool backend_self_manages_downloads(const std::string& recipe) const;
+
     // Shared Hugging Face completeness check: true if all required checkpoints
     // are present and complete (per-backend file validation runs via ops). The
     // default BackendOps::is_downloaded delegates here for HF-backed backends.

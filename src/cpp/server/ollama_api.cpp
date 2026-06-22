@@ -238,8 +238,9 @@ void OllamaApi::auto_load_model(const std::string& model) {
 
     auto info = model_manager_->get_model_info(name);
 
-    // Download if not cached
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(name)) {
+    // Download if not cached (backends that self-manage downloads pull on load)
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(name)) {
         LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
         model_manager_->download_registered_model(info, true);
         info = model_manager_->get_model_info(name);

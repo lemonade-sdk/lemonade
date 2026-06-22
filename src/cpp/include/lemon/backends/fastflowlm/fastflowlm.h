@@ -36,6 +36,7 @@ inline const BackendDescriptor descriptor = {
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/  VersionPolicy::AtLeast,  // system-managed package
+    /*self_manages_downloads*/ true,  // flm pulls its own models via the flm CLI
 };
 
 }  // namespace fastflowlm

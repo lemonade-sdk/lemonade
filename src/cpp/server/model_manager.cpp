@@ -2277,6 +2277,11 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     return false;
 }
 
+bool ModelManager::backend_self_manages_downloads(const std::string& recipe) const {
+    const auto* desc = backends::descriptor_for(recipe);
+    return desc && desc->self_manages_downloads;
+}
+
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     // The backend's ops own the download (shared HF engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
