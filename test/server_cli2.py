@@ -582,62 +582,61 @@ sys.exit(0)
 
     def test_043_listen_all_via_runtime_config(self):
         """Test that setting host to 0.0.0.0 via /internal/set works."""
-        # Set host to 0.0.0.0 (listen on all interfaces)
         try:
-            set_server_config({"host": "0.0.0.0"})
-            print("[OK] Set host to 0.0.0.0 via /internal/set")
-        except Exception as e:
-            self.fail(f"Failed to set host to 0.0.0.0: {e}")
-
-        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
-        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
-        # ::1 (IPv6) in some environments (e.g. Fedora containers).
-        for i in range(30):
+            # Set host to 0.0.0.0 (listen on all interfaces).
             try:
-                response = requests.get(
-                    f"http://127.0.0.1:{PORT}/api/v1/health",
-                    headers=_auth_headers(),
-                    timeout=2,
+                set_server_config({"host": "0.0.0.0"})
+                print("[OK] Set host to 0.0.0.0 via /internal/set")
+            except Exception as e:
+                self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+            # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+            # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+            # ::1 (IPv6) in some environments (e.g. Fedora containers).
+            for i in range(30):
+                try:
+                    response = requests.get(
+                        f"http://127.0.0.1:{PORT}/api/v1/health",
+                        headers=_auth_headers(),
+                        timeout=2,
+                    )
+                    if response.status_code == 200:
+                        break
+                except requests.ConnectionError:
+                    pass
+                time.sleep(1)
+            else:
+                self.fail(
+                    "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
                 )
-                if response.status_code == 200:
-                    break
-            except requests.ConnectionError:
-                pass
-            time.sleep(1)
-        else:
-            self.fail(
-                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+
+            # Verify the server still responds (status command should work).
+            result = self.assertCommandSucceeds(["status"])
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertTrue(
+                "running" in output or "online" in output or "active" in output,
+                f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
             )
 
-        # Verify the server still responds (status command should work)
-        result = self.assertCommandSucceeds(["status"])
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "running" in output or "online" in output or "active" in output,
-            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
-        )
-
-        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
-        response = requests.get(
-            f"http://127.0.0.1:{PORT}/api/v1/health",
-            headers=_auth_headers(),
-            timeout=10,
-        )
-        self.assertEqual(response.status_code, 200)
-
-        # Restore host back to localhost. Use 127.0.0.1 directly since
-        # the server is currently bound to 0.0.0.0 (IPv4 only).
-        try:
-            requests.post(
+            # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason).
+            response = requests.get(
+                f"http://127.0.0.1:{PORT}/api/v1/health",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+        finally:
+            # Always restore host back to localhost. This test runs inside CI jobs
+            # that execute multiple modules against one long-lived server, so a
+            # failed assertion here must not poison later endpoint/Ollama tests.
+            response = requests.post(
                 f"http://127.0.0.1:{PORT}/internal/set",
                 json={"host": "localhost"},
                 headers=_auth_headers(),
                 timeout=10,
             )
+            response.raise_for_status()
             print("[OK] Restored host to localhost")
-        except Exception as e:
-            # Best-effort restore — don't fail the test
-            print(f"Warning: Failed to restore host to localhost: {e}")
 
     # =============================================================================
     # Pull Tests
@@ -658,6 +657,12 @@ sys.exit(0)
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         print(f"Pull with checkpoint exit code: {result.returncode}")
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: "
+            f"{result.stdout}\n{result.stderr}",
+        )
 
     def test_051_pull_with_labels(self):
         """Test pull command with --label option."""
@@ -678,6 +683,12 @@ sys.exit(0)
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         print(f"Pull with labels exit code: {result.returncode}")
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: "
+            f"{result.stdout}\n{result.stderr}",
+        )
 
     def test_052_pull_invalid_label(self):
         """Test pull command with invalid label should fail validation."""
@@ -720,6 +731,12 @@ sys.exit(0)
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         print(f"Pull with multiple checkpoints exit code: {result.returncode}")
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: "
+            f"{result.stdout}\n{result.stderr}",
+        )
 
     def test_054_pull_registered_name(self):
         """Test pull command with a registered model name (no flags)."""
