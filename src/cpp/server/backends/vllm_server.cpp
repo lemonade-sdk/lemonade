@@ -201,6 +201,15 @@ void VLLMServer::load(const std::string& model_name,
         LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
         args.push_back("--quantization");
         args.push_back("awq");
+        // vLLM's AWQ kernels only support float16. Many AWQ repos still declare
+        // bfloat16 in config.json, which makes vLLM abort with "torch.bfloat16 is
+        // not supported for quantization method awq". Force float16 so AWQ models
+        // load, unless the user already pinned a --dtype themselves.
+        if (!resolved_vllm_args.has_dtype_arg) {
+            LOG(DEBUG, "vLLM") << "Forcing --dtype float16 for AWQ" << std::endl;
+            args.push_back("--dtype");
+            args.push_back("float16");
+        }
     } else if (!quant_method.empty()) {
         LOG(DEBUG, "vLLM") << "Detected quantization '" << quant_method
                            << "'; letting vLLM auto-select kernel" << std::endl;
