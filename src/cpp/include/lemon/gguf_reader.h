@@ -12,7 +12,6 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
-#include <limits>
 #include <string>
 #include <lemon/gguf_capabilities.h>
 #include <lemon/utils/path_utils.h>
@@ -55,7 +54,7 @@ static bool read_gguf_string(std::istream& in, std::string& value) {
 }
 
 static bool skip_gguf_bytes(std::istream& in, uint64_t bytes) {
-    if (bytes > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max())) return false;
+    if (bytes > INT64_MAX) return false;
     in.seekg(static_cast<std::streamoff>(bytes), std::ios::cur);
     return static_cast<bool>(in);
 }
@@ -96,7 +95,7 @@ static bool read_gguf_integer_value(std::istream& in, uint32_t type, int64_t& va
         case 10: {
             uint64_t v = 0;
             if (!read_gguf_le(in, v)) return false;
-            if (v > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) return false;
+            if (v > INT64_MAX) return false;
             value = static_cast<int64_t>(v);
             return true;
         }
@@ -128,7 +127,7 @@ static bool skip_gguf_value(std::istream& in, uint32_t type) {
         if (elem_type == 9) return false;
         uint64_t elem_size = gguf_scalar_size(elem_type);
         if (elem_size == 0) return false;
-        if (count > std::numeric_limits<uint64_t>::max() / elem_size) return false;
+        if (count > INT64_MAX / elem_size) return false;
         return skip_gguf_bytes(in, count * elem_size);
     }
 
