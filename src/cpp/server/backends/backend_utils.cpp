@@ -207,8 +207,8 @@ namespace lemon::backends {
                                               std::string& out_section,
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-stable" || backend == "rocm-nightly")) {
+        if ((recipe_has_rocm_channels(recipe) &&
+            (backend == "rocm-stable" || backend == "rocm-nightly"))) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -279,7 +279,7 @@ namespace lemon::backends {
 
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -319,7 +319,7 @@ namespace lemon::backends {
         // directory or ROCm backends remain stuck in update_required after a
         // successful install.
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -333,7 +333,7 @@ namespace lemon::backends {
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
             std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {

@@ -21,5 +21,10 @@ const BackendDescriptor* descriptor_for(const std::string& recipe);
 // True if the recipe is backed by a registered descriptor.
 bool has_backend(const std::string& recipe);
 
+// True if the recipe publishes ROCm release channels (stable/nightly) — i.e. its
+// "rocm" backend resolves to a channel-specific artifact. False for recipes whose
+// rocm build is a single artifact (or that have no rocm build at all).
+bool recipe_has_rocm_channels(const std::string& recipe);
+
 } // namespace backends
 } // namespace lemon

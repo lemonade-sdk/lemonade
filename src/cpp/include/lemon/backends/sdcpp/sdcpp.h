@@ -50,6 +50,7 @@ inline const BackendDescriptor descriptor = {
     /*experimental*/    false,
     /*web_display_name*/ "stable-diffusion.cpp",
     /*web_priority*/    5,
+    /*rocm_channels*/   {"stable"},
 };
 
 }  // namespace sdcpp

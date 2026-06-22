@@ -254,9 +254,16 @@ std::string RuntimeConfig::rocm_channel() const {
 
 std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
     std::string channel = rocm_channel();
-    // sd-cpp currently has no nightly artifacts; use stable builds.
-    if (recipe == "sd-cpp" && channel == "nightly") {
-        return "stable";
+    // Clamp to a channel the backend actually publishes. A backend that lists
+    // only {"stable"} (e.g. sd-cpp, which has no nightly artifacts) falls back to
+    // its first channel when "nightly" is requested. Driven by the descriptor's
+    // rocm_channels, so no per-recipe special case lives here.
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && !desc->rocm_channels.empty()) {
+        const auto& channels = desc->rocm_channels;
+        if (std::find(channels.begin(), channels.end(), channel) == channels.end()) {
+            return channels.front();
+        }
     }
     return channel;
 }

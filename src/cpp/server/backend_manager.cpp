@@ -1,4 +1,5 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -35,7 +36,7 @@ std::string get_current_os() {
 }
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
@@ -467,7 +468,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // Do that here before inflating the install to a multi-file UX flow.
     const std::string os = get_current_os();
     const bool is_rocm_stable_backend =
-        (recipe == "llamacpp" || recipe == "sd-cpp") &&
+        backends::recipe_has_rocm_channels(recipe) &&
         resolved_backend == "rocm-stable";
     const bool therock_applicable =
         is_rocm_stable_backend && will_install_therock(os, backend_versions_);

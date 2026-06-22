@@ -25,5 +25,10 @@ bool has_backend(const std::string& recipe) {
     return descriptor_for(recipe) != nullptr;
 }
 
+bool recipe_has_rocm_channels(const std::string& recipe) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    return d != nullptr && !d->rocm_channels.empty();
+}
+
 } // namespace backends
 } // namespace lemon

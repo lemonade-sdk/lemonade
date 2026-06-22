@@ -65,6 +65,12 @@ struct BackendDescriptor {
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
     int         web_priority = 0;    // model-grouping order on the docs website (lower = higher; 0 = unlisted)
 
+    // ROCm release channels this backend publishes (e.g. {"stable","nightly"}).
+    // Empty = the backend has no ROCm channels (its "rocm" build is a single
+    // artifact). Drives the rocm-stable/rocm-nightly bin-key collapse and the
+    // channel clamp (a requested channel not listed here falls back to the first).
+    std::vector<std::string> rocm_channels;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;
