@@ -26,4 +26,14 @@ struct RecipeBackendDef {
     std::string device_summary = "";
 };
 
+// A backend descriptor's support row, without the recipe (it's always the
+// owning descriptor's recipe — assembling a RecipeBackendDef fills it in). Keeps
+// the descriptor literals from repeating their own recipe on every row.
+struct BackendSupport {
+    std::string backend;
+    std::set<std::string> supported_os;
+    DeviceConstraints devices;
+    std::string device_summary = "";
+};
+
 } // namespace lemon

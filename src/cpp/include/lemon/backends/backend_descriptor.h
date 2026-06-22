@@ -61,7 +61,7 @@ struct BackendDescriptor {
     bool dynamic_models       = false;  // true = class supplies models at runtime (cloud), not server_models.json
 
     std::vector<BackendOption>    options;                       // backend-specific knobs (common ones are automatic)
-    std::vector<RecipeBackendDef> support;                       // which OS / GPU families it runs on ({} = no local gating)
+    std::vector<BackendSupport>   support;                       // which OS / GPU families it runs on ({} = no local gating)
     std::vector<std::string>      default_labels;                // labels injected when a model omits them
     std::vector<std::string>      required_checkpoints{"main"};  // unconditional files; conditional ones checked in load()
 

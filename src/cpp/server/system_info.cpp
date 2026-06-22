@@ -427,7 +427,8 @@ static const std::vector<RecipeBackendDef>& recipe_defs() {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
-                v.push_back(row);
+                // Fill in the recipe (the owning descriptor's) per support row.
+                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices, row.device_summary});
             }
         }
         return v;

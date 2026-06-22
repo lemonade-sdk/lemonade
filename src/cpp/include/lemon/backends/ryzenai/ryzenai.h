@@ -24,7 +24,7 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"ryzenai-llm", "npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},

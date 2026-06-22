@@ -29,12 +29,12 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to whisper-server", "Whisper.cpp Options"},
     },
     /*support*/ {
-        {"whispercpp", "npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
-        {"whispercpp", "rocm", {"windows", "linux"},
+        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
-        {"whispercpp", "vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
-        {"whispercpp", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"whispercpp", "metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
+        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)

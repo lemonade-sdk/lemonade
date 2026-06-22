@@ -36,13 +36,13 @@ inline const BackendDescriptor descriptor = {
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
     },
     /*support*/ {
-        {"sd-cpp", "rocm", {"windows", "linux"},
+        {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
-        {"sd-cpp", "cuda", {"linux"},
+        {"cuda", {"linux"},
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
-        {"sd-cpp", "vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
-        {"sd-cpp", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"sd-cpp", "metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()

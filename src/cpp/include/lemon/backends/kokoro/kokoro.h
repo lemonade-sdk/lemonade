@@ -24,8 +24,8 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"kokoro", "cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"kokoro", "metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {},  // kokoro models carry "tts" explicitly in server_models.json
     /*required_checkpoints*/ {"main"},
