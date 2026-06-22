@@ -452,11 +452,15 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
             ))}
           </div>
           <div className="connect__provider-form">
-            <input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="provider name, e.g. fireworks" />
-            <input value={providerBaseUrl} onChange={e => setProviderBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" />
-            <input value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder="API key (optional)" />
+            <label className="sr-only" htmlFor="cloud-provider-name">Provider name</label>
+            <input id="cloud-provider-name" value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="provider name, e.g. fireworks" />
+            <label className="sr-only" htmlFor="cloud-provider-url">Base URL</label>
+            <input id="cloud-provider-url" value={providerBaseUrl} onChange={e => setProviderBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" aria-describedby="cloud-provider-url-hint" />
+            <label className="sr-only" htmlFor="cloud-provider-key">Provider API key (optional)</label>
+            <input id="cloud-provider-key" value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder="API key (optional)" />
             <button className="btn btn--primary connect__add-provider" type="button" onClick={() => { void handleInstallCloudProvider(); }} disabled={status !== 'connected' || cloudBusy}>Add provider</button>
           </div>
+          <span id="cloud-provider-url-hint" className="sr-only">Full https:// base URL of the OpenAI-compatible provider endpoint.</span>
           {cloudError && <div className="connect__error">{cloudError}</div>}
           {cloudNotice && <div className="connect__notice">{cloudNotice}</div>}
           <div className="connect__provider-list">
@@ -474,7 +478,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
                   <div className="connect__provider-actions">
                     {editingProvider === provider.name ? (
                       <>
-                        <input type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder="New API key" />
+                        <input type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder="New API key" aria-label={`New API key for ${editingProvider ?? 'provider'}`} />
                         <button className="btn btn--primary" type="button" disabled={cloudBusy || !editingApiKey.trim()} onClick={() => { void handleSaveProviderKey(provider.name); }}>Save key</button>
                         <button className="btn btn--ghost" type="button" onClick={() => { setEditingProvider(null); setEditingApiKey(''); }}>Cancel</button>
                       </>
@@ -495,7 +499,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
         <section className="connect__section connect__section--marketplace">
           <div className="connect__section-head">
             <h2>Marketplace</h2>
-            <input className="connect__marketplace-search" value={marketplaceSearch} onChange={e => setMarketplaceSearch(e.target.value)} placeholder="Search apps..." />
+            <input className="connect__marketplace-search" value={marketplaceSearch} onChange={e => setMarketplaceSearch(e.target.value)} placeholder="Search apps..." aria-label="Search marketplace apps" />
           </div>
           {marketplaceLoading ? <div className="connect__empty">Loading marketplace...</div> : marketplaceError ? <div className="connect__error">Marketplace unavailable: {marketplaceError}</div> : (
             <div className="connect__marketplace-grid">

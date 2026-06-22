@@ -5687,7 +5687,7 @@ input, textarea {
 .omni-component-picker__group + .omni-component-picker__group { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
 .omni-component-picker__group-label { padding: var(--space-1) var(--space-2); color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
 .omni-component-picker__option { display: grid; width: 100%; gap: 2px; padding: var(--space-2); border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
-.omni-component-picker__option:hover, .omni-component-picker__option--selected { border-color: var(--accent-soft); background: var(--surface-2); }
+.omni-component-picker__option:hover, .omni-component-picker__option--selected, .omni-component-picker__option--focused { border-color: var(--accent-soft); background: var(--surface-2); }
 .omni-component-picker__option-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .omni-component-picker__option-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-family: var(--font-mono); font-size: var(--text-xs); }
 .omni-component-picker__option-detail, .omni-component-picker__help, .omni-component-picker__empty { color: var(--text-tertiary); font-size: var(--text-xs); }

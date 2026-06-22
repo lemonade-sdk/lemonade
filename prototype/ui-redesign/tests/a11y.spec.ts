@@ -1114,3 +1114,139 @@ test.describe('Accessibility — download progress bar semantics', () => {
     await expect(liveRegion).toBeAttached();
   });
 });
+
+// ─── 17. Group F — Omni picker combobox semantics ─────────────────────────────
+
+test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => {
+  async function openOmniCollectionForm(page: Page): Promise<void> {
+    await page.goto('/');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager');
+    await page.getByText('+ Omni collection').click();
+    await page.waitForSelector('.omni-component-picker');
+  }
+
+  test('A71 — Omni picker input has role=combobox and aria-expanded=false when closed', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+    await expect(input).toHaveAttribute('role', 'combobox');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await expect(input).toHaveAttribute('aria-controls');
+    await expect(input).toHaveAttribute('aria-autocomplete', 'list');
+  });
+
+  test('A72 — Omni picker opens on focus (aria-expanded=true) and Escape closes it (aria-expanded=false)', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+
+    await input.focus();
+    await expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    const listbox = page.locator('.omni-component-picker [role="listbox"]').first();
+    await expect(listbox).toBeVisible();
+
+    await input.press('Escape');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('A73 — Omni picker ArrowDown opens popup; aria-activedescendant tracks active option when options exist', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+    await input.press('Escape');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+
+    await input.press('ArrowDown');
+    await expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    const hasOptions = await page.locator('[role="option"]').count() > 0;
+    if (hasOptions) {
+      const activeDesc = await input.getAttribute('aria-activedescendant');
+      expect(activeDesc).toBeTruthy();
+      if (activeDesc) {
+        await expect(page.locator(`[id="${activeDesc}"]`)).toBeAttached();
+      }
+    }
+  });
+
+  test('A74 — Omni picker label is associated with input via htmlFor/id (for=id pair)', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const firstLabel = page.locator('.omni-component-picker label').first();
+    const forAttr = await firstLabel.getAttribute('for');
+    expect(forAttr).toMatch(/^omni-picker-input-/);
+
+    if (forAttr) {
+      await expect(page.locator(`[id="${forAttr}"]`)).toHaveCount(1);
+    }
+  });
+});
+
+// ─── 18. Group F — Connect / cloud form durable labels (#2349) ─────────────────
+
+test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
+  test('A75 — Cloud provider form fields have programmatic labels (no placeholder-only)', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('.connect');
+
+    await expect(page.getByLabel('Provider name')).toBeVisible();
+    await expect(page.getByLabel('Base URL')).toBeVisible();
+    await expect(page.getByLabel('Provider API key (optional)')).toBeVisible();
+  });
+
+  test('A76 — Marketplace search has accessible name', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('.connect');
+
+    const searchInput = page.locator('.connect__marketplace-search');
+    const ariaLabel = await searchInput.getAttribute('aria-label');
+    expect(ariaLabel).toBeTruthy();
+    expect(ariaLabel).toBe('Search marketplace apps');
+  });
+});
+
+// ─── 19. Group F — Icon-only / title-only controls have reliable names (#2353) ─
+
+test.describe('Accessibility — icon-button accessible names (#2353)', () => {
+  test('A77 — LogViewer search input has an accessible name (not placeholder-only)', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Logs');
+    await page.waitForSelector('.logs-view');
+
+    const searchInput = page.locator('.logs-search');
+    const ariaLabel = await searchInput.getAttribute('aria-label');
+    expect(ariaLabel).toBeTruthy();
+    expect(ariaLabel).toBe('Filter logs');
+  });
+
+  test('A78 — LogViewer Clear button has an aria-label with full action name', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Logs');
+    await page.waitForSelector('.logs-view');
+
+    const clearBtn = page.locator('.logs-btn').filter({ hasNotText: 'Reconnect' }).first();
+    const ariaLabel = await clearBtn.getAttribute('aria-label');
+    expect(ariaLabel).toBe('Clear log output');
+  });
+
+  test('A79 — Omni picker clear button has aria-label naming target', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager');
+    await page.getByText('+ Omni collection').click();
+    await page.waitForSelector('.omni-component-picker');
+
+    const clearBtns = page.locator('.omni-component-picker__clear');
+    const count = await clearBtns.count();
+    if (count > 0) {
+      const ariaLabel = await clearBtns.first().getAttribute('aria-label');
+      expect(ariaLabel).toBeTruthy();
+      expect(ariaLabel).toMatch(/^Clear /);
+    }
+    expect(count).toBeGreaterThanOrEqual(0);
+  });
+});

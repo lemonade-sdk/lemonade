@@ -541,6 +541,15 @@ All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
 - Added always-present sr-only `role="status" aria-live="polite" aria-atomic="true"` live region inside the panel. Announces status transitions only (start / complete / error / cancelled / paused / resumed) — never on every percentage tick. Cleared when panel closes to prevent stale re-reads on reopen.
 - Tests A59–A62 added (4 new tests): role/valuenow/min/max, model-name in label, live region present.
 
+### Group F — Forms, Omni picker, icon names (2026-06-22)
+
+**Branch:** `feat/gui3-forms-icons-a11y`  
+Closes #2347 #2349 #2353
+
+23. **#2347 (Item 10)** ✅ DONE — `OmniComponentPicker` full combobox semantics: `role="combobox"`, `aria-expanded`, `aria-controls` (points to listbox), `aria-activedescendant` (tracks active option), `aria-autocomplete="list"`, arrow-key navigation (ArrowDown/Up moves active option, Enter selects, Escape closes). Options converted from `<button role="option">` to `<div role="option">` (buttons cannot own `role="option"`). HF search action moved outside the `role="listbox"` to avoid invalid owned-element violation. Clear button gained `aria-label`. Label now associated via `htmlFor`/`id` pair. Keyboard focus indicator (`.omni-component-picker__option--focused`) added to CSS.
+24. **#2349 (Item 12)** ✅ DONE — `ConnectView.tsx` cloud provider form: three bare inputs (name, base URL, API key) now have `<label className="sr-only" htmlFor=...>` with matching `id`. Edit-API-key inline input got `aria-label`. Marketplace search got `aria-label="Search marketplace apps"`. An `aria-describedby` hint span was added for the base URL format hint. Server URL and API key fields in the Server section were already correctly labeled.
+25. **#2353 (Item 16)** ✅ DONE — Swept `LogViewer.tsx` (search input → `aria-label="Filter logs"`, Clear → `aria-label="Clear log output"`, Reconnect → `aria-label="Reconnect to log stream"`), `MarkdownMessage.tsx` (code-block copy button → `aria-label="Copy code"` in generated HTML), and `OmniComponentPicker` clear button → `aria-label`.
+
 ---
 
 ## Running the Accessibility Tests
@@ -573,7 +582,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (67 tests)
+### Test groups (76 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -594,6 +603,9 @@ npm test
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
 | Model row qualified names | A46–A50 | Load/Delete/Download/Get&Load buttons include model name in aria-label; no bare generic names |
 | Download progress bar | A59–A62 | `role="progressbar"` present; aria-valuenow/min/max correct; model name in label; sr-only status live region exists |
+| Omni picker combobox (#2347) | A71–A74 | `role="combobox"` + `aria-expanded`; focus opens/Escape closes; ArrowDown opens + listbox visible; `htmlFor`/`id` label pair |
+| Connect form labels (#2349) | A75–A76 | Cloud provider fields found by `getByLabel`; marketplace search has `aria-label` |
+| Icon button names (#2353) | A77–A79 | LogViewer search `aria-label`; Clear button `aria-label`; Omni picker clear `aria-label` |
 
 ### Known limitation
 
@@ -601,4 +613,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342)*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342; Group F: combobox semantics, durable form labels, icon names)*
