@@ -58,7 +58,7 @@ struct BackendDescriptor {
     SlotPolicy slot_policy    = SlotPolicy::Standard; // default; override effective_slot_policy() if variant-dependent
     bool selectable_backend   = false;  // auto-creates "<recipe>_backend" option + "--<recipe>" flag
     bool uses_ctx_size        = false;  // opt in to the shared ctx_size option
-    bool dynamic_models       = false;  // true = class supplies models at runtime (cloud), not server_models.json
+    bool dynamic_models       = false;  // true = ops supply models at runtime (cloud, flm), not server_models.json
 
     std::vector<BackendOption>    options;                       // backend-specific knobs (common ones are automatic)
     std::vector<BackendSupport>   support;                       // which OS / GPU families it runs on ({} = no local gating)

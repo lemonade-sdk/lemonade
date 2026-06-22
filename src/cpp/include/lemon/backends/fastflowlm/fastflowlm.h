@@ -21,7 +21,7 @@ inline const BackendDescriptor descriptor = {
     /*slot_policy*/     SlotPolicy::CoexistByType,
     /*selectable_backend*/ false,
     /*uses_ctx_size*/   true,
-    /*dynamic_models*/  false,
+    /*dynamic_models*/  true,  // models come from flm's model_list.json, not server_models.json
     /*options*/ {},
     /*support*/ {
         {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
