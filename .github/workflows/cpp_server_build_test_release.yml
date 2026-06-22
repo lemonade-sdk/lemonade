@@ -1492,6 +1492,11 @@ jobs:
           /opt/bin/lemonade --version
           /opt/bin/lemond --version
 
+          rpm -qpl "$RPM_FILE" | grep -Fx "/usr/lib/systemd/user/lemond.service"
+          rpm -qpl --dump "$RPM_FILE" \
+            | grep -E '^/usr/lib/systemd/user/lemond\.service ' \
+            | grep -F "/opt/lib/systemd/user/lemond.service"
+
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})
     runs-on: ${{ matrix.os }}

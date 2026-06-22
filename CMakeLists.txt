@@ -1406,6 +1406,34 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
+    # Helper: create a systemd unit symlink with fatal-error-on-failure semantics
+    function(lemonade_install_systemd_symlink link_path target_path)
+        get_filename_component(_link_dir "${link_path}" DIRECTORY)
+
+        install(CODE "
+            set(_link \"\$ENV{DESTDIR}${link_path}\")
+            set(_target \"${target_path}\")
+
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_link_dir}\")
+
+            if(IS_SYMLINK \"\${_link}\")
+                file(REMOVE \"\${_link}\")
+            elseif(EXISTS \"\${_link}\")
+                message(FATAL_ERROR \"Refusing to replace existing non-symlink: \${_link}\")
+            endif()
+
+            execute_process(
+                COMMAND \"${CMAKE_COMMAND}\" -E create_symlink \"\${_target}\" \"\${_link}\"
+                RESULT_VARIABLE _result
+                ERROR_VARIABLE _error
+            )
+
+            if(NOT _result EQUAL 0)
+                message(FATAL_ERROR \"Failed to create systemd symlink \${_link} -> \${_target}: \${_error}\")
+            endif()
+        ")
+    endfunction()
+
     # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond.service.in
@@ -1417,17 +1445,17 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemond.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
-    # Create symlink in standard systemd search path only if not installing to /usr
+    # Create symlinks in standard systemd search paths only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemond.service\"
-            )
-        ")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/system/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
+        )
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
+        )
     endif()
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
