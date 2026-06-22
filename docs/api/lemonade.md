@@ -27,6 +27,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
+| `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -683,6 +684,9 @@ curl http://localhost:13305/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
+  },
+  "telemetry": {
+    "enabled": false
   }
 }
 ```
@@ -712,6 +716,9 @@ curl http://localhost:13305/v1/health
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `telemetry` - Structured telemetry state object:
+  - `enabled` - Boolean indicating if telemetry collection is active
+  - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1382,4 +1389,33 @@ curl http://localhost:13305/live
 
 ```json
 {"status":"ok"}
+```
+
+## Internal Endpoints
+
+Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
+
+## `POST /internal/telemetry/flush`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/telemetry/flush
+```
+
+#### Response Format
+
+Returns a JSON object indicating successful completion of the flush operation:
+
+```json
+{
+  "status": "flushed"
+}
 ```

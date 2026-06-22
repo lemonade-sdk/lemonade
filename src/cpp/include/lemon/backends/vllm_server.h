@@ -7,6 +7,8 @@
 namespace lemon {
 namespace backends {
 
+std::map<std::string, nlohmann::json> parse_vllm_metrics_text(const std::string& body);
+
 class VLLMServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
@@ -42,6 +44,10 @@ public:
                                    bool sse = true,
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
+
+    std::map<std::string, nlohmann::json> get_additional_telemetry() override;
+    std::string get_additional_telemetry_url() const override;
+    std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const override;
 
 };
 
