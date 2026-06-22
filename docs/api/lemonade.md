@@ -18,9 +18,12 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
-| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
-| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
+| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
+| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
+| `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
+| `DELETE` | [`/v1/cloud/auth/{provider}`](#delete-v1cloudauthprovider) | Clear the in-memory API key for a cloud provider |
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
@@ -112,13 +115,14 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register an Omni-Model**
 
-An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+An omni collection is a collection type that bundles several models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+| `components` | Yes | Ordered, non-empty array of model names. Each component must be a regular model. |
+| `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
 
@@ -133,6 +137,15 @@ curl -X POST http://localhost:13305/v1/pull \
     "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
 ```
+
+### Import an Exported Model File
+
+Files written by `lemonade export` (and the desktop app's Export button) are import-ready
+`/v1/pull` request bodies — POST the file contents verbatim to register and install the model.
+This works for regular models and collections alike; exported collection files additionally
+carry `components` plus a `models` array embedding each component's definition (see the
+`models` parameter above). For the file format and the export/import/Hugging Face workflows,
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ### Streaming Response (stream=true)
 
@@ -428,6 +441,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
+| `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -597,6 +611,8 @@ Error response (model not found):
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -627,6 +643,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
       "recipe_options": {
@@ -640,6 +657,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
       "recipe_options": {
@@ -650,6 +668,14 @@ curl http://localhost:13305/v1/health
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
+  "pinned_models": {
+    "transcription":0,
+    "embedding":0,
+    "image":0,
+    "llm":1,
+    "reranking":0,
+    "tts":0
+  },
   "max_models": {
     "transcription":1,
     "embedding":1,
@@ -672,10 +698,12 @@ curl http://localhost:13305/v1/health
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+- `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -719,6 +747,43 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /v1/system-stats`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Current host resource usage as measured by the Lemonade Server process. This endpoint is useful for first-party clients and dashboards that need lightweight runtime telemetry without scraping Prometheus.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/system-stats
+```
+
+### Response format
+
+```json
+{
+  "cpu_percent": 12.3,
+  "memory_gb": 8.4,
+  "gpu_percent": 45.0,
+  "vram_gb": 2.1,
+  "npu_percent": null
+}
+```
+
+**Field Descriptions:**
+
+- `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
+- `memory_gb` - System RAM currently in use, in GiB
+- `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+- `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `npu_percent` - NPU utilization percentage, or `null` when unavailable
+
+GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -946,13 +1011,23 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
+- `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
+  - `providers` - Array, one entry per installed provider:
+    - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
+    - `base_url` - Persisted base URL from `config.json`.
+    - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
+    - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
+    - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
+    - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
 
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Install or update a backend for a specific recipe/backend pair. If the backend is already installed but outdated, this endpoint updates it to the configured version.
+Install or update a backend for a specific recipe/backend pair, **or** register a cloud OpenAI-compatible provider. The request body is dispatched by the `backend` field: any value other than `"cloud"` is treated as a local backend install.
 
-### Parameters
+### Install a local backend
+
+If the backend is already installed but outdated, this endpoint updates it to the configured version.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -961,7 +1036,7 @@ Install or update a backend for a specific recipe/backend pair. If the backend i
 | `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
 | `force` | No | If `true`, bypasses hardware filtering for `unsupported` backends and attempts installation anyway. Defaults to `false`. |
 
-### Example request
+Example request:
 
 ```bash
 curl -X POST http://localhost:13305/v1/install \
@@ -973,7 +1048,7 @@ curl -X POST http://localhost:13305/v1/install \
   }'
 ```
 
-### Response format
+Response format:
 
 ```json
 {
@@ -985,19 +1060,63 @@ curl -X POST http://localhost:13305/v1/install \
 
 In case of an error, returns an `error` field with details.
 
+### Install a cloud provider
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Registers an OpenAI-compatible chat provider. The base URL is persisted to `config.json`; the optional `api_key` lives in `lemond` process memory only (cleared on restart). See the [Cloud Offload guide](../guide/configuration/cloud.md) for the full workflow.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `backend` | Yes | Must be the literal string `"cloud"`. |
+| `provider` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `api_key` | No | Optional. If set, stored in process memory; honors env-wins precedence (see `/v1/cloud/auth`). |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend": "cloud",
+    "provider": "fireworks",
+    "base_url": "https://api.fireworks.ai/inference/v1"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status": "success",
+  "backend": "cloud",
+  "provider": "fireworks",
+  "base_url": "https://api.fireworks.ai/inference/v1",
+  "models_discovered": 12,
+  "auth_state": {
+    "env_var_set": true,
+    "runtime_key_set": false
+  }
+}
+```
+
+`models_discovered` is `0` when no API key is resolvable. If `api_key` is supplied but the provider's env var is also set, the response includes a `warning` string explaining the env var took precedence.
+
 ## `POST /v1/uninstall`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Uninstall a backend for a specific recipe/backend pair. If loaded models are using that backend, they are unloaded first.
+Uninstall a backend for a specific recipe/backend pair, **or** remove a cloud provider. Dispatched by the `backend` field, mirroring `/v1/install`.
 
-### Parameters
+### Uninstall a local backend
+
+If loaded models are using that backend, they are unloaded first.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `recipe` | Yes | Recipe name |
 | `backend` | Yes | Backend name |
 
-### Example request
+Example request:
 
 ```bash
 curl -X POST http://localhost:13305/v1/uninstall \
@@ -1008,7 +1127,7 @@ curl -X POST http://localhost:13305/v1/uninstall \
   }'
 ```
 
-### Response format
+Response format:
 
 ```json
 {
@@ -1019,6 +1138,123 @@ curl -X POST http://localhost:13305/v1/uninstall \
 ```
 
 In case of an error, returns an `error` field with details.
+
+### Uninstall a cloud provider
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Removes the provider record from `config.json`, drops its in-memory API key (if any), and evicts every discovered model for that provider from the cache. Returns 404 if the provider was never installed.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `backend` | Yes | Must be the literal string `"cloud"`. |
+| `provider` | Yes | Installed provider name. |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/uninstall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend": "cloud",
+    "provider": "fireworks"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status": "success",
+  "backend": "cloud",
+  "provider": "fireworks",
+  "models_evicted": 12
+}
+```
+
+## `POST /v1/cloud/auth`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Set an in-memory API key for a previously-installed cloud provider, and trigger a refresh of that provider's discovered model list. The key lives in `lemond` process memory only — it is never written to disk and is cleared on `lemond` restart. For persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.
+
+### Authentication precedence
+
+If `LEMONADE_<PROVIDER>_API_KEY` is set in `lemond`'s environment, the env var takes precedence and this endpoint returns **409 Conflict** without storing the supplied key. This is the safety guarantee that lets an operator provision a "house" key via env without worrying about a client silently overriding it.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `provider` | Yes | Installed provider name. |
+| `api_key` | Yes | API key to store in `lemond` process memory. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/cloud/auth \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "fireworks",
+    "api_key": "fw-XXXXX"
+  }'
+```
+
+### Response format (success — 200)
+
+```json
+{
+  "provider": "fireworks",
+  "auth_state": {
+    "env_var_set": false,
+    "runtime_key_set": true
+  },
+  "models_discovered": 12
+}
+```
+
+### Response format (env-var conflict — 409)
+
+```json
+{
+  "error": {
+    "type": "auth_conflict",
+    "env_var": "LEMONADE_FIREWORKS_API_KEY",
+    "message": "LEMONADE_FIREWORKS_API_KEY is set in the lemond process; the env var takes precedence and the supplied API key was not stored."
+  }
+}
+```
+
+### Other error responses
+
+| Status | Cause |
+|---|---|
+| `400` | Body is missing `provider` or `api_key`, or one of them is empty. |
+| `404` | Provider is not installed. Call `POST /v1/install` with `backend:"cloud"` first. |
+
+## `DELETE /v1/cloud/auth/{provider}`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Clear the in-memory API key for a provider. Any env-var-based key (`LEMONADE_<PROVIDER>_API_KEY`) remains in effect. If no env-var key is set, the provider's discovered models are evicted from the catalog since they are no longer authenticatable.
+
+### Example request
+
+```bash
+curl -X DELETE http://localhost:13305/v1/cloud/auth/fireworks
+```
+
+### Response format
+
+```json
+{
+  "provider": "fireworks",
+  "cleared_runtime_key": true,
+  "auth_state": {
+    "env_var_set": false,
+    "runtime_key_set": false
+  }
+}
+```
+
+`cleared_runtime_key` is `false` when no in-memory key was present (e.g., the only key was from the env var).
 
 ## Log Streaming API (WebSocket)
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

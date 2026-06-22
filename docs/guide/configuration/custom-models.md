@@ -71,7 +71,7 @@ Supported registration flags:
 | Flag | Description |
 |------|-------------|
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `collection.omni`. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -113,6 +113,65 @@ The Omni Model editor only offers already-registered compatible models for each 
 | Text-to-speech | `text_to_speech` | `tts` or `speech` label |
 
 If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
+
+### Share a collection: export, import, and Hugging Face
+
+`lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
+collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
+`recipe`, `components`, and a `models` array embedding each component's definition, so it is
+self-contained — the importing machine does not need any of the components registered beforehand.
+Exported files never contain the user-specific runtime fields `suggested`, `created`, or `downloaded` —
+the server regenerates those on import (`suggested` is set to `true` for registered models;
+`downloaded` is computed from local files).
+
+The same file works, verbatim, in three places:
+
+- `lemonade import <CollectionName>.json` on the CLI (or **File > New Omni Model > From JSON** in the
+  desktop app).
+- `POST /v1/pull` with the file contents as the request body.
+- Uploaded to a Hugging Face model repo **named after the collection**, so that the repo contains
+  `<RepoName>.json`. `lemonade pull <org>/<repo>` looks for the manifest named after the repo,
+  then registers and downloads everything in it. The built-in `LMX-Omni-*` collections are
+  distributed this way.
+
+On import, component names that are already registered keep their local definition (differences from
+the embedded definition are logged as warnings); unknown components are registered as `user.*` models
+from the embedded definitions.
+
+Example collection file:
+
+```json
+{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "checkpoints": { "main": "" },
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny"],
+    "models": [
+        {
+            "model_name": "Qwen3-0.6B-GGUF",
+            "recipe": "llamacpp",
+            "checkpoints": { "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0" },
+            "labels": ["reasoning"],
+            "recipe_options": {},
+            "size": 0.38
+        },
+        {
+            "model_name": "Whisper-Tiny",
+            "recipe": "whispercpp",
+            "checkpoints": {
+                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
+                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            },
+            "labels": ["transcription", "realtime-transcription"],
+            "recipe_options": {},
+            "size": 0.075
+        }
+    ],
+    "labels": [],
+    "recipe_options": {}
+}
+```
 
 ### Register via API
 
@@ -249,7 +308,7 @@ This file contains a JSON object where each key is a model name and each value d
 |-------|----------|------|-------------|
 | `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
-| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
+| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
@@ -435,7 +494,7 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 2. Per-model values from `recipe_options.json`
 3. Global configuration values, see [Server Configuration](./README.md)
 
-**`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `flm_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
+**`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
 
 For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 

@@ -117,7 +117,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset windows
+          cmake --preset vs18
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -149,13 +149,13 @@ jobs:
       matrix:
         include:
           - backend: vulkan
-            runner: [self-hosted, Windows, 128gb, vulkan]
+            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
           - backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, 128gb, rocm]
+            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
           - backend: rocm
             channel: nightly
-            runner: [self-hosted, Windows, 128gb, rocm]
+            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
           # CUDA validation is prepared but intentionally disabled until an
           # NVIDIA self-hosted runner is available. To enable it, uncomment this
           # matrix entry.

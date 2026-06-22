@@ -5,8 +5,8 @@
 //
 // The value lives in toolDefinitions.json — the single source of truth shared
 // by the desktop app (here) and the C++ server-side orchestrator — so the two
-// sides cannot drift. 2:1 aspect ratio with 64-aligned dimensions for
-// compatibility across SD/SDXL/Flux variants. See SDServer::resolve_size for
+// sides cannot drift. 2:1 aspect ratio with dimensions that are valid for
+// SD/SDXL/Flux variants. See SDServer::resolve_size for
 // the server-side passthrough.
 
 import toolDefinitions from './toolDefinitions.json';

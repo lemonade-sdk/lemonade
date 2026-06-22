@@ -492,7 +492,15 @@ Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream a
 
 ### Connection
 
-The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field), then connect with the model name:
+WebSocket upgrades are accepted **directly on the main HTTP port** (default 13305) — the same port as all REST endpoints. Connect with the model name:
+
+```
+ws://localhost:13305/v1/realtime?model=Whisper-Tiny
+```
+
+Accepted paths are `/realtime` and `/logs/stream`, bare or under any of the standard prefixes (`/v1`, `/v0`, `/api/v1`, `/api/v0`), so OpenAI Realtime SDK clients (`/v1/realtime`) connect as-is. When `LEMONADE_API_KEY` is set, pass `?api_key=KEY` as a query parameter.
+
+A dedicated WebSocket port also remains for backward compatibility; it is OS-assigned and reported by the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field). New clients should prefer the main port:
 
 ```
 ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
@@ -614,6 +622,7 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
+- **Migrating off the dedicated port**: Clients that discover `websocket_port` via `/v1/health` and connect there can switch to `ws://HOST:13305/v1/realtime?model=...` — the protocol (events, audio format, auth) is identical on both ports, so it is a URL change only. This also simplifies remote setups (one port to expose) and works through reverse proxies that pass `Upgrade: websocket`. Keep the `websocket_port` fallback only if you must support servers older than this release.
 
 
 ## `POST /v1/images/generations`
@@ -949,6 +958,8 @@ Returns a list of models available on the server in an OpenAI-compatible format.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
+When `lemond` is configured with cloud providers, cloud-routed models appear here alongside local ones with `recipe: "cloud"` and a `cloud_provider` field. They are dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard chat-completions / completions requests below — see [Cloud Offload](../guide/configuration/cloud.md).
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -1038,6 +1049,8 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+  - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
+  - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{model_id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
 
 
 ### Model Labels
@@ -1105,7 +1118,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above.
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ```json
 {

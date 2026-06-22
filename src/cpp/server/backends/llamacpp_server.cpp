@@ -1,5 +1,6 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
@@ -37,7 +38,6 @@ namespace lemon {
 namespace backends {
 
 // Embedding model batch configuration set to 8192 as default
-static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
 
@@ -201,7 +201,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
 #else
         throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
 #endif
@@ -265,7 +269,6 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_device = options.get_option("llamacpp_device");
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
-
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
@@ -275,7 +278,6 @@ void LlamaCppServer::load(const std::string& model_name,
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults llamacpp to GPU, but the cpu backend runs on CPU.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
@@ -292,8 +294,9 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
     }
 
-    // Get mmproj path for vision models
+    // Get mmproj path for vision models and drafter path for mtp or other drafting strategies
     std::string mmproj_path = model_info.resolved_path("mmproj");
+    std::string draft_path = model_info.resolved_path("draft");
 
     // Choose port
     port_ = choose_port();
@@ -351,15 +354,11 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Enable context shift for vulkan/rocm/cuda (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend) ||
-        is_llamacpp_cuda_backend(llamacpp_backend)) {
-        push_overridable_arg(args, llamacpp_args, "--context-shift");
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
-    } else {
-        // For Metal, just use keep without context-shift
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
+    // Add draft model if present
+    if (!draft_path.empty()) {
+        push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
+    push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
@@ -392,11 +391,6 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "--reranking");
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
-
-    // Configure GPU layers
-    std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
-    LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
-    push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
@@ -466,7 +460,7 @@ void LlamaCppServer::load(const std::string& model_name,
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
-                    new_path = therock_bin;
+                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
                 }
             }
         }
@@ -480,23 +474,23 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         std::string arch = lemon::SystemInfo::get_rocm_arch();
-        if (arch == "gfx1151") {
+        if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
         // llama-server.exe. Prepend the executable directory to PATH so the loader
         // resolves them before any system-wide CUDA install.
-        fs::path exe_dir = fs::path(executable).parent_path();
-        std::string new_path = exe_dir.string();
+        fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
+        std::string new_path = path_to_utf8(exe_dir);
 
         const char* existing_path = std::getenv("PATH");
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
     }
 #endif
 
@@ -553,29 +547,59 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
+    std::string process_executable = executable;
+    std::string working_dir;
+#ifdef _WIN32
+    // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.
+    fs::path executable_path = fs::absolute(fs::path(executable));
+    process_executable = path_to_utf8(executable_path);
+    working_dir = path_to_utf8(executable_path.parent_path());
+#endif
+
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars);
+    set_process_handle(ProcessManager::start_process(
+        process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            ProcessManager::stop_process(handle);
+        }
         throw std::runtime_error("llama-server failed to start");
     }
 
-    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << port_ << std::endl;
+    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void LlamaCppServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-#ifdef _WIN32
-    if (process_handle_.handle) {
-#else
-    if (process_handle_.pid > 0) {
-#endif
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        ProcessManager::stop_process(handle);
+    }
+}
+
+bool LlamaCppServer::downsize() {
+    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
+    try {
+        json slots = get_slots();
+        if (slots.is_array()) {
+            for (const auto& slot : slots) {
+                if (slot.contains("id") && slot["id"].is_number()) {
+                    int id = slot["id"].get<int>();
+                    slots_action(id, "erase", json::object());
+                }
+            }
+        } else if (slots.contains("id")) {
+            slots_action(slots["id"].get<int>(), "erase", json::object());
+        }
+        return true;
+    } catch (const std::exception& e) {
+        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
+        return false;
     }
 }
 
@@ -610,128 +634,15 @@ json LlamaCppServer::reranking(const json& request) {
 }
 
 json LlamaCppServer::get_slots() {
-    // Get slot information from llama.cpp server via GET request
-    if (!is_process_running()) {
-        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
-    }
-
-    std::string url = get_base_url() + "/slots";
-    std::map<std::string, std::string> headers; // No Content-Type needed for GET
-
-    LOG(DEBUG, "LlamaCpp") << server_name_ << " GET request to /slots" << std::endl;
-
-    try {
-        auto response = utils::HttpClient::get(url, headers);
-        if (response.status_code == 200) {
-            LOG(DEBUG, "LlamaCpp") << server_name_ << " received slots response: " << response.body << std::endl;
-            return json::parse(response.body);
-        } else {
-            // Try to parse error response from backend
-            json error_details;
-            try {
-                error_details = json::parse(response.body);
-            } catch (...) {
-                error_details = response.body;
-            }
-
-            return ErrorResponse::create(
-                server_name_ + " request failed",
-                ErrorType::BACKEND_ERROR,
-                {
-                    {"status_code", response.status_code},
-                    {"response", error_details}
-                }
-            );
-        }
-    } catch (const std::exception& e) {
-        return ErrorResponse::create(
-            "HTTP request failed: " + std::string(e.what()),
-            ErrorType::NETWORK_ERROR
-        );
-    }
+    return forward_get_request("/slots");
 }
 
 json LlamaCppServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
-    // Perform action on specific slot via POST request
-    if (!is_process_running()) {
-        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
-    }
-
-    std::string url = get_base_url() + "/slots/" + std::to_string(slot_id) + "?action=" + action;
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-
-    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /slots/" << slot_id << "?action=" << action << " with body: " << request_body.dump() << std::endl;
-
-    try {
-        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
-        if (response.status_code == 200) {
-            LOG(DEBUG, "LlamaCpp") << server_name_ << " received slots action response: " << response.body << std::endl;
-            return json::parse(response.body);
-        } else {
-            // Try to parse error response from backend
-            json error_details;
-            try {
-                error_details = json::parse(response.body);
-            } catch (...) {
-                error_details = response.body;
-            }
-
-            return ErrorResponse::create(
-                server_name_ + " request failed",
-                ErrorType::BACKEND_ERROR,
-                {
-                    {"status_code", response.status_code},
-                    {"response", error_details}
-                }
-            );
-        }
-    } catch (const std::exception& e) {
-        return ErrorResponse::create(
-            "HTTP request failed: " + std::string(e.what()),
-            ErrorType::NETWORK_ERROR
-        );
-    }
+    return forward_request("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
 }
 
 json LlamaCppServer::tokenize(const json& request_body) {
-    if (!is_process_running()) {
-        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
-    }
-
-    std::string url = get_base_url() + "/tokenize";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-
-    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /tokenize with body: " << request_body.dump() << std::endl;
-
-    try {
-        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
-        if (response.status_code == 200) {
-            LOG(DEBUG, "LlamaCpp") << server_name_ << " received tokenize response: " << response.body << std::endl;
-            return json::parse(response.body);
-        } else {
-            // Try to parse error response from backend
-            json error_details;
-            try {
-                error_details = json::parse(response.body);
-            } catch (...) {
-                error_details = response.body;
-            }
-
-            return ErrorResponse::create(
-                server_name_ + " request failed",
-                ErrorType::BACKEND_ERROR,
-                {
-                    {"status_code", response.status_code},
-                    {"response", error_details}
-                }
-            );
-        }
-    } catch (const std::exception& e) {
-        return ErrorResponse::create(
-            "HTTP request failed: " + std::string(e.what()),
-            ErrorType::NETWORK_ERROR
-        );
-    }
+    return forward_request("/tokenize", request_body);
 }
 
 json LlamaCppServer::responses(const json& request) {

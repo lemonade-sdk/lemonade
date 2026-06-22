@@ -1,5 +1,5 @@
 {
-  "config_version": 1,
+  "config_version": 2,
   "port": 13305,
   "host": "localhost",
   "websocket_port": "auto",
@@ -9,7 +9,7 @@
   "no_broadcast": false,
   "extra_models_dir": "",
   "models_dir": "auto",
-  "ctx_size": 4096,
+  "ctx_size": -1,
   "offline": false,
   "no_fetch_executables": false,
   "disable_model_filtering": false,
@@ -61,5 +61,11 @@
   },
   "kokoro": {
     "cpu_bin": "builtin"
-  }
+  },
+  "moonshine": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
+  "cloud_providers": []
 }

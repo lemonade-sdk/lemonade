@@ -48,6 +48,7 @@ Engine — apply AT MOST ONE total. This is a hard rule: even if multiple seem r
 - engine::whispercpp — whisper.cpp; audio transcription
 - engine::sd         — stable-diffusion.cpp; image generation/edit/variations
 - engine::kokoro     — Kokoro TTS
+- engine::moonshine  — Moonshine; fast on-device audio transcription (ASR)
 
 Area — apply AT MOST ONE total. Same hard rule as engines. Skip if not clearly in one area:
 - area::cli       — `lemonade` CLI client (src/cpp/cli)
@@ -94,7 +95,12 @@ Rules:
 
 def run(cmd):
     return subprocess.run(
-        cmd, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     ).stdout
 
 
@@ -157,7 +163,9 @@ def classify(item, item_num):
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        sys.exit(f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}")
+        sys.exit(
+            f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}"
+        )
 
     return data["content"][0]["text"].strip()
 
@@ -170,6 +178,7 @@ KNOWN_LABELS = {
     "engine::whispercpp",
     "engine::sd",
     "engine::kokoro",
+    "engine::moonshine",
     "area::cli",
     "area::installer",
     "area::api",
@@ -351,7 +360,9 @@ def parse_decision(decision, existing):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("items", nargs="+", type=int, help="Issue or PR numbers")
-    p.add_argument("--dry-run", action="store_true", help="Print decisions; do not apply")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print decisions; do not apply"
+    )
     p.add_argument("--repo", help="OWNER/REPO; defaults to current repo")
     p.add_argument(
         "--priority-only",

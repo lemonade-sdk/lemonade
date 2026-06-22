@@ -3,12 +3,14 @@
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
 #include "lemon_cli/bench.h"
+#include "lemon_cli/chat_repl.h"
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
+#include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -25,11 +27,14 @@
 #include <functional>
 #include <map>
 #include <vector>
+#include <optional>
 
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <shellapi.h>
+    #include <io.h>
+    #include <windows.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -38,6 +43,7 @@
     #include <sys/wait.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <termios.h>
 #endif
 
 #include "lemon/utils/aixlog.hpp"
@@ -56,7 +62,8 @@ static const std::vector<std::string> VALID_LABELS = {
 static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
-    "opencode"
+    "opencode",
+    "pi"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -148,7 +155,9 @@ struct CliConfig {
     std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
+    std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
+    bool backends_showall = false;
     bool force = false;
     std::string output_file;
     bool downloaded = false;
@@ -164,9 +173,59 @@ struct CliConfig {
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
 
+    // Cloud provider commands
+    std::string cloud_provider;
+    std::string cloud_base_url;
+    std::string cloud_api_key;
+
+    // Chat REPL options
+    bool chat_cli = false;
+    bool chat_no_stream = false;
+    std::string chat_system_prompt;
+
     // Bench command options
     lemon_cli::BenchCliOptions bench;
 };
+
+// Read a line from stdin with terminal echo disabled, so secrets (API keys,
+// passwords) don't linger in scrollback / screen-share. Returns the typed
+// line (without trailing newline). Falls back to plain getline if the
+// terminal can't be put into no-echo mode — better to keep the prompt
+// usable than to refuse it.
+static std::string read_secret_line() {
+    std::string out;
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    bool restored = false;
+    if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
+        SetConsoleMode(h, mode & ~ENABLE_ECHO_INPUT);
+        restored = true;
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        SetConsoleMode(h, mode);
+    }
+#else
+    struct termios old_tio{}, new_tio{};
+    bool restored = false;
+    if (tcgetattr(fileno(stdin), &old_tio) == 0) {
+        new_tio = old_tio;
+        new_tio.c_lflag &= ~ECHO;
+        if (tcsetattr(fileno(stdin), TCSANOW, &new_tio) == 0) {
+            restored = true;
+        }
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        tcsetattr(fileno(stdin), TCSANOW, &old_tio);
+    }
+#endif
+    // Echo a newline so the cursor advances — the user's Enter was swallowed
+    // along with the rest of the input when echo was off.
+    std::cout << std::endl;
+    return out;
+}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -378,13 +437,37 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
         return 1;
     }
 
-    // Check if model is downloaded
-    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
-        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
-        return 1;
+    // Pre-emptive capacity check
+    std::vector<std::string> labels;
+    if (model_info.contains("labels") && model_info["labels"].is_array()) {
+        for (const auto& label : model_info["labels"]) {
+            labels.push_back(label.get<std::string>());
+        }
+    }
+    lemon::ModelType model_type = lemon::get_model_type_from_labels(labels);
+    std::string type_str = lemon::model_type_to_string(model_type);
+
+    try {
+        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        auto health_json = nlohmann::json::parse(health_str);
+        if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
+            auto max_models = health_json["max_models"];
+            auto pinned_models = health_json["pinned_models"];
+            int max = max_models.value(type_str, -1);
+            int pinned_count = pinned_models.value(type_str, 0);
+            if (max != -1 && pinned_count >= max) {
+                std::cerr << "Warning: All slots (" << max << ") for model type '" << type_str
+                          << "' are occupied by pinned models. Loading will fail." << std::endl;
+            }
+        }
+    } catch (...) {
+        // Ignore errors checking health status pre-emptively
     }
 
-    bool is_downloaded = model_info["downloaded"].get<bool>();
+    bool is_downloaded = false;
+    if (model_info.contains("downloaded") && model_info["downloaded"].is_boolean()) {
+        is_downloaded = model_info["downloaded"].get<bool>();
+    }
 
     if (!is_downloaded) {
         std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
@@ -399,7 +482,15 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
+}
+
+static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    lemon_cli::ChatOptions options;
+    options.initial_model = config.model;
+    options.system_prompt = config.chat_system_prompt;
+    options.stream = !config.chat_no_stream;
+    return lemon_cli::run_chat_repl(client, options);
 }
 
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
@@ -410,6 +501,10 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
     int load_result = handle_load_command(client, config);
     if (load_result != 0) {
         return load_result;
+    }
+
+    if (config.chat_cli) {
+        return handle_chat_command(client, config);
     }
 
     open_url(config.host, config.port);
@@ -440,7 +535,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         return result;
     }
 
-    return client.list_recipes();
+    return client.list_recipes(config.backends_showall);
 }
 
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
@@ -517,6 +612,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     const lemon_cli::AgentConfigProfile* profile = nullptr;
     if (config.agent == "opencode") {
         profile = &lemon_cli::opencode_profile();
+    } else if (config.agent == "pi") {
+        profile = &lemon_cli::pi_profile();
     }
 
     if (profile == nullptr) {
@@ -538,6 +635,18 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
+    }
+
+    if (config.agent == "pi") {
+        // Only write settings.json if pi doesn't already have a default provider/model.
+        // This preserves existing user configuration while providing seamless first-time UX.
+        if (!lemon_cli::pi_has_default_config()) {
+            std::string settings_error;
+            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
+                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        }
     }
 }
 
@@ -1049,10 +1158,12 @@ int main(int argc, char* argv[]) {
     // Quick start commands
     CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+    CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
-    CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
     backends_cmd->alias("recipes");
+    backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
@@ -1073,6 +1184,8 @@ int main(int argc, char* argv[]) {
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* pin_cmd = app.add_subcommand("pin", "Pin a loaded model to prevent eviction")->group("Model management");
+    CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
@@ -1087,6 +1200,31 @@ int main(int argc, char* argv[]) {
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
+
+    // Cloud provider commands. `cloud` is a subcommand group with install /
+    // uninstall / auth / list. Mirrors the `backends` group shape on purpose
+    // so muscle memory transfers.
+    CLI::App* cloud_cmd = app.add_subcommand("cloud", "Manage cloud OpenAI-compatible providers")->group("Server");
+    CLI::App* cloud_install_cmd = cloud_cmd->add_subcommand("install", "Register a cloud provider")->group("Subcommands");
+    cloud_install_cmd->add_option("provider", config.cloud_provider, "Provider name (e.g. fireworks, openai)")->required()->type_name("PROVIDER");
+    cloud_install_cmd->add_option("--base-url", config.cloud_base_url, "OpenAI-compat base URL (must include /v1)")->required()->type_name("URL");
+    cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
+        "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
+        ->type_name("KEY");
+
+    CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
+    cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_auth_cmd = cloud_cmd->add_subcommand("auth", "Set a runtime API key (in-memory only)")->group("Subcommands");
+    cloud_auth_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+    cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
+        "API key. If omitted you'll be prompted (TTY only).")
+        ->type_name("KEY");
+
+    CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
+    cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
 
     // Pull options
     pull_cmd->add_option("model", config.model,
@@ -1133,17 +1271,35 @@ int main(int argc, char* argv[]) {
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
+    static bool load_pinned_flag = false;
     load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
+    static bool run_pinned_flag = false;
     run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
+    run_cmd->add_flag("--chat-cli", config.chat_cli,
+        "After loading, open an interactive chat REPL in the terminal instead of the browser");
+
+    // Chat options
+    chat_cmd->add_option("model", config.model,
+        "Model to chat with (optional; uses currently loaded model if omitted)")->type_name("MODEL");
+    chat_cmd->add_option("--system", config.chat_system_prompt,
+        "System prompt to seed the conversation")->type_name("TEXT");
+    chat_cmd->add_flag("--no-stream", config.chat_no_stream,
+        "Disable streaming; print the full response when it is ready");
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
+
+    // Pin/unpin options
+    pin_cmd->add_option("model", config.model, "Model name to pin")->required()->type_name("MODEL");
+    unpin_cmd->add_option("model", config.model, "Model name to unpin")->required()->type_name("MODEL");
 
     // Export options
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
@@ -1206,6 +1362,20 @@ int main(int argc, char* argv[]) {
         }
         return app.exit(e);
     }
+
+    if (load_cmd->count() > 0) {
+        if (load_cmd->count("--pinned") > 0) {
+            config.pinned = load_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    } else if (run_cmd->count() > 0) {
+        if (run_cmd->count("--pinned") > 0) {
+            config.pinned = run_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
@@ -1267,16 +1437,67 @@ int main(int argc, char* argv[]) {
         return client.delete_model(config.model);
     } else if (run_cmd->count() > 0) {
         return handle_run_command(client, config);
+    } else if (chat_cmd->count() > 0) {
+        return handle_chat_command(client, config);
     } else if (load_cmd->count() > 0) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (pin_cmd->count() > 0) {
+        return client.pin_model(config.model, true);
+    } else if (unpin_cmd->count() > 0) {
+        return client.pin_model(config.model, false);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
     } else if (backends_cmd->count() > 0) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);
+    } else if (cloud_cmd->count() > 0) {
+        if (cloud_install_cmd->count() > 0) {
+            return client.install_cloud_provider(config.cloud_provider,
+                                                  config.cloud_base_url,
+                                                  config.cloud_api_key);
+        }
+        if (cloud_uninstall_cmd->count() > 0) {
+            return client.uninstall_cloud_provider(config.cloud_provider);
+        }
+        if (cloud_auth_cmd->count() > 0) {
+            // Interactive prompt only when the user didn't pass --api-key and
+            // stdin is a TTY. In non-interactive contexts (CI, pipes) refuse
+            // rather than silently hang on getline.
+            std::string key = config.cloud_api_key;
+            if (key.empty()) {
+#ifdef _WIN32
+                bool is_tty = _isatty(_fileno(stdin)) != 0;
+#else
+                bool is_tty = isatty(fileno(stdin)) != 0;
+#endif
+                if (!is_tty) {
+                    std::cerr << "Error: --api-key is required when stdin is not a TTY"
+                              << std::endl;
+                    return 1;
+                }
+                std::cout << "API key for " << config.cloud_provider
+                          << " (input hidden): ";
+                std::cout.flush();
+                key = read_secret_line();
+                if (key.empty()) {
+                    std::cerr << "Error: empty API key" << std::endl;
+                    return 1;
+                }
+            }
+            return client.cloud_auth(config.cloud_provider, key);
+        }
+        if (cloud_clear_cmd->count() > 0) {
+            return client.cloud_auth_clear(config.cloud_provider);
+        }
+        if (cloud_list_cmd->count() > 0) {
+            return client.cloud_list();
+        }
+        // No subcommand specified: print help.
+        std::cout << cloud_cmd->help() << std::endl;
+        return 0;
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {

@@ -125,8 +125,9 @@ def get_hf_cache_dir_candidates():
     return candidates
 
 
-# Default port for lemonade server
-PORT = 13305
+# Default port for lemonade server (override with LEMONADE_TEST_PORT to test
+# against a non-default port, e.g. when a production lemond owns 13305)
+PORT = int(os.environ.get("LEMONADE_TEST_PORT", "13305"))
 
 # =============================================================================
 # TIMEOUT CONSTANTS (in seconds)
@@ -138,6 +139,11 @@ TIMEOUT_MODEL_OPERATION = 500
 
 # For requests that don't download a model (health, unload, stats, etc.)
 TIMEOUT_DEFAULT = 60
+
+# For pre-warming the ROCm (TheRock) runtime, which downloads a ~4.5 GB tarball
+# on a cold cache. Generous so a slow/interrupted download does not blow the
+# tighter per-request inference timeout above.
+TIMEOUT_ROCM_INSTALL = 1800
 
 # Standard test messages for chat completions
 STANDARD_MESSAGES = [

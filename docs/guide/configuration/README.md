@@ -8,13 +8,26 @@ Lemonade Server starts automatically with the OS after installation. Configurati
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux (systemd):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+
+  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
 
 If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
 
 > Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
+
+### Seeding defaults for packaged installs
+
+On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+
+1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+
+Values set in the user's `config.json` always take precedence over these seeded defaults.
 
 ### Example config.json
 
@@ -29,7 +42,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "no_broadcast": false,
   "extra_models_dir": "",
   "models_dir": "auto",
-  "ctx_size": 4096,
+  "ctx_size": -1,
   "offline": false,
   "no_fetch_executables": false,
   "disable_model_filtering": false,
@@ -93,7 +106,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
-| `ctx_size` | int | 4096 | Default context size for LLM models |
+| `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `offline` | bool | false | Skip model downloads |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
@@ -148,6 +161,15 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
+
+**cloud_providers** — Cloud OpenAI-compatible providers (see [Cloud Offload](./cloud.md)). Array, one object per installed provider:
+
+| Key | Description |
+|-----|-------------|
+| `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+
+API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
 ### Backend binary selection
 
@@ -243,8 +265,12 @@ lemond --port 9000 --host 0.0.0.0
 If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux
+# Linux (Debian/Ubuntu)
 sudo nano /var/lib/lemonade/.cache/lemonade/config.json
+
+# Linux (Fedora/Red Hat)
+sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
