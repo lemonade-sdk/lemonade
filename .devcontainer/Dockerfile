@@ -13,7 +13,7 @@ RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
     python3 \
-    python3-pip \
+    python3-pip \los
     python3-dev \
     python3-venv \
     python3-setuptools \
