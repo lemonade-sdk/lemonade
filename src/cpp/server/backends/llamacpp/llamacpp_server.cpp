@@ -7,6 +7,7 @@
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <filesystem>
+#include <regex>
 #include <system_error>
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
@@ -662,6 +663,44 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 namespace {
+std::string system_llamacpp_version() {
+    std::string output;
+    #ifdef _WIN32
+    std::string command = "llama-server --version 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
+    #else
+    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
+    if (!pipe) {
+        return "unknown";
+    }
+
+    char buffer[256];
+    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output = buffer;
+    }
+
+    pclose(pipe);
+    #endif
+
+    // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
+    if (!output.empty()) {
+        // Try to find a version number
+        std::regex version_regex(R"(version:\s*(\d+)|version\s+b?(\d+))");
+        std::smatch match;
+        if (std::regex_search(output, match, version_regex)) {
+            for (size_t i = 1; i < match.size(); ++i) {
+                if (match[i].matched) {
+                    return "b" + match[i].str();
+                }
+            }
+        }
+        return "detected";
+    }
+
+    return "unknown";
+}
+
+
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
@@ -725,6 +764,15 @@ public:
         bool ok = in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
                   magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
         return ok ? "" : "Invalid GGUF cache file";
+    }
+
+    std::string resolve_version(const std::string& backend,
+                                const std::string& file_version) const override {
+        // The PATH-installed "system" llama-server has no version.txt; query it.
+        if (backend == "system") {
+            return system_llamacpp_version();
+        }
+        return file_version;
     }
 };
 }  // namespace

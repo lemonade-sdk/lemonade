@@ -507,6 +507,14 @@ public:
     }
 
     bool invalidates_cache_after_download() const override { return true; }
+
+    std::string resolve_version(const std::string&, const std::string& file_version) const override {
+        // On Linux FLM is a system package with no version.txt; query the CLI.
+        if (file_version.empty() || file_version == "unknown") {
+            return flm_version();
+        }
+        return file_version;
+    }
 };
 }  // namespace
 

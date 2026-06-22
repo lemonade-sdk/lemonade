@@ -530,6 +530,75 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
 }
 
 
+std::string flm_version() {
+    // Cache real version strings to avoid spawning the subprocess twice per
+    // build_recipes_info() pass. "unknown" is NOT cached so that post-install
+    // verification in fastflowlm_server.cpp gets a fresh result after FLM is installed.
+    static std::string cached_version;
+    if (!cached_version.empty()) {
+        return cached_version;
+    }
+
+    // Find the flm executable using shared utility
+    std::string flm_path = lemon::utils::find_flm_executable();
+    if (flm_path.empty() || !lemon::utils::is_safe_executable_path(flm_path)) {
+        return "unknown";
+    }
+
+    std::string output;
+    #ifdef _WIN32
+    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
+    #else
+    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        return "unknown";
+    }
+
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+    pclose(pipe);
+    #endif
+
+    // Parse JSON output: { "version": "0.9.34" }
+    try {
+        json j = lemon::utils::JsonUtils::parse(output);
+        if (j.contains("version") && j["version"].is_string()) {
+            std::string version = j["version"].get<std::string>();
+            // If the version doesn't start with 'v', prepend it
+            // for backend_versions.json compatibility (e.g. "v0.9.34").
+            if (!version.empty() && version[0] != 'v') {
+                version = "v" + version;
+            }
+            cached_version = version;
+            return cached_version;
+        }
+    } catch (...) {
+        // Fallback to legacy parsing if JSON parsing fails
+    }
+
+    // Legacy parsing from output like "FLM v0.9.4"
+    if (output.find("FLM v") != std::string::npos) {
+        size_t pos = output.find("FLM v");
+        // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
+        std::string version = output.substr(pos + 4);
+        // Trim whitespace and newlines
+        size_t end = version.find_first_of(" \t\n\r");
+        if (end != std::string::npos) {
+            version = version.substr(0, end);
+        }
+        cached_version = version;
+        return cached_version;
+    }
+
+    return "unknown";
+}
+
+
 } // namespace fastflowlm
 } // namespace backends
 } // namespace lemon

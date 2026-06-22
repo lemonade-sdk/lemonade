@@ -88,6 +88,17 @@ public:
     // Whether the model cache must be rebuilt after this backend downloads a
     // model (e.g. flm, whose model list changes). Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
+
+    // Resolve a backend's installed version for a given backend variant. The
+    // caller passes the version read from the on-disk version.txt (or "" if
+    // absent); the default returns it unchanged. Backends that detect their
+    // version another way override: llamacpp's "system" build runs
+    // `llama-server --version`; flm queries `flm version` when no file is present.
+    virtual std::string resolve_version(const std::string& backend,
+                                        const std::string& file_version) const {
+        (void)backend;
+        return file_version;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.

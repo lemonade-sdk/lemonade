@@ -34,6 +34,9 @@ std::filesystem::path find_flm_config_path_from_repo_dir(const std::string& repo
 // Read the model's max context window from its FLM config.json (0 if unknown).
 int64_t read_flm_max_context_window(const ModelInfo& info);
 
+// Detect the installed FLM version via `flm version` ("unknown" if unavailable).
+std::string flm_version();
+
 // Download (pull) an FLM model by checkpoint via the `flm` CLI.
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback);

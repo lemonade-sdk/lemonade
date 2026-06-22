@@ -8,6 +8,7 @@
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
@@ -609,31 +610,22 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
-    if (recipe == "llamacpp" && backend == "system") {
-        return SystemInfo::get_system_llamacpp_version();
-    }
+    // Read the on-disk version.txt generically, then let the backend's ops
+    // override (llamacpp "system" runs llama-server --version; flm queries the
+    // CLI when no file is present). No per-recipe branches here.
     auto* spec = try_get_spec_for_recipe(recipe);
+    std::string file_version;
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
-        if (version_file.empty()) {
-#ifndef _WIN32
-            // On Linux, FLM is a system package with no version.txt - query directly
-            if (recipe == "flm") {
-                return SystemInfo::get_flm_version();
-            }
-#endif
-            return "unknown";
+        if (!version_file.empty()) {
+            file_version = read_version_file(version_file);
         }
-        std::string version = read_version_file(version_file);
-#ifndef _WIN32
-        // On Linux, version.txt may not exist on disk for system-installed FLM
-        if (recipe == "flm" && (version.empty() || version == "unknown")) {
-            return SystemInfo::get_flm_version();
-        }
-#endif
-        return version;
     }
-    return "";
+    std::string resolved = backends::ops_for(recipe)->resolve_version(backend, file_version);
+    if (!spec && resolved.empty()) {
+        return "";
+    }
+    return resolved.empty() ? "unknown" : resolved;
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
@@ -1681,43 +1673,6 @@ static std::string read_version_file(const fs::path& version_file) {
     return "unknown";
 }
 
-std::string SystemInfo::get_system_llamacpp_version() {
-    std::string output;
-    #ifdef _WIN32
-    std::string command = "llama-server --version 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    #else
-    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
-    if (!pipe) {
-        return "unknown";
-    }
-
-    char buffer[256];
-    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output = buffer;
-    }
-
-    pclose(pipe);
-    #endif
-
-    // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
-    if (!output.empty()) {
-        // Try to find a version number
-        std::regex version_regex(R"(version:\s*(\d+)|version\s+b?(\d+))");
-        std::smatch match;
-        if (std::regex_search(output, match, version_regex)) {
-            for (size_t i = 1; i < match.size(); ++i) {
-                if (match[i].matched) {
-                    return "b" + match[i].str();
-                }
-            }
-        }
-        return "detected";
-    }
-
-    return "unknown";
-}
-
 // Map a CUDA Compute Capability "MAJOR.MINOR" string (as reported by nvidia-smi
 // --query-gpu=compute_cap) to the sm_XX token used in llamacpp-cuda release filenames.
 // Returns empty if the value cannot be parsed.
@@ -2264,74 +2219,6 @@ bool SystemInfo::get_has_igpu() {
     }
 
     return false;  // No iGPU detected
-}
-
-std::string SystemInfo::get_flm_version() {
-    // Cache real version strings to avoid spawning the subprocess twice per
-    // build_recipes_info() pass. "unknown" is NOT cached so that post-install
-    // verification in fastflowlm_server.cpp gets a fresh result after FLM is installed.
-    static std::string cached_version;
-    if (!cached_version.empty()) {
-        return cached_version;
-    }
-
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return "unknown";
-    }
-
-    std::string output;
-    #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    #else
-    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return "unknown";
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-    #endif
-
-    // Parse JSON output: { "version": "0.9.34" }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("version") && j["version"].is_string()) {
-            std::string version = j["version"].get<std::string>();
-            // If the version doesn't start with 'v', prepend it
-            // for backend_versions.json compatibility (e.g. "v0.9.34").
-            if (!version.empty() && version[0] != 'v') {
-                version = "v" + version;
-            }
-            cached_version = version;
-            return cached_version;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
-    }
-
-    // Legacy parsing from output like "FLM v0.9.4"
-    if (output.find("FLM v") != std::string::npos) {
-        size_t pos = output.find("FLM v");
-        // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
-        std::string version = output.substr(pos + 4);
-        // Trim whitespace and newlines
-        size_t end = version.find_first_of(" \t\n\r");
-        if (end != std::string::npos) {
-            version = version.substr(0, end);
-        }
-        cached_version = version;
-        return cached_version;
-    }
-
-    return "unknown";
 }
 
 // ============================================================================
