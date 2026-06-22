@@ -158,7 +158,10 @@
 }
 
 html, body {
-  overflow-x: hidden;
+  /* clip (not hidden) hides horizontal overflow WITHOUT creating a scroll
+     container, so descendant `position: sticky` (the scrollytelling graphic)
+     still works. overflow:hidden would silently break it. */
+  overflow-x: clip;
   width: 100%;
 }
 
@@ -482,7 +485,7 @@ body.install-options {
   width: 100%;
   margin: 0 auto;
   position: relative;
-  overflow-x: hidden;
+  overflow-x: clip;   /* clip, not hidden -> doesn't break sticky descendants */
 }
 
 .main > * {

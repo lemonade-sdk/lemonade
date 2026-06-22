@@ -17,34 +17,14 @@
   <div class="navbar-placeholder"></div>
 
   <main class="main hp-main">
-    <!-- ==================== PERSONA HERO ==================== -->
-    <section class="hp-persona-hero" aria-labelledby="personaHeroTitle">
-      <div class="hp-persona-layout">
-        <div class="hp-persona-left">
-          <div class="hp-persona-copy">
-            <h1 class="hp-persona-title" id="personaHeroTitle">One click. Everything AI can do.</h1>
-            <p class="hp-persona-subtitle" id="personaHeroSubtitle">Install once and the whole local-AI world opens up on any PC, fully private.</p>
-          </div>
-          <div class="hp-stack-col">
-            <div class="hp-stack" id="personaStack" role="tablist" aria-label="Persona stack"></div>
-            <button class="hp-autoplay-toggle is-on" id="personaAutoplay" type="button" role="switch" aria-checked="true" aria-label="Autoplay">
-              <span class="hp-autoplay-switch"><span class="hp-autoplay-knob"></span></span>
-              <span class="hp-autoplay-text">Autoplay</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="hp-demo-stage" aria-live="polite">
-          <div class="hp-demo-frame" id="personaDemoFrame"></div>
-          <p class="hp-demo-caption" id="personaDemoCaption"></p>
-        </div>
-      </div>
+    <!-- ==================== PERSONA PROMISE ==================== -->
+    <section class="hp-persona-promise" aria-labelledby="personaHeroTitle">
+      <h1 class="hp-persona-title" id="personaHeroTitle">One click. Everything AI can do.</h1>
+      <p class="hp-persona-subtitle" id="personaHeroSubtitle">Install once and the whole local-AI world opens up on any PC, fully private.</p>
     </section>
 
-    <!-- ==================== GETTING STARTED ==================== -->
-    <section class="hp-section hp-reveal" id="getting-started">
-      <h2 class="hp-section-heading">Quickstart</h2>
-
+    <!-- ==================== CTA: QUICKSTART (User persona) ==================== -->
+    <section class="hp-section" id="getting-started" data-cta-persona="people">
       <div class="gs-platforms" id="gsPlatforms">
         <button class="gs-platform" type="button" data-platform="windows">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
@@ -83,6 +63,26 @@
       <div class="gs-install" id="gsInstall"></div>
       <div class="gs-quickstart" id="gsQuickstart"></div>
     </section>
+
+    <!-- ==================== CTA: BUILD (Developer persona) ==================== -->
+    <section class="hp-section" id="dev-cta" data-cta-persona="developers">
+      <div class="hp-devcta-actions">
+        <a class="hp-devcta-btn is-primary" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">code</span> Start building
+        </a>
+        <button class="hp-devcta-btn" type="button" id="devCtaTestDrive">
+          <span class="material-symbols-outlined">play_circle</span> Test-drive the capabilities
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== PERSONA JOURNEY (overview map + unrolled sections) ==================== -->
+    <div class="hp-persona-progress" id="personaProgress" hidden aria-hidden="true"></div>
+    <header class="hp-zone-head">
+      <h2 class="hp-zone-heading" id="personaZoneHeading"></h2>
+    </header>
+    <section class="hp-persona-map" id="personaMap" aria-label="Journey overview"></section>
+    <div class="hp-persona-journey" id="personaJourney"></div>
 
     <!-- ==================== CURRENT HERO, PRESERVED BELOW QUICKSTART ==================== -->
     <section class="hp-hero hp-legacy-hero hp-reveal">
@@ -351,6 +351,7 @@
   <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
   <script src="assets/flowchart.js"></script>
+  <script src="assets/scrollama.min.js"></script>
   <script src="assets/persona-demo.js"></script>
   <script>
 

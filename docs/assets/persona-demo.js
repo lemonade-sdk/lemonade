@@ -1,36 +1,35 @@
 // ============================================================================
 // Persona-demo hero
 // ----------------------------------------------------------------------------
-// Drives the interactive hero on the homepage: the People/Developers persona
-// toggle, the step "stack" with its autoplay progress bar, and the demo frame
-// that renders terminals, app mockups, and — for the developer persona — the
-// router flowcharts.
+// Drives the homepage persona content: an overview MAP (people = journey path,
+// developers = stack diagram) followed by the steps UNROLLED into one scroll
+// section each. Each section's demo loops while it is in view (an Intersection
+// Observer starts/stops a per-section timer that re-renders the current slide)
+// and freezes off-screen. The map collapses into a sticky progress bar as you
+// scroll. Persona is toggled by navbar.js (data-persona + lemonadePersonaChange).
 //
-// The flowchart diagrams themselves live in flowchart.js (window.LemonadeFlowchart);
-// this module just hands that renderer its autoplay cadence so the animation
-// cycle stays locked to the progress bar. Requires flowchart.js to load first.
+// The flowchart diagrams live in flowchart.js (window.LemonadeFlowchart); this
+// module hands that renderer the loop cadence. Requires flowchart.js first.
 // ============================================================================
 (function () {
-  var stackEl = document.getElementById('personaStack');
-  var demoEl = document.getElementById('personaDemoFrame');
-  var captionEl = document.getElementById('personaDemoCaption');
   var titleEl = document.getElementById('personaHeroTitle');
   var subtitleEl = document.getElementById('personaHeroSubtitle');
-  var autoplayToggle = document.getElementById('personaAutoplay');
-  if (!stackEl || !demoEl || !captionEl || !titleEl || !subtitleEl) return;
+  var mapEl = document.getElementById('personaMap');
+  var journeyEl = document.getElementById('personaJourney');
+  var progressEl = document.getElementById('personaProgress');
+  var zoneEl = document.getElementById('personaZoneHeading');
+  if (!titleEl || !subtitleEl || !mapEl || !journeyEl) return;
 
-  var activeStep = 0;
-  var activeSlide = 0;
-  var autoplayTimer = null;
-  var autoplayPaused = false;
-  var slideShownAt = Date.now();
-  var defaultAutoplayDelay = 5200;
-  var animationSubsectionDelay = 2450;
+  var defaultAutoplayDelay = 5200;       // base in-view loop interval
+  var animationSubsectionDelay = 2450;   // flowchart cadence (passed through)
   var animationSubsectionGap = 350;
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var STEP_ICONS = ['explore', 'database', 'apps', 'terminal', 'dns'];  // people steps
   var personaSteps = {
     people: {
       title: 'Run AI on your personal hardware.',
       subtitle: 'Lemonade is a refreshingly simple, free and open-source way to run AI locally. It optimizes for your device, stays private, and works from desktop, server, or mobile.',
+      zone: 'Get to know Lemonade',
       label: 'User journey',
       steps: [
         {
@@ -190,6 +189,7 @@
     developers: {
       title: 'One router. Every backend. Any app.',
       subtitle: 'Embed lemond behind one clean OpenAI-compatible API and ship local AI across CPU, GPU, NPU, RAM, and cloud.',
+      zone: 'Dive into the software stack',
       label: 'Software stack',
       steps: [
         {
@@ -348,12 +348,6 @@
 
   function currentPersona() {
     return document.documentElement.getAttribute('data-persona') || 'people';
-  }
-
-  function activeSlideData(persona) {
-    var data = personaSteps[persona || currentPersona()] || personaSteps.people;
-    var step = data.steps[activeStep] || data.steps[0];
-    return step && step.slides ? step.slides[activeSlide] : null;
   }
 
   function animationSubsections(slide) {
@@ -850,42 +844,44 @@
     return appWindow(board.title, '<div class="hp-backend-board">' + html + '</div>', 'hp-backend-window is-dark');
   }
 
-  function renderDemo(step) {
-    var slide = step.slides && step.slides[activeSlide];
+  // Render one slide's demo into a given section frame + caption.
+  function renderDemo(frameEl, captionEl, step, slideIndex) {
+    var slide = step.slides && step.slides[slideIndex];
     var demoKind = (slide && slide.demo) || step.demo;
     var captionText = slide && Object.prototype.hasOwnProperty.call(slide, 'caption') ? slide.caption : (step.copy || '');
     var captionHref = slide && slide.captionHref;
     var mode = animationMode(slide);
-    if (captionText && captionHref) {
-      captionEl.innerHTML = '<a class="hp-demo-caption-link" href="' + escapeText(captionHref) + '" target="_blank" rel="noopener">' +
-        escapeText(captionText) + ' <span class="hp-demo-caption-arrow" aria-hidden="true">&#8594;</span></a>';
-    } else {
-      captionEl.textContent = captionText;
+    if (captionEl) {
+      if (captionText && captionHref) {
+        captionEl.innerHTML = '<a class="hp-demo-caption-link" href="' + escapeText(captionHref) + '" target="_blank" rel="noopener">' +
+          escapeText(captionText) + ' <span class="hp-demo-caption-arrow" aria-hidden="true">&#8594;</span></a>';
+      } else {
+        captionEl.textContent = captionText;
+      }
+      captionEl.hidden = !captionText;
     }
-    captionEl.hidden = !captionText;
-    demoEl.setAttribute('data-animation-mode', mode);
+    frameEl.setAttribute('data-animation-mode', mode);
     if (demoKind.indexOf('router-') === 0 || demoKind === 'spawn-app' || demoKind === 'deploy-everywhere') {
-      // Flowchart diagrams come from the flowchart.js module. Hand it our
-      // autoplay cadence so its SMIL cycle stays aligned with the progress bar.
-      demoEl.innerHTML = window.LemonadeFlowchart.render(demoKind, {
+      // Flowchart diagrams come from the flowchart.js module; hand it our cadence.
+      frameEl.innerHTML = window.LemonadeFlowchart.render(demoKind, {
         subsectionDelay: animationSubsectionDelay,
         subsectionGap: animationSubsectionGap,
         minCycle: defaultAutoplayDelay
       });
     } else if (demoKind.indexOf('explore-') === 0) {
-      demoEl.innerHTML = exploreDemo(demoKind);
+      frameEl.innerHTML = exploreDemo(demoKind);
     } else if (demoKind.indexOf('models-') === 0) {
-      demoEl.innerHTML = modelsDemo(demoKind);
+      frameEl.innerHTML = modelsDemo(demoKind);
     } else if (demoKind.indexOf('apps-') === 0) {
-      demoEl.innerHTML = appStore(demoKind);
+      frameEl.innerHTML = appStore(demoKind);
     } else if (demoKind === 'private-app') {
-      demoEl.innerHTML = privateApp();
+      frameEl.innerHTML = privateApp();
     } else if (demoKind.indexOf('backend-') === 0) {
-      demoEl.innerHTML = backendBoard(demoKind);
+      frameEl.innerHTML = backendBoard(demoKind);
     } else {
-      demoEl.innerHTML = commandDemo(demoKind);
+      frameEl.innerHTML = commandDemo(demoKind);
     }
-    startSvgAnimations(demoEl);
+    startSvgAnimations(frameEl);
   }
 
   // WebKit/Safari does not begin SMIL timelines for SVG inserted via innerHTML
@@ -908,125 +904,281 @@
     }
   }
 
-  function renderStack(persona, stepIndex, slideIndex) {
+  // ---- Overview map (people = journey path; developers = stack diagram) ------
+  // Also fills the condensed sticky progress bar with the same step nodes.
+  function buildMap(persona) {
     var data = personaSteps[persona] || personaSteps.people;
     var steps = data.steps;
-    activeStep = Math.max(0, Math.min(stepIndex || 0, steps.length - 1));
-    activeSlide = Math.max(0, Math.min(slideIndex || 0, ((steps[activeStep].slides || []).length || 1) - 1));
+    var isDev = persona === 'developers';
+
+    if (isDev) {
+      // A layered stack: static App / hardware frame rows around the interactive
+      // step layers (App-facing at top → hardware at the bottom).
+      mapEl.className = 'hp-persona-map is-stack';
+      mapEl.innerHTML =
+        '<div class="hp-map-layer is-static"><span class="hp-map-label">Your App</span></div>' +
+        steps.map(function(step, i) {
+          return '<a class="hp-map-layer hp-map-node" href="#persona-step-' + i + '" data-step="' + i + '">' +
+              '<span class="hp-map-index">' + (i + 1) + '</span>' +
+              '<span class="hp-map-label">' + escapeText(step.title) + '</span>' +
+            '</a>';
+        }).join('') +
+        '<div class="hp-map-layer is-static"><span class="hp-map-label">CPU · GPU · NPU · Cloud</span></div>';
+    } else {
+      mapEl.className = 'hp-persona-map is-path';
+      mapEl.innerHTML = '<div class="hp-map-path">' + steps.map(function(step, i) {
+        return '<a class="hp-map-node" href="#persona-step-' + i + '" data-step="' + i + '" style="--idx:' + i + '">' +
+            '<span class="hp-map-index">' + (i + 1) + '</span>' +
+            '<span class="hp-map-icon"><span class="material-symbols-outlined">' + (STEP_ICONS[i] || 'circle') + '</span></span>' +
+            '<span class="hp-map-label">' + escapeText(step.eyebrow || step.title) + '</span>' +
+          '</a>';
+      }).join('') + '</div>';
+    }
+
+    if (progressEl) {
+      progressEl.innerHTML = '<div class="hp-progress-inner">' + steps.map(function(step, i) {
+        var badge = isDev
+          ? '<span class="hp-progress-num">' + (i + 1) + '</span>'
+          : '<span class="hp-progress-icon"><span class="material-symbols-outlined">' + (STEP_ICONS[i] || 'circle') + '</span></span>';
+        return '<a class="hp-progress-node" href="#persona-step-' + i + '" data-step="' + i + '">' +
+            badge + '<span class="hp-progress-label">' + escapeText(step.eyebrow || step.title) + '</span>' +
+          '</a>';
+      }).join('') + '</div>';
+    }
+  }
+
+  // ---- Per-step scrollytelling controller ----------------------------------
+  // No timers -- the scroll IS the pace. Each slide is a "step" of text; the demo
+  // graphic pins (CSS sticky) and, as a step scrolls to the trigger line, the
+  // matching slide renders into the pinned graphic and plays its entrance once.
+  // The grid-stacked layers cross-fade between slides.
+  function makeController(sectionEl, step) {
+    var slides = step.slides && step.slides.length ? step.slides : [{ label: step.title, demo: step.demo }];
+    return {
+      sectionEl: sectionEl,
+      frameEl: sectionEl.querySelector('.hp-demo-frame'),
+      stepsEls: sectionEl.querySelectorAll('.hp-scrolly-step'),
+      layers: sectionEl.querySelectorAll('.hp-demo-slide'),
+      step: step,
+      slides: slides,
+      current: -1,
+      // Cross-fade the pinned graphic to slide j. The caption text is static in
+      // the scroll steps, so renderDemo gets a null caption element; re-rendering
+      // the layer replays that demo's entrance animation as you arrive at it.
+      // skipRender just swaps which layer is visible without re-rendering -- used
+      // for slide 0, which is rendered once at build and shown (settled) as the
+      // section heading scrolls in, so it never "replays" under the heading.
+      show: function (j, skipRender) {
+        if (j < 0 || j >= this.layers.length) return;
+        this.current = j;
+        if (!skipRender) renderDemo(this.layers[j], null, this.step, j);
+        for (var k = 0; k < this.layers.length; k++) {
+          this.layers[k].classList.toggle('is-active', k === j);
+        }
+        for (var s = 0; s < this.stepsEls.length; s++) {
+          this.stepsEls[s].classList.toggle('is-active', s === j);
+        }
+      }
+    };
+  }
+
+  var sectionCtrls = [];
+  var scroller = null;
+  var progressObserver = null;
+  var journeyObserver = null;
+  var primeObserver = null;
+
+  // ---- Build the scrollytelling sections -----------------------------------
+  function buildSections(persona) {
+    var data = personaSteps[persona] || personaSteps.people;
     titleEl.textContent = data.title;
     subtitleEl.textContent = data.subtitle;
-    stackEl.setAttribute('aria-label', data.label);
-    stackEl.innerHTML = steps.map(function(step, index) {
-      var minorControls = index === activeStep && step.slides ? '<span class="hp-minor-segments" role="group" aria-label="' + escapeText(step.title) + ' slides">' +
-        step.slides.map(function(slide, slideIndex) {
-          var isActive = slideIndex === activeSlide;
-          var mode = animationMode(slide);
-          return '<button class="hp-minor-segment' + (isActive ? ' is-active' : '') + '" type="button" data-step="' + index + '" data-slide="' + slideIndex + '" data-animation-mode="' + escapeText(mode) + '">' +
-            '<span>' + escapeText(slide.label) + '</span>' +
-            (isActive ? '<i class="hp-autoplay-progress" aria-hidden="true"></i>' : '') +
-          '</button>';
-        }).join('') +
-      '</span>' : '';
-      return '<div class="hp-stack-item' + (index === activeStep ? ' is-active' : '') + '" role="tab" tabindex="0" aria-selected="' + (index === activeStep ? 'true' : 'false') + '" data-step="' + index + '">' +
-        '<span class="hp-stack-index">' + String(index + 1).padStart(2, '0') + '</span>' +
-        '<span class="hp-stack-body">' +
-          '<strong>' + escapeText(step.title) + '</strong>' +
-          (index === activeStep ? '<span class="hp-stack-copy">' + escapeText(step.copy) + '</span>' : '') +
-          minorControls +
-        '</span>' +
-      '</div>';
+    if (zoneEl) zoneEl.textContent = data.zone || '';
+    journeyEl.setAttribute('aria-label', data.label);
+    journeyEl.innerHTML = data.steps.map(function(step, i) {
+      var slides = step.slides && step.slides.length ? step.slides : [{ label: step.title, demo: step.demo }];
+      // One grid-stacked, cross-faded demo layer per slide (inside the pinned graphic).
+      var layers = slides.map(function(slide, j) {
+        return '<div class="hp-demo-slide' + (j === 0 ? ' is-active' : '') + '" data-slide="' + j + '"></div>';
+      }).join('');
+      // One scroll "step" per slide: number + label + caption/link. The section's
+      // heading (eyebrow/title/copy) is MERGED into the first step, so "section
+      // heading" and "slide 1" are the same scroll beat -- entering the section
+      // and reaching slide 1 happen together, with no separate heading region
+      // that would show a finished demo and then replay it at slide 1.
+      var steps = slides.map(function(slide, j) {
+        var cap = slide.caption || '';
+        var capHtml = cap
+          ? (slide.captionHref
+              ? '<a class="hp-demo-caption-link" href="' + escapeText(slide.captionHref) + '" target="_blank" rel="noopener">' +
+                  escapeText(cap) + ' <span class="hp-demo-caption-arrow" aria-hidden="true">&#8594;</span></a>'
+              : escapeText(cap))
+          : '';
+        var intro = j === 0
+          ? '<div class="hp-scrolly-intro">' +
+              '<span class="hp-section-eyebrow">' + escapeText(step.eyebrow || ('0' + (i + 1))) + '</span>' +
+              '<h2 class="hp-section-title">' + escapeText(step.title) + '</h2>' +
+              '<p class="hp-section-copy">' + escapeText(step.copy || '') + '</p>' +
+            '</div>'
+          : '';
+        return '<div class="hp-scrolly-step' + (j === 0 ? ' is-lead is-active' : '') + '" data-step="' + i + '" data-slide="' + j + '">' +
+            intro +
+            '<div class="hp-scrolly-row">' +
+              '<span class="hp-scrolly-step-num">' + (j + 1) + '</span>' +
+              '<div class="hp-scrolly-step-body">' +
+                '<span class="hp-scrolly-step-label">' + escapeText(slide.label) + '</span>' +
+                (capHtml ? '<p class="hp-scrolly-step-caption">' + capHtml + '</p>' : '') +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+      // No hp-reveal here: the generic reveal observer only runs once at load, so
+      // a hp-reveal section rebuilt on persona switch would stay invisible. The
+      // scrollytelling steps + demos provide their own scroll-driven reveal.
+      return '<section class="hp-persona-section hp-scrolly" id="persona-step-' + i + '" data-step="' + i + '" data-side="' + (i % 2 ? 'right' : 'left') + '">' +
+          '<div class="hp-scrolly-graphic">' +
+            '<div class="hp-demo-frame">' + layers + '</div>' +
+          '</div>' +
+          '<div class="hp-scrolly-steps">' +
+            steps +
+          '</div>' +
+        '</section>';
     }).join('');
-    renderDemo(steps[activeStep]);
-    slideShownAt = Date.now();
-    scheduleAutoplay();
-  }
 
-  stackEl.addEventListener('click', function(event) {
-    // Selecting a section/slide no longer halts autoplay -- that's the toggle's job.
-    var minor = event.target.closest && event.target.closest('.hp-minor-segment');
-    if (minor) {
-      renderStack(currentPersona(), Number(minor.getAttribute('data-step')) || 0, Number(minor.getAttribute('data-slide')) || 0);
-      return;
+    sectionCtrls = [];
+    var sections = journeyEl.querySelectorAll('.hp-persona-section');
+    for (var i = 0; i < sections.length; i++) {
+      sectionCtrls.push(makeController(sections[i], data.steps[i]));
     }
-    var button = event.target.closest && event.target.closest('.hp-stack-item');
-    if (!button) return;
-    renderStack(currentPersona(), Number(button.getAttribute('data-step')) || 0);
-  });
-
-  stackEl.addEventListener('keydown', function(event) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    pauseAutoplay();
-    event.preventDefault();
-    var direction = event.key === 'ArrowDown' ? 1 : -1;
-    var data = personaSteps[currentPersona()] || personaSteps.people;
-    renderStack(currentPersona(), (activeStep + direction + data.steps.length) % data.steps.length);
-  });
-
-  function updateAutoplayToggle() {
-    if (!autoplayToggle) return;
-    var on = !autoplayPaused;
-    autoplayToggle.classList.toggle('is-on', on);
-    autoplayToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    // Slide 0 is NOT rendered here: that would fire its entrance animation at
+    // page load (before you ever scroll to the section). It's primed lazily as
+    // each section approaches the viewport instead (see primeObserver).
   }
 
-  if (autoplayToggle) {
-    autoplayToggle.addEventListener('click', function() {
-      autoplayPaused = !autoplayPaused;
-      updateAutoplayToggle();
-      scheduleAutoplay();
+  function setActiveStep(i) {
+    var nodes = document.querySelectorAll('.hp-map-node, .hp-progress-node');
+    for (var k = 0; k < nodes.length; k++) {
+      var on = Number(nodes[k].getAttribute('data-step')) === i;
+      nodes[k].classList.toggle('is-active', on);
+      if (on) nodes[k].setAttribute('aria-current', 'step'); else nodes[k].removeAttribute('aria-current');
+    }
+  }
+
+  // ---- Scrollama: scroll position drives which slide the pinned graphic shows -
+  function setupScroller() {
+    // The condensed progress bar is shown ONLY while you're inside the journey
+    // zone: scrolled below the overview map, but not yet past the last section.
+    // Two observers track those two edges; the bar reflects their AND, so it
+    // slides away again once you exit the zone (scroll past the whole journey).
+    if (progressEl && mapEl) {
+      var pastMap = false, pastJourney = false;
+      var syncBar = function () {
+        var show = pastMap && !pastJourney;
+        progressEl.hidden = !show;
+        progressEl.classList.toggle('is-shown', show);
+      };
+      progressObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          pastMap = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+        });
+        syncBar();
+      }, { threshold: 0 });
+      progressObserver.observe(mapEl);
+
+      journeyObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          pastJourney = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+        });
+        syncBar();
+      }, { threshold: 0 });
+      journeyObserver.observe(journeyEl);
+    }
+    setActiveStep(0);
+
+    // Prime each section's slide 0 just as the section approaches the viewport,
+    // so its entrance animation plays as you scroll in (not at page load). The
+    // negative bottom margin fires it once the section's top reaches ~80% down.
+    primeObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (!entry.isIntersecting) return;
+        var i = Number(entry.target.getAttribute('data-step')) || 0;
+        var ctrl = sectionCtrls[i];
+        if (ctrl && ctrl.current < 0) ctrl.show(0);   // render + animate slide 0
+        primeObserver.unobserve(entry.target);
+      });
+    }, { threshold: 0, rootMargin: '0px 0px -20% 0px' });
+    var primeSecs = journeyEl.querySelectorAll('.hp-persona-section');
+    for (var p = 0; p < primeSecs.length; p++) primeObserver.observe(primeSecs[p]);
+
+    // Graceful degradation: if scrollama is unavailable the primed first frames
+    // still render on approach -- the page just doesn't advance past slide 0.
+    if (!window.scrollama) return;
+    scroller = window.scrollama();
+    // offset 0.3: the demo grips a slide when its (top-aligned) heading reaches
+    // ~the top third / center of the pinned demo, not a third up from the bottom.
+    scroller.setup({ step: '.hp-scrolly-step', offset: 0.3 }).onStepEnter(function(resp) {
+      var i = Number(resp.element.getAttribute('data-step')) || 0;
+      var j = Number(resp.element.getAttribute('data-slide')) || 0;
+      var ctrl = sectionCtrls[i];
+      // Slides 1+ render so they animate as you scroll to them. Slide 0 skips the
+      // re-render only if it was already primed on approach (current === 0), so it
+      // doesn't replay under the heading; otherwise (fast scroll) it renders here.
+      if (ctrl) ctrl.show(j, j === 0 && ctrl.current === 0);
+      setActiveStep(i);
     });
   }
 
-  function nextDepthFirst(persona) {
-    var data = personaSteps[persona] || personaSteps.people;
-    var steps = data.steps;
-    var step = steps[activeStep] || steps[0];
-    var slideCount = (step && step.slides && step.slides.length) || 1;
-    if (activeSlide + 1 < slideCount) {
-      renderStack(persona, activeStep, activeSlide + 1);
-      return;
-    }
-    renderStack(persona, (activeStep + 1) % steps.length, 0);
+  function rebuild(persona) {
+    if (scroller && scroller.destroy) { scroller.destroy(); scroller = null; }
+    if (progressObserver) { progressObserver.disconnect(); progressObserver = null; }
+    if (journeyObserver) { journeyObserver.disconnect(); journeyObserver = null; }
+    if (primeObserver) { primeObserver.disconnect(); primeObserver = null; }
+    buildMap(persona);
+    buildSections(persona);
+    setupScroller();
+    if (progressEl) { progressEl.hidden = true; progressEl.classList.remove('is-shown'); }
   }
 
-  function scheduleAutoplay() {
-    clearTimeout(autoplayTimer);
-    updateAutoplayToggle();
-    var slide = activeSlideData(currentPersona());
-    // Every slide advances after a single playback cycle; 'repeat' slides still
-    // loop visually while displayed (the carousel just moves on after one pass).
-    var playbackDuration = playbackCycleDuration(slide);
-    var delay = playbackDuration;
-    stackEl.style.setProperty('--hp-playback-duration', playbackDuration + 'ms');
-    stackEl.setAttribute('data-animation-mode', animationMode(slide));
-    if (autoplayPaused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      stackEl.setAttribute('data-autoplay', 'paused');
-      return;
-    }
-    stackEl.setAttribute('data-autoplay', 'running');
-    // For a non-looping (play-once) slide, advance when its animation finishes:
-    // delay minus however long it's already been on screen (0 if already done,
-    // so flipping autoplay on after a finished one-shot advances immediately).
-    // Looping ('repeat') slides keep their full per-cycle delay.
-    if (animationMode(slide) !== 'repeat') {
-      delay = Math.max(0, delay - (Date.now() - slideShownAt));
-    }
-    autoplayTimer = setTimeout(function() {
-      nextDepthFirst(currentPersona());
-    }, delay);
+  // Keep scrollama's trigger math correct when the viewport resizes.
+  window.addEventListener('resize', function () { if (scroller && scroller.resize) scroller.resize(); });
+
+  function jumpTo(i) {
+    var sec = document.getElementById('persona-step-' + i);
+    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function pauseAutoplay() {
-    autoplayPaused = true;
-    scheduleAutoplay();
+  [mapEl, progressEl].forEach(function(el) {
+    if (!el) return;
+    el.addEventListener('click', function(event) {
+      var node = event.target.closest && event.target.closest('[data-step]');
+      if (!node) return;
+      event.preventDefault();
+      jumpTo(Number(node.getAttribute('data-step')) || 0);
+    });
+  });
+
+  // Dev CTA "Test-drive" → switch to the User persona via the navbar toggle (so
+  // all of navbar.js's side effects fire); fall back to a direct rebuild.
+  var testDrive = document.getElementById('devCtaTestDrive');
+  if (testDrive) {
+    testDrive.addEventListener('click', function() {
+      var btn = document.querySelector('[data-persona-option="people"]');
+      if (btn) {
+        btn.click();
+      } else {
+        document.documentElement.setAttribute('data-persona', 'people');
+        rebuild('people');
+      }
+      var promise = document.getElementById('personaHeroTitle');
+      if (promise && promise.scrollIntoView) promise.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   window.addEventListener('lemonadePersonaChange', function(event) {
-    autoplayPaused = false;
-    renderStack((event.detail && event.detail.persona) || currentPersona(), 0);
+    rebuild((event.detail && event.detail.persona) || currentPersona());
   });
-  document.addEventListener('DOMContentLoaded', function() {
-    renderStack(currentPersona(), 0);
-  });
-  renderStack(currentPersona(), 0);
+
+  function init() { rebuild(currentPersona()); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();

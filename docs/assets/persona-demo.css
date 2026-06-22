@@ -8,24 +8,6 @@
    defined on .hp-main in website-styles.css and inherit down.
    ============================================================================ */
 /* --- Persona Hero Base --- */
-.hp-persona-hero {
-  width: 100%;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: var(--page-space-md) 1.5rem 0;
-  position: relative;
-}
-
-.hp-persona-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-  max-width: 1000px;
-  position: relative;
-  z-index: 3;
-}
-
 .hp-persona-title {
   margin: 0;
   font-family: var(--font-display);
@@ -48,310 +30,400 @@
   text-wrap: balance;
 }
 
-/* --- Persona Stack Hero --- */
-.hp-persona-layout {
-  width: min(1180px, 100%);
-  display: grid;
-  grid-template-columns: minmax(340px, 0.92fr) minmax(360px, 1.08fr);
-  grid-template-areas:
-    "copy copy"
-    "stack demo";
-  gap: clamp(1.6rem, 3.2vw, 4rem);
-  align-items: center;
-}
-
-.hp-persona-left {
-  display: contents;
-}
-
-.hp-persona-left .hp-persona-copy {
-  grid-area: copy;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  justify-self: center;
-  max-width: 960px;
-}
-
-.hp-persona-left .hp-persona-title {
-  font-size: clamp(2.8rem, 5.6vw, 5rem);
-}
-
-.hp-persona-left .hp-persona-subtitle {
-  font-size: clamp(1rem, 1.55vw, 1.22rem);
-}
-
-/* Stack of sections + the autoplay toggle share the grid's "stack" cell, as a
-   column, so the toggle sits directly below the stack (not auto-placed). */
-.hp-stack-col {
-  grid-area: stack;
-  align-self: center;
-  display: flex;
-  flex-direction: column;
-}
-
-.hp-stack {
-  display: grid;
-  gap: 0.42rem;
-}
-
-.hp-stack-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.9rem;
+/* The promise (headline + subtitle) at the top of the page. */
+.hp-persona-promise {
   width: 100%;
-  padding: 0.75rem 0.9rem;
-  border: 0;
-  border-radius: 22px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: var(--page-space-md) 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  text-align: center;
 }
 
-.hp-stack-item:hover,
-.hp-stack-item:focus-visible {
-  background: rgba(255, 255, 255, 0.36);
+/* ---- Persona-aware CTA: show one block per persona (toggled by data-persona) -- */
+html[data-persona="developers"] [data-cta-persona="people"],
+html:not([data-persona="developers"]) [data-cta-persona="developers"] {
+  display: none;
 }
 
-.hp-stack-item.is-active {
-  transform: none;
-  background: rgba(255, 255, 255, 0.82);
-  padding: 1rem;
-  box-shadow:
-    0 14px 34px rgba(92, 75, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+/* Top-of-page vertical rhythm on the major-fourth scale: the promise sits md
+   below the navbar, the CTA sits lg below the promise, and the zone heading sits
+   xl below the CTA (an ascending fourth each step). The CTA overrides .hp-section's
+   default xxl top so the promise -> CTA gap isn't oversized. */
+#getting-started,
+#dev-cta {
+  padding-top: var(--page-space-lg);
 }
 
-.hp-stack-item:focus-visible {
-  outline: 3px solid rgba(252, 216, 70, 0.36);
-  outline-offset: 3px;
-}
-
-.hp-stack-index {
-  width: 2rem;
-  height: 2rem;
+.hp-devcta-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+.hp-devcta-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(252, 216, 70, 0.62);
-  color: #1a1a1a;
+  gap: 0.45rem;
+  padding: 0.7rem 1.3rem;
+  border-radius: var(--radius-btn);
   font-family: var(--font-display);
-  font-size: 0.76rem;
-  font-weight: 900;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--outline-variant);
+  background: var(--glass-bg);
+  color: var(--text-primary);
 }
-
-.hp-stack-item.is-active .hp-stack-index {
-  width: 2.25rem;
-  height: 2.25rem;
+.hp-devcta-btn .material-symbols-outlined { font-size: 1.2rem; }
+.hp-devcta-btn.is-primary {
   background: var(--primary-yellow);
   color: var(--on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-yellow);
 }
 
-/* Autoplay on/off toggle, below the stack of sections. */
-.hp-autoplay-toggle {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 0.6rem;
-  margin-top: var(--page-space-sm);
-  padding: 0.35rem 0.1rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-family: var(--font-display);
-  font-size: 0.92rem;
-  font-weight: 700;
-  transition: color 0.2s ease;
-}
-
-.hp-autoplay-toggle:hover,
-.hp-autoplay-toggle:focus-visible {
-  color: var(--text-primary);
-}
-
-.hp-autoplay-switch {
-  position: relative;
-  width: 2.5rem;
-  height: 1.35rem;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: rgba(140, 140, 140, 0.38);
-  transition: background 0.2s ease;
-}
-
-.hp-autoplay-knob {
-  position: absolute;
-  top: 0.19rem;
-  left: 0.19rem;
-  width: 0.97rem;
-  height: 0.97rem;
-  border-radius: 50%;
-  background: #f6f6f2;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.hp-autoplay-toggle.is-on .hp-autoplay-switch {
-  background: var(--primary-yellow);
-}
-
-.hp-autoplay-toggle.is-on .hp-autoplay-knob {
-  transform: translateX(1.15rem);
-  background: var(--accent-gold);
-}
-
-.hp-stack-body {
-  display: grid;
-  gap: 0.42rem;
-}
-
-.hp-stack-body strong {
-  font-family: var(--font-display);
-  font-size: 1.04rem;
-  font-weight: 900;
-  line-height: 1.16;
-  color: var(--text-primary);
-}
-
-.hp-stack-copy {
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.36;
-}
-
-.hp-minor-segments {
-  display: grid;
-  gap: 0.35rem;
-  padding-top: 0.35rem;
-}
-
-.hp-minor-segment {
-  min-height: 2.15rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 5rem;
-  align-items: center;
-  gap: 0.72rem;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-family: var(--font-display);
-  font-size: 0.82rem;
-  font-weight: 850;
-  line-height: 1.1;
-  padding: 0.45rem 0.62rem;
-  text-align: left;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.hp-minor-segment[data-animation-mode="none"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.hp-minor-segment[data-animation-mode="none"].is-active {
-  grid-template-columns: minmax(0, 1fr) 5rem;
-}
-
-.hp-minor-segment:hover,
-.hp-minor-segment:focus-visible,
-.hp-minor-segment.is-active {
-  background: rgba(252, 216, 70, 0.2);
-  color: var(--text-primary);
-  box-shadow: none;
-}
-
-.hp-autoplay-progress {
+/* ---- Overview map ------------------------------------------------------- */
+.hp-persona-map {
   width: 100%;
-  height: 0.34rem;
-  display: block;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(45, 47, 47, 0.1);
+  max-width: 1000px;
+  margin: var(--page-space-md) auto 0;
+  padding: 0 1.5rem;
 }
 
-.hp-autoplay-progress::before {
-  content: '';
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--primary-yellow);
-  transform: scaleX(0);
-  transform-origin: left center;
-}
-
-.hp-minor-segment.is-active .hp-autoplay-progress::before {
-  animation: hpAutoplayProgress var(--hp-playback-duration, 5.2s) linear forwards;
-}
-
-.hp-stack[data-animation-mode="repeat"] .hp-minor-segment.is-active .hp-autoplay-progress::before {
-  animation-iteration-count: infinite;
-}
-
-@keyframes hpAutoplayProgress {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-.hp-demo-stage {
-  grid-area: demo;
+/* People: a numbered journey path with a connector line behind the badges. */
+.hp-map-path { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.hp-map-node {
   position: relative;
-  min-height: 500px;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 0.4rem;
+  text-decoration: none;
+  color: var(--text-secondary);
+}
+.hp-map-path .hp-map-node::before {
+  content: '';
+  position: absolute;
+  top: 1rem;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--outline-variant);
+  z-index: 0;
+}
+.hp-map-path .hp-map-node:first-child::before { display: none; }
+.hp-map-index {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(252, 216, 70, 0.62);
+  color: var(--on-primary);
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+.hp-map-icon { display: inline-flex; color: var(--accent-gold); }
+.hp-map-icon .material-symbols-outlined { font-size: 1.25rem; }
+.hp-map-label { font-family: var(--font-display); font-size: 0.82rem; font-weight: 700; text-align: center; line-height: 1.2; }
+.hp-map-node.is-active { color: var(--text-primary); }
+.hp-map-node.is-active .hp-map-index { background: var(--primary-yellow); box-shadow: var(--shadow-yellow); }
+
+/* Developers: a layered stack diagram (App → steps → hardware). */
+/* Compact stack: tight rows so 5 steps + the App/hardware frame don't sprawl. */
+.hp-persona-map.is-stack { max-width: 460px; display: flex; flex-direction: column; gap: 0.3rem; }
+.hp-map-layer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-primary);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+.hp-map-layer.is-static {
+  justify-content: center;
+  padding: 0.34rem;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--outline-variant);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+.hp-map-layer.hp-map-node .hp-map-label { text-align: left; font-size: 0.86rem; font-weight: 800; }
+.hp-map-layer.is-active { border-color: rgba(252, 216, 70, 0.5); box-shadow: var(--shadow-light); }
+.hp-map-layer .hp-map-index { width: 1.5rem; height: 1.5rem; font-size: 0.74rem; }
+
+/* ---- Condensed progress bar -- position:fixed (sticky is broken here because
+   <main> has overflow-x:hidden, which makes its overflow-y compute to auto and
+   captures sticking). Fixed pins reliably to the viewport top on scroll. ------ */
+.hp-persona-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 21;
+  padding: 0.5rem 1rem;
+  background: var(--glass-bg-dense);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--outline-variant);
+  transform: translateY(-110%);
+  transition: transform 0.28s ease;
+}
+.hp-persona-progress.is-shown { transform: none; }
+.hp-persona-progress[hidden] { display: none; }
+.hp-progress-inner { display: flex; align-items: center; justify-content: center; gap: 0.4rem; max-width: 1000px; margin: 0 auto; flex-wrap: wrap; }
+.hp-progress-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-btn);
+  text-decoration: none;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.hp-progress-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: rgba(252, 216, 70, 0.5);
+  color: var(--on-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.hp-progress-icon { display: inline-flex; }
+.hp-progress-icon .material-symbols-outlined { font-size: 1.05rem; }
+.hp-progress-node.is-active { color: var(--text-primary); background: rgba(252, 216, 70, 0.16); }
+.hp-progress-node.is-active .hp-progress-num { background: var(--primary-yellow); }
+
+/* ---- Zone heading -- announces entering the journey, above the overview map. */
+.hp-zone-head {
+  width: min(1180px, 100%);
+  margin: var(--page-space-xl) auto 0;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+.hp-zone-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 4.2vw, 3rem);
+  font-weight: 800;
+  line-height: 1.08;
+  color: var(--text-primary);
+}
+
+/* ---- Scrollytelling sections (pinned demo + scroll-driven steps) ----------
+   Each step is a 2-col block: the graphic column's demo pins (position: sticky)
+   while the steps column scrolls past it. Scrollama swaps the pinned demo as
+   each step reaches the trigger line, so the visitor sets the pace by scrolling.
+   align-items:start is required for the sticky child to have travel room. */
+.hp-persona-section {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: grid;
+  gap: clamp(1.6rem, 4vw, 4.5rem);
+  grid-template-columns: minmax(360px, 1.04fr) minmax(320px, 0.96fr);
+  grid-template-areas: "graphic steps";
+  align-items: start;
+}
+.hp-persona-section[data-side="right"] {
+  grid-template-columns: minmax(320px, 0.96fr) minmax(360px, 1.04fr);
+  grid-template-areas: "steps graphic";
+}
+
+/* Pinned demo, TOP-aligned in its sticky region (sits high, near the top of the
+   viewport) so the section heading reads level with the top of the demo rather
+   than floating against its center. top clears the condensed progress bar; the
+   graphic is shorter than the steps column so it sticks through the whole block. */
+.hp-scrolly-graphic {
+  grid-area: graphic;
+  position: sticky;
+  top: 5rem;
+  height: min(82vh, 660px);
+  display: grid;
+  place-items: start center;
+}
+
+.hp-scrolly-steps {
+  grid-area: steps;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Each slide is a scroll step with dwell room so its demo holds the view. The
+   inactive steps dim; the active one (set by Scrollama) reads at full strength.
+   The first step (.is-lead) carries the section heading merged in above its row,
+   so it gets extra height. */
+/* Top-aligned content so the heading sits at the TOP of each step's region (it
+   reads level with the top of the pinned demo). Because the heading is now at
+   the step's top edge -- the exact thing Scrollama measures -- the demo grip
+   fires when the heading itself crosses the trigger line, not when the tall
+   step's far-above top edge does (which used to grip far too early). */
+.hp-scrolly-step {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-top: 4vh;
+  gap: 1.4rem;
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+/* The lead step stacks the section heading above the first slide's row -- give
+   it extra height and a wider gap so the two headings aren't cramped together. */
+.hp-scrolly-step.is-lead {
+  min-height: 88vh;
+  gap: clamp(2.75rem, 6vh, 4.5rem);
+}
+.hp-scrolly-step.is-active { opacity: 1; }
+
+/* The merged section heading (eyebrow / title / copy) at the top of step 1. */
+.hp-scrolly-intro { max-width: 34rem; }
+
+/* The numbered slide row (number badge + label + caption). */
+.hp-scrolly-row {
+  display: flex;
+  align-items: center;
   gap: 1rem;
 }
 
-.hp-demo-stage::before {
-  content: '';
-  position: absolute;
-  inset: 6% 2%;
-  border-radius: 48px;
-  background:
-    radial-gradient(circle at 32% 28%, rgba(252, 216, 70, 0.34), transparent 32%),
-    radial-gradient(circle at 74% 72%, rgba(255, 255, 255, 0.7), transparent 34%);
-  filter: blur(22px);
-  opacity: 0.9;
+.hp-scrolly-step-num {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--glass-bg-dense);
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.hp-scrolly-step.is-active .hp-scrolly-step-num {
+  background: var(--primary-yellow);
+  border-color: transparent;
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+.hp-scrolly-step-body { min-width: 0; }
+.hp-scrolly-step-label {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.hp-scrolly-step-caption {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-body);
+  font-size: clamp(0.95rem, 1.4vw, 1.05rem);
+  line-height: 1.55;
+  color: var(--text-secondary);
 }
 
+.hp-section-eyebrow {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+  margin-bottom: 0.5rem;
+}
+.hp-section-title {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.hp-section-copy {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: clamp(0.96rem, 1.5vw, 1.08rem);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 36rem;
+}
+/* ---- Demo stage: stacked, cross-faded slide layers ----------------------
+   The frame is a transparent, fixed-height stage. Each slide is its own layer,
+   absolutely positioned so re-rendering one never reflows the page (no scroll
+   jank) — only opacity animates between them (the old-hero cross-fade). The
+   demos bring their own surfaces (app window / terminal / router stage), so the
+   stage itself carries no card chrome. */
 .hp-demo-frame {
   position: relative;
   width: min(620px, 100%);
   min-height: 420px;
-  border: 1px solid rgba(45, 47, 47, 0.1);
+  overflow: visible;            /* let app-window drop shadows spill past the stage */
+  display: grid;                /* all slides share one cell -> stage = tallest slide */
+}
+
+/* Every slide occupies the SAME grid cell, so the stage auto-sizes to the
+   tallest slide and the layers overlap for the cross-fade. They stay in normal
+   flow (not absolute), so the stage keeps a stable, content-derived height; each
+   demo re-renders to the same height (entrance motion is opacity/transform only),
+   so re-rendering the active layer never reflows the page -> no scroll jank. */
+.hp-demo-slide {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;          /* center the self-contained windows */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+.hp-demo-slide.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+/* Full-bleed demos (terminal, router stage) fill the stage and self-round,
+   since the stage no longer clips. Window-based demos size themselves. */
+.hp-demo-slide > .hp-demo-terminal,
+.hp-demo-slide > .hp-router-demo {
+  width: 100%;
+  height: 100%;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow:
-    0 34px 110px rgba(92, 75, 0, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
   overflow: hidden;
 }
 
+/* Caption lives in the text column (left), beneath the copy — left-aligned and
+   full-width, kept in sync with the rotating slide by the controller. */
 .hp-demo-caption {
   position: relative;
   z-index: 1;
-  width: min(620px, 100%);
-  min-height: 3.4rem;
-  margin: 0;
+  margin: 0.9rem 0 0;
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: clamp(0.94rem, 1.25vw, 1.04rem);
   font-weight: 620;
   line-height: 1.42;
-  text-align: center;
+  text-align: left;
   text-wrap: balance;
 }
 
@@ -1412,8 +1484,8 @@
   transform: none;
 }
 
-.hp-demo-frame[data-animation-mode="once"] .hp-demo-terminal code .hp-terminal-line,
-.hp-demo-frame[data-animation-mode="repeat"] .hp-demo-terminal code .hp-terminal-line {
+.hp-demo-slide[data-animation-mode="once"] .hp-demo-terminal code .hp-terminal-line,
+.hp-demo-slide[data-animation-mode="repeat"] .hp-demo-terminal code .hp-terminal-line {
   opacity: 0;
   transform: translateY(0.22rem);
   animation: hpTerminalLineIn 0.28s ease forwards;
@@ -1442,205 +1514,80 @@
 }
 
 
-[data-persona="developers"] .hp-stack-item {
-  background: transparent;
-  box-shadow: none;
-}
-
-[data-persona="developers"] .hp-stack-item:hover,
-[data-persona="developers"] .hp-stack-item:focus-visible {
-  background: rgba(255, 255, 255, 0.045);
-}
-
-[data-persona="developers"] .hp-stack-item.is-active {
-  background: rgba(252, 216, 70, 0.08);
-  border-color: rgba(252, 216, 70, 0.34);
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-[data-persona="developers"] .hp-stack {
-  background: transparent;
-  box-shadow: none;
-}
-
-[data-persona="developers"] .hp-autoplay-progress {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 [data-persona="developers"] .hp-demo-caption {
   color: var(--text-secondary);
 }
 
-[data-persona="developers"] .hp-demo-stage::before {
-  background:
-    radial-gradient(circle at 32% 28%, rgba(252, 216, 70, 0.2), transparent 32%),
-    radial-gradient(circle at 74% 72%, rgba(255, 255, 255, 0.06), transparent 34%);
-}
-
-[data-persona="developers"] .hp-demo-frame {
-  border-color: rgba(252, 216, 70, 0.18);
-  background: rgba(22, 21, 16, 0.72);
-  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-/* The router flowchart supplies its own dark stage, so when the demo frame is
-   hosting one, drop the card chrome (border, translucent fill, drop shadow,
-   backdrop blur) and let the animation stand on its own. */
-.hp-demo-frame:has(.hp-router-demo) {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* The app window (chatbot / spawn) is its own self-contained ice-card, so strip
-   the demo-frame chrome entirely and let the frame shrink-wrap and center the
-   window. overflow:visible is essential -- the frame's default overflow:hidden
-   was clipping the window's drop shadow along the bottom edge. */
-.hp-demo-frame:has(.hp-app-window) {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  overflow: visible;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* The stage itself is transparent in both personas (see .hp-demo-frame above) —
+   every demo brings its own surface (light app window, dark terminal, router
+   stage), so no per-persona card chrome or :has() neutralizers are needed. */
 
 .hp-legacy-hero {
   margin-top: var(--page-space-xl);
 }
 
+/* ---- Responsive (reuse the page breakpoints: 1024 / 920 / 720 / 480) ----- */
+@media (max-width: 1024px) {
+  .hp-persona-section { grid-template-columns: minmax(320px, 1fr) minmax(300px, 0.9fr); }
+  .hp-persona-section[data-side="right"] { grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1fr); }
+}
+
 @media (max-width: 920px) {
-  .hp-persona-layout {
+  /* Mobile scrollytelling: the demo pins to the TOP of the viewport (full-bleed,
+     with a frosted backdrop so steps scroll cleanly behind it) and the steps
+     scroll in the space beneath. One column; data-side is ignored. */
+  .hp-persona-section,
+  .hp-persona-section[data-side="right"] {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "copy"
-      "stack"
-      "demo";
-    max-width: 760px;
-    gap: var(--page-space-md);
+      "graphic"
+      "steps";
+    max-width: 640px;
+    gap: 0;
   }
-
-  .hp-persona-left,
-  .hp-persona-left .hp-persona-copy {
-    align-items: center;
-    text-align: center;
+  .hp-scrolly-graphic {
+    top: 3.5rem;
+    height: auto;                 /* shrink to the demo so it never overflows */
+    align-self: start;
+    margin: 0 -1.5rem;            /* full-bleed backdrop across the section padding */
+    padding: 0.75rem 1.5rem;
+    background: var(--glass-bg-dense);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 1;
   }
-
-  .hp-stack {
-    width: 100%;
-  }
-
-  .hp-demo-stage {
-    min-height: auto;
-    width: 100%;
-  }
-
-  .hp-demo-frame {
-    width: 100%;
-  }
+  .hp-scrolly-step { min-height: 52vh; }
+  .hp-scrolly-step.is-lead { min-height: 60vh; }
+  .hp-persona-title { font-size: clamp(2.25rem, 8vw, 4rem); }
 }
 
 @media (max-width: 720px) {
-  .hp-persona-layout {
-    gap: var(--page-space-sm);
-  }
-
-  .hp-persona-left {
-    gap: var(--page-space-sm);
-  }
-
-  .hp-stack-item {
-    padding: 0.8rem;
-  }
-
-  .hp-demo-frame {
-    min-height: 380px;
-    border-radius: 22px;
-  }
-
-  .hp-demo-terminal {
-    min-height: 380px;
-  }
-
-  .hp-demo-terminal pre {
-    padding: 1rem;
-  }
+  .hp-persona-promise,
+  .hp-persona-map { padding-left: 1rem; padding-right: 1rem; }
+  .hp-persona-section { padding: 0 1rem; }
+  .hp-persona-subtitle { font-size: 1rem; max-width: 34rem; }
+  .hp-demo-frame { min-height: 360px; }
+  .hp-demo-terminal { min-height: 360px; }
+  .hp-demo-terminal pre { padding: 1rem; }
+  .hp-scrolly-graphic { margin: 0 -1rem; padding: 0.75rem 1rem; }
+  .hp-scrolly-step { min-height: 48vh; }
+  .hp-scrolly-step.is-lead { min-height: 56vh; }
+  /* People journey path: drop the text labels (icon + number keep it compact). */
+  .hp-map-path .hp-map-label { display: none; }
+  .hp-map-path { justify-content: space-around; }
+  /* Sticky bar: number/icon only, hide the full labels so it stays thin. */
+  .hp-progress-label { display: none; }
 }
 
 @media (max-width: 480px) {
-  .hp-persona-hero {
-    width: 100%;
-    max-width: 100%;
-    overflow: visible;
-  }
-
-  .hp-persona-copy {
-    padding: 0;
-  }
-
-  .hp-stack-item {
-    grid-template-columns: 1fr;
-    gap: 0.55rem;
-  }
-
-  .hp-stack-index {
-    width: 2rem;
-    height: 2rem;
-  }
-}
-
-
-/* --- Persona hero — responsive overrides ---
-   Moved here from the global media-query blocks in website-styles.css.
-   Kept in ascending-breakpoint source order to preserve the cascade. */
-@media (max-width: 1024px) {
-  .hp-persona-hero {
-    --orbit-diameter: min(700px, 94vw);
-  }
-}
-
-@media (max-width: 980px) {
-  .hp-persona-hero {
-    padding: var(--page-space-md) 1rem 0;
-  }
-
-  .hp-persona-title {
-    font-size: clamp(2.25rem, 8vw, 4rem);
-  }
-}
-
-@media (max-width: 720px) {
-  .hp-persona-hero {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-  }
-
-  .hp-persona-subtitle {
-    font-size: 1rem;
-    max-width: 34rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .hp-persona-hero {
-    --orbit-diameter: 520px;
-    width: 100vw;
-    max-width: 100vw;
-    padding-top: 2rem;
-    overflow: hidden;
-  }
-
-  .hp-persona-copy {
-    padding: 0 1rem;
-  }
-
-  .hp-persona-title {
-    font-size: clamp(2rem, 11vw, 3rem);
-  }
+  .hp-persona-promise { padding: 2rem 1rem 0; }
+  .hp-persona-title { font-size: clamp(2rem, 11vw, 3rem); }
+  .hp-persona-section { padding: 0 0.85rem; }
+  .hp-scrolly-graphic { margin: 0 -0.85rem; padding: 0.75rem 0.85rem; }
+  .hp-scrolly-step { min-height: 44vh; }
+  .hp-scrolly-step.is-lead { min-height: 52vh; }
+  .hp-devcta-actions { flex-direction: column; align-items: stretch; }
+  .hp-devcta-btn { justify-content: center; }
+  /* Smallest screens: number-only journey nodes. */
+  .hp-map-icon { display: none; }
 }
