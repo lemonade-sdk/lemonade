@@ -47,6 +47,9 @@ std::string flm_version();
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback);
 
+// Remove an installed FLM model by checkpoint via `flm remove`; throws on failure.
+void flm_remove(const std::string& checkpoint);
+
 } // namespace fastflowlm
 } // namespace backends
 } // namespace lemon

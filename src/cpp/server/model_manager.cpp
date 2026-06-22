@@ -3800,55 +3800,9 @@ void ModelManager::delete_model(const std::string& model_name) {
                                  "Delete the file directly from: " + info.checkpoint());
     }
 
-    // Handle FLM models separately
+    // FLM models have no local HF cache; deletion is the backend's `flm remove`.
     if (info.recipe == "flm") {
-        LOG(INFO, "ModelManager") << "Deleting FLM model: " << info.checkpoint() << std::endl;
-
-        // Validate checkpoint is not empty
-        if (info.checkpoint().empty()) {
-            throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
-        }
-
-        // Find flm executable — on Windows flm.exe lives under the lemonade
-        // cache dir, not on PATH, so we must resolve the full path.
-        std::string flm_path = backends::fastflowlm::find_flm_binary();
-        if (flm_path.empty()) {
-            throw std::runtime_error("FLM executable not found");
-        }
-
-        // Prepare arguments for 'flm remove' command
-        std::vector<std::string> args = {"remove", info.checkpoint()};
-
-        LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
-        for (const auto& arg : args) {
-            LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
-        }
-        LOG(INFO, "ProcessManager") << std::endl;
-
-        // Run flm remove command
-        auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
-
-        // Wait for process to complete
-        int timeout_seconds = 60; // 1 minute timeout for removal
-        for (int i = 0; i < timeout_seconds * 10; ++i) {
-            if (!utils::ProcessManager::is_running(handle)) {
-                int exit_code = utils::ProcessManager::get_exit_code(handle);
-                if (exit_code != 0) {
-                    LOG(ERROR, "ModelManager") << "FLM remove failed with exit code: " << exit_code << std::endl;
-                    throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
-                }
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        // Check if process is still running (timeout)
-        if (utils::ProcessManager::is_running(handle)) {
-            LOG(ERROR, "ModelManager") << "FLM remove timed out" << std::endl;
-            throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove timed out");
-        }
-
-        LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << canonical_model_name << std::endl;
+        backends::fastflowlm::flm_remove(info.checkpoint());
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {

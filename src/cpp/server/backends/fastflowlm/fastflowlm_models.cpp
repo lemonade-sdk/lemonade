@@ -8,6 +8,8 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <sstream>
+#include <thread>
+#include <chrono>
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
@@ -718,6 +720,33 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     return true;
 }
 
+
+void flm_remove(const std::string& checkpoint) {
+    if (checkpoint.empty()) {
+        throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
+    }
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) {
+        throw std::runtime_error("FLM executable not found");
+    }
+    std::vector<std::string> args = {"remove", checkpoint};
+    auto handle = lemon::utils::ProcessManager::start_process(flm_path, args, "", false);
+
+    int timeout_seconds = 60;
+    for (int i = 0; i < timeout_seconds * 10; ++i) {
+        if (!lemon::utils::ProcessManager::is_running(handle)) {
+            int exit_code = lemon::utils::ProcessManager::get_exit_code(handle);
+            if (exit_code != 0) {
+                throw std::runtime_error("FLM remove failed for " + checkpoint +
+                                         " (exit code " + std::to_string(exit_code) + ")");
+            }
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    lemon::utils::ProcessManager::stop_process(handle);
+    throw std::runtime_error("FLM remove timed out for " + checkpoint);
+}
 
 } // namespace fastflowlm
 } // namespace backends
