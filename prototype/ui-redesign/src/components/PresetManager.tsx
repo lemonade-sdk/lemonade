@@ -42,6 +42,10 @@ const ENGINE_LABELS: Record<PresetRecipe, string> = {
   kokoro: 'Kokoro',
 };
 
+// Known selectable values for #2339 datalist suggestions
+const LLAMACPP_BACKENDS = ['auto', 'cpu', 'cuda', 'vulkan', 'kompute', 'metal', 'rpc', 'opencl', 'mmap'] as const;
+const LLAMACPP_DEVICES  = ['Auto', 'CPU', 'CUDA0', 'CUDA1', 'Vulkan0', 'Vulkan1', 'Metal'] as const;
+
 const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   auto: ['ctx_size', 'steps', 'cfg_scale'],
   llamacpp: ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'],
@@ -521,7 +525,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             <div className="auto-run-list">
               {AUTO_OPT_RUNS.map(run => (
                 <article key={run.id} className={`auto-run-card${selectedAutoRunId === run.id ? ' is-active' : ''}`}>
-                  <button type="button" className="auto-run-card__main" onClick={() => setSelectedAutoRunId(run.id)}>
+                  <button type="button" className="auto-run-card__main" onClick={() => setSelectedAutoRunId(run.id)} aria-pressed={selectedAutoRunId === run.id}>
                     <span className="auto-run-card__icon">⚙️</span>
                     <span className="auto-run-card__text">
                       <strong>{run.name}</strong>
@@ -694,7 +698,18 @@ const PresetCard: React.FC<{
   onClone?: () => void;
   onApply?: () => void;
   onExport?: () => void;
-}> = ({ preset, onClick, onClone, onApply, onExport }) => (
+}> = ({ preset, onClick, onClone, onApply, onExport }) => {
+  const descId = `preset-card-desc-${preset.id}`;
+  const capLabels = presetLabelsFor(preset).map(c => CAPABILITY_LABELS[c] || c).join(', ');
+  const paramLines = paramsPreviewLines(preset);
+  const descParts: string[] = [];
+  if (preset.starter) descParts.push('Starter');
+  if (hasManualArgs(preset)) descParts.push('Manual args active');
+  descParts.push(`Applies to: ${capLabels}`);
+  if (paramLines.length) descParts.push(`Parameters: ${paramLines.join('; ')}`);
+  descParts.push(`Prompt: ${promptDisplayText(preset)}`);
+  descParts.push(`Tools: ${toolsDisplayText(preset)}`);
+  return (
   <article
     className={`recipe-card${hasManualArgs(preset) ? ' recipe-card--manual' : ''}`}
     data-recipe-id={preset.id}
@@ -704,7 +719,10 @@ const PresetCard: React.FC<{
       className="recipe-card__overlay-btn"
       onClick={onClick}
       aria-label={`Open Preset: ${preset.name}`}
+      aria-describedby={descId}
     />
+    {/* sr-only description for #2345: exposes parameter/prompt/tools metadata to AT */}
+    <span id={descId} className="sr-only">{descParts.join('. ')}.</span>
     {preset.starter && <span className="starter-badge">Starter</span>}
     <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
     <p className="recipe-card__desc">{preset.description}</p>
@@ -730,7 +748,8 @@ const PresetCard: React.FC<{
       )}
     </div>
   </article>
-);
+  );
+};
 
 const SlideoverContent: React.FC<{
   preset: Preset;
@@ -915,9 +934,9 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
       <div className="slideover__body">
         <div className="slideover__section">
           <h3>Applies to capabilities</h3>
-          <div className="cap-chip-list" data-preset-capabilities>
+          <div className="cap-chip-list" data-preset-capabilities role="radiogroup" aria-label="Applies to capabilities">
             {CAPABILITIES.map(cap => (
-              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)}>
+              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)} role="radio" aria-checked={appliesTo.includes(cap)}>
                 <CapabilityChip cap={cap} on={appliesTo.includes(cap)} off={!appliesTo.includes(cap)} />
               </button>
             ))}
@@ -984,12 +1003,13 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
           )}
           {!isDefaultEmptyPreset && hasChat && (
             <div data-preset-fields="chat">
-              <div className="field"><label className="field__label">Creativity</label><div className="field__row"><input type="range" className="slider" min={0} max={2} step={0.05} value={temperature} disabled={isReadOnly} onChange={e => setTemperature(Number(e.target.value))} data-recipe-temp /><span className="field__value">{temperature.toFixed(2)}</span></div></div>
-              <div className="field"><label className="field__label">Precision (top_p)</label><div className="field__row"><input type="range" className="slider" min={0} max={1} step={0.01} value={topP} disabled={isReadOnly} onChange={e => setTopP(Number(e.target.value))} data-recipe-top-p /><span className="field__value">{topP.toFixed(2)}</span></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-temperature">Creativity</label><div className="field__row"><input id="preset-field-temperature" type="range" className="slider" min={0} max={2} step={0.05} value={temperature} disabled={isReadOnly} onChange={e => setTemperature(Number(e.target.value))} data-recipe-temp /><span className="field__value">{temperature.toFixed(2)}</span></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-top-p">Precision (top_p)</label><div className="field__row"><input id="preset-field-top-p" type="range" className="slider" min={0} max={1} step={0.01} value={topP} disabled={isReadOnly} onChange={e => setTopP(Number(e.target.value))} data-recipe-top-p /><span className="field__value">{topP.toFixed(2)}</span></div></div>
               <div className="field">
-                <label className="field__label">Context size</label>
+                <label className="field__label" htmlFor="preset-field-ctx-size">Context size</label>
                 <div className="field__row">
                   <input
+                    id="preset-field-ctx-size"
                     type="range"
                     className="slider"
                     min={0}
@@ -1003,14 +1023,14 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
                   <span className="field__value">{ctxSize.toLocaleString()}</span>
                 </div>
               </div>
-              <div className="field"><label className="field__label">top_k</label><div className="field__row"><input type="number" className="input input--narrow" min={1} max={200} value={topK} disabled={isReadOnly} onChange={e => setTopK(Number(e.target.value))} data-recipe-top-k /></div></div>
-              <div className="field"><label className="field__label">Repeat penalty</label><div className="field__row"><input type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-top-k">top_k</label><div className="field__row"><input id="preset-field-top-k" type="number" className="input input--narrow" min={1} max={200} value={topK} disabled={isReadOnly} onChange={e => setTopK(Number(e.target.value))} data-recipe-top-k /></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-repeat-penalty">Repeat penalty</label><div className="field__row"><input id="preset-field-repeat-penalty" type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
             </div>
           )}
           {!isDefaultEmptyPreset && hasImage && (
             <div data-preset-fields="image">
-              <div className="field"><label className="field__label">Steps</label><div className="field__row"><input type="range" className="slider" min={1} max={100} step={1} value={steps} disabled={isReadOnly} onChange={e => setSteps(Number(e.target.value))} data-recipe-steps /><span className="field__value">{steps}</span></div></div>
-              <div className="field"><label className="field__label">CFG scale</label><div className="field__row"><input type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-steps">Steps</label><div className="field__row"><input id="preset-field-steps" type="range" className="slider" min={1} max={100} step={1} value={steps} disabled={isReadOnly} onChange={e => setSteps(Number(e.target.value))} data-recipe-steps /><span className="field__value">{steps}</span></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-cfg-scale">CFG scale</label><div className="field__row"><input id="preset-field-cfg-scale" type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
             </div>
           )}
           {!isDefaultEmptyPreset && hasTts && (
@@ -1038,26 +1058,26 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
         {!isDefaultEmptyPreset && <div className="slideover__section preset-autoopt">
           <h3>AutoOpt</h3>
           <p className="slideover__hint">Default is AutoOpt. Entering manual raw args below disables AutoOpt for this preset until those args are cleared.</p>
-          <div className="field"><label className="field__label">AutoOpt result</label><div className="field__row"><select className="select" value={autoOptRunId} disabled={isReadOnly || manualArgsActive} onChange={e => setAutoOptRunId(e.target.value)}>{autoRuns.map(run => <option key={run.id} value={run.id}>{run.name} · {run.date} · Lemonade {run.lemonadeVersion}</option>)}</select></div></div>
+          <div className="field"><label className="field__label" htmlFor="preset-field-autoopt-result">AutoOpt result</label><div className="field__row"><select id="preset-field-autoopt-result" className="select" value={autoOptRunId} disabled={isReadOnly || manualArgsActive} onChange={e => setAutoOptRunId(e.target.value)}>{autoRuns.map(run => <option key={run.id} value={run.id}>{run.name} · {run.date} · Lemonade {run.lemonadeVersion}</option>)}</select></div></div>
           {selectedAutoRun && <p className="preset-autoopt__args"><span>{manualArgsActive ? 'Manual override active' : 'AutoOpt active'}</span><code>{manualArgsActive ? 'Clear manual args to re-enable AutoOpt.' : selectedAutoRun.args}</code></p>}
         </div>}
 
         {!isDefaultEmptyPreset && <details className="slideover__section preset-advanced">
           <summary>Advanced engine options</summary>
           <p className="slideover__hint">Optional backend hints and raw recipe_options keys. Closed by default.</p>
-          <div className="field"><label className="field__label">Engine hint</label><div className="field__row"><select className="select" value={engineHint} disabled={isReadOnly} onChange={e => setEngineHint(e.target.value as PresetRecipe)}>{(Object.keys(ENGINE_LABELS) as PresetRecipe[]).map(r => <option key={r} value={r}>{ENGINE_LABELS[r]}</option>)}</select></div></div>
+          <div className="field"><label className="field__label" htmlFor="preset-field-engine-hint">Engine hint</label><div className="field__row"><select id="preset-field-engine-hint" className="select" value={engineHint} disabled={isReadOnly} onChange={e => setEngineHint(e.target.value as PresetRecipe)}>{(Object.keys(ENGINE_LABELS) as PresetRecipe[]).map(r => <option key={r} value={r}>{ENGINE_LABELS[r]}</option>)}</select></div></div>
           <p className="preset-valid-keys">Valid recipe_options keys: {validKeys.length ? validKeys.join(', ') : 'none'}</p>
           {hasChat && (
             <>
-              <div className="field"><label className="field__label">llamacpp_backend</label><div className="field__row"><input className="input" value={llamacppBackend} disabled={isReadOnly} placeholder="auto" onChange={e => setLlamacppBackend(e.target.value)} /></div></div>
-              <div className="field"><label className="field__label">llamacpp_device</label><div className="field__row"><input className="input" value={llamacppDevice} disabled={isReadOnly} placeholder="e.g. Vulkan0" onChange={e => setLlamacppDevice(e.target.value)} /></div></div>
-              <div className="field"><label className="field__label">llamacpp_args</label><div className="field__row"><input className="input" value={llamacppArgs} disabled={isReadOnly} placeholder="e.g. --n-gpu-layers 99" onChange={e => setLlamacppArgs(e.target.value)} /></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-backend">llamacpp_backend</label><div className="field__row"><input id="preset-field-llamacpp-backend" className="input" list="preset-llamacpp-backends" value={llamacppBackend} disabled={isReadOnly} placeholder="auto" onChange={e => setLlamacppBackend(e.target.value)} /><datalist id="preset-llamacpp-backends">{LLAMACPP_BACKENDS.map(b => <option key={b} value={b} />)}</datalist></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-device">llamacpp_device</label><div className="field__row"><input id="preset-field-llamacpp-device" className="input" list="preset-llamacpp-devices" value={llamacppDevice} disabled={isReadOnly} placeholder="e.g. Vulkan0" onChange={e => setLlamacppDevice(e.target.value)} /><datalist id="preset-llamacpp-devices">{LLAMACPP_DEVICES.map(d => <option key={d} value={d} />)}</datalist></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-args">llamacpp_args</label><div className="field__row"><input id="preset-field-llamacpp-args" className="input" value={llamacppArgs} disabled={isReadOnly} placeholder="e.g. --n-gpu-layers 99" onChange={e => setLlamacppArgs(e.target.value)} /></div></div>
             </>
           )}
           {hasImage && (
             <>
-              <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }}>×</span><input type="number" className="input input--narrow" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
-              <div className="field"><label className="field__label">sdcpp_args</label><div className="field__row"><input className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
+              <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" aria-label="Image width" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }} aria-hidden="true">×</span><input type="number" className="input input--narrow" aria-label="Image height" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
+              <div className="field"><label className="field__label" htmlFor="preset-field-sdcpp-args">sdcpp_args</label><div className="field__row"><input id="preset-field-sdcpp-args" className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
             </>
           )}
         </details>}
