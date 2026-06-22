@@ -84,7 +84,7 @@ void MoonshineServer::load(const std::string& model_name,
 
     // Resolve model architecture. Prefer the explicit registry field; fall back
     // to inferring from the checkpoint variant (onnx/tiny, onnx/small, etc.).
-    int model_arch = model_info.moonshine_arch;
+    int model_arch = model_info.extra<int>("moonshine_arch", -1);
     if (model_arch < 0) {
         std::string variant = model_info.checkpoint();
         std::transform(variant.begin(), variant.end(), variant.begin(), ::tolower);

@@ -293,7 +293,7 @@ static void parse_image_defaults(ModelInfo& info, const json& model_json) {
 static void parse_extras(ModelInfo& info, const json& model_json) {
     static const std::set<std::string> kKnownKeys = {
         "checkpoint", "checkpoints", "components", "mmproj", "recipe", "suggested",
-        "hf_load", "source", "size", "cloud_provider", "moonshine_arch",
+        "source", "size", "cloud_provider",
         "labels", "image_defaults", "recipe_options"
     };
     if (!model_json.is_object()) return;
@@ -1375,11 +1375,9 @@ void ModelManager::build_cache() {
         parse_components(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
-        info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
-        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         // HF-backed collections store their components on Hugging Face — the
         // cached manifest is the single source of truth. Rebuild the component
@@ -1430,11 +1428,9 @@ void ModelManager::build_cache() {
         parse_components(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
-        info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
-        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         // HF-backed user collections (created by `lemonade pull <org>/<repo>`)
         // keep only a repo pointer in user_models.json; their components live in
@@ -1601,12 +1597,12 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
 
     parse_image_defaults(info, *model_json);
+    parse_extras(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
         ? (*model_json)["recipe_options"] : json(nullptr);
     info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(model_name), recipe_options_);
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
-    info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
@@ -4345,7 +4341,6 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     parse_components(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
-    info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
     // Parse labels array
@@ -4364,10 +4359,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         }
     }
 
-    // Parse moonshine_arch
-    if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
-        info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
-    }
+    parse_extras(info, *model_json);
 
     return info;
 }

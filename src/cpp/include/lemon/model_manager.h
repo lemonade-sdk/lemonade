@@ -76,11 +76,6 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
-    // When true, LlamaCppServer launches llama-server with `-hf <checkpoint>`
-    // instead of `-m <gguf> [--mmproj <mmproj>]`. Required for models like
-    // Qwen2.5-Omni where llama-server's manual-load path rejects audio content
-    // parts — the -hf path drives the dual-clip (vision+audio) context correctly.
-    bool hf_load = false;
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -106,9 +101,6 @@ struct ModelInfo {
     // pricing in /v1/models). Used for display only — never affects routing.
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
-
-    // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
-    int moonshine_arch = -1;
 
     // Generic per-model fields a backend declares for itself. Any server_models.json
     // key not consumed by a typed field above lands here, so a new backend can read

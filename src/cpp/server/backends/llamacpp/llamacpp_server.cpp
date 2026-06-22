@@ -295,7 +295,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
     std::string gguf_path = model_info.resolved_path();
-    if (gguf_path.empty() && !model_info.hf_load) {
+    if (gguf_path.empty() && !model_info.extra<bool>("hf_load", false)) {
         throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
@@ -331,7 +331,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // is required for models like Qwen2.5-Omni where the manual -m + --mmproj
     // path rejects audio content parts in /v1/chat/completions — the -hf path
     // drives the dual-clip (vision+audio) context correctly.
-    if (model_info.hf_load) {
+    if (model_info.extra<bool>("hf_load", false)) {
         push_arg(args, reserved_flags, "-hf", model_info.checkpoint(),
                  std::vector<std::string>{"--hf-repo", "-mr", "--hf-file", "-mf"});
     } else {
@@ -353,7 +353,7 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Add mmproj file if present (for vision models). Skip when hf_load is set —
     // llama-server resolves the mmproj companion itself from the HF repo.
-    if (!mmproj_path.empty() && !model_info.hf_load) {
+    if (!mmproj_path.empty() && !model_info.extra<bool>("hf_load", false)) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
             LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
