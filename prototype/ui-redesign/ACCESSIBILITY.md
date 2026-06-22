@@ -3,34 +3,39 @@
 **Date:** 2026-06-14  
 **Branch:** `kpoin/ui-accessibility`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3)  
-**Test status (2026-06-15):** All 50 automated tests passing, 7 skipped, 0 failed on `kpoin/ui-testing`
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete  
+**Test status (2026-06-22):** All 61 automated tests passing, 7 skipped, 0 failed on `feat/gui3-presets-a11y`
 
 ---
 
 ## Summary Table
 
-| # | Item | Section | Priority | Effort |
-|---|------|---------|----------|--------|
-| 1 | `<main>` landmark | Standard A11y | **P0** | S |
-| 2 | `div.onClick` → `<button>` | Standard A11y | **P0** | M |
-| 3 | Focus rings (global `outline: none`) | Standard A11y | **P0** | S |
-| 4 | Composer textarea `aria-label` | Standard A11y | **P0** | S |
-| 5 | Skip-to-main link | Standard A11y | **P0** | S |
-| 6 | Preset slideover focus trap + ESC | Standard A11y | **P0** | M |
-| 7 | `aria-live` for streaming output | Standard A11y | **P0** | M |
-| 8 | ARIA landmarks audit (nav, complementary) | Standard A11y | P1 | S |
-| 9 | `titlebar__status-dot` screen reader label | Standard A11y | P1 | S |
-| 10 | Persistence-toggle label (`ChatView.tsx:1725`) | Standard A11y | P1 | S |
-| 11 | Preset slideover unlabeled inputs | Standard A11y | P1 | S |
-| 12 | Color contrast audit (both themes) | Standard A11y | P1 | M |
-| 13 | `prefers-reduced-motion` (all animations) | LLM-specific | **P0** | M |
-| 14 | Font size / text scale controls | LLM-specific | P1 | M |
-| 15 | High-contrast theme mode | LLM-specific | P1 | L |
-| 16 | Keyboard shortcut system | LLM-specific | P1 | M |
-| 17 | Response verbosity setting | LLM-specific | P2 | M |
-| 18 | Dyslexia-friendly font option | LLM-specific | P2 | S |
-| 19 | Message role announcements for screen readers | LLM-specific | P2 | S |
+| # | Item | Section | Priority | Effort | Status |
+|---|------|---------|----------|--------|--------|
+| 1 | `<main>` landmark | Standard A11y | **P0** | S | ✅ Done |
+| 2 | `div.onClick` → `<button>` | Standard A11y | **P0** | M | ✅ Done (PresetCard) |
+| 3 | Focus rings (global `outline: none`) | Standard A11y | **P0** | S | ✅ Done |
+| 4 | Composer textarea `aria-label` | Standard A11y | **P0** | S | ✅ Done |
+| 5 | Skip-to-main link | Standard A11y | **P0** | S | ✅ Done |
+| 6 | Preset slideover focus trap + ESC | Standard A11y | **P0** | M | ✅ Done |
+| 7 | `aria-live` for streaming output | Standard A11y | **P0** | M | ✅ Done |
+| 8 | ARIA landmarks audit (nav, complementary) | Standard A11y | P1 | S | ✅ Done |
+| 9 | `titlebar__status-dot` screen reader label | Standard A11y | P1 | S | ✅ Done |
+| 10 | Persistence-toggle label (`ChatView.tsx:1725`) | Standard A11y | P1 | S | ✅ Done |
+| 11 | Preset slideover unlabeled inputs | Standard A11y | P1 | S | ✅ Done |
+| 12 | Color contrast audit (both themes) | Standard A11y | P1 | M | |
+| 13 | `prefers-reduced-motion` (all animations) | LLM-specific | **P0** | M | ✅ Done |
+| 14 | Font size / text scale controls | LLM-specific | P1 | M | |
+| 15 | High-contrast theme mode | LLM-specific | P1 | L | |
+| 16 | Keyboard shortcut system | LLM-specific | P1 | M | |
+| 17 | Response verbosity setting | LLM-specific | P2 | M | |
+| 18 | Dyslexia-friendly font option | LLM-specific | P2 | S | |
+| 19 | Message role announcements for screen readers | LLM-specific | P2 | S | |
+| 20 | Preset param controls programmatic labels (#2338) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 21 | Backend/device fields discoverable (#2339) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 22 | Preset card exposes metadata to AT (#2345) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 23 | Capability chip toggle-button semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 (revised 2026-06-22) |
+| 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 
 ---
 
@@ -471,12 +476,22 @@ Do these first. All are small changes with high compliance impact.
 17. **2.1** — Add `--font-scale` token + A−/A+ UI control — DEFERRED to Phase 3
 18. **1.1.3** — Convert message list to `<ol>` with `<article>` per message — DEFERRED to Phase 3
 
-### Phase 3 — Enhancements (L-effort, P2, new deps)
+### Phase 3 — Enhancements (L-effort, P2, new deps) + GUI3 Preset A11y
 
 19. **2.2** — High-contrast theme (`[data-theme="high-contrast"]` + `forced-colors` handling) — new token set
 20. **2.6** — Dyslexia-friendly font (Lexend self-hosted font files — new asset dep)
 21. **2.4** — Response verbosity preference in composer toolbar
 22. **2.8** — Full message role announcement polish (combined with Phase 2 article work)
+
+#### GUI3 Preset A11y — ✅ DONE 2026-06-22 (branch `feat/gui3-presets-a11y`)
+
+All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
+
+23. **#2338** ✅ DONE — All Preset parameter controls labelled via `htmlFor`/`id` (temperature, top_p, context size, top_k, repeat penalty, steps, CFG scale, engine hint, AutoOpt result, llamacpp_args, sdcpp_args) and via `aria-label` (image width, image height which share one visual label). File: `PresetManager.tsx` lines ~1000–1075.
+24. **#2339** ✅ DONE — `llamacpp_backend` and `llamacpp_device` converted to `<input list=>` + `<datalist>` exposing known values (backends: auto/cpu/cuda/vulkan/kompute/metal/rpc/opencl/mmap; devices: Auto/CPU/CUDA0/CUDA1/Vulkan0/Vulkan1/Metal). File: `PresetManager.tsx` lines ~1060–1067.
+25. **#2345** ✅ DONE — PresetCard overlay button gains `aria-describedby` pointing to a `sr-only` span containing: starter/manual-args state, applies_to capability list, parameter summary, prompt name, tools state. File: `PresetManager.tsx` lines ~700–726.
+26. **#2350** ✅ DONE (revised) — Capability chip container changed from `role="radiogroup"` to `role="group" aria-label="Applies to capabilities"`; each chip button changed from `role="radio" aria-checked={…}` to `aria-pressed={…}` (toggle-button semantics). Radiogroup requires arrow-key navigation (ARIA APG / WCAG 2.1.1); toggle buttons are keyboard-correct with Tab + Enter/Space. File: `PresetManager.tsx` lines ~937–943.
+27. **#2352** ✅ DONE — AutoOpt run buttons gain `aria-pressed={selectedAutoRunId === run.id}`, updated on selection change. File: `PresetManager.tsx` line ~528.
 
 ---
 
@@ -510,7 +525,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (34 tests)
+### Test groups (61 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -523,6 +538,11 @@ npm test
 | aria-live regions | A25–A27 | Assertive + polite regions in DOM at load; both are `.sr-only` |
 | :focus-visible rings | A28–A30 | Keyboard = outline present; mouse click = no ring; textarea keyboard ring present |
 | prefers-reduced-motion | A31–A34 | Bottom sheet transition near-zero; normal = 280ms; all transitions; `transform: none` snap |
+| Preset param labels (#2338) | A35–A37 | temperature/ctx-size/top_k sliders labelled via htmlFor/id |
+| Backend/device discoverable (#2339) | A38–A39 | llamacpp_backend and llamacpp_device inputs have datalist with ≥3 options |
+| Preset card metadata (#2345) | A40 | Card button aria-describedby includes applies_to, prompt, tools |
+| Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
+| AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
 
 ### Known limitation
 
@@ -530,4 +550,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-14 by Mattingly*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352)*

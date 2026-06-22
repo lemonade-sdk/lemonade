@@ -652,3 +652,187 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     expect(transform).toBe('none');
   });
 });
+
+// ─── 10. Preset parameter labels — issue #2338 ───────────────────────────────
+
+test.describe('Accessibility — preset parameter labels (#2338)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    // nth(1) skips DEFAULT_PRESET (which hides behavior fields); opens first STARTER (chat)
+    await page.locator('.recipe-card').nth(1).click();
+    await page.waitForSelector('.slideover.is-open');
+  });
+
+  test('A35 — temperature slider linked to label via htmlFor/id', async ({ page }) => {
+    const labelText = await page.locator('[data-recipe-temp]').evaluate(el => {
+      const id = (el as HTMLElement).id;
+      if (!id) return '';
+      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
+    });
+    expect(labelText, 'Temperature slider must be labelled via htmlFor/id').toBeTruthy();
+  });
+
+  test('A36 — context-size slider linked to label via htmlFor/id', async ({ page }) => {
+    const labelText = await page.locator('[data-recipe-ctx]').evaluate(el => {
+      const id = (el as HTMLElement).id;
+      if (!id) return '';
+      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
+    });
+    expect(labelText, 'Context size slider must be labelled via htmlFor/id').toBeTruthy();
+  });
+
+  test('A37 — top_k input linked to label via htmlFor/id', async ({ page }) => {
+    const labelText = await page.locator('[data-recipe-top-k]').evaluate(el => {
+      const id = (el as HTMLElement).id;
+      if (!id) return '';
+      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
+    });
+    expect(labelText, 'top_k input must be labelled via htmlFor/id').toBeTruthy();
+  });
+});
+
+// ─── 11. Advanced backend/device fields discoverable — issue #2339 ────────────
+
+test.describe('Accessibility — backend/device fields discoverable (#2339)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    await page.locator('.recipe-card').nth(1).click();
+    await page.waitForSelector('.slideover.is-open');
+    // Open the <details> Advanced engine options section
+    await page.locator('.preset-advanced summary').click();
+    await page.waitForTimeout(200);
+  });
+
+  test('A38 — llamacpp_backend input has a datalist of known backend values', async ({ page }) => {
+    const listId = await page.locator('#preset-field-llamacpp-backend').getAttribute('list');
+    expect(listId, 'llamacpp_backend input must have list= attribute').toBeTruthy();
+    const optionCount = await page.locator(`#${listId} option`).count();
+    expect(optionCount, 'llamacpp_backend datalist must have ≥3 options').toBeGreaterThanOrEqual(3);
+  });
+
+  test('A39 — llamacpp_device input has a datalist of known device values', async ({ page }) => {
+    const listId = await page.locator('#preset-field-llamacpp-device').getAttribute('list');
+    expect(listId, 'llamacpp_device input must have list= attribute').toBeTruthy();
+    const optionCount = await page.locator(`#${listId} option`).count();
+    expect(optionCount, 'llamacpp_device datalist must have ≥3 options').toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ─── 12. Preset card accessible description — issue #2345 ────────────────────
+
+test.describe('Accessibility — preset card metadata accessible (#2345)', () => {
+  test('A40 — card button has aria-describedby pointing to metadata description', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+
+    const { descId, descText } = await page.locator('.recipe-card').first().evaluate(card => {
+      const btn = card.querySelector('.recipe-card__overlay-btn') as HTMLElement | null;
+      const id = btn?.getAttribute('aria-describedby') ?? '';
+      const descEl = id ? document.getElementById(id) : null;
+      return { descId: id, descText: descEl?.textContent?.trim() ?? '' };
+    });
+
+    expect(descId, 'card overlay button must have aria-describedby').toBeTruthy();
+    expect(descText, 'description element must have non-empty text').toBeTruthy();
+    expect(descText, 'description must include applies_to metadata').toMatch(/Applies to:/i);
+    expect(descText, 'description must include prompt metadata').toMatch(/Prompt:/i);
+    expect(descText, 'description must include tools metadata').toMatch(/Tools:/i);
+  });
+});
+
+// ─── 13. Capability chip toggle-button semantics — issue #2350 (revised) ─────
+
+test.describe('Accessibility — capability chip toggle-button semantics (#2350)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    await page.locator('.recipe-card').nth(1).click();
+    await page.waitForSelector('.slideover.is-open');
+  });
+
+  test('A41 — capability chip container has role="group" with accessible label', async ({ page }) => {
+    const container = page.locator('[data-preset-capabilities]');
+    const role = await container.getAttribute('role');
+    expect(role).toBe('group');
+    const label = await container.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A42 — each capability chip is a plain button with aria-pressed', async ({ page }) => {
+    const capButtons = page.locator('[data-preset-capabilities] .preset-cap-button');
+    const count = await capButtons.count();
+    expect(count).toBeGreaterThan(0);
+
+    for (let i = 0; i < count; i++) {
+      const btn = capButtons.nth(i);
+      // Must NOT have role="radio" — plain button semantics
+      const role = await btn.getAttribute('role');
+      expect(role, 'chip must not have role="radio"').not.toBe('radio');
+      // Must expose aria-pressed as "true" or "false"
+      const pressed = await btn.getAttribute('aria-pressed');
+      expect(['true', 'false'], `aria-pressed must be "true" or "false", got "${pressed}"`).toContain(pressed);
+    }
+  });
+
+  test('A43 — exactly one capability chip has aria-pressed="true"; all others are "false"', async ({ page }) => {
+    const { trueCount, falseCount, total } = await page
+      .locator('[data-preset-capabilities] .preset-cap-button')
+      .evaluateAll(buttons => ({
+        trueCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'true').length,
+        falseCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'false').length,
+        total: buttons.length,
+      }));
+    expect(trueCount).toBe(1);
+    expect(falseCount).toBe(total - 1);
+  });
+});
+
+// ─── 14. AutoOpt run selection state — issue #2352 ───────────────────────────
+
+test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
+  test('A44 — AutoOpt run buttons expose selected state via aria-pressed', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.auto-run-list');
+
+    const buttons = page.locator('.auto-run-card__main');
+    const count = await buttons.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Exactly one button should be aria-pressed="true" on initial render
+    const pressedCount = await buttons.evaluateAll(btns =>
+      btns.filter(b => b.getAttribute('aria-pressed') === 'true').length,
+    );
+    expect(pressedCount).toBe(1);
+  });
+
+  test('A45 — clicking a different AutoOpt run updates aria-pressed to true on that button', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.auto-run-list');
+
+    const buttons = page.locator('.auto-run-card__main');
+    // Click the second button (index 1) to change selection
+    await buttons.nth(1).click();
+    await page.waitForTimeout(100);
+
+    const secondPressed = await buttons.nth(1).getAttribute('aria-pressed');
+    expect(secondPressed).toBe('true');
+
+    // First button must now be false
+    const firstPressed = await buttons.nth(0).getAttribute('aria-pressed');
+    expect(firstPressed).toBe('false');
+  });
+});
