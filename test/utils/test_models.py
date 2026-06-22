@@ -230,7 +230,9 @@ USER_MODEL_TE_CHECKPOINT = (
 # Using a file not at repo top-level
 USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 
-# Models for shared-repo dependency testing (same repo, different quants)
+# Models for shared-repo dependency testing (same repo, different quants).
+# Also used by server_endpoints.py::test_034 (shared-repo variant resolution after a
+# refs/main advance); keep both quants pointing at the same repo if these change.
 SHARED_REPO_MODEL_A_NAME = "user.SharedRepo-TestA"
 SHARED_REPO_MODEL_A_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
