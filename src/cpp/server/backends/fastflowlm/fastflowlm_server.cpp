@@ -1,6 +1,9 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
+#include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/process_manager.h"
@@ -475,9 +478,21 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<FastFlowLMServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+namespace {
+// FLM model-management behavior: max context window from the model's config.json.
+class FlmOps : public BackendOps {
+public:
+    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
+        info.max_context_window = read_flm_max_context_window(info);
+    }
+};
+}  // namespace
 
 const BackendSpec* spec() { return &FastFlowLMServer::SPEC; }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const FlmOps kOps;
+    return &kOps;
+}
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon

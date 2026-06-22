@@ -1,6 +1,13 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/gguf_capabilities.h"
+#include "lemon/model_manager.h"
+#include <algorithm>
+#include <filesystem>
+#include <system_error>
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
@@ -654,9 +661,48 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<LlamaCppServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+namespace {
+// llamacpp model-management behavior: GGUF metadata + capability labels.
+class LlamaCppOps : public BackendOps {
+public:
+    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
+        const std::string gguf_path = info.resolved_path();
+        if (gguf_path.size() < 5) {
+            return;
+        }
+        std::string ext = gguf_path.substr(gguf_path.size() - 5);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext != ".gguf") {
+            return;
+        }
+        std::error_code ec;
+        if (!std::filesystem::exists(lemon::utils::path_from_utf8(gguf_path), ec)) {
+            return;
+        }
+        GgufMetadata meta;
+        if (!read_gguf_metadata(meta, gguf_path)) {
+            return;
+        }
+        info.max_context_window = meta.context_length;
+        info.gguf_block_count = meta.block_count;
+        info.gguf_embedding_length = meta.embedding_length;
+        info.gguf_head_count_kv = meta.head_count_kv;
+        info.gguf_key_length = meta.key_length;
+        // GGUF vision/tool metadata are LLM capabilities. Don't apply them to
+        // embedding/reranking models, or labels like tool-calling would
+        // reclassify the model away from its endpoint type.
+        if (info.type == ModelType::LLM) {
+            apply_gguf_capability_labels(info.labels, meta.caps);
+        }
+    }
+};
+}  // namespace
 
 const BackendSpec* spec() { return &LlamaCppServer::SPEC; }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const LlamaCppOps kOps;
+    return &kOps;
+}
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

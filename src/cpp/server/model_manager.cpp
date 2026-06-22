@@ -1,15 +1,16 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
-#include <lemon/gguf_capabilities.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud/cloud_server.h>
+#include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
 #include <filesystem>
 #include <iostream>
@@ -153,354 +154,21 @@ static std::string cache_key_to_canonical_id(const std::string& cache_key) {
     return canonical_id(ModelSource::Builtin, cache_key);
 }
 
-template <typename T>
-static bool read_le(std::istream& in, T& value) {
-    in.read(reinterpret_cast<char*>(&value), sizeof(T));
-    return static_cast<bool>(in);
-}
-
-static bool read_gguf_string(std::istream& in, std::string& value) {
-    uint64_t len = 0;
-    if (!read_le(in, len)) return false;
-    if (len > 1024 * 1024) return false;
-    value.assign(static_cast<size_t>(len), '\0');
-    if (len == 0) return true;
-    in.read(&value[0], static_cast<std::streamsize>(len));
-    return static_cast<bool>(in);
-}
-
-static bool skip_bytes(std::istream& in, uint64_t bytes) {
-    if (bytes > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max())) return false;
-    in.seekg(static_cast<std::streamoff>(bytes), std::ios::cur);
-    return static_cast<bool>(in);
-}
-
-static uint64_t gguf_scalar_size(uint32_t type) {
-    switch (type) {
-        case 0:  // UINT8
-        case 1:  // INT8
-        case 7:  // BOOL
-            return 1;
-        case 2:  // UINT16
-        case 3:  // INT16
-            return 2;
-        case 4:  // UINT32
-        case 5:  // INT32
-        case 6:  // FLOAT32
-            return 4;
-        case 10: // UINT64
-        case 11: // INT64
-        case 12: // FLOAT64
-            return 8;
-        default:
-            return 0;
-    }
-}
-
-static bool skip_gguf_value(std::istream& in, uint32_t type);
-
-static bool read_gguf_integer_value(std::istream& in, uint32_t type, int64_t& value) {
-    switch (type) {
-        case 0: { uint8_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 1: { int8_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 2: { uint16_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 3: { int16_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 4: { uint32_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 5: { int32_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        case 10: {
-            uint64_t v = 0;
-            if (!read_le(in, v)) return false;
-            if (v > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) return false;
-            value = static_cast<int64_t>(v);
-            return true;
-        }
-        case 11: { int64_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
-        default:
-            return skip_gguf_value(in, type) && false;
-    }
-}
-
-static bool skip_gguf_value(std::istream& in, uint32_t type) {
-    if (type == 8) {  // STRING
-        std::string ignored;
-        return read_gguf_string(in, ignored);
-    }
-
-    if (type == 9) {  // ARRAY
-        uint32_t elem_type = 0;
-        uint64_t count = 0;
-        if (!read_le(in, elem_type) || !read_le(in, count)) return false;
-
-        if (elem_type == 8) {
-            for (uint64_t i = 0; i < count; ++i) {
-                std::string ignored;
-                if (!read_gguf_string(in, ignored)) return false;
-            }
-            return true;
-        }
-
-        if (elem_type == 9) return false;
-        uint64_t elem_size = gguf_scalar_size(elem_type);
-        if (elem_size == 0) return false;
-        if (count > std::numeric_limits<uint64_t>::max() / elem_size) return false;
-        return skip_bytes(in, count * elem_size);
-    }
-
-    uint64_t size = gguf_scalar_size(type);
-    return size > 0 && skip_bytes(in, size);
-}
-
-// All GGUF metadata extracted in a single pass over the KV header.
-// Replaces the previous three separate readers (context_length, arch_info, capabilities)
-// that each opened the file independently.
-struct GgufMetadata {
-    std::string architecture;
-    int64_t context_length = 0;
-    int64_t block_count = 0;
-    int64_t embedding_length = 0;
-    int64_t head_count_kv = 0;
-    int64_t key_length = 0;
-    GgufCapabilities caps;
-};
-
-static bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
-    std::ifstream in(path_from_utf8(path), std::ios::binary);
-    if (!in) return false;
-
-    char magic[4] = {};
-    in.read(magic, sizeof(magic));
-    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return false;
-
-    uint32_t version = 0;
-    uint64_t tensor_count = 0;
-    uint64_t kv_count = 0;
-    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return false;
-    (void)version;
-    (void)tensor_count;
-
-    int64_t pending_context_length = 0;
-
-    for (uint64_t i = 0; i < kv_count; ++i) {
-        std::string key;
-        uint32_t type = 0;
-        if (!read_gguf_string(in, key) || !read_le(in, type)) return false;
-
-        // Read architecture
-        if (key == "general.architecture" && type == 8) {
-            if (!read_gguf_string(in, out.architecture)) return false;
-            if (pending_context_length > 0) {
-                out.context_length = pending_context_length;
-            }
-            continue;
-        }
-
-        // Context length
-        const bool context_key = !out.architecture.empty() && key == out.architecture + ".context_length";
-        const bool possible_context_key = out.architecture.empty() && key.size() > std::strlen(".context_length") &&
-                                          ends_with_ignore_case(key, ".context_length");
-        if (context_key || possible_context_key) {
-            int64_t value = 0;
-            if (read_gguf_integer_value(in, type, value) && value > 0) {
-                if (context_key) {
-                    out.context_length = value;
-                } else {
-                    pending_context_length = value;
-                }
-            }
-            continue;
-        }
-
-        // Architecture fields for KV cache estimation
-        if (!out.architecture.empty()) {
-            if (key == out.architecture + ".block_count") {
-                int64_t value = 0;
-                if (read_gguf_integer_value(in, type, value) && value > 0)
-                    out.block_count = value;
-                continue;
-            }
-            if (key == out.architecture + ".embedding_length") {
-                int64_t value = 0;
-                if (read_gguf_integer_value(in, type, value) && value > 0)
-                    out.embedding_length = value;
-                continue;
-            }
-            if (key == out.architecture + ".attention.head_count_kv") {
-                int64_t value = 0;
-                if (read_gguf_integer_value(in, type, value) && value > 0)
-                    out.head_count_kv = value;
-                continue;
-            }
-            if (key == out.architecture + ".attention.key_length") {
-                int64_t value = 0;
-                if (read_gguf_integer_value(in, type, value) && value > 0)
-                    out.key_length = value;
-                continue;
-            }
-        }
-
-        // Capability detection (vision, tool-calling, MTP)
-        if (type == 4) {
-            uint32_t val = 0;
-            if (read_le(in, val)) {
-                if (contains_ignore_case(key, "nextn_predict_layers") && val > 0)
-                    out.caps.mtp = true;
-            }
-        } else if (type == 8) {
-            std::string value;
-            if (read_gguf_string(in, value)) {
-                inspect_gguf_string(key, value, out.caps);
-            }
-        } else if (type == 9) {
-            // Array — check string elements for capability hints
-            uint32_t elem_type = 0;
-            uint64_t count = 0;
-            if (read_le(in, elem_type) && read_le(in, count)) {
-                if (elem_type == 8) {
-                    for (uint64_t j = 0; j < count; ++j) {
-                        std::string value;
-                        if (!read_gguf_string(in, value)) return false;
-                        inspect_gguf_string(key, value, out.caps);
-                    }
-                } else if (elem_type != 9) {
-                    uint64_t elem_size = gguf_scalar_size(elem_type);
-                    if (elem_size == 0) return false;
-                    if (!skip_bytes(in, count * elem_size)) return false;
-                } else {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        } else {
-            if (!skip_gguf_value(in, type)) return false;
-        }
-    }
-
-    if (out.context_length == 0 && pending_context_length > 0) {
-        out.context_length = pending_context_length;
-    }
-    return true;
-}
-
 // Candidate roots that FLM may use to store models. FLM resolves its model
 // directory from the FLM_MODEL_PATH env var (set by the installer) and falls
 // back to a built-in default that has changed across releases. lemond is often
 // launched from a parent process that predates the FLM install and therefore
 // doesn't see FLM_MODEL_PATH, so we also probe every documented default.
 // Order is most-specific to most-historical.
-static std::vector<fs::path> get_flm_models_dir_candidates() {
-    std::vector<fs::path> roots;
-
-    const char* flm_model_path = std::getenv("FLM_MODEL_PATH");
-    if (flm_model_path && *flm_model_path) {
-        roots.push_back(path_from_utf8(flm_model_path) / "models");
-    }
-
-#ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile && *userprofile) {
-        fs::path home = path_from_utf8(userprofile);
-        roots.push_back(home / ".flm" / "models");          // current installer default
-        roots.push_back(home / "Documents" / "flm" / "models"); // legacy installer default
-        roots.push_back(home / "flm" / "models");
-    }
-#else
-    const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-    if (xdg_config_home && *xdg_config_home) {
-        roots.push_back(path_from_utf8(xdg_config_home) / "flm" / "models");
-    }
-    const char* home = std::getenv("HOME");
-    if (home && *home) {
-        fs::path home_path = path_from_utf8(home);
-        roots.push_back(home_path / ".flm" / "models");
-        roots.push_back(home_path / ".config" / "flm" / "models");
-    }
-#endif
-
-    return roots;
-}
-
-static fs::path find_flm_config_path_from_repo_dir(const std::string& repo_dir) {
-    if (repo_dir.empty()) return fs::path();
-
-    for (const auto& root : get_flm_models_dir_candidates()) {
-        fs::path candidate = root / repo_dir / "config.json";
-        if (safe_exists(candidate)) return candidate;
-    }
-    return fs::path();
-}
-
-static std::string repo_dir_from_url(const std::string& url) {
-    std::string clean = url;
-    while (!clean.empty() && clean.back() == '/') clean.pop_back();
-    size_t query_pos = clean.find_first_of("?#");
-    if (query_pos != std::string::npos) clean = clean.substr(0, query_pos);
-
-    for (const std::string marker : {"/tree/", "/resolve/"}) {
-        size_t marker_pos = clean.find(marker);
-        if (marker_pos != std::string::npos) {
-            clean = clean.substr(0, marker_pos);
-            break;
-        }
-    }
-
-    size_t slash = clean.find_last_of('/');
-    return slash == std::string::npos ? clean : clean.substr(slash + 1);
-}
-
-static int64_t read_flm_max_context_window(const ModelInfo& info) {
-    if (info.type != ModelType::LLM) return 0;
-
-    std::string config_path = info.resolved_path("config");
-    if (config_path.empty()) return 0;
-
-    try {
-        json config = JsonUtils::load_from_file(config_path);
-        if (config.contains("max_position_embeddings") && config["max_position_embeddings"].is_number_integer()) {
-            int64_t value = config["max_position_embeddings"].get<int64_t>();
-            return value > 0 ? value : 0;
-        }
-        if (config.contains("text_config") && config["text_config"].is_object()) {
-            const auto& text_config = config["text_config"];
-            if (text_config.contains("max_position_embeddings") && text_config["max_position_embeddings"].is_number_integer()) {
-                int64_t value = text_config["max_position_embeddings"].get<int64_t>();
-                return value > 0 ? value : 0;
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(DEBUG, "ModelManager") << "Could not read FLM config metadata for "
-                                   << info.model_name << ": " << e.what() << std::endl;
-    }
-    return 0;
-}
 
 static void populate_model_metadata(ModelInfo& info) {
     info.max_context_window = 0;
     if (!info.downloaded) return;
 
-    if (info.recipe == "llamacpp") {
-        std::string gguf_path = info.resolved_path();
-        if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
-            GgufMetadata meta;
-            if (read_gguf_metadata(meta, gguf_path)) {
-                info.max_context_window = meta.context_length;
-                info.gguf_block_count = meta.block_count;
-                info.gguf_embedding_length = meta.embedding_length;
-                info.gguf_head_count_kv = meta.head_count_kv;
-                info.gguf_key_length = meta.key_length;
-
-                // GGUF vision/tool metadata are LLM capabilities. Do not apply
-                // them to embedding/reranking models, otherwise labels such as
-                // tool-calling would reclassify the model away from its endpoint
-                // type and break /embeddings or /rerank.
-                if (info.type == ModelType::LLM) {
-                    apply_gguf_capability_labels(info.labels, meta.caps);
-                }
-            }
-        }
-    } else if (info.recipe == "flm") {
-        info.max_context_window = read_flm_max_context_window(info);
-    }
+    // Per-backend metadata (GGUF arch/labels for llamacpp, config.json ctx for
+    // flm, …) is read by the backend's ops, not a recipe switchboard here.
+    backends::BackendOpsContext ctx;
+    backends::ops_for(info.recipe)->populate_metadata(info, ctx);
 }
 
 static bool is_user_model_name(const std::string& model_name) {
@@ -3108,7 +2776,8 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                     info.suggested = true; // All official FLM models are suggested
 
                     if (JsonUtils::get_or_default<bool>(m, "installed", false) && m.contains("url") && m["url"].is_string()) {
-                        fs::path config_path = find_flm_config_path_from_repo_dir(repo_dir_from_url(m["url"].get<std::string>()));
+                        fs::path config_path = backends::fastflowlm::find_flm_config_path_from_repo_dir(
+                            backends::fastflowlm::repo_dir_from_url(m["url"].get<std::string>()));
                         if (!config_path.empty()) {
                             info.resolved_paths["config"] = path_to_utf8(config_path);
                         }
