@@ -49,14 +49,17 @@ class MoonshineTests(ServerTestBase):
         import math
 
         n_samples = int(duration_sec * sample_rate)
-        tmp_path = os.path.join(tempfile.gettempdir(), "moonshine_test_audio.wav")
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = tmp.name
 
         with wave.open(tmp_path, "w") as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
             wf.setframerate(sample_rate)
             for i in range(n_samples):
-                sample = int(math.sin(2 * math.pi * 440 * i / sample_rate) * 0.3 * 32767)
+                sample = int(
+                    math.sin(2 * math.pi * 440 * i / sample_rate) * 0.3 * 32767
+                )
                 wf.writeframes(struct.pack("<h", sample))
 
         return tmp_path
@@ -85,7 +88,9 @@ class MoonshineTests(ServerTestBase):
                 data = {"model": model_name, "response_format": "json"}
                 resp = requests.post(url, files=files, data=data, timeout=60)
 
-            self.assertEqual(resp.status_code, 200, f"Transcription failed: {resp.text}")
+            self.assertEqual(
+                resp.status_code, 200, f"Transcription failed: {resp.text}"
+            )
 
             result = resp.json()
             self.assertIn("text", result)
@@ -145,10 +150,14 @@ class MoonshineTests(ServerTestBase):
                 frames_per_chunk = rate * chunk_ms // 1000
 
                 async with websockets.connect(ws_url) as ws:
-                    await ws.send(jsonlib.dumps({
-                        "type": "session.update",
-                        "session": {"model": model_name},
-                    }))
+                    await ws.send(
+                        jsonlib.dumps(
+                            {
+                                "type": "session.update",
+                                "session": {"model": model_name},
+                            }
+                        )
+                    )
 
                     async def reader():
                         nonlocal final_text
@@ -171,39 +180,49 @@ class MoonshineTests(ServerTestBase):
                         # continue for the audio that follows
                         for _ in range(3):
                             frames = wf.readframes(frames_per_chunk)
-                            await ws.send(jsonlib.dumps({
-                                "type": "input_audio_buffer.append",
-                                "audio": base64.b64encode(frames).decode(),
-                            }))
+                            await ws.send(
+                                jsonlib.dumps(
+                                    {
+                                        "type": "input_audio_buffer.append",
+                                        "audio": base64.b64encode(frames).decode(),
+                                    }
+                                )
+                            )
                             await asyncio.sleep(chunk_ms / 1000)
                         wf.rewind()
-                        await ws.send(jsonlib.dumps(
-                            {"type": "input_audio_buffer.clear"}
-                        ))
+                        await ws.send(
+                            jsonlib.dumps({"type": "input_audio_buffer.clear"})
+                        )
                         await asyncio.sleep(0.5)
 
                     while True:
                         frames = wf.readframes(frames_per_chunk)
                         if not frames:
                             break
-                        await ws.send(jsonlib.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(frames).decode(),
-                        }))
+                        await ws.send(
+                            jsonlib.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(frames).decode(),
+                                }
+                            )
+                        )
                         await asyncio.sleep(chunk_ms / 1000)
 
                     # Trailing silence lets the streaming model close the line
                     silence = b"\x00\x00" * frames_per_chunk
                     for _ in range(15):
-                        await ws.send(jsonlib.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(silence).decode(),
-                        }))
+                        await ws.send(
+                            jsonlib.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(silence).decode(),
+                                }
+                            )
+                        )
                         await asyncio.sleep(chunk_ms / 1000)
 
-                    await ws.send(jsonlib.dumps(
-                        {"type": "input_audio_buffer.commit"}
-                    ))
+                    await ws.send(jsonlib.dumps({"type": "input_audio_buffer.commit"}))
                     await asyncio.sleep(3)
                     rtask.cancel()
             return events, final_text
@@ -281,10 +300,10 @@ class MoonshineTests(ServerTestBase):
 
         # Find the moonshine-server subprocess PID
         import subprocess
+
         try:
             output = subprocess.check_output(
-                ["pgrep", "-f", "moonshine-server"],
-                text=True
+                ["pgrep", "-f", "moonshine-server"], text=True
             ).strip()
             if not output:
                 self.skipTest("moonshine-server process not found")
@@ -295,13 +314,94 @@ class MoonshineTests(ServerTestBase):
                     if line.startswith("Threads:"):
                         thread_count = int(line.split()[1])
                         self.assertLessEqual(
-                            thread_count, 10,
-                            f"moonshine-server spawned {thread_count} threads (expected <= 10)"
+                            thread_count,
+                            10,
+                            f"moonshine-server spawned {thread_count} threads (expected <= 10)",
                         )
                         print(f"[MoonshineTest] Thread count: {thread_count}")
                         break
         except Exception as e:
             self.skipTest(f"Could not check thread count: {e}")
+
+    @skip_if_unsupported("transcription")
+    def test_moonshine_invalid_file_transcription(self):
+        """Test that transcribing an invalid/unsupported file returns a 400 Bad Request."""
+        model_name = _get_moonshine_model()
+        if not model_name or "Moonshine" not in model_name:
+            self.skipTest("No Moonshine model configured for testing")
+
+        self._load_model(model_name)
+
+        # Create an invalid WAV file (just some text content) using NamedTemporaryFile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp.write(b"This is not a valid RIFF/WAV file.")
+            tmp_path = tmp.name
+
+        try:
+            url = f"http://127.0.0.1:{PORT}/v1/audio/transcriptions"
+            with open(tmp_path, "rb") as f:
+                files = {"file": ("test.wav", f, "audio/wav")}
+                data = {"model": model_name, "response_format": "json"}
+                resp = requests.post(url, files=files, data=data, timeout=60)
+
+            # We expect a 400 Bad Request
+            self.assertEqual(
+                resp.status_code,
+                400,
+                f"Expected 400 but got {resp.status_code}: {resp.text}",
+            )
+
+            result = resp.json()
+            self.assertIn("error", result)
+            self.assertIn("message", result["error"])
+            self.assertEqual(result["error"]["type"], "invalid_request_error")
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    @skip_if_unsupported("transcription")
+    def test_moonshine_unsupported_ogg_transcription(self):
+        """Test that transcribing a valid but unsupported Ogg audio file returns a 400 Bad Request."""
+        model_name = _get_moonshine_model()
+        if not model_name or "Moonshine" not in model_name:
+            self.skipTest("No Moonshine model configured for testing")
+
+        self._load_model(model_name)
+
+        import base64
+
+        # A tiny valid silent Ogg file fixture (180 bytes)
+        ogg_data = base64.b64decode(
+            "T2dnUwACAAAAAAAAAAAyzN3NAAAAAGFf2X8BM39GTEFDAQAAAWZMYUMAAAAiEgASAAAAAAAkFQrEQPAAAAAAAAAAAAAAAAAAAAAAAAAAAE9nZ1MAAAAAAAAAAAAAMszdzQEAAAD5LKCSATeEAAAzDQAAAExhdmY1NS40OC4xMDABAAAAGgAAAGVuY29kZXI9TGF2YzU1LjY5LjEwMCBmbGFjT2dnUwAEARIAAAAAAAAyzN3NAgAAAKWVljkCDAD/+GkIAAAdAAABICI="
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+            tmp.write(ogg_data)
+            tmp_path = tmp.name
+
+        try:
+            url = f"http://127.0.0.1:{PORT}/v1/audio/transcriptions"
+            with open(tmp_path, "rb") as f:
+                files = {"file": ("test.ogg", f, "audio/ogg")}
+                data = {"model": model_name, "response_format": "json"}
+                resp = requests.post(url, files=files, data=data, timeout=60)
+
+            # Ogg is unsupported by Moonshine, so it must return 400 Bad Request
+            self.assertEqual(
+                resp.status_code,
+                400,
+                f"Expected 400 but got {resp.status_code}: {resp.text}",
+            )
+
+            result = resp.json()
+            self.assertIn("error", result)
+            self.assertIn("message", result["error"])
+            self.assertEqual(result["error"]["type"], "invalid_request_error")
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 
 if __name__ == "__main__":

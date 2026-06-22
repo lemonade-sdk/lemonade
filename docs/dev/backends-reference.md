@@ -115,7 +115,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
 
-#### `llamacpp` — Llama.cpp GPU (74 models)
+#### `llamacpp` — Llama.cpp GPU (77 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -128,9 +128,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | `GLM-4.5-Air-UD-Q4K-XL-GGUF` | 67.7 | reasoning |
 | `GLM-4.7-Flash-GGUF` | 17.5 | tool-calling |
 | `Gemma-3-4b-it-GGUF` | 3.34 | vision |
-| `Gemma-4-12B-it-GGUF` | 7.12 | tool-calling, llamacpp |
+| `Gemma-4-12B-it-GGUF` | 7.29 | tool-calling, vision, llamacpp |
+| `Gemma-4-12B-it-MTP-GGUF` | 7.75 | tool-calling, llamacpp, vision, mtp |
 | `Gemma-4-26B-A4B-it-GGUF` | 18.1 | hot, tool-calling, vision, llamacpp |
+| `Gemma-4-26B-A4B-it-MTP-GGUF` | 18.5 | hot, tool-calling, vision, llamacpp, mtp |
 | `Gemma-4-31B-it-GGUF` | 19.5 | hot, tool-calling, vision, llamacpp |
+| `Gemma-4-31B-it-MTP-GGUF` | 20.0 | hot, tool-calling, vision, llamacpp, mtp |
 | `Gemma-4-E2B-it-GGUF` | 4.09 | tool-calling, vision, llamacpp |
 | `Gemma-4-E4B-it-GGUF` | 5.97 | tool-calling, vision, llamacpp |
 | `Jan-nano-128k-GGUF` | 2.5 | — |
