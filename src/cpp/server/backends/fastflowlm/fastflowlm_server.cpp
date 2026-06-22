@@ -491,6 +491,22 @@ public:
         // FLM uses the checkpoint string as-is (e.g. "gemma3:4b"); no local file.
         return ctx.checkpoint;
     }
+
+    std::vector<ModelInfo> discover_models(const BackendOpsContext&) const override {
+        return flm_discover_models();
+    }
+
+    bool is_downloaded(const ModelInfo& info, const BackendOpsContext&) const override {
+        const auto installed = flm_installed_checkpoints();
+        return std::find(installed.begin(), installed.end(), info.checkpoint()) != installed.end();
+    }
+
+    void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
+                        const BackendOpsContext&) const override {
+        flm_download(info.checkpoint(), do_not_upgrade, progress);
+    }
+
+    bool invalidates_cache_after_download() const override { return true; }
 };
 }  // namespace
 

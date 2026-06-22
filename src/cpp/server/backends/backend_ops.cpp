@@ -102,6 +102,20 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
     return ctx.model_cache_path;
 }
 
+bool BackendOps::is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const {
+    // Default: the shared HF checkpoint-completeness check.
+    return ctx.model_manager != nullptr && ctx.model_manager->checkpoints_complete(info);
+}
+
+void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
+                                DownloadProgressCallback progress, const BackendOpsContext& ctx) const {
+    // Default: the shared Hugging Face download engine.
+    (void)do_not_upgrade;
+    if (ctx.model_manager != nullptr) {
+        ctx.model_manager->download_from_huggingface_engine(info, progress);
+    }
+}
+
 const BackendOps* default_backend_ops() {
     static const BackendOps kDefault;
     return &kDefault;

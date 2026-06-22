@@ -815,6 +815,47 @@ public:
         // upstream provider's model id, used directly when forwarding requests.
         return "";
     }
+
+    // Cloud models have no local artifacts — always "downloaded".
+    bool is_downloaded(const ModelInfo&, const BackendOpsContext&) const override {
+        return true;
+    }
+
+    // "Downloading" a cloud model is a no-op.
+    void download_model(const ModelInfo&, bool, DownloadProgressCallback,
+                        const BackendOpsContext&) const override {}
+
+    // Discover models from each installed cloud provider with a resolvable
+    // credential. Per AGENTS.md invariant #11 the registry persists only
+    // {provider, base_url}; keys come from env vars / process memory. Failures
+    // are logged, never propagated, so one offline provider can't block discovery.
+    std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const override {
+        std::vector<ModelInfo> out;
+        if (ctx.cloud_registry == nullptr) {
+            return out;
+        }
+        for (const auto& rec : ctx.cloud_registry->list_installed()) {
+            const std::string api_key = ctx.cloud_registry->resolve_key(rec.name);
+            if (api_key.empty() || rec.base_url.empty()) {
+                LOG(INFO, "CloudOps") << "Skipping cloud discovery for '" << rec.name
+                                      << "': no API key resolvable (set "
+                                      << CloudProviderRegistry::env_var_name(rec.name)
+                                      << " or POST /v1/cloud/auth)" << std::endl;
+                continue;
+            }
+            try {
+                for (auto& m : CloudServer::discover_models(rec.name, api_key, rec.base_url)) {
+                    if (m.recipe == "cloud" && !m.model_name.empty()) {
+                        out.push_back(std::move(m));
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG(WARNING, "CloudOps") << "Cloud discovery threw for '" << rec.name
+                                         << "': " << e.what() << std::endl;
+            }
+        }
+        return out;
+    }
 };
 }  // namespace
 

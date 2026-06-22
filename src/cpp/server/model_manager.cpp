@@ -1297,21 +1297,6 @@ static bool has_partial_files(const fs::path& dir) {
     return false;
 }
 
-static bool is_valid_gguf_file_for_cache(const std::string& path) {
-    std::ifstream in(path_from_utf8(path), std::ios::binary);
-    if (!in.is_open()) {
-        return false;
-    }
-
-    char magic[4] = {};
-    in.read(magic, sizeof(magic));
-    return in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
-           magic[0] == 'G' &&
-           magic[1] == 'G' &&
-           magic[2] == 'U' &&
-           magic[3] == 'F';
-}
-
 static bool is_checkpoint_path_complete(const std::string& path_str) {
     if (path_str.empty()) return false;
 
@@ -1347,18 +1332,24 @@ static bool are_required_checkpoints_complete(const ModelInfo& info) {
             return false;
         }
 
-        fs::path resolved = path_from_utf8(resolved_path);
-        if (info.recipe == "llamacpp" &&
-            !safe_is_directory(resolved) &&
-            ends_with_ignore_case(resolved_path, ".gguf") &&
-            !is_valid_gguf_file_for_cache(resolved_path)) {
+        // Per-backend file validation (e.g. llamacpp checks GGUF magic).
+        std::string invalid = backends::ops_for(info.recipe)->validate_checkpoint_file(resolved_path);
+        if (!invalid.empty()) {
             LOG(WARNING, "ModelManager")
-                << "Invalid GGUF cache file; marking model as not downloaded: "
-                << resolved_path << std::endl;
+                << invalid << "; marking model as not downloaded: " << resolved_path << std::endl;
             return false;
         }
     }
     return true;
+}
+
+bool ModelManager::checkpoints_complete(const ModelInfo& info) const {
+    return are_required_checkpoints_complete(info);
+}
+
+void ModelManager::download_from_huggingface_engine(const ModelInfo& info,
+                                                    DownloadProgressCallback progress_callback) {
+    download_from_huggingface(info, progress_callback);
 }
 
 void ModelManager::build_cache() {
@@ -1498,48 +1489,20 @@ void ModelManager::build_cache() {
         all_models[name] = info;
     }
 
-    // Step 1.6: Discover FLM models from 'flm list --json'
-    // Only discover FLM models if FLM is fully installed
-    // Precedence: server_models.json > user_models.json > extra_models > flm_list
-    auto flm_status = SystemInfoCache::get_flm_status();
-    if (flm_status.is_ready()) {
-        auto flm_available = get_flm_available_models();
-        for (const auto& info : flm_available) {
-            // Use emplace to only add if key doesn't exist (respect precedence)
-            all_models.emplace(info.model_name, info);
-        }
-    }
-
-    // Cloud-offload discovery is server-side and automatic. For each
-    // installed cloud provider with a resolvable credential (env var or
-    // runtime-auth POST), call discover_models and merge the results into
-    // all_models. Per AGENTS.md invariant #11, the registry persists only
-    // {provider, base_url} pairs — API keys live in env vars or process
-    // memory, never on disk. Failures are logged, never propagated, so a
-    // single offline provider can't block the rest of cache build.
-    if (cloud_registry_ != nullptr) {
-        auto installed = cloud_registry_->list_installed();
-        for (const auto& rec : installed) {
-            const std::string api_key = cloud_registry_->resolve_key(rec.name);
-            if (api_key.empty() || rec.base_url.empty()) {
-                LOG(INFO, "ModelManager") << "Skipping cloud discovery for '"
-                                           << rec.name << "': no API key resolvable"
-                                           << " (set " << CloudProviderRegistry::env_var_name(rec.name)
-                                           << " or POST /v1/cloud/auth)" << std::endl;
+    // Step 1.6: Dynamic discovery. Backends whose models are supplied at runtime
+    // (descriptor dynamic_models = true — flm from `flm list`, cloud from each
+    // provider) contribute their models via ops->discover_models(). Each carries
+    // its own downloaded status. Precedence: server/user/extra models win, so we
+    // emplace (don't overwrite). Failures are handled inside each backend's ops.
+    {
+        backends::BackendOpsContext octx;
+        octx.model_manager = this;
+        octx.cloud_registry = cloud_registry_;
+        for (const auto* desc : backends::all_descriptors()) {
+            if (!desc->dynamic_models) {
                 continue;
             }
-            std::vector<ModelInfo> discovered;
-            try {
-                discovered = backends::CloudServer::discover_models(rec.name, api_key, rec.base_url);
-            } catch (const std::exception& e) {
-                LOG(WARNING, "ModelManager") << "Cloud discovery threw for '"
-                                              << rec.name << "': " << e.what()
-                                              << std::endl;
-                continue;
-            }
-            for (auto& m : discovered) {
-                if (m.recipe != "cloud" || m.model_name.empty()) continue;
-                // Same merge precedence as FLM: emplace, don't overwrite.
+            for (auto& m : backends::ops_for(desc->recipe)->discover_models(octx)) {
                 all_models.emplace(m.model_name, std::move(m));
             }
         }
@@ -1556,21 +1519,21 @@ void ModelManager::build_cache() {
     // Step 2: Filter by backend availability
     all_models = filter_models_by_backend(all_models);
 
-    // Step 3: Check download status ONCE for all models
-    auto flm_models = get_flm_installed_models();
-    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
+    // Step 3: Check download status for all models. Dynamic-discovery backends
+    // (flm, cloud) already set downloaded during discovery; everyone else asks
+    // its backend ops (default = shared HF completeness check).
+    backends::BackendOpsContext status_ctx;
+    status_ctx.model_manager = this;
 
     int downloaded_count = 0;
     // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
         if (is_collection_recipe(info.recipe)) {
             continue;  // Handled in second pass after components are resolved
-        } else if (info.recipe == "flm") {
-            info.downloaded = flm_set.count(info.checkpoint()) > 0;
-        } else if (info.recipe == "cloud") {
-            info.downloaded = true;  // Cloud-offloaded models have no local artifacts
-        } else {
-            info.downloaded = are_required_checkpoints_complete(info);
+        }
+        const auto* desc = backends::descriptor_for(info.recipe);
+        if (!(desc && desc->dynamic_models)) {
+            info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, status_ctx);
         }
 
         if (info.downloaded) {
@@ -1667,16 +1630,14 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         return; // Backend not available, don't add to cache
     }
 
-    // Check download status
+    // Check download status (collections aggregate their components; everyone
+    // else asks its backend ops).
     if (is_collection_recipe(info.recipe)) {
         info.downloaded = check_component_downloaded(info, models_cache_);
-    } else if (info.recipe == "flm") {
-        auto flm_models = get_flm_installed_models();
-        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
-    } else if (info.recipe == "cloud") {
-        info.downloaded = true;  // Cloud-offloaded models have no local artifacts
     } else {
-        info.downloaded = are_required_checkpoints_complete(info);
+        backends::BackendOpsContext octx;
+        octx.model_manager = this;
+        info.downloaded = backends::ops_for(info.recipe)->is_downloaded(info, octx);
     }
 
     populate_model_metadata(info);
@@ -1715,10 +1676,10 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // The path changes now that files exist on disk
         if (downloaded) {
             resolve_all_model_paths(it->second);
-            if (it->second.recipe == "flm") {
+            if (backends::ops_for(it->second.recipe)->invalidates_cache_after_download()) {
                 cache_valid_ = false;
-                LOG(INFO, "ModelManager") << "Invalidated model cache after FLM download for '"
-                          << model_name << "'" << std::endl;
+                LOG(INFO, "ModelManager") << "Invalidated model cache after download for '"
+                          << model_name << "' (backend rebuilds its model list)" << std::endl;
                 return;
             }
             populate_model_metadata(it->second);
@@ -2295,192 +2256,8 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
     cache_valid_ = false;
 }
 
-// Find the FLM executable: install dir on Windows, system PATH on Linux.
-// Returns empty string if not found.
-static std::string find_flm_binary() {
-    try {
-        const backends::BackendSpec* spec = backends::try_get_spec_for_recipe("flm");
-        if (!spec) {
-            return "";
-        }
-        return backends::BackendUtils::get_backend_binary_path(*spec, "npu");
-    } catch (...) {
-#ifndef _WIN32
-        return utils::find_flm_executable();
-#else
-        return "";
-#endif
-    }
-}
 
-// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
-std::vector<std::string> ModelManager::get_flm_installed_models() {
-    std::vector<std::string> installed_models;
 
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) return installed_models;
-
-    // Run 'flm list --filter installed --quiet --json' to get only installed models
-    std::string output;
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-#else
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return installed_models;
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-#endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& model : j["models"]) {
-                if (model.contains("name") && model["name"].is_string()) {
-                    installed_models.push_back(model["name"].get<std::string>());
-                }
-            }
-            return installed_models;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
-    }
-
-    // Legacy parsing - cleaner format without emojis
-    // Expected format:
-    //   Models:
-    //     - modelname:tag
-    //     - another:model
-    std::istringstream stream(output);
-    std::string line;
-    while (std::getline(stream, line)) {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-        // Skip the "Models:" header line or empty lines
-        if (line == "Models:" || line.empty()) {
-            continue;
-        }
-
-        // Parse model checkpoint (format: "  - modelname:tag")
-        if (line.find("- ") == 0) {
-            std::string checkpoint = line.substr(2);
-            // Trim any remaining whitespace
-            checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
-            checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
-            if (!checkpoint.empty()) {
-                installed_models.push_back(checkpoint);
-            }
-        }
-    }
-
-    return installed_models;
-}
-
-std::vector<ModelInfo> ModelManager::get_flm_available_models() {
-    std::vector<ModelInfo> flm_models;
-
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) return flm_models;
-
-    LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
-
-    // Run 'flm list --json' to get all available models
-    std::string output;
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    LOG(INFO, "ModelManager") << "flm list --json exit code: " << rc
-              << ", output length: " << output.size() << std::endl;
-    if (rc != 0 || output.empty()) {
-        LOG(WARNING, "ModelManager") << "flm list --json failed or returned empty. "
-                  << "Output: " << output.substr(0, 200) << std::endl;
-    }
-#else
-    std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return flm_models;
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-#endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& m : j["models"]) {
-                if (m.contains("name") && m["name"].is_string()) {
-                    std::string checkpoint = m["name"].get<std::string>();
-
-                    // Format display name: replace : with -, append -FLM
-                    // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
-                    std::string display_name = checkpoint;
-                    // Replace : with -
-                    std::replace(display_name.begin(), display_name.end(), ':', '-');
-
-                    std::string model_name = display_name + "-FLM";
-
-                    ModelInfo info;
-                    info.model_name = model_name;
-                    info.checkpoints["main"] = checkpoint;
-                    info.recipe = "flm";
-                    info.suggested = true; // All official FLM models are suggested
-
-                    if (JsonUtils::get_or_default<bool>(m, "installed", false) && m.contains("url") && m["url"].is_string()) {
-                        fs::path config_path = backends::fastflowlm::find_flm_config_path_from_repo_dir(
-                            backends::fastflowlm::repo_dir_from_url(m["url"].get<std::string>()));
-                        if (!config_path.empty()) {
-                            info.resolved_paths["config"] = path_to_utf8(config_path);
-                        }
-                    }
-
-                    // Size in GB (footprint field contains disk size in GB)
-                    if (m.contains("footprint") && m["footprint"].is_number()) {
-                        info.size = m["footprint"].get<double>();
-                    }
-
-                    // Labels from FLM metadata
-                    if (m.contains("label") && m["label"].is_array()) {
-                        for (const auto& l : m["label"]) {
-                            if (l.is_string()) {
-                                info.labels.push_back(l.get<std::string>());
-                            }
-                        }
-                    }
-
-                    // Populate type and device fields (multi-model support)
-                    info.type = get_model_type_from_labels(info.labels);
-                    info.device = device_type_for_recipe(info.recipe);
-
-                    flm_models.push_back(info);
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "FLM model discovery failed: " << e.what() << std::endl;
-    } catch (...) {
-        LOG(WARNING, "ModelManager") << "FLM model discovery failed with unknown error" << std::endl;
-    }
-
-    return flm_models;
-}
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Build cache if needed
@@ -2505,18 +2282,11 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Cloud models have no local artifacts; "downloading" is a no-op.
-    if (info.recipe == "cloud") {
-        update_model_in_cache(info.model_name, true);
-        return;
-    }
-
-    // Use recipe-specific download paths
-    if (info.recipe == "flm") {
-        download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
-    } else {
-        download_from_huggingface(info, progress_callback);
-    }
+    // The backend's ops own the download (shared HF engine by default; flm pulls
+    // via the flm CLI; cloud is a no-op).
+    backends::BackendOpsContext octx;
+    octx.model_manager = this;
+    backends::ops_for(info.recipe)->download_model(info, do_not_upgrade, progress_callback, octx);
 
     // Update cache after successful download
     update_model_in_cache(info.model_name, true);
@@ -4019,224 +3789,6 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     LOG(INFO, "ModelManager") << "Download location: " << reported_download_path << std::endl;
 }
 
-void ModelManager::download_from_flm(const std::string& checkpoint,
-                                     bool do_not_upgrade,
-                                     DownloadProgressCallback progress_callback) {
-    LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
-
-    // Ensure FLM is ready (single source of truth)
-    auto status = SystemInfoCache::get_flm_status();
-    if (!status.is_ready()) {
-        throw std::runtime_error(status.error_string());
-    }
-
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) {
-        throw std::runtime_error("FLM executable not found");
-    }
-
-    // Prepare arguments
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
-
-    LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
-    for (const auto& arg : args) {
-        LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
-    }
-    LOG(INFO, "ProcessManager") << std::endl;
-
-    // State for parsing FLM output
-    int total_files = 0;
-    int current_file_index = 0;
-    std::string current_filename;
-    bool cancelled = false;
-
-    // Run flm pull command and parse output
-    int exit_code = utils::ProcessManager::run_process_with_output(
-        flm_path, args,
-        [&](const std::string& line) -> bool {
-            // Always print the line to console
-            LOG(INFO, "FLM") << line << std::endl;
-
-            // Parse FLM output to extract progress information
-            // Pattern: "[FLM]  Downloading X/Y: filename"
-            if (line.find("[FLM]  Downloading ") != std::string::npos &&
-                line.find("/") != std::string::npos &&
-                line.find(":") != std::string::npos) {
-
-                // Extract "X/Y: filename" from "[FLM]  Downloading X/Y: filename"
-                size_t start = line.find("Downloading ") + 12;
-                size_t slash = line.find("/", start);
-                size_t colon = line.find(":", slash);
-
-                if (slash != std::string::npos && colon != std::string::npos) {
-                    try {
-                        current_file_index = std::stoi(line.substr(start, slash - start));
-                        total_files = std::stoi(line.substr(slash + 1, colon - slash - 1));
-                        current_filename = line.substr(colon + 2);  // Skip ": "
-
-                        // Send progress update
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = 0;
-                            progress.bytes_total = 0;
-                            progress.percent = (total_files > 0) ?
-                                ((current_file_index - 1) * 100 / total_files) : 0;
-
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Downloading: XX.X% (XXX.XMB / XXX.XMB)"
-            else if (line.find("[FLM]  Downloading: ") != std::string::npos &&
-                     line.find("%") != std::string::npos) {
-
-                // Extract percentage and bytes
-                size_t start = line.find("Downloading: ") + 13;
-                size_t pct_end = line.find("%", start);
-
-                if (pct_end != std::string::npos) {
-                    try {
-                        std::string pct_str = line.substr(start, pct_end - start);
-                        double file_percent = std::stod(pct_str);
-
-                        // Try to extract bytes (XXX.XMB / XXX.XMB)
-                        size_t open_paren = line.find("(", pct_end);
-                        size_t slash = line.find("/", open_paren);
-                        size_t close_paren = line.find(")", slash);
-
-                        size_t bytes_downloaded = 0;
-                        size_t bytes_total = 0;
-
-                        if (open_paren != std::string::npos && slash != std::string::npos) {
-                            std::string downloaded_str = line.substr(open_paren + 1, slash - open_paren - 1);
-                            std::string total_str = line.substr(slash + 1, close_paren - slash - 1);
-
-                            // Parse "XXX.XMB" format
-                            auto parse_size = [](const std::string& s) -> size_t {
-                                double val = 0;
-                                size_t mb_pos = s.find("MB");
-                                size_t gb_pos = s.find("GB");
-                                size_t kb_pos = s.find("KB");
-
-                                if (mb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, mb_pos));
-                                    return static_cast<size_t>(val * 1024 * 1024);
-                                } else if (gb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, gb_pos));
-                                    return static_cast<size_t>(val * 1024 * 1024 * 1024);
-                                } else if (kb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, kb_pos));
-                                    return static_cast<size_t>(val * 1024);
-                                }
-                                return 0;
-                            };
-
-                            bytes_downloaded = parse_size(downloaded_str);
-                            bytes_total = parse_size(total_str);
-                        }
-
-                        // Send progress update with byte-level info
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = bytes_downloaded;
-                            progress.bytes_total = bytes_total;
-                            // Use intra-file percent when we have byte-level progress
-                            progress.percent = static_cast<int>(file_percent);
-
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Overall progress: XX.X% (X/Y files)"
-            else if (line.find("[FLM]  Overall progress: ") != std::string::npos) {
-                size_t start = line.find("progress: ") + 10;
-                size_t pct_end = line.find("%", start);
-
-                if (pct_end != std::string::npos) {
-                    try {
-                        int overall_percent = static_cast<int>(std::stod(line.substr(start, pct_end - start)));
-
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = 0;  // Not available for overall progress
-                            progress.bytes_total = 0;
-                            progress.percent = overall_percent;
-
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Missing files (N):"
-            else if (line.find("[FLM]  Missing files (") != std::string::npos) {
-                size_t start = line.find("(") + 1;
-                size_t end = line.find(")", start);
-                if (end != std::string::npos) {
-                    try {
-                        total_files = std::stoi(line.substr(start, end - start));
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-
-            return true;  // Continue
-        },
-        "",  // Working directory
-        3600  // 1 hour timeout for large model downloads
-    );
-
-    if (cancelled) {
-        LOG(INFO, "ModelManager") << "FLM download cancelled by client" << std::endl;
-        throw std::runtime_error("Download cancelled");
-    }
-
-    if (exit_code != 0) {
-        LOG(ERROR, "ModelManager") << "FLM pull failed with exit code: " << exit_code << std::endl;
-        throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-    }
-
-    // Send completion event
-    if (progress_callback) {
-        DownloadProgress progress;
-        progress.complete = true;
-        progress.file_index = total_files;
-        progress.total_files = total_files;
-        progress.percent = 100;
-        (void)progress_callback(progress);  // Ignore return - download already complete
-    }
-
-    LOG(INFO, "ModelManager") << "FLM model pull completed successfully" << std::endl;
-}
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
@@ -4263,7 +3815,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Find flm executable — on Windows flm.exe lives under the lemonade
         // cache dir, not on PATH, so we must resolve the full path.
-        std::string flm_path = find_flm_binary();
+        std::string flm_path = backends::fastflowlm::find_flm_binary();
         if (flm_path.empty()) {
             throw std::runtime_error("FLM executable not found");
         }

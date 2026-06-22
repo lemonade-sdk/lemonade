@@ -2,11 +2,11 @@
 
 #include <string>
 #include <vector>
+#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback (server-side only)
 
 namespace lemon {
 
-struct ModelInfo;
-class ModelManager;
+class CloudProviderRegistry;
 
 namespace backends {
 
@@ -14,6 +14,7 @@ namespace backends {
 // management needs without a running subprocess. Grows as migrations require.
 struct BackendOpsContext {
     ModelManager* model_manager = nullptr;
+    CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
 };
 
 // Inputs for resolving a checkpoint's on-disk path. The model manager computes
@@ -57,6 +58,36 @@ public:
     // bespoke artifact layout (GGUF file, genai_config.json dir, .bin, …) override.
     virtual std::string resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const;
+
+    // Models supplied at runtime rather than from server_models.json (descriptor
+    // dynamic_models = true). Default: none. cloud/flm override.
+    virtual std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const {
+        (void)ctx;
+        return {};
+    }
+
+    // Whether a model's local artifacts are present. Default: the shared HF
+    // checkpoint-completeness check (ModelManager::checkpoints_complete). cloud
+    // (always true) and flm (installed-set membership) override.
+    virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+
+    // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
+    // a reason it should be treated as not-downloaded. Default: always valid;
+    // llamacpp checks GGUF magic.
+    virtual std::string validate_checkpoint_file(const std::string& resolved_path) const {
+        (void)resolved_path;
+        return "";
+    }
+
+    // Download a model's artifacts. Default: the shared Hugging Face download.
+    // cloud (no-op) and flm (flm pull) override.
+    virtual void download_model(const ModelInfo& info, bool do_not_upgrade,
+                                DownloadProgressCallback progress,
+                                const BackendOpsContext& ctx) const;
+
+    // Whether the model cache must be rebuilt after this backend downloads a
+    // model (e.g. flm, whose model list changes). Default: false.
+    virtual bool invalidates_cache_after_download() const { return false; }
 };
 
 // Shared default ops instance for backends that override nothing.

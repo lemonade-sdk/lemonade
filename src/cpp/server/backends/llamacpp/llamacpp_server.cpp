@@ -705,6 +705,27 @@ public:
         }
         return BackendOps::resolve_checkpoint_path(info, ctx);
     }
+
+    std::string validate_checkpoint_file(const std::string& resolved_path) const override {
+        // A .gguf file in the cache must start with the GGUF magic, else it's a
+        // truncated/corrupt download and the model is not really present.
+        std::error_code ec;
+        std::filesystem::path p = lemon::utils::path_from_utf8(resolved_path);
+        if (std::filesystem::is_directory(p, ec)) {
+            return "";
+        }
+        std::string ext = resolved_path.size() >= 5 ? resolved_path.substr(resolved_path.size() - 5) : "";
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext != ".gguf") {
+            return "";
+        }
+        std::ifstream in(p, std::ios::binary);
+        char magic[4] = {};
+        in.read(magic, sizeof(magic));
+        bool ok = in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
+                  magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
+        return ok ? "" : "Invalid GGUF cache file";
+    }
 };
 }  // namespace
 

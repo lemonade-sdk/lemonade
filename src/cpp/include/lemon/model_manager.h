@@ -224,11 +224,15 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Get list of installed FLM models (for caching)
-    std::vector<std::string> get_flm_installed_models();
+    // Shared Hugging Face completeness check: true if all required checkpoints
+    // are present and complete (per-backend file validation runs via ops). The
+    // default BackendOps::is_downloaded delegates here for HF-backed backends.
+    bool checkpoints_complete(const ModelInfo& info) const;
 
-    // Get list of all available FLM models from 'flm list --json'
-    std::vector<ModelInfo> get_flm_available_models();
+    // Shared Hugging Face download engine. The default BackendOps::download_model
+    // delegates here; flm/cloud override with their own download.
+    void download_from_huggingface_engine(const ModelInfo& info,
+                                          DownloadProgressCallback progress_callback = nullptr);
 
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
@@ -309,11 +313,6 @@ private:
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
-
-    // Download from FLM
-    void download_from_flm(const std::string& checkpoint,
-                          bool do_not_upgrade = true,
-                          DownloadProgressCallback progress_callback = nullptr);
 
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
