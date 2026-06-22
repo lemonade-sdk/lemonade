@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import { Icon } from './Icon';
-import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloads/downloadStore';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 interface DownloadManagerProps {
   isVisible: boolean;

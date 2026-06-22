@@ -13,7 +13,7 @@ import {
   saveBackendApplied,
 } from '../presetStore';
 import { Icon, PresetIcon } from './Icon';
-import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloads/downloadStore';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
