@@ -16,7 +16,7 @@ inline const BackendDescriptor descriptor = {
 #else
     /*binary*/          "whisper-server",
 #endif
-    /*config_section*/  "whispercpp",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_CPU,   // npu variant resolves to NPU + ExclusiveNpu via effective_*()
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,

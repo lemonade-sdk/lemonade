@@ -16,7 +16,7 @@ inline const BackendDescriptor descriptor = {
 #else
     /*binary*/          "koko",
 #endif
-    /*config_section*/  "kokoro",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_CPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ false,

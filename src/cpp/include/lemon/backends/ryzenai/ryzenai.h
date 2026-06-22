@@ -16,7 +16,7 @@ inline const BackendDescriptor descriptor = {
 #else
     /*binary*/          "ryzenai-server",
 #endif
-    /*config_section*/  "ryzenai",
+    /*config_section*/  "ryzenai",  // differs from recipe "ryzenai-llm"
     /*default_device*/  DEVICE_NPU,
     /*slot_policy*/     SlotPolicy::ExclusiveNpu,
     /*selectable_backend*/ false,

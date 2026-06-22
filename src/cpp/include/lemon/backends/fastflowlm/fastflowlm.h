@@ -16,7 +16,7 @@ inline const BackendDescriptor descriptor = {
 #else
     /*binary*/          "flm",
 #endif
-    /*config_section*/  "flm",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_NPU,
     /*slot_policy*/     SlotPolicy::CoexistByType,
     /*selectable_backend*/ false,

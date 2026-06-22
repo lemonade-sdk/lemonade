@@ -12,7 +12,7 @@ inline const BackendDescriptor descriptor = {
     /*recipe*/          "vllm",
     /*display_name*/    "vLLM ROCm (experimental)",
     /*binary*/          "vllm-server",
-    /*config_section*/  "vllm",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,

@@ -16,7 +16,7 @@ inline const BackendDescriptor descriptor = {
 #else
     /*binary*/          "llama-server",
 #endif
-    /*config_section*/  "llamacpp",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,   // cpu/system variants resolve to CPU via effective_device()
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,

@@ -12,7 +12,7 @@ inline const BackendDescriptor descriptor = {
     /*recipe*/          "moonshine",
     /*display_name*/    "Moonshine",
     /*binary*/          "moonshine-server",
-    /*config_section*/  "moonshine",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_CPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ false,

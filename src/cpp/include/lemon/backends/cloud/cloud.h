@@ -12,7 +12,7 @@ inline const BackendDescriptor descriptor = {
     /*recipe*/          "cloud",
     /*display_name*/    "Cloud",
     /*binary*/          "",  // no subprocess: runs on a remote provider
-    /*config_section*/  "cloud",
+    /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_NONE,
     /*slot_policy*/     SlotPolicy::Unmetered,  // never counts toward slots, never auto-evicted
     /*selectable_backend*/ false,
