@@ -196,6 +196,9 @@ TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 # Secondary model for multi-model testing (small, fast to load)
 MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
 
+# Secondary model for eviction testing
+SECOND_TEST_MODEL_EVICTION = "Phi-4-mini-instruct-GGUF"
+
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
