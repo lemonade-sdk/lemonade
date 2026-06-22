@@ -3,8 +3,8 @@
   "description": "Public Lemonade API route contract. CI compares this manifest with the C++ route registrations so accidental method or path removals are caught during review.",
   "sources": [
     "src/cpp/server/server.cpp",
-    "src/cpp/server/ollama_api.cpp",
-    "src/cpp/server/anthropic_api.cpp",
+    "src/cpp/server/core/route_registry.cpp",
+    "src/cpp/server/routes",
     "src/cpp/server/websocket_server.cpp"
   ],
   "versioned_prefixes": [
@@ -45,10 +45,10 @@
     {"method": "POST", "versioned_path": "load"},
     {"method": "POST", "versioned_path": "unload"},
     {"method": "POST", "versioned_path": "delete"},
-    {"method": "POST", "versioned_path": "params"},
     {"method": "POST", "versioned_path": "install"},
     {"method": "POST", "versioned_path": "uninstall"},
-    {"method": "POST", "versioned_path": "log-level"},
+    {"method": "POST", "versioned_path": "cloud/auth"},
+    {"method": "DELETE", "versioned_path": "cloud/auth/{param}"},
 
     {"method": "POST", "path": "/api/chat"},
     {"method": "POST", "path": "/api/generate"},
@@ -65,10 +65,42 @@
     {"method": "POST", "path": "/api/push"},
     {"method": "POST", "path": "/api/blobs/{param}"},
 
-    {"method": "POST", "path": "/v1/messages"}
+    {"method": "POST", "path": "/v1/messages"},
+    {"method": "POST", "path": "/mcp"},
+    {"method": "DELETE", "versioned_path": "jobs/{param}"},
+    {"method": "DELETE", "versioned_path": "models/{param}/options"},
+    {"method": "GET", "versioned_path": "docs"},
+    {"method": "GET", "versioned_path": "docs/{param}"},
+    {"method": "GET", "versioned_path": "jobs"},
+    {"method": "GET", "versioned_path": "jobs/{param}"},
+    {"method": "GET", "versioned_path": "models/{param}/files"},
+    {"method": "GET", "versioned_path": "models/{param}/options"},
+    {"method": "GET", "versioned_path": "registry/search"},
+    {"method": "GET", "path": "/mcp"},
+    {"method": "POST", "versioned_path": "3d/generations"},
+    {"method": "POST", "versioned_path": "audio/generations"},
+    {"method": "POST", "versioned_path": "classify"},
+    {"method": "POST", "versioned_path": "install/dry-run"},
+    {"method": "POST", "versioned_path": "jobs"},
+    {"method": "POST", "versioned_path": "jobs/{param}/interrupt"},
+    {"method": "POST", "versioned_path": "jobs/{param}/pause"},
+    {"method": "POST", "versioned_path": "jobs/{param}/resume"},
+    {"method": "POST", "versioned_path": "models/check-updates"},
+    {"method": "POST", "versioned_path": "models/register"},
+    {"method": "POST", "versioned_path": "models/{param}/options"},
+    {"method": "POST", "versioned_path": "rerank"},
+    {"method": "POST", "versioned_path": "reranker"},
+    {"method": "POST", "versioned_path": "routing/validate"},
+    {"method": "POST", "versioned_path": "systemone"}
   ],
   "websocket_routes": [
     {"method": "WS", "path": "/realtime"},
-    {"method": "WS", "path": "/logs/stream"}
+    {"method": "WS", "versioned_path": "realtime"},
+    {"method": "WS", "path": "/logs/stream"},
+    {"method": "WS", "versioned_path": "logs/stream"},
+    {"method": "WS", "versioned_path": "spans/stream"},
+    {"method": "WS", "versioned_path": "traces/stream"},
+    {"method": "WS", "path": "/spans/stream"},
+    {"method": "WS", "path": "/traces/stream"}
   ]
 }
