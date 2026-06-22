@@ -71,6 +71,10 @@ struct BackendDescriptor {
     // channel clamp (a requested channel not listed here falls back to the first).
     std::vector<std::string> rocm_channels;
 
+    // True if the backend's subprocess exposes a Prometheus /metrics endpoint
+    // that lemond should scrape and re-export (llama-server does).
+    bool exposes_prometheus_metrics = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

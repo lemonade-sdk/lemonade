@@ -47,6 +47,7 @@ inline const BackendDescriptor descriptor = {
     /*web_display_name*/ "llama.cpp GPU",
     /*web_priority*/    1,
     /*rocm_channels*/   {"stable", "nightly"},
+    /*exposes_prometheus_metrics*/ true,
 };
 
 }  // namespace llamacpp
