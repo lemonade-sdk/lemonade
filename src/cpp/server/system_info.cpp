@@ -4087,7 +4087,7 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     // NVIDIA: one query returns used + total for the first GPU.
     {
-        if (!get_cuda_arch().empty()) {
+        if (!find_executable_in_path("nvidia-smi").empty()) {
             std::string output;
             int rc = lemon::utils::ProcessManager::run_command(
                 "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",

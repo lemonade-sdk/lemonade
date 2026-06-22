@@ -6,6 +6,7 @@ import time
 from utils.server_base import ServerTestBase, pull_model_with_retry
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
@@ -19,7 +20,7 @@ class EvictionTests(ServerTestBase):
 
     _model_pulled = False
     _model2_pulled = False
-    MODEL2 = "Phi-4-mini-instruct-GGUF"
+    MODEL2 = SECOND_TEST_MODEL_EVICTION
 
     @classmethod
     def setUpClass(cls):
@@ -187,14 +188,14 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
+            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90, "max_models_loaded" : 2},
             headers=headers,
         )
 
         # Protected model loaded first (older) but with a large weight factor.
         requests.post(
             f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "evict_weight_factor": 1000.0, "max_models_loaded" : 2},
+            json={"model_name": ENDPOINT_TEST_MODEL, "evict_weight_factor": 1000.0},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         time.sleep(2)
