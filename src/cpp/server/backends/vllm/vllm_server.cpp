@@ -323,6 +323,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 const BackendSpec* spec() { return &VLLMServer::SPEC; }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace vllm
 }  // namespace backends
 }  // namespace lemon

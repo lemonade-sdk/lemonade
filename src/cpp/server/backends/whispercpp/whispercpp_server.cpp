@@ -700,6 +700,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 const BackendSpec* spec() { return &WhisperServer::SPEC; }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

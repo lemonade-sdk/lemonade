@@ -63,6 +63,7 @@ namespace ryzenai {
 // Factory for the ryzenai backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
+const BackendOps* ops();
 }  // namespace ryzenai
 }  // namespace backends
 }  // namespace lemon

@@ -23,6 +23,15 @@ const BackendSpec* spec_for(const std::string& recipe) {
     return nullptr;
 }
 
+const BackendOps* ops_for(const std::string& recipe) {
+    for (const auto& reg : all_registrations()) {
+        if (reg.descriptor->recipe == recipe) {
+            return reg.ops;
+        }
+    }
+    return default_backend_ops();
+}
+
 std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const BackendContext& ctx) {
     for (const auto& reg : all_registrations()) {
         if (reg.descriptor->recipe == recipe) {

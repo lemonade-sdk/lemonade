@@ -342,6 +342,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 const BackendSpec* spec() { return &MoonshineServer::SPEC; }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

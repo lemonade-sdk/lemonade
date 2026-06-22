@@ -4,6 +4,7 @@
 #include <string>
 #include "lemon/backends/backend_descriptor.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
 
 namespace lemon {
 
@@ -37,13 +38,18 @@ struct BackendRegistration {
     const BackendDescriptor* descriptor;
     BackendCreateFn create;
     const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
+    const BackendOps* ops;    // stateless model-management behavior (never null)
 };
 
-// All registered (descriptor, create, spec) entries, in LEMON_BACKENDS order.
+// All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.
 const std::vector<BackendRegistration>& all_registrations();
 
 // Install/download spec for a recipe, or nullptr if the recipe has none.
 const BackendSpec* spec_for(const std::string& recipe);
+
+// Stateless model-management ops for a recipe. Falls back to the shared default
+// ops (base behavior) for recipes with no registered backend.
+const BackendOps* ops_for(const std::string& recipe);
 
 // Construct a backend instance for a recipe and associate its descriptor, or
 // nullptr if the recipe has no registered backend.

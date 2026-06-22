@@ -56,6 +56,7 @@ namespace vllm {
 // Factory for the vllm backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
+const BackendOps* ops();
 }  // namespace vllm
 }  // namespace backends
 }  // namespace lemon

@@ -656,6 +656,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 const BackendSpec* spec() { return &LlamaCppServer::SPEC; }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

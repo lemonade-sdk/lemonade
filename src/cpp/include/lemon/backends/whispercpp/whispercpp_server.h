@@ -85,6 +85,7 @@ namespace whispercpp {
 // Factory for the whispercpp backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
+const BackendOps* ops();
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

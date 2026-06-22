@@ -807,6 +807,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 const BackendSpec* spec() { return nullptr; }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace cloud
 }  // namespace backends
 }  // namespace lemon
