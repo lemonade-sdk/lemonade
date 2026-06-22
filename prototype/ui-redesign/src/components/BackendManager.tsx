@@ -615,6 +615,10 @@ const BackendManager: React.FC = () => {
             <span><PresetIcon preset={selectedBackendPreset} /> {selectedBackendPreset.name}</span>
           </div>
         )}
+        {/* #2351: always-present polite live region for preset assignment notices (NVDA) */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-preset-notice-live>
+          {presetNotice || ''}
+        </div>
         {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
       </div>
     </aside>
@@ -735,8 +739,15 @@ const BackendManager: React.FC = () => {
                           const isPresetHighlighted = Boolean(highlightedPresetId && activePreset.id === highlightedPresetId);
                           return (
                             <div className={`cell cell--selectable${isSelectedBackend ? ' is-selected' : ''}${isPresetHighlighted ? ' cell--preset-highlight' : ''}`} key={`${recipe}-${backend}`}
-                              data-cell={cellKey}
-                              onClick={() => setSelectedBackendKey(current => current === cellKey ? '' : cellKey)}>
+                              data-cell={cellKey}>
+                              {/* #2343: overlay button provides keyboard + SR selection; covers the full cell area */}
+                              <button
+                                type="button"
+                                className="cell__select-btn"
+                                aria-pressed={isSelectedBackend}
+                                aria-label={`${RECIPE_LABELS[recipe] || recipe} (${backend}), ${badge.label}`}
+                                onClick={() => setSelectedBackendKey(current => current === cellKey ? '' : cellKey)}
+                              />
                               <span className="cell__name">
                                 {RECIPE_LABELS[recipe] || recipe}
                                 {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
@@ -750,6 +761,7 @@ const BackendManager: React.FC = () => {
                                   <button
                                     className="cell__swap"
                                     disabled={isInstalling}
+                                    aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
                                     onClick={() => handleInstall(recipe, backend)}>
                                     {isInstalling ? 'Installing…' : 'Install'}
                                   </button>
@@ -758,12 +770,16 @@ const BackendManager: React.FC = () => {
                                   <button
                                     className="cell__swap"
                                     disabled={isInstalling}
+                                    aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
                                     onClick={() => handleInstall(recipe, backend, true)}>
                                     {isInstalling ? 'Updating…' : 'Update'}
                                   </button>
                                 )}
                                 {info.state === 'action_required' && info.action && (
-                                  <button className="cell__swap" onClick={() => handleAction(info.action)}>
+                                  <button
+                                    className="cell__swap"
+                                    aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+                                    onClick={() => handleAction(info.action)}>
                                     Setup guide ▸
                                   </button>
                                 )}
@@ -771,6 +787,7 @@ const BackendManager: React.FC = () => {
                                   <button
                                     className="cell__swap cell__swap--danger"
                                     disabled={isInstalling}
+                                    aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
                                     onClick={() => handleUninstall(recipe, backend)}>
                                     {isInstalling ? 'Working…' : 'Uninstall'}
                                   </button>
@@ -803,6 +820,10 @@ const BackendManager: React.FC = () => {
         </div>
       )}
 
+      {/* #2351: always-present polite live region so NVDA announces toast messages */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
+        {toastMsg || ''}
+      </div>
       {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
       </div>
     </section>

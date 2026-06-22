@@ -836,3 +836,113 @@ test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
     expect(firstPressed).toBe('false');
   });
 });
+
+// ─── 15. Backend Manager — matrix cells, action labels, live regions ──────────
+//        Covers: #2343 (keyboard-operable cells), #2344 (qualified action names),
+//                #2351 (live-region toasts/notices).
+
+test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
+  const MOCK_SYSTEM_INFO = {
+    lemonade_version: '1.0.0',
+    os_version: 'Test OS',
+    devices: { cpu: { name: 'Test CPU', available: true } },
+    recipes: {
+      llamacpp: {
+        default_backend: 'cpu',
+        backends: {
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
+          cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
+        },
+      },
+    },
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/system-info**', route =>
+      route.fulfill({ json: MOCK_SYSTEM_INFO }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+  });
+
+  // ── #2343 — matrix cells are keyboard-focusable with selected state ────────
+
+  test('A51 — each matrix cell contains a button with aria-pressed (selected state)', async ({ page }) => {
+    const cellBtn = page.locator('.cell__select-btn').first();
+    await expect(cellBtn).toBeVisible();
+    const pressed = await cellBtn.getAttribute('aria-pressed');
+    expect(['true', 'false']).toContain(pressed);
+  });
+
+  test('A52 — clicking the cell select button toggles aria-pressed between "true" and "false"', async ({ page }) => {
+    const cellBtn = page.locator('[data-cell="llamacpp:vulkan"] .cell__select-btn');
+    await expect(cellBtn).toHaveAttribute('aria-pressed', 'false');
+    await cellBtn.click();
+    await expect(cellBtn).toHaveAttribute('aria-pressed', 'true');
+    await cellBtn.click();
+    await expect(cellBtn).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('A53 — cell select button is keyboard-focusable (tabIndex >= 0, is a <button>)', async ({ page }) => {
+    const cellBtn = page.locator('.cell__select-btn').first();
+    // Verify it is a <button> element (native keyboard operability)
+    const tag = await cellBtn.evaluate(el => el.tagName.toLowerCase());
+    expect(tag).toBe('button');
+    // Verify it is in the tab order
+    const tabIndex = await cellBtn.evaluate(el => (el as HTMLElement).tabIndex);
+    expect(tabIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  test('A54 — cell select button aria-label contains both recipe label and backend identifier', async ({ page }) => {
+    const btn = page.locator('[data-cell="llamacpp:vulkan"] .cell__select-btn');
+    const label = await btn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    // Should mention the human-readable recipe label (llama.cpp) and backend (vulkan)
+    expect(label!.toLowerCase()).toContain('llama');
+    expect(label!.toLowerCase()).toContain('vulkan');
+  });
+
+  // ── #2344 — action buttons have qualified accessible names ─────────────────
+
+  test('A55 — Install button aria-label includes recipe and backend identifiers', async ({ page }) => {
+    const installBtn = page.locator('[data-cell="llamacpp:vulkan"] button.cell__swap');
+    await expect(installBtn).toBeVisible();
+    const label = await installBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('install');
+    expect(label!.toLowerCase()).toContain('llama');
+    expect(label!.toLowerCase()).toContain('vulkan');
+  });
+
+  test('A56 — Uninstall button aria-label includes recipe and backend identifiers', async ({ page }) => {
+    const uninstallBtn = page.locator('[data-cell="llamacpp:cpu"] button.cell__swap--danger');
+    await expect(uninstallBtn).toBeVisible();
+    const label = await uninstallBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('uninstall');
+    expect(label!.toLowerCase()).toContain('llama');
+    expect(label!.toLowerCase()).toContain('cpu');
+  });
+
+  // ── #2351 — persistent polite live regions for toasts and preset notices ───
+
+  test('A57 — backends view has a persistent role="status" live region for toast messages', async ({ page }) => {
+    const liveRegion = page.locator('[data-backends-toast-live]');
+    await expect(liveRegion).toHaveCount(1);
+    expect(await liveRegion.getAttribute('role')).toBe('status');
+    expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
+    expect(await liveRegion.getAttribute('aria-atomic')).toBe('true');
+  });
+
+  test('A58 — backend preset rail has a persistent role="status" live region for preset notices', async ({ page }) => {
+    const liveRegion = page.locator('[data-backends-preset-notice-live]');
+    await expect(liveRegion).toHaveCount(1);
+    expect(await liveRegion.getAttribute('role')).toBe('status');
+    expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
+  });
+});

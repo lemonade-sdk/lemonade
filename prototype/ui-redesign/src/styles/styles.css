@@ -3192,6 +3192,8 @@ input, textarea {
 .show-tech .cell__device-detail { display: block; }
 
 .cell__actions {
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: var(--space-1);
   margin-top: var(--space-1);
@@ -3718,10 +3720,21 @@ input, textarea {
 }
 
 .cell--selectable {
+  position: relative; /* needed for overlay select button */
   cursor: pointer;
   padding: var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
+}
+
+/* Overlay button for keyboard + SR selection (#2343).
+ * Covers the full cell area; action buttons sit above it via z-index. */
+.cell__select-btn {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
 }
 
 .cell--preset-highlight {
