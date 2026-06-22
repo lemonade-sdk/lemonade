@@ -295,8 +295,35 @@ json MoonshineServer::forward_multipart_audio_data(const std::string& audio_data
     LOG(DEBUG, "MoonshineServer") << "Response status: " << res.status_code << std::endl;
 
     if (res.status_code != 200) {
-        throw std::runtime_error("moonshine-server returned status " +
-                                std::to_string(res.status_code) + ": " + res.body);
+        std::string err_msg = res.body;
+        std::string err_type = "audio_processing_error";
+        int status_code = res.status_code;
+
+        try {
+            json error_json = json::parse(res.body);
+            if (error_json.contains("error")) {
+                if (error_json["error"].is_string()) {
+                    err_msg = error_json["error"].get<std::string>();
+                } else if (error_json["error"].is_object() && error_json["error"].contains("message")) {
+                    err_msg = error_json["error"]["message"].get<std::string>();
+                }
+            }
+        } catch (...) {
+            // Keep res.body as raw error message
+        }
+
+        if (status_code == 400 || (status_code == 500 && err_msg.find("Not a valid RIFF file") != std::string::npos)) {
+            status_code = 400;
+            err_type = "invalid_request_error";
+        }
+
+        return json{
+            {"error", {
+                {"message", "Transcription failed: " + err_msg},
+                {"type", err_type},
+                {"status_code", status_code}
+            }}
+        };
     }
 
     try {
@@ -322,7 +349,8 @@ json MoonshineServer::audio_transcriptions(const json& request) {
         return json{
             {"error", {
                 {"message", std::string("Transcription failed: ") + e.what()},
-                {"type", "audio_processing_error"}
+                {"type", "audio_processing_error"},
+                {"status_code", 500}
             }}
         };
     }

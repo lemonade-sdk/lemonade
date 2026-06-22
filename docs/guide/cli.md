@@ -35,7 +35,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
@@ -460,30 +460,35 @@ lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 
 ## Options for backends
 
-The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
+lemonade backends --all
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
 
 | Command | Description |
 |--------|-------------|
-| `lemonade backends` | List available recipes and backends |
+| `lemonade backends` | List supported recipes and backends |
+| `lemonade backends --all` | List all available recipes and backends |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
-- Available backends depend on your system and the recipe
-- Use `lemonade backends` to list all available recipes and backends
+- Supported backends depend on your system and the recipe
+- Use `lemonade backends --all` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
-# List all available recipes and backends
+# List supported recipes and backends
 lemonade backends
+
+# List all available recipes and backends
+lemonade backends --all
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
@@ -685,6 +690,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--response-log FILE` | Write response produced by the benchmark to a JSONL logfile, for later quality evaluation. | - |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
@@ -758,6 +764,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 

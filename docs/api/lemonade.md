@@ -18,6 +18,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
@@ -746,6 +747,43 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /v1/system-stats`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Current host resource usage as measured by the Lemonade Server process. This endpoint is useful for first-party clients and dashboards that need lightweight runtime telemetry without scraping Prometheus.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/system-stats
+```
+
+### Response format
+
+```json
+{
+  "cpu_percent": 12.3,
+  "memory_gb": 8.4,
+  "gpu_percent": 45.0,
+  "vram_gb": 2.1,
+  "npu_percent": null
+}
+```
+
+**Field Descriptions:**
+
+- `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
+- `memory_gb` - System RAM currently in use, in GiB
+- `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+- `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `npu_percent` - NPU utilization percentage, or `null` when unavailable
+
+GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

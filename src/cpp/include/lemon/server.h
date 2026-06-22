@@ -206,6 +206,10 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    bool parse_required_json_body(const httplib::Request& req,
+                                  httplib::Response& res,
+                                  nlohmann::json& out);
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 

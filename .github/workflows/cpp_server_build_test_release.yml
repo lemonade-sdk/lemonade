@@ -275,8 +275,9 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -534,8 +535,9 @@ jobs:
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -1489,6 +1491,11 @@ jobs:
 
           /opt/bin/lemonade --version
           /opt/bin/lemond --version
+
+          rpm -qpl "$RPM_FILE" | grep -Fx "/usr/lib/systemd/user/lemond.service"
+          rpm -qpl --dump "$RPM_FILE" \
+            | grep -E '^/usr/lib/systemd/user/lemond\.service ' \
+            | grep -F "/opt/lib/systemd/user/lemond.service"
 
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})

@@ -652,12 +652,24 @@ static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
+// A trailing 'X' in an allowed family acts as a wildcard (e.g. "gfx110X" matches "gfx1103").
 static bool device_matches_constraint(const std::string& device_family,
                                        const std::set<std::string>& allowed_families) {
     if (allowed_families.empty()) {
         return true;  // Empty = all families allowed
     }
-    return allowed_families.count(device_family) > 0;
+    if (allowed_families.count(device_family) > 0) {
+        return true;
+    }
+    for (const auto& af : allowed_families) {
+        if (af.size() > 1 && af.back() == 'X') {
+            std::string prefix = af.substr(0, af.size() - 1);
+            if (device_family.compare(0, prefix.size(), prefix) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Generic installation check
