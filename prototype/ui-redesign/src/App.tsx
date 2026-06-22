@@ -15,7 +15,7 @@ import Dashboard from './components/Dashboard';
 import LogViewer from './components/LogViewer';
 import DownloadManager from './components/DownloadManager';
 import { Icon } from './components/Icon';
-import { DownloadListItem, downloadStore, isDownloadActive } from './features/downloads/downloadStore';
+import { DownloadListItem, downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
 type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect';
 
