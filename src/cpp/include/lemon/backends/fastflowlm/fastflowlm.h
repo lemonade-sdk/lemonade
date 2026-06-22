@@ -32,6 +32,10 @@ inline const BackendDescriptor descriptor = {
     /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",
     /*web_priority*/    3,
+    /*rocm_channels*/   {},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ false,
+    /*version_policy*/  VersionPolicy::AtLeast,  // system-managed package
 };
 
 }  // namespace fastflowlm

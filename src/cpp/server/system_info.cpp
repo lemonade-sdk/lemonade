@@ -1401,9 +1401,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 return installed.compare(0, prefix.size(), prefix) == 0;
             };
 #if !defined(_WIN32)
-            // On non-Windows, FLM is a system-managed package; a version newer
-            // than the minimum required is acceptable.
-            if (def.recipe == "flm") {
+            // System-managed packages (e.g. flm on Linux) accept a version newer
+            // than the minimum required.
+            const auto* ver_desc = backends::descriptor_for(def.recipe);
+            if (ver_desc && ver_desc->version_policy == VersionPolicy::AtLeast) {
                 auto installed_ver = utils::Version::parse(installed_version);
                 auto expected_ver = utils::Version::parse(expected_version);
                 // If either version cannot be parsed, fall back to exact equality check

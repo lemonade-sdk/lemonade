@@ -29,6 +29,12 @@ enum class SlotPolicy {
     Unmetered      // never counts toward slots, never auto-evicted (cloud)
 };
 
+// How an installed backend version is compared against the expected pin.
+enum class VersionPolicy {
+    Exact,    // installed must match the expected version
+    AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
+};
+
 inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
         case SlotPolicy::Standard:      return "standard";
@@ -78,6 +84,10 @@ struct BackendDescriptor {
     // True if this backend's ROCm build requires the gfx1151 (Strix Halo) kernel
     // CWSR fix. Gates the availability/remediation check for the "rocm" backend.
     bool rocm_requires_cwsr_fix = false;
+
+    // How the installed version is compared against the expected pin. Exact by
+    // default; system-managed packages (flm) accept any version >= expected.
+    VersionPolicy version_policy = VersionPolicy::Exact;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
