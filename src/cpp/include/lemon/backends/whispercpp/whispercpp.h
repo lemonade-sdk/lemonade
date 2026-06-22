@@ -41,6 +41,7 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Speech-to-text",
     /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",
+    /*web_priority*/    4,
 };
 
 }  // namespace whispercpp

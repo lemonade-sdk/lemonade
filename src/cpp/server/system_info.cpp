@@ -1520,6 +1520,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["modality"] = desc->modality;
         entry["experimental"] = desc->experimental;
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
+        entry["web_priority"] = desc->web_priority;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
         // Machine-independent support matrix (OS + device families + friendly
         // device summary per backend), straight from the descriptor — used by the

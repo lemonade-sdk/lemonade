@@ -31,68 +31,81 @@ Values set in the user's `config.json` always take precedence over these seeded 
 
 ### Example config.json
 
+<!-- BEGIN GENERATED: config-example -->
 ```json
 {
-  "config_version": 1,
-  "port": 13305,
-  "host": "localhost",
-  "log_level": "info",
-  "global_timeout": 600,
-  "max_loaded_models": 1,
-  "no_broadcast": false,
-  "extra_models_dir": "",
-  "models_dir": "auto",
+  "cloud_providers": [],
+  "config_version": 2,
   "ctx_size": -1,
-  "offline": false,
-  "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
-  "rocm_channel": "stable",
-  "llamacpp": {
-    "backend": "auto",
-    "args": "",
-    "vulkan_args": "",
-    "rocm_args": "",
-    "cpu_args": "",
-	"device": "",
-    "prefer_system": false,
-    "rocm_bin": "builtin",
-    "vulkan_bin": "builtin",
+  "extra_models_dir": "",
+  "flm": {
+    "args": ""
+  },
+  "global_timeout": 600,
+  "host": "localhost",
+  "kokoro": {
     "cpu_bin": "builtin"
   },
-  "whispercpp": {
-    "backend": "auto",
+  "llamacpp": {
     "args": "",
+    "backend": "auto",
     "cpu_args": "",
-    "npu_args": "",
     "cpu_bin": "builtin",
-    "npu_bin": "builtin"
-  },
-  "sdcpp": {
-    "backend": "auto",
-    "args": "",
-    "cpu_args": "",
+    "cuda_bin": "builtin",
+    "prefer_system": true,
     "rocm_args": "",
-    "vulkan_args": "",
-    "steps": 20,
-    "cfg_scale": 7.0,
-    "width": 512,
-    "height": 512,
-    "cpu_bin": "builtin",
     "rocm_bin": "builtin",
+    "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
-  "flm": {
+  "log_level": "info",
+  "max_loaded_models": 1,
+  "models_dir": "auto",
+  "moonshine": {
     "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
   },
+  "no_broadcast": false,
+  "no_fetch_executables": false,
+  "offline": false,
+  "port": 13305,
+  "rocm_channel": "stable",
   "ryzenai": {
     "server_bin": "builtin"
   },
-  "kokoro": {
-    "cpu_bin": "builtin"
+  "sdcpp": {
+    "args": "",
+    "backend": "auto",
+    "cfg_scale": 7.0,
+    "cpu_args": "",
+    "cpu_bin": "builtin",
+    "height": 512,
+    "rocm_args": "",
+    "rocm_bin": "builtin",
+    "steps": 20,
+    "vulkan_args": "",
+    "vulkan_bin": "builtin",
+    "width": 512
+  },
+  "vllm": {
+    "args": "",
+    "backend": "auto"
+  },
+  "websocket_port": "auto",
+  "whispercpp": {
+    "args": "",
+    "backend": "auto",
+    "cpu_args": "",
+    "cpu_bin": "builtin",
+    "npu_args": "",
+    "npu_bin": "builtin"
   }
 }
 ```
+<!-- END GENERATED: config-example -->
 
 ### Settings Reference
 

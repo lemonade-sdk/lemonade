@@ -49,6 +49,7 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Image generation",
     /*experimental*/    false,
     /*web_display_name*/ "stable-diffusion.cpp",
+    /*web_priority*/    5,
 };
 
 }  // namespace sdcpp

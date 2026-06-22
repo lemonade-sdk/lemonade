@@ -63,6 +63,7 @@ struct BackendDescriptor {
     std::string modality;           // "Text generation" | "Speech-to-text" | "Text-to-speech" | "Image generation"
     bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
+    int         web_priority = 0;    // model-grouping order on the docs website (lower = higher; 0 = unlisted)
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

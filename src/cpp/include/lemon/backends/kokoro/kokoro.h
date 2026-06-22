@@ -32,6 +32,7 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text-to-speech",
     /*experimental*/    false,
     /*web_display_name*/ "",
+    /*web_priority*/    6,
 };
 
 }  // namespace kokoro

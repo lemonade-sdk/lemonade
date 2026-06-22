@@ -31,6 +31,7 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text generation",
     /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",
+    /*web_priority*/    3,
 };
 
 }  // namespace fastflowlm

@@ -105,6 +105,9 @@ class Lemond:
     def system_info(self) -> dict:
         return json.loads(self._get("/api/v1/system-info", timeout=30))
 
+    def config(self) -> dict:
+        return json.loads(self._get("/internal/config", timeout=10))
+
 
 def md_escape(text: str) -> str:
     return str(text).replace("|", "\\|")
@@ -249,6 +252,53 @@ def _oxford(items: list) -> str:
     if len(items) == 2:
         return f"{items[0]} and {items[1]}"
     return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _js_to_title(recipe: str) -> str:
+    # Mirror models.js toTitle(): the website's fallback for unlisted display names.
+    return re.sub(
+        r"\b\w",
+        lambda m: m.group(0).upper(),
+        recipe.replace("_", " ").replace("-", " "),
+    )
+
+
+def _js_key(recipe: str) -> str:
+    # Bare identifier if it's a valid JS key, else quoted (matches models.js style).
+    return recipe if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", recipe) else f"'{recipe}'"
+
+
+def render_models_js(recipes: dict) -> str:
+    # RECIPE_PRIORITY: recipes with web_priority > 0, in that order (legacy oga-*
+    # recipes have no descriptor and are intentionally dropped).
+    prioritized = sorted(
+        (r for r, i in recipes.items() if i.get("web_priority", 0) > 0),
+        key=lambda r: recipes[r]["web_priority"],
+    )
+    pri_lines = ",\n".join(f"  '{r}'" for r in prioritized)
+
+    # RECIPE_DISPLAY_NAMES: only recipes whose name differs from the JS toTitle()
+    # fallback (matching the curated map, which omits redundant entries).
+    name_lines = []
+    for r, info in _ordered(recipes):
+        name = info.get("web_display_name") or info.get("display_name", r)
+        if name and name != _js_to_title(r):
+            name_lines.append(f"  {_js_key(r)}: '{name}'")
+    names = ",\n".join(name_lines)
+
+    return (
+        f"const RECIPE_PRIORITY = [\n{pri_lines}\n];\n\n"
+        f"const RECIPE_DISPLAY_NAMES = {{\n{names}\n}};"
+    )
+
+
+def render_config_example(config: dict) -> str:
+    # The canonical config.json, straight from a fresh lemond's /internal/config.
+    # `port` is the only environment-dependent field (it reflects the launch port);
+    # normalize it to the documented default.
+    cfg = dict(config)
+    cfg["port"] = 13305
+    return "```json\n" + json.dumps(cfg, indent=2) + "\n```"
 
 
 def render_recipe_values(recipes: dict) -> str:
@@ -407,17 +457,28 @@ the generator instead. Prose outside the markers is preserved. -->
 
 def apply_sections(text: str, sections: dict[str, str]) -> str:
     for marker_id, body in sections.items():
-        pattern = re.compile(
+        # Accept HTML (`<!-- ... -->`) markers for Markdown and block (`/* ... */`)
+        # markers for code files like .js, so the same generator drives both.
+        mid = re.escape(marker_id)
+        begin = (
             r"(<!-- BEGIN GENERATED: "
-            + re.escape(marker_id)
-            + r" -->).*?(<!-- END GENERATED: "
-            + re.escape(marker_id)
-            + r" -->)",
-            re.DOTALL,
+            + mid
+            + r" -->|/\* BEGIN GENERATED: "
+            + mid
+            + r" \*/)"
         )
+        end = (
+            r"(<!-- END GENERATED: "
+            + mid
+            + r" -->|/\* END GENERATED: "
+            + mid
+            + r" \*/)"
+        )
+        pattern = re.compile(begin + r".*?" + end, re.DOTALL)
         m = pattern.search(text)
         if not m:
             sys.exit(f"Marker region '{marker_id}' not found in target doc")
+
         # Inline regions (markers mid-line, e.g. inside a table cell) get no
         # surrounding newlines; block regions are wrapped on their own lines.
         inline = m.start() > 0 and text[m.start() - 1] != "\n"
@@ -442,9 +503,12 @@ def main() -> int:
     binary = find_lemond(args.lemond)
     with Lemond(binary) as server:
         info = server.system_info()
+        config = server.config()
     recipes = info.get("recipes", {})
     if not recipes:
         sys.exit("/system-info returned no recipes")
+    if not config:
+        sys.exit("/internal/config returned nothing")
 
     # Each target doc maps marker IDs -> generated content. backends-reference.md
     # is created from a template if missing; the others must already contain their
@@ -482,6 +546,19 @@ def main() -> int:
         / "configuration"
         / "custom-models.md": {
             "sections": {"recipe-values": render_recipe_values(recipes)},
+        },
+        REPO_ROOT
+        / "docs"
+        / "guide"
+        / "configuration"
+        / "README.md": {
+            "sections": {"config-example": render_config_example(config)},
+        },
+        REPO_ROOT
+        / "docs"
+        / "assets"
+        / "models.js": {
+            "sections": {"models-js-recipes": render_models_js(recipes)},
         },
     }
 
