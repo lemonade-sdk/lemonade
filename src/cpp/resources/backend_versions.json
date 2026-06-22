@@ -51,10 +51,11 @@
       "gfx110X",
       "gfx120X"
     ],
-    "url_mapping": {
-      "gfx908": "gfx90X-dcgpu",
-      "gfx90a": "gfx90X-dcgpu",
+    "wheel_url_mapping": {
+      "gfx908": "gfx908",
+      "gfx90a": "gfx90a",
       "gfx942": "gfx94X-dcgpu",
+      "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
       "gfx110X": "gfx110X-all",
       "gfx120X": "gfx120X-all",
@@ -67,9 +68,6 @@
       "gfx1152": "gfx1152",
       "gfx1200": "gfx120X-all",
       "gfx1201": "gfx120X-all",
-      "gfx1010": "gfx101X-dgpu",
-      "gfx1011": "gfx101X-dgpu",
-      "gfx1012": "gfx101X-dgpu",
       "gfx1030": "gfx103X-all",
       "gfx1031": "gfx103X-all",
       "gfx1032": "gfx103X-all",

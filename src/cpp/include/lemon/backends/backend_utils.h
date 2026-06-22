@@ -99,18 +99,27 @@ namespace lemon::backends {
         /** Check if ROCm libraries are installed system-wide (Linux only) */
         static bool is_rocm_installed_system_wide();
 
-        /** Get TheRock installation directory for a specific architecture and version */
+        /** Get the TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
-        /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
+        /** Install the TheRock ROCm runtime (Linux/Windows only): pip install the per-arch
+         *  ROCm wheels into a venv. A version-matching legacy tarball install is reused. */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
 
-        /** Clean up old TheRock versions, keeping only the specified version */
+        /** Clean up old TheRock versions (tarball and venv), keeping only the specified version */
         static void cleanup_old_therock_versions(const std::string& current_version);
 
         /** Get TheRock lib directory path if available, or empty string if not needed */
         static std::string get_therock_lib_path(const std::string& rocm_arch);
+
+        /**
+         * Locate a Python interpreter for creating the ROCm venv.
+         * Linux/macOS: "python3" then "python" from PATH.
+         * Windows: "py -3" launcher, then "python".
+         * Returns an argv vector (e.g. {"py", "-3"} or {"python3"}), or empty if none found.
+         */
+        static std::vector<std::string> find_python();
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
