@@ -806,8 +806,23 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
+namespace {
+class CloudOps : public BackendOps {
+public:
+    std::string resolve_checkpoint_path(const ModelInfo&,
+                                        const CheckpointResolveContext&) const override {
+        // Cloud-offloaded models have no local artifacts; the checkpoint is the
+        // upstream provider's model id, used directly when forwarding requests.
+        return "";
+    }
+};
+}  // namespace
+
 const BackendSpec* spec() { return nullptr; }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const CloudOps kOps;
+    return &kOps;
+}
 }  // namespace cloud
 }  // namespace backends
 }  // namespace lemon

@@ -1,6 +1,9 @@
 #include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/model_manager.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -699,8 +702,42 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
+namespace {
+class WhisperOps : public BackendOps {
+public:
+    std::string resolve_checkpoint_path(const ModelInfo& info,
+                                        const CheckpointResolveContext& ctx) const override {
+        // With no variant, find any .bin model file; otherwise use the shared
+        // default (variant/aux resolution).
+        if (ctx.variant.empty()) {
+            std::filesystem::path dir = lemon::utils::path_from_utf8(ctx.model_cache_path);
+            if (!hf_cache::exists(dir)) {
+                return ctx.model_cache_path;
+            }
+            std::vector<std::string> bin_files;
+            for (const auto& entry :
+                 std::filesystem::recursive_directory_iterator(dir, hf_cache::dir_options())) {
+                if (entry.is_regular_file() &&
+                    entry.path().filename().string().find(".bin") != std::string::npos) {
+                    bin_files.push_back(lemon::utils::path_to_utf8(entry.path()));
+                }
+            }
+            if (bin_files.empty()) {
+                return ctx.model_cache_path;
+            }
+            std::sort(bin_files.begin(), bin_files.end());
+            return bin_files[0];
+        }
+        return BackendOps::resolve_checkpoint_path(info, ctx);
+    }
+};
+}  // namespace
+
 const BackendSpec* spec() { return &WhisperServer::SPEC; }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const WhisperOps kOps;
+    return &kOps;
+}
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

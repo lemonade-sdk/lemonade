@@ -25,6 +25,12 @@ struct GgufMetadata {
 // not a valid GGUF container.
 bool read_gguf_metadata(GgufMetadata& out, const std::string& path);
 
+// Resolve the on-disk path of the GGUF file for a model cache directory and
+// variant (handles sharding, folder variants, and quant-token fallback). Returns
+// the cache directory if no GGUF is present, or "" if the requested variant
+// can't be resolved.
+std::string resolve_gguf_path(const std::string& model_cache_path, const std::string& variant);
+
 } // namespace llamacpp
 } // namespace backends
 } // namespace lemon

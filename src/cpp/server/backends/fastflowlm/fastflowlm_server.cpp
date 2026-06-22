@@ -485,6 +485,12 @@ public:
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
         info.max_context_window = read_flm_max_context_window(info);
     }
+
+    std::string resolve_checkpoint_path(const ModelInfo&,
+                                        const CheckpointResolveContext& ctx) const override {
+        // FLM uses the checkpoint string as-is (e.g. "gemma3:4b"); no local file.
+        return ctx.checkpoint;
+    }
 };
 }  // namespace
 

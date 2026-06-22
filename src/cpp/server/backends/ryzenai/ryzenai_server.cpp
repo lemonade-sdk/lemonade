@@ -1,6 +1,9 @@
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/hf_cache_util.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/utils/process_manager.h"
@@ -185,8 +188,31 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
+namespace {
+class RyzenAiOps : public BackendOps {
+public:
+    std::string resolve_checkpoint_path(const ModelInfo&,
+                                        const CheckpointResolveContext& ctx) const override {
+        // RyzenAI models are a directory containing genai_config.json.
+        std::filesystem::path dir = lemon::utils::path_from_utf8(ctx.model_cache_path);
+        if (hf_cache::exists(dir)) {
+            for (const auto& entry :
+                 std::filesystem::recursive_directory_iterator(dir, hf_cache::dir_options())) {
+                if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
+                    return lemon::utils::path_to_utf8(entry.path().parent_path());
+                }
+            }
+        }
+        return ctx.model_cache_path;  // directory even if genai_config not found
+    }
+};
+}  // namespace
+
 const BackendSpec* spec() { return &::lemon::RyzenAIServer::SPEC; }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const RyzenAiOps kOps;
+    return &kOps;
+}
 }  // namespace ryzenai
 }  // namespace backends
 }  // namespace lemon

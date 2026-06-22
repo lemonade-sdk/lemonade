@@ -695,6 +695,16 @@ public:
             apply_gguf_capability_labels(info.labels, meta.caps);
         }
     }
+
+    std::string resolve_checkpoint_path(const ModelInfo& info,
+                                        const CheckpointResolveContext& ctx) const override {
+        // The main checkpoint is a GGUF file (with sharding/variant resolution);
+        // auxiliary checkpoints (mmproj, …) use the shared default.
+        if (ctx.type == "main") {
+            return resolve_gguf_path(ctx.model_cache_path, ctx.variant);
+        }
+        return BackendOps::resolve_checkpoint_path(info, ctx);
+    }
 };
 }  // namespace
 

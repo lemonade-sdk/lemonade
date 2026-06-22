@@ -16,6 +16,19 @@ struct BackendOpsContext {
     ModelManager* model_manager = nullptr;
 };
 
+// Inputs for resolving a checkpoint's on-disk path. The model manager computes
+// the HF-cache locations generically; each backend's ops decide how to find its
+// artifact within (a .gguf file, a genai_config.json directory, a .bin, …).
+struct CheckpointResolveContext {
+    std::string hf_cache;          // HF cache root dir
+    std::string model_cache_path;  // hf_cache/<checkpoint repo cache dir>
+    std::string repo_id;           // checkpoint's repo id
+    std::string main_repo_id;      // the model's "main" checkpoint repo id (fallback)
+    std::string variant;           // checkpoint variant after ':' ("" if none)
+    std::string type;              // checkpoint type ("main", "mmproj", "npu_cache", …)
+    std::string checkpoint;        // the raw checkpoint string
+};
+
 // Stateless per-backend behavior for model management that happens WITHOUT a
 // running subprocess: checkpoint-path resolution, download, dynamic discovery,
 // per-model metadata, version detection, availability. One singleton per
@@ -37,6 +50,13 @@ public:
         (void)info;
         (void)ctx;
     }
+
+    // Resolve a checkpoint to its absolute on-disk path (file or directory).
+    // Default: the shared HF behavior — locate the variant/aux file in the active
+    // snapshot, else fall back to the model cache directory. Backends with a
+    // bespoke artifact layout (GGUF file, genai_config.json dir, .bin, …) override.
+    virtual std::string resolve_checkpoint_path(const ModelInfo& info,
+                                                const CheckpointResolveContext& ctx) const;
 };
 
 // Shared default ops instance for backends that override nothing.

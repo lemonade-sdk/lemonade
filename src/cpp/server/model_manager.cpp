@@ -1091,370 +1091,38 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Collections are virtual entries with no direct checkpoint to resolve
+    // Collections are virtual entries with no direct checkpoint to resolve.
     if (is_collection_recipe(info.recipe)) {
         return "";
     }
 
-    // Cloud-offloaded models have no local artifacts; checkpoint is the
-    // upstream provider's model id, used directly when forwarding requests.
-    if (info.recipe == "cloud") {
-        return "";
-    }
-
-    // FLM models use checkpoint as-is (e.g., "gemma3:4b")
-    if (info.recipe == "flm") {
-        return checkpoint;
-    }
-
-    // Local path models use checkpoint as-is (absolute path to file)
+    // Local-path models use the checkpoint as-is (absolute path to a file).
     if (info.source == "local_path") {
         return checkpoint;
     }
 
     std::string hf_cache = get_hf_cache_dir();
 
-    // Local uploads: checkpoint is relative path from HF cache
+    // Local uploads: checkpoint is a relative path from the HF cache.
     if (info.source == "local_upload") {
         std::string normalized = checkpoint;
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
         return hf_cache + "/" + normalized;
     }
 
-    // For now, NPU cache is handled directly in whisper.cpp
-    if (type == "npu_cache") {
-        return "";
-    }
+    // Compute the HF cache location for this checkpoint's repo, then let the
+    // backend's ops find its artifact within (a .gguf file, a genai_config.json
+    // directory, a .bin, …) — no per-recipe switchboard here.
+    backends::CheckpointResolveContext ctx;
+    ctx.hf_cache = hf_cache;
+    ctx.repo_id = checkpoint_to_repo_id(checkpoint);
+    ctx.main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    ctx.variant = checkpoint_to_variant(checkpoint);
+    ctx.model_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(ctx.repo_id);
+    ctx.type = type;
+    ctx.checkpoint = checkpoint;
 
-    // HuggingFace models: need to find the GGUF file in cache
-    // Parse checkpoint to get repo_id and variant
-    // Use the checkpoint's own repo, falling back to main repo for backward compatibility
-    std::string checkpoint_repo_id = checkpoint_to_repo_id(checkpoint);
-    std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
-    std::string repo_id = checkpoint_repo_id;
-    std::string variant = checkpoint_to_variant(checkpoint);
-
-    std::string model_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(repo_id);
-    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
-
-    // For RyzenAI LLM models, look for genai_config.json directory
-    if (info.recipe == "ryzenai-llm") {
-        if (safe_exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
-                if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                    return path_to_utf8(entry.path().parent_path());
-                }
-            }
-        }
-        return model_cache_path;  // Return directory even if genai_config not found
-    }
-
-    // For kokoro models, look for index.json directory
-    if (info.recipe == "kokoro") {
-        if (safe_exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
-                if (entry.is_regular_file() && entry.path().filename() == "index.json") {
-                    return path_to_utf8(entry.path());
-                }
-            }
-        }
-
-        return model_cache_path;  // Return directory even if index not found
-    }
-
-    // For whispercpp, find the .bin model file
-    if (info.recipe == "whispercpp" && variant.empty()) {
-        // No variant specified - use fallback logic to find any .bin file
-        if (!safe_exists(model_cache_path_fs)) {
-            return model_cache_path;  // Return directory path even if not found
-        }
-
-        // Collect all .bin files
-        std::vector<std::string> all_bin_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".bin") != std::string::npos) {
-                    all_bin_files.push_back(path_to_utf8(entry.path()));
-                }
-            }
-        }
-
-        if (all_bin_files.empty()) {
-            return model_cache_path;  // Return directory if no .bin found
-        }
-
-        // Sort files for consistent ordering
-        std::sort(all_bin_files.begin(), all_bin_files.end());
-
-        // Return first .bin file as fallback (only when no variant specified)
-        return all_bin_files[0];
-    }
-
-    // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp" && type == "main") {
-        if (!safe_exists(model_cache_path_fs)) {
-            return model_cache_path;  // Return directory path even if not found
-        }
-
-        // Prefer the active HF snapshot recorded in refs/main. This lets
-        // Lemonade keep using the previous snapshot when upstream only changed
-        // README/metadata and the requested model artifacts are unchanged.
-        auto collect_gguf_files = [](const fs::path& search_root) {
-            std::vector<std::string> files;
-            if (search_root.empty() || !safe_exists(search_root)) {
-                return files;
-            }
-
-            std::error_code ec;
-            for (const auto& entry : fs::recursive_directory_iterator(search_root, safe_dir_options, ec)) {
-                if (ec) break;
-                if (!entry.is_regular_file(ec)) {
-                    ec.clear();
-                    continue;
-                }
-
-                std::string filename = entry.path().filename().string();
-                std::string filename_lower = filename;
-                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-
-                if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
-                    files.push_back(path_to_utf8(entry.path()));
-                }
-            }
-            return files;
-        };
-
-        std::vector<std::string> all_gguf_files = collect_gguf_files(active_hf_snapshot_path(model_cache_path_fs));
-        if (all_gguf_files.empty()) {
-            // Backward-compatible fallback for caches without refs/main and for
-            // partially migrated/manual HF cache layouts.
-            all_gguf_files = collect_gguf_files(model_cache_path_fs);
-        }
-
-        if (all_gguf_files.empty()) {
-            return model_cache_path;  // Return directory if no GGUF found
-        }
-
-        // Sort files for consistent ordering (important for sharded models)
-        std::sort(all_gguf_files.begin(), all_gguf_files.end());
-
-        // Case 0: Wildcard (*) - return first file (llama-server will auto-load shards)
-        if (variant == "*") {
-            return all_gguf_files[0];
-        }
-
-        // Case 1: Empty variant - return first file
-        if (variant.empty()) {
-            return all_gguf_files[0];
-        }
-
-        // Case 2: Exact filename match (variant ends with .gguf)
-        if (variant.find(".gguf") != std::string::npos) {
-            for (const auto& filepath : all_gguf_files) {
-                std::string filename = path_from_utf8(filepath).filename().string();
-                if (filename == variant) {
-                    return filepath;
-                }
-            }
-            return "";  // Exact variant not found — signal not downloaded
-        }
-
-        // Case 3: Files ending with {variant}.gguf (case insensitive)
-        std::string variant_lower = variant;
-        std::transform(variant_lower.begin(), variant_lower.end(), variant_lower.begin(), ::tolower);
-        std::string suffix = variant_lower + ".gguf";
-
-        std::vector<std::string> matching_files;
-        for (const auto& filepath : all_gguf_files) {
-            std::string filename = path_from_utf8(filepath).filename().string();
-            std::string filename_lower = filename;
-            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-
-            if (filename_lower.size() >= suffix.size() &&
-                filename_lower.substr(filename_lower.size() - suffix.size()) == suffix) {
-                matching_files.push_back(filepath);
-            }
-        }
-
-        if (!matching_files.empty()) {
-            return matching_files[0];
-        }
-
-        // Case 4: Folder-based sharding (files in variant/ folder)
-        std::string folder_prefix_lower = variant_lower + "/";
-
-        for (const auto& filepath : all_gguf_files) {
-            // Get relative path from model cache path
-            std::string relative_path = path_to_utf8(
-                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
-            std::string relative_lower = relative_path;
-            // Normalize path separators and case so folder-variant matching works cross-platform.
-            std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
-            std::replace(relative_lower.begin(), relative_lower.end(), '\\', '/');
-
-            if (relative_lower.find(folder_prefix_lower) != std::string::npos) {
-                return filepath;
-            }
-        }
-
-        // Case 5: Local quant-token fallback.
-        //
-        // Keep the existing resolver cases above as the primary logic: exact
-        // filenames, suffix matches, and folder-based sharding are more
-        // specific and preserve the CHECKPOINT:VARIANT contract.
-        //
-        // Some GGUF repositories name files with the quant token in the middle,
-        // for example:
-        //   Qwen3.6-27B-MTP-IMAT-IQ4_XS-Q8nextn.gguf
-        // for variant:
-        //   IQ4_XS
-        // That file does not end with IQ4_XS.gguf, so mirror the downloader's
-        // GGUF variant enumeration over the files that are already present in
-        // the local HF cache before declaring the model missing.
-        //
-        // HF cache paths have an extra snapshots/<revision>/ prefix that is not
-        // part of the repository-relative filename. Strip it before calling
-        // enumerate_gguf_variants(); otherwise the enumerator treats
-        // "snapshots" as a top-level sharded-folder variant and never extracts
-        // the quant token from the actual GGUF filename.
-        std::vector<std::string> relative_gguf_files;
-        std::map<std::string, std::string> absolute_by_relative;
-        auto repo_relative_from_cache_relative = [](std::string rel) {
-            std::replace(rel.begin(), rel.end(), '\\', '/');
-
-            static const std::string snapshots_prefix = "snapshots/";
-            if (rel.rfind(snapshots_prefix, 0) == 0) {
-                size_t revision_end = rel.find('/', snapshots_prefix.size());
-                if (revision_end != std::string::npos && revision_end + 1 < rel.size()) {
-                    rel = rel.substr(revision_end + 1);
-                }
-            }
-
-            return rel;
-        };
-
-        for (const auto& filepath : all_gguf_files) {
-            std::string relative_path = path_to_utf8(
-                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
-            relative_path = repo_relative_from_cache_relative(relative_path);
-
-            // Multiple HF snapshots can contain the same repo-relative file.
-            // Keep the first absolute path from the sorted all_gguf_files list
-            // so duplicates do not create false ambiguity.
-            if (absolute_by_relative.emplace(relative_path, filepath).second) {
-                relative_gguf_files.push_back(relative_path);
-            }
-        }
-
-        std::vector<std::string> enumerated_matches;
-        auto local_variants = lemon::enumerate_gguf_variants(relative_gguf_files);
-        for (const auto& local_variant : local_variants.variants) {
-            if (to_lower(local_variant.name) != variant_lower) {
-                continue;
-            }
-
-            auto it = absolute_by_relative.find(local_variant.primary_file);
-            if (it != absolute_by_relative.end()) {
-                enumerated_matches.push_back(it->second);
-            }
-        }
-
-        if (enumerated_matches.size() == 1) {
-            LOG(INFO, "ModelManager")
-                << "Resolved local GGUF variant '" << variant
-                << "' via quant-token fallback: " << enumerated_matches[0] << std::endl;
-            return enumerated_matches[0];
-        }
-
-        if (enumerated_matches.size() > 1) {
-            LOG(WARNING, "ModelManager")
-                << "Multiple local GGUF files matched variant '" << variant
-                << "' via quant-token fallback; refusing to guess" << std::endl;
-            return "";
-        }
-
-        // No match found for the requested GGUF variant. Do not fall back to
-        // another quantization in the same Hugging Face repo; otherwise a
-        // custom download with a different quant can make a built-in model
-        // appear downloaded and allow deleting the wrong file.
-        return "";
-    }
-
-    // Everything else
-    if (!variant.empty()) {
-        // Prefer refs/main for auxiliary checkpoints too (for example mmproj),
-        // so companion files stay on the same active snapshot as the main model
-        // when unchanged artifacts are reused across README-only commits.
-        fs::path active_snapshot = active_hf_snapshot_path(model_cache_path_fs);
-        if (!active_snapshot.empty()) {
-            fs::path direct_variant_path = active_snapshot / path_from_utf8(variant);
-            if (safe_exists(direct_variant_path)) {
-                return path_to_utf8(direct_variant_path);
-            }
-
-            std::error_code ec;
-            for (const auto& entry : fs::recursive_directory_iterator(active_snapshot, safe_dir_options, ec)) {
-                if (ec) break;
-                if (entry.is_regular_file(ec)) {
-                    std::string filename = entry.path().filename().string();
-                    if (filename == variant) {
-                        return path_to_utf8(entry.path());
-                    }
-                } else if (entry.is_directory(ec)) {
-                    fs::path variant_path = entry.path() / path_from_utf8(variant);
-                    if (safe_exists(variant_path)) {
-                        return path_to_utf8(variant_path);
-                    }
-                }
-                ec.clear();
-            }
-        }
-
-        // Try to find the exact variant in snapshots subdirectories
-        if (safe_exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    if (filename == variant) {
-                        return path_to_utf8(entry.path());
-                    }
-                } else if (entry.is_directory()) {
-                    fs::path variant_path = entry.path() / path_from_utf8(variant);
-                    if (safe_exists(variant_path)) {
-                        return path_to_utf8(variant_path);
-                    }
-                }
-            }
-        }
-        // Variant not found in checkpoint's own repo - try main repo as fallback
-        // (backward compat: older downloads placed all files in the main repo dir)
-        if (checkpoint_repo_id != main_repo_id) {
-            std::string main_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(main_repo_id);
-            fs::path main_cache_path_fs = path_from_utf8(main_cache_path);
-            if (fs::exists(main_cache_path_fs)) {
-                for (const auto& entry : fs::recursive_directory_iterator(main_cache_path_fs)) {
-                    if (entry.is_regular_file()) {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == variant) {
-                            return path_to_utf8(entry.path());
-                        }
-                    } else if (entry.is_directory()) {
-                        fs::path variant_path = entry.path() / path_from_utf8(variant);
-                        if (fs::exists(variant_path)) {
-                            return path_to_utf8(variant_path);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Variant not found - return empty string to indicate model not downloaded
-        return "";
-    }
-
-    // Fallback: return directory path
-    return model_cache_path;
+    return backends::ops_for(info.recipe)->resolve_checkpoint_path(info, ctx);
 }
 
 void ModelManager::resolve_all_model_paths(ModelInfo& info) {
