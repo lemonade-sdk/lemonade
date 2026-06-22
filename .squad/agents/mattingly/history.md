@@ -15,6 +15,191 @@ Leading UI POC on `feat/ui-testing`. React stays (ROI analysis showed ~300 LOC s
 
 ## Active Learnings
 
+### 2026-06-22: GUI3 Chat Rail + Account Menu A11y — feat/gui3-chat-account-a11y
+
+**Task:** #2346 #2348 — conversation rail missing listbox keyboard nav; account menu declared dialog but missing aria-modal, focus trap, Escape, and focus restore. Branch `feat/gui3-chat-account-a11y`. Tests went from 50 → 58 passed, 0 failed.
+
+**ChatView.tsx conversation rail — key facts:**
+- `<ul role="listbox" aria-label="Conversations">` already existed with correct role/label. Only `aria-selected`, `tabIndex`, and keyboard handlers were missing.
+- Roving tabindex pattern: selected conversation gets `tabIndex=0`; if no active conversation, the first item gets `tabIndex=0`; all others get `tabIndex=-1`.
+- `handleRailKeyDown` uses `e.currentTarget` (the `<ul>`) to find `[role="option"]` children — no extra ref needed.
+- `handleSheetKeyDown` is a separate callback (same logic but also calls `closeMobileSheet()` on Enter/Space) defined AFTER `closeMobileSheet` to avoid a stale closure on first render.
+- Delete button: `tabIndex={-1}` removes it from Tab order within the listbox; `aria-label=\`Delete conversation: ${title}\`` qualifies it. NVDA browse mode can still reach and activate it.
+- CSS `.rail__item:focus-within .rail__item-delete { opacity: 1 }` shows the delete button on keyboard focus (not just hover).
+- Both desktop rail (`id="rail-conv-{id}"`) and mobile sheet (`id="sheet-conv-{id}"`) lists get the same treatment with separate IDs to avoid DOM duplicates.
+
+**AccountMenu.tsx — modal dialog decision:**
+- Component already had `role="dialog"` and `aria-haspopup="dialog"`. Going MODAL was the right call (multi-mode forms, complex interactions).
+- `useFocusTrap(panelRef, open)` — existing hook, zero new deps. Focuses first focusable element (× button) on open, wraps Tab within the panel.
+- `closePanel()` callback: `setOpen(false)` + `requestAnimationFrame(() => triggerRef.current?.focus())` for Escape and × button paths. Trigger click does NOT call `closePanel()` (focus is already on trigger after click).
+- `autoFocus` on form inputs (sign-in, create modes) fires on mode-switch re-render AFTER the trap has focused the × button — works correctly, no conflict.
+- Escape handler uses `e.stopPropagation()` to avoid bubbling to the bottom sheet Escape handler.
+
+**Test pattern for conversation rail:**
+- Use `page.addInitScript()` to inject `lemonade:guest:shared:conversations`, `lemonade:guest:shared:active_conversation`, and `lemonade:guest:shared:persist_conversations` into localStorage BEFORE page load.
+- Conversation IDs must be stable (e.g., `rc1`, `rc2`) to use `#rail-conv-rc1` locators in tests.
+- After `page.goto('/')`, `await page.waitForSelector('.rail__list')` before asserting.
+- For ArrowDown test: call `.focus()` on the first option element, then keyboard.press('ArrowDown'), then check `document.activeElement.id`.
+
+**Test count:** 50 → 58 passed. New tests: A35–A42 (8 tests, 2 describe blocks).
+
+**Files changed:**
+- `prototype/ui-redesign/src/components/ChatView.tsx`
+- `prototype/ui-redesign/src/features/accounts/AccountMenu.tsx`
+- `prototype/ui-redesign/src/styles/styles.css`
+- `prototype/ui-redesign/tests/a11y.spec.ts`
+- `prototype/ui-redesign/ACCESSIBILITY.md`
+
+---
+
+### 2026-06-22: GUI3 Download Progress A11y — feat/gui3-download-a11y
+
+**Task:** #2342 — download progress was visual-only (bare `aria-label="NN%"` on a `<div>`). Branch `feat/gui3-download-a11y`. Tests went from 50 → 54 passed, 0 failed.
+
+**DownloadManager.tsx structure key facts:**
+- `DownloadManager` always has its hooks run (state/effects never skip) but returns `null` when `isVisible=false` — the "conditional return after hooks" pattern. This means the `prevStatusRef` and `statusAnnouncement` state persist across open/close cycles.
+- `downloadStore` is a MODULE-LEVEL SINGLETON instantiated at import time. Its constructor calls `readStored()` which reads from `localStorage` immediately. Pre-populating `localStorage` via `page.addInitScript()` BEFORE page load is the reliable way to inject a download item in tests — no API timing required.
+- The store calls `api.downloads()` only when `api.isConnected === true`. First poll on `start()` often runs before the health check returns; the store schedules `POLL_MS=1000` retry. For tests that need real API data, wait for `page.waitForResponse('/api/v1/downloads')`.
+- `mergeDownloads([], true)` (empty server response + `includeStored=true`) does NOT clear existing active items — it re-reads localStorage AND in-memory state. Safe to mock downloads with empty response while keeping localStorage-injected items.
+
+**A11y patterns used:**
+1. **`role="progressbar"`** with `aria-valuenow={Math.round(percent)}`, `aria-valuemin={0}`, `aria-valuemax={100}`, and `aria-label` including the model name. Visual `<span>` gets `aria-hidden="true"`.
+2. **Status live region** — `role="status" aria-live="polite" aria-atomic="true"` sr-only div always present inside the panel (same pattern as BackendManager toasts). `prevStatusRef` tracks previous statuses; the effect only sets announcement on status TRANSITIONS, not on percent updates. Cleared on panel close via `useEffect([isVisible])`.
+
+**Key insight on live regions (reiterated):**
+- The live region must be always present in the DOM while the panel is open — conditional mounting (`{msg && <div aria-live>}`) does NOT trigger NVDA.
+- Since `DownloadManager` is conditionally RETURNED (not conditionally mounted), the live region only exists in the DOM when `isVisible=true`. This is correct — we want status announcements only when the panel is open, and the always-present pattern is satisfied within the panel's render.
+
+**Test pattern for DownloadManager:**
+- Use `page.addInitScript((item) => { localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([item])); }, MOCK_DOWNLOAD)` to inject a fake download BEFORE page load.
+- Mock health (`{ status: 'ok', all_models_loaded: [] }`) to avoid errors; mock downloads (`{ downloads: [] }`) to prevent the store from clearing the localStorage item.
+- After `page.goto('/')`, click `.titlebar__download-toggle` to open the panel, then `waitForSelector('.download-item--downloading')` before asserting.
+- `Date.now()` timestamps in the mock item are fine — `downloading` status is never pruned by TTL.
+
+**Test count:** 50 → 54 passed. New tests: A35–A38 (4 tests, 1 `describe` block).
+
+**Files changed:**
+- `prototype/ui-redesign/src/components/DownloadManager.tsx`
+- `prototype/ui-redesign/tests/a11y.spec.ts`
+- `prototype/ui-redesign/ACCESSIBILITY.md`
+
+---
+
+### 2026-06-22: GUI3 Backend Manager A11y — feat/gui3-backend-a11y
+
+**Task:** #2343 #2344 #2351 — keyboard-operable matrix cells, qualified action button names, live-region toasts. Branch `feat/gui3-backend-a11y`. Tests went from 50 → 58 passed, 0 failed.
+
+**BackendManager.tsx structure key facts:**
+- Matrix is a `<table>` inside `.matrix[data-backends-matrix]`. Each `<td>` can contain multiple `.cell.cell--selectable` divs (one per recipe:backend combo in that device×capability cell).
+- Cell key: `backendKey(recipe, backend)` → `"${recipe}:${backend}"` (e.g., `"llamacpp:vulkan"`). Used as `data-cell` attribute.
+- `selectedBackendKey` state holds the currently selected cell key. Selection toggles on click.
+- `RECIPE_LABELS` maps recipe id → human label (e.g., `llamacpp` → `'llama.cpp'`).
+- Action buttons live inside `.cell__actions` div (stopPropagation sibling to the select button).
+- `toastMsg` drives the visual toast (conditionally rendered). `presetNotice` drives the context-rail notice.
+- Both `toastMsg` and `presetNotice` are set via `setTimeout(null, ...)` — they appear and disappear transiently.
+
+**A11y patterns used:**
+1. **Overlay button (`cell__select-btn`)** — same pattern as `recipe-card__overlay-btn` in PresetManager. `position: absolute; inset: 0; z-index: 0`. Cell div needs `position: relative` added to `.cell--selectable`. Action buttons get `position: relative; z-index: 1`. The overlay button has `aria-pressed` + `aria-label`.
+2. **`aria-label` on action buttons** — `Install/Update/Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`. Same direct-label approach as ModelManager fix.
+3. **Always-present sr-only live region** — one for `toastMsg` (`data-backends-toast-live`), one for `presetNotice` (`data-backends-preset-notice-live`). Visual elements remain conditionally rendered. Content mirrors the state value; empty string when null.
+
+**Key insight on live regions:**
+- Conditionally mounting `{msg && <div aria-live="polite">{msg}</div>}` does NOT trigger NVDA — the element must exist in DOM BEFORE content changes.
+- Pattern: always render `<div role="status" aria-live="polite" aria-atomic="true" className="sr-only">`, set content to `{msg || ''}`. Visual element stays conditional (animation, visual only).
+- Use `role="status"` (maps to implicit `aria-live="polite"`) + explicit `aria-live="polite"` for belt-and-suspenders. Add explicit `aria-atomic="true"` for toast messages.
+
+**Overlay button semantics: button vs grid:**
+- A `<button aria-pressed>` was chosen over `role="grid"` + `role="gridcell"` because:
+  1. Table already has implicit table semantics. Adding `role="grid"` switches AT to application-mode reading (changes arrow-key behavior for all cells), which would be more disruptive than helpful for a matrix with very few focusable cells.
+  2. The overlay-button pattern is already established in the codebase (PresetManager).
+  3. `aria-pressed` is semantically correct: the cell toggles a selection state.
+  4. Arrow-key navigation not warranted here — the matrix is small (≤4 columns × ≤5 rows) and Tab navigation is sufficient.
+- Decision recorded in `.squad/decisions/inbox/mattingly-gui3-backend-a11y.md`.
+
+**Test mocking for BackendManager:**
+- Mock `/api/v1/system-info**` (not health — BackendManager calls `api.health().catch(() => null)` and proceeds regardless).
+- Wait for `[data-backends-matrix]` after navigation (not `[data-backends-matrix-empty]` which appears when no data).
+- Mock needs `devices.cpu.available: true` and at least one recipe with backends in `installable` and `installed` states to get visible Install/Uninstall buttons.
+- Cell key in mock: `llamacpp:vulkan` (installable → Install button), `llamacpp:cpu` (installed, can_uninstall: true → Uninstall button).
+- `BACKEND_DEVICE['vulkan'] = 'gpu'` (referenced but not detected) and `BACKEND_DEVICE['cpu'] = 'cpu'` (detected). Both appear in matrixRows.
+
+**Test count:** 50 → 58 passed. New tests: A35–A42 (8 tests, 1 `describe` block).
+
+**Files changed:**
+- `prototype/ui-redesign/src/components/BackendManager.tsx`
+- `prototype/ui-redesign/src/styles/styles.css`
+- `prototype/ui-redesign/tests/a11y.spec.ts`
+- `prototype/ui-redesign/ACCESSIBILITY.md`
+
+
+
+**Task:** #2341 — model row action buttons had generic accessible names colliding across rows (Load/Load/Load…). Branch `feat/gui3-models-a11y`. Tests went from 50 → 55 passed, 0 failed.
+
+**ModelManager.tsx structure key facts:**
+- Three render functions produce row action buttons: `renderRunningModel` (loaded), `renderModelRow` (downloaded/registry), `renderHfRow` (HuggingFace search results).
+- `renderModelRow(m, isDownloaded)` — `isDownloaded: true` shows Load+Delete; `false` shows Download+Get&Load.
+- `downloaded: true` on a model in the API response puts it in `dl` (downloaded zone); omitting it puts it in `av` (registry/available zone).
+- `renderPinAndSpeechControl(name, isPinned, capability)` — renders Pin (all models) and TTS speech toggle (TTS-capability models only). `name` is the first arg.
+- CopyInlineButton uses its `title` prop as `aria-label`; pass `title={`Copy model ID: ${name}`}` at the call site.
+- HF variant buttons are inside `renderHfRow` expanded section; `r.id` is the repo identifier, `v.name` is the variant filename.
+
+**A11y patterns used:**
+1. **`aria-label` directly on `<button>`** — for all action buttons. Computed from the in-scope `name` / `m.model_name` / `r.id` variable. No restructuring needed.
+2. **`title` prop on CopyInlineButton call sites** — the component forwards `title` to `aria-label`; pass a qualified title at each call site rather than changing the component.
+3. **Icon-only buttons** — Delete and Cancel-download already had a `title` attribute for tooltip; added `aria-label` alongside (`title` stays for pointer users, `aria-label` for AT).
+
+**Test pattern:**
+- Mock both `/api/v1/health` (returns `{ status: 'ok', all_models_loaded: [] }`) AND `/api/v1/models**` (returns test models with `downloaded: true/false`) in `test.beforeEach`.
+- Health mock is required: `refresh()` in ModelManager checks `api.isConnected` (set by the health call) before fetching models. Without the health mock, the models mock never fires.
+- After navigating to Models, use `page.waitForSelector('.row', { timeout: 5000 }).catch(() => {})` instead of a fixed timeout.
+- `page.getByRole('button', { name: /Load Llama-3\.1-8B/ })` matches against the computed accessible name (aria-label takes priority over text content).
+
+**Gotchas:**
+- `renderRunningModel` uses a *second* `info` variable inside the expanded `{expandedModel === m.model_name && (() => { ... })()}` IIFE — different scope from the `info` at the function top. The delete button's `title` uses the outer `info`, so `aria-label` on the same button can reference `m.model_name` directly without ambiguity.
+- The `downloaded` field in the API response is checked via `Boolean((m as any).downloaded)` — must be explicitly `true`; omitting the field or passing `false` routes to the registry zone.
+- `gh pr create --body` breaks on markdown with backticks and regex patterns; always use `--body-file` with a temp file.
+
+**Test count:** 50 → 55 passed. New tests: A35–A39 (5 tests, 1 `describe` block).
+
+**Files changed:**
+- `prototype/ui-redesign/src/components/ModelManager.tsx`
+- `prototype/ui-redesign/tests/a11y.spec.ts`
+- `prototype/ui-redesign/ACCESSIBILITY.md`
+
+### 2026-06-22: GUI3 Preset Accessibility — feat/gui3-presets-a11y
+
+**Task:** Address 5 NVDA screen-reader issues on PresetManager.tsx (issues #2338 #2339 #2345 #2350 #2352). Branch `feat/gui3-presets-a11y`. All 5 items shipped in one pass; tests went from 50 → 61 passed, 0 failed.
+
+**PresetManager.tsx structure key facts:**
+- `DEFAULT_PRESET` is always the first card; its slideover hides the Behavior fields (`isDefaultEmptyPreset` guard at line ~858).
+- Use `page.locator('.recipe-card').nth(1)` in tests to open the first STARTER (chat capability, shows Behavior fields).
+- `STARTERS` array order: Balanced, Quality, Fast, Creative, Long Context, Code (chat), Sharp, Quick (image).
+- `CAPABILITIES = ['all', 'chat', 'image', 'tts']` (4 options, always rendered in capability section).
+- `toggleCap(cap)` always sets `appliesTo = [cap]` (single-select, not multi-select toggle) — radio semantics are correct, not aria-pressed.
+- `AUTO_OPT_RUNS` has 3 items; first is selected by default via `useState(AUTO_OPT_RUNS[0]?.id)`.
+- Advanced fields (`llamacpp_backend`, `llamacpp_device`, etc.) are inside a `<details class="preset-advanced">` — tests must open it first with `.preset-advanced summary` click.
+- The context-size slider is a "logical index" slider (maps to `ctxOptions[idx]`), not a direct value slider.
+
+**A11y patterns used:**
+1. **`aria-describedby` + `sr-only` span** — for the card button metadata (#2345). Description is hand-authored from `paramsPreviewLines`, `promptDisplayText`, `toolsDisplayText`. Kept `aria-hidden` on visual params/behavior divs to avoid duplication.
+2. **`role="radiogroup"` + `role="radio"` + `aria-checked`** — for capability chips (#2350). Correct because toggleCap is single-select.
+3. **`aria-pressed`** — for AutoOpt run buttons (#2352). Preferred over radiogroup because the run cards are structurally complex (article + button + details); adding radiogroup semantics would require DOM restructuring.
+4. **`htmlFor`/`id`** — for all field labels (#2338). Used static IDs since only one preset slideover is open at a time. Exception: the "Image width × height" shared visual label — used `aria-label` directly on each of the two inputs.
+5. **`<input list=> + <datalist>`** — for llamacpp_backend and llamacpp_device (#2339). Chosen over `<select>` because these accept arbitrary free-text, not just the listed values. Constants `LLAMACPP_BACKENDS` and `LLAMACPP_DEVICES` added near top of file.
+
+**Gotchas:**
+- `<button role="radio">` is valid per ARIA in HTML spec (button allows role override to radio). axe-core accepts it as long as `aria-checked` is present and a `role="radiogroup"` parent exists.
+- `aria-pressed` on AutoOpt buttons uses `{selectedAutoRunId === run.id}` — a boolean expression, which React serializes as `"true"` or `"false"` string (both valid aria-pressed values).
+- The `PresetCard` was an arrow function with implicit return `(...)`. Converting to function body required changing `) =>` to `) => {` and adding `return (`, and changing the closing `);` to `  );\n};`.
+- datalist IDs must be globally unique on the page. Used `preset-llamacpp-backends` and `preset-llamacpp-devices` (non-suffixed) because only one slideover is open at a time.
+
+**Test count:** 50 → 61 passed. New tests: A35–A45 (11 tests across 5 issues).
+
+**Files changed:**
+- `prototype/ui-redesign/src/components/PresetManager.tsx`
+- `prototype/ui-redesign/tests/a11y.spec.ts`
+- `prototype/ui-redesign/ACCESSIBILITY.md`
+
 ### 2026-06-19: Presets redesign audit — screenshots + findings
 
 **Task:** Design audit of the Presets UI in response to Kyle's stakeholder feedback: "I can't even figure out how to edit the default starters" and the preset↔recipe integration gap.
