@@ -10,6 +10,9 @@ namespace backends {
 struct VLLMArgResolution {
     std::vector<std::string> args;
     bool has_memory_budget_arg = false;
+    // True when the user/family already supplied --dtype, so backend code
+    // should not force its own (e.g. the AWQ float16 default).
+    bool has_dtype_arg = false;
 };
 
 VLLMArgResolution resolve_vllm_args(const std::string& model_name,

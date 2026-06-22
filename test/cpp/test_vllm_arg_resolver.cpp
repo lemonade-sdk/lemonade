@@ -68,6 +68,18 @@ static bool expect_args(const char* name,
     return ok;
 }
 
+static bool expect_dtype_flag(const char* name,
+                              const VLLMArgResolution& actual,
+                              bool expected_dtype) {
+    bool ok = actual.has_dtype_arg == expected_dtype;
+    std::printf("[%s] %s\n  got:  has_dtype_arg=%s\n  want: has_dtype_arg=%s\n",
+                ok ? "PASS" : "FAIL",
+                name,
+                actual.has_dtype_arg ? "true" : "false",
+                expected_dtype ? "true" : "false");
+    return ok;
+}
+
 static bool expect_error(const char* name,
                          const std::string& arg_string,
                          const std::string& expected_substring) {
@@ -258,6 +270,17 @@ int main() {
         "short vLLM flags still parse as flags",
         resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "-tp 2 --max-num-seqs 4"),
         "-tp 2 --max-num-seqs 4");
+
+    // has_dtype_arg drives whether the backend forces --dtype float16 for AWQ.
+    failures += !expect_dtype_flag(
+        "no user --dtype leaves has_dtype_arg false",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""),
+        false);
+
+    failures += !expect_dtype_flag(
+        "user --dtype is detected",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--dtype bfloat16"),
+        true);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

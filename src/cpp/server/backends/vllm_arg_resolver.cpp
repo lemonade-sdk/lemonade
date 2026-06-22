@@ -233,6 +233,11 @@ bool has_memory_budget_arg(const std::vector<ParsedArg>& args) {
     return std::any_of(args.begin(), args.end(), is_memory_budget_arg);
 }
 
+bool has_dtype_arg(const std::vector<ParsedArg>& args) {
+    return std::any_of(args.begin(), args.end(),
+                       [](const ParsedArg& arg) { return arg.flag == "--dtype"; });
+}
+
 } // namespace
 
 VLLMArgResolution resolve_vllm_args(const std::string& model_name,
@@ -277,7 +282,7 @@ VLLMArgResolution resolve_vllm_args(const std::string& model_name,
 
     merge_layer(resolved, parse_args(user_vllm_args, "vllm_args"));
 
-    return {flatten_args(resolved), has_memory_budget_arg(resolved)};
+    return {flatten_args(resolved), has_memory_budget_arg(resolved), has_dtype_arg(resolved)};
 }
 
 } // namespace backends
