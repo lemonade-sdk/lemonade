@@ -780,13 +780,7 @@ namespace lemon::backends {
         return (therock_base / (arch + "-" + version)).string();
     }
 
-#if defined(__linux__) || defined(_WIN32)
     namespace {
-        // Subdirectory (inside the per-arch install dir) that holds the wheel venv.
-        fs::path therock_venv_dir(const std::string& arch, const std::string& version) {
-            return fs::path(BackendUtils::get_therock_install_dir(arch, version)) / "venv";
-        }
-
         fs::path venv_python(const fs::path& venv_dir) {
 #ifdef _WIN32
             return venv_dir / "Scripts" / "python.exe";
@@ -914,33 +908,26 @@ namespace lemon::backends {
             return arch;
         }
     } // namespace
-#endif
 
     std::vector<std::string> BackendUtils::find_python() {
-#if defined(__linux__) || defined(_WIN32)
         std::string out;
 #ifdef _WIN32
         // Prefer the Windows "py -3" launcher, then a bare "python".
         if (run_capture("py", {"-3", "--version"}, out, 30) == 0) {
             return {"py", "-3"};
         }
-        if (run_capture("python", {"--version"}, out, 30) == 0) {
-            return {"python"};
-        }
 #else
         if (run_capture("python3", {"--version"}, out, 30) == 0) {
             return {"python3"};
         }
+#endif
         if (run_capture("python", {"--version"}, out, 30) == 0) {
             return {"python"};
         }
-#endif
-#endif
         return {};
     }
 
     void BackendUtils::cleanup_old_therock_versions(const std::string& current_version) {
-#if defined(__linux__) || defined(_WIN32)
         fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
 
         if (!fs::exists(therock_base)) {
@@ -965,14 +952,10 @@ namespace lemon::backends {
         } catch (const std::exception& e) {
             LOG(WARNING, "BackendUtils") << "Failed to cleanup old TheRock versions: " << e.what() << std::endl;
         }
-#endif
     }
 
     void BackendUtils::install_therock(const std::string& arch, const std::string& version,
                                        DownloadProgressCallback progress_cb) {
-#if !defined(__linux__) && !defined(_WIN32)
-        throw std::runtime_error("TheRock is only supported on Linux and Windows");
-#else
         if (legacy_therock_install_valid(arch, version)) {
             LOG(DEBUG, "BackendUtils") << "TheRock " << arch << "-" << version
                                        << " already installed (tarball); reusing" << std::endl;
@@ -1086,13 +1069,9 @@ namespace lemon::backends {
 
         report_stage("complete", 100, true);
         LOG(INFO, "BackendUtils") << "TheRock installation complete" << std::endl;
-#endif
     }
 
     std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
-#if !defined(__linux__) && !defined(_WIN32)
-        return "";
-#else
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         json config = utils::JsonUtils::load_from_file(config_path);
 
@@ -1141,7 +1120,6 @@ namespace lemon::backends {
             resolved_cache[version] = resolved;
         }
         return resolved;
-#endif
     }
     void BackendUtils::apply_cuda_env_vars(
             std::vector<std::pair<std::string, std::string>>& env_vars,
