@@ -66,6 +66,7 @@ namespace backends {
 namespace llamacpp {
 // Factory for the llamacpp backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
+const BackendSpec* spec();
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

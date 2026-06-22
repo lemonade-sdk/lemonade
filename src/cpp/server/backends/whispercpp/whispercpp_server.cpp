@@ -230,7 +230,7 @@ void WhisperServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("whispercpp", whispercpp_backend);
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults whispercpp to CPU, but npu/vulkan use different devices.
+    // The descriptor defaults whispercpp to CPU; npu/vulkan variants use different devices.
     if (whispercpp_backend == "npu") {
         device_type_ = DEVICE_NPU;
     } else if (whispercpp_backend == "vulkan" || whispercpp_backend == "metal") {
@@ -698,6 +698,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<WhisperServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+
+const BackendSpec* spec() { return &WhisperServer::SPEC; }
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

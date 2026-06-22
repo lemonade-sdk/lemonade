@@ -213,6 +213,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<KokoroServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+
+const BackendSpec* spec() { return &KokoroServer::SPEC; }
 }  // namespace kokoro
 }  // namespace backends
 }  // namespace lemon

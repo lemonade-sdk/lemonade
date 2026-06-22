@@ -139,28 +139,14 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
     return ModelType::LLM;
 }
 
-// Determine device type from recipe
-// Default device from recipe — individual backends override based on their config
+// Fallback device type for recipes with no registered backend descriptor
+// (collections and unknown recipes). The authoritative per-backend default lives
+// in BackendDescriptor::default_device; ModelManager::device_type_for_recipe
+// consults the descriptor registry first and only falls back here. Kept in this
+// low-level header (which must not depend on the backend registry) for that
+// fallback alone — it intentionally carries no per-backend knowledge.
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") {
-        return DEVICE_GPU;
-    } else if (recipe == "ryzenai-llm") {
-        return DEVICE_NPU;
-    } else if (recipe == "flm") {
-        return DEVICE_NPU;
-    } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;
-    } else if (recipe == "moonshine") {
-        return DEVICE_CPU;
-    } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;
-    } else if (recipe == "kokoro") {
-        return DEVICE_CPU;
-    } else if (is_collection_recipe(recipe)) {
-        return DEVICE_NONE;
-    } else if (recipe == "cloud") {
-        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
-    }
+    (void)recipe;
     return DEVICE_NONE;
 }
 

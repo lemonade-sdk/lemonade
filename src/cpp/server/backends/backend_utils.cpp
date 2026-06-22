@@ -1,14 +1,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
-#include "lemon/backends/whispercpp/whispercpp_server.h"
-#include "lemon/backends/sdcpp/sdcpp_server.h"
-#include "lemon/backends/kokoro/kokoro_server.h"
-#include "lemon/backends/ryzenai/ryzenai_server.h"
-#include "lemon/backends/vllm/vllm_server.h"
-#include "lemon/backends/fastflowlm/fastflowlm_server.h"
-#include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
@@ -39,15 +32,9 @@ using json = nlohmann::json;
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
-        if (recipe == "whispercpp") return &WhisperServer::SPEC;
-        if (recipe == "sd-cpp") return &SDServer::SPEC;
-        if (recipe == "kokoro") return &KokoroServer::SPEC;
-        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
-        if (recipe == "vllm") return &VLLMServer::SPEC;
-        if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "moonshine") return &MoonshineServer::SPEC;
-        return nullptr;
+        // Each backend exposes its install/download spec through the registry
+        // (see <stem>::spec()); no per-recipe branches or server includes here.
+        return spec_for(recipe);
     }
 
     static std::string hash_string_from_json(const json& node) {

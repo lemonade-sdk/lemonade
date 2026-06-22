@@ -15,6 +15,8 @@ struct ModelInfo;
 
 namespace backends {
 
+struct BackendSpec;  // install/download spec, defined in backend_utils.h
+
 // Everything a backend's create() needs to build an instance. Mirrors the
 // arguments the old router factory passed to each backend constructor.
 struct BackendContext {
@@ -34,10 +36,14 @@ using BackendCreateFn = std::unique_ptr<WrappedServer> (*)(const BackendContext&
 struct BackendRegistration {
     const BackendDescriptor* descriptor;
     BackendCreateFn create;
+    const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
 };
 
-// All registered (descriptor, create) pairs, in LEMON_BACKENDS order.
+// All registered (descriptor, create, spec) entries, in LEMON_BACKENDS order.
 const std::vector<BackendRegistration>& all_registrations();
+
+// Install/download spec for a recipe, or nullptr if the recipe has none.
+const BackendSpec* spec_for(const std::string& recipe);
 
 // Construct a backend instance for a recipe and associate its descriptor, or
 // nullptr if the recipe has no registered backend.

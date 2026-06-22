@@ -184,6 +184,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return server;
 }
 
+
+const BackendSpec* spec() { return &::lemon::RyzenAIServer::SPEC; }
 }  // namespace ryzenai
 }  // namespace backends
 }  // namespace lemon

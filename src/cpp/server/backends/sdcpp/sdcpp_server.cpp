@@ -203,7 +203,7 @@ void SDServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal/cuda are GPU backends.
+    // The descriptor defaults sd-cpp to CPU; rocm/vulkan/metal/cuda variants are GPU backends.
     if (backend == "rocm" || backend == "vulkan" || backend == "metal" || backend == "cuda") {
         device_type_ = DEVICE_GPU;
     } else {
@@ -756,6 +756,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<SDServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+
+const BackendSpec* spec() { return &SDServer::SPEC; }
 }  // namespace sdcpp
 }  // namespace backends
 }  // namespace lemon

@@ -11,7 +11,6 @@
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/cloud_provider_registry.h>
-#include <lemon/backends/fastflowlm/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -2964,8 +2963,11 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
 // Returns empty string if not found.
 static std::string find_flm_binary() {
     try {
-        return backends::BackendUtils::get_backend_binary_path(
-            backends::FastFlowLMServer::SPEC, "npu");
+        const backends::BackendSpec* spec = backends::try_get_spec_for_recipe("flm");
+        if (!spec) {
+            return "";
+        }
+        return backends::BackendUtils::get_backend_binary_path(*spec, "npu");
     } catch (...) {
 #ifndef _WIN32
         return utils::find_flm_executable();

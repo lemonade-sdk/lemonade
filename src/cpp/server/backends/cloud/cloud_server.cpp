@@ -805,6 +805,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
         ctx.model_manager, ctx.backend_manager, ctx.cloud_registry);
 }
 
+
+const BackendSpec* spec() { return nullptr; }
 }  // namespace cloud
 }  // namespace backends
 }  // namespace lemon

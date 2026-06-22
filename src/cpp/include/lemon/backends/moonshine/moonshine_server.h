@@ -61,6 +61,7 @@ namespace backends {
 namespace moonshine {
 // Factory for the moonshine backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
+const BackendSpec* spec();
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

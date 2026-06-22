@@ -14,6 +14,15 @@ const std::vector<BackendRegistration>& all_registrations() {
     return kRegistrations;
 }
 
+const BackendSpec* spec_for(const std::string& recipe) {
+    for (const auto& reg : all_registrations()) {
+        if (reg.descriptor->recipe == recipe) {
+            return reg.spec;
+        }
+    }
+    return nullptr;
+}
+
 std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const BackendContext& ctx) {
     for (const auto& reg : all_registrations()) {
         if (reg.descriptor->recipe == recipe) {

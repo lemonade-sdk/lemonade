@@ -80,6 +80,7 @@ namespace backends {
 namespace fastflowlm {
 // Factory for the fastflowlm backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
+const BackendSpec* spec();
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon
