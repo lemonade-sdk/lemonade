@@ -182,9 +182,11 @@ namespace lemon::backends {
         LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
         return false;
 #endif
-        int result = system(command.c_str());
+        std::string output;
+        int result = lemon::utils::ProcessManager::run_command(command, output, 300);
         if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result
+                                     << (output.empty() ? "" : " - " + output) << std::endl;
             return false;
         }
         return true;

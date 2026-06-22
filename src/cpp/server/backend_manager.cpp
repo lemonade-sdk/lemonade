@@ -1,4 +1,5 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -369,24 +370,40 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // any UI/metadata callers that still touch this code path.
     if (utils::looks_like_path(raw)) return pinned_version;
 
-    // "latest" → ask GitHub. If offline and a previously-installed version is
-    // recorded, reuse it instead of failing.
+    // "latest" → ask GitHub for the newest release. The lookup can be skipped
+    // (offline) or fail (e.g. HTTP 504, network error); in either case fall back
+    // to the binary already installed rather than refusing to load a model that
+    // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
-        if (cfg->offline()) {
-            std::string install_dir = backends::BackendUtils::get_install_directory(
-                recipe, resolved_backend);
-            std::string cached = read_version_file(fs::path(install_dir) / "version.txt");
-            if (!cached.empty()) {
+        const bool offline = cfg->offline();
+        // A non-throwing lookup so a transient GitHub failure becomes a fallback
+        // rather than an exception. Skipped entirely when offline.
+        std::string fetched = offline
+            ? std::string()
+            : fetch_latest_github_tag(repo, /*throw_on_failure=*/false);
+
+        // The install directory is not version-scoped, so version.txt always
+        // reflects the most recently installed binary for this (recipe, backend).
+        std::string install_dir = backends::BackendUtils::get_install_directory(
+            recipe, resolved_backend);
+        std::string installed = read_version_file(fs::path(install_dir) / "version.txt");
+
+        LatestPinResolution resolution =
+            resolve_latest_pin(recipe, resolved_backend, offline, fetched, installed);
+        if (!resolution.version.empty()) {
+            if (resolution.used_installed_fallback && offline) {
                 LOG(WARNING, "BackendManager") << "offline: reusing installed " << recipe
                                                << ":" << resolved_backend << " version "
-                                               << cached << " for 'latest'" << std::endl;
-                return cached;
+                                               << resolution.version << " for 'latest'" << std::endl;
+            } else if (resolution.used_installed_fallback) {
+                LOG(WARNING, "BackendManager") << "could not resolve 'latest' for " << recipe
+                                               << ":" << resolved_backend
+                                               << "; falling back to installed version "
+                                               << resolution.version << std::endl;
             }
-            throw std::runtime_error(
-                "Cannot resolve 'latest' for " + recipe + ":" + resolved_backend
-                + ": offline mode and no installed version found");
+            return resolution.version;
         }
-        return fetch_latest_github_tag(repo, /*throw_on_failure=*/true);
+        throw std::runtime_error(resolution.error);
     }
 
     // Otherwise: a bare upstream release tag (e.g. "b8664"). Pass through.

@@ -39,6 +39,7 @@ struct BenchRunResult {
     double vram_gb = -1.0;      // -1 means not available
     double memory_gb = -1.0;    // -1 means not available
     bool success = true;        // false if the run failed (exception, HTTP error, etc.)
+    std::string response_text;  // LLM response text (only populated if capture enabled)
 };
 
 struct BenchScenarioResult {
@@ -132,7 +133,8 @@ bool unload_all_models(lemonade::LemonadeClient& client);
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
-                                bool memory_tracking);
+                                bool memory_tracking,
+                                bool capture_response);
 
 // Run a full scenario (warmup + measurement runs).
 // When reload=true, unloads+loads the model before each measurement run to clear prompt cache.
@@ -146,7 +148,9 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& recipe,
                                  const std::string& backend,
                                  int ctx_size,
-                                 const std::string& backend_args);
+                                 const std::string& backend_args,
+                                 const std::string& response_log_path,
+                                 const std::string& response_timestamp = "");
 
 // ============================================================
 // CLI Options (raw values parsed by CLI11 in main.cpp)
@@ -166,6 +170,7 @@ struct BenchCliOptions {
     bool no_memory = false;
     bool no_reload = false;  // disable reload between runs
     std::string compare_file;
+    std::string response_log;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
     std::vector<std::string> vllm_args;
@@ -192,7 +197,8 @@ struct BenchConfig {
     bool memory_tracking = true;
     bool reload = true;  // unload+reload model between runs to clear prompt cache
     std::string compare_file;
-    // Backend-specific custom args (keyed by recipe name: "llamacpp", "vllm", "sd-cpp", "whispercpp")
+    std::string response_log;
+    // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
 };
