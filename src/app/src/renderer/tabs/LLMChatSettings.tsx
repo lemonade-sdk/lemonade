@@ -8,17 +8,49 @@ interface NumericSettingConfig {
   description: string
 }
 
-interface  LLMChatSettingsProps {
+interface LLMChatSettingsProps {
   settings: AppSettings,
   numericSettingsConfig: NumericSettingConfig[];
+  defaultModel: string;
+  defaultModelOptions: string[];
+  onDefaultModelChange: (model: string) => void;
   onBooleanChangeFunc: (key: string | any, value: boolean) => void;
   onNumericChangeFunc: (key: NumericSettingKey, rawValue: number) => void;
   onResetFunc: (key: any) => void
 }
 
-const LLMChatSettings: React.FC<LLMChatSettingsProps> = ({settings, numericSettingsConfig, onBooleanChangeFunc, onNumericChangeFunc, onResetFunc}) => {
+const LLMChatSettings: React.FC<LLMChatSettingsProps> = ({
+  settings,
+  numericSettingsConfig,
+  defaultModel,
+  defaultModelOptions,
+  onDefaultModelChange,
+  onBooleanChangeFunc,
+  onNumericChangeFunc,
+  onResetFunc,
+}) => {
   return (
     <div className="settings-section-container">
+      <div className="settings-section">
+        <div className="settings-label-row">
+          <label className="settings-label">
+            <span className="settings-label-text">Default Model</span>
+            <span className="settings-description">
+              When a request names an unknown model, Lemonade uses this fallback. Choose None to return an error instead.
+            </span>
+          </label>
+        </div>
+        <select
+          className="settings-text-input"
+          value={defaultModel}
+          onChange={(e) => onDefaultModelChange(e.target.value)}
+        >
+          <option value="">None</option>
+          {defaultModelOptions.map((modelId) => (
+            <option key={modelId} value={modelId}>{modelId}</option>
+          ))}
+        </select>
+      </div>
       {numericSettingsConfig.map((config: NumericSettingConfig) => (
         <NumericSetting
           settings={settings}

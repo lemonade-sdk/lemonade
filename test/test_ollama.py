@@ -24,6 +24,7 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    set_server_config,
 )
 from utils.test_models import (
     PORT,
@@ -389,6 +390,28 @@ class OllamaTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_012b_chat_falls_back_to_default_model(self):
+        """Test /api/chat uses configured default_model when request model is unknown."""
+        self.ensure_model_pulled()
+        set_server_config({"default_model": ENDPOINT_TEST_MODEL})
+        try:
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": "gemma3:12b",
+                    "messages": [{"role": "user", "content": "Say hello"}],
+                    "stream": False,
+                    "options": {"num_predict": 10},
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            data = response.json()
+            self.assertEqual(data["model"], ENDPOINT_TEST_MODEL)
+            self.assertTrue(data["done"])
+        finally:
+            set_server_config({"default_model": ""})
 
     def test_013_chat_with_latest_suffix(self):
         """Test /api/chat strips :latest suffix from model name."""

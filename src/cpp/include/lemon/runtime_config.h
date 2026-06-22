@@ -40,6 +40,8 @@ public:
     bool offline() const;
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
+    /// Fallback model when a requested name is not registered. Empty means disabled.
+    std::string default_model() const;
     bool enable_dgpu_gtt() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;

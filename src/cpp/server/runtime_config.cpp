@@ -231,6 +231,14 @@ bool RuntimeConfig::disable_model_filtering() const {
     return config_["disable_model_filtering"].get<bool>();
 }
 
+std::string RuntimeConfig::default_model() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("default_model") && config_["default_model"].is_string()) {
+        return config_["default_model"].get<std::string>();
+    }
+    return "";
+}
+
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
     return config_["enable_dgpu_gtt"].get<bool>();
@@ -404,6 +412,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
+        }
+    } else if (key == "default_model") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'default_model' must be a string");
         }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "no_fetch_executables" ||
