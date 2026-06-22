@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/llamacpp_server.h"
@@ -24,6 +25,7 @@
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <system_error>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -182,9 +184,11 @@ namespace lemon::backends {
         LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
         return false;
 #endif
-        int result = system(command.c_str());
+        std::string output;
+        int result = lemon::utils::ProcessManager::run_command(command, output, 300);
         if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result
+                                     << (output.empty() ? "" : " - " + output) << std::endl;
             return false;
         }
         return true;
@@ -257,27 +261,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
-        if (fs::exists(install_dir)) {
-            // On Windows, executables have a .exe extension that may not be in binary_name
-#ifdef _WIN32
-            const std::string binary_name_exe = binary_name + ".exe";
-#endif
-            // This could be optimized with a cache but saving a few milliseconds every few minutes/hours is not going to do much
-            for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(install_dir)) {
-                if (dir_entry.is_regular_file()) {
-                    const auto& fname = dir_entry.path().filename();
-                    if (fname == binary_name
-#ifdef _WIN32
-                        || fname == binary_name_exe
-#endif
-                    ) {
-                        return dir_entry.path().string();
-                    }
-                }
-            }
-        }
-
-        return "";
+        // Delegates to the header-only helper so the executable-lookup logic has
+        // a single source of truth shared with commit_staged_install().
+        return find_executable_in_dir(install_dir, binary_name);
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
@@ -403,7 +389,11 @@ namespace lemon::backends {
                     LOG(INFO, spec.log_name()) << "Upgrading " << spec.binary << " from " << installed_version
                             << " to " << expected_version << std::endl;
                     needs_install = true;
-                    fs::remove_all(install_dir);
+                    // NOTE: do NOT remove install_dir here. The existing working
+                    // binary is kept in place until the replacement has been
+                    // downloaded, extracted, and verified; the atomic swap below
+                    // (commit_staged_install) handles removal so an interrupted
+                    // download cannot leave the backend with no usable binary.
                 }
             } else if (!needs_install && !expected_version.empty()) {
                 // If the executable exists but version.txt is missing, SystemInfo
@@ -413,7 +403,7 @@ namespace lemon::backends {
                 LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
                         << spec.binary << " version " << expected_version << std::endl;
                 needs_install = true;
-                fs::remove_all(install_dir);
+                // See note above: removal is deferred to the verified atomic swap.
             }
         }
 
@@ -421,11 +411,37 @@ namespace lemon::backends {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
-            // Create install directory
-            fs::create_directories(install_dir);
+            // Stage the new install in a sibling directory so the currently
+            // installed (working) binary is left untouched until the download is
+            // complete, extracted, and verified. Only then is staging atomically
+            // swapped into place (see commit_staged_install below), so a slow or
+            // interrupted download never destroys a working binary.
+            const std::string staging_dir = install_dir + ".staging";
+            std::error_code staging_ec;
+            fs::remove_all(staging_dir, staging_ec);  // clear any leftover from a prior aborted install
+            fs::remove_all(install_dir + ".old", staging_ec);  // and any orphaned swap backup
+            // If a stale staging tree could not be cleared (e.g. a locked file on
+            // Windows), fail rather than extracting into it — a leftover binary
+            // could otherwise satisfy verification and get promoted as a stale or
+            // mixed install over the working one.
+            if (fs::exists(staging_dir)) {
+                throw std::runtime_error("Could not clear stale staging directory: " + staging_dir);
+            }
+            fs::create_directories(staging_dir);
 
-            std::string url = "https://github.com/" + repo + "/releases/download/" +
-                            expected_version + "/" + filename;
+            // Remove the staging tree on any early exit (exception) before the
+            // swap, so a failed download/extraction never leaves a half-built
+            // tree behind for the next attempt to trip over.
+            struct StagingGuard {
+                const std::string& dir;
+                bool active = true;
+                ~StagingGuard() {
+                    if (active) {
+                        std::error_code ec;
+                        fs::remove_all(dir, ec);
+                    }
+                }
+            } staging_guard{staging_dir};
 
             // Download archive to cache directory.
             // Preserve the actual filename (sanitised for use in a path) so that
@@ -441,6 +457,19 @@ namespace lemon::backends {
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + "_" + safe_filename)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
+
+            // Remove the downloaded archive on ANY exit from here on — success
+            // OR exception, including a throw from commit_staged_install() below
+            // (a swap/rename failure) — so the cache archive is never leaked.
+            // Mirrors StagingGuard above; replaces the per-throw fs::remove(zip_path)
+            // calls that did not cover the commit_staged_install throw path.
+            struct ZipGuard {
+                const std::string& path;
+                ~ZipGuard() {
+                    std::error_code ec;
+                    fs::remove(path, ec);
+                }
+            } zip_guard{zip_path};
 
             const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
                                                   expected_version + "/";
@@ -585,7 +614,6 @@ namespace lemon::backends {
                     if (!part_result.success) {
                         combined.close();
                         fs::remove(part_path);
-                        fs::remove(zip_path);
                         throw std::runtime_error("Failed to download " + part_filename + " from: " + part_url +
                                                  " - " + part_result.error_message);
                     }
@@ -610,28 +638,44 @@ namespace lemon::backends {
             LOG(DEBUG, spec.log_name()) << "Downloaded archive file size: "
                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
-            // Extract
-            if (!extract_archive(zip_path, install_dir, spec.log_name())) {
-                fs::remove(zip_path);
-                fs::remove_all(install_dir);
+            // Extract into the staging directory (NOT install_dir) so a failed
+            // extraction cannot destroy the currently-installed binary. The
+            // staging guard removes the partial tree when we throw.
+            if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
             }
 
-            // Verify extraction
-            exe_path = find_executable_in_install_dir(install_dir, spec.binary);
-            if (exe_path.empty()) {
-                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
-                fs::remove(zip_path);
-                fs::remove_all(install_dir);
-                throw std::runtime_error("Extraction failed: executable not found");
+            // Save version info into the staging tree so it travels with the
+            // atomic swap below. Fail cleanly on a write error rather than
+            // promoting a backend with no version.txt (which would make the next
+            // status check force an unnecessary reinstall).
+            {
+                const std::string staged_version_file = (fs::path(staging_dir) / "version.txt").string();
+                std::ofstream vf(staged_version_file);
+                vf << expected_version;
+                vf.flush();
+                if (!vf.good()) {
+                    throw std::runtime_error("Failed to write version file: " + staged_version_file);
+                }
             }
 
-            LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
+            // Verify the staged tree contains the executable, then atomically
+            // swap it into place. commit_staged_install keeps a recoverable .old
+            // backup across the swap: it removes the staging tree and leaves
+            // install_dir untouched on verification failure (returns ""), and on
+            // a swap (rename) failure it rolls the backup back and throws — so a
+            // botched download/extraction/swap never destroys the working binary.
+            exe_path = commit_staged_install(staging_dir, install_dir, spec.binary);
+            if (exe_path.empty()) {
+                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
+                throw std::runtime_error("Extraction failed: executable not found");
+            }
+            // Swap succeeded: staging was consumed by the rename, so disarm the
+            // guard (its cleanup would now be a no-op, but disarm to make intent
+            // explicit and skip a pointless filesystem call).
+            staging_guard.active = false;
 
-            // Save version info
-            std::ofstream vf(version_file);
-            vf << expected_version;
-            vf.close();
+            LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
 
     #ifndef _WIN32
             // Make all binaries in bin/ executable (tar may lose permissions)
@@ -649,8 +693,7 @@ namespace lemon::backends {
             chmod(exe_path.c_str(), 0755);
     #endif
 
-            // Delete ZIP file
-            fs::remove(zip_path);
+            // (The downloaded archive is removed by zip_guard on scope exit.)
 
             // Send completion event now that installation is fully done.
             // For split archives the combined on-disk size is only known after
