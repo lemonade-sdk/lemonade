@@ -1740,3 +1740,22 @@ if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
     include(CTest)
     add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
 endif()
+
+# Backend install atomicity (staging + verified atomic swap).
+# Header-only unit under test, so no extra source files are required.
+set(_INSTALL_ATOMICITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_install_atomicity.cpp"
+)
+if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
+    add_executable(test_install_atomicity
+        test/cpp/test_install_atomicity.cpp
+    )
+    target_include_directories(test_install_atomicity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
+endif()
