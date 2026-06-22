@@ -28,8 +28,11 @@ struct GgufMetadata {
     int64_t context_length = 0;
     int64_t block_count = 0;
     int64_t embedding_length = 0;
-    int64_t head_count_kv = 0;
+    int64_t head_count_kv = 0;    // total across all blocks (summed from array, or scalar × block_count)
     int64_t key_length = 0;
+    int64_t key_length_swa = 0;   // SWA-reduced key length (Gemma4, etc.)
+    int64_t swa_layer_count = 0;  // layers with sliding-window attention
+    int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
     GgufCapabilities caps;
 };
 
@@ -149,8 +152,22 @@ inline bool ends_with_ignore_case(const std::string& str, const std::string& suf
     return to_lower(str.substr(str.length() - suffix.length())) == to_lower(suffix);
 }
 
+inline bool starts_with_ignore_case(const std::string& str, const std::string& prefix) {
+    if (prefix.length() > str.length()) return false;
+    return to_lower(str.substr(0, prefix.length())) == to_lower(prefix);
+}
+
 inline bool contains_ignore_case(const std::string& str, const std::string& substr) {
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
+}
+
+inline bool has_gguf_magic(const std::string& path) {
+    std::ifstream in(utils::path_from_utf8(path), std::ios::binary);
+    if (!in.is_open()) return false;
+    char magic[4] = {};
+    in.read(magic, sizeof(magic));
+    return in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
+           std::memcmp(magic, "GGUF", 4) == 0;
 }
 
 } // namespace gguf_reader_detail
@@ -254,6 +271,41 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                     out.key_length = value;
                 continue;
             }
+            if (key == out.architecture + ".attention.key_length_swa") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.key_length_swa = value;
+                continue;
+            }
+            if (key == out.architecture + ".full_attention_interval") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.full_attention_interval = value;
+                continue;
+            }
+        }
+
+        // sliding_window_pattern: bool array, one entry per layer.
+        // Count true entries → swa_layer_count.  Match by suffix so we don't
+        // need the architecture prefix (key shape: arch.attention.sliding_window_pattern).
+        if (key.size() > std::strlen(".sliding_window_pattern")
+             && gguf_reader_detail::ends_with_ignore_case(key, ".sliding_window_pattern") && type == 9) {
+            uint32_t elem_type = 0;
+            uint64_t count = 0;
+            if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
+                if (elem_type == 7) {  // BOOL
+                    for (uint64_t j = 0; j < count; ++j) {
+                        uint8_t v = 0;
+                        if (read_gguf_le(in, v) && v)
+                            out.swa_layer_count++;
+                    }
+                } else if (elem_type != 9) {
+                    uint64_t elem_size = gguf_scalar_size(elem_type);
+                    if (elem_size > 0)
+                        skip_gguf_bytes(in, count * elem_size);
+                }
+            }
+            continue;
         }
 
         // Capability detection (vision, tool-calling, MTP)

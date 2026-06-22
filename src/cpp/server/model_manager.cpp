@@ -26,7 +26,6 @@
 #include <tuple>
 #include <unordered_set>
 #include <iomanip>
-#include <limits>
 #include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
@@ -111,38 +110,11 @@ namespace lemon {
 // Properties which are defined by the user for model registration.
 static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options"};
 
-// Helper functions for string operations
-static std::string to_lower(const std::string& str) {
-    std::string result = str;
-    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
-    return result;
-}
-
-static bool ends_with_ignore_case(const std::string& str, const std::string& suffix) {
-    if (suffix.length() > str.length()) {
-        return false;
-    }
-    return to_lower(str.substr(str.length() - suffix.length())) == to_lower(suffix);
-}
-
-static bool starts_with_ignore_case(const std::string& str, const std::string& prefix) {
-    if (prefix.length() > str.length()) {
-        return false;
-    }
-    return to_lower(str.substr(0, prefix.length())) == to_lower(prefix);
-}
-
-static bool contains_ignore_case(const std::string& str, const std::string& substr) {
-    return to_lower(str).find(to_lower(substr)) != std::string::npos;
-}
+// Helper functions for string operations — use shared implementations from gguf_reader_detail
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
-
-static bool has_label(const ModelInfo& info, const std::string& label) {
-    return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
-}
 
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
@@ -252,7 +224,7 @@ static void populate_model_metadata(ModelInfo& info) {
 
     if (info.recipe == "llamacpp") {
         std::string gguf_path = info.resolved_path();
-        if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
+        if (!gguf_path.empty() && gguf_reader_detail::ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
             GgufMetadata meta;
             if (read_gguf_metadata(meta, gguf_path)) {
                 info.max_context_window = meta.context_length;
@@ -731,7 +703,7 @@ static GGUFFiles identify_gguf_models(
     // (case 0) Wildcard, download everything
     if (!variant.empty() && variant == "*") {
         for (const auto& f : repo_files) {
-            if (ends_with_ignore_case(f, ".gguf")) {
+            if (gguf_reader_detail::ends_with_ignore_case(f, ".gguf")) {
                 sharded_files.push_back(f);
             }
         }
@@ -747,7 +719,7 @@ static GGUFFiles identify_gguf_models(
         variant_name = sharded_files[0];
     }
     // (case 1) If variant ends in .gguf or .bin, use it directly
-    else if (!variant.empty() && (ends_with_ignore_case(variant, ".gguf") || ends_with_ignore_case(variant, ".bin"))) {
+    else if (!variant.empty() && (gguf_reader_detail::ends_with_ignore_case(variant, ".gguf") || gguf_reader_detail::ends_with_ignore_case(variant, ".bin"))) {
         variant_name = variant;
 
         // Validate file exists in repo
@@ -769,7 +741,7 @@ static GGUFFiles identify_gguf_models(
     else if (variant.empty()) {
         std::vector<std::string> all_variants;
         for (const auto& f : repo_files) {
-            if (ends_with_ignore_case(f, ".gguf") && !contains_ignore_case(f, "mmproj")) {
+            if (gguf_reader_detail::ends_with_ignore_case(f, ".gguf") && !gguf_reader_detail::contains_ignore_case(f, "mmproj")) {
                 all_variants.push_back(f);
             }
         }
@@ -786,7 +758,7 @@ static GGUFFiles identify_gguf_models(
         auto vset = lemon::enumerate_gguf_variants(repo_files);
         std::vector<lemon::GgufVariant> exact_matches;
         for (const auto& v : vset.variants) {
-            if (to_lower(v.name) == to_lower(variant)) {
+            if (gguf_reader_detail::to_lower(v.name) == gguf_reader_detail::to_lower(variant)) {
                 exact_matches.push_back(v);
             }
         }
@@ -811,7 +783,7 @@ static GGUFFiles identify_gguf_models(
             std::string variant_suffix = variant + ".gguf";
 
             for (const auto& f : repo_files) {
-                if (ends_with_ignore_case(f, variant_suffix) && !contains_ignore_case(f, "mmproj")) {
+                if (gguf_reader_detail::ends_with_ignore_case(f, variant_suffix) && !gguf_reader_detail::contains_ignore_case(f, "mmproj")) {
                     end_with_variant.push_back(f);
                 }
             }
@@ -830,7 +802,7 @@ static GGUFFiles identify_gguf_models(
             else {
                 std::string folder_prefix = variant + "/";
                 for (const auto& f : repo_files) {
-                    if (ends_with_ignore_case(f, ".gguf") && starts_with_ignore_case(f, folder_prefix)) {
+                    if (gguf_reader_detail::ends_with_ignore_case(f, ".gguf") && gguf_reader_detail::starts_with_ignore_case(f, folder_prefix)) {
                         sharded_files.push_back(f);
                     }
                 }
@@ -842,12 +814,12 @@ static GGUFFiles identify_gguf_models(
                     std::string suffix_dash = "-" + variant + "/";
                     std::string suffix_underscore = "_" + variant + "/";
                     for (const auto& f : repo_files) {
-                        if (!ends_with_ignore_case(f, ".gguf")) continue;
+                        if (!gguf_reader_detail::ends_with_ignore_case(f, ".gguf")) continue;
                         size_t slash_pos = f.find('/');
                         if (slash_pos != std::string::npos) {
                             std::string folder = f.substr(0, slash_pos + 1);
-                            if (ends_with_ignore_case(folder, suffix_dash) ||
-                                ends_with_ignore_case(folder, suffix_underscore)) {
+                            if (gguf_reader_detail::ends_with_ignore_case(folder, suffix_dash) ||
+                                gguf_reader_detail::ends_with_ignore_case(folder, suffix_underscore)) {
                                 sharded_files.push_back(f);
                             }
                         }
@@ -1037,7 +1009,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     static constexpr const char* EXTRA_MODEL_SOURCE = "extra_models_dir";
 
     // Helper to initialize common ModelInfo fields for discovered models
-    auto init_extra_model_info = [this](const std::string& name) -> ModelInfo {
+    auto init_extra_model_info = [](const std::string& name) -> ModelInfo {
         ModelInfo info;
         info.model_name = name;
         info.recipe = EXTRA_MODEL_RECIPE;
@@ -1060,7 +1032,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
             std::string filename = entry.path().filename().string();
 
-            if (!ends_with_ignore_case(filename, ".gguf")) continue;
+            if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf")) continue;
 
             fs::path parent_dir = entry.path().parent_path();
 
@@ -1083,7 +1055,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         std::string filename = gguf_path.filename().string();
 
         // Skip mmproj files - they're part of multimodal models
-        if (contains_ignore_case(filename, "mmproj")) continue;
+        if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) continue;
 
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + gguf_path.stem().string();
         ModelInfo info = init_extra_model_info(model_name);
@@ -1122,7 +1094,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             } catch (...) {}
 
             // Check if this is an mmproj file (can be anywhere in filename)
-            if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
+            if (gguf_reader_detail::contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
                 mmproj_file = gguf_path;
                 continue;
             }
@@ -1419,7 +1391,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             std::vector<std::string> enumerated_matches;
             auto local_variants = lemon::enumerate_gguf_variants(relative_gguf_files);
             for (const auto& local_variant : local_variants.variants) {
-                if (to_lower(local_variant.name) != variant_lower) {
+                if (gguf_reader_detail::to_lower(local_variant.name) != variant_lower) {
                     continue;
                 }
 
@@ -1810,7 +1782,7 @@ static bool are_required_checkpoints_complete(const ModelInfo& info) {
         fs::path resolved = path_from_utf8(resolved_path);
         if (info.recipe == "llamacpp" &&
             !safe_is_directory(resolved) &&
-            ends_with_ignore_case(resolved_path, ".gguf") &&
+            gguf_reader_detail::ends_with_ignore_case(resolved_path, ".gguf") &&
             !is_valid_gguf_file_for_cache(resolved_path)) {
             LOG(WARNING, "ModelManager")
                 << "Invalid GGUF cache file; marking model as not downloaded: "
@@ -2373,12 +2345,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     filtered_out_models_.clear();
 
-#ifdef __APPLE__
-    bool is_macos = true;
-#else
-    bool is_macos = false;
-#endif
-
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
@@ -2459,7 +2425,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         debug_printed = true;
     }
 
-    int filtered_count = 0;
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
         bool filter_out = false;
@@ -2522,7 +2487,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 #endif
 
         if (filter_out) {
-            filtered_count++;
             // Store the filter reason for later lookup
             filtered_out_models_[name] = filter_reason;
             continue;
@@ -3800,24 +3764,6 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     int file_index = 0;
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
-    auto ends_with_ignore_case_local = [](std::string value, std::string suffix) {
-        std::transform(value.begin(), value.end(), value.begin(), ::tolower);
-        std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
-        return value.size() >= suffix.size() &&
-               value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-    };
-
-    auto has_gguf_magic = [](const std::string& path) {
-        std::ifstream in(path_from_utf8(path), std::ios::binary);
-        if (!in.is_open()) {
-            return false;
-        }
-        char magic[4] = {};
-        in.read(magic, sizeof(magic));
-        return in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
-               magic[0] == 'G' && magic[1] == 'G' &&
-               magic[2] == 'U' && magic[3] == 'F';
-    };
 
 
     // Compute total download size across all files for accurate progress reporting
@@ -3935,9 +3881,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Reject that cache entry before HttpClient can treat the final path
         // as already complete. SHA validation still remains the primary check
         // when Hugging Face exposes an LFS object id.
-        if (ends_with_ignore_case_local(filename, ".gguf") &&
+        if (gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") &&
             fs::exists(output_path) && !fs::exists(partial_path) &&
-            !has_gguf_magic(output_path)) {
+            !gguf_reader_detail::has_gguf_magic(output_path)) {
             LOG(WARNING, "ModelManager") << "Removing invalid GGUF cache file before download: "
                                          << filename << std::endl;
             std::error_code remove_ec;
@@ -4097,7 +4043,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // an HTML/error/pointer file. Surface that as download validation
         // failure instead, and remove the invalid final file so the next pull
         // starts fresh.
-        if (ends_with_ignore_case_local(filename, ".gguf") && !has_gguf_magic(expected_path)) {
+        if (gguf_reader_detail::ends_with_ignore_case(filename, ".gguf") && !gguf_reader_detail::has_gguf_magic(expected_path)) {
             all_valid = false;
             LOG(ERROR, "ModelManager") << "Invalid GGUF file: " << filename
                                        << " (missing GGUF magic header)" << std::endl;
@@ -4240,7 +4186,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 folder_prefix += "/";
             }
             for (const auto& file : repo_files) {
-                if (starts_with_ignore_case(file, folder_prefix)) {
+                if (gguf_reader_detail::starts_with_ignore_case(file, folder_prefix)) {
                     files_to_download[main_repo_id].push_back(file);
                 }
             }
