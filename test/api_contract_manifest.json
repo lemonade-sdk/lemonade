@@ -5,6 +5,7 @@
     "src/cpp/server/server.cpp",
     "src/cpp/server/ollama_api.cpp",
     "src/cpp/server/anthropic_api.cpp",
+    "src/cpp/server/mcp_server.cpp",
     "src/cpp/server/websocket_server.cpp"
   ],
   "versioned_prefixes": [
@@ -49,6 +50,8 @@
     {"method": "POST", "versioned_path": "install"},
     {"method": "POST", "versioned_path": "uninstall"},
     {"method": "POST", "versioned_path": "log-level"},
+    {"method": "POST", "versioned_path": "cloud/auth"},
+    {"method": "DELETE", "versioned_path": "cloud/auth/{param}"},
 
     {"method": "POST", "path": "/api/chat"},
     {"method": "POST", "path": "/api/generate"},
@@ -65,10 +68,13 @@
     {"method": "POST", "path": "/api/push"},
     {"method": "POST", "path": "/api/blobs/{param}"},
 
-    {"method": "POST", "path": "/v1/messages"}
+    {"method": "POST", "path": "/v1/messages"},
+    {"method": "POST", "path": "/mcp"}
   ],
   "websocket_routes": [
     {"method": "WS", "path": "/realtime"},
-    {"method": "WS", "path": "/logs/stream"}
+    {"method": "WS", "versioned_path": "realtime"},
+    {"method": "WS", "path": "/logs/stream"},
+    {"method": "WS", "versioned_path": "logs/stream"}
   ]
 }

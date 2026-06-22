@@ -148,8 +148,33 @@ def decode_cpp_literal(literal: str) -> str:
     raise ValueError(f"unsupported C++ string literal: {literal!r}")
 
 
-def find_helper_body(source: str, helper_name: str) -> str:
-    start = source.find(f"auto {helper_name}")
+def skip_cpp_string_or_char(source: str, index: int) -> int:
+    """Return the index just after a C++ string/char literal starting at index."""
+
+    if source.startswith('R"(', index):
+        end = source.find(')"', index + 3)
+        return len(source) if end == -1 else end + 2
+
+    quote = source[index]
+    if quote not in {'"', "'"}:
+        return index
+
+    index += 1
+    while index < len(source):
+        if source[index] == "\\" and index + 1 < len(source):
+            index += 2
+            continue
+        if source[index] == quote:
+            return index + 1
+        index += 1
+
+    return index
+
+
+def find_braced_body(source: str, start_token: str) -> str:
+    """Find the {...} body that follows start_token, ignoring braces in strings."""
+
+    start = source.find(start_token)
     if start == -1:
         return ""
 
@@ -158,7 +183,12 @@ def find_helper_body(source: str, helper_name: str) -> str:
         return ""
 
     depth = 0
-    for index in range(brace, len(source)):
+    index = brace
+    while index < len(source):
+        if source.startswith('R"(', index) or source[index] in {'"', "'"}:
+            index = skip_cpp_string_or_char(source, index)
+            continue
+
         char = source[index]
         if char == "{":
             depth += 1
@@ -166,7 +196,13 @@ def find_helper_body(source: str, helper_name: str) -> str:
             depth -= 1
             if depth == 0:
                 return source[brace : index + 1]
+        index += 1
+
     return ""
+
+
+def find_helper_body(source: str, helper_name: str) -> str:
+    return find_braced_body(source, f"auto {helper_name}")
 
 
 def extract_helper_prefixes(source: str, helper_name: str, cpp_method: str) -> list[str]:
@@ -210,11 +246,64 @@ def extract_routes_from_source(source: str) -> set[Route]:
     return routes
 
 
+def extract_websocket_prefixes(classify_path_body: str) -> list[str]:
+    prefix_match = re.search(
+        r"for\s*\([^:]+:\s*\{(?P<prefixes>[^}]+)\}\)",
+        classify_path_body,
+        re.DOTALL,
+    )
+    if not prefix_match:
+        return []
+
+    return [
+        normalize_path(prefix)
+        for prefix in re.findall(r'"([^"]+)"', prefix_match.group("prefixes"))
+    ]
+
+
 def extract_websocket_routes(source: str) -> set[Route]:
     source = strip_cpp_comments(source)
+    body = find_braced_body(source, "WebSocketServer::classify_path")
+
+    if body:
+        prefixes = extract_websocket_prefixes(body)
+        websocket_paths = [
+            normalize_path(path)
+            for path in re.findall(r'\bstripped\s*==\s*"([^"]+)"', body)
+        ]
+
+        # Fallback for older implementations that compare the raw path directly.
+        if not websocket_paths:
+            websocket_paths = [
+                normalize_path(path)
+                for path in re.findall(r'\bpath\s*==\s*"([^"]+)"', body)
+            ]
+    else:
+        prefixes = []
+        websocket_paths = [
+            normalize_path(path)
+            for path in re.findall(r'\bpath\s*==\s*"([^"]+)"', source)
+        ]
+
+    routes: set[Route] = set()
+    for path in websocket_paths:
+        routes.add(Route("WS", path))
+        for prefix in prefixes:
+            routes.add(Route("WS", normalize_path(f"{prefix}/{path.lstrip('/')}")))
+
+    return routes
+
+
+def expand_manifest_route(route: dict, prefixes: Iterable[str]) -> set[Route]:
+    method = route["method"]
+
+    if "path" in route:
+        return {Route(method, normalize_path(route["path"]))}
+
+    suffix = route["versioned_path"].lstrip("/")
     return {
-        Route("WS", normalize_path(path))
-        for path in re.findall(r"path\s*==\s*\"([^\"]+)\"", source)
+        Route(method, normalize_path(f"{prefix}/{suffix}"))
+        for prefix in prefixes
     }
 
 
@@ -223,16 +312,10 @@ def expected_routes(manifest: dict) -> set[Route]:
     routes: set[Route] = set()
 
     for route in manifest["http_routes"]:
-        method = route["method"]
-        if "path" in route:
-            routes.add(Route(method, normalize_path(route["path"])))
-            continue
-        suffix = route["versioned_path"].lstrip("/")
-        for prefix in prefixes:
-            routes.add(Route(method, normalize_path(f"{prefix}/{suffix}")))
+        routes.update(expand_manifest_route(route, prefixes))
 
     for route in manifest["websocket_routes"]:
-        routes.add(Route(route["method"], normalize_path(route["path"])))
+        routes.update(expand_manifest_route(route, prefixes))
 
     return routes
 
