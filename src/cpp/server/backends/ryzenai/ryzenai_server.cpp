@@ -195,7 +195,13 @@ public:
     std::string resolve_checkpoint_path(const ModelInfo&,
                                         const CheckpointResolveContext& ctx) const override {
         // RyzenAI models are a directory containing genai_config.json.
-        std::filesystem::path dir = lemon::utils::path_from_utf8(ctx.model_cache_path);
+        std::string found = find_imported_checkpoint(ctx.model_cache_path);
+        return found.empty() ? ctx.model_cache_path : found;  // dir if not found
+    }
+
+    std::string find_imported_checkpoint(const std::string& import_dir) const override {
+        // The primary artifact is the directory holding genai_config.json.
+        std::filesystem::path dir = lemon::utils::path_from_utf8(import_dir);
         if (hf_cache::exists(dir)) {
             for (const auto& entry :
                  std::filesystem::recursive_directory_iterator(dir, hf_cache::dir_options())) {
@@ -204,7 +210,7 @@ public:
                 }
             }
         }
-        return ctx.model_cache_path;  // directory even if genai_config not found
+        return "";  // register the directory itself
     }
 };
 }  // namespace

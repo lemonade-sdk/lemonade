@@ -731,6 +731,22 @@ public:
         }
         return BackendOps::resolve_checkpoint_path(info, ctx);
     }
+
+    std::string find_imported_checkpoint(const std::string& import_dir) const override {
+        // The primary artifact is the .bin model file.
+        std::filesystem::path dir = lemon::utils::path_from_utf8(import_dir);
+        if (!hf_cache::exists(dir)) {
+            return "";
+        }
+        for (const auto& entry :
+             std::filesystem::recursive_directory_iterator(dir, hf_cache::dir_options())) {
+            if (entry.is_regular_file() &&
+                entry.path().filename().string().find(".bin") != std::string::npos) {
+                return lemon::utils::path_to_utf8(entry.path());
+            }
+        }
+        return "";
+    }
 };
 }  // namespace
 

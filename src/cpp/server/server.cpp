@@ -3958,59 +3958,11 @@ void Server::resolve_and_register_local_model(
     std::string recipe = model_data.value("recipe", "");
     bool vision = model_data.value("vision", false);
 
-    std::string resolved_checkpoint;
+    // The backend's ops locate its primary artifact within the imported
+    // directory (.gguf / .bin file, genai_config.json dir, …); "" means register
+    // the directory itself.
+    std::string resolved_checkpoint = backends::ops_for(recipe)->find_imported_checkpoint(dest_path);
     std::string resolved_mmproj;
-
-    // For RyzenAI LLM models, find genai_config.json
-    if (recipe == "ryzenai-llm") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                resolved_checkpoint = entry.path().parent_path().string();
-                break;
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
-    // For llamacpp models, find the GGUF file
-    else if (recipe == "llamacpp") {
-        std::string gguf_file_found;
-
-        // If no variant or variant not found, search for any .gguf file (excluding mmproj)
-        if (gguf_file_found.empty()) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    std::string filename_lower = filename;
-                    std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-
-                    if (filename_lower.find(".gguf") != std::string::npos &&
-                        filename_lower.find("mmproj") == std::string::npos) {
-                        gguf_file_found = entry.path().string();
-                        break;
-                    }
-                }
-            }
-        }
-
-        resolved_checkpoint = gguf_file_found.empty() ? dest_path : gguf_file_found;
-    }
-    // For whispercpp, find .bin file
-    else if (recipe == "whispercpp") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".bin") != std::string::npos) {
-                    resolved_checkpoint = entry.path().string();
-                    break;
-                }
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
 
     // Search for mmproj file if vision is enabled or mmproj hint provided
     if (vision || !mmproj.empty()) {

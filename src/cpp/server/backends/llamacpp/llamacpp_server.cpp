@@ -792,6 +792,11 @@ public:
         return BackendOps::resolve_checkpoint_path(info, ctx);
     }
 
+    std::string find_imported_checkpoint(const std::string& import_dir) const override {
+        // The primary artifact is the (non-mmproj) GGUF file.
+        return resolve_gguf_path(import_dir, "");
+    }
+
     std::string validate_checkpoint_file(const std::string& resolved_path) const override {
         // A .gguf file in the cache must start with the GGUF magic, else it's a
         // truncated/corrupt download and the model is not really present.

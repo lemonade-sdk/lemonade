@@ -59,6 +59,15 @@ public:
     virtual std::string resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const;
 
+    // Find the primary checkpoint artifact inside a freshly-imported local
+    // directory (a local_import pull), e.g. the .gguf / .bin file or the
+    // genai_config.json directory. Returns the absolute path to register, or ""
+    // to register the directory itself. Default: "" (register the directory).
+    virtual std::string find_imported_checkpoint(const std::string& import_dir) const {
+        (void)import_dir;
+        return "";
+    }
+
     // Models supplied at runtime rather than from server_models.json (descriptor
     // dynamic_models = true). Default: none. cloud/flm override.
     virtual std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const {
