@@ -517,6 +517,12 @@ Do these first. All are small changes with high compliance impact.
 17. **2.1** — Add `--font-scale` token + A−/A+ UI control — DEFERRED to Phase 3
 18. **1.1.3** — Convert message list to `<ol>` with `<article>` per message — DEFERRED to Phase 3
 
+### Phase 2 Group E — Chat rail + Account menu (2026-06-22)
+
+23. **Chat conversation rail** ✅ DONE — Full listbox keyboard navigation in `ChatView.tsx`. Each `[role="option"]` now has `aria-selected`, roving `tabIndex` (selected=0, others=-1), unique `id` for both desktop rail (`rail-conv-{id}`) and mobile sheet (`sheet-conv-{id}`). `handleRailKeyDown` / `handleSheetKeyDown` wire ArrowUp/Down, Home/End, Enter/Space. Delete buttons carry qualified `aria-label="Delete conversation: {title}"` and `tabIndex={-1}` (not a Tab stop; reachable via NVDA browse mode). CSS: `.rail__item:focus-within .rail__item-delete { opacity: 1 }` shows delete button on keyboard focus.
+
+24. **Account menu dialog** ✅ DONE — `AccountMenu.tsx` promoted to a complete modal dialog. Added `aria-modal="true"` on the panel, `ref` on both trigger and panel, `useFocusTrap(panelRef, open)` for Tab containment, Escape keydown handler (`closePanel()`) that restores focus to the trigger via `requestAnimationFrame`. The × close button now calls `closePanel()` instead of `setOpen(false)`. **Modal-vs-popover decision: MODAL.** The panel already declared `role="dialog"` and `aria-haspopup="dialog"`; it contains multi-mode forms (sign-in, create, settings) where interaction is modal in nature. Upgrading to full modal is consistent with the existing declaration and prevents screen-reader virtual-cursor from escaping into page content while the panel is open.
+
 ### Phase 3 — Enhancements (L-effort, P2, new deps) + GUI3 Preset A11y
 
 19. **2.2** — High-contrast theme (`[data-theme="high-contrast"]` + `forced-colors` handling) — new token set
@@ -582,7 +588,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (76 tests)
+### Test groups (84 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -603,6 +609,8 @@ npm test
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
 | Model row qualified names | A46–A50 | Load/Delete/Download/Get&Load buttons include model name in aria-label; no bare generic names |
 | Download progress bar | A59–A62 | `role="progressbar"` present; aria-valuenow/min/max correct; model name in label; sr-only status live region exists |
+| Conversation rail listbox | A63–A66 | `role="listbox"` + label; selected option `aria-selected="true"` + tabIndex=0; ArrowDown moves focus; delete button name includes title |
+| Account menu dialog | A67–A70 | `aria-haspopup` + `aria-expanded`; open = `role="dialog"` + `aria-modal`; focus moves in; Escape closes + focus restores |
 | Omni picker combobox (#2347) | A71–A74 | `role="combobox"` + `aria-expanded`; focus opens/Escape closes; ArrowDown opens + listbox visible; `htmlFor`/`id` label pair |
 | Connect form labels (#2349) | A75–A76 | Cloud provider fields found by `getByLabel`; marketplace search has `aria-label` |
 | Icon button names (#2353) | A77–A79 | LogViewer search `aria-label`; Clear button `aria-label`; Omni picker clear `aria-label` |
@@ -613,4 +621,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342; Group F: combobox semantics, durable form labels, icon names)*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342; Group E: conversation rail listbox + account menu modal dialog; Group F: combobox semantics, durable form labels, icon names)*

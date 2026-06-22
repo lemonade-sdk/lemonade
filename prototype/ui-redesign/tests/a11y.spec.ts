@@ -1115,7 +1115,124 @@ test.describe('Accessibility — download progress bar semantics', () => {
   });
 });
 
-// ─── 17. Group F — Omni picker combobox semantics ─────────────────────────────
+// ─── 17. Conversation rail — listbox keyboard navigation ──────────────────────
+
+test.describe('Accessibility — conversation rail listbox', () => {
+  const RAIL_CONVOS = [
+    { id: 'rc1', title: 'Alpha conversation', model: null, messages: [], updatedAt: Date.now(), schemaVersion: 3 },
+    { id: 'rc2', title: 'Beta conversation', model: null, messages: [], updatedAt: Date.now() - 1000, schemaVersion: 3 },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript((data: { persistKey: string; convKey: string; activeKey: string; convos: typeof RAIL_CONVOS }) => {
+      localStorage.setItem(data.persistKey, 'true');
+      localStorage.setItem(data.convKey, JSON.stringify({ version: 3, conversations: data.convos }));
+      localStorage.setItem(data.activeKey, 'rc1');
+    }, {
+      persistKey: 'lemonade:guest:shared:persist_conversations',
+      convKey: 'lemonade:guest:shared:conversations',
+      activeKey: 'lemonade:guest:shared:active_conversation',
+      convos: RAIL_CONVOS,
+    });
+    await page.goto('/');
+    await page.waitForSelector('.rail__list');
+  });
+
+  test('A63 — rail__list has role="listbox" with an accessible aria-label', async ({ page }) => {
+    const list = page.locator('.rail__list').first();
+    expect(await list.getAttribute('role')).toBe('listbox');
+    const label = await list.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A64 — selected conversation option has aria-selected="true" and tabIndex=0', async ({ page }) => {
+    const activeOption = page.locator('.rail__list [role="option"][aria-selected="true"]').first();
+    await expect(activeOption).toBeVisible();
+    const tabIndex = await activeOption.getAttribute('tabindex');
+    expect(tabIndex).toBe('0');
+  });
+
+  test('A65 — ArrowDown moves keyboard focus to the next conversation option', async ({ page }) => {
+    await page.locator('#rail-conv-rc1').focus();
+    await page.keyboard.press('ArrowDown');
+
+    const focusedId = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.id ?? '',
+    );
+    expect(focusedId).toBe('rail-conv-rc2');
+  });
+
+  test('A66 — delete button accessible name includes the conversation title', async ({ page }) => {
+    const deleteBtn = page.locator('.rail__list .rail__item-delete').first();
+    const label = await deleteBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('delete');
+    expect(label).toContain('Alpha conversation');
+  });
+});
+
+// ─── 18. Account menu — modal dialog semantics ────────────────────────────────
+
+test.describe('Accessibility — account menu dialog', () => {
+  test('A67 — account menu trigger has aria-haspopup="dialog" and aria-expanded="false" on load', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    const trigger = page.locator('.account-menu__trigger');
+    expect(await trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(await trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('A68 — opening account menu: panel has role="dialog" + aria-modal="true", trigger aria-expanded="true"', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    const panel = page.locator('.account-menu__panel');
+    expect(await panel.getAttribute('role')).toBe('dialog');
+    expect(await panel.getAttribute('aria-modal')).toBe('true');
+
+    const trigger = page.locator('.account-menu__trigger');
+    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('A69 — opening account menu moves focus inside the panel (useFocusTrap activates)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    const activeIsInPanel = await page.evaluate(() => {
+      const panel = document.querySelector('.account-menu__panel');
+      return panel?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInPanel).toBe(true);
+  });
+
+  test('A70 — Escape closes account menu and restores focus to the trigger', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100); // allow rAF focus restore
+
+    await expect(page.locator('.account-menu__panel')).not.toBeVisible({ timeout: 3000 });
+
+    const activeClass = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.className ?? '',
+    );
+    expect(activeClass).toContain('account-menu__trigger');
+
+  });
+});
+
+// ─── 19. Group F — Omni picker combobox semantics ─────────────────────────────
 
 test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => {
   async function openOmniCollectionForm(page: Page): Promise<void> {
@@ -1184,7 +1301,7 @@ test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => 
   });
 });
 
-// ─── 18. Group F — Connect / cloud form durable labels (#2349) ─────────────────
+// ─── 20. Group F — Connect / cloud form durable labels (#2349) ─────────────────
 
 test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
   test('A75 — Cloud provider form fields have programmatic labels (no placeholder-only)', async ({ page }) => {
@@ -1209,7 +1326,7 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
   });
 });
 
-// ─── 19. Group F — Icon-only / title-only controls have reliable names (#2353) ─
+// ─── 21. Group F — Icon-only / title-only controls have reliable names (#2353) ─
 
 test.describe('Accessibility — icon-button accessible names (#2353)', () => {
   test('A77 — LogViewer search input has an accessible name (not placeholder-only)', async ({ page }) => {
