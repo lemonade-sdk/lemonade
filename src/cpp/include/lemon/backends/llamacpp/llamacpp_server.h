@@ -13,15 +13,6 @@ class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IR
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-            "llamacpp",
-    #ifdef _WIN32
-            "llama-server.exe"
-    #else
-            "llama-server"
-    #endif
-        , get_install_params
-    );
 
     LlamaCppServer(const std::string& log_level,
                    ModelManager* model_manager,

@@ -15,15 +15,6 @@ class KokoroServer : public WrappedServer, public ITextToSpeechServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-            "kokoro",
-    #ifdef _WIN32
-            "koko.exe"
-    #else
-            "koko"
-    #endif
-        , get_install_params
-    );
 
     explicit KokoroServer(const std::string& log_level,
                           ModelManager* model_manager,

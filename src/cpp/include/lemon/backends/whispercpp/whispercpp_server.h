@@ -15,15 +15,6 @@ class WhisperServer : public WrappedServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-        "whispercpp",
-#ifdef _WIN32
-        "whisper-server.exe"
-#else
-        "whisper-server"
-#endif
-        , get_install_params
-    );
 
     explicit WhisperServer(const std::string& log_level,
                           ModelManager* model_manager,

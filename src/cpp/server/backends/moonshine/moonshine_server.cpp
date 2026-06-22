@@ -1,4 +1,5 @@
 #include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/backends/moonshine/moonshine.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -72,7 +73,7 @@ void MoonshineServer::load(const std::string& model_name,
     device_type_ = DEVICE_CPU;
 
     // Install moonshine-server if needed
-    backend_manager_->install_backend(SPEC.recipe, "cpu");
+    backend_manager_->install_backend(moonshine::spec()->recipe, "cpu");
 
     // Resolve model path from ModelManager (standard HF cache)
     std::string model_path = model_info.resolved_path();
@@ -98,7 +99,7 @@ void MoonshineServer::load(const std::string& model_name,
     }
 
     // Get executable path
-    std::string executable = BackendUtils::get_backend_binary_path(SPEC, "cpu");
+    std::string executable = BackendUtils::get_backend_binary_path(*moonshine::spec(), "cpu");
     LOG(INFO, "MoonshineServer") << "Using executable: " << executable << std::endl;
 
     // moonshine-server binds three consecutive ports: HTTP, WS (+1), TCP (+2).
@@ -341,7 +342,11 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() { return &MoonshineServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   MoonshineServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace moonshine
 }  // namespace backends

@@ -14,11 +14,6 @@ class MoonshineServer : public WrappedServer, public ITranscriptionServer, publi
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-        "moonshine",
-        "moonshine-server",
-        get_install_params
-    );
 
     explicit MoonshineServer(const std::string& log_level,
                             ModelManager* model_manager,

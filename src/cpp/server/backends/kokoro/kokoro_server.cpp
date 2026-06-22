@@ -1,4 +1,5 @@
 #include "lemon/backends/kokoro/kokoro_server.h"
+#include "lemon/backends/kokoro/kokoro.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -74,7 +75,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     // Install kokoros if needed
     const std::string backend = default_kokoro_backend();
-    backend_manager_->install_backend(SPEC.recipe, backend);
+    backend_manager_->install_backend(kokoro::spec()->recipe, backend);
 
     // Use pre-resolved model path
     fs::path model_path = fs::path(model_info.resolved_path());
@@ -94,7 +95,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Using model: " << model_index["model"] << std::endl;
 
     // Get koko executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*kokoro::spec(), backend);
 
     // Choose a port
     port_ = choose_port();
@@ -239,7 +240,11 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() { return &KokoroServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   KokoroServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() {
     static const KokoroOps kOps;
     return &kOps;

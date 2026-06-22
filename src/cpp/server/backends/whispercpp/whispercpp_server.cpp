@@ -1,4 +1,5 @@
 #include "lemon/backends/whispercpp/whispercpp_server.h"
+#include "lemon/backends/whispercpp/whispercpp.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -242,7 +243,7 @@ void WhisperServer::load(const std::string& model_name,
         device_type_ = DEVICE_CPU;
     }
 
-    backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
+    backend_manager_->install_backend(whispercpp::spec()->recipe, whispercpp_backend);
 
     std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {
@@ -258,7 +259,7 @@ void WhisperServer::load(const std::string& model_name,
     }
 
     // Get whisper-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, whispercpp_backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*whispercpp::spec(), whispercpp_backend);
 
     // Choose a port
     port_ = choose_port();
@@ -733,7 +734,11 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() { return &WhisperServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   WhisperServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() {
     static const WhisperOps kOps;
     return &kOps;

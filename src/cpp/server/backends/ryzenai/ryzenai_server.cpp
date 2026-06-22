@@ -1,4 +1,5 @@
 #include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/backends/backend_ops.h"
@@ -43,7 +44,7 @@ RyzenAIServer::~RyzenAIServer() {
 
 bool RyzenAIServer::is_available() {
     try {
-        return !backends::BackendUtils::get_backend_binary_path(SPEC, "npu").empty();
+        return !backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu").empty();
     } catch (...) {
         return false;
     }
@@ -60,7 +61,7 @@ void RyzenAIServer::load(const std::string& model_name,
     backend_manager_->install_backend("ryzenai-llm", "npu");
 
     // Get the path to ryzenai-server
-    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(SPEC, "npu");
+    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
@@ -208,7 +209,11 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() { return &::lemon::RyzenAIServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec("ryzenai-server", descriptor.binary,
+                                   ::lemon::RyzenAIServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() {
     static const RyzenAiOps kOps;
     return &kOps;

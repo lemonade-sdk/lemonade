@@ -13,17 +13,6 @@ class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public 
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-        // recipe
-            "flm",
-        // executable
-    #ifdef _WIN32
-            "flm.exe"
-    #else
-            "flm"
-    #endif
-        , get_install_params
-    );
 
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);

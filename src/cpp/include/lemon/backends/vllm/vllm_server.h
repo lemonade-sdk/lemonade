@@ -13,12 +13,6 @@ class VLLMServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-            "vllm",
-            "vllm-server"
-        , get_install_params
-        , /*supports_split_archive=*/true
-    );
 
     VLLMServer(const std::string& log_level,
                ModelManager* model_manager,

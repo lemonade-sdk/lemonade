@@ -17,15 +17,6 @@ class RyzenAIServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-        "ryzenai-server",
-#ifdef _WIN32
-        "ryzenai-server.exe"
-#else
-        "ryzenai-server"
-#endif
-        , get_install_params
-    );
 
     RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
                   BackendManager* backend_manager);

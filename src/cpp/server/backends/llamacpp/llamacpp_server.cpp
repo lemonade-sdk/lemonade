@@ -1,4 +1,5 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
@@ -290,7 +291,7 @@ void LlamaCppServer::load(const std::string& model_name,
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(SPEC.recipe, llamacpp_backend);
+    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -310,7 +311,7 @@ void LlamaCppServer::load(const std::string& model_name,
     port_ = choose_port();
 
     // Get executable path
-    std::string executable = BackendUtils::get_backend_binary_path(SPEC, llamacpp_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
     // Check for embeddings and reranking support based on model type
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
@@ -836,7 +837,11 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() { return &LlamaCppServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   LlamaCppServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() {
     static const LlamaCppOps kOps;
     return &kOps;

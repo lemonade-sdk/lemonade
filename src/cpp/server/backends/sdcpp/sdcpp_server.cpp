@@ -1,4 +1,5 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/sdcpp/sdcpp.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -211,7 +212,7 @@ void SDServer::load(const std::string& model_name,
     }
 
     // Install sd-server if needed
-    backend_manager_->install_backend(SPEC.recipe, backend);
+    backend_manager_->install_backend(sdcpp::spec()->recipe, backend);
 
     // Get model path
     std::string model_path = model_info.resolved_path("main");
@@ -233,7 +234,7 @@ void SDServer::load(const std::string& model_name,
     LOG(DEBUG, "SDServer") << "Using model: " << model_path << std::endl;
 
     // Get sd-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend);
 
     // Choose a port
     port_ = choose_port();
@@ -757,7 +758,11 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() { return &SDServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   SDServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace sdcpp
 }  // namespace backends

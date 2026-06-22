@@ -1,4 +1,5 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
+#include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
@@ -164,7 +165,7 @@ void FastFlowLMServer::load(const std::string& model_name,
 
 #ifdef _WIN32
     // On Windows, auto-install FLM binary if needed (downloads zip and extracts)
-    backend_manager_->install_backend(SPEC.recipe, "npu");
+    backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
 #endif
 
     // Validate NPU hardware/drivers
@@ -448,7 +449,7 @@ std::string FastFlowLMServer::get_flm_path() {
 #ifdef _WIN32
     // On Windows, use the standard install directory (auto-installed zip)
     try {
-        std::string path = BackendUtils::get_backend_binary_path(SPEC, "npu");
+        std::string path = BackendUtils::get_backend_binary_path(*fastflowlm::spec(), "npu");
         LOG(INFO, "FastFlowLM") << "Found flm at: " << path << std::endl;
         return path;
     } catch (const std::exception& e) {
@@ -526,7 +527,11 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() { return &FastFlowLMServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   FastFlowLMServer::get_install_params, /*split=*/false);
+    return &kSpec;
+}
 const BackendOps* ops() {
     static const FlmOps kOps;
     return &kOps;

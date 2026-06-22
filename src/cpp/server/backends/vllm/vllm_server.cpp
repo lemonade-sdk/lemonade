@@ -1,4 +1,5 @@
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/backends/vllm/vllm.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_manager.h"
@@ -123,7 +124,7 @@ void VLLMServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
     // Install vllm-server if needed
-    backend_manager_->install_backend(SPEC.recipe, vllm_backend);
+    backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
 
     // vLLM uses HuggingFace model names, not local file paths.
     // The checkpoint field in server_models.json is the HF model ID.
@@ -138,7 +139,7 @@ void VLLMServer::load(const std::string& model_name,
     port_ = choose_port();
 
     // Get executable path
-    std::string executable = BackendUtils::get_backend_binary_path(SPEC, vllm_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(*vllm::spec(), vllm_backend);
 
     // Build command line arguments
     std::vector<std::string> args;
@@ -322,7 +323,11 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() { return &VLLMServer::SPEC; }
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
+                                   VLLMServer::get_install_params, /*split=*/true);
+    return &kSpec;
+}
 const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace vllm
 }  // namespace backends

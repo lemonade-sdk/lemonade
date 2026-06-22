@@ -3118,7 +3118,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         // as a separate request from generation, which lets the frontend show
         // the original and upscaled images side by side with independent timing.
         std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            lemon::backends::SDServer::SPEC, backend);
+            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
         std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
 #ifdef _WIN32
             "sd-cli.exe";
