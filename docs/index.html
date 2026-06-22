@@ -6,6 +6,8 @@
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
+  <link rel="stylesheet" href="assets/persona-demo.css">
+  <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,8 +17,75 @@
   <div class="navbar-placeholder"></div>
 
   <main class="main hp-main">
-    <!-- ==================== HERO ==================== -->
-    <section class="hp-hero">
+    <!-- ==================== PERSONA HERO ==================== -->
+    <section class="hp-persona-hero" aria-labelledby="personaHeroTitle">
+      <div class="hp-persona-layout">
+        <div class="hp-persona-left">
+          <div class="hp-persona-copy">
+            <h1 class="hp-persona-title" id="personaHeroTitle">One click. Everything AI can do.</h1>
+            <p class="hp-persona-subtitle" id="personaHeroSubtitle">Install once and the whole local-AI world opens up on any PC, fully private.</p>
+          </div>
+          <div class="hp-stack-col">
+            <div class="hp-stack" id="personaStack" role="tablist" aria-label="Persona stack"></div>
+            <button class="hp-autoplay-toggle is-on" id="personaAutoplay" type="button" role="switch" aria-checked="true" aria-label="Autoplay">
+              <span class="hp-autoplay-switch"><span class="hp-autoplay-knob"></span></span>
+              <span class="hp-autoplay-text">Autoplay</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="hp-demo-stage" aria-live="polite">
+          <div class="hp-demo-frame" id="personaDemoFrame"></div>
+          <p class="hp-demo-caption" id="personaDemoCaption"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== GETTING STARTED ==================== -->
+    <section class="hp-section hp-reveal" id="getting-started">
+      <h2 class="hp-section-heading">Quickstart</h2>
+
+      <div class="gs-platforms" id="gsPlatforms">
+        <button class="gs-platform" type="button" data-platform="windows">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
+          <span class="gs-platform-name">Windows</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="docker">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/docker.png" alt="Docker" />
+          <span class="gs-platform-name">Docker</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="snap">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
+          <span class="gs-platform-name">Snap</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="ubuntu">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
+          <span class="gs-platform-name">Ubuntu</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="arch">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/arch_linux.png" alt="Arch" />
+          <span class="gs-platform-name">Arch</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="fedora">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/fedora.png" alt="Fedora" />
+          <span class="gs-platform-name">Fedora</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="debian">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/debian.png" alt="Debian" />
+          <span class="gs-platform-name">Debian</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="apple">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/apple.png" alt="macOS" />
+          <span class="gs-platform-name">macOS</span>
+        </button>
+      </div>
+
+      <div class="gs-install" id="gsInstall"></div>
+      <div class="gs-quickstart" id="gsQuickstart"></div>
+    </section>
+
+    <!-- ==================== CURRENT HERO, PRESERVED BELOW QUICKSTART ==================== -->
+    <section class="hp-hero hp-legacy-hero hp-reveal">
       <div class="hp-hero-left">
         <h1 class="hp-headline">
           Refreshingly simple<br><span class="hp-headline-line2">local <span class="hp-carousel-word" id="hpCarouselWord" aria-live="polite">chat.</span></span>
@@ -26,11 +95,11 @@
           <div class="hp-cta-row">
             <a class="download-btn" href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
               <img src="https://cdn.simpleicons.org/discord/000000" alt="" class="hp-cta-icon" /> Discord
-              <span class="hp-cta-stat" id="discordOnlineCount">Loading...</span>
+              <span class="hp-cta-stat" data-community-stat="discord">Members</span>
             </a>
             <a class="dev-btn ice-card" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
               <img src="https://cdn.simpleicons.org/github/2D2F2F" alt="" class="hp-cta-icon" /> GitHub
-              <span class="hp-cta-stat" id="githubStarsCount">Loading...</span>
+              <span class="hp-cta-stat" data-community-stat="github">Stars</span>
             </a>
           </div>
         </div>
@@ -80,49 +149,6 @@
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- ==================== GETTING STARTED ==================== -->
-    <section class="hp-section hp-reveal" id="getting-started">
-      <h2 class="hp-section-heading">Quickstart</h2>
-
-      <div class="gs-platforms" id="gsPlatforms">
-        <button class="gs-platform" type="button" data-platform="windows">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
-          <span class="gs-platform-name">Windows</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="docker">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/docker.png" alt="Docker" />
-          <span class="gs-platform-name">Docker</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="snap">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
-          <span class="gs-platform-name">Snap</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="ubuntu">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
-          <span class="gs-platform-name">Ubuntu</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="arch">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/arch_linux.png" alt="Arch" />
-          <span class="gs-platform-name">Arch</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="fedora">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/fedora.png" alt="Fedora" />
-          <span class="gs-platform-name">Fedora</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="debian">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/debian.png" alt="Debian" />
-          <span class="gs-platform-name">Debian</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="apple">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/apple.png" alt="macOS" />
-          <span class="gs-platform-name">macOS</span>
-        </button>
-      </div>
-
-      <div class="gs-install" id="gsInstall"></div>
-      <div class="gs-quickstart" id="gsQuickstart"></div>
     </section>
 
     <!-- ==================== WHY LEMONADE ==================== -->
@@ -324,7 +350,10 @@
   <script src="assets/footer.js"></script>
   <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
+  <script src="assets/flowchart.js"></script>
+  <script src="assets/persona-demo.js"></script>
   <script>
+
     // ---- Getting Started section ----
     (function() {
       var gsPlatform = 'windows';
@@ -740,31 +769,34 @@
       return String(value);
     }
     async function fetchCommunityStats() {
-      var githubEl = document.getElementById('githubStarsCount');
-      var discordEl = document.getElementById('discordOnlineCount');
-      if (!githubEl || !discordEl) return;
+      var githubEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="github"]'));
+      var discordEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="discord"]'));
+      if (!githubEls.length && !discordEls.length) return;
+      function setAll(els, text) {
+        els.forEach(function(el) { el.textContent = text; });
+      }
       try {
         var repoResponse = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
         if (repoResponse.ok) {
           var repoData = await repoResponse.json();
           var stars = compactCount(repoData.stargazers_count);
-          if (stars) githubEl.textContent = stars + ' stars';
+          if (stars) setAll(githubEls, stars);
         }
       } catch (error) {}
       try {
         var inviteResponse = await fetch('https://discord.com/api/v10/invites/5xXzkMu8Zk?with_counts=true');
         if (inviteResponse.ok) {
           var inviteData = await inviteResponse.json();
-          var online = compactCount(inviteData.approximate_presence_count);
-          if (online) discordEl.textContent = online + ' online';
+          var members = compactCount(inviteData.approximate_member_count);
+          if (members) setAll(discordEls, members);
         }
       } catch (error) {}
-      if (githubEl.textContent.indexOf('Loading') === 0) {
-        githubEl.textContent = 'See stars';
-      }
-      if (discordEl.textContent.indexOf('Loading') === 0) {
-        discordEl.textContent = 'Online';
-      }
+      githubEls.forEach(function(el) {
+        if (el.textContent === 'Stars') el.textContent = 'Stars';
+      });
+      discordEls.forEach(function(el) {
+        if (el.textContent === 'Members') el.textContent = 'Members';
+      });
     }
     function initUnifiedApiSamples() {
       var codeEl = document.getElementById('hpApiSampleCode');

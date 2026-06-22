@@ -1,0 +1,241 @@
+/* ============================================================================
+   Flowchart animation framework — appearance
+   ----------------------------------------------------------------------------
+   Styles for the glowing-dot router diagrams rendered by flowchart.js.
+   This file owns APPEARANCE only (colors, blur, stroke widths); the animation
+   TIMING is computed in flowchart.js (SMIL keyTimes cannot live in CSS).
+   ============================================================================ */
+.hp-router-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(252, 216, 70, 0.16), transparent 42%),
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.06), transparent 24%),
+    linear-gradient(145deg, rgba(28, 27, 21, 0.92), rgba(11, 12, 9, 0.96));
+}
+
+.hp-router-flowchart {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hp-router-wire {
+  fill: none;
+  stroke: rgba(252, 216, 70, 0.16);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+}
+
+.hp-router-flow-segment {
+  fill: none;
+  stroke-linecap: round;
+}
+
+/* Wire trail = a filament heating up as the dot passes: a crisp bright core
+   thread with only a soft, narrow warm bleed to the sides (the halo). Keep the
+   halo restrained — it should read as residual heat, not a blaze. */
+.hp-router-flow-halo {
+  stroke: rgba(252, 216, 70, 0.2);
+  stroke-width: 7;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-router-flow-core {
+  stroke: #ffe76a;
+  stroke-width: 2.6;
+  filter: url(#hpRouterGlow);
+}
+
+/* Pill = a frosted-glass lampshade lit from within by the dot: a gentle,
+   diffuse warm fill, not a saturated panel. The diffusion comes from the
+   wide #hpRouterBloom blur; keep the alpha low so it stays a soft glow. */
+.hp-router-pill-glow {
+  fill: rgba(255, 228, 150, 0.28);
+  filter: url(#hpRouterBloom);
+}
+
+.hp-router-traveler-dot {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2.2;
+  filter: url(#hpRouterGlow);
+}
+
+/* Model pill: an SVG rect, translucent enough that the glowing dot behind it
+   reads as a soft frosted glow (no backdrop-filter needed). */
+.hp-router-node {
+  fill: rgba(26, 25, 20, 0.46);
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.hp-router-node-label {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+/* ---- Request / response artifacts -------------------------------------
+   The request/response pill is ONE persistent frosted rect (.hp-router-iopill)
+   that morphs between pill size and artifact size -- same element, same style,
+   so the container never visually changes mode. The per-route content (prompt,
+   waveform, image, reply, code-plan glyph) rides on top. Pure appearance; the
+   expand/reveal timing is generated in flowchart.js. */
+/* Near-opaque fill so the request/response pill OCCLUDES the travelling dot
+   (it holds the artifact, so the dot should read as behind it -- unlike the
+   translucent model pills, which the dot shines through). */
+.hp-router-iopill {
+  fill: rgba(28, 27, 21, 0.93);
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 1;
+}
+
+.hp-router-iopill-label {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.hp-router-art-tag {
+  fill: rgba(252, 216, 70, 0.72);
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hp-router-art-prompt {
+  fill: #efe9d3;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-style: italic;
+}
+
+.hp-router-art-out {
+  fill: #f4efdc;
+  font-family: var(--font-body);
+  font-size: 16px;
+}
+
+.hp-router-art-glyph {
+  fill: #ffe76a;
+  font-family: var(--font-mono);
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hp-router-art-glyph-label {
+  fill: #f4efdc;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.hp-router-art-badge rect {
+  fill: rgba(252, 216, 70, 0.13);
+  stroke: rgba(252, 216, 70, 0.28);
+  stroke-width: 0.75;
+}
+
+.hp-router-art-badge text {
+  fill: #ffe9a8;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Audio-input waveform: SVG bars (each pulsed by its own SMIL animation,
+   gated visible by the artifact group's opacity). */
+.hp-router-wavebar {
+  fill: #fcd846;
+  opacity: 0.85;
+}
+
+/* ---- Spawn diagram ("Start lemond subprocess") -------------------------
+   Rendered inside the same terminal-window chrome as the Fetch slide (reuses
+   .hp-demo-terminal / .hp-demo-terminal-bar -- no separate stage). The SVG body
+   ignites a lemon-slice (lemond) whose six segments hold the AI capabilities,
+   lighting up in a cascade. Plays once and freezes. */
+.hp-spawn-svg {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+.hp-spawn-callbg { fill: rgba(252, 216, 70, 0.16); }
+
+.hp-spawn-call {
+  fill: #e9e4cf;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+.hp-spawn-call .run { fill: #ffd84a; }
+.hp-spawn-call .kw { fill: #c4b5fd; font-weight: 700; }
+
+.hp-spawn-spark {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-spawn-flash {
+  fill: none;
+  stroke: rgba(255, 244, 190, 0.9);
+  stroke-width: 2.5;
+  filter: url(#hpRouterGlow);
+}
+
+/* lemond as a lemon slice: glowing rind, pale flesh, segment membranes, hub. */
+.hp-lemon-rind {
+  fill: none;
+  stroke: #fcd846;
+  stroke-width: 13;
+  stroke-linecap: round;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-lemon-flesh {
+  fill: rgba(255, 243, 190, 0.12);
+  stroke: rgba(252, 216, 70, 0.28);
+  stroke-width: 1;
+}
+
+.hp-lemon-membrane {
+  stroke: rgba(255, 243, 200, 0.32);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.hp-lemon-hub {
+  fill: rgba(252, 216, 70, 0.6);
+  filter: url(#hpRouterGlow);
+}
+
+/* Capability glyphs: hand-drawn SVG geometry (NOT icon-font <text>), so they are
+   correct-by-construction across Chrome/WebKit/Firefox -- no ligature width,
+   baseline, or text-anchor divergence. Each glyph is centred on the origin and
+   positioned by a group transform (see capGlyph in flowchart.js). Outlines/lines
+   inherit the stroke here; solid nodes opt into a fill via .hp-cap-dot. */
+.hp-cap-glyph {
+  fill: none;
+  stroke: #ffe76a;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hp-cap-glyph .hp-cap-dot {
+  fill: #ffe76a;
+  stroke: none;
+}

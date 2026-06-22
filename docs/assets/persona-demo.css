@@ -1,0 +1,1525 @@
+/* ============================================================================
+   Persona-demo hero — appearance
+   ----------------------------------------------------------------------------
+   Styles for the interactive homepage hero driven by persona-demo.js: the
+   persona toggle, the step stack + autoplay progress bar, and the demo frame
+   (install pickers, terminals, app mockups). The router-flowchart styles it
+   embeds live in flowchart.css. The --page-space-* tokens these rules use are
+   defined on .hp-main in website-styles.css and inherit down.
+   ============================================================================ */
+/* --- Persona Hero Base --- */
+.hp-persona-hero {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--page-space-md) 1.5rem 0;
+  position: relative;
+}
+
+.hp-persona-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: 1000px;
+  position: relative;
+  z-index: 3;
+}
+
+.hp-persona-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.7rem, 6.2vw, 5.15rem);
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.hp-persona-subtitle {
+  margin: 0;
+  max-width: 760px;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 1.8vw, 1.28rem);
+  font-weight: 620;
+  line-height: 1.42;
+  text-wrap: balance;
+}
+
+/* --- Persona Stack Hero --- */
+.hp-persona-layout {
+  width: min(1180px, 100%);
+  display: grid;
+  grid-template-columns: minmax(340px, 0.92fr) minmax(360px, 1.08fr);
+  grid-template-areas:
+    "copy copy"
+    "stack demo";
+  gap: clamp(1.6rem, 3.2vw, 4rem);
+  align-items: center;
+}
+
+.hp-persona-left {
+  display: contents;
+}
+
+.hp-persona-left .hp-persona-copy {
+  grid-area: copy;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-self: center;
+  max-width: 960px;
+}
+
+.hp-persona-left .hp-persona-title {
+  font-size: clamp(2.8rem, 5.6vw, 5rem);
+}
+
+.hp-persona-left .hp-persona-subtitle {
+  font-size: clamp(1rem, 1.55vw, 1.22rem);
+}
+
+/* Stack of sections + the autoplay toggle share the grid's "stack" cell, as a
+   column, so the toggle sits directly below the stack (not auto-placed). */
+.hp-stack-col {
+  grid-area: stack;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.hp-stack {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.hp-stack-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.hp-stack-item:hover,
+.hp-stack-item:focus-visible {
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.hp-stack-item.is-active {
+  transform: none;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 1rem;
+  box-shadow:
+    0 14px 34px rgba(92, 75, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.hp-stack-item:focus-visible {
+  outline: 3px solid rgba(252, 216, 70, 0.36);
+  outline-offset: 3px;
+}
+
+.hp-stack-index {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(252, 216, 70, 0.62);
+  color: #1a1a1a;
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.hp-stack-item.is-active .hp-stack-index {
+  width: 2.25rem;
+  height: 2.25rem;
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+}
+
+/* Autoplay on/off toggle, below the stack of sections. */
+.hp-autoplay-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.6rem;
+  margin-top: var(--page-space-sm);
+  padding: 0.35rem 0.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 700;
+  transition: color 0.2s ease;
+}
+
+.hp-autoplay-toggle:hover,
+.hp-autoplay-toggle:focus-visible {
+  color: var(--text-primary);
+}
+
+.hp-autoplay-switch {
+  position: relative;
+  width: 2.5rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(140, 140, 140, 0.38);
+  transition: background 0.2s ease;
+}
+
+.hp-autoplay-knob {
+  position: absolute;
+  top: 0.19rem;
+  left: 0.19rem;
+  width: 0.97rem;
+  height: 0.97rem;
+  border-radius: 50%;
+  background: #f6f6f2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.hp-autoplay-toggle.is-on .hp-autoplay-switch {
+  background: var(--primary-yellow);
+}
+
+.hp-autoplay-toggle.is-on .hp-autoplay-knob {
+  transform: translateX(1.15rem);
+  background: var(--accent-gold);
+}
+
+.hp-stack-body {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.hp-stack-body strong {
+  font-family: var(--font-display);
+  font-size: 1.04rem;
+  font-weight: 900;
+  line-height: 1.16;
+  color: var(--text-primary);
+}
+
+.hp-stack-copy {
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.36;
+}
+
+.hp-minor-segments {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.35rem;
+}
+
+.hp-minor-segment {
+  min-height: 2.15rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  align-items: center;
+  gap: 0.72rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.1;
+  padding: 0.45rem 0.62rem;
+  text-align: left;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hp-minor-segment[data-animation-mode="none"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hp-minor-segment[data-animation-mode="none"].is-active {
+  grid-template-columns: minmax(0, 1fr) 5rem;
+}
+
+.hp-minor-segment:hover,
+.hp-minor-segment:focus-visible,
+.hp-minor-segment.is-active {
+  background: rgba(252, 216, 70, 0.2);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+.hp-autoplay-progress {
+  width: 100%;
+  height: 0.34rem;
+  display: block;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(45, 47, 47, 0.1);
+}
+
+.hp-autoplay-progress::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary-yellow);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.hp-minor-segment.is-active .hp-autoplay-progress::before {
+  animation: hpAutoplayProgress var(--hp-playback-duration, 5.2s) linear forwards;
+}
+
+.hp-stack[data-animation-mode="repeat"] .hp-minor-segment.is-active .hp-autoplay-progress::before {
+  animation-iteration-count: infinite;
+}
+
+@keyframes hpAutoplayProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.hp-demo-stage {
+  grid-area: demo;
+  position: relative;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.hp-demo-stage::before {
+  content: '';
+  position: absolute;
+  inset: 6% 2%;
+  border-radius: 48px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(252, 216, 70, 0.34), transparent 32%),
+    radial-gradient(circle at 74% 72%, rgba(255, 255, 255, 0.7), transparent 34%);
+  filter: blur(22px);
+  opacity: 0.9;
+}
+
+.hp-demo-frame {
+  position: relative;
+  width: min(620px, 100%);
+  min-height: 420px;
+  border: 1px solid rgba(45, 47, 47, 0.1);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow:
+    0 34px 110px rgba(92, 75, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  overflow: hidden;
+}
+
+.hp-demo-caption {
+  position: relative;
+  z-index: 1;
+  width: min(620px, 100%);
+  min-height: 3.4rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: clamp(0.94rem, 1.25vw, 1.04rem);
+  font-weight: 620;
+  line-height: 1.42;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Caption that links to the relevant docs. */
+.hp-demo-caption-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(252, 216, 70, 0.45);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.hp-demo-caption-link:hover,
+.hp-demo-caption-link:focus-visible {
+  color: var(--text-primary);
+  border-bottom-color: var(--primary-yellow);
+}
+
+.hp-demo-caption-arrow {
+  display: inline-block;
+  color: var(--primary-yellow-darker, #f0cc00);
+  transition: transform 0.2s ease;
+}
+
+.hp-demo-caption-link:hover .hp-demo-caption-arrow {
+  transform: translateX(3px);
+}
+
+.hp-demo-caption[hidden] {
+  display: none;
+}
+
+/* ---- Unified "app window" -----------------------------------------------
+   One window chrome shared by the User persona's chatbot (light frosted
+   ice-card) and the Developer persona's spawn-app demo (dark ice-card). A
+   title bar carries the app title centered, with three window-control dots at
+   the right; the body holds whatever the slide renders. The frame chrome is
+   dropped below (:has) so the window stands alone, matching DESIGN.md's
+   glassmorphism. */
+.hp-app-window {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: var(--radius-xl);   /* window-appropriate, overrides ice-card's 3rem */
+  box-shadow: var(--shadow-heavy);
+  /* One window size across both personas (matches the demo frame / dev windows). */
+  width: min(620px, 100%);
+  min-height: 420px;
+}
+
+.hp-app-window-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  padding: 0.66rem 0.9rem;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+/* Title centered on the window regardless of the dots; dots sit at the right. */
+.hp-app-window-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.hp-app-window-dots {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;            /* dots stay at the right edge */
+}
+
+.hp-app-window-dots i {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+}
+
+.hp-app-window-dots i:nth-child(1) { background: #ff6b5f; }
+.hp-app-window-dots i:nth-child(2) { background: #fcd846; }
+.hp-app-window-dots i:nth-child(3) { background: #50c878; }
+
+/* Dark variant -- the dark-mode counterpart of the ice-card, used by the dev
+   spawn-app window. Hardcodes the DESIGN.md Midnight glass values (the page
+   stays in light scheme, so we can't rely on the dark tokens being active). */
+.hp-app-window.is-dark {
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    rgba(20, 19, 14, 0.92);
+  border: 1px solid rgba(252, 216, 70, 0.18);
+  color: #f8f3da;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.hp-app-window.is-dark .hp-app-window-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.hp-app-window.is-dark .hp-app-window-title {
+  color: rgba(248, 243, 218, 0.92);
+}
+
+/* ---- User chatbot window ------------------------------------------------- */
+.hp-chatbot {
+  --demo-base: 0.6rem;                                              /* major-fourth base */
+  --demo-step1: calc(var(--demo-base) * 1.333);                     /* ≈ 0.8rem */
+  --demo-step2: calc(var(--demo-base) * 1.333 * 1.333);             /* ≈ 1.07rem */
+  --demo-step3: calc(var(--demo-base) * 1.333 * 1.333 * 1.333);     /* ≈ 1.42rem */
+  --demo-gap: var(--demo-base);
+  --demo-font: 0.82rem;
+  --demo-padding: var(--demo-base) var(--demo-step1);
+  --demo-radius: var(--radius-lg);
+  --demo-user-max: 80%;
+  --demo-response-max: clamp(220px, 70%, 300px);
+}
+
+/* Conversation area: message history sits at the TOP of the window, below the
+   title bar (the input bar stays pinned at the bottom). */
+.hp-chatbot-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+/* The shared content classes use height:100% + space-between; here let them size
+   to their content (stacked from the top) with a tight major-fourth gap. */
+.hp-chatbot .hp-demo-chat,
+.hp-chatbot .hp-demo-coding,
+.hp-chatbot .hp-demo-image,
+.hp-chatbot .hp-demo-audio {
+  height: auto;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: var(--demo-step1);
+}
+
+/* Text entry box at the bottom. */
+.hp-chatbot-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: var(--demo-step1) var(--demo-step2);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* Text-entry field. A ghost --outline-variant border is the DESIGN.md-sanctioned
+   affordance for inputs; the surface matches the listing/search-bar family so the
+   chat window reads as part of the same set. */
+.hp-chatbot-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-btn);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+.hp-chatbot-typed {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hp-chatbot-caret {
+  flex: 0 0 auto;
+  width: 1.5px;
+  height: 0.95rem;
+  margin-left: 1px;
+  background: var(--primary-yellow);
+}
+
+.hp-chatbot-send {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+.hp-chatbot-send .material-symbols-outlined {
+  font-size: 1.2rem;
+}
+
+/* ---- Send + arrival animation -------------------------------------------
+   At ~0.7s the typed prompt "sends": the input text clears, the send button
+   pulses, and the first message rises up out of the input into the chat. The
+   remaining messages then arrive in sequence. Boxes keep their space (opacity/
+   transform only) so the bottom-anchored layout stays stable. Replays on every
+   slide render. */
+@keyframes hp-chatbot-arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hp-chatbot-from-input {
+  0%   { opacity: 0; transform: translateY(34px) scale(0.96); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.hp-chatbot .hp-demo-chat > *,
+.hp-chatbot .hp-demo-coding > *,
+.hp-chatbot .hp-demo-image > *,
+.hp-chatbot .hp-demo-audio > * {
+  animation: hp-chatbot-arrive 0.42s ease both;
+}
+
+.hp-chatbot .hp-demo-chat > *:nth-child(1),
+.hp-chatbot .hp-demo-coding > *:nth-child(1),
+.hp-chatbot .hp-demo-image > *:nth-child(1),
+.hp-chatbot .hp-demo-audio > *:nth-child(1) {
+  animation: hp-chatbot-from-input 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 0.7s;
+}
+
+.hp-chatbot .hp-demo-chat > *:nth-child(2),
+.hp-chatbot .hp-demo-coding > *:nth-child(2),
+.hp-chatbot .hp-demo-image > *:nth-child(2),
+.hp-chatbot .hp-demo-audio > *:nth-child(2) { animation-delay: 1.25s; }
+
+.hp-chatbot .hp-demo-chat > *:nth-child(3) { animation-delay: 1.7s; }
+.hp-chatbot .hp-demo-chat > *:nth-child(4) { animation-delay: 2.15s; }
+
+@keyframes hp-chatbot-sent {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-4px); }
+}
+
+.hp-chatbot-typed {
+  animation: hp-chatbot-sent 0.3s ease 0.7s both;
+}
+
+@keyframes hp-chatbot-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes hp-chatbot-caret-off { to { opacity: 0; visibility: hidden; } }
+
+.hp-chatbot-caret {
+  animation:
+    hp-chatbot-blink 1s steps(1, end) infinite,
+    hp-chatbot-caret-off 0.01s linear 0.7s forwards;
+}
+
+@keyframes hp-chatbot-send-pulse {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(0.86); }
+  70% { transform: scale(1.12); }
+}
+
+.hp-chatbot-send {
+  animation: hp-chatbot-send-pulse 0.45s ease 0.62s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-chatbot .hp-demo-chat > *,
+  .hp-chatbot .hp-demo-coding > *,
+  .hp-chatbot .hp-demo-image > *,
+  .hp-chatbot .hp-demo-audio > *,
+  .hp-chatbot-typed,
+  .hp-chatbot-caret,
+  .hp-chatbot-send {
+    animation: none;
+  }
+}
+
+/* ======================================================================
+   Model manager: list with download + progress (REUSABLE for backends)
+   Shares the .hp-app-window chrome; the body is a vertical list whose rows
+   arrive staggered. One row can show a filling progress bar in place of its
+   download button. Spacing on the perfect-fourth (1.333) scale.
+   ====================================================================== */
+.hp-applist-window,
+.hp-modelsearch-window {
+  --demo-base: 0.6rem;
+  --demo-step1: calc(var(--demo-base) * 1.333);
+  --demo-step2: calc(var(--demo-base) * 1.333 * 1.333);
+  --demo-step3: calc(var(--demo-base) * 1.333 * 1.333 * 1.333);
+}
+
+.hp-applist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-base);
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+/* Same listing style as the app-store cards: no solid outline (DESIGN.md
+   "No-Line"), a brighter translucent surface + soft ambient shadow. */
+.hp-applist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--demo-step1);
+  padding: var(--demo-step1) var(--demo-step2);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.12s + 0.1s);
+}
+
+@keyframes hp-applist-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hp-applist-name {
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.hp-applist-meta {
+  margin-left: auto;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hp-applist-dl {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+.hp-applist-dl .material-symbols-outlined { font-size: 1.05rem; }
+
+/* Progress bar track. The fill (width 0 -> --p, linear, no deceleration) is
+   driven by the action-slot context below, timed to the cursor's download click. */
+.hp-applist-progress {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.12);
+  overflow: hidden;
+}
+
+.hp-applist-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary-yellow);
+}
+
+@keyframes hp-applist-fill {
+  to { width: var(--p, 100%); }
+}
+
+/* Action slot -- identical fixed slot on EVERY row so the downloading row looks
+   like the rest. Holds the download button (right-aligned); on the downloading
+   row it also holds the progress bar + cursor, and at --swap-at the button fades
+   out and the bar fills linearly to 100%. */
+.hp-applist-act {
+  flex: 0 0 auto;
+  position: relative;
+  width: 4.4rem;
+  height: 1.9rem;
+}
+
+.hp-applist-act > .hp-applist-dl {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.hp-applist-act > .hp-applist-progress {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-dl {
+  animation: hp-dl-out 0.28s ease var(--swap-at, 1300ms) both;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-progress {
+  animation: hp-prog-in 0.01s linear var(--swap-at, 1300ms) forwards;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-progress i {
+  animation: hp-applist-fill 2200ms linear calc(var(--swap-at, 1300ms) + 120ms) forwards;
+}
+
+@keyframes hp-dl-out {
+  to { opacity: 0; transform: translateY(-50%) scale(0.7); }
+}
+
+@keyframes hp-prog-in {
+  to { opacity: 1; }
+}
+
+/* ---- Stylized mouse cursor (registry + search) --------------------------- */
+.hp-cursor {
+  position: absolute;
+  z-index: 8;   /* above the quant dropdown menu (z 7) so it never hides the cursor */
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(45, 47, 47, 0.35));
+}
+
+.hp-cursor svg { display: block; width: 100%; height: 100%; }
+
+.hp-cursor path {
+  fill: #fffdf7;
+  stroke: #2d2f2f;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+/* The press scales the inner <svg> (movement uses the .hp-cursor transform /
+   right-top, so the two animations never fight over `transform`). */
+@keyframes hp-cursor-press {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.78); }
+}
+
+/* Registry: the cursor flies in from the lower-left, clicks the download button
+   at --swap-at, then fades out -- so with two downloading rows only one cursor is
+   visible at a time (reads as a single mouse moving down the list). */
+.hp-applist-act.is-downloading > .hp-cursor {
+  right: 0.3rem;
+  top: 50%;
+  animation:
+    hp-reg-cursor 0.8s cubic-bezier(0.4, 0.5, 0.3, 1) calc(var(--swap-at, 1300ms) - 800ms) both,
+    hp-cursor-fade 0.3s ease calc(var(--swap-at, 1300ms) + 300ms) forwards;
+}
+
+.hp-applist-act.is-downloading > .hp-cursor svg {
+  animation: hp-cursor-press 0.22s ease var(--swap-at, 1300ms);
+}
+
+@keyframes hp-reg-cursor {
+  from { transform: translate(-64px, 46px); opacity: 0; }
+  55%  { opacity: 1; }
+  to   { transform: translate(0, -3px); opacity: 1; }
+}
+
+@keyframes hp-cursor-fade {
+  to { opacity: 0; }
+}
+
+/* ---- Hugging Face search ------------------------------------------------- */
+.hp-modelsearch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-step1);
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+.hp-modelsearch-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-btn);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+}
+
+.hp-modelsearch-icon { font-size: 1.1rem; color: var(--text-muted); }
+
+.hp-modelsearch-typed {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hp-modelsearch-caret {
+  width: 1.5px;
+  height: 0.95rem;
+  background: var(--primary-yellow);
+  animation:
+    hp-chatbot-blink 1s steps(1, end) infinite,
+    hp-chatbot-caret-off 0.01s linear 1s forwards;
+}
+
+.hp-modelsearch-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-base);
+}
+
+.hp-modelsearch-result {
+  display: flex;
+  align-items: center;
+  gap: var(--demo-step1);
+  padding: var(--demo-step1) var(--demo-step2);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--res, 0) * 0.1s + 1.1s);
+}
+
+/* The interacted-with result looks like every other row (no highlight -- the
+   cursor shows which one is acted on), but it carries the cursor + dropdown menu.
+   z-index lifts the whole row (and its menu) above the later sibling rows so the
+   opaque dropdown isn't veiled by their translucent backgrounds painting over it. */
+.hp-modelsearch-result.is-selected {
+  position: relative;
+  z-index: 5;
+}
+
+.hp-modelsearch-repo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.hp-modelsearch-name {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-modelsearch-dls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.hp-modelsearch-dls .material-symbols-outlined { font-size: 0.8rem; }
+
+.hp-modelsearch-controls {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Quantization dropdown. The menu opens at the cursor's first click (~1.95s)
+   and closes at the download click (~3.0s) -- timed over the 5s cursor cycle. */
+.hp-modelsearch-quant { position: relative; flex: 0 0 auto; }
+
+.hp-modelsearch-quant-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.22rem 0.4rem 0.22rem 0.55rem;
+  border-radius: var(--radius);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Chevron sits directly after the value text, inside the pill (not pushed to a
+   far edge -- WebKit rendered space-between with a visible gap). */
+.hp-modelsearch-quant-value .material-symbols-outlined {
+  font-size: 0.95rem;
+  margin-right: -0.1rem;
+}
+
+.hp-modelsearch-quant-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 0.2rem;
+  border-radius: var(--radius);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-medium);
+  opacity: 0;
+  transform: translateY(-4px) scaleY(0.86);
+  transform-origin: top;
+  pointer-events: none;
+  animation: hp-quant-toggle 5s linear both;
+}
+
+.hp-quant-opt {
+  padding: 0.26rem 0.6rem;
+  border-radius: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.hp-quant-opt.is-active {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  font-weight: 800;
+}
+
+@keyframes hp-quant-toggle {
+  0%, 38%   { opacity: 0; transform: translateY(-4px) scaleY(0.86); }
+  41%, 58%  { opacity: 1; transform: translateY(0) scaleY(1); }
+  61%, 100% { opacity: 0; transform: translateY(-4px) scaleY(0.86); }
+}
+
+/* Non-selected results carry the same yellow-circle button at the row's right. */
+.hp-modelsearch-result > .hp-applist-dl {
+  margin-left: auto;
+}
+
+/* The search download button reuses the shared .hp-applist-dl yellow-circle base
+   (so every model row -- registry and search -- has the same button); this only
+   adds the fade-out at the download click. */
+.hp-modelsearch-dl {
+  animation: hp-modelsearch-dl-out 0.28s ease 3050ms both;
+}
+
+@keyframes hp-modelsearch-dl-out {
+  to { opacity: 0; transform: scale(0.7); }
+}
+
+.hp-modelsearch-progress {
+  position: absolute;
+  left: var(--demo-step2);
+  right: var(--demo-step2);
+  bottom: 0.45rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.12);
+  overflow: hidden;
+  opacity: 0;
+  animation: hp-prog-in 0.01s linear 3050ms forwards;
+}
+
+.hp-modelsearch-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary-yellow);
+  /* linear to 100%, finishing near the end of the 5.8s slide (no deceleration) */
+  animation: hp-applist-fill 2450ms linear 3150ms forwards;
+}
+
+
+/* Search cursor: flies to the quant dropdown (~1.9s), clicks, then to the
+   download button (~3.0s) and clicks. `right` offsets (rem from the result's
+   padding edge) match the fixed control geometry: button center ~2rem,
+   dropdown center ~5.5rem. */
+.hp-modelsearch-result.is-selected > .hp-cursor {
+  top: 50%;
+  right: 0;
+  animation: hp-search-cursor 5s linear both;
+}
+
+.hp-modelsearch-result.is-selected > .hp-cursor svg {
+  animation:
+    hp-cursor-press 0.22s ease 1.95s,
+    hp-cursor-press 0.22s ease 3s;
+}
+
+@keyframes hp-search-cursor {
+  0%, 22%  { right: 1.2rem; top: 150%; opacity: 0; }
+  27%      { opacity: 1; }
+  38%      { right: 5.2rem; top: 42%; opacity: 1; }   /* dropdown @1.9s */
+  56%      { right: 5.2rem; top: 42%; opacity: 1; }   /* hold open @2.8s */
+  60%      { right: 2rem;   top: 42%; opacity: 1; }   /* download @3.0s */
+  100%     { right: 2rem;   top: 42%; opacity: 1; }
+}
+
+/* ======================================================================
+   App store (REUSABLE across app categories), hosted inside a stylized
+   Lemonade app window. Marketplace-style cards (header + description + CTA row)
+   fill the window; a faint full-height scrollbar implies a longer, scrollable
+   list. The body grows to fill the window so the cards + scrollbar span it.
+   ====================================================================== */
+.hp-appstore {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;   /* distribute the cards across the full body */
+  gap: 0.6rem;
+  padding: 0.9rem 1.25rem 0.9rem 0.9rem;
+  overflow: hidden;
+}
+
+/* Per DESIGN.md "No-Line" rule: no solid outlines for sectioning -- separate the
+   card from the window with a brighter translucent surface (a higher tonal layer)
+   and a soft ambient shadow ("physics, not lines"). */
+.hp-appstore-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.45s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.14s + 0.1s);
+}
+
+@keyframes hp-appstore-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hp-appstore-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.hp-appstore-logo {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--radius);
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.28rem;
+}
+
+.hp-appstore-name {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.hp-appstore-desc {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* CTA row under the description (stylized, no real action) -- mirrors the
+   website marketplace card's Visit / Guide links. */
+.hp-appstore-cta {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.1rem;
+}
+
+.hp-appstore-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.hp-appstore-btn .material-symbols-outlined { font-size: 0.9rem; }
+
+.hp-appstore-btn.is-primary {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+/* Faint full-height scrollbar track + thumb implying the list scrolls. */
+.hp-appstore-scrollhint {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  right: 0.4rem;
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.08);
+  pointer-events: none;
+}
+
+.hp-appstore-scrollhint::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 38%;
+  border-radius: inherit;
+  background: rgba(45, 47, 47, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-applist-row,
+  .hp-applist-progress i,
+  .hp-applist-act.is-downloading > .hp-applist-dl,
+  .hp-applist-act.is-downloading > .hp-applist-progress,
+  .hp-applist-act.is-downloading > .hp-applist-progress i,
+  .hp-cursor,
+  .hp-cursor svg,
+  .hp-modelsearch-result,
+  .hp-modelsearch-caret,
+  .hp-modelsearch-dl,
+  .hp-modelsearch-quant-menu,
+  .hp-modelsearch-progress,
+  .hp-modelsearch-progress i,
+  .hp-appstore-card {
+    animation: none;
+  }
+  .hp-applist-row,
+  .hp-modelsearch-result,
+  .hp-appstore-card { opacity: 1; transform: none; }
+  /* settle into the finished state: progress filled, buttons gone, no cursor */
+  .hp-applist-act.is-downloading > .hp-applist-progress,
+  .hp-modelsearch-progress { opacity: 1; }
+  .hp-applist-act.is-downloading > .hp-applist-progress i,
+  .hp-modelsearch-progress i { width: var(--p, 100%); }
+  .hp-applist-act.is-downloading > .hp-applist-dl,
+  .hp-modelsearch-dl,
+  .hp-cursor { opacity: 0; }
+  .hp-modelsearch-quant-menu { opacity: 0; }
+}
+
+.hp-demo-terminal {
+  min-height: 420px;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    #11110d;
+  color: #f8f3da;
+  display: flex;
+  flex-direction: column;
+}
+
+.hp-demo-terminal-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.44rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hp-demo-terminal-bar span {
+  width: 0.74rem;
+  height: 0.74rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hp-demo-terminal-bar span:first-child {
+  background: #ff6b5f;
+}
+
+.hp-demo-terminal-bar span:nth-child(2) {
+  background: #fcd846;
+}
+
+.hp-demo-terminal-bar span:nth-child(3) {
+  background: #50c878;
+}
+
+.hp-demo-terminal-bar strong {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(248, 243, 218, 0.92);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.hp-demo-terminal pre {
+  margin: 0;
+  padding: 1.35rem;
+  white-space: pre-wrap;
+}
+
+.hp-demo-terminal code {
+  color: #f8f3da;
+  font-family: var(--font-mono);
+  font-size: clamp(0.82rem, 1.25vw, 0.98rem);
+  line-height: 1.72;
+}
+
+.hp-demo-terminal code .hp-terminal-line {
+  display: block;
+  opacity: 1;
+  transform: none;
+}
+
+.hp-demo-frame[data-animation-mode="once"] .hp-demo-terminal code .hp-terminal-line,
+.hp-demo-frame[data-animation-mode="repeat"] .hp-demo-terminal code .hp-terminal-line {
+  opacity: 0;
+  transform: translateY(0.22rem);
+  animation: hpTerminalLineIn 0.28s ease forwards;
+  animation-delay: var(--terminal-delay, 0ms);
+}
+
+.hp-demo-terminal .hp-terminal-comment {
+  color: rgba(248, 243, 218, 0.52);
+}
+
+.hp-demo-terminal .hp-terminal-command {
+  color: #fff8d8;
+  font-weight: 780;
+}
+
+.hp-demo-terminal .hp-terminal-output {
+  color: rgba(248, 243, 218, 0.62);
+  padding-left: 1.15rem;
+}
+
+@keyframes hpTerminalLineIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+[data-persona="developers"] .hp-stack-item {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-persona="developers"] .hp-stack-item:hover,
+[data-persona="developers"] .hp-stack-item:focus-visible {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+[data-persona="developers"] .hp-stack-item.is-active {
+  background: rgba(252, 216, 70, 0.08);
+  border-color: rgba(252, 216, 70, 0.34);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+[data-persona="developers"] .hp-stack {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-persona="developers"] .hp-autoplay-progress {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-persona="developers"] .hp-demo-caption {
+  color: var(--text-secondary);
+}
+
+[data-persona="developers"] .hp-demo-stage::before {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(252, 216, 70, 0.2), transparent 32%),
+    radial-gradient(circle at 74% 72%, rgba(255, 255, 255, 0.06), transparent 34%);
+}
+
+[data-persona="developers"] .hp-demo-frame {
+  border-color: rgba(252, 216, 70, 0.18);
+  background: rgba(22, 21, 16, 0.72);
+  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* The router flowchart supplies its own dark stage, so when the demo frame is
+   hosting one, drop the card chrome (border, translucent fill, drop shadow,
+   backdrop blur) and let the animation stand on its own. */
+.hp-demo-frame:has(.hp-router-demo) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* The app window (chatbot / spawn) is its own self-contained ice-card, so strip
+   the demo-frame chrome entirely and let the frame shrink-wrap and center the
+   window. overflow:visible is essential -- the frame's default overflow:hidden
+   was clipping the window's drop shadow along the bottom edge. */
+.hp-demo-frame:has(.hp-app-window) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-legacy-hero {
+  margin-top: var(--page-space-xl);
+}
+
+@media (max-width: 920px) {
+  .hp-persona-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "copy"
+      "stack"
+      "demo";
+    max-width: 760px;
+    gap: var(--page-space-md);
+  }
+
+  .hp-persona-left,
+  .hp-persona-left .hp-persona-copy {
+    align-items: center;
+    text-align: center;
+  }
+
+  .hp-stack {
+    width: 100%;
+  }
+
+  .hp-demo-stage {
+    min-height: auto;
+    width: 100%;
+  }
+
+  .hp-demo-frame {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .hp-persona-layout {
+    gap: var(--page-space-sm);
+  }
+
+  .hp-persona-left {
+    gap: var(--page-space-sm);
+  }
+
+  .hp-stack-item {
+    padding: 0.8rem;
+  }
+
+  .hp-demo-frame {
+    min-height: 380px;
+    border-radius: 22px;
+  }
+
+  .hp-demo-terminal {
+    min-height: 380px;
+  }
+
+  .hp-demo-terminal pre {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hp-persona-hero {
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .hp-persona-copy {
+    padding: 0;
+  }
+
+  .hp-stack-item {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .hp-stack-index {
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+
+/* --- Persona hero — responsive overrides ---
+   Moved here from the global media-query blocks in website-styles.css.
+   Kept in ascending-breakpoint source order to preserve the cascade. */
+@media (max-width: 1024px) {
+  .hp-persona-hero {
+    --orbit-diameter: min(700px, 94vw);
+  }
+}
+
+@media (max-width: 980px) {
+  .hp-persona-hero {
+    padding: var(--page-space-md) 1rem 0;
+  }
+
+  .hp-persona-title {
+    font-size: clamp(2.25rem, 8vw, 4rem);
+  }
+}
+
+@media (max-width: 720px) {
+  .hp-persona-hero {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .hp-persona-subtitle {
+    font-size: 1rem;
+    max-width: 34rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hp-persona-hero {
+    --orbit-diameter: 520px;
+    width: 100vw;
+    max-width: 100vw;
+    padding-top: 2rem;
+    overflow: hidden;
+  }
+
+  .hp-persona-copy {
+    padding: 0 1rem;
+  }
+
+  .hp-persona-title {
+    font-size: clamp(2rem, 11vw, 3rem);
+  }
+}
