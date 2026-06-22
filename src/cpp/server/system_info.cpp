@@ -565,15 +565,13 @@ static bool device_matches_constraint(const std::string& device_family,
 
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
-    bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
-
-    // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    bool is_vllm_rocm_backend = recipe == "vllm" && backend == "rocm";
-    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend) {
-        if (needs_gfx1151_cwsr_fix()) {
-            error_message = "Linux kernel missing support";
-            return false;
-        }
+    // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
+    // CWSR fix is missing — which backends' rocm build needs it is a descriptor flag.
+    const auto* cwsr_desc = backends::descriptor_for(recipe);
+    if (backend == "rocm" && cwsr_desc && cwsr_desc->rocm_requires_cwsr_fix &&
+        needs_gfx1151_cwsr_fix()) {
+        error_message = "Linux kernel missing support";
+        return false;
     }
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
@@ -1365,11 +1363,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     : "Backend is supported but not installed.";
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
-                bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
-                    (def.recipe == "llamacpp" && def.backend == "rocm") ||
-                    (def.recipe == "vllm" && def.backend == "rocm");
+                const auto* cwsr_desc = backends::descriptor_for(def.recipe);
+                bool is_rocm_backend = def.backend == "rocm" && cwsr_desc &&
+                                       cwsr_desc->rocm_requires_cwsr_fix;
 
-                // Special action for ROCm backends on llamacpp/sd-cpp/vllm if CWSR fix is missing
+                // Special action for ROCm backends that need the gfx1151 CWSR fix.
                 if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";

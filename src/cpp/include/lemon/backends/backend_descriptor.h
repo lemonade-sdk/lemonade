@@ -75,6 +75,10 @@ struct BackendDescriptor {
     // that lemond should scrape and re-export (llama-server does).
     bool exposes_prometheus_metrics = false;
 
+    // True if this backend's ROCm build requires the gfx1151 (Strix Halo) kernel
+    // CWSR fix. Gates the availability/remediation check for the "rocm" backend.
+    bool rocm_requires_cwsr_fix = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

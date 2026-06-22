@@ -51,6 +51,8 @@ inline const BackendDescriptor descriptor = {
     /*web_display_name*/ "stable-diffusion.cpp",
     /*web_priority*/    5,
     /*rocm_channels*/   {"stable"},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ true,
 };
 
 }  // namespace sdcpp

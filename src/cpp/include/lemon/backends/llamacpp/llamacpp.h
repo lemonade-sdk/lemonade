@@ -48,6 +48,7 @@ inline const BackendDescriptor descriptor = {
     /*web_priority*/    1,
     /*rocm_channels*/   {"stable", "nightly"},
     /*exposes_prometheus_metrics*/ true,
+    /*rocm_requires_cwsr_fix*/ true,
 };
 
 }  // namespace llamacpp

@@ -32,6 +32,10 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text generation",
     /*experimental*/    true,
     /*web_display_name*/ "",
+    /*web_priority*/    0,
+    /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ true,
 };
 
 }  // namespace vllm
