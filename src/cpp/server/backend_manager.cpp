@@ -64,15 +64,6 @@ std::string get_backend_runtime_version(const json& backend_versions,
         return backend_versions[recipe][runtime_key].get<std::string>();
     }
 
-    // Only fall back to llamacpp runtime version if the recipe is llamacpp
-    if (recipe == "llamacpp" &&
-        backend_versions.contains("llamacpp") &&
-        backend_versions["llamacpp"].is_object() &&
-        backend_versions["llamacpp"].contains(runtime_key) &&
-        backend_versions["llamacpp"][runtime_key].is_string()) {
-        return backend_versions["llamacpp"][runtime_key].get<std::string>();
-    }
-
     throw std::runtime_error("backend_versions.json is missing runtime version for: " + recipe + ":" + runtime_key);
 }
 
