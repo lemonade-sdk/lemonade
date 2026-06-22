@@ -701,6 +701,52 @@ std::string system_llamacpp_version() {
 }
 
 
+bool is_ggml_hip_plugin_available() {
+#ifdef __linux__
+    // Allow distros/packagers that install outside the FHS paths below
+    // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
+    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
+        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
+        // case-insensitive, versioned sonames allowed). This is a sanity check,
+        // not a security boundary: the path is not forwarded to ggml's loader,
+        // so we cannot verify it is actually loadable. It only guards against an
+        // accidental override pointing at an unrelated existing file.
+        std::string name = fs::path(env).filename().string();
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
+                                  name.find(".so") != std::string::npos;
+        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
+        // filesystem overload: an odd or malformed path resolves to "not a
+        // regular file" (ec set) instead of raising a filesystem_error.
+        std::error_code hip_path_ec;
+        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
+            return true;
+        }
+    }
+    // On Linux x86_64, check common system library paths for the HIP plugin
+    std::vector<std::string> possible_paths = {
+        // Debian/Ubuntu multiarch path (most common)
+        "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
+	// Arch AUR path
+	"/usr/lib/libggml-hip.so",
+        // Standard Linux paths
+        "/usr/lib/ggml/backends0/libggml-hip.so",
+        "/usr/lib64/ggml/backends0/libggml-hip.so"
+    };
+
+    // Check all possible paths
+    for (const auto& path : possible_paths) {
+        if (fs::exists(path)) {
+            return true;
+        }
+    }
+#endif
+
+    return false;
+}
+
+
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
@@ -773,6 +819,19 @@ public:
             return system_llamacpp_version();
         }
         return file_version;
+    }
+
+    InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        // The system llama-server also needs the ggml HIP plugin for ROCm GPU
+        // acceleration when an AMD GPU (KFD) is present.
+        if (binary_found && backend == "system") {
+#ifdef __linux__
+            if (std::filesystem::exists("/sys/class/kfd") && !is_ggml_hip_plugin_available()) {
+                return {false, "HIP plugin libggml-hip.so not installed"};
+            }
+#endif
+        }
+        return {binary_found, ""};
     }
 };
 }  // namespace

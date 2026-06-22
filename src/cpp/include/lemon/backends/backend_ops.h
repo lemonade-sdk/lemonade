@@ -99,6 +99,22 @@ public:
         (void)backend;
         return file_version;
     }
+
+    // Result of a backend-specific install check: whether the backend variant is
+    // usable, plus an optional error explaining why not.
+    struct InstallCheck {
+        bool installed = false;
+        std::string error;
+    };
+
+    // Decide whether a backend variant is installed, given whether its managed
+    // binary was found on disk. Default: installed iff the binary was found.
+    // llamacpp's "system" build also requires the ggml HIP plugin when an AMD GPU
+    // is present; flm can be a system PATH package even without a managed binary.
+    virtual InstallCheck check_install(const std::string& backend, bool binary_found) const {
+        (void)backend;
+        return {binary_found, ""};
+    }
 };
 
 // Shared default ops instance for backends that override nothing.

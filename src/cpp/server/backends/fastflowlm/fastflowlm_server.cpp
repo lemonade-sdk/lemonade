@@ -170,7 +170,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Validate NPU hardware/drivers
     std::string flm_path = get_flm_path();
     std::string validate_error;
-    if (!utils::run_flm_validate(flm_path, validate_error)) {
+    if (!fastflowlm::run_flm_validate(flm_path, validate_error)) {
         throw std::runtime_error("FLM NPU validation failed: " + validate_error +
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
@@ -457,7 +457,7 @@ std::string FastFlowLMServer::get_flm_path() {
     }
 #else
     // On Linux, FLM is installed as a system package (in PATH)
-    std::string flm_path = utils::find_flm_executable();
+    std::string flm_path = fastflowlm::find_flm_executable();
     if (!flm_path.empty()) {
         LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
     } else {
@@ -514,6 +514,14 @@ public:
             return flm_version();
         }
         return file_version;
+    }
+
+    InstallCheck check_install(const std::string&, bool binary_found) const override {
+        // On Linux FLM is a system package on PATH, not in the managed install dir.
+        if (!binary_found && !find_flm_executable().empty()) {
+            return {true, ""};
+        }
+        return {binary_found, ""};
     }
 };
 }  // namespace

@@ -34,6 +34,12 @@ std::filesystem::path find_flm_config_path_from_repo_dir(const std::string& repo
 // Read the model's max context window from its FLM config.json (0 if unknown).
 int64_t read_flm_max_context_window(const ModelInfo& info);
 
+// Locate the flm executable on PATH / install dirs ("" if not found).
+std::string find_flm_executable();
+
+// Run `flm validate` and report readiness; error_message on failure.
+bool run_flm_validate(const std::string& flm_path, std::string& error_message);
+
 // Detect the installed FLM version via `flm version` ("unknown" if unavailable).
 std::string flm_version();
 

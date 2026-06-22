@@ -573,38 +573,22 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         error_message = "Linux kernel missing support";
         return false;
     }
-    auto* spec = try_get_spec_for_recipe(recipe);
-    if (spec) {
+    // Find the managed binary, then let the backend's ops decide installed-ness
+    // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
+    bool binary_found = false;
+    if (auto* spec = try_get_spec_for_recipe(recipe)) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
-
-            // For system llamacpp backend, also verify the HIP plugin is available
-            // This is required for ROCm GPU acceleration with dynamically loaded backends
-            if (recipe == "llamacpp" && backend == "system") {
-#ifdef __linux__
-                // Check if AMD GPU driver is loaded (KFD indicates amdgpu driver)
-                if (fs::exists("/sys/class/kfd")) {
-                    // System has AMD GPU(s), so we need the HIP plugin
-                    if (!is_ggml_hip_plugin_available()) {
-                        error_message = "HIP plugin libggml-hip.so not installed";
-                        return false;
-                    }
-                }
-#endif
-            }
-
-            return true;
+            binary_found = true;
         } catch (...) {
-#ifndef _WIN32
-            // On Linux, FLM is installed as a system package (in PATH, not install dir)
-            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
-                return true;
-            }
-#endif
-            return false;
+            binary_found = false;
         }
     }
-    return false;
+    auto check = backends::ops_for(recipe)->check_install(backend, binary_found);
+    if (!check.installed && !check.error.empty()) {
+        error_message = check.error;
+    }
+    return check.installed;
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
