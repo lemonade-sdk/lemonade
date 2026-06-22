@@ -751,6 +751,79 @@
     '</div>';
   }
 
+  // Developer "Deploy everywhere": a mini app window at top wired to 4 PCs
+  // (AMD laptop, NVIDIA desktop, Apple laptop, Vulkan desktop); a glowing dot
+  // travels to each in a repeating cascade and the PC lights up on arrival.
+  // Pure SVG + SMIL: device icons are geometry, labels are <text> with an
+  // explicit y (NOT dominant-baseline), text-anchor centres horizontally only.
+  function deployDemo() {
+    var C = 4800;
+    var cycle = (C / 1000).toFixed(3) + 's';
+    // Repeating <animate>; pads the final keyTime to 1 so SMIL stays valid.
+    function ranim(attr, vals, times) {
+      var v = vals.split(';'), k = times.split(';');
+      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
+      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
+    }
+    function f(n) { return (+n).toFixed(4); }
+    var appX = 310, appY = 94, pcY = 250;
+    var pcs = [
+      { label: 'AMD', type: 'laptop', x: 110 },
+      { label: 'NVIDIA', type: 'desktop', x: 250 },
+      { label: 'Apple', type: 'laptop', x: 390 },
+      { label: 'Vulkan', type: 'desktop', x: 530 }
+    ];
+
+    function pcIcon(type, cx, cy) {
+      if (type === 'laptop') {
+        return '<rect x="' + (cx - 28) + '" y="' + (cy - 26) + '" width="56" height="34" rx="3"></rect>' +
+               '<path d="M ' + (cx - 34) + ' ' + (cy + 16) + ' L ' + (cx + 34) + ' ' + (cy + 16) + ' L ' + (cx + 28) + ' ' + (cy + 9) + ' L ' + (cx - 28) + ' ' + (cy + 9) + ' Z"></path>';
+      }
+      return '<rect x="' + (cx - 30) + '" y="' + (cy - 26) + '" width="60" height="40" rx="4"></rect>' +
+             '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + cx + '" y2="' + (cy + 22) + '"></line>' +
+             '<line x1="' + (cx - 13) + '" y1="' + (cy + 22) + '" x2="' + (cx + 13) + '" y2="' + (cy + 22) + '"></line>';
+    }
+
+    // mini app window glyph at top (the wire origin)
+    var app =
+      '<g class="hp-deploy-app">' +
+        '<rect x="250" y="34" width="120" height="58" rx="9"></rect>' +
+        '<line x1="250" y1="51" x2="370" y2="51"></line>' +
+        '<circle cx="262" cy="43" r="2.6"></circle><circle cx="271" cy="43" r="2.6"></circle><circle cx="280" cy="43" r="2.6"></circle>' +
+        '<text class="hp-deploy-applabel" x="310" y="78" text-anchor="middle">Your App</text>' +
+      '</g>';
+
+    var wires = '', nodes = '', dots = '';
+    pcs.forEach(function (pc, i) {
+      var px = pc.x;
+      var wire = 'M ' + appX + ' ' + (appY + 4) + ' C ' + appX + ' ' + (appY + 86) + ', ' + px + ' ' + (pcY - 86) + ', ' + px + ' ' + (pcY - 34);
+      var s = i / 4;
+      wires += '<path class="hp-deploy-wire" d="' + wire + '"></path>';
+      nodes += '<g class="hp-deploy-pc">' +
+          '<g class="hp-deploy-icon">' + pcIcon(pc.type, px, pcY) + '</g>' +
+          '<g class="hp-deploy-glow">' + pcIcon(pc.type, px, pcY) +
+            ranim('opacity', '0;0;1;0', '0;' + f(s + 0.11) + ';' + f(s + 0.15) + ';' + f(s + 0.24)) +
+          '</g>' +
+          '<text class="hp-deploy-label" x="' + px + '" y="' + (pcY + 42) + '" text-anchor="middle">' + escapeText(pc.label) + '</text>' +
+        '</g>';
+      dots += '<circle class="hp-deploy-dot" r="6" cx="0" cy="0" opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(s + 0.13) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(s + 0.13) + ';' + f(s + 0.15)) +
+        '</circle>';
+    });
+
+    return '<div class="hp-app-window is-dark hp-deploy-term">' +
+      '<div class="hp-app-window-bar">' +
+        '<span class="hp-app-window-title">Your App</span>' +
+        '<span class="hp-app-window-dots"><i></i><i></i><i></i></span>' +
+      '</div>' +
+      '<svg class="hp-deploy-svg" viewBox="0 0 620 376" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+        '<defs>' + routerGlowFilter() + '</defs>' +
+        wires + app + nodes + dots +
+      '</svg>' +
+    '</div>';
+  }
+
   function routerDemo(kind) {
     if (kind === 'router-hybrid') {
       // Hybrid = right SIZE & LOCATION: an easy ask stays local (fast, private,
@@ -815,6 +888,7 @@
         };
       }
       if (kind === 'spawn-app') return spawnDemo();
+      if (kind === 'deploy-everywhere') return deployDemo();
       return routerDemo(kind);
     }
   };

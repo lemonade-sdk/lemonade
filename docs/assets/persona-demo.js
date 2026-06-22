@@ -207,12 +207,20 @@
               duration: 3600
             },
             {
-              label: 'Customize completely',
-              demo: 'terminal-dev-customize',
-              caption: 'Every aspect of lemond is configurable for your app\'s requirements.',
-              captionHref: 'https://lemonade-server.ai/docs/embeddable/runtime/',
+              label: 'Deploy everywhere',
+              demo: 'deploy-everywhere',
+              caption: 'Compatible with every mainstream PC.',
+              captionHref: 'https://lemonade-server.ai/docs/embeddable/',
+              animationMode: 'repeat',
+              duration: 5200
+            },
+            {
+              label: 'Private & white-labeled',
+              demo: 'private-app',
+              caption: 'Ship your own inference stack — your models, your key, no Lemonade branding.',
+              captionHref: 'https://lemonade-server.ai/docs/embeddable/',
               animationMode: 'once',
-              animationSections: ['tune live', 'persist config']
+              duration: 3400
             }
           ]
         },
@@ -237,6 +245,94 @@
               captionHref: 'https://lemonade-server.ai/docs/guide/configuration/cloud/',
               animationMode: 'repeat',
               animationSections: ['small local route', 'cloud route']
+            }
+          ]
+        },
+        {
+          eyebrow: 'Interfaces',
+          title: 'Standard interfaces',
+          copy: 'All capabilities available over language-agnostic HTTP endpoints.',
+          demo: 'terminal-api-openai',
+          slides: [
+            {
+              label: 'OpenAI API',
+              demo: 'terminal-api-openai',
+              caption: 'Chat, image, and speech with industry-standard APIs.',
+              captionHref: 'https://lemonade-server.ai/docs/api/openai/',
+              animationMode: 'once',
+              duration: 4200
+            },
+            {
+              label: 'Lemonade API',
+              demo: 'terminal-api-lemonade',
+              caption: 'Manage models, backends, configuration, and lemond lifecycle.',
+              captionHref: 'https://lemonade-server.ai/docs/api/lemonade/',
+              animationMode: 'once',
+              duration: 4000
+            },
+            {
+              label: 'Ollama API',
+              demo: 'terminal-api-ollama',
+              caption: 'Point any Ollama client at Lemonade.',
+              captionHref: 'https://lemonade-server.ai/docs/api/ollama/',
+              animationMode: 'once',
+              duration: 3400
+            },
+            {
+              label: 'Anthropic API',
+              demo: 'terminal-api-anthropic',
+              caption: 'The Anthropic Messages API, with tool use.',
+              captionHref: 'https://lemonade-server.ai/docs/api/anthropic/',
+              animationMode: 'once',
+              duration: 3000
+            }
+          ]
+        },
+        {
+          eyebrow: 'Backends',
+          title: 'Backends and devices',
+          copy: 'Provides optimized inference across modalities and platforms.',
+          demo: 'backend-engines',
+          slides: [
+            {
+              label: 'Inference engines',
+              demo: 'backend-engines',
+              caption: 'One API, many engines — chat, image, speech, and more.',
+              captionHref: 'https://lemonade-server.ai/docs/embeddable/backends/',
+              animationMode: 'once',
+              duration: 3600
+            },
+            {
+              label: 'Devices & acceleration',
+              demo: 'backend-devices',
+              caption: 'Optimized for every device — GPU, NPU, and CPU.',
+              captionHref: 'https://lemonade-server.ai/docs/guide/configuration/llamacpp/',
+              animationMode: 'once',
+              duration: 3200
+            }
+          ]
+        },
+        {
+          eyebrow: 'Customize',
+          title: 'Customize completely',
+          copy: 'Configure every aspect of lemond for your app.',
+          demo: 'terminal-customize-runtime',
+          slides: [
+            {
+              label: 'Tune at runtime',
+              demo: 'terminal-customize-runtime',
+              caption: 'Set models, context, and backends from the command line or live API.',
+              captionHref: 'https://lemonade-server.ai/docs/guide/configuration/',
+              animationMode: 'once',
+              duration: 4000
+            },
+            {
+              label: 'Bundle for deployment',
+              demo: 'terminal-customize-bundle',
+              caption: 'Bundle private models and backends, then launch hidden and locked to your app.',
+              captionHref: 'https://lemonade-server.ai/docs/embeddable/',
+              animationMode: 'once',
+              duration: 3600
             }
           ]
         }
@@ -359,6 +455,82 @@
           { text: '$ lemonade config set llamacpp.backend=rocm port=8123', kind: 'command', phase: 0, delay: 520 },
           { text: '✓ llamacpp.backend = rocm', kind: 'output', phase: 0, delay: 900 },
           { text: '✓ port = 8123', kind: 'output', phase: 0, delay: 1120 }
+        ]
+      },
+      'terminal-api-openai': {
+        title: 'Bash',
+        lines: [
+          { text: '# Chat · image · speech over the OpenAI API', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ curl :8000/v1/chat/completions -d \'{"messages":[{"role":"user","content":"Population of Paris?"}]}\'', kind: 'command', phase: 0, delay: 480 },
+          { text: '{ "content": "Paris has about 2.2 million residents." }', kind: 'output', phase: 0, delay: 820 },
+          { text: '', delay: 1120 },
+          { text: '$ curl :8000/v1/images/generations -d \'{"model":"SD-Turbo","prompt":"a lemon grove"}\'', kind: 'command', phase: 1, delay: 1420 },
+          { text: '✓ generated 512×512 PNG', kind: 'output', phase: 1, delay: 1740 },
+          { text: '', delay: 2000 },
+          { text: '$ curl :8000/v1/audio/speech -d \'{"model":"kokoro-v1","input":"Lemonade can speak!"}\'', kind: 'command', phase: 2, delay: 2300 },
+          { text: '✓ speech.mp3 (1.2s)', kind: 'output', phase: 2, delay: 2620 }
+        ]
+      },
+      'terminal-api-lemonade': {
+        title: 'Bash',
+        lines: [
+          { text: '# Manage models, backends, and configuration', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ curl :8000/api/v1/pull -d \'{"model_name":"Qwen3-4B-GGUF"}\'', kind: 'command', phase: 0, delay: 480 },
+          { text: '✓ installed Qwen3-4B-GGUF', kind: 'output', phase: 0, delay: 820 },
+          { text: '', delay: 1100 },
+          { text: '$ curl :8000/api/v1/install -d \'{"recipe":"llamacpp","backend":"vulkan"}\'', kind: 'command', phase: 1, delay: 1400 },
+          { text: '✓ backend ready: llamacpp:vulkan', kind: 'output', phase: 1, delay: 1740 },
+          { text: '', delay: 2000 },
+          { text: '$ curl :8000/internal/set -d \'{"max_loaded_models":3}\'', kind: 'command', phase: 2, delay: 2300 },
+          { text: '✓ max_loaded_models = 3', kind: 'output', phase: 2, delay: 2620 }
+        ]
+      },
+      'terminal-api-ollama': {
+        title: 'Bash',
+        lines: [
+          { text: '# Point any Ollama client at Lemonade', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ curl :11434/api/chat -d \'{"model":"Qwen3-4B-GGUF","messages":[{"role":"user","content":"Hello"}]}\'', kind: 'command', phase: 0, delay: 520 },
+          { text: '{ "message": { "content": "Hello! How can I help you today?" } }', kind: 'output', phase: 0, delay: 900 },
+          { text: '', delay: 1200 },
+          { text: '$ curl :11434/api/tags', kind: 'command', phase: 1, delay: 1500 },
+          { text: '{ "models": [ { "name": "Qwen3-4B-GGUF:latest" } ] }', kind: 'output', phase: 1, delay: 1840 }
+        ]
+      },
+      'terminal-api-anthropic': {
+        title: 'Bash',
+        lines: [
+          { text: '# The Anthropic Messages API, with tool use', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ curl :8000/api/messages -d \'{"max_tokens":100,"messages":[{"role":"user","content":"Say hello"}]}\'', kind: 'command', phase: 0, delay: 560 },
+          { text: '{ "content": [ { "type": "text", "text": "Hello! I am here to help." } ] }', kind: 'output', phase: 0, delay: 1000 },
+          { text: '', delay: 1300 },
+          { text: '# tool use + SSE streaming supported', kind: 'comment', phase: 1, delay: 1600 }
+        ]
+      },
+      'terminal-customize-runtime': {
+        title: 'Bash',
+        lines: [
+          { text: '# Tune the runtime for your app', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ lemonade config set max_loaded_models=3 ctx_size=8192 llamacpp.backend=rocm', kind: 'command', phase: 0, delay: 520 },
+          { text: '✓ max_loaded_models = 3', kind: 'output', phase: 0, delay: 880 },
+          { text: '✓ ctx_size = 8192', kind: 'output', phase: 0, delay: 1060 },
+          { text: '✓ llamacpp.backend = rocm', kind: 'output', phase: 0, delay: 1240 },
+          { text: '', delay: 1520 },
+          { text: '# ...or live, with no restart', kind: 'comment', phase: 1, delay: 1800 },
+          { text: '$ curl :8000/internal/set -d \'{"ctx_size":16384}\'', kind: 'command', phase: 1, delay: 2120 },
+          { text: '✓ applied', kind: 'output', phase: 1, delay: 2420 }
+        ]
+      },
+      'terminal-customize-bundle': {
+        title: 'Bash',
+        lines: [
+          { text: '# Bundle a private, branded deployment', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ lemonade config set models_dir="./models"', kind: 'command', phase: 0, delay: 480 },
+          { text: '$ lemonade backends install llamacpp:vulkan', kind: 'command', phase: 0, delay: 760 },
+          { text: '✓ bundled into your app folder', kind: 'output', phase: 0, delay: 1080 },
+          { text: '', delay: 1360 },
+          { text: '# launch hidden, locked to your app', kind: 'comment', phase: 1, delay: 1660 },
+          { text: '$ LEMONADE_API_KEY=app-secret lemond ./ --port 8000', kind: 'command', phase: 1, delay: 1980 },
+          { text: '✓ lemond running (private)', kind: 'output', phase: 1, delay: 2300 }
         ]
       }
     };
@@ -598,6 +770,86 @@
     return appWindow('Lemonade', body, 'hp-appstore-window');
   }
 
+  // Developer "Private & white-labeled": an app window branded as the APP (not
+  // Lemonade) wrapping a private, locked-down lemond — a bundled model library, an
+  // API-key chip, and a footer noting lemond runs hidden. Dark variant to match the
+  // developer demos. (Real basis: models_dir, LEMONADE_API_KEY, headless binary.)
+  function privateApp() {
+    var models = [
+      { name: 'assistant-7b', tag: 'chat' },
+      { name: 'vision-4b', tag: 'vision' },
+      { name: 'voice-tiny', tag: 'speech' }
+    ];
+    var rows = models.map(function(m, i) {
+      return '<div class="hp-private-row" style="--row:' + i + '">' +
+          '<span class="hp-private-name">' + escapeText(m.name) + '</span>' +
+          '<span class="hp-private-tag">' + escapeText(m.tag) + '</span>' +
+          '<span class="hp-private-lock"><span class="material-symbols-outlined">lock</span></span>' +
+        '</div>';
+    }).join('');
+    var body =
+      '<div class="hp-private">' +
+        '<div class="hp-private-keychip"><span class="material-symbols-outlined">key</span>Authorization: Bearer ••••••••</div>' +
+        '<div class="hp-private-libhead">Private model library</div>' +
+        '<div class="hp-private-lib">' + rows + '</div>' +
+        '<div class="hp-private-foot"><span class="material-symbols-outlined">visibility_off</span>lemond runs hidden — your brand only</div>' +
+      '</div>';
+    return appWindow('YourApp', body, 'hp-private-window is-dark');
+  }
+
+  // Developer "Backends and devices": a grid of glass icon-cards showing the breadth
+  // of engines / device acceleration. Dark variant. Material icons (no external logos).
+  function backendBoard(kind) {
+    var boards = {
+      'backend-engines': {
+        title: 'Inference engines',
+        groups: [
+          { label: 'Core', items: [
+            { icon: 'forum', name: 'llama.cpp', tag: 'chat · embed · rerank' },
+            { icon: 'image', name: 'stable-diffusion.cpp', tag: 'image' },
+            { icon: 'graphic_eq', name: 'whisper.cpp', tag: 'transcription' },
+            { icon: 'campaign', name: 'Kokoro', tag: 'text-to-speech' },
+            { icon: 'mic', name: 'Moonshine', tag: 'streaming ASR' }
+          ] },
+          { label: 'Specialized', items: [
+            { icon: 'bolt', name: 'vLLM', tag: 'LLM · ROCm' },
+            { icon: 'memory', name: 'RyzenAI', tag: 'NPU' },
+            { icon: 'developer_board', name: 'FastFlowLM', tag: 'NPU · multimodal' }
+          ] }
+        ]
+      },
+      'backend-devices': {
+        title: 'Devices & acceleration',
+        groups: [
+          { items: [
+            { icon: 'view_in_ar', name: 'Vulkan', tag: 'any GPU' },
+            { icon: 'memory', name: 'ROCm', tag: 'AMD' },
+            { icon: 'memory', name: 'CUDA', tag: 'NVIDIA' },
+            { icon: 'laptop_mac', name: 'Metal', tag: 'Apple' },
+            { icon: 'developer_board', name: 'CPU', tag: 'x86 · ARM' },
+            { icon: 'bolt', name: 'NPU', tag: 'Ryzen AI' }
+          ] }
+        ]
+      }
+    };
+    var board = boards[kind] || boards['backend-engines'];
+    var idx = 0;
+    var html = board.groups.map(function(g) {
+      var cards = g.items.map(function(it) {
+        var card = '<div class="hp-backend-card" style="--card:' + idx + '">' +
+            '<span class="hp-backend-icon"><span class="material-symbols-outlined">' + it.icon + '</span></span>' +
+            '<span class="hp-backend-name">' + escapeText(it.name) + '</span>' +
+            '<span class="hp-backend-tag">' + escapeText(it.tag) + '</span>' +
+          '</div>';
+        idx += 1;
+        return card;
+      }).join('');
+      return (g.label ? '<div class="hp-backend-grouplabel">' + escapeText(g.label) + '</div>' : '') +
+        '<div class="hp-backend-grid">' + cards + '</div>';
+    }).join('');
+    return appWindow(board.title, '<div class="hp-backend-board">' + html + '</div>', 'hp-backend-window is-dark');
+  }
+
   function renderDemo(step) {
     var slide = step.slides && step.slides[activeSlide];
     var demoKind = (slide && slide.demo) || step.demo;
@@ -612,7 +864,7 @@
     }
     captionEl.hidden = !captionText;
     demoEl.setAttribute('data-animation-mode', mode);
-    if (demoKind.indexOf('router-') === 0 || demoKind === 'spawn-app') {
+    if (demoKind.indexOf('router-') === 0 || demoKind === 'spawn-app' || demoKind === 'deploy-everywhere') {
       // Flowchart diagrams come from the flowchart.js module. Hand it our
       // autoplay cadence so its SMIL cycle stays aligned with the progress bar.
       demoEl.innerHTML = window.LemonadeFlowchart.render(demoKind, {
@@ -626,6 +878,10 @@
       demoEl.innerHTML = modelsDemo(demoKind);
     } else if (demoKind.indexOf('apps-') === 0) {
       demoEl.innerHTML = appStore(demoKind);
+    } else if (demoKind === 'private-app') {
+      demoEl.innerHTML = privateApp();
+    } else if (demoKind.indexOf('backend-') === 0) {
+      demoEl.innerHTML = backendBoard(demoKind);
     } else {
       demoEl.innerHTML = commandDemo(demoKind);
     }

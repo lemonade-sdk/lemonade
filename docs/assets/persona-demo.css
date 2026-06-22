@@ -1192,6 +1192,123 @@
   background: rgba(45, 47, 47, 0.22);
 }
 
+/* ======================================================================
+   Developer: "Private & white-labeled" window (dark variant). The app is
+   branded as YourApp; inside it a locked-down private model library + an
+   API-key chip + a footer noting lemond runs hidden.
+   ====================================================================== */
+.hp-private {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1.2rem 1.4rem;
+}
+
+.hp-private-keychip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.7rem;
+  border-radius: var(--radius-btn);
+  background: rgba(252, 216, 70, 0.12);
+  border: 1px solid rgba(252, 216, 70, 0.3);
+  color: #ffe76a;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.hp-private-keychip .material-symbols-outlined { font-size: 0.95rem; }
+
+.hp-private-libhead {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.55);
+}
+
+.hp-private-lib { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.hp-private-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.12s + 0.15s);
+}
+
+.hp-private-name { font-family: var(--font-mono); font-size: 0.82rem; color: #f4efdc; }
+.hp-private-tag { margin-left: auto; font-family: var(--font-body); font-size: 0.72rem; color: rgba(248, 243, 218, 0.55); }
+.hp-private-lock { flex: 0 0 auto; display: inline-flex; color: #fcd846; }
+.hp-private-lock .material-symbols-outlined { font-size: 1rem; }
+
+.hp-private-foot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  color: rgba(248, 243, 218, 0.5);
+}
+
+.hp-private-foot .material-symbols-outlined { font-size: 0.95rem; }
+
+/* ======================================================================
+   Developer: "Backends and devices" board (dark variant). A grid of glass
+   icon-cards (Material icons, no external logos) grouped core/specialized.
+   Grid uses auto-fit so it reflows to 1 col on narrow screens.
+   ====================================================================== */
+.hp-backend-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.1rem 1.3rem;
+}
+
+.hp-backend-grouplabel {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.5);
+  margin-top: 0.2rem;
+}
+
+.hp-backend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+}
+
+.hp-backend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(252, 216, 70, 0.12);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.08s + 0.12s);
+}
+
+.hp-backend-icon { display: inline-flex; color: #ffe76a; }
+.hp-backend-icon .material-symbols-outlined { font-size: 1.3rem; }
+.hp-backend-name { font-family: var(--font-display); font-size: 0.84rem; font-weight: 800; color: #f4efdc; }
+.hp-backend-tag { font-family: var(--font-body); font-size: 0.7rem; color: rgba(248, 243, 218, 0.55); }
+
 @media (prefers-reduced-motion: reduce) {
   .hp-applist-row,
   .hp-applist-progress i,
@@ -1206,12 +1323,16 @@
   .hp-modelsearch-quant-menu,
   .hp-modelsearch-progress,
   .hp-modelsearch-progress i,
-  .hp-appstore-card {
+  .hp-appstore-card,
+  .hp-private-row,
+  .hp-backend-card {
     animation: none;
   }
   .hp-applist-row,
   .hp-modelsearch-result,
-  .hp-appstore-card { opacity: 1; transform: none; }
+  .hp-appstore-card,
+  .hp-private-row,
+  .hp-backend-card { opacity: 1; transform: none; }
   /* settle into the finished state: progress filled, buttons gone, no cursor */
   .hp-applist-act.is-downloading > .hp-applist-progress,
   .hp-modelsearch-progress { opacity: 1; }

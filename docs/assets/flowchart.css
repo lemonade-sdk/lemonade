@@ -239,3 +239,70 @@
   fill: #ffe76a;
   stroke: none;
 }
+
+/* ---- Deploy-everywhere diagram (dev "Deploy everywhere") -----------------
+   A mini app window wired to 4 PC icons; a glowing dot cascades to each and the
+   target lights up. Device icons are stroked geometry; labels are SVG <text>. */
+.hp-deploy-svg {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+.hp-deploy-app rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.5);
+  stroke-width: 1.5;
+}
+.hp-deploy-app line { stroke: rgba(248, 243, 218, 0.28); stroke-width: 1; }
+.hp-deploy-app circle { fill: rgba(248, 243, 218, 0.5); }
+.hp-deploy-applabel {
+  fill: #f4efdc;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.hp-deploy-wire {
+  fill: none;
+  stroke: rgba(252, 216, 70, 0.18);
+  stroke-width: 1.5;
+}
+
+.hp-deploy-dot {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+/* resting device outline */
+.hp-deploy-icon rect,
+.hp-deploy-icon path,
+.hp-deploy-icon line {
+  fill: none;
+  stroke: rgba(248, 243, 218, 0.55);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* bright overlay that pulses on when the dot arrives */
+.hp-deploy-glow rect,
+.hp-deploy-glow path,
+.hp-deploy-glow line {
+  fill: none;
+  stroke: #ffe76a;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-deploy-label {
+  fill: rgba(248, 243, 218, 0.72);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+}
