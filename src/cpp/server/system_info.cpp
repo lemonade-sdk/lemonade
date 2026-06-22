@@ -445,12 +445,18 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64", "arm64"}},
     }},
 
-    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
+    // whisper.cpp - NPU, ROCm GPU, Vulkan, CPU, Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
-    {"whispercpp", "vulkan", {"linux"}, {
+    {"whispercpp", "rocm", {"windows", "linux"}, {
+        // gfx103X omitted: lemonade-sdk/whisper.cpp-rocm publishes no gfx103X
+        // ROCm whisper build, so advertising it would yield a 404 on install.
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+    }},
+    {"whispercpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+        {"amd_gpu", {}},
     }},
     {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -646,12 +652,24 @@ static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
+// A trailing 'X' in an allowed family acts as a wildcard (e.g. "gfx110X" matches "gfx1103").
 static bool device_matches_constraint(const std::string& device_family,
                                        const std::set<std::string>& allowed_families) {
     if (allowed_families.empty()) {
         return true;  // Empty = all families allowed
     }
-    return allowed_families.count(device_family) > 0;
+    if (allowed_families.count(device_family) > 0) {
+        return true;
+    }
+    for (const auto& af : allowed_families) {
+        if (af.size() > 1 && af.back() == 'X') {
+            std::string prefix = af.substr(0, af.size() - 1);
+            if (device_family.compare(0, prefix.size(), prefix) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Generic installation check
@@ -4056,6 +4074,85 @@ bool SystemInfo::is_running_under_systemd() {
     const char* invocation_id = std::getenv("INVOCATION_ID");
     return (journal_stream || invocation_id) && !isatty(STDOUT_FILENO);
 #endif
+}
+
+double SystemInfo::get_global_vram_usage_pct() {
+    // Report *global* GPU memory pressure (all processes, not just lemonade's),
+    // so the eviction engine yields VRAM when other apps (ComfyUI, games, etc.)
+    // consume it. Returns used/total in [0,1], or -1.0 if no source is available.
+    //
+    // Reuses the same detection sources as the rest of this file: nvidia-smi for
+    // NVIDIA (Linux + Windows) and AMD sysfs for Linux. macOS/Metal is unsupported
+    // for now and falls through to -1.0.
+
+    // NVIDIA: one query returns used + total for the first GPU.
+    {
+        std::string output;
+        int rc = lemon::utils::ProcessManager::run_command(
+            "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
+            output, 5);
+        if (rc == 0 && !output.empty()) {
+            std::istringstream iss(output);
+            std::string line;
+            if (std::getline(iss, line)) {
+                size_t comma = line.find(',');
+                if (comma != std::string::npos) {
+                    try {
+                        double used = std::stod(line.substr(0, comma));
+                        double total = std::stod(line.substr(comma + 1));
+                        if (total > 0.0) {
+                            return used / total;
+                        }
+                    } catch (...) {
+                        // fall through to other sources
+                    }
+                }
+            }
+        }
+    }
+
+#ifdef __linux__
+    // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
+    try {
+        const std::string drm_path = "/sys/class/drm";
+        if (fs::exists(drm_path)) {
+            double highest_ratio = -1.0;
+            for (const auto& entry : fs::directory_iterator(drm_path)) {
+                std::string card_name = entry.path().filename().string();
+                if (card_name.rfind("card", 0) != 0 || card_name.find('-') != std::string::npos) {
+                    continue;
+                }
+                std::string device_path = entry.path().string() + "/device";
+
+                uint64_t vram_used = 0;
+                uint64_t vram_total = 0;
+                {
+                    std::ifstream f(device_path + "/mem_info_vram_used");
+                    if (f.is_open()) f >> vram_used;
+                }
+                {
+                    std::ifstream f(device_path + "/mem_info_vram_total");
+                    if (f.is_open()) f >> vram_total;
+                }
+
+                if (vram_total > 0) {
+                    double ratio = static_cast<double>(vram_used) / static_cast<double>(vram_total);
+                    if (ratio > highest_ratio) {
+                        highest_ratio = ratio;
+                    }
+                }
+            }
+            if (highest_ratio >= 0.0) {
+                return highest_ratio;
+            }
+        }
+    } catch (...) {
+        // fall through
+    }
+#endif
+
+    // No supported VRAM source available on this platform/hardware.
+    return -1.0;
 }
 
 } // namespace lemon

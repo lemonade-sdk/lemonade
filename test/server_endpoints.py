@@ -40,6 +40,9 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SHARED_REPO_MODEL_A_NAME,
+    SHARED_REPO_MODEL_A_CHECKPOINT,
+    SHARED_REPO_MODEL_B_NAME,
     SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -47,6 +50,8 @@ from utils.test_models import (
     USER_MODEL_NAME,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_VAE_CHECKPOINT,
+    get_hf_cache_dir,
+    get_hf_cache_dir_candidates,
 )
 
 
@@ -681,8 +686,9 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
-    def _start_mock_cloud_provider(self, upstream_ids, chat_handler=None,
-                                    sse_chunks=None):
+    def _start_mock_cloud_provider(
+        self, upstream_ids, chat_handler=None, sse_chunks=None
+    ):
         """Spin up an in-process OpenAI-compatible mock provider.
 
         Serves GET /v1/models with the given ids and (optionally) POST
@@ -994,7 +1000,8 @@ class EndpointTests(ServerTestBase):
             return {"error": "mock should not have been reached"}
 
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id], chat_handler=chat_response,
+            [upstream_id],
+            chat_handler=chat_response,
         )
         try:
             requests.post(
@@ -1038,10 +1045,13 @@ class EndpointTests(ServerTestBase):
             # the body must be JSON with an `error` envelope that names
             # the missing-credentials condition — never an HTML stack-trace
             # or empty body — so a UI/CLI can route the user to /cloud/auth.
-            self.assertNotEqual(chat_resp.status_code, 200,
-                                "Chat must not succeed without creds")
+            self.assertNotEqual(
+                chat_resp.status_code, 200, "Chat must not succeed without creds"
+            )
             body = chat_resp.json()
-            self.assertIn("error", body, f"Missing structured error envelope: {chat_resp.text}")
+            self.assertIn(
+                "error", body, f"Missing structured error envelope: {chat_resp.text}"
+            )
             err = body["error"]
             self.assertIn("message", err, f"Error envelope missing message: {body}")
             self.assertIn("type", err, f"Error envelope missing type: {body}")
@@ -1053,7 +1063,8 @@ class EndpointTests(ServerTestBase):
             # The provider name should appear so multi-provider setups know
             # which one to authenticate.
             self.assertIn(
-                provider, err.get("details", {}).get("provider", "") + err["message"],
+                provider,
+                err.get("details", {}).get("provider", "") + err["message"],
                 f"Error should name the offending provider: {body}",
             )
         finally:
@@ -1096,7 +1107,8 @@ class EndpointTests(ServerTestBase):
             },
         ]
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id], sse_chunks=sse_chunks,
+            [upstream_id],
+            sse_chunks=sse_chunks,
         )
         try:
             requests.post(
@@ -1130,7 +1142,7 @@ class EndpointTests(ServerTestBase):
                     line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
                     if not line.startswith("data:"):
                         continue
-                    payload = line[len("data:"):].strip()
+                    payload = line[len("data:") :].strip()
                     if payload == "[DONE]":
                         saw_done = True
                         break
@@ -1140,7 +1152,8 @@ class EndpointTests(ServerTestBase):
                         deltas.append(delta["content"])
                 self.assertTrue(saw_done, "Stream must end with data: [DONE]")
                 self.assertEqual(
-                    "".join(deltas), "Hello",
+                    "".join(deltas),
+                    "Hello",
                     f"Streamed chunks did not assemble correctly: {deltas}",
                 )
         finally:
@@ -1227,7 +1240,9 @@ class EndpointTests(ServerTestBase):
             json={"backend": "cloud", "provider": "localhttpguard"},
             timeout=TIMEOUT_DEFAULT,
         )
-        print("[OK] /install rejects http:// to non-loopback hosts, allows http://localhost")
+        print(
+            "[OK] /install rejects http:// to non-loopback hosts, allows http://localhost"
+        )
 
     def test_012i_cloud_refresh_is_idempotent_no_duplicates(self):
         """refresh_cloud_models must evict-then-emplace this provider's prior
@@ -1264,7 +1279,8 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(resp.status_code, 200, resp.text)
             self.assertEqual(
-                resp.json()["models_discovered"], 2,
+                resp.json()["models_discovered"],
+                2,
                 "Re-auth must report the same count — refresh is supposed to "
                 "evict the provider's prior entries before re-emplacing",
             )
@@ -1277,7 +1293,8 @@ class EndpointTests(ServerTestBase):
             for uid in upstream_ids:
                 expected = f"{provider}.{uid}"
                 self.assertEqual(
-                    ids.count(expected), 1,
+                    ids.count(expected),
+                    1,
                     f"Expected {expected} exactly once in /models, ids={ids}",
                 )
         finally:
@@ -2147,6 +2164,368 @@ class EndpointTests(ServerTestBase):
                 except Exception:
                     pass
 
+    def test_021t_inline_collection_missing_def_rejected(self):
+        """Inline collection imports fail closed: a component with no matching
+        definition in `models` (and not already registered) must be rejected,
+        not silently dropped into a smaller, different collection."""
+        suffix = uuid.uuid4().hex[:8]
+        collection_name = f"user.InlineColl-{suffix}"
+        defined = f"InlineComp-{suffix}"
+        missing = f"MissingComp-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                # `components` lists two, but `models` defines only one and the
+                # other is not a registered model -> the import must be rejected.
+                "components": [defined, missing],
+                "models": [
+                    {
+                        "model_name": defined,
+                        "recipe": "llamacpp",
+                        "checkpoints": {"main": USER_MODEL_MAIN_CHECKPOINT},
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("matching definition", response.json().get("error", "").lower())
+
+        # Fail-closed: the rejected collection must not have been persisted.
+        models_response = requests.get(
+            f"{self.base_url}/models?show_all=true",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(models_response.status_code, 200)
+        ids = {m["id"] for m in models_response.json()["data"]}
+        self.assertNotIn(
+            collection_name[5:],
+            ids,
+            "Rejected inline collection must not be persisted",
+        )
+        print("[OK] Inline collection with missing component def rejected with 400")
+
+    def test_021u_inline_collection_invalid_def_rejected(self):
+        """Inline collection imports fail closed on a *malformed* component def:
+        a `models` entry whose name matches but is missing the minimum a real
+        registration needs (recipe + checkpoint) must be rejected up front, not
+        registered as a half-defined user.* model that fails later mid-download."""
+        suffix = uuid.uuid4().hex[:8]
+        collection_name = f"user.InvalidColl-{suffix}"
+        comp = f"InvalidComp-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                "components": [comp],
+                # Name matches `components`, but the def has no recipe and no
+                # checkpoint -> not a usable registration -> must be rejected.
+                "models": [{"model_name": comp}],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("incomplete definition", response.json().get("error", "").lower())
+
+        # Fail-closed: neither the collection nor the half-defined component
+        # may have been persisted as a side effect.
+        models_response = requests.get(
+            f"{self.base_url}/models?show_all=true",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(models_response.status_code, 200)
+        ids = {m["id"] for m in models_response.json()["data"]}
+        self.assertNotIn(
+            collection_name[5:], ids, "Rejected collection must not persist"
+        )
+        self.assertNotIn(comp, ids, "Half-defined component must not be registered")
+        print("[OK] Inline collection with invalid component def rejected with 400")
+
+    def test_021v_collection_self_reference_bare_name_rejected(self):
+        """A collection that lists itself as a component by its *bare* name (e.g.
+        `user.MyCol` with components ["MyCol"]) must be rejected, not just the
+        exact `user.`-qualified spelling — otherwise it resolves back to itself."""
+        suffix = uuid.uuid4().hex[:8]
+        bare = f"SelfRefColl-{suffix}"
+        collection_name = f"user.{bare}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                # Bare self-reference: must be caught by the bare-form comparison.
+                "components": [bare],
+                "models": [
+                    {
+                        "model_name": bare,
+                        "recipe": "collection.omni",
+                        "components": [ENDPOINT_TEST_MODEL],
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("reference itself", response.json().get("error", "").lower())
+
+        models_response = requests.get(
+            f"{self.base_url}/models?show_all=true",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(models_response.status_code, 200)
+        ids = {m["id"] for m in models_response.json()["data"]}
+        self.assertNotIn(bare, ids, "Self-referential collection must not persist")
+        print("[OK] Bare-name self-referential collection rejected with 400")
+
+    def _server_hf_cache_root(self, probe_repo_dir):
+        """Return the HF cache root the *server* actually uses, verified by
+        locating a repo dir the server already downloaded (`probe_repo_dir`), or
+        None if it can't be located from this process.
+
+        The server's cache may live somewhere the test process can't compute or
+        read — e.g. a config.json `models_dir` override, or a packaged server
+        (macOS .pkg) running under a different user/HOME. We probe candidates
+        (config models_dir, then env/platform defaults) for a known-downloaded
+        repo; if none match, the test can't stage a manifest where the server
+        will read it, so the caller should skip."""
+        candidates = []
+        try:
+            cfg = requests.get(
+                f"http://localhost:{PORT}/internal/config", timeout=TIMEOUT_DEFAULT
+            ).json()
+            models_dir = cfg.get("models_dir", "") or ""
+            if models_dir and models_dir != "auto" and os.path.isabs(models_dir):
+                candidates.append(models_dir)
+        except Exception:
+            pass
+        candidates.extend(get_hf_cache_dir_candidates())
+        for root in candidates:
+            if os.path.isdir(os.path.join(root, probe_repo_dir)):
+                return root
+        return None
+
+    def _write_collection_manifest(self, cache_root, repo_id, components, models):
+        """Write a fake HF-cached collection manifest for `repo_id` into the HF
+        cache (refs/main + a snapshot dir), mimicking a repo pulled by
+        `lemonade pull <org>/<repo>`. Returns the repo cache dir path."""
+        repo_dir = os.path.join(cache_root, "models--" + repo_id.replace("/", "--"))
+        snapshot = os.path.join(repo_dir, "snapshots", "rev1")
+        os.makedirs(snapshot, exist_ok=True)
+        os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+        with open(os.path.join(repo_dir, "refs", "main"), "w", encoding="utf-8") as f:
+            f.write("rev1")
+        manifest = {
+            "model_name": repo_id.split("/")[-1],
+            "recipe": "collection.omni",
+            "checkpoints": {"main": ""},
+            "components": components,
+            "models": models,
+        }
+        # Content-based discovery: the filename is not load-bearing for the cache
+        # reader, but use the documented <RepoName>.json convention anyway.
+        with open(
+            os.path.join(snapshot, repo_id.split("/")[-1] + ".json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(manifest, f)
+        return repo_dir
+
+    def _collection_components(self, model_id):
+        r = requests.get(f"{self.base_url}/models/{model_id}", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json().get("components", [])
+
+    def test_021w_hf_backed_collection_refresh_is_pointer_only(self):
+        """HF-backed collections are pointer-only: the pull body is just a repo
+        pointer (the real `lemonade pull <org>/<repo>` shape — no inline
+        components/models), /pull resolves components from the manifest on disk,
+        nothing is persisted in user_models.json, and a changed manifest is
+        reflected on re-pull (the Codex/fl0rianr staleness scenario). The staged
+        manifest stands in for what /pull's own download step writes to disk;
+        the real network download of the manifest is exercised by server_omni.py.
+        Uses already-downloaded components so the refresh needs no network."""
+        suffix = uuid.uuid4().hex[:8]
+        repo_id = f"lemontest/RefreshKit-{suffix}"
+        collection = f"user.RefreshKit-{suffix}"
+        # Component A: the always-present built-in test model.
+        comp_a = ENDPOINT_TEST_MODEL
+        a_def = {
+            "model_name": comp_a,
+            "recipe": "llamacpp",
+            "checkpoints": {"main": USER_MODEL_MAIN_CHECKPOINT},
+        }
+        # Component B: a user model we pre-pull so it is already downloaded; the
+        # refresh that adds it must not require a network fetch.
+        comp_b = f"RefreshB-{suffix}"
+        b_def = {
+            "model_name": comp_b,
+            "recipe": "llamacpp",
+            "checkpoints": {"main": USER_MODEL_MAIN_CHECKPOINT},
+        }
+        repo_dir = None
+        try:
+            # Pre-download component B as a standalone user model.
+            pull_b = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": f"user.{comp_b}",
+                    "recipe": b_def["recipe"],
+                    "checkpoints": b_def["checkpoints"],
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_b.status_code, 200, pull_b.text)
+
+            # Discover the server's real HF cache root by locating the repo it
+            # just downloaded for component B (config models_dir overrides can put
+            # it where the test side wouldn't compute, e.g. macOS .pkg installs).
+            b_repo_dir = "models--" + USER_MODEL_MAIN_CHECKPOINT.split(":")[0].replace(
+                "/", "--"
+            )
+            cache_root = self._server_hf_cache_root(b_repo_dir)
+            if cache_root is None:
+                self.skipTest(
+                    "Cannot locate the server's HF cache from the test process "
+                    "(e.g. packaged server under a different user); the HF-backed "
+                    "refresh path is covered end-to-end by server_omni.py."
+                )
+
+            # Manifest v1 on disk (stands in for /pull's own manifest download).
+            repo_dir = self._write_collection_manifest(
+                cache_root, repo_id, [comp_a], [a_def]
+            )
+
+            # Register the HF-backed collection with the real hf_pull POINTER body:
+            # model name + recipe + the repo as the checkpoint. No inline
+            # components/models — /pull resolves them from the manifest on disk.
+            reg = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection,
+                    "recipe": "collection.omni",
+                    "checkpoints": {"main": repo_id},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(reg.status_code, 200, reg.text)
+
+            # Pointer-only: components must NOT be persisted in the registry.
+            self.assertEqual(
+                sorted(self._collection_components(collection)),
+                sorted([comp_a]),
+                "Collection should expose the manifest's single component",
+            )
+
+            # Manifest v2: add component B upstream, then refresh via re-pull.
+            self._write_collection_manifest(
+                cache_root, repo_id, [comp_a, comp_b], [a_def, b_def]
+            )
+            refresh = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": collection, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(refresh.status_code, 200, refresh.text)
+
+            # The new component must now be reflected — proving the registry did
+            # not shadow the refreshed manifest with a stale persisted list. A
+            # unique user.* component surfaces under its bare public name.
+            components = self._collection_components(collection)
+            self.assertIn(comp_a, components)
+            self.assertIn(
+                comp_b,
+                components,
+                "Refreshed manifest's added component must appear after re-pull",
+            )
+            print("[OK] HF-backed collection refresh reflects changed manifest")
+        finally:
+            for name in (collection, f"user.{comp_b}"):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            if repo_dir and os.path.isdir(repo_dir):
+                shutil.rmtree(repo_dir, ignore_errors=True)
+
+    def test_021x_reject_nested_collection_by_name(self):
+        """Nested collections are not supported: a collection whose component
+        names an already-registered collection (here the built-in
+        LMX-Omni-5.5B-Lite) must be rejected — components must be leaf models."""
+        collection_name = f"user.NestByName-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                "components": ["LMX-Omni-5.5B-Lite"],  # a built-in collection
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not collections", response.json().get("error", "").lower())
+        ids = {
+            m["id"]
+            for m in requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()["data"]
+        }
+        self.assertNotIn(
+            collection_name[5:], ids, "Rejected collection must not persist"
+        )
+        print("[OK] Nested collection (component is a registered collection) rejected")
+
+    def test_021y_reject_nested_collection_inline_def(self):
+        """Nested collections are not supported: a component whose inline `models`
+        definition is itself a collection (recipe collection.omni) must be
+        rejected, not registered."""
+        suffix = uuid.uuid4().hex[:8]
+        collection_name = f"user.NestInline-{suffix}"
+        child = f"NestChild-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                "components": [child],
+                "models": [
+                    {
+                        "model_name": child,
+                        "recipe": "collection.omni",  # nested → must be rejected
+                        "components": [ENDPOINT_TEST_MODEL],
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not collections", response.json().get("error", "").lower())
+        ids = {
+            m["id"]
+            for m in requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()["data"]
+        }
+        self.assertNotIn(
+            collection_name[5:], ids, "Rejected collection must not persist"
+        )
+        self.assertNotIn(child, ids, "Nested child collection must not be registered")
+        print("[OK] Nested collection (inline collection component def) rejected")
+
     def test_021o_load_collection_routes_through_component_branch(self):
         """POST /load on a collection must not route the collection itself
         through the generic HF download path (collections have no checkpoint).
@@ -2882,6 +3261,155 @@ class EndpointTests(ServerTestBase):
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    def test_034_shared_repo_variant_resolves_after_refs_main_advances(self):
+        """Regression for #2300: two models sharing one HF repo with different
+        quants must both stay resolvable after refs/main advances past one of them.
+
+        HF refs/main is a single sticky per-repo pointer (advanced only on a
+        successful pull). When a sibling variant is pulled/updated, refs/main moves
+        to a snapshot that contains only that variant; the other variant stays in
+        the previous snapshot, so refs/main no longer covers both. On the next
+        models-cache build (i.e. after a lemond restart) the GGUF resolver, which
+        searches only the refs/main snapshot, then reports the variant not covered
+        by refs/main as not downloaded even though its file is still cached. The fix
+        broadens the resolver to fall back to all snapshots when the active one
+        lacks the requested variant.
+
+        Repro without waiting for a real upstream commit: pull both variants (they
+        land in one snapshot under the current commit), then move one variant into a
+        fresh snapshot and repoint refs/main at it, so the two variants live in
+        different snapshots. The models cache is then rebuilt by pulling an
+        unrelated model from a *different* repo (re-pulling a shared-repo model would
+        query HF and repair refs/main, masking the bug).
+        """
+        a_name = SHARED_REPO_MODEL_A_NAME
+        b_name = SHARED_REPO_MODEL_B_NAME
+        repo_id, a_file = SHARED_REPO_MODEL_A_CHECKPOINT.split(":", 1)
+        b_file = SHARED_REPO_MODEL_B_CHECKPOINT.split(":", 1)[1]
+        repo_cache_dir = "models--" + repo_id.replace("/", "--")
+        throwaway = f"user.OrphanRebuild-{uuid.uuid4().hex[:8]}"
+
+        def _pull(model_name, checkpoint):
+            r = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "recipe": "llamacpp",
+                    "checkpoints": {"main": checkpoint},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+
+        def _delete(model_name):
+            # Best-effort cleanup; ignore status so one failure does not mask others.
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+            except requests.RequestException:
+                pass
+
+        def _downloaded(model_name):
+            # GET /models/{id} -> get_model_info() -> build_cache(), so this re-runs
+            # the on-disk resolver against the staged cache state.
+            r = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+            return r.json().get("downloaded", False)
+
+        try:
+            # 1. Pull both variants of the shared repo. With a single upstream commit
+            #    both files land in the same snapshots/<commit>/ directory.
+            _pull(a_name, SHARED_REPO_MODEL_A_CHECKPOINT)
+            _pull(b_name, SHARED_REPO_MODEL_B_CHECKPOINT)
+            self.assertTrue(_downloaded(a_name), "Variant A should download")
+            self.assertTrue(_downloaded(b_name), "Variant B should download")
+
+            # Locate the server's real HF cache (handles config models_dir overrides
+            # and packaged servers running under a different user/HOME).
+            cache_root = self._server_hf_cache_root(repo_cache_dir)
+            if cache_root is None:
+                self.skipTest(
+                    "Cannot locate the server's HF cache from the test process; "
+                    "the shared-repo resolution path needs on-disk snapshot access."
+                )
+
+            repo_dir = os.path.join(cache_root, repo_cache_dir)
+            snapshots_dir = os.path.join(repo_dir, "snapshots")
+            refs_main = os.path.join(repo_dir, "refs", "main")
+
+            with open(refs_main, encoding="utf-8") as f:
+                cur_rev = f.read().strip()
+            cur_snapshot = os.path.join(snapshots_dir, cur_rev)
+            a_in_cur = os.path.join(cur_snapshot, a_file)
+            b_in_cur = os.path.join(cur_snapshot, b_file)
+            if not (os.path.exists(a_in_cur) and os.path.exists(b_in_cur)):
+                self.skipTest(
+                    "Shared-repo variants are not co-located in the active snapshot "
+                    "(upstream layout changed); cannot stage the orphan."
+                )
+
+            # 2. Simulate an upstream commit being pulled for one variant: move B
+            #    into a fresh snapshot and advance refs/main to it. This mirrors what
+            #    a real pull does — only the freshly pulled file lands in the new
+            #    snapshot, so the two variants no longer share one snapshot and
+            #    refs/main no longer covers both of them. (The repo here stores real
+            #    files in the snapshot dirs, so the file is relocated directly.)
+            new_rev = "0" * 40
+            new_snapshot = os.path.join(snapshots_dir, new_rev)
+            os.makedirs(new_snapshot, exist_ok=True)
+            os.rename(b_in_cur, os.path.join(new_snapshot, b_file))
+            os.makedirs(os.path.dirname(refs_main), exist_ok=True)
+            with open(refs_main, "w", encoding="utf-8") as f:
+                f.write(new_rev)
+
+            # Sanity: each variant now lives in a different snapshot, and refs/main
+            # points at the one that holds only B.
+            self.assertTrue(
+                os.path.exists(os.path.join(new_snapshot, b_file)),
+                "Setup error: B must be in the new refs/main snapshot",
+            )
+            self.assertFalse(
+                os.path.exists(os.path.join(new_snapshot, a_file)),
+                "Setup error: A must not be in the new refs/main snapshot",
+            )
+            self.assertTrue(
+                os.path.exists(a_in_cur),
+                "Setup error: A must remain in the previous snapshot",
+            )
+
+            # 3. Force a models-cache rebuild without touching the shared repo (this
+            #    is what a lemond restart would do). Pulling an unrelated model from a
+            #    different repo invalidates the cache so the resolver re-runs.
+            _pull(throwaway, USER_MODEL_MAIN_CHECKPOINT)
+
+            # 4. #2300: both variants are still physically cached (one in each
+            #    snapshot), so both must resolve as downloaded. Before the fix the
+            #    resolver searched only the refs/main snapshot, so the variant not
+            #    covered by refs/main was reported missing.
+            self.assertTrue(
+                _downloaded(b_name),
+                "#2300: variant B must remain downloaded after refs/main advances "
+                "(its file is still cached, in the new snapshot)",
+            )
+            self.assertTrue(
+                _downloaded(a_name),
+                "#2300: variant A must remain downloaded after refs/main advances "
+                "(its file is still cached, in the previous snapshot)",
+            )
+            print(
+                "[OK] #2300 shared-repo variants both resolve after refs/main advance"
+            )
+        finally:
+            _delete(a_name)
+            _delete(b_name)
+            _delete(throwaway)
 
 
 if __name__ == "__main__":

@@ -209,6 +209,44 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         return 1;
     }
 
+    // Omni collection repos: /pull/variants only inspected the repo and told us
+    // it is a collection. Send a *pointer* /pull body — model name + recipe +
+    // the repo as the checkpoint. /pull does the actual downloading: it fetches
+    // <RepoName>.json to disk and then pulls each component's weights. (We do not
+    // forward the manifest content; /pull re-downloads it as the pull step, which
+    // keeps inspection and download cleanly separated and mirrors regular models,
+    // where the .gguf is downloaded by /pull rather than carried in the body.)
+    if (variants_response.value("repo_kind", "") == "collection") {
+        if (!variant.empty()) {
+            std::cerr << "warning: variant '" << variant
+                      << "' ignored for Omni collection repositories" << std::endl;
+        }
+
+        std::string model_name = normalize_user_model_name(
+            variants_response.value("suggested_name", checkpoint));
+
+        json pull_body;
+        pull_body["model_name"] = model_name;
+        pull_body["recipe"] = "collection.omni";
+        // The repo is the checkpoint pointer; /pull resolves components from the
+        // manifest it downloads to disk, and a later `lemonade pull <name>`
+        // refreshes them from Hugging Face.
+        pull_body["checkpoints"] = json::object();
+        pull_body["checkpoints"]["main"] = checkpoint;
+
+        std::string display_name = model_name.substr(std::string("user.").size());
+        size_t component_count = variants_response.value("component_count", static_cast<size_t>(0));
+        std::cout << "Pulling Omni collection " << checkpoint << " as " << display_name
+                  << " (" << component_count
+                  << (component_count == 1 ? " component" : " components");
+        if (variants_response.contains("size") && variants_response["size"].is_number()) {
+            std::cout << ", ~" << variants_response["size"].get<double>() << " GB";
+        }
+        std::cout << ")" << std::endl;
+
+        return client.pull_model(pull_body, display_name, /*upgrade=*/true);
+    }
+
     if (!variants_response.contains("variants") || !variants_response["variants"].is_array() ||
         variants_response["variants"].empty()) {
         std::cerr << "No GGUF variants found for '" << checkpoint << "'." << std::endl;

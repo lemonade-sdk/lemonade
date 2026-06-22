@@ -1,4 +1,5 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -127,6 +128,21 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
     const fs::path version_file = "/opt/rocm/.info/version";
     const std::string system_version = read_version_file(version_file);
     return runtime_version_matches_expected(system_version, expected_runtime_version);
+}
+
+
+bool backend_update_required(const std::string& recipe, const std::string& backend) {
+    for (const auto& recipe_status : SystemInfo::get_all_recipe_statuses()) {
+        if (recipe_status.name != recipe) {
+            continue;
+        }
+        for (const auto& backend_status : recipe_status.backends) {
+            if (backend_status.name == backend) {
+                return backend_status.state == "update_required";
+            }
+        }
+    }
+    return false;
 }
 
 bool will_install_therock(const std::string& os, const json& backend_versions) {
@@ -354,24 +370,40 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // any UI/metadata callers that still touch this code path.
     if (utils::looks_like_path(raw)) return pinned_version;
 
-    // "latest" → ask GitHub. If offline and a previously-installed version is
-    // recorded, reuse it instead of failing.
+    // "latest" → ask GitHub for the newest release. The lookup can be skipped
+    // (offline) or fail (e.g. HTTP 504, network error); in either case fall back
+    // to the binary already installed rather than refusing to load a model that
+    // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
-        if (cfg->offline()) {
-            std::string install_dir = backends::BackendUtils::get_install_directory(
-                recipe, resolved_backend);
-            std::string cached = read_version_file(fs::path(install_dir) / "version.txt");
-            if (!cached.empty()) {
+        const bool offline = cfg->offline();
+        // A non-throwing lookup so a transient GitHub failure becomes a fallback
+        // rather than an exception. Skipped entirely when offline.
+        std::string fetched = offline
+            ? std::string()
+            : fetch_latest_github_tag(repo, /*throw_on_failure=*/false);
+
+        // The install directory is not version-scoped, so version.txt always
+        // reflects the most recently installed binary for this (recipe, backend).
+        std::string install_dir = backends::BackendUtils::get_install_directory(
+            recipe, resolved_backend);
+        std::string installed = read_version_file(fs::path(install_dir) / "version.txt");
+
+        LatestPinResolution resolution =
+            resolve_latest_pin(recipe, resolved_backend, offline, fetched, installed);
+        if (!resolution.version.empty()) {
+            if (resolution.used_installed_fallback && offline) {
                 LOG(WARNING, "BackendManager") << "offline: reusing installed " << recipe
                                                << ":" << resolved_backend << " version "
-                                               << cached << " for 'latest'" << std::endl;
-                return cached;
+                                               << resolution.version << " for 'latest'" << std::endl;
+            } else if (resolution.used_installed_fallback) {
+                LOG(WARNING, "BackendManager") << "could not resolve 'latest' for " << recipe
+                                               << ":" << resolved_backend
+                                               << "; falling back to installed version "
+                                               << resolution.version << std::endl;
             }
-            throw std::runtime_error(
-                "Cannot resolve 'latest' for " + recipe + ":" + resolved_backend
-                + ": offline mode and no installed version found");
+            return resolution.version;
         }
-        return fetch_latest_github_tag(repo, /*throw_on_failure=*/true);
+        throw std::runtime_error(resolution.error);
     }
 
     // Otherwise: a bare upstream release tag (e.g. "b8664"). Pass through.
@@ -450,10 +482,18 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // `will_install_therock` intentionally answers whether TheRock is applicable
     // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
     // Do that here before inflating the install to a multi-file UX flow.
-    const bool needs_therock_download = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                                        resolved_backend == "rocm-stable" &&
-                                        will_install_therock(get_current_os(), backend_versions_) &&
-                                        !is_therock_installed_for_current_arch(backend_versions_);
+    const std::string os = get_current_os();
+    const bool is_rocm_stable_backend =
+        (recipe == "llamacpp" || recipe == "sd-cpp") &&
+        resolved_backend == "rocm-stable";
+    const bool therock_applicable =
+        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
+    const bool rocm_runtime_update_required =
+        therock_applicable && backend_update_required(recipe, backend);
+    const bool needs_therock_download =
+        therock_applicable &&
+        (rocm_runtime_update_required ||
+         !is_therock_installed_for_current_arch(backend_versions_));
 
     struct RuntimeInstallStep {
         std::string name;
@@ -462,10 +502,27 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     std::vector<RuntimeInstallStep> runtime_steps;
     if (needs_therock_download) {
-        const std::string os = get_current_os();
         runtime_steps.push_back({
             "TheRock runtime",
-            [this, os](DownloadProgressCallback runtime_progress_cb) {
+            [this, os, rocm_runtime_update_required](DownloadProgressCallback runtime_progress_cb) {
+                if (rocm_runtime_update_required) {
+                    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+                    if (rocm_arch.empty()) {
+                        throw std::runtime_error("Cannot repair TheRock runtime: ROCm architecture could not be detected");
+                    }
+
+                    const std::string version = backend_versions_["therock"]["version"].get<std::string>();
+                    const std::string install_dir =
+                        backends::BackendUtils::get_therock_install_dir(rocm_arch, version);
+
+                    std::error_code ec;
+                    fs::remove_all(install_dir, ec);
+                    if (ec) {
+                        throw std::runtime_error("Failed to remove existing TheRock runtime '" +
+                                                 install_dir + "': " + ec.message());
+                    }
+                }
+
                 install_therock_if_needed(os, backend_versions_, runtime_progress_cb);
             }
         });

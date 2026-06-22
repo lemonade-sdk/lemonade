@@ -18,9 +18,11 @@ import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
-import { EjectIcon } from './components/Icons';
+import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
+import { mergeWithDefaultSettings } from './utils/appSettings';
+import { tauriReady } from './tauriShim';
 
 interface ModelFamily {
   displayName: string;
@@ -356,6 +358,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const [showFilterPanel, setShowFilterPanel] = useState(false);
 const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
+  const [pinnedModels, setPinnedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [optionsModel, setOptionsModel] = useState<string | null>(null);
@@ -378,6 +381,41 @@ const [searchQuery, setSearchQuery] = useState('');
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
+  useEffect(() => {
+    const loadModelManagerSettings = async () => {
+      try {
+        await tauriReady;
+        if (!window.api?.getSettings) return;
+        const settings = mergeWithDefaultSettings(await window.api.getSettings());
+        setShowDownloadedOnly(settings.modelManager.showDownloadedOnly);
+      } catch (error) {
+        console.error('Failed to load model manager settings:', error);
+      }
+    };
+
+    loadModelManagerSettings();
+  }, []);
+
+  const updateShowDownloadedOnly = useCallback(async (checked: boolean) => {
+    setShowDownloadedOnly(checked);
+    setShowFilterPanel(false);
+
+    try {
+      await tauriReady;
+      if (!window.api?.getSettings || !window.api?.saveSettings) return;
+      const currentSettings = await window.api.getSettings();
+      await window.api.saveSettings({
+        ...currentSettings,
+        modelManager: {
+          ...currentSettings.modelManager,
+          showDownloadedOnly: checked,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save model manager settings:', error);
+    }
+  }, []);
+
   const fetchCurrentLoadedModel = useCallback(async () => {
     try {
       const response = await serverFetch('/health');
@@ -390,6 +428,14 @@ const [searchQuery, setSearchQuery] = useState('');
         );
         setLoadedModels(loadedModelNames);
 
+        // Extract pinned models from the all_models_loaded array
+        const pinnedModelNames = new Set<string>(
+          data.all_models_loaded
+            .filter((model: any) => model.pinned === true)
+            .map((model: any) => model.model_name)
+        );
+        setPinnedModels(pinnedModelNames);
+
         // Remove loaded models from loading state
         setLoadingModels(prev => {
           const newSet = new Set(prev);
@@ -398,9 +444,11 @@ const [searchQuery, setSearchQuery] = useState('');
         });
       } else {
         setLoadedModels(new Set());
+        setPinnedModels(new Set());
       }
     } catch (error) {
       setLoadedModels(new Set());
+      setPinnedModels(new Set());
       console.error('Failed to fetch current loaded model:', error);
     }
   }, []);
@@ -1235,6 +1283,22 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
+  const handleTogglePin = async (modelName: string, pin: boolean) => {
+    try {
+      const response = await serverFetch('/internal/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelName, pinned: pin })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to pin model: ${response.statusText}`);
+      }
+      await fetchCurrentLoadedModel();
+    } catch (error) {
+      showError(`Failed to update pin: ${error instanceof Error ? error.message : 'Unknown'}`);
+    }
+  };
+
   const hasActiveDownloadForModel = (modelName: string): boolean => {
     const relatedNames = new Set<string>([modelName]);
     const info = modelsData[modelName];
@@ -1853,8 +1917,7 @@ const [searchQuery, setSearchQuery] = useState('');
                     <span className="toggle-label-text">Downloaded only</span>
                     <div className="toggle-switch">
                       <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => {
-                        setShowDownloadedOnly(e.target.checked);
-                        setShowFilterPanel(false);
+                        updateShowDownloadedOnly(e.target.checked);
                       }} />
                       <span className="toggle-slider"></span>
                     </div>
@@ -1884,9 +1947,18 @@ const [searchQuery, setSearchQuery] = useState('');
                       <span className="loaded-model-name" title={modelName}>{getModelDisplayName(modelName)}</span>
                     </div>
                     {!isLoading && (
-                      <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                        <EjectIcon />
-                      </button>
+                      <div className="active-model-actions">
+                        <button
+                          className={`model-action-btn pin-btn ${pinnedModels.has(modelName) ? 'pinned' : ''}`}
+                          onClick={() => handleTogglePin(modelName, !pinnedModels.has(modelName))}
+                          title={pinnedModels.has(modelName) ? "Unpin model" : "Pin model"}
+                        >
+                          <PinIcon fill={pinnedModels.has(modelName) ? 'currentColor' : 'none'} />
+                        </button>
+                        <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
+                          <EjectIcon />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}

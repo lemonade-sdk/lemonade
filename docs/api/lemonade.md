@@ -18,6 +18,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
@@ -114,13 +115,14 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register an Omni-Model**
 
-An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+An omni collection is a collection type that bundles several models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+| `components` | Yes | Ordered, non-empty array of model names. Each component must be a regular model. |
+| `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
 
@@ -135,6 +137,15 @@ curl -X POST http://localhost:13305/v1/pull \
     "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
 ```
+
+### Import an Exported Model File
+
+Files written by `lemonade export` (and the desktop app's Export button) are import-ready
+`/v1/pull` request bodies — POST the file contents verbatim to register and install the model.
+This works for regular models and collections alike; exported collection files additionally
+carry `components` plus a `models` array embedding each component's definition (see the
+`models` parameter above). For the file format and the export/import/Hugging Face workflows,
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ### Streaming Response (stream=true)
 
@@ -430,6 +441,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
+| `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -599,6 +611,8 @@ Error response (model not found):
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -629,6 +643,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
       "recipe_options": {
@@ -642,6 +657,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
       "recipe_options": {
@@ -652,6 +668,14 @@ curl http://localhost:13305/v1/health
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
+  "pinned_models": {
+    "transcription":0,
+    "embedding":0,
+    "image":0,
+    "llm":1,
+    "reranking":0,
+    "tts":0
+  },
   "max_models": {
     "transcription":1,
     "embedding":1,
@@ -676,10 +700,12 @@ curl http://localhost:13305/v1/health
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+- `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -723,6 +749,43 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /v1/system-stats`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Current host resource usage as measured by the Lemonade Server process. This endpoint is useful for first-party clients and dashboards that need lightweight runtime telemetry without scraping Prometheus.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/system-stats
+```
+
+### Response format
+
+```json
+{
+  "cpu_percent": 12.3,
+  "memory_gb": 8.4,
+  "gpu_percent": 45.0,
+  "vram_gb": 2.1,
+  "npu_percent": null
+}
+```
+
+**Field Descriptions:**
+
+- `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
+- `memory_gb` - System RAM currently in use, in GiB
+- `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+- `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `npu_percent` - NPU utilization percentage, or `null` when unavailable
+
+GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

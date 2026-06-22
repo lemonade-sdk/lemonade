@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.7.0)
+project(lemon_cpp VERSION 10.8.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -583,9 +583,12 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
+    src/cpp/server/global_vram_monitor.cpp
+    src/cpp/server/eviction_engine.cpp
     src/cpp/server/cli_parser.cpp
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
+    src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -617,6 +620,7 @@ set(SOURCES_CORE
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
+    src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
@@ -1402,6 +1406,34 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
+    # Helper: create a systemd unit symlink with fatal-error-on-failure semantics
+    function(lemonade_install_systemd_symlink link_path target_path)
+        get_filename_component(_link_dir "${link_path}" DIRECTORY)
+
+        install(CODE "
+            set(_link \"\$ENV{DESTDIR}${link_path}\")
+            set(_target \"${target_path}\")
+
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_link_dir}\")
+
+            if(IS_SYMLINK \"\${_link}\")
+                file(REMOVE \"\${_link}\")
+            elseif(EXISTS \"\${_link}\")
+                message(FATAL_ERROR \"Refusing to replace existing non-symlink: \${_link}\")
+            endif()
+
+            execute_process(
+                COMMAND \"${CMAKE_COMMAND}\" -E create_symlink \"\${_target}\" \"\${_link}\"
+                RESULT_VARIABLE _result
+                ERROR_VARIABLE _error
+            )
+
+            if(NOT _result EQUAL 0)
+                message(FATAL_ERROR \"Failed to create systemd symlink \${_link} -> \${_target}: \${_error}\")
+            endif()
+        ")
+    endfunction()
+
     # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond.service.in
@@ -1413,17 +1445,17 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemond.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
-    # Create symlink in standard systemd search path only if not installing to /usr
+    # Create symlinks in standard systemd search paths only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemond.service\"
-            )
-        ")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/system/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
+        )
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
+        )
     endif()
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
@@ -1669,3 +1701,89 @@ add_custom_target(embeddable
 
 message(STATUS "Embeddable archive target available: cmake --build . --target embeddable")
 message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
+
+# ============================================================
+# C++ Unit Tests
+# ============================================================
+set(_DIR_WATCHER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
+)
+set(_DIR_WATCHER_LIB_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/directory_watcher.cpp"
+)
+if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
+    add_executable(test_directory_watcher
+        test/cpp/test_directory_watcher.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_directory_watcher PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    if(UNIX)
+        target_link_libraries(test_directory_watcher PRIVATE pthread)
+        target_link_options(test_directory_watcher PRIVATE -pthread)
+    endif()
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
+endif()
+
+# GGUF capability detection (MTP / vision / tool-calling label logic).
+# Header-only unit under test, so no extra source files are required.
+set(_GGUF_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_capabilities.cpp"
+)
+if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
+    add_executable(test_gguf_capabilities
+        test/cpp/test_gguf_capabilities.cpp
+    )
+    target_include_directories(test_gguf_capabilities PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
+endif()
+
+# Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
+# logic, so the test links nothing beyond the standard library — regression
+# coverage for #2265 (fall back to the installed binary when the GitHub
+# "latest" lookup fails).
+set(_LATEST_FALLBACK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_latest_version_fallback.cpp"
+)
+if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
+    add_executable(test_latest_version_fallback
+        test/cpp/test_latest_version_fallback.cpp
+    )
+    target_include_directories(test_latest_version_fallback PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
+endif()
+
+# Backend install atomicity (staging + verified atomic swap).
+# Header-only unit under test, so no extra source files are required.
+set(_INSTALL_ATOMICITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_install_atomicity.cpp"
+)
+if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
+    add_executable(test_install_atomicity
+        test/cpp/test_install_atomicity.cpp
+    )
+    target_include_directories(test_install_atomicity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
+endif()

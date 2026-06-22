@@ -14,9 +14,16 @@ namespace lemon {
 namespace utils {
 
 struct HttpResponse {
-    int status_code;
+    int status_code = 0;
     std::string body;
     std::map<std::string, std::string> headers;
+
+    // Transport status from libcurl. For non-streaming callers this remains
+    // CURLE_OK/0 because transport errors are thrown. Streaming callers need the
+    // original code so they can distinguish a clean [DONE] from an interrupted
+    // backend connection that happened after HTTP headers were received.
+    int curl_code = 0;
+    std::string curl_error;
 };
 
 struct MultipartField {
@@ -65,7 +72,6 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
-    // Set default timeout for all requests
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }

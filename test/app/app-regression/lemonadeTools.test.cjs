@@ -9,6 +9,7 @@ const {
 const LEMONADE_TOOLS = 'src/app/src/renderer/utils/lemonadeTools.ts';
 const TOOL_DEFINITIONS = 'src/app/src/renderer/utils/toolDefinitions.json';
 const IMAGE_CONFIG = 'src/app/src/renderer/utils/collectionImageConfig.ts';
+const LLM_CHAT_PANEL = 'src/app/src/renderer/components/panels/LLMChatPanel.tsx';
 
 function readToolDefinitions() {
   return JSON.parse(readSource(TOOL_DEFINITIONS));
@@ -41,6 +42,65 @@ const tests = [
     },
   },
   {
+    name: 'image tools keep default size optional and expose only one canvas-size argument',
+    run() {
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assert.deepEqual(byName.generate_image.function.parameters.required, ['prompt']);
+      assert.deepEqual(byName.edit_image.function.parameters.required, ['prompt']);
+
+      const generateProps = byName.generate_image.function.parameters.properties;
+      const editProps = byName.edit_image.function.parameters.properties;
+
+      for (const props of [generateProps, editProps]) {
+        assertIncludes(
+          props.size.description,
+          'Omit by default',
+          'The planner should not have to emit a default size argument for every image request.',
+        );
+        assertIncludes(props.size.description, 'output', 'Size should be framed as output canvas, not content detail.');
+        assertIncludes(
+          props.size.description,
+          'nearest multiple of 8',
+          'Schema description should match the executor rounding behavior.',
+        );
+        assert.ok(!('width' in props), 'Canvas width should not duplicate the size string argument.');
+        assert.ok(!('height' in props), 'Canvas height should not duplicate the size string argument.');
+        assert.ok(!('aspect_ratio' in props), 'Aspect ratio should not be an extra planner schema field.');
+        assert.ok(!('orientation' in props), 'Orientation should not be an extra planner schema field.');
+      }
+    },
+  },
+  {
+    name: 'image size resolver does not treat prompt WxH text as canvas size',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assert.ok(
+        !source.includes('parseSizeFromText(typeof args.prompt'),
+        'Prompt text like "100x100 pixel-art grid" should not override the image canvas size.',
+      );
+      assertIncludes(
+        source,
+        'Prompt text is always image content',
+        'The resolver should document why prompt text is not parsed as output dimensions.',
+      );
+      assert.ok(
+        !source.includes('SIZE_HINT_TO_SIZE') && !source.includes('ASPECT_RATIO_TO_SIZE'),
+        'Prompt words such as portrait/square/landscape should not change the default canvas size.',
+      );
+      assertIncludes(
+        source,
+        'const IMAGE_DIMENSION_STEP = 8',
+        'Explicit dimensions should round to model-supported 8-pixel alignment.',
+      );
+      assertIncludes(
+        source,
+        'Math.round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP',
+        'Explicit dimensions should round to the nearest 8-pixel multiple rather than falling back unexpectedly.',
+      );
+    },
+  },
+  {
     name: 'buildLemonadeTools keeps component matching separate from planner matching',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
@@ -57,6 +117,73 @@ const tests = [
       );
       const hasPlannerPath = /requiresLlmLabels[\s\S]*?include\(def, llmModel\)/.test(source);
       assert.ok(hasPlannerPath, 'Tools with requires_llm_labels should route through the selected planner path.');
+    },
+  },
+  {
+    name: 'unavailable tool guidance is omitted from the planner prompt',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      const definitions = readToolDefinitions();
+      assertIncludes(definitions.system_prompt, '{tool_guidance}', 'Conditional guidance should be injected at runtime.');
+      assert.ok(!definitions.system_prompt.includes('flow_shift'), 'Static prompt should not mention image-only options.');
+      assertIncludes(
+        source,
+        'const guidance: string[] = []',
+        'Planner guidance should be collected only from included tools.',
+      );
+      assertIncludes(
+        source,
+        'if (def.prompt_guidance) guidance.push(substituteImageSize(def.prompt_guidance));',
+        'Only included tool prompt_guidance should be added to the planner prompt.',
+      );
+      assertIncludes(
+        source,
+        ".replace('{tool_guidance}', toolGuidance)",
+        'The 2071 server/frontend shared prompt should use the tool_guidance placeholder.',
+      );
+    },
+  },
+  {
+    name: 'collection UI skips exact duplicate generate_image calls without blocking distinct image requests',
+    run() {
+      const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
+      assertIncludes(
+        source,
+        'const generatedImageRequestKeys = new Set<string>()',
+        'The duplicate guard should track exact generate_image requests, not just whether any image exists.',
+      );
+      assertIncludes(
+        source,
+        'getImageToolRequestKey(toolCall)',
+        'Duplicate detection should compare prompt/options so distinct image requests still run.',
+      );
+      assertIncludes(
+        source,
+        'Duplicate image generation skipped because this exact image request was already generated for this turn.',
+        'Repeated identical generate_image tool calls in one request should not render duplicate images.',
+      );
+    },
+  },
+  {
+    name: 'collection UI preserves planner agency for image edit tool choice',
+    run() {
+      const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
+      assert.ok(!source.includes('isLikelyImageEditRequest'), 'Regex edit-intent parsing should not override the planner tool choice.');
+      assert.ok(!source.includes('withToolName(toolCall'), 'The UI should not rewrite generate_image tool calls into edit_image calls.');
+      assert.ok(!source.includes('EDIT_INTENT_RE'), 'Edit routing should be planner-driven, not regex-driven.');
+      assertMatches(source, /const funcName = toolCall\.function\.name;[\s\S]*?executeLemonadeTool\(toolCall, toolModel,/, 'The executed tool should match the planner-selected tool.');
+
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assertIncludes(
+        byName.edit_image.prompt_guidance,
+        'use edit_image rather than generate_image',
+        'Prompt guidance should tell the planner when to choose edit_image.',
+      );
+      assert.ok(
+        !('prompt_guidance' in byName.generate_image),
+        'Generate-image canvas guidance belongs in the size parameter description, not duplicated in prompt_guidance.',
+      );
     },
   },
   {
@@ -80,8 +207,34 @@ const tests = [
       );
       assertMatches(
         source,
-        /prop\.description\.includes\('\{image_size\}'\)[\s\S]*?replaceAll\('\{image_size\}', COLLECTION_IMAGE_SIZE\)/,
+        /const substituteImageSize = \(text: string\): string => \([\s\S]*?text\.replace\(\/\\\{image_size\\\}\/g, COLLECTION_IMAGE_SIZE\)/,
+        'Tool parameter descriptions and prompt guidance should share the image-size substitution helper.',
+      );
+      assertIncludes(
+        source,
+        'substituteImageSize(prop.description)',
         'Tool parameter descriptions should replace {image_size} at materialization time.',
+      );
+      assertIncludes(
+        source,
+        'substituteImageSize(def.prompt_guidance)',
+        'Tool prompt guidance should replace {image_size} at materialization time.',
+      );
+    },
+  },
+  {
+    name: 'transcription instructions are not duplicated in prompt guidance',
+    run() {
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assert.ok(
+        !('prompt_guidance' in byName.transcribe_audio),
+        'Transcription guidance should live in the tool description rather than duplicate prompt_guidance.',
+      );
+      assertIncludes(
+        byName.transcribe_audio.function.description,
+        'The audio data is automatically provided by the system, just call this tool with the language parameter.',
+        'The simplified transcription description should keep the operational instruction.',
       );
     },
   },

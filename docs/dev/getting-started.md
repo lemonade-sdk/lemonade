@@ -239,8 +239,9 @@ Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd6
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
-- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
-- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
+- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`, `libcpp-httplib0.41`
+- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, `libxrt-npu2` for NPU acceleration,
+  plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
@@ -590,7 +591,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -625,6 +626,7 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
+| `POST` | `/internal/pin` | Pin or unpin a loaded model |
 
 #### `POST /internal/set`
 
@@ -657,7 +659,6 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `cfg_scale` | number |
 | `width` | int (positive) |
 | `height` | int (positive) |
-| `flm_args` | string |
 
 **Example:**
 ```bash
