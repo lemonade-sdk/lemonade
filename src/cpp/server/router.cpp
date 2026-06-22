@@ -225,10 +225,11 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
-WrappedServer* Router::find_flm_server_by_type(ModelType type) const {
+WrappedServer* Router::find_coexisting_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
-            server->get_recipe_options().get_recipe() == "flm" &&
+            slot_policy_for_recipe(server->get_recipe_options().get_recipe()) ==
+                SlotPolicy::CoexistByType &&
             server->get_model_type() == type) {
             return server.get();
         }
@@ -455,7 +456,7 @@ void Router::load_model(const std::string& model_name,
                     evict_server(peer);
                 }
                 // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 transcription, 1 embed)
-                WrappedServer* same_type_flm = find_flm_server_by_type(model_type);
+                WrappedServer* same_type_flm = find_coexisting_server_by_type(model_type);
                 if (same_type_flm) {
                     LOG(INFO, "Router") << "FLM " << model_type_to_string(model_type)
                               << " slot occupied by: " << same_type_flm->get_model_name()
@@ -1449,7 +1450,8 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
 int Router::count_pinned_servers_by_type(ModelType type) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered servers (cloud) never occupy a slot, so they don't count.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type && server->is_pinned()) {
