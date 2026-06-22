@@ -748,9 +748,9 @@ test.describe('Accessibility — preset card metadata accessible (#2345)', () =>
   });
 });
 
-// ─── 13. Capability chip radio semantics — issue #2350 ───────────────────────
+// ─── 13. Capability chip toggle-button semantics — issue #2350 (revised) ─────
 
-test.describe('Accessibility — capability chip radio semantics (#2350)', () => {
+test.describe('Accessibility — capability chip toggle-button semantics (#2350)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
@@ -760,31 +760,40 @@ test.describe('Accessibility — capability chip radio semantics (#2350)', () =>
     await page.waitForSelector('.slideover.is-open');
   });
 
-  test('A41 — capability chip container has role="radiogroup"', async ({ page }) => {
-    const role = await page.locator('[data-preset-capabilities]').getAttribute('role');
-    expect(role).toBe('radiogroup');
+  test('A41 — capability chip container has role="group" with accessible label', async ({ page }) => {
+    const container = page.locator('[data-preset-capabilities]');
+    const role = await container.getAttribute('role');
+    expect(role).toBe('group');
+    const label = await container.getAttribute('aria-label');
+    expect(label).toBeTruthy();
   });
 
-  test('A42 — each capability chip button has role="radio" and aria-checked', async ({ page }) => {
+  test('A42 — each capability chip is a plain button with aria-pressed', async ({ page }) => {
     const capButtons = page.locator('[data-preset-capabilities] .preset-cap-button');
     const count = await capButtons.count();
     expect(count).toBeGreaterThan(0);
 
     for (let i = 0; i < count; i++) {
       const btn = capButtons.nth(i);
-      expect(await btn.getAttribute('role')).toBe('radio');
-      const checked = await btn.getAttribute('aria-checked');
-      expect(['true', 'false'], `aria-checked must be "true" or "false", got "${checked}"`).toContain(checked);
+      // Must NOT have role="radio" — plain button semantics
+      const role = await btn.getAttribute('role');
+      expect(role, 'chip must not have role="radio"').not.toBe('radio');
+      // Must expose aria-pressed as "true" or "false"
+      const pressed = await btn.getAttribute('aria-pressed');
+      expect(['true', 'false'], `aria-pressed must be "true" or "false", got "${pressed}"`).toContain(pressed);
     }
   });
 
-  test('A43 — exactly one capability chip is aria-checked="true"', async ({ page }) => {
-    const checkedCount = await page
+  test('A43 — exactly one capability chip has aria-pressed="true"; all others are "false"', async ({ page }) => {
+    const { trueCount, falseCount, total } = await page
       .locator('[data-preset-capabilities] .preset-cap-button')
-      .evaluateAll(buttons =>
-        buttons.filter(b => b.getAttribute('aria-checked') === 'true').length,
-      );
-    expect(checkedCount).toBe(1);
+      .evaluateAll(buttons => ({
+        trueCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'true').length,
+        falseCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'false').length,
+        total: buttons.length,
+      }));
+    expect(trueCount).toBe(1);
+    expect(falseCount).toBe(total - 1);
   });
 });
 

@@ -34,7 +34,7 @@
 | 20 | Preset param controls programmatic labels (#2338) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 | 21 | Backend/device fields discoverable (#2339) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 | 22 | Preset card exposes metadata to AT (#2345) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
-| 23 | Capability chip radio semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 23 | Capability chip toggle-button semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 (revised 2026-06-22) |
 | 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 
 ---
@@ -490,7 +490,7 @@ All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
 23. **#2338** ✅ DONE — All Preset parameter controls labelled via `htmlFor`/`id` (temperature, top_p, context size, top_k, repeat penalty, steps, CFG scale, engine hint, AutoOpt result, llamacpp_args, sdcpp_args) and via `aria-label` (image width, image height which share one visual label). File: `PresetManager.tsx` lines ~1000–1075.
 24. **#2339** ✅ DONE — `llamacpp_backend` and `llamacpp_device` converted to `<input list=>` + `<datalist>` exposing known values (backends: auto/cpu/cuda/vulkan/kompute/metal/rpc/opencl/mmap; devices: Auto/CPU/CUDA0/CUDA1/Vulkan0/Vulkan1/Metal). File: `PresetManager.tsx` lines ~1060–1067.
 25. **#2345** ✅ DONE — PresetCard overlay button gains `aria-describedby` pointing to a `sr-only` span containing: starter/manual-args state, applies_to capability list, parameter summary, prompt name, tools state. File: `PresetManager.tsx` lines ~700–726.
-26. **#2350** ✅ DONE — Capability chip container gains `role="radiogroup" aria-label="Applies to capabilities"`; each chip button gains `role="radio" aria-checked={…}`. File: `PresetManager.tsx` lines ~937–943.
+26. **#2350** ✅ DONE (revised) — Capability chip container changed from `role="radiogroup"` to `role="group" aria-label="Applies to capabilities"`; each chip button changed from `role="radio" aria-checked={…}` to `aria-pressed={…}` (toggle-button semantics). Radiogroup requires arrow-key navigation (ARIA APG / WCAG 2.1.1); toggle buttons are keyboard-correct with Tab + Enter/Space. File: `PresetManager.tsx` lines ~937–943.
 27. **#2352** ✅ DONE — AutoOpt run buttons gain `aria-pressed={selectedAutoRunId === run.id}`, updated on selection change. File: `PresetManager.tsx` line ~528.
 
 ---
@@ -541,7 +541,7 @@ npm test
 | Preset param labels (#2338) | A35–A37 | temperature/ctx-size/top_k sliders labelled via htmlFor/id |
 | Backend/device discoverable (#2339) | A38–A39 | llamacpp_backend and llamacpp_device inputs have datalist with ≥3 options |
 | Preset card metadata (#2345) | A40 | Card button aria-describedby includes applies_to, prompt, tools |
-| Capability radio semantics (#2350) | A41–A43 | Container has role=radiogroup; buttons have role=radio + aria-checked; exactly 1 checked |
+| Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
 | AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
 
 ### Known limitation

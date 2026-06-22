@@ -934,9 +934,9 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
       <div className="slideover__body">
         <div className="slideover__section">
           <h3>Applies to capabilities</h3>
-          <div className="cap-chip-list" data-preset-capabilities role="radiogroup" aria-label="Applies to capabilities">
+          <div className="cap-chip-list" data-preset-capabilities role="group" aria-label="Applies to capabilities">
             {CAPABILITIES.map(cap => (
-              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)} role="radio" aria-checked={appliesTo.includes(cap)}>
+              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)} aria-pressed={appliesTo.includes(cap)}>
                 <CapabilityChip cap={cap} on={appliesTo.includes(cap)} off={!appliesTo.includes(cap)} />
               </button>
             ))}
