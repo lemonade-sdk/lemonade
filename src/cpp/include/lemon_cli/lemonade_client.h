@@ -53,7 +53,7 @@ struct ModelInfo {
     std::vector<std::string> labels;
     std::string download_url;
     std::string description;
-    double   size = 0.0;
+    std::vector<double> component_sizes;
 };
 
 // Recipe backend status structure

@@ -6,6 +6,7 @@
 #include <regex>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace lemonade {
 
@@ -14,7 +15,7 @@ using json = nlohmann::json;
 static const int DEFAULT_CONNECTION_TIMEOUT_MS = 30000;
 static const int DEFAULT_READ_TIMEOUT_MS = 30000;
 static const int LONG_TIMEOUT_MS = 86400000;
-static const double UNKNOWN_SIZE = 0.0;
+static const double UNKNOWN_MODEL_SIZE = 0.0;
 
 static std::regex build_name_filter_regex(const std::string& name_filter) {
     std::string regex_pattern;
@@ -69,36 +70,6 @@ static int model_source_sort_rank(const std::string& model_name) {
     if (starts_with(model_name, "extra.")) return 2;
     if (starts_with(model_name, "builtin.")) return 3;
     return 0;
-}
-
-//Helper functions to calculate the total size of the models in a collection.
-static double get_size_of_single_model(const json& model) {
-    if (model.contains("recipe") && model["recipe"].is_string() && model["recipe"].get<std::string>() == "cloud") {
-        return UNKNOWN_SIZE;
-    }
-    if (model.contains("size") && 
-            model["size"].is_number()) {
-        return model["size"].get<double>();
-    }
-    return UNKNOWN_SIZE;
-}
-
-static double get_size_of_collection(const json& collection_components, const json& server_models) {
-    double collection_size = 0.0;
-    for (const auto component : collection_components){
-        for (const auto& model : server_models) {
-
-            if (model.contains("id") && model["id"].get<std::string>() == component) {
-                double component_size = get_size_of_single_model(model);
-                if (component_size == UNKNOWN_SIZE) {
-                    return UNKNOWN_SIZE;
-                } else {
-                    collection_size += component_size;
-                }
-            }
-        }
-    }
-    return collection_size;
 }
 
 HttpError::HttpError(int status, std::string body, const std::string& message)
@@ -351,6 +322,57 @@ int LemonadeClient::status(int display_port) const {
     }
 }
 
+//Helper functions to calculate the total size of the models in a collection.
+static double get_collection_component_size(const json& model) {
+    if (model.contains("recipe") && model["recipe"].is_string() && model["recipe"].get<std::string>() == "cloud") {
+        return UNKNOWN_MODEL_SIZE;
+    }
+    if (model.contains("size") && 
+            model["size"].is_number()) {
+        return model["size"].get<double>();
+    }
+    return UNKNOWN_MODEL_SIZE;
+}
+
+static std::vector<double> get_collection_sizes(const json& collection_components, const json& server_models) {
+    std::vector<double> collection_sizes;
+    double component_size = UNKNOWN_MODEL_SIZE;
+    for (const auto component : collection_components){
+        component_size = UNKNOWN_MODEL_SIZE;
+        for (const auto& model : server_models) {
+            if (model.contains("id") && model["id"].get<std::string>() == component) {
+                component_size = get_collection_component_size(model);
+                break;
+            }
+        }
+        collection_sizes.push_back(component_size);
+    }
+    return collection_sizes;
+}
+
+static std::string model_size_to_str(const ModelInfo& model) {
+    double size = UNKNOWN_MODEL_SIZE;
+    bool is_aprox_size = false;
+
+    for(double component_size : model.component_sizes) {
+        if (component_size == UNKNOWN_MODEL_SIZE) {
+            is_aprox_size = true;
+        } else {
+            size += component_size;
+        }
+    }
+    std::ostringstream os;
+    if (size == UNKNOWN_MODEL_SIZE) {
+        os << "N/A";
+    } else {
+        if (is_aprox_size) {
+            os << ">";
+        }
+        os << std::fixed << std::setprecision(2) << size;
+    }
+    return os.str();
+}
+
 std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
     std::vector<ModelInfo> models;
 
@@ -393,9 +415,9 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
                 }
             }
             if (model_item.contains("components") && model_item["components"].is_array() && !model_item["components"].empty()) {
-                info.size = get_size_of_collection(model_item["components"], json_response["data"]);
+                info.component_sizes=get_collection_sizes(model_item["components"], json_response["data"]);
             } else {
-                info.size = get_size_of_single_model(model_item);
+                info.component_sizes.push_back(get_collection_component_size(model_item));
             }
 
             if (!info.id.empty()) {
@@ -462,17 +484,11 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             // column is always copy-paste-safe.
             for (const auto& model : models) {
                 std::string downloaded = model.downloaded ? "Yes" : "No";
-                std::string details = model.recipe.empty() ? "-" : model.recipe;      
+                std::string details = model.recipe.empty() ? "-" : model.recipe;
                 std::cout   << std::left << std::setw(40) << model.id
-                            << std::setw(15) << downloaded
-                            << std::setw(5) << std::fixed << std::setprecision(2) << std::right;
-                if (model.size == UNKNOWN_SIZE) {
-                    std::cout << "--";
-                } else {
-                    std::cout << model.size;
-                }
-                std::cout   << std::setw(10) << " "
-                            << std::setw(20) << std::left << details << std::endl;
+                            << std::setw(15) << downloaded;
+                std::cout   << std::right << std::setw(8) << model_size_to_str(model) << std::setw(7) << " ";
+                std::cout   << std::setw(20) << std::left << details << std::endl;
             }
 
             std::cout << std::string(100, '-') << std::endl;
