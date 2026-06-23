@@ -3,8 +3,41 @@
 **Date:** 2026-06-14  
 **Branch:** `kpoin/ui-accessibility`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete  
-**Test status (2026-06-22):** All 61 automated tests passing, 7 skipped, 0 failed on `feat/gui3-presets-a11y`
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete  
+**Test status (2026-06-22):** All 58 automated tests passing, 7 skipped, 0 failed on `feat/gui3-backend-a11y`
+
+---
+
+## Group C — BackendManager (2026-06-22, `feat/gui3-backend-a11y`)
+
+Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
+
+### C1 — #2343: Matrix cell keyboard operability
+
+- **Status:** ✅ **Fixed 2026-06-22**
+- **What:** Clickable `<div>` cells in the backend matrix were mouse-only — no keyboard focus, no ARIA role, no selected state.
+- **Fix:** Overlay-button pattern (same as `recipe-card__overlay-btn` in PresetManager). Each `.cell--selectable` div now has `position: relative`. A `<button class="cell__select-btn">` with `position: absolute; inset: 0; z-index: 0` covers the full cell. The button has `aria-pressed` (selected state) and an `aria-label` including the recipe label and backend identifier. Action buttons (`.cell__actions`) have `position: relative; z-index: 1` so they remain clickable above the overlay. `:focus-visible` ring from global CSS applies automatically to the button.
+- **WCAG:** 4.1.2 (Name, Role, Value), 2.1.1 (Keyboard)
+
+### C2 — #2344: Action button qualified accessible names
+
+- **Status:** ✅ **Fixed 2026-06-22**
+- **What:** Install, Update, Uninstall, and Setup guide buttons had generic labels ("Install", "Update", "Uninstall") — indistinguishable when multiple backends share the same action.
+- **Fix:** Added `aria-label` to each action button: `Install ${RECIPE_LABELS[recipe]} (${backend})`, `Update …`, `Uninstall …`, `Setup guide for … (${backend})`. Visible text unchanged.
+- **WCAG:** 4.1.2 (Name, Role, Value)
+
+### C3 — #2351: Toast and notice live regions
+
+- **Status:** ✅ **Fixed 2026-06-22**
+- **What:** `backends__toast` was conditionally mounted (`{toastMsg && <div>…</div>}`); `context-rail__notice` likewise. Mounting with content does not trigger NVDA live region announcements.
+- **Fix:** Added two always-present `<div role="status" aria-live="polite" aria-atomic="true" className="sr-only">` elements alongside the visual elements:
+  - `data-backends-toast-live` — mirrors `toastMsg` (install/update/uninstall progress and completion messages)
+  - `data-backends-preset-notice-live` — mirrors `presetNotice` (preset assignment confirmation and incompatibility notices)
+  Visual toast and notice remain conditionally rendered; only the sr-only live regions are always in DOM.
+- **WCAG:** 4.1.3 (Status Messages)
+
+**Tests added:** A51–A58 (8 tests) in `tests/a11y.spec.ts`.  
+**Files changed:** `BackendManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -53,14 +86,14 @@
 
 #### 1.1.2 `div.onClick` / `span.onClick` used as interactive elements
 
-- **Status:** ✅ **Fixed 2026-06-15 for PresetCard** — `<article role="button">` replaced with overlay-button pattern (`<button class="recipe-card__overlay-btn">` at absolute inset:0, card content at z-index:1). Remaining `div.onClick` instances in AccountMenu, BackendManager, ModelManager are P1 deferred.
+- **Status:** ✅ **Fixed 2026-06-15 for PresetCard** — `<article role="button">` replaced with overlay-button pattern (`<button class="recipe-card__overlay-btn">` at absolute inset:0, card content at z-index:1). ✅ **Fixed 2026-06-22 for BackendManager** — matrix cells use same overlay-button pattern (`<button class="cell__select-btn">`). Remaining `div.onClick` in AccountMenu, ModelManager are P1 deferred.
 - **What:** Clickable divs/spans without button semantics — no keyboard activation, no role, not focusable.
 - **Current state:**
   - `AccountMenu.tsx` — 2 `div.onClick` instances (account row items)
-  - `BackendManager.tsx` — 1 `div.onClick`
+  - `BackendManager.tsx` — ✅ fixed (overlay button pattern, #2343)
   - `ChatView.tsx` — 1 `div.onClick` (backdrop `aria-hidden="true"` — OK as-is)
   - `ModelManager.tsx` — 3 `div.onClick` instances
-  - `PresetManager.tsx` — 2 `div.onClick` instances (preset card selection at line 610 uses `tabIndex={0}` but lacks `role="button"` and `onKeyDown`)
+  - `PresetManager.tsx` — ✅ fixed (overlay-button pattern on preset card)
 - **Target:** Replace clickable `div`/`span` elements with `<button>` (or `<a>` where navigation applies). At minimum add `role="button"`, `tabIndex={0}`, and `onKeyDown` handling (`Enter`/`Space` triggers click).
 - **Effort:** M
 - **Priority:** P0 — WCAG 4.1.2 (Name, Role, Value)
@@ -525,7 +558,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (61 tests)
+### Test groups (58 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -543,6 +576,7 @@ npm test
 | Preset card metadata (#2345) | A40 | Card button aria-describedby includes applies_to, prompt, tools |
 | Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
 | AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
+| Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
 
 ### Known limitation
 
@@ -550,4 +584,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352)*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351)*
