@@ -336,7 +336,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
         <div className="form-section">
           <label className="form-label">System Prompt</label>
           <div className="form-subtext">
-            Edit to override the default for this Omni Model. Keep the {'{tool_list}'} and {'{tool_guidance}'} placeholders so the planner sees the available tools. Leave the text unchanged (or use Reset) to keep using the shipped default — including any future updates to it.
+            Edit to override the default for this Omni Model. Keep the {'{tool_list}'} and {'{tool_guidance}'} placeholders so the planner sees the available tools.
           </div>
           <textarea
             className="form-input"
