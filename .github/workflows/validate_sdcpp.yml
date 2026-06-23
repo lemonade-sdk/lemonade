@@ -195,7 +195,7 @@ jobs:
           echo "cuda_update_backends=${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
           echo "update_backends=${SDCPP_BASE_UPDATE_BACKENDS},${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
           echo "Will update base sd-cpp pins: ${SDCPP_BASE_UPDATE_BACKENDS} -> ${BASE_RELEASE}"
-          echo "Will update CUDA sd-cpp pin: ${SDCPP_CUDA_UPDATE_BACKENDS} -> ${CUDA_RELEASE}"
+          echo "Will update CUDA sd-cpp pins later after validation: ${SDCPP_CUDA_UPDATE_BACKENDS} -> ${{ steps.release.outputs.cuda_release }}"
 
   build:
     name: Build Lemonade with sd-cpp pins
@@ -271,7 +271,8 @@ jobs:
             backend: rocm
             channel: stable
             runner: [self-hosted, Windows, 128gb, rocm]
-          # CUDA is pinned by the updater and its assets are required above.
+          # CUDA is pinned by the updater and its assets are required by the
+          # verify-cuda-assets job after this validation matrix completes.
           # Validation stays disabled until a matching runner exists.
           # - label: cuda
           #   backend: cuda
