@@ -339,49 +339,89 @@ class OllamaTests(ServerTestBase):
 
     def test_010_chat_streaming_with_tools_returns_complete_tool_call(self):
         """Test /api/chat streaming with tools returns complete Ollama tool calls."""
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        # This test uses the larger native tool-calling model. On macOS CI the
+        # preceding tests can leave the tiny endpoint model resident, and relying
+        # on implicit unload/load inside the streaming request has caused the
+        # request to hang until the 500s HTTP timeout. Make the heavy model
+        # transition explicit so failures are attributed to pull/load/chat.
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
 
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": TOOL_CALLING_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "Run the calculator_calculate tool with expression set to 1+1",
-                    }
-                ],
-                "tools": [SAMPLE_TOOL],
-                "stream": True,
-                "options": {"num_predict": 64},
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-            stream=True,
-        )
-        self.assertEqual(response.status_code, 200)
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        chunks = [
-            json.loads(line.decode("utf-8")) for line in response.iter_lines() if line
-        ]
-        self.assertGreater(len(chunks), 0)
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        tool_chunks = [
-            chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
-        ]
-        self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+            try:
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": TOOL_CALLING_MODEL,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Run the calculator_calculate tool with "
+                                    "expression set to 1+1"
+                                ),
+                            }
+                        ],
+                        "tools": [SAMPLE_TOOL],
+                        "stream": True,
+                        "options": {"num_predict": 64},
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                    stream=True,
+                )
+                self.assertEqual(response.status_code, 200)
 
-        tool_call = tool_chunks[0]["message"]["tool_calls"][0]
-        self.assertIn("id", tool_call)
-        self.assertEqual(tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"])
-        self.assertIsInstance(tool_call["function"]["arguments"], dict)
-        self.assertIn("expression", tool_call["function"]["arguments"])
-        self.assertTrue(chunks[-1].get("done", False))
-        self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+                chunks = [
+                    json.loads(line.decode("utf-8"))
+                    for line in response.iter_lines()
+                    if line
+                ]
+            except requests.exceptions.RequestException as exc:
+                self._dump_server_diagnostics("Ollama streaming tool-calling timeout")
+                self.fail(
+                    "Ollama streaming tool-calling request failed after "
+                    f"{TIMEOUT_MODEL_OPERATION}s timeout budget: {exc}"
+                )
+            self.assertGreater(len(chunks), 0)
+
+            tool_chunks = [
+                chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
+            ]
+            self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+
+            tool_call = tool_chunks[0]["message"]["tool_calls"][0]
+            self.assertIn("id", tool_call)
+            self.assertEqual(
+                tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"]
+            )
+            self.assertIsInstance(tool_call["function"]["arguments"], dict)
+            self.assertIn("expression", tool_call["function"]["arguments"])
+            self.assertTrue(chunks[-1].get("done", False))
+            self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+        finally:
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
 
     def test_011_chat_missing_model(self):
         """Test /api/chat returns 400 when model is missing."""
