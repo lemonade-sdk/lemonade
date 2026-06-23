@@ -2591,6 +2591,17 @@ footer {
     gap: 4px;
 }
 
+.form-subtext {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
+.form-actions-inline {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .info-icon {
     font-size: 0.6rem;
     color: var(--text-quaternary);

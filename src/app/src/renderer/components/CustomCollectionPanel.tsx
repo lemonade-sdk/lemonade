@@ -6,6 +6,7 @@ import {
   CustomCollection,
   CustomCollectionDraft,
   CustomCollectionRole,
+  DEFAULT_OMNI_SYSTEM_PROMPT,
   getCollectionRoleOptions,
   getCustomCollectionRoleLabel,
   getCustomCollectionComponentList,
@@ -45,7 +46,10 @@ const emptyDraft = () => ({
   edit: '',
   transcription: '',
   speech: '',
-  systemPrompt: '',
+  // Pre-fill with the current default so authors can see the prompt they
+  // would otherwise inherit. formToDraft compares the textbox to this default
+  // and stores no override when they match — see DEFAULT_OMNI_SYSTEM_PROMPT.
+  systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT,
   createdAt: undefined as string | undefined,
 });
 
@@ -62,25 +66,34 @@ const draftFromCollection = (collection: CustomCollection, sourceId: string, isC
     edit: collection.components.edit ?? '',
     transcription: collection.components.transcription ?? '',
     speech: collection.components.speech ?? '',
-    systemPrompt: collection.systemPrompt ?? '',
+    systemPrompt: collection.systemPrompt ?? DEFAULT_OMNI_SYSTEM_PROMPT,
     createdAt: collection.createdAt,
   };
 };
 
-const formToDraft = (form: CollectionForm): CustomCollectionDraft => ({
-  id: form.selectedCollectionId || undefined,
-  name: form.name.trim(),
-  createdAt: form.createdAt,
-  components: {
-    llm: form.llm,
-    vision: form.vision || undefined,
-    image: form.image || undefined,
-    edit: form.edit || undefined,
-    transcription: form.transcription || undefined,
-    speech: form.speech || undefined,
-  },
-  systemPrompt: form.systemPrompt.trim() || undefined,
-});
+const formToDraft = (form: CollectionForm): CustomCollectionDraft => {
+  // Text identical to the shipped default is treated as "no override" so the
+  // collection stays on the global fallback — a later toolDefinitions.json
+  // update reaches existing collections instead of being shadowed by a frozen
+  // copy. A trimmed empty string maps to the same state (the textarea is
+  // pre-filled, but an author may clear it without using "Reset to default").
+  const trimmed = form.systemPrompt.trim();
+  const isDefault = !trimmed || form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT;
+  return {
+    id: form.selectedCollectionId || undefined,
+    name: form.name.trim(),
+    createdAt: form.createdAt,
+    components: {
+      llm: form.llm,
+      vision: form.vision || undefined,
+      image: form.image || undefined,
+      edit: form.edit || undefined,
+      transcription: form.transcription || undefined,
+      speech: form.speech || undefined,
+    },
+    systemPrompt: isDefault ? undefined : trimmed,
+  };
+};
 
 const componentListForForm = (form: CollectionForm): string[] => getCustomCollectionComponentList(formToDraft(form));
 
@@ -321,20 +334,28 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
         </div>
 
         <div className="form-section">
-          <label
-            className="form-label"
-            title="Optional template that overrides the default OmniRouter system prompt. Leave blank to use the default. Keep the {tool_list} and {tool_guidance} placeholders so the planner sees the available tools."
-          >
-            System Prompt (optional)
-          </label>
+          <label className="form-label">System Prompt</label>
+          <div className="form-subtext">
+            Edit to override the default for this Omni Model. Keep the {'{tool_list}'} and {'{tool_guidance}'} placeholders so the planner sees the available tools. Leave the text unchanged (or use Reset) to keep using the shipped default — including any future updates to it.
+          </div>
           <textarea
             className="form-input"
-            rows={6}
+            rows={8}
             value={form.systemPrompt}
             onChange={(e) => updateForm({ systemPrompt: e.target.value })}
-            placeholder="Leave blank to use the default OmniRouter system prompt. To customize, keep the {tool_list} and {tool_guidance} placeholders."
             spellCheck={false}
           />
+          <div className="form-actions-inline">
+            <button
+              type="button"
+              className="settings-reset-button"
+              onClick={() => updateForm({ systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT })}
+              disabled={form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT}
+              title="Restore the shipped default OmniRouter system prompt."
+            >
+              Reset to default
+            </button>
+          </div>
         </div>
 
         {error && <div className="form-error">{error}</div>}

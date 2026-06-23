@@ -181,6 +181,52 @@ const tests = [
         'request.system_prompt = systemPrompt',
         'buildCustomCollectionPullRequest should attach the trimmed prompt when non-empty.',
       );
+      assertIncludes(
+        customCollections,
+        'DEFAULT_OMNI_SYSTEM_PROMPT',
+        'The shipped default prompt should be exported so the editor can pre-fill it.',
+      );
+    },
+  },
+  {
+    name: 'custom collection editor pre-fills the default and only saves real overrides',
+    run() {
+      const panel = readSource('src/app/src/renderer/components/CustomCollectionPanel.tsx');
+      assertIncludes(
+        panel,
+        'DEFAULT_OMNI_SYSTEM_PROMPT',
+        'The editor should import the shipped default to populate the textarea.',
+      );
+      assertIncludes(
+        panel,
+        'systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT',
+        'Empty-draft initial state should pre-fill the textarea with the current default.',
+      );
+      assertIncludes(
+        panel,
+        'collection.systemPrompt ?? DEFAULT_OMNI_SYSTEM_PROMPT',
+        'Editing an existing collection should fall back to the default when no override exists.',
+      );
+      assertIncludes(
+        panel,
+        'form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT',
+        'formToDraft should treat text equal to the default as "no override" so the global fallback wins.',
+      );
+      assertIncludes(
+        panel,
+        'systemPrompt: isDefault ? undefined : trimmed',
+        'Saving with the default text should omit the override; edited text should persist trimmed.',
+      );
+      assertIncludes(
+        panel,
+        'Reset to default',
+        'A reset button should restore the shipped default.',
+      );
+      assertIncludes(
+        panel,
+        'form-subtext',
+        'The override instruction should render as subtext under the label.',
+      );
     },
   },
   {

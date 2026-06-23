@@ -2,8 +2,16 @@ import type { ModelInfo, ModelsData } from './modelData';
 import { USER_MODEL_PREFIX } from './modelData';
 import { isChatPlannerCandidate } from './modelLabels';
 import { COLLECTION_OMNI_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
+import toolDefinitions from './toolDefinitions.json';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
+
+// The shipped OmniRouter system prompt, exposed so the Omni Model editor can
+// show authors the text they're (potentially) overriding. Matched verbatim on
+// save: when the textarea content equals this string, the editor stores no
+// override and the collection stays on whatever the global default is at
+// runtime — so a future tweak to toolDefinitions.json propagates automatically.
+export const DEFAULT_OMNI_SYSTEM_PROMPT: string = toolDefinitions.system_prompt;
 
 export type CustomCollectionRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 

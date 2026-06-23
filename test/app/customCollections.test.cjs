@@ -181,6 +181,21 @@ defineTest('regular-model export carries no collection fields', () => {
   assert.ok(!('created' in payload));
 });
 
+defineTest('DEFAULT_OMNI_SYSTEM_PROMPT is the canonical default from toolDefinitions.json', () => {
+  const toolDefinitionsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'toolDefinitions.json');
+  const toolDefs = JSON.parse(fs.readFileSync(toolDefinitionsPath, 'utf8'));
+  assert.equal(
+    typeof collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    'string',
+    'The default prompt constant should be exported as a string.',
+  );
+  assert.equal(
+    collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    toolDefs.system_prompt,
+    'The editor default must match toolDefinitions.json verbatim so diff-on-save is exact.',
+  );
+});
+
 defineTest('buildCustomCollectionPullRequest attaches an optional system_prompt and omits it when blank', () => {
   const baseDraft = {
     name: 'WithPrompt',
