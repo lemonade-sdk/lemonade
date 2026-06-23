@@ -534,6 +534,13 @@ All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
 26. **#2350** ✅ DONE (revised) — Capability chip container changed from `role="radiogroup"` to `role="group" aria-label="Applies to capabilities"`; each chip button changed from `role="radio" aria-checked={…}` to `aria-pressed={…}` (toggle-button semantics). Radiogroup requires arrow-key navigation (ARIA APG / WCAG 2.1.1); toggle buttons are keyboard-correct with Tab + Enter/Space. File: `PresetManager.tsx` lines ~937–943.
 27. **#2352** ✅ DONE — AutoOpt run buttons gain `aria-pressed={selectedAutoRunId === run.id}`, updated on selection change. File: `PresetManager.tsx` line ~528.
 
+### GUI3 A11y Series — targeted fixes (branches feat/gui3-*)
+
+**#2342 — Download progress: native progressbar semantics + status announcements** ✅ DONE (2026-06-22, `feat/gui3-download-a11y`)
+- `DownloadManager.tsx` line ~283: replaced `<div aria-label="NN%">` with `role="progressbar"` + `aria-valuenow` / `aria-valuemin={0}` / `aria-valuemax={100}` + `aria-label` including the model name (`"Downloading Llama-3.1-8B: 42%"`). Visual `<span>` text gets `aria-hidden="true"` to avoid double-reading.
+- Added always-present sr-only `role="status" aria-live="polite" aria-atomic="true"` live region inside the panel. Announces status transitions only (start / complete / error / cancelled / paused / resumed) — never on every percentage tick. Cleared when panel closes to prevent stale re-reads on reopen.
+- Tests A59–A62 added (4 new tests): role/valuenow/min/max, model-name in label, live region present.
+
 ---
 
 ## Running the Accessibility Tests
@@ -566,7 +573,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (63 tests)
+### Test groups (67 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -586,6 +593,7 @@ npm test
 | AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
 | Model row qualified names | A46–A50 | Load/Delete/Download/Get&Load buttons include model name in aria-label; no bare generic names |
+| Download progress bar | A59–A62 | `role="progressbar"` present; aria-valuenow/min/max correct; model name in label; sr-only status live region exists |
 
 ### Known limitation
 
@@ -593,4 +601,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341)*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342)*

@@ -1035,3 +1035,82 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
     }
   });
 });
+
+// ─── 16. Download progress bar semantics (#2342) ──────────────────────────────
+
+test.describe('Accessibility — download progress bar semantics', () => {
+  // A valid DownloadListItem for a 42%-complete model download.
+  // Passed to addInitScript so the singleton DownloadStore reads it from
+  // localStorage before any React code runs (avoids poll-timing flakiness).
+  const MOCK_DOWNLOAD = {
+    id: 'model:Llama-3.1-8B',
+    downloadType: 'model',
+    modelName: 'Llama-3.1-8B',
+    fileName: 'Llama-3.1-8B.gguf',
+    fileIndex: 1,
+    totalFiles: 1,
+    bytesDownloaded: 420_000_000,
+    bytesTotal: 1_000_000_000,
+    bytesTotalIsLowerBound: false,
+    percent: 42,
+    status: 'downloading',
+    startTime: 1_000_000_000_000,
+    bytesResumed: 0,
+    running: true,
+    speedBytesPerSecond: 5_000_000,
+    updatedAt: Date.now(),
+  };
+
+  test.beforeEach(async ({ page }) => {
+    // Pre-populate localStorage so the DownloadStore singleton (read at module init)
+    // has an active downloading item before React renders anything.
+    await page.addInitScript((item: unknown) => {
+      localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([item]));
+    }, MOCK_DOWNLOAD);
+
+    await page.route('/api/v1/health', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
+    );
+    // Return empty from the server so the mock item is not overwritten by polling.
+    await page.route('/api/v1/downloads**', route =>
+      route.fulfill({ json: { downloads: [] } }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    // Open the download manager via its titlebar toggle button.
+    await page.locator('.titlebar__download-toggle').click();
+    await page.waitForSelector('.download-manager__panel');
+    // Ensure the download item row is rendered before we start asserting.
+    await page.waitForSelector('.download-item--downloading', { timeout: 5000 });
+  });
+
+  test('A59 — active download progress element has role="progressbar"', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    await expect(progressBar).toBeVisible();
+  });
+
+  test('A60 — progressbar has aria-valuenow matching percent, aria-valuemin=0, aria-valuemax=100', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    const valuenow = await progressBar.getAttribute('aria-valuenow');
+    const valuemin = await progressBar.getAttribute('aria-valuemin');
+    const valuemax = await progressBar.getAttribute('aria-valuemax');
+    expect(Number(valuenow)).toBe(42);
+    expect(Number(valuemin)).toBe(0);
+    expect(Number(valuemax)).toBe(100);
+  });
+
+  test('A61 — progressbar aria-label includes the model name', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    const label = await progressBar.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label).toContain('Llama-3.1-8B');
+  });
+
+  test('A62 — sr-only polite status live region is present inside the download manager panel', async ({ page }) => {
+    const liveRegion = page.locator(
+      '.download-manager__panel [role="status"][aria-live="polite"]',
+    );
+    await expect(liveRegion).toBeAttached();
+  });
+});
