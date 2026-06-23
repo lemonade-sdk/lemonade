@@ -1,123 +1,575 @@
 name: 'Cleanup Processes (Linux)'
-description: 'Kill all lemonade, Python, and llama-server processes on Linux'
+description: 'Best-effort safe cleanup of Lemonade-owned Linux CI processes and ports'
 runs:
   using: "composite"
   steps:
-    - name: Kill zombie processes
+    - name: Clean up Lemonade-related processes
       shell: bash
       run: |
+        # GitHub composite steps may run with strict error handling.
+        # Cleanup must be best-effort and must never fail the real test job.
+        set +e
+
         echo "========================================"
-        echo "Cleaning up processes on Linux..."
+        echo "Cleaning up Lemonade-related processes on Linux..."
         echo "========================================"
 
-        # Kill processes aggressively by pattern
-        kill_by_pattern() {
-            local pattern=$1
-            local description=$2
+        WORKSPACE_ROOT="${GITHUB_WORKSPACE:-$PWD}"
+        TEMP_ROOT="${RUNNER_TEMP:-}"
+        RUNTIME_ROOT="${XDG_RUNTIME_DIR:-}"
+        CURRENT_PID="$$"
+
+        # Safe default for shared self-hosted runners: never kill unscoped processes.
+        # Set LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS=1 only on dedicated CI hosts.
+        ALLOW_UNSCOPED_TARGETS="${LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS:-0}"
+        FORCE_KILL="${LEMONADE_CLEANUP_FORCE_KILL:-0}"
+
+        # Keep the cleanup backend-agnostic. New backends should not need changes here
+        # unless they introduce additional long-lived CI ports or opt-out of normal CI env.
+        CLEANUP_PORTS="${LEMONADE_CLEANUP_PORTS:-13305 9001}"
+
+        # Used only for diagnostics and the final fallback scan. Ownership checks are the
+        # safety boundary; this hint is not enough by itself unless explicitly allowed.
+        PROCESS_HINT_REGEX="${LEMONADE_CLEANUP_PROCESS_HINT_REGEX:-lemond|lemonade|llama|llamacpp|server_[[:alnum:]_-]+\.py|wrapped-server|stable-diffusion|sd-server|server_sd\.py|whisper|fastflowlm|(^|[[:space:]/_-])flm([[:space:]]|$)|kokoro|tts-server|server_tts\.py|vllm}"
+
+        echo "Workspace root:        $WORKSPACE_ROOT"
+        if [ -n "$TEMP_ROOT" ]; then
+            echo "Runner temp:           $TEMP_ROOT"
+        else
+            echo "Runner temp:           <unset>"
+        fi
+        if [ -n "$RUNTIME_ROOT" ]; then
+            echo "XDG runtime dir:       $RUNTIME_ROOT"
+        else
+            echo "XDG runtime dir:       <unset>"
+        fi
+        echo "Configured CI ports:   $CLEANUP_PORTS"
+        echo "Allow unscoped kills:  $ALLOW_UNSCOPED_TARGETS"
+        echo "Force-kill fallback:   $FORCE_KILL"
+        echo "Remove install dir:    ${LEMONADE_CLEANUP_REMOVE_INSTALL_DIR:-auto}"
+
+        read_pid_cmdline() {
+            local pid="$1"
+            tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null
+        }
+
+        read_pid_environ_lines() {
+            local pid="$1"
+            tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null
+        }
+
+        read_pid_cwd() {
+            local pid="$1"
+            readlink "/proc/$pid/cwd" 2>/dev/null
+        }
+
+        read_pid_exe() {
+            local pid="$1"
+            readlink "/proc/$pid/exe" 2>/dev/null
+        }
+
+        read_pid_ppid() {
+            local pid="$1"
+            awk '/^PPid:/ { print $2; exit }' "/proc/$pid/status" 2>/dev/null
+        }
+
+        path_under_root() {
+            local path="$1"
+            local root="$2"
+
+            if [ -z "$path" ] || [ -z "$root" ]; then
+                return 1
+            fi
+
+            case "$path" in
+                "$root"|"$root"/*)
+                    return 0
+                    ;;
+            esac
+
+            return 1
+        }
+
+        cmdline_contains_root() {
+            local cmdline="$1"
+            local root="$2"
+
+            if [ -z "$cmdline" ] || [ -z "$root" ]; then
+                return 1
+            fi
+
+            case "$cmdline" in
+                *"$root"*)
+                    return 0
+                    ;;
+            esac
+
+            return 1
+        }
+
+        has_env_line() {
+            local pid="$1"
+            local expected="$2"
+
+            read_pid_environ_lines "$pid" | grep -Fx -- "$expected" >/dev/null 2>&1
+        }
+
+        has_current_run_env() {
+            local pid="$1"
+
+            if [ -z "${GITHUB_RUN_ID:-}" ]; then
+                return 1
+            fi
+
+            has_env_line "$pid" "GITHUB_RUN_ID=$GITHUB_RUN_ID"
+        }
+
+        has_lemonade_ci_env() {
+            local pid="$1"
+
+            has_env_line "$pid" "LEMONADE_CI_MODE=True" || \
+                has_env_line "$pid" "LEMONADE_CI_MODE=true" || \
+                has_env_line "$pid" "LEMONADE_CI_MODE=1"
+        }
+
+        pid_is_current_ancestor() {
+            local candidate="$1"
+            local pid="$CURRENT_PID"
+
+            while [ -n "$pid" ] && [ "$pid" != "0" ]; do
+                if [ "$candidate" = "$pid" ]; then
+                    return 0
+                fi
+                pid="$(read_pid_ppid "$pid")"
+            done
+
+            return 1
+        }
+
+        pid_is_current_descendant() {
+            local pid="$1"
+
+            while [ -n "$pid" ] && [ "$pid" != "0" ]; do
+                if [ "$pid" = "$CURRENT_PID" ]; then
+                    return 0
+                fi
+                pid="$(read_pid_ppid "$pid")"
+            done
+
+            return 1
+        }
+
+        is_protected_process() {
+            local pid="$1"
+            local cmdline="$2"
+
+            if pid_is_current_ancestor "$pid" || pid_is_current_descendant "$pid"; then
+                return 0
+            fi
+
+            # Keep this intentionally narrow. Do not match "actions-runner" broadly
+            # because normal job workspaces often live under that path.
+            case "$cmdline" in
+                *Runner.Listener*|*Runner.Worker*)
+                    return 0
+                    ;;
+            esac
+
+            return 1
+        }
+
+        is_scoped_to_this_job() {
+            local pid="$1"
+            local cmdline="$2"
+            local cwd
+            local exe
+
+            if has_current_run_env "$pid"; then
+                return 0
+            fi
+
+            if cmdline_contains_root "$cmdline" "$WORKSPACE_ROOT" || \
+                cmdline_contains_root "$cmdline" "$TEMP_ROOT" || \
+                cmdline_contains_root "$cmdline" "$RUNTIME_ROOT"; then
+                return 0
+            fi
+
+            cwd="$(read_pid_cwd "$pid")"
+            if path_under_root "$cwd" "$WORKSPACE_ROOT" || \
+                path_under_root "$cwd" "$TEMP_ROOT" || \
+                path_under_root "$cwd" "$RUNTIME_ROOT"; then
+                return 0
+            fi
+
+            exe="$(read_pid_exe "$pid")"
+            if path_under_root "$exe" "$WORKSPACE_ROOT" || \
+                path_under_root "$exe" "$TEMP_ROOT" || \
+                path_under_root "$exe" "$RUNTIME_ROOT"; then
+                return 0
+            fi
+
+            return 1
+        }
+
+        has_process_hint() {
+            local cmdline="$1"
+
+            printf '%s\n' "$cmdline" | grep -Eiq -- "$PROCESS_HINT_REGEX"
+        }
+
+        is_lemonade_ci_process() {
+            local pid="$1"
+            local cmdline="$2"
+
+            # Strongest ownership signal: the process belongs to this exact
+            # GitHub Actions run. This catches child backend processes even when
+            # their command line does not include a Lemonade-specific path or name.
+            if has_current_run_env "$pid"; then
+                return 0
+            fi
+
+            # LEMONADE_CI_MODE is workflow-level and can be inherited by unrelated
+            # jobs on the same self-hosted runner. Treat it as ownership only when
+            # an independent path/cwd/exe signal also scopes the process to this job.
+            if has_lemonade_ci_env "$pid" && is_scoped_to_this_job "$pid" "$cmdline"; then
+                return 0
+            fi
+
+            # Fallback for older leftovers: require both scope evidence and a Lemonade-ish
+            # command hint. The hint alone is never enough in safe mode.
+            if is_scoped_to_this_job "$pid" "$cmdline" && has_process_hint "$cmdline"; then
+                return 0
+            fi
+
+            return 1
+        }
+
+        pid_exists() {
+            local pid="$1"
+
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+        }
+
+        terminate_pid() {
+            local pid="$1"
+            local reason="$2"
+            local cmdline="$3"
+
+            echo "  Sending SIGTERM to PID $pid ($reason): $cmdline"
+            kill -TERM "$pid" 2>/dev/null
+
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                if ! pid_exists "$pid"; then
+                    echo "  PID $pid exited after SIGTERM"
+                    return 0
+                fi
+                sleep 0.5
+            done
+
+            if ! pid_exists "$pid"; then
+                echo "  PID $pid exited after SIGTERM"
+                return 0
+            fi
+
+            if [ "$FORCE_KILL" = "1" ]; then
+                echo "  Sending SIGKILL to PID $pid ($reason; force-kill fallback enabled): $cmdline"
+                kill -KILL "$pid" 2>/dev/null
+                sleep 0.3
+                if pid_exists "$pid"; then
+                    echo "  WARNING: PID $pid is still present after SIGKILL"
+                else
+                    echo "  PID $pid exited after SIGKILL"
+                fi
+            else
+                echo "  WARNING: PID $pid did not exit after SIGTERM; leaving it running because LEMONADE_CLEANUP_FORCE_KILL is not enabled"
+            fi
+        }
+
+        cleanup_pid() {
+            local pid="$1"
+            local reason="$2"
+            local policy="${3:-safe}"
+            local cmdline
+
+            if ! echo "$pid" | grep -Eq '^[0-9]+$'; then
+                return 0
+            fi
+
+            if ! pid_exists "$pid" || [ ! -d "/proc/$pid" ]; then
+                return 0
+            fi
+
+            cmdline="$(read_pid_cmdline "$pid")"
+            if [ -z "$cmdline" ]; then
+                return 0
+            fi
+
+            if is_protected_process "$pid" "$cmdline"; then
+                echo "  Skipping protected PID $pid: $cmdline"
+                return 0
+            fi
+
+            if is_lemonade_ci_process "$pid" "$cmdline"; then
+                terminate_pid "$pid" "$reason" "$cmdline"
+                return 0
+            fi
+
+            # Known CI port cleanup may also remove listeners that are clearly scoped
+            # to this job, even when their command line has no Lemonade-specific hint.
+            if [ "$policy" = "allow_unscoped" ] && is_scoped_to_this_job "$pid" "$cmdline"; then
+                terminate_pid "$pid" "$reason; scoped to current job" "$cmdline"
+                return 0
+            fi
+
+            if [ "$policy" = "allow_unscoped" ] && [ "$ALLOW_UNSCOPED_TARGETS" = "1" ] && has_process_hint "$cmdline"; then
+                terminate_pid "$pid" "$reason; unscoped target allowed" "$cmdline"
+                return 0
+            fi
+
+            if [ "$policy" = "allow_unscoped" ] && [ "$ALLOW_UNSCOPED_TARGETS" = "1" ]; then
+                echo "  Skipping unscoped non-target PID $pid ($reason), even though unscoped cleanup is enabled: $cmdline"
+                return 0
+            fi
+
+            echo "  Skipping unscoped PID $pid ($reason): $cmdline"
+        }
+
+        collect_pid_file_pids() {
+            local file
+
+            if [ -n "$TEMP_ROOT" ]; then
+                for file in "$TEMP_ROOT"/lemonade*.pid "$TEMP_ROOT"/lemond*.pid; do
+                    if [ -f "$file" ]; then
+                        sed -n 's/^[[:space:]]*\([0-9][0-9]*\).*$/\1/p' "$file" 2>/dev/null
+                    fi
+                done
+            fi
+
+            if [ -n "$RUNTIME_ROOT" ]; then
+                for file in "$RUNTIME_ROOT"/lemonade/lemonade*.pid; do
+                    if [ -f "$file" ]; then
+                        sed -n 's/^[[:space:]]*\([0-9][0-9]*\).*$/\1/p' "$file" 2>/dev/null
+                    fi
+                done
+            fi
+        }
+
+        cleanup_pid_files() {
+            local pids
+            local pid
 
             echo ""
-            echo "Killing $description processes..."
+            echo "Step 1: PID-file cleanup"
 
-            # Find and kill in one shot with SIGKILL
-            pkill -9 -f "$pattern" 2>/dev/null && echo "  Killed processes matching: $pattern" || echo "  No $description processes found"
+            pids="$(collect_pid_file_pids | grep -E '^[0-9]+$' | sort -u)"
+            if [ -z "$pids" ]; then
+                echo "  No Lemonade PID files found"
+                return 0
+            fi
+
+            for pid in $pids; do
+                cleanup_pid "$pid" "Lemonade PID file" "safe"
+            done
         }
 
-        # Kill by exact name (even more aggressive)
-        kill_by_exact_name() {
-            local name=$1
+        port_listener_pids() {
+            local port="$1"
 
-            if pgrep -x "$name" > /dev/null 2>&1; then
-                echo "Killing $name (exact match)..."
-                pkill -9 -x "$name"
-                sleep 0.5
-                # Verify it's dead
-                if pgrep -x "$name" > /dev/null 2>&1; then
-                    echo "  WARNING: $name still running after kill!"
-                else
-                    echo "  Successfully killed $name"
-                fi
+            # CI Linux runners are expected to provide ss. Avoid tool probing here;
+            # if the runner image is missing ss, the cleanup log should show that directly.
+            ss -H -ltnp "sport = :$port" \
+                | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p'
+        }
+
+        cleanup_port_listener() {
+            local port="$1"
+            local pids
+            local pid
+
+            echo ""
+            echo "Step 2: TCP port $port cleanup"
+
+            pids="$(port_listener_pids "$port" | grep -E '^[0-9]+$' | sort -u)"
+            if [ -z "$pids" ]; then
+                echo "  No listener PID found for TCP port $port"
+                return 0
+            fi
+
+            for pid in $pids; do
+                cleanup_pid "$pid" "TCP port $port listener" "allow_unscoped"
+            done
+
+            sleep 0.5
+
+            if ss -ltnp "sport = :$port" | grep -q ":$port"; then
+                echo "  WARNING: TCP port $port still appears occupied"
+                ss -ltnp "sport = :$port"
+            else
+                echo "  TCP port $port is free"
             fi
         }
 
-        # Kill llama processes
-        kill_by_pattern "llama-server" "llama-server"
-        kill_by_pattern "llama-cli" "llama-cli"
-        kill_by_pattern "llama-bench" "llama-bench"
+        cleanup_owned_processes() {
+            local proc_dir
+            local pid
+            local cmdline
+            local found="false"
 
-        # Kill everything lemonade-related
-        kill_by_pattern "lemonade" "lemonade"
+            echo ""
+            echo "Step 3: owned Lemonade CI process cleanup"
 
-        # Kill Python processes (this is aggressive - be careful!)
-        kill_by_pattern "python" "Python"
+            if [ ! -d /proc ]; then
+                echo "  /proc not available; skipping process scan"
+                return 0
+            fi
 
-        # Additional pass: kill by exact process names
-        echo ""
-        echo "Second pass: killing by exact name..."
-        for proc_name in lemond lemonade-tray llama-server llama-cli llama-bench; do
-            kill_by_exact_name "$proc_name"
+            for proc_dir in /proc/[0-9]*; do
+                pid="$(basename "$proc_dir")"
+
+                if [ ! -r "$proc_dir/cmdline" ]; then
+                    continue
+                fi
+
+                cmdline="$(read_pid_cmdline "$pid")"
+                if [ -z "$cmdline" ]; then
+                    continue
+                fi
+
+                if is_protected_process "$pid" "$cmdline"; then
+                    continue
+                fi
+
+                if is_lemonade_ci_process "$pid" "$cmdline"; then
+                    cleanup_pid "$pid" "owned Lemonade CI process" "safe"
+                    found="true"
+                fi
+            done
+
+            if [ "$found" = "false" ]; then
+                echo "  No owned Lemonade CI processes found"
+            fi
+        }
+
+        show_remaining_targets() {
+            echo ""
+            echo "=== Remaining target process check ==="
+
+            local found="false"
+            local lines
+
+            lines="$(
+                pgrep -af "$PROCESS_HINT_REGEX" 2>/dev/null \
+                    | grep -v "cleanup-processes-linux" \
+                    | grep -v "Runner.Worker" \
+                    | grep -v "Runner.Listener"
+            )"
+            if [ -n "$lines" ]; then
+                echo "$lines"
+                found="true"
+            fi
+
+            if [ "$found" = "true" ]; then
+                echo "WARNING: Some target-like processes may still exist. Cleanup is best-effort only."
+            else
+                echo "No remaining target-like processes found"
+            fi
+        }
+
+        cleanup_runtime_files() {
+            local tmp_root="${RUNNER_TEMP:-$PWD}"
+
+            echo ""
+            echo "Cleaning up Lemonade lock, PID, and log files..."
+
+            rm -f "$tmp_root"/lemonade*.lock 2>/dev/null
+            rm -f "$tmp_root"/lemonade*.pid 2>/dev/null
+            rm -f "$tmp_root"/lemond*.pid 2>/dev/null
+            rm -f "$tmp_root"/lemonade*.log 2>/dev/null
+            rm -f "$tmp_root"/lemonade-server*.log 2>/dev/null
+            rm -f "$tmp_root"/lemond*.log 2>/dev/null
+
+            if [ -n "$RUNTIME_ROOT" ]; then
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.lock 2>/dev/null
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.pid 2>/dev/null
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.log 2>/dev/null
+            fi
+
+            echo "Runtime files cleaned."
+        }
+
+        should_remove_installation_dir() {
+            case "${LEMONADE_CLEANUP_REMOVE_INSTALL_DIR:-auto}" in
+                1|true|True|TRUE|yes|Yes|YES)
+                    return 0
+                    ;;
+                0|false|False|FALSE|no|No|NO)
+                    return 1
+                    ;;
+                auto|"")
+                    # Safe default: remove only when HOME is explicitly scoped to this
+                    # job. This preserves persistent user-level installs on shared
+                    # self-hosted runners, while still cleaning ephemeral CI homes.
+                    path_under_root "${HOME:-}" "$WORKSPACE_ROOT" || \
+                        path_under_root "${HOME:-}" "$TEMP_ROOT" || \
+                        path_under_root "${HOME:-}" "$RUNTIME_ROOT"
+                    return $?
+                    ;;
+                *)
+                    echo "  Unknown LEMONADE_CLEANUP_REMOVE_INSTALL_DIR value '${LEMONADE_CLEANUP_REMOVE_INSTALL_DIR}'; preserving install directory"
+                    return 1
+                    ;;
+            esac
+        }
+
+        cleanup_installation_dir() {
+            local install_dir="${HOME:-}/.local/share/lemonade-server"
+
+            echo ""
+            echo "Cleaning up Lemonade installation directories..."
+
+            if [ -z "${HOME:-}" ]; then
+                echo "  HOME is unset; skipping install directory cleanup"
+                return 0
+            fi
+
+            if [ ! -d "$install_dir" ]; then
+                echo "No lemonade-server directory found in ~/.local/share/"
+                return 0
+            fi
+
+            if should_remove_installation_dir; then
+                rm -rf "$install_dir" 2>/dev/null
+                echo "Removed: $install_dir"
+            else
+                echo "Preserved: $install_dir"
+                echo "  Set LEMONADE_CLEANUP_REMOVE_INSTALL_DIR=1 to remove persistent install directories on dedicated runners."
+            fi
+        }
+
+        cleanup_pid_files
+
+        for port in $CLEANUP_PORTS; do
+            if echo "$port" | grep -Eq '^[0-9]+$'; then
+                cleanup_port_listener "$port"
+            else
+                echo "Skipping invalid port value: $port"
+            fi
         done
 
-        # Wait for processes to die
+        cleanup_owned_processes
+
+        # Give killed processes a moment to exit and release sockets.
         sleep 2
 
-        # FINAL VERIFICATION - show what's still alive
-        echo ""
-        echo "=== Verification: checking for remaining processes ==="
-        if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
-            echo "WARNING: Some processes still alive:"
-            ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
-
-            # NUCLEAR OPTION: Kill them with extreme prejudice
-            echo "Using nuclear option..."
-            pkill -9 -f "llama" 2>/dev/null || true
-            pkill -9 -f "lemonade" 2>/dev/null || true
-            sleep 1
-
-            # Check again
-            if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
-                echo "ERROR: Processes STILL alive after nuclear option!"
-                ps aux | grep -E "lemonade|llama" | grep -v grep || true
-            else
-                echo "Nuclear option successful"
-            fi
-        else
-            echo "All target processes terminated successfully"
-        fi
-
-        echo ""
-        echo "Cleaning up lock and PID files..."
-        TMP_ROOT="${RUNNER_TEMP:-$PWD}"
-        rm -f "$TMP_ROOT"/lemonade*.lock 2>/dev/null || true
-        rm -f "$TMP_ROOT"/lemonade*.pid 2>/dev/null || true
-        rm -f "$TMP_ROOT"/lemond.pid 2>/dev/null || true
-        if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.lock 2>/dev/null || true
-          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.pid 2>/dev/null || true
-        fi
-        echo "Lock and PID files cleaned."
-
-        # Clean up log files
-        echo ""
-        echo "Cleaning up log files..."
-        rm -f "$TMP_ROOT"/lemonade*.log 2>/dev/null || true
-        rm -f "$TMP_ROOT"/lemonade-server*.log 2>/dev/null || true
-        rm -f "$TMP_ROOT"/lemond*.log 2>/dev/null || true
-        if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.log 2>/dev/null || true
-        fi
-        echo "Log files cleaned."
-
-        # Clean up installation directories
-        echo ""
-        echo "Cleaning up lemonade installation directories..."
-        if [ -d "$HOME/.local/share/lemonade-server" ]; then
-            rm -rf "$HOME/.local/share/lemonade-server" 2>/dev/null || true
-            echo "Removed: $HOME/.local/share/lemonade-server"
-        else
-            echo "No lemonade-server directory found in ~/.local/share/"
-        fi
+        show_remaining_targets
+        cleanup_runtime_files
+        cleanup_installation_dir
 
         echo ""
         echo "========================================"
         echo "Process cleanup complete!"
         echo "========================================"
+
+        # Always succeed. Cleanup problems should be warnings, not CI blockers.
+        exit 0
+
