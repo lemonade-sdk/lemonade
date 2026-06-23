@@ -639,6 +639,31 @@ sys.exit(0)
             # Best-effort restore — don't fail the test
             print(f"Warning: Failed to restore host to localhost: {e}")
 
+    def test_044_config_set_flat_backend_key(self):
+        """Flat backend keys (e.g. vllm_args) map to their nested form (issue #1824)."""
+        try:
+            # The flat underscore form is what the CLI flags and docs use; it
+            # must be accepted and stored under the nested "vllm.args" key.
+            self.assertCommandSucceeds(
+                ["config", "set", "vllm_args=--max-num-seqs 128"]
+            )
+
+            result = self.assertCommandSucceeds(["config"])
+            output = result.stdout
+            self.assertIn(
+                "vllm.args",
+                output,
+                f"vllm.args should appear in config output: {output}",
+            )
+            self.assertIn(
+                "--max-num-seqs 128",
+                output,
+                f"flat vllm_args value should be stored under vllm.args: {output}",
+            )
+        finally:
+            # Restore the default (empty) value so later tests are unaffected.
+            run_cli_command(["config", "set", "vllm.args="])
+
     # =============================================================================
     # Pull Tests
     # =============================================================================
