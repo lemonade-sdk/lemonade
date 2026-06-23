@@ -269,7 +269,15 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **Effort:** —
 - **Priority:** —
 
-#### 1.6.3 Persistence toggle checkbox — no label
+#### 1.6.5 Model row action buttons — no model-qualified accessible name (#2341)
+
+- **What:** Per-row action buttons (Load, Download, Get & Load, Unload, Delete, cancel-download, Pin, speech toggle, Copy) rendered once per model row had identical accessible names across rows. NVDA users navigating by button role (pressing 'B') heard "Load, Load, Load…" with no way to distinguish targets.
+- **Current state (pre-fix):** All Load buttons had visible text "Load" and no `aria-label`; all Delete buttons were icon-only `<button>` elements with a generic `title` but no `aria-label`.
+- **Fix (2026-06-22):** Added `aria-label` to every per-row action button in `ModelManager.tsx`, including the icon-only X (delete/cancel) buttons and the pin/speech icon buttons in `renderPinAndSpeechControl`. The model or repo identifier already in scope for each row is embedded in the label: `aria-label="Load Llama-3.1-8B"`, `aria-label="Delete Qwen2.5-7B"`, `aria-label="Cancel download of Phi-3-mini"`, `aria-label="Pin Llama-3.1-8B"`, `aria-label="Download org/repo-id"`, etc. Visible button text is unchanged.
+- **Effort:** S
+- **Priority:** P0 — WCAG 4.1.2 (Name, Role, Value); WCAG 2.4.6 (Headings and Labels)
+
+
 
 - **What:** A checkbox in the bottom sheet lacks an accessible label.
 - **Current state:** `ChatView.tsx:1725` — `<input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />`. No `<label>`, no `aria-label`. Adjacent text is not programmatically associated.
@@ -558,7 +566,7 @@ npm test
 
 > Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
 
-### Test groups (58 tests)
+### Test groups (63 tests)
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
@@ -577,6 +585,7 @@ npm test
 | Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
 | AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
+| Model row qualified names | A46–A50 | Load/Delete/Download/Get&Load buttons include model name in aria-label; no bare generic names |
 
 ### Known limitation
 
@@ -584,4 +593,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351)*
+*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341)*

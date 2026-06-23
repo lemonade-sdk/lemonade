@@ -946,3 +946,92 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
   });
 });
+
+// ─── 15. Model row action qualified accessible names (#2341) ─────────────────
+
+test.describe('Accessibility — model row action qualified names (#2341)', () => {
+  /**
+   * Simulate a connected server returning two test models:
+   *   Llama-3.1-8B  (downloaded: true)  → Downloaded zone → Load + Delete buttons
+   *   Qwen2.5-7B    (downloaded: false) → Registry zone   → Download + Get & Load buttons
+   *
+   * Both buttons of the same action type (e.g. "Load") must carry model-qualified
+   * accessible names so NVDA/JAWS users can distinguish them when navigating by
+   * button role (pressing 'B' in NVDA browse mode).
+   */
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager');
+    // Wait for model rows to render from the mocked API response
+    await page.waitForSelector('.row', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  });
+
+  test('A46 — downloaded model row: Load button accessible name includes model name', async ({ page }) => {
+    // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in
+    // a list of multiple loaded models when navigating by button role.
+    await expect(
+      page.getByRole('button', { name: /Load Llama-3\.1-8B/ }),
+    ).toBeVisible();
+  });
+
+  test('A47 — downloaded model row: Delete button accessible name includes model name', async ({ page }) => {
+    // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is
+    // not announced as a nameless button to screen reader users.
+    await expect(
+      page.getByRole('button', { name: /Delete Llama-3\.1-8B/ }),
+    ).toBeVisible();
+  });
+
+  test('A48 — registry model row: Download button accessible name includes model name', async ({ page }) => {
+    await expect(
+      page.getByRole('button', { name: /Download Qwen2\.5-7B/ }),
+    ).toBeVisible();
+  });
+
+  test('A49 — registry model row: "Get and load" button accessible name includes model name', async ({ page }) => {
+    await expect(
+      page.getByRole('button', { name: /Get and load Qwen2\.5-7B/i }),
+    ).toBeVisible();
+  });
+
+  test('A50 — no row action button in the model manager carries a bare unqualified accessible name', async ({ page }) => {
+    // Buttons whose accessible name is just "Load", "Download", "Delete", etc.
+    // cause collision when multiple model rows are rendered — NVDA hears
+    // "Load, Load, Load…" with no way to distinguish targets.
+    const genericExact = new Set([
+      'Load', 'Download', 'Delete', 'Unload', 'Get & Load', 'Cancel download',
+      'Pin model', 'Unpin model', 'Copy model name', 'Copy repository name',
+    ]);
+    const labels = await page.locator('.row .row__right button').evaluateAll(
+      (btns: HTMLElement[]) =>
+        btns.map(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()),
+    );
+    for (const label of labels) {
+      if (!label) continue;
+      expect(
+        genericExact.has(label),
+        `Row action button carries bare generic accessible name: "${label}"`,
+      ).toBe(false);
+    }
+  });
+});
