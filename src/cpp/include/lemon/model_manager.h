@@ -96,6 +96,11 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
+    // Per-collection system prompt template (collection.omni models only).
+    // When non-empty, overrides the global default in toolDefinitions.json.
+    // Stays a template — {tool_list} / {tool_guidance} are substituted at runtime.
+    std::string system_prompt;
+
     // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
     // (e.g., "fireworks"). Empty for non-cloud recipes.
     std::string cloud_provider;

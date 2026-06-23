@@ -1777,6 +1777,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
+    // Per-collection system prompt override (collection.omni only). Omitted on
+    // models that don't carry one so the field doesn't pollute every entry.
+    if (!info.system_prompt.empty()) {
+        model_json["system_prompt"] = info.system_prompt;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {

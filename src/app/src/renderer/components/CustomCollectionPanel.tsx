@@ -45,6 +45,7 @@ const emptyDraft = () => ({
   edit: '',
   transcription: '',
   speech: '',
+  systemPrompt: '',
   createdAt: undefined as string | undefined,
 });
 
@@ -61,6 +62,7 @@ const draftFromCollection = (collection: CustomCollection, sourceId: string, isC
     edit: collection.components.edit ?? '',
     transcription: collection.components.transcription ?? '',
     speech: collection.components.speech ?? '',
+    systemPrompt: collection.systemPrompt ?? '',
     createdAt: collection.createdAt,
   };
 };
@@ -77,6 +79,7 @@ const formToDraft = (form: CollectionForm): CustomCollectionDraft => ({
     transcription: form.transcription || undefined,
     speech: form.speech || undefined,
   },
+  systemPrompt: form.systemPrompt.trim() || undefined,
 });
 
 const componentListForForm = (form: CollectionForm): string[] => getCustomCollectionComponentList(formToDraft(form));
@@ -315,6 +318,23 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
             <div className="collection-warning">This planner LLM may not support tool calling. The Omni Model can still be saved, but OmniRouter tools may be unreliable with this model.</div>
           )}
           {OPTIONAL_ROLES.map((role) => renderRoleSelect(role))}
+        </div>
+
+        <div className="form-section">
+          <label
+            className="form-label"
+            title="Optional template that overrides the default OmniRouter system prompt. Leave blank to use the default. Keep the {tool_list} and {tool_guidance} placeholders so the planner sees the available tools."
+          >
+            System Prompt (optional)
+          </label>
+          <textarea
+            className="form-input"
+            rows={6}
+            value={form.systemPrompt}
+            onChange={(e) => updateForm({ systemPrompt: e.target.value })}
+            placeholder="Leave blank to use the default OmniRouter system prompt. To customize, keep the {tool_list} and {tool_guidance} placeholders."
+            spellCheck={false}
+          />
         </div>
 
         {error && <div className="form-error">{error}</div>}

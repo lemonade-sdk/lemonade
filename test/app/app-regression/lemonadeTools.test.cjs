@@ -120,6 +120,70 @@ const tests = [
     },
   },
   {
+    name: 'collection-level system_prompt overrides the global default in buildLemonadeTools',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assertIncludes(
+        source,
+        "typeof info?.system_prompt === 'string' && info.system_prompt",
+        'buildLemonadeTools should prefer the collection model\'s own system_prompt when set.',
+      );
+      assertIncludes(
+        source,
+        '? info.system_prompt',
+        'The override branch must read system_prompt off the collection\'s ModelInfo.',
+      );
+      assertIncludes(
+        source,
+        ': toolDefinitions.system_prompt',
+        'The fallback branch must keep the global default in toolDefinitions.json.',
+      );
+    },
+  },
+  {
+    name: 'system_prompt rides through the export/import allowlist',
+    run() {
+      const modelData = readSource('src/app/src/renderer/utils/modelData.ts');
+      assertIncludes(
+        modelData,
+        "'system_prompt',",
+        'EXPORT_KNOWN_KEYS must include system_prompt so round-trips do not drop it.',
+      );
+      assertIncludes(
+        modelData,
+        'system_prompt?: string',
+        'ModelInfo should expose system_prompt as an optional field.',
+      );
+      const recipeImport = readSource('src/cpp/cli/recipe_import.cpp');
+      assertIncludes(
+        recipeImport,
+        '"system_prompt"',
+        'kKnownKeys (CLI side) must mirror the desktop allowlist.',
+      );
+    },
+  },
+  {
+    name: 'custom collection draft carries an optional systemPrompt through to the pull request',
+    run() {
+      const customCollections = readSource('src/app/src/renderer/utils/customCollections.ts');
+      assertIncludes(
+        customCollections,
+        'systemPrompt?: string',
+        'CustomCollection / CustomCollectionDraft should carry an optional systemPrompt.',
+      );
+      assertIncludes(
+        customCollections,
+        "system_prompt?: string",
+        'CustomCollectionPullRequest should serialize system_prompt to the wire format.',
+      );
+      assertIncludes(
+        customCollections,
+        'request.system_prompt = systemPrompt',
+        'buildCustomCollectionPullRequest should attach the trimmed prompt when non-empty.',
+      );
+    },
+  },
+  {
     name: 'unavailable tool guidance is omitted from the planner prompt',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));

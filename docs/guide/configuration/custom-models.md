@@ -114,6 +114,8 @@ The Omni Model editor only offers already-registered compatible models for each 
 
 If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
 
+The editor also exposes an optional **System Prompt** field. Leave it blank to use the default OmniRouter system prompt; supply a string to override it just for this collection. The override is a *template* — keep the `{tool_list}` and `{tool_guidance}` placeholders so the planner still sees the available tools (the server expands them at runtime based on which components are present).
+
 ### Share a collection: export, import, and Hugging Face
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
