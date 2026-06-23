@@ -2832,7 +2832,7 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
 
 bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
     for (const auto& file_pair : req.form.files) {
-        if (file_pair.first == "image") {
+        if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
             out["image_data"] = utils::JsonUtils::base64_encode(file.content);
             out["image_filename"] = file.filename;
