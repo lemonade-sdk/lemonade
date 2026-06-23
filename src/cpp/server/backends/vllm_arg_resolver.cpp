@@ -238,6 +238,12 @@ bool has_dtype_arg(const std::vector<ParsedArg>& args) {
                        [](const ParsedArg& arg) { return arg.flag == "--dtype"; });
 }
 
+const ParsedArg* find_arg(const std::vector<ParsedArg>& args, const std::string& flag) {
+    auto it = std::find_if(args.begin(), args.end(),
+                           [&](const ParsedArg& arg) { return arg.flag == flag; });
+    return it == args.end() ? nullptr : &(*it);
+}
+
 } // namespace
 
 VLLMArgResolution resolve_vllm_args(const std::string& model_name,
@@ -282,7 +288,18 @@ VLLMArgResolution resolve_vllm_args(const std::string& model_name,
 
     merge_layer(resolved, parse_args(user_vllm_args, "vllm_args"));
 
-    return {flatten_args(resolved), has_memory_budget_arg(resolved), has_dtype_arg(resolved)};
+    const ParsedArg* quantization_arg = find_arg(resolved, "--quantization");
+    std::string quantization_value = quantization_arg && !quantization_arg->values.empty()
+        ? quantization_arg->values.front()
+        : "";
+
+    return {
+        flatten_args(resolved),
+        has_memory_budget_arg(resolved),
+        has_dtype_arg(resolved),
+        quantization_arg != nullptr,
+        quantization_value
+    };
 }
 
 } // namespace backends

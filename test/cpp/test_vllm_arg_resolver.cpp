@@ -80,6 +80,23 @@ static bool expect_dtype_flag(const char* name,
     return ok;
 }
 
+static bool expect_quantization_arg(const char* name,
+                                    const VLLMArgResolution& actual,
+                                    bool expected_has_quantization,
+                                    const std::string& expected_quantization) {
+    bool ok = actual.has_quantization_arg == expected_has_quantization &&
+              actual.quantization_arg == expected_quantization;
+    std::printf("[%s] %s\n  got:  has_quantization_arg=%s quantization=%s\n"
+                "  want: has_quantization_arg=%s quantization=%s\n",
+                ok ? "PASS" : "FAIL",
+                name,
+                actual.has_quantization_arg ? "true" : "false",
+                actual.quantization_arg.c_str(),
+                expected_has_quantization ? "true" : "false",
+                expected_quantization.c_str());
+    return ok;
+}
+
 static bool expect_error(const char* name,
                          const std::string& arg_string,
                          const std::string& expected_substring) {
@@ -281,6 +298,24 @@ int main() {
         "user --dtype is detected",
         resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--dtype bfloat16"),
         true);
+
+    failures += !expect_quantization_arg(
+        "missing --quantization is reported",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""),
+        false,
+        "");
+
+    failures += !expect_quantization_arg(
+        "config --quantization is reported",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), ""),
+        true,
+        "awq");
+
+    failures += !expect_quantization_arg(
+        "user --quantization override is reported",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--quantization gptq"),
+        true,
+        "gptq");
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

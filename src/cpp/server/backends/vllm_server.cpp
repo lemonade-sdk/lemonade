@@ -198,14 +198,22 @@ void VLLMServer::load(const std::string& model_name,
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
     std::string quant_method = detect_quant_method(model_id);
     if (quant_method == "awq") {
-        LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
-        args.push_back("--quantization");
-        args.push_back("awq");
+        if (!resolved_vllm_args.has_quantization_arg) {
+            LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
+            args.push_back("--quantization");
+            args.push_back("awq");
+        } else {
+            LOG(DEBUG, "vLLM") << "Detected AWQ; using resolved --quantization "
+                               << resolved_vllm_args.quantization_arg << std::endl;
+        }
         // vLLM's AWQ kernels only support float16. Many AWQ repos still declare
         // bfloat16 in config.json, which makes vLLM abort with "torch.bfloat16 is
         // not supported for quantization method awq". Force float16 so AWQ models
         // load, unless the user already pinned a --dtype themselves.
-        if (!resolved_vllm_args.has_dtype_arg) {
+        bool effective_awq_quantization =
+            !resolved_vllm_args.has_quantization_arg ||
+            resolved_vllm_args.quantization_arg == "awq";
+        if (effective_awq_quantization && !resolved_vllm_args.has_dtype_arg) {
             LOG(DEBUG, "vLLM") << "Forcing --dtype float16 for AWQ" << std::endl;
             args.push_back("--dtype");
             args.push_back("float16");

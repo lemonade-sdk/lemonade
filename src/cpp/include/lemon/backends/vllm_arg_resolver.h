@@ -13,6 +13,8 @@ struct VLLMArgResolution {
     // True when the user/family already supplied --dtype, so backend code
     // should not force its own (e.g. the AWQ float16 default).
     bool has_dtype_arg = false;
+    bool has_quantization_arg = false;
+    std::string quantization_arg;
 };
 
 VLLMArgResolution resolve_vllm_args(const std::string& model_name,
