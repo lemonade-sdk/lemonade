@@ -22,7 +22,6 @@ namespace lemon {
 namespace backends {
 
 static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
-static constexpr int64_t VLLM_TOKEN_FIT_RESERVE = 64;
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -46,6 +45,36 @@ static json with_legacy_token_limit(const json& request) {
         modified_request["max_tokens"] = modified_request["max_completion_tokens"];
     }
     return modified_request;
+}
+
+static void copy_if_present(json& target, const json& source, const char* key) {
+    if (source.contains(key)) {
+        target[key] = source[key];
+    }
+}
+
+static void merge_chat_template_kwarg(json& target, const json& source, const char* key) {
+    if (!source.contains(key)) {
+        return;
+    }
+    if (!target.contains("chat_template_kwargs")) {
+        target["chat_template_kwargs"] = json::object();
+    }
+    if (target["chat_template_kwargs"].is_object() &&
+        !target["chat_template_kwargs"].contains(key)) {
+        target["chat_template_kwargs"][key] = source[key];
+    }
+}
+
+static void add_reasoning_effort_template_kwargs(json& target, const json& source) {
+    merge_chat_template_kwarg(target, source, "reasoning_effort");
+    if (!source.contains("reasoning_effort") || !source["reasoning_effort"].is_string() ||
+        !target["chat_template_kwargs"].is_object() ||
+        target["chat_template_kwargs"].contains("enable_thinking")) {
+        return;
+    }
+    target["chat_template_kwargs"]["enable_thinking"] =
+        source["reasoning_effort"].get<std::string>() != "none";
 }
 
 json VLLMServer::prepare_openai_request(const json& request) {
@@ -385,12 +414,11 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
         return request;
     }
 
-    if (input_tokens >= max_model_len_) {
+    int64_t available_output_tokens = max_model_len_ - input_tokens;
+    if (available_output_tokens <= 0) {
         return request;
     }
 
-    int64_t available_output_tokens =
-        std::max<int64_t>(1, max_model_len_ - input_tokens - VLLM_TOKEN_FIT_RESERVE);
     if (requested_max_tokens <= available_output_tokens) {
         return request;
     }
@@ -405,8 +433,7 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
     LOG(INFO, "vLLM") << "Reduced OpenAI max tokens from " << requested_max_tokens
                       << " to " << available_output_tokens
                       << " so input_tokens (" << input_tokens
-                      << ") fits max_model_len (" << max_model_len_
-                      << ") with reserve (" << VLLM_TOKEN_FIT_RESERVE << ")" << std::endl;
+                      << ") fits max_model_len (" << max_model_len_ << ")" << std::endl;
     return modified_request;
 }
 
@@ -415,16 +442,21 @@ int64_t VLLMServer::count_openai_prompt_tokens(const json& request) {
     tokenize_request["model"] = model_name_;
     if (request.contains("messages")) {
         tokenize_request["messages"] = request["messages"];
+        copy_if_present(tokenize_request, request, "add_generation_prompt");
+        copy_if_present(tokenize_request, request, "continue_final_message");
+        copy_if_present(tokenize_request, request, "add_special_tokens");
+        copy_if_present(tokenize_request, request, "chat_template");
+        copy_if_present(tokenize_request, request, "chat_template_kwargs");
+        copy_if_present(tokenize_request, request, "media_io_kwargs");
+        copy_if_present(tokenize_request, request, "mm_processor_kwargs");
+        copy_if_present(tokenize_request, request, "tools");
+        merge_chat_template_kwarg(tokenize_request, request, "documents");
+        add_reasoning_effort_template_kwargs(tokenize_request, request);
     } else if (request.contains("prompt")) {
         tokenize_request["prompt"] = request["prompt"];
+        copy_if_present(tokenize_request, request, "add_special_tokens");
     } else {
         return 0;
-    }
-    if (request.contains("tools")) {
-        tokenize_request["tools"] = request["tools"];
-    }
-    if (request.contains("tool_choice")) {
-        tokenize_request["tool_choice"] = request["tool_choice"];
     }
 
     // This is a synchronous backend round trip on the request path. It only
