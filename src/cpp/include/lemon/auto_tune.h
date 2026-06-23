@@ -192,56 +192,6 @@ inline double get_available_memory_gb(DeviceType device_type) {
     LOG(DEBUG, "AutoTune") << "get_available_memory_gb: could not determine memory, returning 0.0";
     return 0.0;  // Could not determine
 }
-
-/**
- * Compute the maximum context window that fits in available memory based on
- * GGUF architecture metadata.
- *
- * Base formula (standard MHA/GQA):
- *   kv_bytes_per_token = head_count_kv × key_length × 2[F16] × 2[K+V]
- *   (head_count_kv is total KV heads across all blocks)
- *
- * Architecture-specific scaling factors reduce this for models that compress
- * their KV cache.  Rules are driven by GGUF metadata, not architecture names:
- *   - SWA with reduced dims: factor = 1 - swa_ratio + swa_ratio × (key_swa / key)
- *   - Hybrid SSM-attention: factor = 1 / full_attention_interval
- *   - Neither detected: factor = 1.0 (conservative)
- *
- *   max_ctx = floor((available_memory_gb × 1024³ - weights) / kv_bytes_per_token)
- *   ctx_size = min(model_max_context_window, max_ctx)
- *
- * When GGUF metadata is unavailable, estimates kv_bytes_per_token from model size.
- * For embedding models, the result is floored at EMBEDDING_CTX_SIZE.
- *
- * @param model_info       Model metadata including GGUF architecture fields
- * @param available_memory_gb  Total memory available for the model (VRAM or system RAM)
- * @param is_embedding     Whether this is an embedding model (applies minimum floor)
- * @return Resolved context size, or AUTO_CTX_FALLBACK if computation fails
- */
-static double compute_kv_cache_scaling_factor(const GgufMetadata& gguf) {
-    // SWA with reduced dimensions: some layers store smaller key/value vectors.
-    // Detected by sliding_window_pattern (→ swa_layer_count) and key_length_swa < key_length.
-    // Approximation assumes KV heads are distributed proportionally across layers.
-    if (gguf.swa_layer_count > 0 &&
-        gguf.block_count > 0 &&
-        gguf.key_length_swa > 0 && gguf.key_length > 0 &&
-        gguf.key_length_swa < gguf.key_length) {
-        double swa_ratio = static_cast<double>(gguf.swa_layer_count) /
-                           static_cast<double>(gguf.block_count);
-        double dim_ratio = static_cast<double>(gguf.key_length_swa) /
-                           static_cast<double>(gguf.key_length);
-        double factor = 1.0 - swa_ratio + swa_ratio * dim_ratio;
-        return std::max(0.1, factor);
-    }
-
-    // Hybrid SSM-attention: only 1 every `full_attention_interval` layers grows KV cache;
-    // the rest use SSM recurrent state (constant memory regardless of context length).
-    if (gguf.full_attention_interval > 1) {
-        return 1.0 / static_cast<double>(gguf.full_attention_interval);
-    }
-
-    return 1.0;  // Standard MHA/GQA — no scaling
-}
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false) {
@@ -262,16 +212,28 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     int64_t key_length = model_info.gguf.key_length;
 
     if (block_count > 0 && head_count_kv > 0 && key_length > 0) {
-        // Base formula: total_kv_heads × head_dim × 2[F16] × 2[K+V]
-        // head_count_kv is already the total across all blocks
-        kv_cache_scale = compute_kv_cache_scaling_factor(model_info.gguf);
-        kv_bytes_per_token = static_cast<double>(head_count_kv)
-                            * static_cast<double>(key_length)
-                            * 2.0  // F16 = 2 bytes per element
-                            * 2.0  // K cache + V cache
-                            * kv_cache_scale;
+        kv_bytes_per_token = compute_weighted_kv_cache_bytes_per_token(
+            model_info.gguf, &kv_cache_scale);
         if (kv_cache_scale < 1.0) {
             estimated = true;  // mark as architecture-adjusted
+        }
+        // Log precise SWA head breakdown when raw arrays are available
+        if (model_info.gguf.key_length_swa > 0 &&
+            model_info.gguf.key_length_swa < model_info.gguf.key_length &&
+            !model_info.gguf.head_count_kv_per_layer.empty() &&
+            !model_info.gguf.sliding_window_pattern.empty()) {
+            int64_t swa_heads = 0, full_heads = 0;
+            for (size_t i = 0; i < model_info.gguf.head_count_kv_per_layer.size(); ++i) {
+                if (model_info.gguf.sliding_window_pattern[i])
+                    swa_heads += model_info.gguf.head_count_kv_per_layer[i];
+                else
+                    full_heads += model_info.gguf.head_count_kv_per_layer[i];
+            }
+            if (swa_heads > 0 || full_heads > 0) {
+                LOG(DEBUG, "AutoTune") << "  SWA head breakdown: swa_heads="
+                                       << swa_heads << ", full_heads="
+                                       << full_heads << " ";
+            }
         }
     } else {
         // GGUF metadata missing — estimate from model size

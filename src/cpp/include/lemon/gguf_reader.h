@@ -8,11 +8,13 @@
 /// MTP).  All helpers are static — no stateful reader class is needed because
 /// the header is read sequentially in one shot.
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <ios>
 #include <string>
+#include <vector>
 #include <lemon/gguf_capabilities.h>
 #include <lemon/utils/path_utils.h>
 
@@ -22,17 +24,33 @@ namespace lemon {
 ///
 /// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
 /// subsystems can estimate KV-cache pressure and clamp context size.
+///
+/// Arrays that vary per-block (head_count_kv_per_layer, sliding_window_pattern)
+/// are stored as-is so that downstream code can perform precise per-layer
+/// computations (e.g. distinguishing SWA-layer head counts from full-layer
+/// head counts).  Scalar convenience fields (head_count_kv, swa_layer_count)
+/// are derived from the raw arrays after the header pass completes.
 struct GgufMetadata {
     std::string architecture;
     int64_t context_length = 0;
     int64_t block_count = 0;
     int64_t embedding_length = 0;
-    int64_t head_count_kv = 0;    // total across all blocks (summed from array, or scalar × block_count)
+    int64_t head_count_kv = 0;       // total across all blocks (derived)
     int64_t key_length = 0;
-    int64_t key_length_swa = 0;   // SWA-reduced key length (Gemma4, etc.)
-    int64_t swa_layer_count = 0;  // layers with sliding-window attention
+    int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
+    int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
     GgufCapabilities caps;
+
+    // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
+    // Populated when the GGUF field is an array.  Empty when the field is
+    // a scalar (in which case the scalar is repeated for every block).
+    std::vector<int64_t> head_count_kv_per_layer;
+    std::vector<bool> sliding_window_pattern;
+
+    // Transient scalar held when head_count_kv GGUF field is a scalar.
+    // Converted to head_count_kv_per_layer in post-loop validation.
+    int64_t head_count_kv_scalar = 0;
 };
 
 // ── Low-level binary readers ──────────────────────────────────────────
@@ -244,23 +262,22 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             }
             if (key == out.architecture + ".attention.head_count_kv") {
                 if (type == 9) {
-                    // Array of integers: one entry per block — sum to get total KV heads
+                    // Array of integers: one entry per block — store raw values
                     uint32_t elem_type = 0;
                     uint64_t count = 0;
                     if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
-                        int64_t total = 0;
+                        out.head_count_kv_per_layer.resize(static_cast<size_t>(count));
                         for (uint64_t j = 0; j < count; ++j) {
                             int64_t v = 0;
-                            if (read_gguf_integer_value(in, elem_type, v) && v > 0)
-                                total += v;
+                            if (read_gguf_integer_value(in, elem_type, v))
+                                out.head_count_kv_per_layer[j] = v;
                         }
-                        out.head_count_kv = total;
                     }
                 } else {
-                    // Scalar: per-block count, multiply by block_count for total
+                    // Scalar: per-block count, stored transiently for later
                     int64_t value = 0;
                     if (read_gguf_integer_value(in, type, value) && value > 0)
-                        out.head_count_kv = value * out.block_count;
+                        out.head_count_kv_scalar = value;
                 }
                 continue;
             }
@@ -285,18 +302,20 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
         }
 
         // sliding_window_pattern: bool array, one entry per layer.
-        // Count true entries → swa_layer_count.  Match by suffix so we don't
-        // need the architecture prefix (key shape: arch.attention.sliding_window_pattern).
+        // Store raw values so downstream code can correlate with per-layer
+        // head counts and key lengths.  Match by suffix so we don't need the
+        // architecture prefix (key shape: arch.attention.sliding_window_pattern).
         if (key.size() > std::strlen(".sliding_window_pattern")
              && gguf_reader_detail::ends_with_ignore_case(key, ".sliding_window_pattern") && type == 9) {
             uint32_t elem_type = 0;
             uint64_t count = 0;
             if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
                 if (elem_type == 7) {  // BOOL
+                    out.sliding_window_pattern.resize(static_cast<size_t>(count));
                     for (uint64_t j = 0; j < count; ++j) {
                         uint8_t v = 0;
-                        if (read_gguf_le(in, v) && v)
-                            out.swa_layer_count++;
+                        if (read_gguf_le(in, v))
+                            out.sliding_window_pattern[j] = (v != 0);
                     }
                 } else if (elem_type != 9) {
                     uint64_t elem_size = gguf_scalar_size(elem_type);
@@ -348,7 +367,115 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
     if (out.context_length == 0 && pending_context_length > 0) {
         out.context_length = pending_context_length;
     }
+
+    // ── Derive scalar convenience fields from raw arrays ──────────────
+    // head_count_kv: total KV heads across all blocks
+    if (!out.head_count_kv_per_layer.empty()) {
+        for (int64_t v : out.head_count_kv_per_layer)
+            out.head_count_kv += v;
+    } else if (out.head_count_kv_scalar > 0 && out.block_count > 0) {
+        out.head_count_kv = out.head_count_kv_scalar * out.block_count;
+        // Also populate the per-layer array for uniform scalar case
+        out.head_count_kv_per_layer.assign(out.block_count, out.head_count_kv_scalar);
+    }
+
+    // swa_layer_count: number of layers with sliding-window attention
+    if (!out.sliding_window_pattern.empty()) {
+        for (bool v : out.sliding_window_pattern)
+            if (v) out.swa_layer_count++;
+    }
+
     return true;
+}
+
+/// Compute KV cache bytes-per-token using raw per-layer arrays from GGUF.
+///
+/// When head_count_kv_per_layer and sliding_window_pattern are populated,
+/// this gives a precise weighted sum that accounts for per-layer head-count
+/// variation combined with SWA-reduced key lengths.  When only scalar
+/// metadata is available, falls back to the proportional approximation.
+///
+/// @param gguf       GGUF metadata with raw arrays populated
+/// @param[out] scale_out  Output scaling factor (for logging). Set to 1.0 if
+///                        no architecture-specific scaling applies. May be null.
+/// @return Bytes per token for KV cache, or 0 if metadata is insufficient.
+inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf,
+                                                        double* scale_out = nullptr) {
+    int64_t block_count = gguf.block_count;
+    int64_t key_length = gguf.key_length;
+    int64_t key_length_swa = gguf.key_length_swa;
+
+    if (block_count <= 0 || key_length <= 0)
+        return 0.0;
+
+    // Hybrid SSM-attention: only 1 every N layers grows KV cache;
+    // the rest use SSM recurrent state (constant memory regardless of context).
+    // Full-attention layers at indices 0, interval, 2*interval, …
+    // Exact count: floor((block_count - 1) / interval) + 1
+    if (gguf.full_attention_interval > 1) {
+        int64_t full_attn_layers = (block_count - 1) / gguf.full_attention_interval + 1;
+        double factor = static_cast<double>(full_attn_layers)
+                      / static_cast<double>(block_count);
+        if (scale_out) *scale_out = factor;
+        int64_t total_heads = gguf.head_count_kv;
+        if (total_heads <= 0)
+            return 0.0;
+        return static_cast<double>(total_heads)
+             * static_cast<double>(key_length)
+             * 2.0  // F16
+             * 2.0  // K+V
+             * factor;
+    }
+
+    // ── SWA or standard MHA/GQA ──────────────────────────────────────
+    bool has_swa = (key_length_swa > 0 && key_length_swa < key_length);
+
+    if (has_swa && !gguf.head_count_kv_per_layer.empty() && !gguf.sliding_window_pattern.empty()) {
+        // Precise per-layer weighted sum using raw arrays.
+        // Each layer contributes: heads[layer] × key_len[layer] × 2[F16] × 2[K+V]
+        // where key_len[layer] = key_length_swa if SWA, key_length otherwise.
+        size_t n = gguf.head_count_kv_per_layer.size();
+        double weighted_sum = 0.0;
+        double unweighted_sum = 0.0;
+
+        for (size_t i = 0; i < n; ++i) {
+            int64_t heads = gguf.head_count_kv_per_layer[i];
+            if (heads <= 0) continue;
+            double kl = gguf.sliding_window_pattern[i] ? key_length_swa : key_length;
+            weighted_sum += static_cast<double>(heads) * kl;
+            unweighted_sum += static_cast<double>(heads) * key_length;
+        }
+
+        if (weighted_sum > 0 && scale_out) {
+            *scale_out = (unweighted_sum > 0) ? weighted_sum / unweighted_sum : 1.0;
+        }
+
+        return weighted_sum * 2.0 * 2.0;
+    }
+
+    // Scalar/uniform case: use proportional approximation.
+    // This also covers the non-SWA standard MHA/GQA path.
+    int64_t total_heads = gguf.head_count_kv;
+    if (total_heads <= 0)
+        return 0.0;
+
+    double factor = 1.0;
+    if (has_swa && gguf.swa_layer_count > 0) {
+        double swa_ratio = static_cast<double>(gguf.swa_layer_count)
+                         / static_cast<double>(block_count);
+        double dim_ratio = static_cast<double>(key_length_swa)
+                         / static_cast<double>(key_length);
+        factor = 1.0 - swa_ratio + swa_ratio * dim_ratio;
+        factor = std::max(0.1, factor);
+    }
+
+    if (scale_out) *scale_out = factor;
+
+    return static_cast<double>(total_heads)
+         * static_cast<double>(key_length)
+         * 2.0  // F16
+         * 2.0  // K+V
+         * factor;
 }
 
 } // namespace lemon
