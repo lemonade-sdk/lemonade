@@ -4087,30 +4087,31 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     // NVIDIA: one query returns used + total for the first GPU.
     {
-        std::string output;
-        int rc = lemon::utils::ProcessManager::run_command(
-            "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
-            output, 5);
-        if (rc == 0 && !output.empty()) {
-            std::istringstream iss(output);
-            std::string line;
-            if (std::getline(iss, line)) {
-                size_t comma = line.find(',');
-                if (comma != std::string::npos) {
-                    try {
-                        double used = std::stod(line.substr(0, comma));
-                        double total = std::stod(line.substr(comma + 1));
-                        if (total > 0.0) {
-                            return used / total;
+        if (!find_executable_in_path("nvidia-smi").empty()) {
+            std::string output;
+            int rc = lemon::utils::ProcessManager::run_command(
+                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
+                output, 5);
+            if (rc == 0 && !output.empty()) {
+                std::istringstream iss(output);
+                std::string line;
+                if (std::getline(iss, line)) {
+                    size_t comma = line.find(',');
+                    if (comma != std::string::npos) {
+                        try {
+                            double used = std::stod(line.substr(0, comma));
+                            double total = std::stod(line.substr(comma + 1));
+                            if (total > 0.0) {
+                                return used / total;
+                            }
+                        } catch (...) {
+                            // fall through to other sources
                         }
-                    } catch (...) {
-                        // fall through to other sources
                     }
                 }
             }
         }
     }
-
 #ifdef __linux__
     // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
     try {
