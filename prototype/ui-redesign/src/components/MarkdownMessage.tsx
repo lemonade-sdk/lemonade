@@ -172,7 +172,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         } else {
           highlighted = instance.utils.escapeHtml(str);
         }
-        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy">${COPY_ICON}</button></div><pre><code>${highlighted}</code></pre></div>`;
+        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy" aria-label="Copy code">${COPY_ICON}</button></div><pre><code>${highlighted}</code></pre></div>`;
       },
     });
 

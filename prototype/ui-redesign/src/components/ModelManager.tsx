@@ -808,6 +808,10 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
   const config = OMNI_COMPONENT_ROLE_CONFIG[role];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const inputId = `omni-picker-input-${role}`;
+  const listboxId = `omni-picker-listbox-${role}`;
+  const optionId = (index: number) => `omni-picker-option-${role}-${index}`;
   const selected = options.find(option => option.id === value);
   const queryText = query.trim().toLowerCase();
   const visibleOptions = useMemo(() => {
@@ -819,23 +823,58 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
       : options;
     return filtered.slice(0, 40);
   }, [options, queryText]);
+
+  // Reset active index when the option list changes
+  useEffect(() => { setActiveIndex(-1); }, [visibleOptions]);
+
   const groups: Array<{ source: OmniComponentOptionSource; label: string; options: OmniComponentOption[] }> = [
     { source: 'custom' as OmniComponentOptionSource, label: 'Custom models', options: visibleOptions.filter(option => option.source === 'custom') },
     { source: 'downloaded' as OmniComponentOptionSource, label: 'Downloaded locally', options: visibleOptions.filter(option => option.source === 'downloaded') },
     { source: 'registered' as OmniComponentOptionSource, label: 'Registered registry models', options: visibleOptions.filter(option => option.source === 'registered') },
   ].filter(group => group.options.length > 0);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const count = visibleOptions.length;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) { setOpen(true); setActiveIndex(count > 0 ? 0 : -1); return; }
+      setActiveIndex(prev => count > 0 ? (prev + 1) % count : -1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { setOpen(true); setActiveIndex(count > 0 ? count - 1 : -1); return; }
+      setActiveIndex(prev => count > 0 ? (prev <= 0 ? count - 1 : prev - 1) : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && activeIndex >= 0 && visibleOptions[activeIndex]) {
+        onChange(visibleOptions[activeIndex].id);
+        setQuery('');
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  };
+
   return (
     <div className="omni-component-picker">
-      <label className="omni-component-picker__label" title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
+      <label className="omni-component-picker__label" htmlFor={inputId} title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
       <div className="omni-component-picker__control">
         <input
+          id={inputId}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-activedescendant={open && activeIndex >= 0 && visibleOptions[activeIndex] ? optionId(activeIndex) : undefined}
+          aria-autocomplete="list"
           value={open ? query : (selected ? selected.label : '')}
           onFocus={() => { setOpen(true); setQuery(''); }}
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setActiveIndex(-1); }}
+          onBlur={() => window.setTimeout(() => { setOpen(false); setActiveIndex(-1); }, 120)}
+          onKeyDown={handleKeyDown}
           placeholder={config.placeholder}
-          aria-label={`${config.label} component`}
           autoComplete="off"
         />
         {value && !config.required && (
@@ -845,43 +884,49 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
             onMouseDown={e => e.preventDefault()}
             onClick={() => onChange('')}
             title={`Clear ${config.label}`}
+            aria-label={`Clear ${config.label}`}
           >×</button>
         )}
-        <span className="omni-component-picker__chevron">⌄</span>
+        <span className="omni-component-picker__chevron" aria-hidden="true">⌄</span>
         {open && (
-          <div className="omni-component-picker__menu" role="listbox">
-            {groups.length > 0 ? groups.map(group => (
-              <div className="omni-component-picker__group" key={group.source}>
-                <div className="omni-component-picker__group-label">{group.label}</div>
-                {group.options.map(option => (
-                  <button
-                    type="button"
-                    key={option.id}
-                    className={`omni-component-picker__option${option.id === value ? ' omni-component-picker__option--selected' : ''}`}
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => { onChange(option.id); setQuery(''); setOpen(false); }}
-                    role="option"
-                    aria-selected={option.id === value}
-                  >
-                    <span className="omni-component-picker__option-name">{option.label}</span>
-                    <span className="omni-component-picker__option-id">{option.id}</span>
-                    <span className="omni-component-picker__option-detail">{option.detail}</span>
-                  </button>
-                ))}
-              </div>
-            )) : (
-              <div className="omni-component-picker__empty">
-                No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
-              </div>
-            )}
+          <div className="omni-component-picker__menu">
+            <div role="listbox" id={listboxId} aria-label={`${config.label} options`}>
+              {groups.length > 0 ? groups.map(group => (
+                <div className="omni-component-picker__group" key={group.source} role="group" aria-label={group.label}>
+                  <div className="omni-component-picker__group-label" aria-hidden="true">{group.label}</div>
+                  {group.options.map(option => {
+                    const flatIdx = visibleOptions.indexOf(option);
+                    return (
+                      <div
+                        key={option.id}
+                        id={optionId(flatIdx)}
+                        className={`omni-component-picker__option${option.id === value ? ' omni-component-picker__option--selected' : ''}${flatIdx === activeIndex ? ' omni-component-picker__option--focused' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { onChange(option.id); setQuery(''); setOpen(false); setActiveIndex(-1); }}
+                        role="option"
+                        aria-selected={option.id === value}
+                      >
+                        <span className="omni-component-picker__option-name">{option.label}</span>
+                        <span className="omni-component-picker__option-id">{option.id}</span>
+                        <span className="omni-component-picker__option-detail">{option.detail}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )) : (
+                <div className="omni-component-picker__empty">
+                  No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+                </div>
+              )}
+            </div>
             {queryText.length >= 2 && onHuggingFaceSearch && (
               <button
                 type="button"
                 className="omni-component-picker__hf-search"
                 onMouseDown={e => e.preventDefault()}
-                onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); }}
+                onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); setActiveIndex(-1); }}
               >
-                Search HuggingFace for “{query.trim()}”
+                Search HuggingFace for "{query.trim()}"
               </button>
             )}
           </div>

@@ -348,6 +348,7 @@ const LogViewer: React.FC = () => {
             placeholder="Filter logs…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            aria-label="Filter logs"
           />
         </div>
 
@@ -379,12 +380,12 @@ const LogViewer: React.FC = () => {
             </select>
           </label>
 
-          <button className="logs-btn" onClick={clearLogs} title="Clear logs">
+          <button className="logs-btn" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">
             Clear
           </button>
 
           {connStatus !== 'connected' && (
-            <button className="logs-btn logs-btn--accent" onClick={connect} title="Reconnect">
+            <button className="logs-btn logs-btn--accent" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">
               Reconnect
             </button>
           )}
