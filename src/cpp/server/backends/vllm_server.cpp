@@ -365,8 +365,10 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
     int64_t requested_max_tokens = has_max_completion_tokens
         ? request["max_completion_tokens"].get<int64_t>()
         : request["max_tokens"].get<int64_t>();
+    const int64_t preflight_threshold =
+        std::min<int64_t>(VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD, max_model_len_);
     if (requested_max_tokens <= 0 ||
-        requested_max_tokens <= VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD) {
+        requested_max_tokens <= preflight_threshold) {
         return request;
     }
 
