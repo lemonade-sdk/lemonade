@@ -100,12 +100,21 @@ public:
     // string on OK, a human-readable error message otherwise.
     static std::string validate_provider_name(const std::string& provider);
 
-    // Validates a candidate base URL: must be https:// (any host), or
-    // http:// limited to localhost / 127.0.0.1 / ::1 so the mock-provider
-    // tests still work. Anything else is rejected — a typo'd scheme would
-    // leak the Bearer API key in plaintext on every forwarded request.
+    // Validates a candidate base URL: must be https:// or http://. Plain HTTP
+    // is allowed because custom backends can legitimately live on a trusted LAN,
+    // but callers should surface base_url_warnings() so the user understands
+    // the transport tradeoff.
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_base_url(const std::string& base_url);
+
+    // Returns true for an http:// base URL, false for https:// or invalid input.
+    static bool is_http_base_url(const std::string& base_url);
+
+    // Non-blocking warnings for a validated base URL. When api_key_available is
+    // true, includes a stronger warning that Lemonade will send Bearer auth over
+    // plaintext HTTP.
+    static std::vector<std::string> base_url_warnings(const std::string& base_url,
+                                                      bool api_key_available);
 
 private:
     static std::string normalize_base_url(std::string url);

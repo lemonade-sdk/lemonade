@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -194,6 +195,26 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/v0/system-stats" || path == "/v1/system-stats" ||
            path == "/api/v0/stats" || path == "/api/v1/stats" ||
            path == "/v0/stats" || path == "/v1/stats";
+}
+
+std::string join_warnings(const std::vector<std::string>& warnings) {
+    std::ostringstream joined;
+    for (size_t i = 0; i < warnings.size(); ++i) {
+        if (i > 0) {
+            joined << " | ";
+        }
+        joined << warnings[i];
+    }
+    return joined.str();
+}
+
+void attach_warnings(json& response, const std::vector<std::string>& warnings) {
+    if (warnings.empty()) {
+        return;
+    }
+    response["warnings"] = warnings;
+    // Backward-compatible single-string field for older clients.
+    response["warning"] = join_warnings(warnings);
 }
 
 } // namespace
@@ -3918,6 +3939,11 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
             }},
             {"models_discovered", models_after}
         };
+        attach_warnings(
+            response,
+            CloudProviderRegistry::base_url_warnings(
+                cloud_registry_->base_url_for(provider),
+                /*api_key_available=*/true));
         res.set_content(response.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;
@@ -4186,14 +4212,20 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         nlohmann::json providers = nlohmann::json::array();
         for (const auto& rec : cloud_registry_->list_installed()) {
             auto state = cloud_registry_->auth_state(rec.name);
-            providers.push_back({
+            nlohmann::json provider = {
                 {"name", rec.name},
                 {"base_url", rec.base_url},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
                 {"models_discovered", model_manager_->count_cloud_models(rec.name)}
-            });
+            };
+            attach_warnings(
+                provider,
+                CloudProviderRegistry::base_url_warnings(
+                    rec.base_url,
+                    state.env_var_set || state.runtime_key_set));
+            providers.push_back(std::move(provider));
         }
         system_info["cloud"] = {{"providers", providers}};
     }
@@ -5073,10 +5105,14 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                     {"runtime_key_set", state.runtime_key_set}
                 }}
             };
+            std::vector<std::string> warnings = CloudProviderRegistry::base_url_warnings(
+                cloud_registry_->base_url_for(provider),
+                state.env_var_set || state.runtime_key_set);
             if (!api_key.empty() && !runtime_key_stored) {
-                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
-                    " is set; supplied api_key was ignored.";
+                warnings.push_back(CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.");
             }
+            attach_warnings(response, warnings);
             res.set_content(response.dump(), "application/json");
             return;
         }

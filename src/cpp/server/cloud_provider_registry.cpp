@@ -10,6 +10,22 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+namespace {
+
+std::string to_lower_copy(const std::string& value) {
+    std::string lower = value;
+    for (auto& c : lower) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return lower;
+}
+
+bool starts_with_scheme(const std::string& value, const std::string& scheme) {
+    return to_lower_copy(value).compare(0, scheme.size(), scheme) == 0;
+}
+
+} // namespace
+
 std::string CloudProviderRegistry::env_var_name(const std::string& provider) {
     std::string upper = provider;
     for (auto& c : upper) {
@@ -40,32 +56,34 @@ std::string CloudProviderRegistry::validate_base_url(const std::string& base_url
     if (base_url.empty()) {
         return "Base URL is required";
     }
-    const std::string lower = [&]() {
-        std::string s = base_url;
-        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    }();
     const std::string https = "https://";
     const std::string http = "http://";
-    if (lower.compare(0, https.size(), https) == 0) {
+    if (starts_with_scheme(base_url, https) ||
+        starts_with_scheme(base_url, http)) {
         return "";
     }
-    if (lower.compare(0, http.size(), http) == 0) {
-        // Allow only loopback hosts so the Bearer API key isn't sent in
-        // plaintext on a typo'd scheme. Mock-provider tests use these.
-        const std::string host_and_rest = lower.substr(http.size());
-        auto host_end = host_and_rest.find_first_of(":/");
-        const std::string host = host_end == std::string::npos
-                                     ? host_and_rest
-                                     : host_and_rest.substr(0, host_end);
-        if (host == "localhost" || host == "127.0.0.1" || host == "[::1]") {
-            return "";
-        }
-        return "Base URL uses http:// to a non-loopback host (" + host +
-               "); refused because it would send the Bearer API key in plaintext. "
-               "Use https:// or set the host to localhost / 127.0.0.1 for local mocks.";
+    return "Base URL must start with https:// or http://";
+}
+
+bool CloudProviderRegistry::is_http_base_url(const std::string& base_url) {
+    return starts_with_scheme(base_url, "http://");
+}
+
+std::vector<std::string>
+CloudProviderRegistry::base_url_warnings(const std::string& base_url,
+                                         bool api_key_available) {
+    std::vector<std::string> warnings;
+    if (!is_http_base_url(base_url)) {
+        return warnings;
     }
-    return "Base URL must start with https:// (or http:// for localhost)";
+    warnings.push_back(
+        "Base URL uses http://; traffic to this provider is not encrypted.");
+    if (api_key_available) {
+        warnings.push_back(
+            "An API key is configured for this http:// provider; Lemonade will "
+            "send it as a Bearer token over plaintext HTTP.");
+    }
+    return warnings;
 }
 
 std::string CloudProviderRegistry::normalize_base_url(std::string url) {
