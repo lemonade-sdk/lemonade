@@ -218,10 +218,12 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
             estimated = true;  // mark as architecture-adjusted
         }
         // Log precise SWA head breakdown when raw arrays are available
+        // (and both arrays have matching lengths so per-layer indexing is safe)
         if (model_info.gguf.key_length_swa > 0 &&
             model_info.gguf.key_length_swa < model_info.gguf.key_length &&
             !model_info.gguf.head_count_kv_per_layer.empty() &&
-            !model_info.gguf.sliding_window_pattern.empty()) {
+            !model_info.gguf.sliding_window_pattern.empty() &&
+            model_info.gguf.head_count_kv_per_layer.size() == model_info.gguf.sliding_window_pattern.size()) {
             int64_t swa_heads = 0, full_heads = 0;
             for (size_t i = 0; i < model_info.gguf.head_count_kv_per_layer.size(); ++i) {
                 if (model_info.gguf.sliding_window_pattern[i])

@@ -430,7 +430,8 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
     // ── SWA or standard MHA/GQA ──────────────────────────────────────
     bool has_swa = (key_length_swa > 0 && key_length_swa < key_length);
 
-    if (has_swa && !gguf.head_count_kv_per_layer.empty() && !gguf.sliding_window_pattern.empty()) {
+    if (has_swa && !gguf.head_count_kv_per_layer.empty() && !gguf.sliding_window_pattern.empty()
+        && gguf.head_count_kv_per_layer.size() == gguf.sliding_window_pattern.size()) {
         // Precise per-layer weighted sum using raw arrays.
         // Each layer contributes: heads[layer] × key_len[layer] × 2[F16] × 2[K+V]
         // where key_len[layer] = key_length_swa if SWA, key_length otherwise.
