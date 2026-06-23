@@ -98,7 +98,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         if (amd_igpu.available && amd_igpu.vram_gb > 0) {
             // iGPU total = dedicated VRAM + GTT (system memory pool accessible by GPU)
             double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
-            double available = std::max(0.0, total_gb - used_gb);
+            double available = (std::max)(0.0, total_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (AMD iGPU) total="
                                    << std::fixed << std::setprecision(2) << total_gb
                                    << " GB (vram=" << amd_igpu.vram_gb
@@ -111,7 +111,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         auto amd_dgpus = si->get_amd_dgpu_devices();
         for (const auto& gpu : amd_dgpus) {
             if (gpu.available && gpu.vram_gb > 0) {
-                double available = std::max(0.0, gpu.vram_gb - used_gb);
+                double available = (std::max)(0.0, gpu.vram_gb - used_gb);
                 LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (AMD dGPU) total="
                                        << std::fixed << std::setprecision(2) << gpu.vram_gb
                                        << " GB, used=" << used_gb
@@ -124,7 +124,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         for (const auto& gpu : nvidia_gpus) {
             if (gpu.available && gpu.vram_gb > 0) {
-                double available = std::max(0.0, gpu.vram_gb - used_gb);
+                double available = (std::max)(0.0, gpu.vram_gb - used_gb);
                 LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (NVIDIA) total="
                                        << std::fixed << std::setprecision(2) << gpu.vram_gb
                                        << " GB, used=" << used_gb
@@ -140,8 +140,8 @@ inline double get_available_memory_gb(DeviceType device_type) {
         // working-set budget so we don't push the system into swap.
         auto apple = si->get_apple_silicon_device();
         if (apple.available && apple.vram_gb > 0) {
-            double free_unified = std::max(0.0, apple.virtual_gb - used_gb);
-            double available = std::min(apple.vram_gb, free_unified);
+            double free_unified = (std::max)(0.0, apple.virtual_gb - used_gb);
+            double available = (std::min)(apple.vram_gb, free_unified);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (Metal) budget="
                                    << std::fixed << std::setprecision(2) << apple.vram_gb
                                    << " GB, unified=" << apple.virtual_gb
@@ -156,7 +156,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     // as virtual_gb on the Apple Silicon device.
     auto apple = si->get_apple_silicon_device();
     if (apple.available && apple.virtual_gb > 0) {
-        double available = std::max(0.0, apple.virtual_gb - used_gb);
+        double available = (std::max)(0.0, apple.virtual_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (Apple Silicon unified) total="
                                << std::fixed << std::setprecision(2) << apple.virtual_gb
                                << " GB, used=" << used_gb
@@ -168,7 +168,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     auto amd_igpu = si->get_amd_igpu_device();
     if (amd_igpu.available && amd_igpu.vram_gb > 0) {
         double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
-        double available = std::max(0.0, total_gb - used_gb);
+        double available = (std::max)(0.0, total_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD iGPU proxy) total="
                                << std::fixed << std::setprecision(2) << total_gb
                                << " GB, used=" << used_gb
@@ -180,7 +180,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     auto amd_dgpus = si->get_amd_dgpu_devices();
     for (const auto& gpu : amd_dgpus) {
         if (gpu.available && gpu.virtual_gb > 0) {
-            double available = std::max(0.0, gpu.virtual_gb - used_gb);
+            double available = (std::max)(0.0, gpu.virtual_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD dGPU GTT proxy) total="
                                    << std::fixed << std::setprecision(2) << gpu.virtual_gb
                                    << " GB, used=" << used_gb
@@ -247,7 +247,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     // Available memory for KV cache = total - used - model weights
     // (used is already subtracted in get_available_memory_gb)
-    double model_weight_gb = std::max(0.0, model_info.size);
+    double model_weight_gb = (std::max)(0.0, model_info.size);
     double available_for_kv_gb = available_memory_gb - model_weight_gb;
 
     if (available_for_kv_gb <= 0) {

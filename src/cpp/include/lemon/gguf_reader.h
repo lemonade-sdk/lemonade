@@ -466,7 +466,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
         double dim_ratio = static_cast<double>(key_length_swa)
                          / static_cast<double>(key_length);
         factor = 1.0 - swa_ratio + swa_ratio * dim_ratio;
-        factor = std::max(0.1, factor);
+        factor = (std::max)(0.1, factor);
     }
 
     if (scale_out) *scale_out = factor;
