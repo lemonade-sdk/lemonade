@@ -283,8 +283,13 @@ int LemonadeClient::status(int display_port) const {
             for (const auto& model : json_response["all_models_loaded"]) {
                 if (!model.is_object()) continue;
 
+                std::string model_name = model.value("model_name", "-");
+                if (model.value("pinned", false)) {
+                    model_name += " (pinned)";
+                }
+
                 std::cout << std::left
-                          << std::setw(30) << model.value("model_name", "-")
+                          << std::setw(30) << model_name
                           << std::setw(10) << model.value("type", "-")
                           << std::setw(10) << model.value("device", "-")
                           << std::setw(14) << model.value("recipe", "-")
@@ -737,13 +742,16 @@ int LemonadeClient::cleanup_cache(bool dry_run) const {
     }
 }
 
-int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options) const {
+int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options, std::optional<bool> pinned) const {
     std::cout << "Loading model: " << model_name << std::endl;
 
     try {
         json request_body = recipe_options;
         request_body["model_name"] = model_name;
         request_body["save_options"] = save_options;
+        if (pinned.has_value()) {
+            request_body["pinned"] = pinned.value();
+        }
 
         // since load can trigger a pull but doesn't send the related streaming events, we want long read timeouts.
         make_request("/api/v1/load", "POST", request_body.dump(), "application/json", LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
@@ -756,6 +764,18 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error loading model: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::pin_model(const std::string& model_name, bool pinned) const {
+    try {
+        json request_body = {{"model_name", model_name}, {"pinned", pinned}};
+        make_request("/internal/pin", "POST", request_body.dump(), "application/json");
+        std::cout << "Model " << (pinned ? "pinned" : "unpinned") << " successfully!" << std::endl;
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -801,7 +821,7 @@ nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) con
     }
 }
 
-int LemonadeClient::list_recipes() const {
+int LemonadeClient::list_recipes(bool show_all) const {
     try {
         std::string response = make_request("/api/v1/system-info");
         auto json_response = json::parse(response);
@@ -856,13 +876,15 @@ int LemonadeClient::list_recipes() const {
             bool first_backend = true;
 
             if (recipe.backends.empty()) {
-                std::cout << std::left << std::setw(20) << recipe.name
-                          << std::setw(12) << "-"
-                          << std::setw(16) << "unsupported"
-                          << std::setw(46) << "No backend definitions"
-                          << "-" << std::endl;
+                if (show_all) {
+                    std::cout << std::left << std::setw(20) << recipe.name
+                            << std::setw(12) << "-"
+                            << std::setw(16) << "unsupported"
+                            << std::setw(46) << "No backend definitions"
+                            << "-" << std::endl;
+                }
             } else {
-                for (const auto& backend : recipe.backends) {
+                for (const auto& backend : recipe.backends) {                    
                     std::string recipe_col = first_backend ? recipe.name : "";
                     std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
@@ -875,14 +897,15 @@ int LemonadeClient::list_recipes() const {
                         info_col = "-";
                     }
                     std::string action_col = backend.action.empty() ? "-" : backend.action;
+                    if (show_all || status_str != "unsupported") {
+                        std::cout << std::left << std::setw(20) << recipe_col
+                                << std::setw(12) << backend.name
+                                << std::setw(16) << status_str
+                                << std::setw(46) << info_col
+                                << " " << action_col << std::endl;
 
-                    std::cout << std::left << std::setw(20) << recipe_col
-                              << std::setw(12) << backend.name
-                              << std::setw(16) << status_str
-                              << std::setw(46) << info_col
-                              << " " << action_col << std::endl;
-
-                    first_backend = false;
+                        first_backend = false;
+                    }
                 }
             }
         }

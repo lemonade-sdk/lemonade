@@ -2,6 +2,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -76,8 +77,9 @@ WhisperServer::~WhisperServer() {
 InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+    params.repo = "lemonade-sdk/whisper.cpp-rocm";
+
     if (backend == "npu") {
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
 #ifdef _WIN32
         params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
@@ -85,23 +87,33 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #endif
     } else if (backend == "cpu") {
 #ifdef _WIN32
-        params.repo = "ggml-org/whisper.cpp";
-        params.filename = "whisper-bin-x64.zip";
+        params.filename = "whisper-" + version + "-windows-cpu-x64.zip";
 #elif defined(__linux__)
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
 #else
-        throw std::runtime_error("Unsupported platform for whisper.cpp");
+        throw std::runtime_error("Unsupported platform for whisper.cpp cpu backend");
+#endif
+    } else if (backend == "rocm") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (rocm_arch.empty()) {
+            throw std::runtime_error(SystemInfo::get_unsupported_backend_error("whispercpp", "rocm"));
+        }
+#ifdef _WIN32
+        params.filename = "whisper-" + version + "-windows-rocm-" + rocm_arch + ".zip";
+#elif defined(__linux__)
+        params.filename = "whisper-" + version + "-linux-rocm-" + rocm_arch + ".tar.gz";
+#else
+        throw std::runtime_error("ROCm whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "vulkan") {
-#if defined(__linux__)
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
+#ifdef _WIN32
+        params.filename = "whisper-" + version + "-windows-vulkan-x64.zip";
+#elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
 #else
-        throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
+        throw std::runtime_error("Vulkan whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "metal") {
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-darwin-metal-arm64.tar.gz";
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
@@ -288,6 +300,19 @@ void WhisperServer::load(const std::string& model_name,
 #ifndef _WIN32
     // set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
+
+    // ROCm whisper-server needs the TheRock ROCm libs (libamd_comgr.so.3, etc.)
+    // on LD_LIBRARY_PATH, exactly as llamacpp_server.cpp and sd_server.cpp do.
+    // Without this it aborts at startup (dlopen libamd_comgr.so.3) on gfx1151.
+    if (whispercpp_backend == "rocm") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_lib.empty()) {
+                lib_path = therock_lib + ":" + lib_path;
+            }
+        }
+    }
 
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {

@@ -98,14 +98,8 @@ class WhisperTests(ServerTestBase):
                 pass  # Ignore cleanup errors
         super().tearDownClass()
 
-    def test_001_transcription_basic(self):
-        """Test basic audio transcription with Whisper."""
-        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
-        self.assertTrue(
-            os.path.exists(self._test_audio_path),
-            f"Test audio file not found at {self._test_audio_path}",
-        )
-
+    def _load_whisper_model_or_fail(self):
+        """Load the configured Whisper model before positive transcription tests."""
         model = _get_whisper_model()
         whispercpp_backend = _get_whispercpp_backend()
 
@@ -121,11 +115,27 @@ class WhisperTests(ServerTestBase):
                 json=load_payload,
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            if load_response.status_code != 200:
-                self.skipTest(
-                    f"{whispercpp_backend} backend not available: {load_response.text}"
-                )
-                return
+            self.assertEqual(
+                load_response.status_code,
+                200,
+                (
+                    f"Failed to load model {model} with {whispercpp_backend} "
+                    f"backend: {load_response.text}"
+                ),
+            )
+
+        return model
+
+    def test_001_transcription_basic(self):
+        """Test basic audio transcription with Whisper."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+        self.assertTrue(
+            os.path.exists(self._test_audio_path),
+            f"Test audio file not found at {self._test_audio_path}",
+        )
+
+        model = self._load_whisper_model_or_fail()
+        whispercpp_backend = _get_whispercpp_backend()
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
@@ -161,7 +171,7 @@ class WhisperTests(ServerTestBase):
         """Test audio transcription with explicit language parameter."""
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}

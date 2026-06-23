@@ -35,7 +35,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
@@ -49,6 +49,8 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
+| `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -303,11 +305,21 @@ lemonade import model-with-id-alias.json
 
 ## Options for load
 
-The `load` command loads a model into memory for inference. It supports recipe-specific options that are passed to the backend server:
+The `load` command loads a model into memory for inference. It supports both general options and recipe-specific options that are passed to the backend server:
 
 ```bash
 lemonade load MODEL_NAME [options]
 ```
+
+### General Options
+
+The following options apply to all model loads:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--pinned` | Pin the model in memory to prevent auto-eviction under capacity limits. | `false` |
+| `--save-options` | Persist the supplied recipe options in `recipe_options.json` for future loads. | `false` |
+| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model (if `false`, per-model replaces global entirely). | `true` |
 
 ### Recipe-Specific Options
 
@@ -350,13 +362,10 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
-| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
 
 **Notes:**
-- Use `--save-options` to persist your configuration for the model
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
-- `--merge-args` controls whether `*_args` from global config are merged with per-model args (default: merge). Use `--no-merge-args` to replace global args entirely with per-model args.
 
 **Examples:**
 
@@ -381,6 +390,25 @@ lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
+```
+
+## Options for pin and unpin
+
+The `pin` and `unpin` commands dynamically modify the pinned status of a currently loaded model. Pinned models are excluded from Least Recently Used (LRU) eviction.
+
+```bash
+lemonade pin MODEL_NAME
+lemonade unpin MODEL_NAME
+```
+
+**Examples:**
+
+```bash
+# Pin a loaded model to prevent it from being auto-evicted
+lemonade pin Qwen3-0.6B-GGUF
+
+# Unpin a model to allow it to be evicted when slots are full
+lemonade unpin Qwen3-0.6B-GGUF
 ```
 
 ## Options for run
@@ -432,30 +460,35 @@ lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 
 ## Options for backends
 
-The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
+lemonade backends --all
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
 
 | Command | Description |
 |--------|-------------|
-| `lemonade backends` | List available recipes and backends |
+| `lemonade backends` | List supported recipes and backends |
+| `lemonade backends --all` | List all available recipes and backends |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
-- Available backends depend on your system and the recipe
-- Use `lemonade backends` to list all available recipes and backends
+- Supported backends depend on your system and the recipe
+- Use `lemonade backends --all` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
-# List all available recipes and backends
+# List supported recipes and backends
 lemonade backends
+
+# List all available recipes and backends
+lemonade backends --all
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
@@ -500,7 +533,7 @@ Codex-only option:
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
+- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
@@ -657,6 +690,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--response-log FILE` | Write response produced by the benchmark to a JSONL logfile, for later quality evaluation. | - |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
@@ -730,6 +764,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 

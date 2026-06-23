@@ -18,10 +18,10 @@ import { pullModel, type ModelRegistrationData } from './utils/backendInstaller'
 import {
   CustomCollectionDraft,
   buildCustomCollectionPullRequest,
-  buildCustomCollectionsExportPayload,
-  buildCustomModelPullRequest,
-  importCustomCollections,
+  getCollectionDisplayName,
 } from './utils/customCollections';
+import { isCollectionRecipe } from './utils/recipeNames';
+import { downloadModelExportFile } from './utils/modelData';
 import { isModelEffectivelyDownloaded } from './utils/collectionModels';
 import '../../styles/index.css';
 
@@ -31,6 +31,7 @@ type PullRegistrationPayload = {
   checkpoint?: string;
   checkpoints?: Record<string, string>;
   components?: string[];
+  models?: Array<Record<string, unknown>>;
   labels?: string[];
   mmproj?: string;
   size?: number;
@@ -406,19 +407,13 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleExportCustomCollection = (collection: CustomCollectionDraft) => {
+  const handleExportCustomCollection = async (collection: CustomCollectionDraft) => {
     try {
-      const payload = buildCustomCollectionsExportPayload([collection], modelsData);
+      // Collections export exactly like regular models: fetch the live
+      // /models/{id} object and save the normalized, import-ready file.
+      // The collection must be saved (registered) so the server knows it.
       const request = buildCustomCollectionPullRequest(collection);
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = request.model_name + '.json';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await downloadModelExportFile(request.model_name);
     } catch (exportError) {
       showError(exportError instanceof Error ? exportError.message : 'Failed to export Omni Model.');
     }
@@ -432,19 +427,24 @@ const AppContent: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (loadEvent) => {
       try {
-        const parsed = JSON.parse(String(loadEvent.target?.result ?? ''));
-        const result = importCustomCollections(parsed, modelsData);
-        for (const model of result.models) {
-          if (!modelsData[model.model_name]) {
-            await pullRegistration(buildCustomModelPullRequest(model));
-          }
+        // Exported model/collection files are import-ready /pull bodies: hand
+        // the whole file to the server, which registers any components from
+        // the embedded `models` definitions and downloads what is missing.
+        const parsed: unknown = JSON.parse(String(loadEvent.target?.result ?? ''));
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('The selected file is not an exported model JSON.');
         }
-        for (const collection of result.collections) {
-          await registerCustomCollection(collection);
+        const record = parsed as PullRegistrationPayload;
+        if (typeof record.model_name !== 'string' || record.model_name.length === 0) {
+          throw new Error("The selected file is missing a 'model_name' field.");
         }
+        if (typeof record.recipe !== 'string' || record.recipe.length === 0) {
+          throw new Error("The selected file is missing a 'recipe' field.");
+        }
+        await pullRegistration(record);
         await refreshModels();
-        const skipped = result.skipped > 0 ? '; skipped ' + result.skipped + ' invalid entr' + (result.skipped === 1 ? 'y' : 'ies') : '';
-        showSuccess('Imported ' + result.imported + ' Omni Model' + (result.imported === 1 ? '' : 's') + skipped + '.');
+        const kind = isCollectionRecipe(record.recipe) ? 'Omni Model' : 'model';
+        showSuccess(`Imported ${kind} ${getCollectionDisplayName(record.model_name)}.`);
       } catch (importError) {
         showError(importError instanceof Error ? importError.message : 'Failed to import Omni Models.');
       }

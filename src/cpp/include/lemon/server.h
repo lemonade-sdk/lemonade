@@ -103,6 +103,7 @@ private:
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
+    void handle_pin(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
 
@@ -205,6 +206,10 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    bool parse_required_json_body(const httplib::Request& req,
+                                  httplib::Response& res,
+                                  nlohmann::json& out);
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
@@ -219,8 +224,12 @@ private:
     // missing. Shared by handle_load and auto_load_model_if_needed.
     void ensure_collection_loaded(const ModelInfo& info);
 
-    // Helper function to convert ModelInfo to JSON (used by models endpoints)
-    nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
+    // Helper function to convert ModelInfo to JSON (used by models endpoints).
+    // `depth` tracks collection-component nesting; embedding stops past
+    // kMaxCollectionEmbedDepth so a cyclic collection registration cannot
+    // recurse unboundedly.
+    nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                      int depth = 0);
 
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();

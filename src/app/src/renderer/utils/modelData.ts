@@ -254,3 +254,111 @@ export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
   // client-side discovery, no per-client mirroring.
   return fetchBuiltInModelsFromAPI();
 };
+
+// ---------------------------------------------------------------------------
+// Model export — mirrors the CLI's validate_and_transform_model_json so GUI
+// and CLI produce the same import-ready file from the live /models/{id} object.
+// ---------------------------------------------------------------------------
+
+// Keys allowed in exported model files. Keep in sync with kKnownKeys in
+// src/cpp/cli/recipe_import.cpp. Notably excludes the user-specific runtime
+// fields (suggested, created, downloaded) and wire decorations (id, object,
+// owned_by) — the server regenerates those on import.
+const EXPORT_KNOWN_KEYS = new Set([
+  'checkpoint',
+  'checkpoints',
+  'components',
+  'model_name',
+  'models',
+  'image_defaults',
+  'labels',
+  'recipe',
+  'recipe_options',
+  'size',
+]);
+
+const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const entry = Object.fromEntries(
+    Object.entries(raw).filter(([key]) => EXPORT_KNOWN_KEYS.has(key))
+  );
+  if (typeof entry.model_name !== 'string' && typeof raw.id === 'string') {
+    entry.model_name = raw.id;
+  }
+  if (isRecord(entry.checkpoints) && 'checkpoint' in entry) {
+    delete entry.checkpoint;
+  }
+  return entry;
+};
+
+/**
+ * Normalize a live /models/{id} object into the import-ready file shape
+ * (pure; mirrors the CLI transform). Collections keep `components` and a
+ * `models` array with each component normalized by the same per-model
+ * transform.
+ */
+export const normalizeModelExportPayload = (
+  raw: Record<string, unknown>,
+  fallbackId = '',
+): { filename: string; payload: Record<string, unknown> } => {
+  const payload = toExportEntry(raw);
+
+  // The exported model itself is import-ready: registration uses the `user.`
+  // namespace, exactly like the CLI export transform.
+  const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
+  payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
+
+  if (isCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+    // Normalize each embedded component with the same transform. Components
+    // are leaf models: drop their (empty) collection fields and keep bare
+    // names — the server decides `user.` prefixing when registering them.
+    const models = Array.isArray(raw.models) ? raw.models : [];
+    payload.models = models.filter(isRecord).map((component) => {
+      const entry = toExportEntry(component);
+      if (Array.isArray(entry.components) && entry.components.length === 0) delete entry.components;
+      if (Array.isArray(entry.models) && entry.models.length === 0) delete entry.models;
+      return entry;
+    });
+  } else {
+    // Regular-model files carry no collection fields (the live API emits an
+    // empty `components` array on every model object).
+    delete payload.components;
+    delete payload.models;
+  }
+
+  const bareName = name.startsWith(USER_MODEL_PREFIX) ? name.slice(USER_MODEL_PREFIX.length) : name;
+  return { filename: `${bareName}.json`, payload };
+};
+
+/**
+ * Build an exportable model JSON the same way `lemonade export` does: fetch
+ * the live /models/{id} object and normalize it into the import-ready file
+ * shape.
+ */
+export const buildModelExportFile = async (
+  modelId: string,
+): Promise<{ filename: string; payload: Record<string, unknown> }> => {
+  const { serverFetch } = await import('./serverConfig');
+  const response = await serverFetch(`/models/${encodeURIComponent(modelId)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch model info for '${modelId}' (HTTP ${response.status}).`);
+  }
+  const raw: unknown = await response.json();
+  if (!isRecord(raw)) {
+    throw new Error(`Unexpected /models response for '${modelId}'.`);
+  }
+  return normalizeModelExportPayload(raw, modelId);
+};
+
+/** Trigger a browser download of an exported model/collection JSON. */
+export const downloadModelExportFile = async (modelId: string): Promise<void> => {
+  const { filename, payload } = await buildModelExportFile(modelId);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};

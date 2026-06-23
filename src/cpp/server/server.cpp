@@ -1,7 +1,9 @@
 #include "lemon/server.h"
+#include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
+#include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
@@ -175,6 +177,16 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+int get_http_status_from_error(const std::string& error_code) {
+    if (error_code == "slots_pinned_error") {
+        return 409;
+    } else if (error_code == "model_load_error") {
+        return 500;
+    } else {
+        return 404;
+    }
+}
+
 bool is_quiet_polling_path(const std::string& path) {
     return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
            path == "/v0/downloads" || path == "/v1/downloads" ||
@@ -345,10 +357,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes and internal endpoints)
+    // Check if path requires authentication (API routes and internal endpoints).
+    // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
+    // gateway (Critical Invariant #10). It is the only API route outside the
+    // /api/, /v0/, /v1/ prefixes — see register_routes() in McpServer for why.
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
-                        (req.path.rfind("/v1/", 0) == 0);
+                        (req.path.rfind("/v1/", 0) == 0) ||
+                        (req.path == "/mcp");
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
     bool is_metrics_route = (req.path == "/metrics");
 
@@ -621,6 +637,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_shutdown(req, res);
     });
 
+    web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_pin(req, res);
+    });
+
     // Unified config endpoints (not part of public API)
     web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_set(req, res);
@@ -667,6 +687,15 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Register Ollama-compatible API routes
     auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
     ollama_api->register_routes(web_server);
+
+    // Register MCP gateway (POST /mcp). NOTE: /mcp is an INTENTIONAL EXCEPTION
+    // to the quad-prefix invariant (AGENTS.md #1) — the MCP spec mandates a
+    // single endpoint URL.
+    auto mcp_server = std::make_shared<McpServer>(
+        router_.get(),
+        model_manager_.get(),
+        [this](const std::string& m) { auto_load_model_if_needed(m); });
+    mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI
     setup_static_files(web_server);
@@ -836,7 +865,31 @@ window.api = {
         const settings = await window.api.getSettings();
         return settings.apiKey?.value || '';
     },
-    restartApp: () => window.location.reload()
+    restartApp: () => window.location.reload(),
+    writeClipboard: async (text) => {
+        if (navigator.clipboard) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return;
+            } catch {
+                // Ignore clipboard errors and fall back to legacy method
+            }
+        }
+        const ta = document.createElement('textarea');
+        ta.value = String(text);
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        try {
+            ta.select();
+            if (!document.execCommand('copy')) {
+                throw new Error('Legacy clipboard copy failed');
+            }
+        } finally {
+            document.body.removeChild(ta);
+        }
+    }
 };
 </script>
 )";
@@ -1480,7 +1533,18 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
 
-    // Case 3: Model exists and is available, but failed to load (engine error)
+    // Case 3: Model exists and is available, but failed to load (engine error or pinned slots constraint)
+    if (exception_msg.find("are pinned") != std::string::npos) {
+        error_response["error"] = {
+            {"message", exception_msg},
+            {"type", "slots_pinned_error"},
+            {"param", "model"},
+            {"code", "slots_pinned_error"},
+            {"requested_model", requested_model}
+        };
+        return error_response;
+    }
+
     // Return the actual exception message so the user knows what went wrong
     std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
 
@@ -1603,6 +1667,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
+    // Add pinned model counts
+    response["pinned_models"] = router_->get_pinned_model_counts();
+
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
@@ -1655,7 +1722,14 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     res.set_content(response.dump(), "application/json");
 }
 
-nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+// Maximum collection-component nesting depth embedded in "models" arrays.
+// Collection components are normally leaf models, but nothing prevents
+// registering a collection as a component of another collection — including
+// cyclically — so the embedding recursion must be bounded.
+static constexpr int kMaxCollectionEmbedDepth = 3;
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                          int depth) {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -1718,6 +1792,23 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
+    // Collections (Omni) additionally embed each component's full model object,
+    // in component order, under "models". Embedding is bounded by
+    // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
+    // cannot recurse unboundedly.
+    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+        nlohmann::json component_models = nlohmann::json::array();
+        for (const auto& component : info.components) {
+            if (!model_manager_->model_exists(component)) {
+                continue;
+            }
+            auto comp_info = model_manager_->get_model_info(component);
+            component_models.push_back(model_info_to_json(
+                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+        }
+        model_json["models"] = component_models;
+    }
+
     return model_json;
 }
 
@@ -1750,7 +1841,7 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
                              << "': " << e.what() << std::endl;
         auto error_response = create_model_error(collection_info.model_name, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return;
     }
@@ -1796,8 +1887,10 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
@@ -1842,11 +1935,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2052,11 +2141,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2235,7 +2320,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2271,7 +2356,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2500,7 +2585,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2519,7 +2604,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 
         // Check for error in response
         if (response.contains("error")) {
-            res.status = 500;
+            set_error_response(response, res, 500);
+            return;
         }
 
         res.set_content(response.dump(), "application/json");
@@ -2548,7 +2634,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2679,7 +2765,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
             return;
         }
@@ -2746,7 +2832,7 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
 
 bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
     for (const auto& file_pair : req.form.files) {
-        if (file_pair.first == "image") {
+        if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
             out["image_data"] = utils::JsonUtils::base64_encode(file.content);
             out["image_filename"] = file.filename;
@@ -2781,7 +2867,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return false;
     }
@@ -3176,7 +3262,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -3242,6 +3328,25 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         res.set_content(error.dump(), "application/json");
     }
 }
+bool Server::parse_required_json_body(const httplib::Request& req,
+                                      httplib::Response& res,
+                                      nlohmann::json& out) {
+    if (req.body.empty()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "Request body is required but was empty"}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    try {
+        out = nlohmann::json::parse(req.body);
+        return true;
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+}
 
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     auto bad_request = [&res](const std::string& message) {
@@ -3250,8 +3355,10 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         res.set_content(error.dump(), "application/json");
     };
 
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
         std::string model_name = request_json.contains("model") ?
             request_json["model"].get<std::string>() :
@@ -3301,12 +3408,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
-            // Canonicalize components so downstream cache lookups
-            // (check_component_downloaded, update_model_in_cache) succeed
-            // even when the client passed a public alias (bare name) rather
-            // than the canonical `user.X` / `builtin.X` form.
-            for (auto& c : request_json["components"]) {
-                c = model_manager_->resolve_model_name(c.get<std::string>());
+            // A body carrying a `models` array is a collection file import: its
+            // components may not be registered yet (download_model registers them
+            // from the embedded definitions and canonicalizes the list itself).
+            // A pointer body (HF-backed collection) has no `components` at all —
+            // they come from the downloaded manifest. Only pre-canonicalize an
+            // inline `components` list whose entries must already exist.
+            if (request_json.contains("components") && request_json["components"].is_array() &&
+                (!request_json.contains("models") || !request_json["models"].is_array())) {
+                // Canonicalize components so downstream cache lookups
+                // (check_component_downloaded, update_model_in_cache) succeed
+                // even when the client passed a public alias (bare name) rather
+                // than the canonical `user.X` / `builtin.X` form.
+                for (auto& c : request_json["components"]) {
+                    c = model_manager_->resolve_model_name(c.get<std::string>());
+                }
             }
         }
 
@@ -3419,8 +3535,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     // Declare model_name outside try block so it's available in catch block
     std::string model_name;
 
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
         // Cloud models are registered automatically at cache build / cloud-auth
@@ -3443,6 +3561,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
+        std::optional<bool> pinned_opt = std::nullopt;
+        if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
+            pinned_opt = request_json["pinned"].get<bool>();
+        }
 
         LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
@@ -3478,7 +3600,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             // if already loaded with matching options, reload only if options
             // differ)
             router_->load_model(model_name, info, options, true,
-                                /*allow_reload_on_option_change=*/true);
+                                /*allow_reload_on_option_change=*/true,
+                                pinned_opt);
 
             // Return success response
             nlohmann::json response = {
@@ -3497,7 +3620,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (!model_name.empty()) {
             auto error_response = create_model_error(model_name, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
         } else {
             // JSON parsing failed before we got model_name - return generic error
@@ -3569,9 +3692,69 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
     }
 }
 
-void Server::handle_delete(const httplib::Request& req, httplib::Response& res) {
+void Server::handle_pin(const httplib::Request& req, httplib::Response& res) {
     try {
-        auto request_json = nlohmann::json::parse(req.body);
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const std::exception& parse_err) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Invalid JSON body: " + std::string(parse_err.what())},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("model") && !request_json.contains("model_name")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'model' or 'model_name' is required"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("pinned") || !request_json["pinned"].is_boolean()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'pinned' is required and must be a boolean"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        std::string model_name = request_json.contains("model") ?
+            request_json["model"].get<std::string>() :
+            request_json["model_name"].get<std::string>();
+        bool pinned = request_json["pinned"].get<bool>();
+
+        std::string canonical_name = model_manager_->resolve_model_name(model_name);
+        router_->set_model_pinned(canonical_name, pinned);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"model_name", model_name},
+            {"pinned", pinned}
+        };
+        res.status = 200;
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Pin/unpin failed: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_delete(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    try {
         // Accept both "model" and "model_name" for compatibility
         std::string model_name = request_json.contains("model") ?
             request_json["model"].get<std::string>() :
