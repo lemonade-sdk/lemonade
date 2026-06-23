@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import { Icon } from './Icon';
-import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { DownloadListItem, DownloadStatus, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 interface DownloadManagerProps {
   isVisible: boolean;
@@ -68,8 +68,51 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  const prevStatusRef = useRef<Map<string, DownloadStatus> | null>(null);
+  const [statusAnnouncement, setStatusAnnouncement] = useState('');
 
   useEffect(() => downloadStore.subscribe(setDownloads), []);
+
+  // Announce status transitions (start/complete/error/pause/resume) to screen readers.
+  // Runs on every downloads change but only emits announcements on status transitions,
+  // never on every percentage tick.
+  useEffect(() => {
+    if (prevStatusRef.current === null) {
+      // First run — initialise the map without announcing (avoids spurious on-mount reads).
+      const initial = new Map<string, DownloadStatus>();
+      for (const d of downloads) initial.set(d.id, d.status);
+      prevStatusRef.current = initial;
+      return;
+    }
+    const prev = prevStatusRef.current;
+    let message = '';
+    for (const d of downloads) {
+      const prevStatus = prev.get(d.id);
+      const name = displayName(d.modelName);
+      if (!prevStatus && d.status === 'downloading') {
+        message = `Downloading ${name} started`;
+      } else if (prevStatus === 'downloading' && d.status === 'completed') {
+        message = `${name} download complete`;
+      } else if (prevStatus === 'downloading' && d.status === 'error') {
+        message = `${name} download failed${d.error ? ': ' + d.error : ''}`;
+      } else if (prevStatus === 'downloading' && d.status === 'cancelled') {
+        message = `${name} download cancelled`;
+      } else if (prevStatus === 'downloading' && d.status === 'paused') {
+        message = `${name} download paused`;
+      } else if (prevStatus === 'paused' && d.status === 'downloading') {
+        message = `${name} download resumed`;
+      }
+    }
+    const next = new Map<string, DownloadStatus>();
+    for (const d of downloads) next.set(d.id, d.status);
+    prevStatusRef.current = next;
+    if (message) setStatusAnnouncement(message);
+  }, [downloads]);
+
+  // Clear the announcement when the panel closes so stale text is not re-read on reopen.
+  useEffect(() => {
+    if (!isVisible) setStatusAnnouncement('');
+  }, [isVisible]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -205,6 +248,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           </button>
         </div>
 
+        {/* sr-only live region: announces status transitions without spamming every percent tick */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{statusAnnouncement}</div>
+
         <div className="download-manager__body">
           {downloads.length === 0 ? (
             <div className="download-manager__empty">
@@ -280,9 +326,16 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                   </div>
 
                   {download.status === 'downloading' && (
-                    <div className="download-item__progress" aria-label={`${download.percent.toFixed(0)}%`}>
+                    <div
+                      className="download-item__progress"
+                      role="progressbar"
+                      aria-valuenow={Math.round(download.percent)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`Downloading ${displayName(download.modelName)}: ${Math.round(download.percent)}%`}
+                    >
                       <div className="download-item__progress-track"><div className="download-item__progress-fill" style={{ width: `${download.percent}%` }} /></div>
-                      <span>{download.percent.toFixed(0)}%</span>
+                      <span aria-hidden="true">{download.percent.toFixed(0)}%</span>
                     </div>
                   )}
 
