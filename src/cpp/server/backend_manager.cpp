@@ -116,6 +116,62 @@ std::string read_version_file(const fs::path& version_file) {
     return trim(version);
 }
 
+std::string read_installed_backend_version(const std::string& recipe,
+                                           const std::string& resolved_backend) {
+    const std::string install_dir = backends::BackendUtils::get_install_directory(
+        recipe, resolved_backend);
+    return read_version_file(fs::path(install_dir) / "version.txt");
+}
+
+bool has_installed_backend_binary(const backends::BackendSpec& spec,
+                                  const std::string& resolved_backend) {
+    if (!backends::BackendUtils::find_external_backend_binary(
+            spec.recipe, resolved_backend).empty()) {
+        return true;
+    }
+
+    const std::string install_dir = backends::BackendUtils::get_install_directory(
+        spec.recipe, resolved_backend);
+    return !backends::BackendUtils::find_executable_in_install_dir(
+        install_dir, spec.binary).empty();
+}
+
+void report_installed_backend_ready(const std::string& recipe,
+                                    const std::string& resolved_backend,
+                                    DownloadProgressCallback progress_cb) {
+    if (!progress_cb) {
+        return;
+    }
+
+    DownloadProgress p;
+    p.file = recipe + ":" + resolved_backend;
+    p.file_index = 1;
+    p.total_files = 1;
+    p.bytes_downloaded = 0;
+    p.bytes_total = 0;
+    p.total_download_size = 0;
+    p.percent = 100;
+    p.complete = true;
+    progress_cb(p);
+}
+
+bool github_reachable_for_backend_update() {
+    try {
+        std::map<std::string, std::string> headers = {
+            {"User-Agent", "lemonade"},
+            {"Accept", "application/vnd.github+json"},
+        };
+        auto response = utils::HttpClient::get(
+            "https://api.github.com/rate_limit", headers, /*timeout_seconds=*/3);
+        return response.status_code >= 200 && response.status_code < 500;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager")
+            << "GitHub reachability probe failed; deferring backend update: "
+            << e.what() << std::endl;
+        return false;
+    }
+}
+
 bool has_matching_system_rocm_runtime(const std::string& expected_runtime_version) {
     const fs::path version_file = "/opt/rocm/.info/version";
     const std::string system_version = read_version_file(version_file);
@@ -457,18 +513,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->no_fetch_executables()) {
-            throw std::runtime_error(
-                "Fetching executable artifacts is disabled");
-        }
-    }
-
-    auto params = get_install_params(recipe, resolved_backend);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
+
+    const std::string backend_install_dir =
+        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
+    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
+    const bool backend_binary_available =
+        has_installed_backend_binary(*spec, resolved_backend);
 
     // Check if we need to download additional runtime components after the main backend.
     // `will_install_therock` intentionally answers whether TheRock is applicable
@@ -486,6 +540,50 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         therock_applicable &&
         (rocm_runtime_update_required ||
          !is_therock_installed_for_current_arch(backend_versions_));
+
+    if (auto* cfg = RuntimeConfig::global()) {
+        const bool offline = cfg->offline();
+        const bool no_fetch = cfg->no_fetch_executables();
+        if (offline || no_fetch) {
+            if (!force && backend_binary_available && !needs_therock_download) {
+                LOG(WARNING, "BackendManager")
+                    << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
+                    << "; using installed " << recipe << ":" << resolved_backend
+                    << " backend" << std::endl;
+                report_installed_backend_ready(recipe, resolved_backend, progress_cb);
+                return;
+            }
+
+            if (!backend_binary_available) {
+                throw std::runtime_error(
+                    (offline ? "Cannot install " : "Fetching executable artifacts is disabled and ") +
+                    recipe + ":" + resolved_backend +
+                    (offline ? ": offline mode" : " is not installed"));
+            }
+
+            throw std::runtime_error(
+                (offline ? "Cannot install " : "Fetching executable artifacts is disabled for ") +
+                recipe + ":" + resolved_backend +
+                ": required runtime components are not installed");
+        }
+    }
+
+    // Non-forced calls come from model-load/ensure flows. They should still
+    // update when GitHub is reachable, but when the machine is effectively
+    // offline they must reuse the installed backend immediately instead of
+    // entering the archive downloader's multi-retry backoff. Explicit update
+    // paths pass force=true and skip this probe.
+    if (!force && backend_binary_available && !needs_therock_download &&
+        !github_reachable_for_backend_update()) {
+        LOG(WARNING, "BackendManager")
+            << "GitHub is not reachable; using installed "
+            << recipe << ":" << resolved_backend
+            << " backend and deferring update" << std::endl;
+        report_installed_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
+
+    auto params = get_install_params(recipe, resolved_backend);
 
     struct RuntimeInstallStep {
         std::string name;
@@ -575,15 +673,47 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         };
     }
 
-    const std::string backend_install_dir =
-        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
-    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
-
     bool completion_reported = false;
 
     try {
-        backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+        try {
+            backends::BackendUtils::install_from_github(
+                *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+        } catch (const std::exception& e) {
+            if (!force && backend_binary_available) {
+                LOG(WARNING, "BackendManager")
+                    << "Could not update " << recipe << ":" << resolved_backend
+                    << "; using installed backend instead: " << e.what()
+                    << std::endl;
+                report_installed_backend_ready(recipe, resolved_backend, progress_cb);
+                return;
+            }
+            throw;
+        }
+
+        const std::string installed_backend_version =
+            read_installed_backend_version(spec->recipe, resolved_backend);
+        const bool backend_update_was_deferred =
+            !force &&
+            backend_binary_available &&
+            !params.version.empty() &&
+            installed_backend_version != params.version;
+
+        if (backend_update_was_deferred) {
+            // A non-forced ensure kept an older working backend. Do not continue
+            // into follow-up runtime downloads (for example TheRock), because that
+            // would reintroduce slow/offline failures during model load. Explicit
+            // install/update calls pass force=true and still perform the refresh.
+            LOG(WARNING, "BackendManager")
+                << "Using existing " << recipe << ":" << resolved_backend
+                << " backend version "
+                << (installed_backend_version.empty() ? "unknown" : installed_backend_version)
+                << " instead of " << params.version
+                << "; deferring runtime updates until an explicit backend update"
+                << std::endl;
+            report_installed_backend_ready(recipe, resolved_backend, progress_cb);
+            return;
+        }
 
         const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
         for (size_t i = 0; i < runtime_steps.size(); ++i) {
