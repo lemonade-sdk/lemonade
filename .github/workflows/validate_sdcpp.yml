@@ -11,10 +11,6 @@ on:
         description: "Optional lemonade-sdk CUDA tag, e.g. master-714-db48014. Empty = latest CUDA release."
         required: false
         type: string
-      lite:
-        description: "Smoke test only: first model at 512x256. Full update PRs should leave this off."
-        type: boolean
-        default: false
   pull_request:
     paths:
       - ".github/workflows/validate_sdcpp.yml"
@@ -39,7 +35,6 @@ env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
   SDCPP_REPO: leejet/stable-diffusion.cpp
   SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
   # Non-CUDA assets are published by leejet. CUDA assets are published by the
@@ -47,10 +42,9 @@ env:
   SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
   SDCPP_CUDA_UPDATE_BACKENDS: cuda
   SDCPP_VALIDATED_LABELS: cpu,vulkan,rocm-stable
-  # Current matrix produces 3 backends * 2 models * 2 sizes = 12 rendered images.
-  # Set this to 16 only when a fourth validation leg is enabled.
-  SDCPP_EXPECTED_PR_IMAGES: "12"
   SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
+  SDCPP_TEST_MODELS: "SD-Turbo-GGUF,Flux-2-Klein-4B"
+  SDCPP_TEST_SIZES: "512x256,1024x1024"
   SDCPP_TEST_SEED: "12345"
   SDCPP_TEST_STEPS: "4"
   LEMONADE_VALIDATE_SD_TIMEOUT: "7200"
@@ -143,25 +137,19 @@ jobs:
           echo "Using base stable-diffusion.cpp release: ${BASE_RELEASE}"
           echo "Using CUDA stable-diffusion.cpp release: ${CUDA_RELEASE}"
 
-      - name: Verify release assets
+      - name: Verify base release assets
         id: assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_RELEASE: ${{ steps.release.outputs.base_release }}
           BASE_SHORT_RELEASE: ${{ steps.release.outputs.base_short_release }}
-          CUDA_RELEASE: ${{ steps.release.outputs.cuda_release }}
-          CUDA_SHORT_RELEASE: ${{ steps.release.outputs.cuda_short_release }}
         run: |
           set -euo pipefail
 
           echo "Base assets from ${SDCPP_REPO}@${BASE_RELEASE}:"
           gh api repos/${SDCPP_REPO}/releases/tags/${BASE_RELEASE} --jq '.assets[].name' | sort > assets.txt
           cat assets.txt
-
-          echo "CUDA assets from ${SDCPP_CUDA_REPO}@${CUDA_RELEASE}:"
-          gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${CUDA_RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt
-          cat cuda-assets.txt
 
           python3 <<'PY'
           import os
@@ -170,9 +158,7 @@ jobs:
           from pathlib import Path
 
           base_short = os.environ['BASE_SHORT_RELEASE']
-          cuda_short = os.environ['CUDA_SHORT_RELEASE']
           base_assets = set(Path('assets.txt').read_text(encoding='utf-8').splitlines())
-          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
 
           checks = {
               'cpu': [
@@ -189,10 +175,6 @@ jobs:
               ],
               'metal': [
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$'),
-              ],
-              'cuda': [
-                  (cuda_assets, rf'^sd-{re.escape(cuda_short)}-windows-cuda-sm_[0-9]+-x64\.zip$'),
-                  (cuda_assets, rf'^sd-{re.escape(cuda_short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$'),
               ],
           }
 
@@ -280,8 +262,6 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
-            # No dedicated CPU runner label exists; run CPU validation on the
-            # existing Windows 128GB Vulkan host with the sd-cpp CPU backend.
             runner: [self-hosted, Windows, 128gb, vulkan]
           - label: vulkan
             backend: vulkan
@@ -375,20 +355,28 @@ jobs:
               "test/validate_sdcpp.py",
               "--backend", $backend,
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
-              "--size", "512x256",
-              "--size", "1024x1024",
               "--warmup",
               "--output", "sdcpp_validation_$label.json",
               "--images-dir", "sdcpp-images-$label"
             )
+            foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
+              $model = $model.Trim()
+              if ($model) {
+                $validationArgs += "--model"
+                $validationArgs += $model
+              }
+            }
+            foreach ($size in "${{ env.SDCPP_TEST_SIZES }}".Split(',')) {
+              $size = $size.Trim()
+              if ($size) {
+                $validationArgs += "--size"
+                $validationArgs += $size
+              }
+            }
             if ($channel) {
               $validationArgs += "--channel"
               $validationArgs += $channel
             }
-            if ("${{ env.LITE_MODE }}" -eq "true") {
-              $validationArgs += "--lite"
-            }
-
             & $venvPython @validationArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
@@ -425,16 +413,62 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
+  verify-cuda-assets:
+    name: Verify required CUDA assets
+    needs: [discover-release, validate]
+    if: always() && needs.discover-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify CUDA release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          CUDA_SHORT_RELEASE: ${{ needs.discover-release.outputs.cuda_short_release }}
+        run: |
+          set -euo pipefail
+          echo "CUDA asset validation intentionally runs after the image validation matrix."
+          echo "If CUDA assets are missing, this job hard-fails after CPU/Vulkan/ROCm evidence is available."
+          echo "CUDA assets from ${SDCPP_CUDA_REPO}@${CUDA_RELEASE}:"
+          gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${CUDA_RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt
+          cat cuda-assets.txt
+
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          cuda_short = os.environ['CUDA_SHORT_RELEASE']
+          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
+          patterns = [
+              rf'^sd-{re.escape(cuda_short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
+              rf'^sd-{re.escape(cuda_short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
+          ]
+
+          missing = []
+          for pattern in patterns:
+              if not any(re.match(pattern, asset) for asset in cuda_assets):
+                  missing.append(pattern)
+
+          if missing:
+              print('Missing expected CUDA release assets:', file=sys.stderr)
+              for pattern in missing:
+                  print(f'  - {pattern}', file=sys.stderr)
+              sys.exit(1)
+          PY
+
   create-pr:
     name: Create update PR
-    needs: [discover-release, validate]
+    needs: [discover-release, validate, verify-cuda-assets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.verify-cuda-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
@@ -463,8 +497,11 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-          EVIDENCE_DIR=".github/sdcpp-validation/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-          rm -rf "$EVIDENCE_DIR"
+          EVIDENCE_ROOT=".github/sdcpp-validation"
+          EVIDENCE_DIR="${EVIDENCE_ROOT}/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          # Keep only the current update evidence so merged auto-update PRs do not
+          # accumulate old binary PNG evidence indefinitely.
+          rm -rf "$EVIDENCE_ROOT"
           python3 .github/scripts/render_sdcpp_pr_body.py \
             --base-release "$BASE_RELEASE" \
             --cuda-release "$CUDA_RELEASE" \
@@ -474,7 +511,8 @@ jobs:
             --repository "${GITHUB_REPOSITORY}" \
             --image-ref "$BRANCH" \
             --evidence-dir "$EVIDENCE_DIR" \
-            --expected-images "${SDCPP_EXPECTED_PR_IMAGES}" \
+            --models "${SDCPP_TEST_MODELS}" \
+            --sizes "${SDCPP_TEST_SIZES}" \
             --output pr_body.md
 
       - name: Create Pull Request

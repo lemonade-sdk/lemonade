@@ -134,6 +134,45 @@ def group_summary(records: list[dict[str, Any]], labels: list[str]) -> dict[str,
     return summary
 
 
+def assert_expected_images(records: list[dict[str, Any]], labels: list[str], models: list[str], sizes: list[str]) -> None:
+    """Fail if any expected backend/model/size image is missing or failed."""
+    if not models:
+        raise SystemExit("No expected validation models were provided")
+    if not sizes:
+        raise SystemExit("No expected validation sizes were provided")
+
+    rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in records:
+        key = (str(row.get("label", "")), str(row.get("model", "")), str(row.get("size", "")))
+        rows[key] = row
+
+    missing: list[str] = []
+    failed: list[str] = []
+    missing_image: list[str] = []
+    for label in labels:
+        for model in models:
+            for size in sizes:
+                key = (label, model, size)
+                row = rows.get(key)
+                item = f"{label} / {model} / {size}"
+                if row is None:
+                    missing.append(item)
+                elif not row.get("pass"):
+                    failed.append(f"{item}: {row.get('error', 'marked failed')}")
+                elif not row.get("pr_image_path"):
+                    missing_image.append(item)
+
+    if missing or failed or missing_image:
+        details: list[str] = []
+        if missing:
+            details.append("Missing validation records:\n  - " + "\n  - ".join(missing))
+        if failed:
+            details.append("Failed validation records:\n  - " + "\n  - ".join(failed))
+        if missing_image:
+            details.append("Missing copied validation images:\n  - " + "\n  - ".join(missing_image))
+        raise SystemExit("Expected validation image evidence is incomplete.\n" + "\n".join(details))
+
+
 def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied: int) -> str:
     base_backends = parse_csv(args.base_update_backends)
     cuda_backends = parse_csv(args.cuda_update_backends)
@@ -225,7 +264,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-ref", required=True, help="Branch or commit ref that will contain committed evidence images")
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--output", default="pr_body.md")
-    parser.add_argument("--expected-images", type=int, default=0)
     parser.add_argument("--prompt", default=os.environ.get("SDCPP_TEST_PROMPT", ""))
     parser.add_argument("--seed", default=os.environ.get("SDCPP_TEST_SEED", "12345"))
     parser.add_argument("--steps", default=os.environ.get("SDCPP_TEST_STEPS", "4"))
@@ -241,11 +279,7 @@ def main() -> int:
     evidence_dir = Path(args.evidence_dir)
     copied = copy_images(records, evidence_dir)
 
-    if args.expected_images and copied != args.expected_images:
-        raise SystemExit(
-            f"Expected {args.expected_images} rendered validation images, but found {copied}. "
-            "Check the validation matrix, lite mode, and downloaded artifacts."
-        )
+    assert_expected_images(records, labels, parse_csv(args.models), parse_csv(args.sizes))
 
     body = render_body(args, records, copied)
     Path(args.output).write_text(body, encoding="utf-8")
