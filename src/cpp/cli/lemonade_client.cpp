@@ -6,6 +6,7 @@
 #include <regex>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace lemonade {
 
@@ -14,6 +15,7 @@ using json = nlohmann::json;
 static const int DEFAULT_CONNECTION_TIMEOUT_MS = 30000;
 static const int DEFAULT_READ_TIMEOUT_MS = 30000;
 static const int LONG_TIMEOUT_MS = 86400000;
+static const double UNKNOWN_MODEL_SIZE = 0.0;
 
 static std::regex build_name_filter_regex(const std::string& name_filter) {
     std::string regex_pattern;
@@ -320,6 +322,57 @@ int LemonadeClient::status(int display_port) const {
     }
 }
 
+//Helper functions to calculate the total size of the models in a collection.
+static double get_collection_component_size(const json& model) {
+    if (model.contains("recipe") && model["recipe"].is_string() && model["recipe"].get<std::string>() == "cloud") {
+        return UNKNOWN_MODEL_SIZE;
+    }
+    if (model.contains("size") && 
+            model["size"].is_number()) {
+        return model["size"].get<double>();
+    }
+    return UNKNOWN_MODEL_SIZE;
+}
+
+static std::vector<double> get_collection_sizes(const json& collection_components, const json& server_models) {
+    std::vector<double> collection_sizes;
+    double component_size = UNKNOWN_MODEL_SIZE;
+    for (const auto component : collection_components){
+        component_size = UNKNOWN_MODEL_SIZE;
+        for (const auto& model : server_models) {
+            if (model.contains("id") && model["id"].get<std::string>() == component) {
+                component_size = get_collection_component_size(model);
+                break;
+            }
+        }
+        collection_sizes.push_back(component_size);
+    }
+    return collection_sizes;
+}
+
+static std::string model_size_to_str(const ModelInfo& model) {
+    double size = UNKNOWN_MODEL_SIZE;
+    bool is_aprox_size = false;
+
+    for(double component_size : model.component_sizes) {
+        if (component_size == UNKNOWN_MODEL_SIZE) {
+            is_aprox_size = true;
+        } else {
+            size += component_size;
+        }
+    }
+    std::ostringstream os;
+    if (size == UNKNOWN_MODEL_SIZE) {
+        os << "N/A";
+    } else {
+        if (is_aprox_size) {
+            os << ">";
+        }
+        os << std::fixed << std::setprecision(2) << size;
+    }
+    return os.str();
+}
+
 std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
     std::vector<ModelInfo> models;
 
@@ -360,6 +413,11 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
                         info.labels.push_back(label.get<std::string>());
                     }
                 }
+            }
+            if (model_item.contains("components") && model_item["components"].is_array() && !model_item["components"].empty()) {
+                info.component_sizes=get_collection_sizes(model_item["components"], json_response["data"]);
+            } else {
+                info.component_sizes.push_back(get_collection_component_size(model_item));
             }
 
             if (!info.id.empty()) {
@@ -413,7 +471,8 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
         // Helper lambda to print a formatted table of models.
         auto print_model_table = [](const std::vector<ModelInfo>& models) {
             std::cout << std::left << std::setw(40) << "Model Name"
-                      << std::setw(12) << "Downloaded"
+                      << std::setw(15) << "Downloaded"
+                      << std::setw(15) << "Size (GB)"
                       << "Details" << std::endl;
             std::cout << std::string(100, '-') << std::endl;
 
@@ -426,10 +485,10 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             for (const auto& model : models) {
                 std::string downloaded = model.downloaded ? "Yes" : "No";
                 std::string details = model.recipe.empty() ? "-" : model.recipe;
-
-                std::cout << std::left << std::setw(40) << model.id
-                          << std::setw(12) << downloaded
-                          << details << std::endl;
+                std::cout   << std::left << std::setw(40) << model.id
+                            << std::setw(15) << downloaded;
+                std::cout   << std::right << std::setw(8) << model_size_to_str(model) << std::setw(7) << " ";
+                std::cout   << std::setw(20) << std::left << details << std::endl;
             }
 
             std::cout << std::string(100, '-') << std::endl;
