@@ -488,6 +488,7 @@ input, textarea {
 }
 
 .rail__item:hover .rail__item-delete { opacity: 1; }
+.rail__item:focus-within .rail__item-delete { opacity: 1; }
 .rail__item-delete:hover { background: var(--surface-3); color: var(--danger, #ff6b6b); }
 
 .rail__empty {
