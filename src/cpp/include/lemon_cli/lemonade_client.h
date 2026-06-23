@@ -95,7 +95,7 @@ public:
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
-    int list_recipes() const;
+    int list_recipes(bool show_all = false) const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 

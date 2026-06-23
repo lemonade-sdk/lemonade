@@ -19,7 +19,8 @@
 				"ms-vscode.cpptools-extension-pack" // (Optional) Adds CMake & Themes
 			]
 		}
-	}
+	},
+	"postCreateCommand": "/opt/venv/bin/pip install -r ./test/requirements.txt"
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
