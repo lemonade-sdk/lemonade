@@ -127,6 +127,8 @@ add_executable(lemonade
 target_link_libraries(lemonade PRIVATE
     nlohmann_json::nlohmann_json
     lemonade-digest-crypto
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 
 # Link httplib based on what's available (set by parent CMakeLists.txt)
@@ -177,7 +179,7 @@ if(WIN32)
     )
 endif()
 
-target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
+target_compile_definitions(lemonade PRIVATE LEMONADE_CLI CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # Platform-specific settings
 if(WIN32)

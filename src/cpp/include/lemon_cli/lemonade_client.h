@@ -30,6 +30,8 @@ private:
 
 std::string extract_server_error_message(const HttpError& error);
 
+void ParseTargetUrl(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl);
+
 // Helper struct for streaming request state
 struct StreamingRequestState {
     std::string last_file;
@@ -73,7 +75,7 @@ struct RecipeStatus {
 // Main CLI client class
 class LemonadeClient {
 public:
-    LemonadeClient(const std::string& host, int port, const std::string& api_key);
+    LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl = false);
     ~LemonadeClient();
 
     // Model management commands
@@ -131,6 +133,7 @@ private:
     std::string host_;
     int port_;
     std::string api_key_;
+    bool is_ssl_ = false;
     std::string normalize_host(const std::string& host) const;
     std::string get_base_url() const;
 };
