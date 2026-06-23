@@ -13,16 +13,6 @@ function isHomepage() {
 }
 
 function createNavbar(basePath = '') {
-  const showPersonaToggle = isHomepage();
-  const showDownloadButton = !showPersonaToggle;
-  const personaToggleHtml = showPersonaToggle ? `
-        <div class="navbar-persona-toggle" role="group" aria-label="Choose audience">
-          <button class="navbar-persona-option" type="button" data-persona-option="people">Users</button>
-          <button class="navbar-persona-option" type="button" data-persona-option="developers">Devs</button>
-        </div>` : '';
-  const downloadButtonHtml = showDownloadButton ? `
-        <a class="navbar-install-btn" href="${basePath}index.html#getting-started">Download</a>` : '';
-
   return `
     <nav class="navbar" id="navbar">
       <div class="navbar-brand">
@@ -51,8 +41,6 @@ function createNavbar(basePath = '') {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.13C19.56 3.58 12 3.58 12 3.58s-7.56 0-9.4.49A3 3 0 0 0 .5 6.2 31.4 31.4 0 0 0 0 12a31.4 31.4 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.13c1.84.49 9.4.49 9.4.49s7.56 0 9.4-.49a3 3 0 0 0 2.1-2.13A31.4 31.4 0 0 0 24 12a31.4 31.4 0 0 0-.5-5.8ZM9.55 15.45v-6.9L15.82 12l-6.27 3.45Z"></path></svg>
           </a>
         </div>
-${personaToggleHtml}
-${downloadButtonHtml}
         <button class="navbar-toggle" id="navbarToggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navbarLinks">
           <span class="navbar-toggle-bar"></span>
           <span class="navbar-toggle-bar"></span>
@@ -88,19 +76,11 @@ function initializeNavbar(basePath = '') {
     if (e.target.tagName === 'A') setOpen(false);
   });
 
-  const personaButtons = navbarContainer.querySelectorAll('[data-persona-option]');
-  if (personaButtons.length) {
-    const storedPersona = readPersona();
-    setPersona(storedPersona, false);
-  }
-
-  personaButtons.forEach(function(button) {
-    button.addEventListener('click', function() {
-      setPersona(button.getAttribute('data-persona-option'), true);
-      setOpen(false);
-    });
-  });
-
+  // Persona is a homepage-only concept: the hero CTA + journey switch between a
+  // user view and a developer view. The in-page CTA buttons drive it through the
+  // global setter exposed below; navbar.js owns the side effects (dark color
+  // scheme for the dev view, persistence, and the change event the homepage
+  // modules listen for).
   function readPersona() {
     try {
       return localStorage.getItem('lemonade-persona') || 'people';
@@ -117,15 +97,22 @@ function initializeNavbar(basePath = '') {
     } else {
       document.documentElement.removeAttribute('data-md-color-scheme');
     }
-    personaButtons.forEach(function(button) {
-      var active = button.getAttribute('data-persona-option') === nextPersona;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
     if (persist) {
       try { localStorage.setItem('lemonade-persona', nextPersona); } catch (error) {}
     }
     window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: nextPersona } }));
+  }
+
+  if (isHomepage()) {
+    window.lemonadeSetPersona = setPersona;
+    // The install Quick Start is user-persona content. Landing directly on its
+    // anchor must force the user persona, or the section is display:none and the
+    // browser scrolls to nothing.
+    if (window.location.hash === '#getting-started') {
+      setPersona('people', true);
+    } else {
+      setPersona(readPersona(), false);
+    }
   }
 }
 

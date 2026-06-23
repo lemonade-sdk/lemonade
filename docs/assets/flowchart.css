@@ -161,10 +161,10 @@
 }
 
 /* ---- Spawn diagram ("Start lemond subprocess") -------------------------
-   Rendered inside the same terminal-window chrome as the Fetch slide (reuses
-   .hp-demo-terminal / .hp-demo-terminal-bar -- no separate stage). The SVG body
-   ignites a lemon-slice (lemond) whose six segments hold the AI capabilities,
-   lighting up in a cascade. Plays once and freezes. */
+   Rendered inside the unified .hp-app-window chrome (dark theme) -- same window
+   as every other demo. The SVG body ignites a lemon-slice (lemond) whose six
+   segments hold the AI capabilities, lighting up in a cascade. Plays once and
+   freezes. */
 .hp-spawn-svg {
   flex: 1 1 auto;
   width: 100%;

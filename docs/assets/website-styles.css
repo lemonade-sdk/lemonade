@@ -4578,7 +4578,15 @@ body.install-options {
 
 .hp-reveal.hp-visible {
   opacity: 1;
-  transform: translateY(0);
+  /* `none`, not translateY(0): a lingering transform would establish a containing
+     block and permanently break the sticky journey TOC. They render identically. */
+  transform: none;
+}
+
+/* Used for one frame when a persona swap re-lifts a section: snap straight back
+   to the hidden state instead of animating "out", so it can cleanly lift in. */
+.hp-reveal.hp-reveal-instant {
+  transition: none;
 }
 
 .hp-section {
@@ -4615,11 +4623,11 @@ body.install-options {
 
 .hp-section-heading {
   font-family: var(--font-display);
-  /* One perfect fourth step below hero headline (hero = base × 1.333³, section = base × 1.333²) */
-  font-size: clamp(1.35rem, 2.4vw, 2.1rem);
+  /* Modern section headline: larger than body by roughly two perfect-fourth steps. */
+  font-size: clamp(1.7rem, 3.1vw, 2.6rem);
   font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 var(--page-space-sm);
+  margin: 0 0 calc(var(--page-space-base) * 0.4);
   letter-spacing: -0.03em;
   line-height: 1.12;
 }

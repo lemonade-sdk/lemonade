@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
-  <link rel="stylesheet" href="assets/website-styles.css">
+  <link rel="stylesheet" href="assets/website-styles.css?v=hero-redesign">
   <link rel="stylesheet" href="assets/persona-demo.css">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,13 +18,34 @@
 
   <main class="main hp-main">
     <!-- ==================== PERSONA PROMISE ==================== -->
-    <section class="hp-persona-promise" aria-labelledby="personaHeroTitle">
-      <h1 class="hp-persona-title" id="personaHeroTitle">One click. Everything AI can do.</h1>
-      <p class="hp-persona-subtitle" id="personaHeroSubtitle">Install once and the whole local-AI world opens up on any PC, fully private.</p>
+    <section class="hp-persona-promise hp-reveal" aria-labelledby="personaHeroTitle">
+      <h1 class="hp-persona-title" id="personaHeroTitle">
+        <span class="hp-persona-title-line">Refreshingly open</span>
+        <span class="hp-persona-title-line">intelligence<span class="hp-persona-period">.</span></span>
+      </h1>
+      <p class="hp-persona-subtitle" id="personaHeroSubtitle">
+        <span class="hp-persona-subtitle-line">Lemonade is a community-driven AI platform built for privacy, flexibility,</span>
+        <span class="hp-persona-subtitle-line">and the pace of what’s next.</span>
+      </p>
     </section>
 
-    <!-- ==================== CTA: QUICKSTART (User persona) ==================== -->
-    <section class="hp-section" id="getting-started" data-cta-persona="people">
+    <!-- ==================== HERO PERSONA SWITCH ==================== -->
+    <section class="hp-section hp-cta-section hp-reveal" id="hero-cta" data-persona-lift>
+      <div class="hp-persona-switch ice-card" role="group" aria-label="Choose a quickstart path">
+        <button class="hp-persona-switch-btn" type="button" data-cta-switch="people" data-persona-choice="people">
+          <span class="material-symbols-outlined">person</span>
+          <span>For you</span>
+        </button>
+        <button class="hp-persona-switch-btn" type="button" data-cta-switch="developers" data-persona-choice="developers">
+          <span class="material-symbols-outlined">code</span>
+          <span>For developers</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== QUICK START: INSTALL (User persona) ==================== -->
+    <section class="hp-section hp-reveal" id="getting-started" data-cta-persona="people" data-persona-lift>
+      <h2 class="hp-section-heading">Up and running in two minutes.</h2>
       <div class="gs-platforms" id="gsPlatforms">
         <button class="gs-platform" type="button" data-platform="windows">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
@@ -64,25 +85,53 @@
       <div class="gs-quickstart" id="gsQuickstart"></div>
     </section>
 
-    <!-- ==================== CTA: BUILD (Developer persona) ==================== -->
-    <section class="hp-section" id="dev-cta" data-cta-persona="developers">
-      <div class="hp-devcta-actions">
-        <a class="hp-devcta-btn is-primary" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">
-          <span class="material-symbols-outlined">code</span> Start building
+    <!-- ==================== QUICK START: BUILD (Developer persona) ==================== -->
+    <section class="hp-section hp-reveal" id="dev-quickstart" data-cta-persona="developers" data-persona-lift>
+      <h2 class="hp-section-heading">Quick Start</h2>
+      <p class="hp-section-desc">Embed Lemonade behind one OpenAI-compatible API and ship local AI in your app.</p>
+      <div class="hp-cta-actions">
+        <a class="hp-cta-btn is-primary" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">deployed_code</span> Embeddable SDK
         </a>
-        <button class="hp-devcta-btn" type="button" id="devCtaTestDrive">
-          <span class="material-symbols-outlined">play_circle</span> Test-drive the capabilities
-        </button>
+        <a class="hp-cta-btn" href="https://lemonade-server.ai/docs/api/" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">api</span> API Reference
+        </a>
+        <a class="hp-cta-btn" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+          <span class="material-symbols-outlined">code</span> Source on GitHub
+        </a>
+      </div>
+      <div class="hp-proof-band" aria-label="Lemonade platform highlights">
+        <div class="hp-proof-grid">
+          <article class="hp-proof-card ice-card">
+            <span class="material-symbols-outlined hp-proof-icon">diversity_3</span>
+            <h3>Open source, open roadmap</h3>
+            <p>Free to use, shaped in public, and built with a community that welcomes builders.</p>
+          </article>
+          <article class="hp-proof-card ice-card">
+            <span class="material-symbols-outlined hp-proof-icon">shield_lock</span>
+            <h3>Private when it matters</h3>
+            <p>Run close to your data, then reach servers and cloud models when more power helps.</p>
+          </article>
+          <article class="hp-proof-card ice-card">
+            <span class="material-symbols-outlined hp-proof-icon">auto_awesome</span>
+            <h3>One platform, every mode</h3>
+            <p>Chat, vision, image generation, speech, embeddings, reranking, and more.</p>
+          </article>
+          <article class="hp-proof-card ice-card">
+            <span class="material-symbols-outlined hp-proof-icon">tune</span>
+            <h3>Your stack, your shape</h3>
+            <p>Choose models, backends, hardware acceleration, APIs, and deployment patterns.</p>
+          </article>
+        </div>
       </div>
     </section>
 
-    <!-- ==================== PERSONA JOURNEY (overview map + unrolled sections) ==================== -->
-    <div class="hp-persona-progress" id="personaProgress" hidden aria-hidden="true"></div>
-    <header class="hp-zone-head">
+    <!-- ==================== PERSONA JOURNEY (zone heading + pinned TOC stage) ==================== -->
+    <header class="hp-zone-head hp-reveal" data-persona-lift>
       <h2 class="hp-zone-heading" id="personaZoneHeading"></h2>
+      <p class="hp-section-desc" id="personaZoneSubtitle"></p>
     </header>
-    <section class="hp-persona-map" id="personaMap" aria-label="Journey overview"></section>
-    <div class="hp-persona-journey" id="personaJourney"></div>
+    <div class="hp-journey hp-reveal" id="personaJourney" data-persona-lift></div>
 
     <!-- ==================== CURRENT HERO, PRESERVED BELOW QUICKSTART ==================== -->
     <section class="hp-hero hp-legacy-hero hp-reveal">
@@ -345,13 +394,12 @@
 
   <div class="footer-placeholder"></div>
 
-  <script src="assets/navbar.js"></script>
+  <script src="assets/navbar.js?v=hero-redesign"></script>
   <script src="assets/install-selector.js"></script>
   <script src="assets/footer.js"></script>
   <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
   <script src="assets/flowchart.js"></script>
-  <script src="assets/scrollama.min.js"></script>
   <script src="assets/persona-demo.js"></script>
   <script>
 
@@ -648,17 +696,47 @@
       });
     })();
 
-    // ---- Scroll reveal ----
+    // ---- Section reveal (lift-in) ----
+    // One animation for the whole page, preserving main's feel: every .hp-reveal
+    // section lifts in once as it crosses 12% into view (above-the-fold sections
+    // lift together on load; lower ones as you scroll). Extension for personas:
+    // when the persona changes, only sections whose CONTENT changes (marked
+    // data-persona-lift) lift back in — visible ones immediately, off-screen ones
+    // re-armed so the observer lifts them when scrolled to. Static sections (the
+    // promise, legacy hero, and everything below the journey) are never touched.
     (function() {
-      var sections = document.querySelectorAll('.hp-reveal');
       var observer = new IntersectionObserver(function(entries) {
         entries.forEach(function(entry) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('hp-visible');
-          }
+          if (entry.isIntersecting) entry.target.classList.add('hp-visible');
         });
       }, { threshold: 0.12 });
-      sections.forEach(function(s) { observer.observe(s); });
+      document.querySelectorAll('.hp-reveal').forEach(function(s) { observer.observe(s); });
+
+      function isInView(el) {
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return false; // display:none / empty
+        return r.top < window.innerHeight && r.bottom > 0;
+      }
+
+      function relift(el) {
+        // Snap back to the hidden state without animating "out" (transition is
+        // disabled for the snap), then lift back in — now if on screen, or later
+        // via the observer once scrolled into view.
+        el.classList.add('hp-reveal-instant');
+        el.classList.remove('hp-visible');
+        void el.offsetWidth; // flush the snap before re-enabling the transition
+        el.classList.remove('hp-reveal-instant');
+        if (isInView(el)) el.classList.add('hp-visible');
+      }
+
+      // Skip the first event (the navbar applying the stored persona on load) so
+      // every section reveals uniformly through the observer; only real persona
+      // switches after that re-lift the changed sections.
+      var personaApplied = false;
+      window.addEventListener('lemonadePersonaChange', function() {
+        if (!personaApplied) { personaApplied = true; return; }
+        document.querySelectorAll('[data-persona-lift]').forEach(relift);
+      });
     })();
 
     // ---- Release fetch ----
