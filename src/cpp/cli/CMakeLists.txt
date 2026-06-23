@@ -13,43 +13,45 @@
 if(NOT TARGET lemonade-digest-crypto)
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
-        pkg_check_modules(MBEDCRYPTO QUIET mbedcrypto)
+        pkg_check_modules(MBEDTLS QUIET mbedtls mbedx509 mbedcrypto)
     endif()
 
     add_library(lemonade-digest-crypto INTERFACE)
 
-    if(MBEDCRYPTO_FOUND)
-        message(STATUS "Using system mbedcrypto for download digest verification")
-        if(MBEDCRYPTO_INCLUDE_DIRS)
-            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_INCLUDE_DIRS})
+    if(MBEDTLS_FOUND)
+        message(STATUS "Using system mbedtls for CLI HTTPS and digest verification")
+        if(MBEDTLS_INCLUDE_DIRS)
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIRS})
         endif()
-        if(MBEDCRYPTO_LIBRARY_DIRS)
-            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY_DIRS})
+        if(MBEDTLS_LIBRARY_DIRS)
+            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY_DIRS})
         endif()
-        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARIES})
-        if(MBEDCRYPTO_CFLAGS_OTHER)
-            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_CFLAGS_OTHER})
+        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARIES})
+        if(MBEDTLS_CFLAGS_OTHER)
+            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDTLS_CFLAGS_OTHER})
         endif()
     else()
-        # Some distro packages do not ship a pkg-config file for mbedcrypto.
+        # Some distro packages do not ship a pkg-config file for mbedtls.
         # Keep the system-library path working for Debian/PPA builds, where
         # FetchContent is intentionally fully disconnected.
-        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/md.h)
+        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/ssl.h)
+        find_library(MBEDTLS_LIBRARY NAMES mbedtls)
+        find_library(MBEDX509_LIBRARY NAMES mbedx509)
         find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
 
-        if(MBEDTLS_INCLUDE_DIR AND MBEDCRYPTO_LIBRARY)
-            message(STATUS "Using system mbedcrypto for download digest verification")
+        if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_LIBRARY AND MBEDX509_LIBRARY AND MBEDCRYPTO_LIBRARY)
+            message(STATUS "Using system mbedtls libraries for CLI HTTPS and digest verification")
             target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
-            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY})
+            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
         else()
             if(FETCHCONTENT_FULLY_DISCONNECTED AND NOT FETCHCONTENT_SOURCE_DIR_MBEDTLS)
                 message(FATAL_ERROR
-                    "System mbedcrypto was not found and FetchContent is fully disconnected. "
+                    "System mbedtls was not found and FetchContent is fully disconnected. "
                     "Install the distro development package (for Debian/Ubuntu: libmbedtls-dev) "
                     "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
             endif()
 
-            message(STATUS "System mbedcrypto not found; fetching mbedTLS for download digest verification")
+            message(STATUS "System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification")
             include(FetchContent)
             FetchContent_Declare(mbedtls
                 GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
@@ -64,12 +66,12 @@ if(NOT TARGET lemonade-digest-crypto)
             FetchContent_MakeAvailable(mbedtls)
 
             target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
-            if(TARGET MbedTLS::mbedcrypto)
-                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedcrypto)
-            elseif(TARGET mbedcrypto)
-                target_link_libraries(lemonade-digest-crypto INTERFACE mbedcrypto)
+            if(TARGET MbedTLS::mbedtls AND TARGET MbedTLS::mbedx509 AND TARGET MbedTLS::mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
+            elseif(TARGET mbedtls AND TARGET mbedx509 AND TARGET mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE mbedtls mbedx509 mbedcrypto)
             else()
-                message(FATAL_ERROR "mbedTLS FetchContent did not create an mbedcrypto target")
+                message(FATAL_ERROR "mbedTLS FetchContent did not create expected targets")
             endif()
         endif()
     endif()
@@ -185,7 +187,18 @@ if(WIN32)
     )
 endif()
 
-target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
+set(HTTPLIB_SUPPORTS_MBEDTLS FALSE)
+if(NOT USE_SYSTEM_HTTPLIB)
+    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE)
+elseif(HTTPLIB_VERSION AND NOT HTTPLIB_VERSION VERSION_LESS "0.31.0")
+    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE)
+endif()
+
+if(HTTPLIB_SUPPORTS_MBEDTLS)
+    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI CPPHTTPLIB_MBEDTLS_SUPPORT)
+else()
+    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
+endif()
 
 # Platform-specific settings
 if(WIN32)
