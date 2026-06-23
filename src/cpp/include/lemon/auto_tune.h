@@ -98,7 +98,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         if (amd_igpu.available && amd_igpu.vram_gb > 0) {
             // iGPU total = dedicated VRAM + GTT (system memory pool accessible by GPU)
             double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
-            double available = std::max(0.0, total_gb - used_gb);
+            double available = (std::max)(0.0, total_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (AMD iGPU) total="
                                    << std::fixed << std::setprecision(2) << total_gb
                                    << " GB (vram=" << amd_igpu.vram_gb
@@ -111,7 +111,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         auto amd_dgpus = si->get_amd_dgpu_devices();
         for (const auto& gpu : amd_dgpus) {
             if (gpu.available && gpu.vram_gb > 0) {
-                double available = std::max(0.0, gpu.vram_gb - used_gb);
+                double available = (std::max)(0.0, gpu.vram_gb - used_gb);
                 LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (AMD dGPU) total="
                                        << std::fixed << std::setprecision(2) << gpu.vram_gb
                                        << " GB, used=" << used_gb
@@ -124,7 +124,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         for (const auto& gpu : nvidia_gpus) {
             if (gpu.available && gpu.vram_gb > 0) {
-                double available = std::max(0.0, gpu.vram_gb - used_gb);
+                double available = (std::max)(0.0, gpu.vram_gb - used_gb);
                 LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (NVIDIA) total="
                                        << std::fixed << std::setprecision(2) << gpu.vram_gb
                                        << " GB, used=" << used_gb
@@ -140,8 +140,8 @@ inline double get_available_memory_gb(DeviceType device_type) {
         // working-set budget so we don't push the system into swap.
         auto apple = si->get_apple_silicon_device();
         if (apple.available && apple.vram_gb > 0) {
-            double free_unified = std::max(0.0, apple.virtual_gb - used_gb);
-            double available = std::min(apple.vram_gb, free_unified);
+            double free_unified = (std::max)(0.0, apple.virtual_gb - used_gb);
+            double available = (std::min)(apple.vram_gb, free_unified);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (Metal) budget="
                                    << std::fixed << std::setprecision(2) << apple.vram_gb
                                    << " GB, unified=" << apple.virtual_gb
@@ -156,7 +156,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     // as virtual_gb on the Apple Silicon device.
     auto apple = si->get_apple_silicon_device();
     if (apple.available && apple.virtual_gb > 0) {
-        double available = std::max(0.0, apple.virtual_gb - used_gb);
+        double available = (std::max)(0.0, apple.virtual_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (Apple Silicon unified) total="
                                << std::fixed << std::setprecision(2) << apple.virtual_gb
                                << " GB, used=" << used_gb
@@ -168,7 +168,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     auto amd_igpu = si->get_amd_igpu_device();
     if (amd_igpu.available && amd_igpu.vram_gb > 0) {
         double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
-        double available = std::max(0.0, total_gb - used_gb);
+        double available = (std::max)(0.0, total_gb - used_gb);
         LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD iGPU proxy) total="
                                << std::fixed << std::setprecision(2) << total_gb
                                << " GB, used=" << used_gb
@@ -180,7 +180,7 @@ inline double get_available_memory_gb(DeviceType device_type) {
     auto amd_dgpus = si->get_amd_dgpu_devices();
     for (const auto& gpu : amd_dgpus) {
         if (gpu.available && gpu.virtual_gb > 0) {
-            double available = std::max(0.0, gpu.virtual_gb - used_gb);
+            double available = (std::max)(0.0, gpu.virtual_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (AMD dGPU GTT proxy) total="
                                    << std::fixed << std::setprecision(2) << gpu.virtual_gb
                                    << " GB, used=" << used_gb
@@ -192,24 +192,6 @@ inline double get_available_memory_gb(DeviceType device_type) {
     LOG(DEBUG, "AutoTune") << "get_available_memory_gb: could not determine memory, returning 0.0";
     return 0.0;  // Could not determine
 }
-
-/**
- * Compute the maximum context window that fits in available memory based on
- * GGUF architecture metadata.
- *
- * Formula (from auto-tune schema):
- *   kv_bytes_per_token = block_count × head_count_kv × key_length × 2[F16] × 2[K+V]
- *   max_ctx = floor((available_memory_gb × 1024³ - weights) / kv_bytes_per_token)
- *   ctx_size = min(model_max_context_window, max_ctx)
- *
- * When GGUF metadata is unavailable, estimates kv_bytes_per_token from model size.
- * For embedding models, the result is floored at EMBEDDING_CTX_SIZE.
- *
- * @param model_info       Model metadata including GGUF architecture fields
- * @param available_memory_gb  Total memory available for the model (VRAM or system RAM)
- * @param is_embedding     Whether this is an embedding model (applies minimum floor)
- * @return Resolved context size, or AUTO_CTX_FALLBACK if computation fails
- */
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false) {
@@ -221,20 +203,40 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     // KV cache bytes per token
     double kv_bytes_per_token = 0;
+    double kv_cache_scale = 1.0;
     bool estimated = false;
 
     // Try exact GGUF metadata first
-    int64_t block_count = model_info.gguf_block_count;
-    int64_t head_count_kv = model_info.gguf_head_count_kv;
-    int64_t key_length = model_info.gguf_key_length;
+    int64_t block_count = model_info.gguf.block_count;
+    int64_t head_count_kv = model_info.gguf.head_count_kv;
+    int64_t key_length = model_info.gguf.key_length;
 
     if (block_count > 0 && head_count_kv > 0 && key_length > 0) {
-        // Exact formula: layers × kv_heads × head_dim × 2[F16] × 2[K+V]
-        kv_bytes_per_token = static_cast<double>(block_count)
-                            * static_cast<double>(head_count_kv)
-                            * static_cast<double>(key_length)
-                            * 2.0  // F16 = 2 bytes per element
-                            * 2.0; // K cache + V cache
+        kv_bytes_per_token = compute_weighted_kv_cache_bytes_per_token(
+            model_info.gguf, &kv_cache_scale);
+        if (kv_cache_scale < 1.0) {
+            estimated = true;  // mark as architecture-adjusted
+        }
+        // Log precise SWA head breakdown when raw arrays are available
+        // (and both arrays have matching lengths so per-layer indexing is safe)
+        if (model_info.gguf.key_length_swa > 0 &&
+            model_info.gguf.key_length_swa < model_info.gguf.key_length &&
+            !model_info.gguf.head_count_kv_per_layer.empty() &&
+            !model_info.gguf.sliding_window_pattern.empty() &&
+            model_info.gguf.head_count_kv_per_layer.size() == model_info.gguf.sliding_window_pattern.size()) {
+            int64_t swa_heads = 0, full_heads = 0;
+            for (size_t i = 0; i < model_info.gguf.head_count_kv_per_layer.size(); ++i) {
+                if (model_info.gguf.sliding_window_pattern[i])
+                    swa_heads += model_info.gguf.head_count_kv_per_layer[i];
+                else
+                    full_heads += model_info.gguf.head_count_kv_per_layer[i];
+            }
+            if (swa_heads > 0 || full_heads > 0) {
+                LOG(DEBUG, "AutoTune") << "  SWA head breakdown: swa_heads="
+                                       << swa_heads << ", full_heads="
+                                       << full_heads << " ";
+            }
+        }
     } else {
         // GGUF metadata missing — estimate from model size
         kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(model_info.size);
@@ -247,7 +249,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     // Available memory for KV cache = total - used - model weights
     // (used is already subtracted in get_available_memory_gb)
-    double model_weight_gb = std::max(0.0, model_info.size);
+    double model_weight_gb = (std::max)(0.0, model_info.size);
     double available_for_kv_gb = available_memory_gb - model_weight_gb;
 
     if (available_for_kv_gb <= 0) {
@@ -283,8 +285,11 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
-                           << " — GGUF: blocks=" << block_count << ", kv_heads=" << head_count_kv
+                           << " — GGUF: " << model_info.gguf.architecture
+                           << ", blocks=" << block_count << ", kv_heads=" << head_count_kv
                            << ", key_len=" << key_length
+                           << ", swa_layers=" << model_info.gguf.swa_layer_count
+                           << ", scale=" << std::fixed << std::setprecision(2) << kv_cache_scale
                            << " | kv_cache=" << std::fixed << std::setprecision(2)
                            << (kv_bytes_per_token / (1024.0 * 1024.0)) << " MB/token"
                            << (estimated ? " (est)" : "")
