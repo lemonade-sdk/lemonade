@@ -582,62 +582,95 @@ sys.exit(0)
 
     def test_043_listen_all_via_runtime_config(self):
         """Test that setting host to 0.0.0.0 via /internal/set works."""
-        # Set host to 0.0.0.0 (listen on all interfaces)
         try:
-            set_server_config({"host": "0.0.0.0"})
-            print("[OK] Set host to 0.0.0.0 via /internal/set")
-        except Exception as e:
-            self.fail(f"Failed to set host to 0.0.0.0: {e}")
-
-        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
-        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
-        # ::1 (IPv6) in some environments (e.g. Fedora containers).
-        for i in range(30):
+            # Set host to 0.0.0.0 (listen on all interfaces).
             try:
-                response = requests.get(
-                    f"http://127.0.0.1:{PORT}/api/v1/health",
-                    headers=_auth_headers(),
-                    timeout=2,
+                set_server_config({"host": "0.0.0.0"})
+                print("[OK] Set host to 0.0.0.0 via /internal/set")
+            except Exception as e:
+                self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+            # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+            # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+            # ::1 (IPv6) in some environments (e.g. Fedora containers).
+            for i in range(30):
+                try:
+                    response = requests.get(
+                        f"http://127.0.0.1:{PORT}/api/v1/health",
+                        headers=_auth_headers(),
+                        timeout=2,
+                    )
+                    if response.status_code == 200:
+                        break
+                except requests.ConnectionError:
+                    pass
+                time.sleep(1)
+            else:
+                self.fail(
+                    "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
                 )
-                if response.status_code == 200:
-                    break
-            except requests.ConnectionError:
-                pass
-            time.sleep(1)
-        else:
-            self.fail(
-                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+
+            # Verify the server still responds (status command should work).
+            result = self.assertCommandSucceeds(["status"])
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertTrue(
+                "running" in output or "online" in output or "active" in output,
+                f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
             )
 
-        # Verify the server still responds (status command should work)
-        result = self.assertCommandSucceeds(["status"])
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "running" in output or "online" in output or "active" in output,
-            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
-        )
-
-        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
-        response = requests.get(
-            f"http://127.0.0.1:{PORT}/api/v1/health",
-            headers=_auth_headers(),
-            timeout=10,
-        )
-        self.assertEqual(response.status_code, 200)
-
-        # Restore host back to localhost. Use 127.0.0.1 directly since
-        # the server is currently bound to 0.0.0.0 (IPv4 only).
-        try:
-            requests.post(
-                f"http://127.0.0.1:{PORT}/internal/set",
-                json={"host": "localhost"},
+            # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason).
+            response = requests.get(
+                f"http://127.0.0.1:{PORT}/api/v1/health",
                 headers=_auth_headers(),
                 timeout=10,
             )
-            print("[OK] Restored host to localhost")
-        except Exception as e:
-            # Best-effort restore — don't fail the test
-            print(f"Warning: Failed to restore host to localhost: {e}")
+            self.assertEqual(response.status_code, 200)
+        finally:
+            # Best-effort restore: this test runs inside CI jobs that execute
+            # multiple modules against one long-lived server, so cleanup must not
+            # mask the primary assertion failure. reset_server_state also restores
+            # the host before subsequent CI suites.
+            try:
+                response = requests.post(
+                    f"http://127.0.0.1:{PORT}/internal/set",
+                    json={"host": "localhost"},
+                    headers=_auth_headers(),
+                    timeout=10,
+                )
+                if response.status_code < 400:
+                    print("[OK] Restored host to localhost")
+                else:
+                    print(
+                        "Warning: Failed to restore host to localhost: "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as e:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: Failed to restore host to localhost: {e}")
+
+    def test_044_config_set_flat_backend_key(self):
+        """Flat backend keys (e.g. vllm_args) map to their nested form (issue #1824)."""
+        try:
+            # The flat underscore form is what the CLI flags and docs use; it
+            # must be accepted and stored under the nested "vllm.args" key.
+            self.assertCommandSucceeds(
+                ["config", "set", "vllm_args=--max-num-seqs 128"]
+            )
+
+            result = self.assertCommandSucceeds(["config"])
+            output = result.stdout
+            self.assertIn(
+                "vllm.args",
+                output,
+                f"vllm.args should appear in config output: {output}",
+            )
+            self.assertIn(
+                "--max-num-seqs 128",
+                output,
+                f"flat vllm_args value should be stored under vllm.args: {output}",
+            )
+        finally:
+            # Restore the default (empty) value so later tests are unaffected.
+            run_cli_command(["config", "set", "vllm.args="])
 
     # =============================================================================
     # Pull Tests

@@ -67,6 +67,41 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         LOG(WARNING) << message << std::endl;
     }
 
+    // Promote flat backend keys (e.g. "vllm_args", "llamacpp_backend") into
+    // their nested form ("vllm": {"args": ...}). Backend CLI flags and docs use
+    // the flat underscore form, but config.json stores backend options nested.
+    // Only keys whose prefix (before the first underscore) is a known backend
+    // are promoted; no top-level config key starts with a backend name, so this
+    // mapping is unambiguous. See issue #1824.
+    std::vector<std::string> flat_backend_keys;
+    for (auto& [key, value] : normalized.items()) {
+        size_t underscore = key.find('_');
+        if (underscore == std::string::npos) continue;
+        if (is_backend_name(key.substr(0, underscore))) {
+            flat_backend_keys.push_back(key);
+        }
+    }
+    for (const auto& key : flat_backend_keys) {
+        size_t underscore = key.find('_');
+        std::string backend = key.substr(0, underscore);
+        std::string field = key.substr(underscore + 1);
+        json value = normalized[key];
+
+        if (!normalized.contains(backend)) {
+            normalized[backend] = json::object();
+        } else if (!normalized[backend].is_object()) {
+            throw std::invalid_argument(
+                "Ambiguous config: '" + key + "' conflicts with non-object '" + backend + "'");
+        }
+        if (normalized[backend].contains(field) && normalized[backend][field] != value) {
+            throw std::invalid_argument(
+                "Ambiguous config: both '" + key + "' and '" + backend + "." + field +
+                "' were provided with different values");
+        }
+        normalized[backend][field] = value;
+        normalized.erase(key);
+    }
+
     return {normalized, message};
 }
 
