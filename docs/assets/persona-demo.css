@@ -137,8 +137,9 @@ html:not([data-persona="developers"]) [data-cta-persona="developers"] {
 }
 
 /* The persona swap-in animation is the page-wide .hp-reveal lift (website-styles.css),
-   re-triggered on sections marked data-persona-lift by the reveal code in index.html —
-   there's no separate persona animation here, on purpose (one system, no whack-a-mole). */
+   re-triggered on every .hp-reveal section below the toggle by the reveal code in
+   index.html — there's no separate persona animation here, on purpose (one system, no
+   whack-a-mole). */
 
 /* Top-of-page vertical rhythm: the promise sits md below the navbar and the hero
    persona switch follows without taking on .hp-section's default xxl gap. */

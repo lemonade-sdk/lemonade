@@ -30,7 +30,7 @@
     </section>
 
     <!-- ==================== HERO PERSONA SWITCH ==================== -->
-    <section class="hp-section hp-cta-section hp-reveal" id="hero-cta" data-persona-lift>
+    <section class="hp-section hp-cta-section hp-reveal" id="hero-cta">
       <div class="hp-persona-switch ice-card" role="group" aria-label="Choose a quickstart path">
         <button class="hp-persona-switch-btn" type="button" data-cta-switch="people" data-persona-choice="people">
           <span class="material-symbols-outlined">person</span>
@@ -44,7 +44,7 @@
     </section>
 
     <!-- ==================== QUICK START: INSTALL (User persona) ==================== -->
-    <section class="hp-section hp-reveal" id="getting-started" data-cta-persona="people" data-persona-lift>
+    <section class="hp-section hp-reveal" id="getting-started" data-cta-persona="people">
       <div class="hp-quickstart-card ice-card">
         <h2 class="hp-section-heading">Up and running in minutes.</h2>
         <p class="hp-section-desc hp-quickstart-subtitle">Installation equips your computer with an AI runtime, GUI, CLI, and API endpoints to begin your AI journey.</p>
@@ -89,7 +89,7 @@
     </section>
 
     <!-- ==================== QUICK START: BUILD (Developer persona) ==================== -->
-    <section class="hp-section hp-reveal" id="dev-quickstart" data-cta-persona="developers" data-persona-lift>
+    <section class="hp-section hp-reveal" id="dev-quickstart" data-cta-persona="developers">
       <div class="hp-dev-quickstart-layout hp-dev-quickstart-card ice-card">
         <div class="hp-dev-quickstart-copy">
           <h2 class="hp-section-heading">Quick Start</h2>
@@ -134,11 +134,11 @@
     </section>
 
     <!-- ==================== PERSONA JOURNEY (zone heading + pinned TOC stage) ==================== -->
-    <header class="hp-zone-head hp-reveal" data-persona-lift>
+    <header class="hp-zone-head hp-reveal">
       <h2 class="hp-zone-heading" id="personaZoneHeading"></h2>
       <p class="hp-section-desc" id="personaZoneSubtitle"></p>
     </header>
-    <div class="hp-journey hp-reveal" id="personaJourney" data-persona-lift></div>
+    <div class="hp-journey hp-reveal" id="personaJourney"></div>
 
     <!-- ==================== CURRENT HERO, PRESERVED BELOW QUICKSTART ==================== -->
     <section class="hp-hero hp-legacy-hero hp-reveal">
@@ -703,15 +703,18 @@
       });
     })();
 
-    // ---- Section reveal (lift-in) ----
-    // One animation for the whole page, preserving main's feel: every .hp-reveal
-    // section lifts in once as it crosses 12% into view (above-the-fold sections
-    // lift together on load; lower ones as you scroll). Extension for personas:
-    // when the persona changes, only sections whose CONTENT changes (marked
-    // data-persona-lift) lift back in — visible ones immediately, off-screen ones
-    // re-armed so the observer lifts them when scrolled to. Static sections (the
-    // promise, legacy hero, and everything below the journey) are never touched.
+    // ---- Section reveal (lift-in) + persona replay ----
+    // The page-load fade is a CSS keyframe animation: `.main > * { animation: fadeInUp }`
+    // (website-styles.css). It fades every section in on load and, via `both` fill, holds
+    // it visible afterward — which is also why it shadows the .hp-reveal/.hp-visible system
+    // below for these elements. On a persona switch we replay that SAME animation on every
+    // .main child below the toggle, so the journey and everything under it fade in again
+    // exactly like a fresh load. (The active quickstart already replays on its own, because
+    // switching personas flips its display:none/block, which restarts the animation.)
     (function() {
+      // Legacy scroll-reveal hook. For .main children it is shadowed by the fadeInUp fill
+      // above; kept as a harmless no-JS-animation fallback for any .hp-reveal that is not a
+      // direct .main child.
       var observer = new IntersectionObserver(function(entries) {
         entries.forEach(function(entry) {
           if (entry.isIntersecting) entry.target.classList.add('hp-visible');
@@ -719,30 +722,27 @@
       }, { threshold: 0.12 });
       document.querySelectorAll('.hp-reveal').forEach(function(s) { observer.observe(s); });
 
-      function isInView(el) {
-        var r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return false; // display:none / empty
-        return r.top < window.innerHeight && r.bottom > 0;
+      // The fadeInUp animation lives on `.main > *`, so replay targets the .main children
+      // that follow the toggle in the document (the promise and the toggle itself precede
+      // it and stay put).
+      var toggle = document.getElementById('hero-cta');
+      var belowToggle = Array.prototype.filter.call(
+        document.querySelectorAll('.main > *'),
+        function(el) { return toggle && (toggle.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING); }
+      );
+
+      // Restart the entrance animation: clear it, force a reflow so the browser drops the
+      // finished run, then let the stylesheet rule re-apply — it plays again from the top.
+      function replay(el) {
+        el.style.animation = 'none';
+        void el.offsetWidth;
+        el.style.animation = '';
       }
 
-      function relift(el) {
-        // Snap back to the hidden state without animating "out" (transition is
-        // disabled for the snap), then lift back in — now if on screen, or later
-        // via the observer once scrolled into view.
-        el.classList.add('hp-reveal-instant');
-        el.classList.remove('hp-visible');
-        void el.offsetWidth; // flush the snap before re-enabling the transition
-        el.classList.remove('hp-reveal-instant');
-        if (isInView(el)) el.classList.add('hp-visible');
-      }
-
-      // Skip the first event (the navbar applying the stored persona on load) so
-      // every section reveals uniformly through the observer; only real persona
-      // switches after that re-lift the changed sections.
-      var personaApplied = false;
+      // lemonadePersonaChange is emitted ONLY on a real user persona switch
+      // (persona-demo.js), never on load — so every fire is a switch.
       window.addEventListener('lemonadePersonaChange', function() {
-        if (!personaApplied) { personaApplied = true; return; }
-        document.querySelectorAll('[data-persona-lift]').forEach(relift);
+        belowToggle.forEach(replay);
       });
     })();
 

@@ -2,16 +2,6 @@
 // (marketplace.html, models.html, news/, etc.). The Zensical docs site
 // renders its own header, restyled in docs/assets/zest-theme.css.
 
-function isHomepage() {
-  const path = window.location.pathname.replace(/\/+$/, '');
-  return path === '' ||
-    path === '/index' ||
-    path === '/index.html' ||
-    path.endsWith('/docs') ||
-    path.endsWith('/docs/index') ||
-    path.endsWith('/docs/index.html');
-}
-
 function createNavbar(basePath = '') {
   return `
     <nav class="navbar" id="navbar">
@@ -75,45 +65,6 @@ function initializeNavbar(basePath = '') {
   links.addEventListener('click', function(e) {
     if (e.target.tagName === 'A') setOpen(false);
   });
-
-  // Persona is a homepage-only concept: the hero CTA + journey switch between a
-  // user view and a developer view. The in-page CTA buttons drive it through the
-  // global setter exposed below; navbar.js owns the side effects (dark color
-  // scheme for the dev view, persistence, and the change event the homepage
-  // modules listen for).
-  function readPersona() {
-    try {
-      return localStorage.getItem('lemonade-persona') || 'people';
-    } catch (error) {
-      return 'people';
-    }
-  }
-
-  function setPersona(persona, persist) {
-    var nextPersona = persona === 'developers' ? 'developers' : 'people';
-    document.documentElement.setAttribute('data-persona', nextPersona);
-    if (nextPersona === 'developers') {
-      document.documentElement.setAttribute('data-md-color-scheme', 'zest-dark');
-    } else {
-      document.documentElement.removeAttribute('data-md-color-scheme');
-    }
-    if (persist) {
-      try { localStorage.setItem('lemonade-persona', nextPersona); } catch (error) {}
-    }
-    window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: nextPersona } }));
-  }
-
-  if (isHomepage()) {
-    window.lemonadeSetPersona = setPersona;
-    // The install Quick Start is user-persona content. Landing directly on its
-    // anchor must force the user persona, or the section is display:none and the
-    // browser scrolls to nothing.
-    if (window.location.hash === '#getting-started') {
-      setPersona('people', true);
-    } else {
-      setPersona(readPersona(), false);
-    }
-  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {

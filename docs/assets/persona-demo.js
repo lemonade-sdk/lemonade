@@ -6,7 +6,8 @@
 // section each. Each section's demo loops while it is in view (an Intersection
 // Observer starts/stops a per-section timer that re-renders the current slide)
 // and freezes off-screen. The map collapses into a sticky progress bar as you
-// scroll. Persona is toggled by navbar.js (data-persona + lemonadePersonaChange).
+// scroll. This module OWNS the persona state (the data-persona attribute, the dev
+// dark scheme, persistence, and the toggle-only lemonadePersonaChange signal).
 //
 // The flowchart diagrams live in flowchart.js (window.LemonadeFlowchart); this
 // module hands that renderer the loop cadence. Requires flowchart.js first.
@@ -351,6 +352,41 @@
   function currentPersona() {
     return document.documentElement.getAttribute('data-persona') || 'people';
   }
+
+  function readStoredPersona() {
+    try { return localStorage.getItem('lemonade-persona') || 'people'; }
+    catch (e) { return 'people'; }
+  }
+
+  // Apply persona to <html> (drives all [data-persona] CSS + the dev dark scheme).
+  // Pure state: it does NOT rebuild or signal — callers decide. Used silently on
+  // load so no reveal replay fires for the initial persona.
+  function applyPersona(persona, persist) {
+    var next = persona === 'developers' ? 'developers' : 'people';
+    document.documentElement.setAttribute('data-persona', next);
+    if (next === 'developers') {
+      document.documentElement.setAttribute('data-md-color-scheme', 'zest-dark');
+    } else {
+      document.documentElement.removeAttribute('data-md-color-scheme');
+    }
+    if (persist) {
+      try { localStorage.setItem('lemonade-persona', next); } catch (e) {}
+    }
+    return next;
+  }
+
+  // The single entry point for a USER-driven switch (hero toggle): apply + persist,
+  // rebuild the journey/zone, then emit the toggle-only lemonadePersonaChange signal
+  // the homepage reveal code listens for. Load does NOT go through here, so every
+  // dispatch means "the user switched" — no skip-the-first-event gate is needed.
+  function switchPersona(persona) {
+    var next = persona === 'developers' ? 'developers' : 'people';
+    if (next === currentPersona()) return; // already active: no rebuild, no replay
+    applyPersona(next, true);
+    rebuild(next);
+    window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: next } }));
+  }
+  window.lemonadeSetPersona = switchPersona; // preserve the public hook
 
   function animationMode(slide) {
     if (slide && slide.animationMode) return slide.animationMode;
@@ -1058,10 +1094,8 @@
 
   // Hero CTA buttons (persona-aware labels toggled in CSS): the primary button
   // smooth-scrolls down to that persona's Quick Start section (its id is named in
-  // data-cta-scroll); the secondary switches persona in place (no scroll). Persona
-  // switching routes through navbar.js's setter (window.lemonadeSetPersona) so its
-  // side effects — dark color scheme, localStorage, the change event this module
-  // listens for — all fire; we fall back to a direct rebuild if it's absent.
+  // data-cta-scroll); the secondary switches persona in place (no scroll) via
+  // switchPersona, which owns the side effects (dark scheme, persistence, signal).
   document.addEventListener('click', function(event) {
     if (!event.target.closest) return;
     var scrollBtn = event.target.closest('[data-cta-scroll]');
@@ -1071,22 +1105,18 @@
       return;
     }
     var switchBtn = event.target.closest('[data-cta-switch]');
-    if (switchBtn) {
-      var persona = switchBtn.getAttribute('data-cta-switch');
-      if (typeof window.lemonadeSetPersona === 'function') {
-        window.lemonadeSetPersona(persona, true);
-      } else {
-        document.documentElement.setAttribute('data-persona', persona);
-        rebuild(persona);
-      }
-    }
+    if (switchBtn) switchPersona(switchBtn.getAttribute('data-cta-switch'));
   });
 
-  window.addEventListener('lemonadePersonaChange', function(event) {
-    rebuild((event.detail && event.detail.persona) || currentPersona());
-  });
-
-  function init() { rebuild(currentPersona()); }
+  // Apply the persona on load via the silent path (no signal, so no reveal replay),
+  // then build the journey. The install Quick Start is user-persona content, so
+  // landing directly on its anchor forces the user persona (else it is display:none
+  // and the browser scrolls to nothing).
+  function init() {
+    if (window.location.hash === '#getting-started') applyPersona('people', true);
+    else applyPersona(readStoredPersona(), false);
+    rebuild(currentPersona());
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
