@@ -1457,8 +1457,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         type="button"
         className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
         onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
-        title={isPinned ? 'Unpin model' : 'Pin model'}
-        aria-label={isPinned ? 'Unpin model' : 'Pin model'}
+        title={isPinned ? `Unpin ${name}` : `Pin ${name}`}
+        aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
         aria-pressed={isPinned}
       ><Icon name="pin" size={13} /></button>
     );
@@ -1472,8 +1472,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           type="button"
           className={`row__speech${isSpeechActive ? ' row__speech--active' : ''}`}
           onClick={(e) => { e.stopPropagation(); toggleTtsSpeechModel(name); }}
-          title={isSpeechActive ? 'Stop using this model for spoken replies' : 'Read assistant chat messages with this model'}
-          aria-label={isSpeechActive ? 'Disable spoken replies for this TTS model' : 'Use this TTS model for spoken replies'}
+          title={isSpeechActive ? `Stop using ${name} for spoken replies` : `Read assistant chat messages with ${name}`}
+          aria-label={isSpeechActive ? `Disable spoken replies using ${name}` : `Use ${name} for spoken replies`}
           aria-pressed={isSpeechActive}
         ><Icon name="speech" size={13} /></button>
       </span>
@@ -1964,17 +1964,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </button>
           <div className="row__right">
             {renderPinAndSpeechControl(m.model_name, isPinned, cap)}
-            <CopyInlineButton text={m.model_name} />
+            <CopyInlineButton text={m.model_name} title={`Copy model ID: ${m.model_name}`} />
             <span className="row__status-pill row__status-pill--running">
               <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
             </span>
             {selectable && !isActive && (
-              <button className="row__action" onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
+              <button className="row__action" aria-label={`Use ${m.model_name} in ${capabilityLabel(cap)} mode`} onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
                 Use in {capabilityLabel(cap)} mode
               </button>
             )}
             <button
               className="row__action row__action--unload"
+              aria-label={loadingModel === m.model_name ? `Working on ${m.model_name}…` : `Unload ${m.model_name}`}
               onClick={(e) => { e.stopPropagation(); handleUnload(m); }}
               disabled={loadingModel === m.model_name}
             >
@@ -1989,6 +1990,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               }}
               disabled={loadingModel === m.model_name}
               title={info && (info as any).custom ? 'Delete custom model definition' : 'Delete model files'}
+              aria-label={`Delete ${m.model_name}`}
             >
               <Icon name="x" size={14} />
             </button>
@@ -2064,7 +2066,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </button>
           <div className="row__right">
             {renderPinAndSpeechControl(name, isPinned, cap)}
-            <CopyInlineButton text={name} />
+            <CopyInlineButton text={name} title={`Copy model ID: ${name}`} />
             {isPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -2074,7 +2076,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <button
                   className="row__action row__action--cancel"
                   onClick={(e) => { e.stopPropagation(); handleCancelPull(name); }}
-                  title="Cancel download"
+                  title={`Cancel download of ${name}`}
+                  aria-label={`Cancel download of ${name}`}
                 ><Icon name="x" size={13} /></button>
               </div>
             ) : isDownloaded ? (
@@ -2082,6 +2085,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="row__status-pill row__status-pill--ready">Ready</span>
                 <button
                   className="row__action"
+                  aria-label={isLoading ? `Loading ${name}…` : `Load ${name}`}
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
                   disabled={isLoading}
                 >
@@ -2092,6 +2096,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
                   disabled={isLoading}
                   title={(m as any).custom ? 'Delete custom model definition' : 'Delete model files'}
+                  aria-label={`Delete ${name}`}
                 >
                   <Icon name="x" size={14} />
                 </button>
@@ -2100,6 +2105,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <>
                 <button
                   className="row__action row__action--download"
+                  aria-label={`Download ${name}`}
                   onClick={(e) => { e.stopPropagation(); handlePull(m); }}
                   disabled={isPulling}
                 >
@@ -2107,6 +2113,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </button>
                 <button
                   className="row__action"
+                  aria-label={`Get and load ${name}`}
                   onClick={(e) => { e.stopPropagation(); handlePullAndLoad(m); }}
                   disabled={isPulling}
                 >
@@ -2174,7 +2181,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
-            <CopyInlineButton text={r.id} title="Copy repository name" />
+            <CopyInlineButton text={r.id} title={`Copy repository name: ${r.id}`} />
             {isHfPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -2184,12 +2191,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <button
                   className="row__action row__action--cancel"
                   onClick={(e) => { e.stopPropagation(); handleCancelHfPull(r.id); }}
-                  title="Cancel download"
+                  title={`Cancel download of ${r.id}`}
+                  aria-label={`Cancel download of ${r.id}`}
                 ><Icon name="x" size={13} /></button>
               </div>
             ) : (
               <button
                 className="row__action row__action--download"
+                aria-label={`Download ${r.id}`}
                 onClick={(e) => { e.stopPropagation(); handleExpand(); }}
                 title="Expand to pick a variant to download"
               >
@@ -2257,6 +2266,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                         <button
                           key={v.name}
                           className="hf-detail__gguf-btn"
+                          aria-label={`Download ${v.name} from ${r.id}`}
                           disabled={isHfPulling}
                           onClick={() => handleHfPull(r.id, v.name, vdata.recipe)}
                         >
