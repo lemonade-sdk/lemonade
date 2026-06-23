@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/semantic_router.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
@@ -255,6 +256,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         router_.get(),
         config_->host(),
         config_->websocket_port());
+
+    // Initialize semantic router
+    semantic_router_ = std::make_unique<SemanticRouter>(cache_dir_);
+    semantic_router_->load_config(semantic_router_->get_config_path());
 
     start_model_cache_warmup();
 

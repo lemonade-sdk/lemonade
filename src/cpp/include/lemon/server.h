@@ -104,6 +104,10 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
 
+    // Semantic routing config endpoints
+    void handle_semantic_routing_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_semantic_routing_config_post(const httplib::Request& req, httplib::Response& res);
+
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
@@ -225,6 +229,7 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<WebSocketServer> websocket_server_;
+    std::unique_ptr<class SemanticRouter> semantic_router_;
 
     std::mutex downloads_mutex_;
     std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;
