@@ -626,17 +626,26 @@ sys.exit(0)
             )
             self.assertEqual(response.status_code, 200)
         finally:
-            # Always restore host back to localhost. This test runs inside CI jobs
-            # that execute multiple modules against one long-lived server, so a
-            # failed assertion here must not poison later endpoint/Ollama tests.
-            response = requests.post(
-                f"http://127.0.0.1:{PORT}/internal/set",
-                json={"host": "localhost"},
-                headers=_auth_headers(),
-                timeout=10,
-            )
-            response.raise_for_status()
-            print("[OK] Restored host to localhost")
+            # Best-effort restore: this test runs inside CI jobs that execute
+            # multiple modules against one long-lived server, so cleanup must not
+            # mask the primary assertion failure. reset_server_state also restores
+            # the host before subsequent CI suites.
+            try:
+                response = requests.post(
+                    f"http://127.0.0.1:{PORT}/internal/set",
+                    json={"host": "localhost"},
+                    headers=_auth_headers(),
+                    timeout=10,
+                )
+                if response.status_code < 400:
+                    print("[OK] Restored host to localhost")
+                else:
+                    print(
+                        "Warning: Failed to restore host to localhost: "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as e:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: Failed to restore host to localhost: {e}")
 
     # =============================================================================
     # Pull Tests

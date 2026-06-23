@@ -90,12 +90,21 @@ def _print_diagnostics(port: int) -> None:
                 headers=_auth_headers(),
                 timeout=5,
             )
-            print(f"[reset] GET {path} -> {response.status_code}: {response.text[:1200]}")
+            print(
+                f"[reset] GET {path} -> {response.status_code}: "
+                f"{response.text[:1200]}"
+            )
         except Exception as exc:  # noqa: BLE001 - best-effort diagnostics
             print(f"[reset] GET {path} failed: {exc}")
 
 
-def reset_server_state(*, port: int = PORT, restore_host: bool = True, unload: bool = True, timeout: int = TIMEOUT_DEFAULT) -> None:
+def reset_server_state(
+    *,
+    port: int = PORT,
+    restore_host: bool = True,
+    unload: bool = True,
+    timeout: int = TIMEOUT_DEFAULT,
+) -> None:
     _wait_for_live(port, timeout=timeout)
 
     if restore_host:

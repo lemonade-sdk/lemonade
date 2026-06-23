@@ -54,7 +54,6 @@ class OllamaTests(ServerTestBase):
         """Set up class - verify server is running."""
         super().setUpClass()
 
-
     def _dump_server_diagnostics(self, context):
         """Print server state to make rare CI timeouts actionable."""
         print(f"[DIAG] Server diagnostics after {context}")
@@ -65,7 +64,10 @@ class OllamaTests(ServerTestBase):
         ):
             try:
                 response = requests.get(url, timeout=TIMEOUT_DEFAULT)
-                print(f"[DIAG] GET {url} -> {response.status_code}: {response.text[:1200]}")
+                print(
+                    f"[DIAG] GET {url} -> {response.status_code}: "
+                    f"{response.text[:1200]}"
+                )
             except requests.RequestException as exc:
                 print(f"[DIAG] GET {url} failed: {exc}")
 
@@ -781,14 +783,23 @@ class OllamaTests(ServerTestBase):
 
             data = response.json()
             self.assertIn("content", data)
-            tool_use_blocks = [b for b in data["content"] if b.get("type") == "tool_use"]
+            tool_use_blocks = [
+                b for b in data["content"] if b.get("type") == "tool_use"
+            ]
             self.assertGreater(
                 len(tool_use_blocks), 0, "Expected at least one tool_use block"
             )
             self.assertEqual(data.get("stop_reason"), "tool_use")
         finally:
-            response = unload_all_models()
-            self.assertIn(response.status_code, (200, 404), response.text)
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
 
 
 if __name__ == "__main__":
