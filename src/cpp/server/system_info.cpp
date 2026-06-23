@@ -652,12 +652,24 @@ static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
+// A trailing 'X' in an allowed family acts as a wildcard (e.g. "gfx110X" matches "gfx1103").
 static bool device_matches_constraint(const std::string& device_family,
                                        const std::set<std::string>& allowed_families) {
     if (allowed_families.empty()) {
         return true;  // Empty = all families allowed
     }
-    return allowed_families.count(device_family) > 0;
+    if (allowed_families.count(device_family) > 0) {
+        return true;
+    }
+    for (const auto& af : allowed_families) {
+        if (af.size() > 1 && af.back() == 'X') {
+            std::string prefix = af.substr(0, af.size() - 1);
+            if (device_family.compare(0, prefix.size(), prefix) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Generic installation check
@@ -4075,30 +4087,31 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     // NVIDIA: one query returns used + total for the first GPU.
     {
-        std::string output;
-        int rc = lemon::utils::ProcessManager::run_command(
-            "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
-            output, 5);
-        if (rc == 0 && !output.empty()) {
-            std::istringstream iss(output);
-            std::string line;
-            if (std::getline(iss, line)) {
-                size_t comma = line.find(',');
-                if (comma != std::string::npos) {
-                    try {
-                        double used = std::stod(line.substr(0, comma));
-                        double total = std::stod(line.substr(comma + 1));
-                        if (total > 0.0) {
-                            return used / total;
+        if (!find_executable_in_path("nvidia-smi").empty()) {
+            std::string output;
+            int rc = lemon::utils::ProcessManager::run_command(
+                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
+                output, 5);
+            if (rc == 0 && !output.empty()) {
+                std::istringstream iss(output);
+                std::string line;
+                if (std::getline(iss, line)) {
+                    size_t comma = line.find(',');
+                    if (comma != std::string::npos) {
+                        try {
+                            double used = std::stod(line.substr(0, comma));
+                            double total = std::stod(line.substr(comma + 1));
+                            if (total > 0.0) {
+                                return used / total;
+                            }
+                        } catch (...) {
+                            // fall through to other sources
                         }
-                    } catch (...) {
-                        // fall through to other sources
                     }
                 }
             }
         }
     }
-
 #ifdef __linux__
     // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
     try {

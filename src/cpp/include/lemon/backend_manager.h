@@ -82,10 +82,12 @@ private:
 
     // Resolve the user's *_bin config value for a (recipe, backend) into a
     // concrete release tag. Falls back to `pinned_version` for "" / "builtin"
-    // / path-syntax values. For "latest", queries GitHub (cached). For any
+    // / path-syntax values. For "latest", queries GitHub (cached); if the
+    // lookup fails (e.g. HTTP 504) or is skipped (offline), falls back to the
+    // installed version.txt so an already-installed binary still loads. For any
     // other value, returns the value verbatim as a release tag.
-    // Throws on failure for "latest" when offline/no_fetch_executables block
-    // resolution and no installed version.txt exists.
+    // Throws on failure for "latest" only when the lookup cannot be satisfied
+    // (offline or GitHub error) AND no installed version.txt exists.
     std::string resolve_user_version(const std::string& recipe,
                                      const std::string& resolved_backend,
                                      const std::string& pinned_version,

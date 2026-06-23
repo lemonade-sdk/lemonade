@@ -294,8 +294,9 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
     }
 
-    // Get mmproj path for vision models
+    // Get mmproj path for vision models and drafter path for mtp or other drafting strategies
     std::string mmproj_path = model_info.resolved_path("mmproj");
+    std::string draft_path = model_info.resolved_path("draft");
 
     // Choose port
     port_ = choose_port();
@@ -352,6 +353,12 @@ void LlamaCppServer::load(const std::string& model_name,
         }
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
+
+    // Add draft model if present
+    if (!draft_path.empty()) {
+        push_arg(args, reserved_flags, "--model-draft", draft_path);
+    }
+    push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
