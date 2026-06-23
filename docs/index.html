@@ -6,7 +6,7 @@
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css?v=hero-redesign">
-  <link rel="stylesheet" href="assets/persona-demo.css">
+  <link rel="stylesheet" href="assets/persona-demo.css?v=hero-redesign-static">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -45,83 +45,90 @@
 
     <!-- ==================== QUICK START: INSTALL (User persona) ==================== -->
     <section class="hp-section hp-reveal" id="getting-started" data-cta-persona="people" data-persona-lift>
-      <h2 class="hp-section-heading">Up and running in two minutes.</h2>
-      <div class="gs-platforms" id="gsPlatforms">
-        <button class="gs-platform" type="button" data-platform="windows">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
-          <span class="gs-platform-name">Windows</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="docker">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/docker.png" alt="Docker" />
-          <span class="gs-platform-name">Docker</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="snap">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
-          <span class="gs-platform-name">Snap</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="ubuntu">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
-          <span class="gs-platform-name">Ubuntu</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="arch">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/arch_linux.png" alt="Arch" />
-          <span class="gs-platform-name">Arch</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="fedora">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/fedora.png" alt="Fedora" />
-          <span class="gs-platform-name">Fedora</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="debian">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/debian.png" alt="Debian" />
-          <span class="gs-platform-name">Debian</span>
-        </button>
-        <button class="gs-platform" type="button" data-platform="apple">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/apple.png" alt="macOS" />
-          <span class="gs-platform-name">macOS</span>
-        </button>
-      </div>
+      <div class="hp-quickstart-card ice-card">
+        <h2 class="hp-section-heading">Up and running in minutes.</h2>
+        <p class="hp-section-desc hp-quickstart-subtitle">Installation equips your computer with an AI runtime, GUI, CLI, and API endpoints to begin your AI journey.</p>
+        <div class="gs-platforms" id="gsPlatforms">
+          <button class="gs-platform" type="button" data-platform="windows">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
+            <span class="gs-platform-name">Windows</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="docker">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/docker.png" alt="Docker" />
+            <span class="gs-platform-name">Docker</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="snap">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
+            <span class="gs-platform-name">Snap</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="ubuntu">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
+            <span class="gs-platform-name">Ubuntu</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="arch">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/arch_linux.png" alt="Arch" />
+            <span class="gs-platform-name">Arch</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="fedora">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/fedora.png" alt="Fedora" />
+            <span class="gs-platform-name">Fedora</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="debian">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/debian.png" alt="Debian" />
+            <span class="gs-platform-name">Debian</span>
+          </button>
+          <button class="gs-platform" type="button" data-platform="apple">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/apple.png" alt="macOS" />
+            <span class="gs-platform-name">macOS</span>
+          </button>
+        </div>
 
-      <div class="gs-install" id="gsInstall"></div>
-      <div class="gs-quickstart" id="gsQuickstart"></div>
+        <div class="gs-install" id="gsInstall"></div>
+        <div class="gs-quickstart" id="gsQuickstart"></div>
+      </div>
     </section>
 
     <!-- ==================== QUICK START: BUILD (Developer persona) ==================== -->
     <section class="hp-section hp-reveal" id="dev-quickstart" data-cta-persona="developers" data-persona-lift>
-      <h2 class="hp-section-heading">Quick Start</h2>
-      <p class="hp-section-desc">Embed Lemonade behind one OpenAI-compatible API and ship local AI in your app.</p>
-      <div class="hp-cta-actions">
-        <a class="hp-cta-btn is-primary" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">
-          <span class="material-symbols-outlined">deployed_code</span> Embeddable SDK
-        </a>
-        <a class="hp-cta-btn" href="https://lemonade-server.ai/docs/api/" target="_blank" rel="noopener">
-          <span class="material-symbols-outlined">api</span> API Reference
-        </a>
-        <a class="hp-cta-btn" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
-          <span class="material-symbols-outlined">code</span> Source on GitHub
-        </a>
-      </div>
-      <div class="hp-proof-band" aria-label="Lemonade platform highlights">
-        <div class="hp-proof-grid">
-          <article class="hp-proof-card ice-card">
-            <span class="material-symbols-outlined hp-proof-icon">diversity_3</span>
-            <h3>Open source, open roadmap</h3>
-            <p>Free to use, shaped in public, and built with a community that welcomes builders.</p>
-          </article>
-          <article class="hp-proof-card ice-card">
-            <span class="material-symbols-outlined hp-proof-icon">shield_lock</span>
-            <h3>Private when it matters</h3>
-            <p>Run close to your data, then reach servers and cloud models when more power helps.</p>
-          </article>
-          <article class="hp-proof-card ice-card">
-            <span class="material-symbols-outlined hp-proof-icon">auto_awesome</span>
-            <h3>One platform, every mode</h3>
-            <p>Chat, vision, image generation, speech, embeddings, reranking, and more.</p>
-          </article>
-          <article class="hp-proof-card ice-card">
-            <span class="material-symbols-outlined hp-proof-icon">tune</span>
-            <h3>Your stack, your shape</h3>
-            <p>Choose models, backends, hardware acceleration, APIs, and deployment patterns.</p>
-          </article>
+      <div class="hp-dev-quickstart-layout hp-dev-quickstart-card ice-card">
+        <div class="hp-dev-quickstart-copy">
+          <h2 class="hp-section-heading">Quick Start</h2>
+          <p class="hp-section-desc">Learn how to add native support or an embedded copy of Lemonade in your app.</p>
+          <div class="hp-cta-actions">
+            <a class="hp-cta-btn is-primary" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">
+              <span class="material-symbols-outlined">deployed_code</span> Embeddable SDK
+            </a>
+            <a class="hp-cta-btn" href="https://lemonade-server.ai/docs/api/" target="_blank" rel="noopener">
+              <span class="material-symbols-outlined">api</span> API Reference
+            </a>
+            <a class="hp-cta-btn" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+              <span class="material-symbols-outlined">code</span> Source on GitHub
+            </a>
+          </div>
+        </div>
+        <div class="hp-proof-band hp-dev-proof-panel" aria-label="Lemonade platform highlights">
+          <div class="hp-proof-grid">
+            <article class="hp-proof-card ice-card">
+              <span class="material-symbols-outlined hp-proof-icon">diversity_3</span>
+              <h3>Truly open</h3>
+              <p>Free to use, shaped in public, and built with a community that welcomes builders.</p>
+            </article>
+            <article class="hp-proof-card ice-card">
+              <span class="material-symbols-outlined hp-proof-icon">shield_lock</span>
+              <h3>Fully private</h3>
+              <p>Transparent, zero telemetry. Data stays where you put it. No upsell.</p>
+            </article>
+            <article class="hp-proof-card ice-card">
+              <span class="material-symbols-outlined hp-proof-icon">auto_awesome</span>
+              <h3>Omni modal</h3>
+              <p>Your app gets chat, vision, image, speech, transcription, and embeddings.</p>
+            </article>
+            <article class="hp-proof-card ice-card">
+              <span class="material-symbols-outlined hp-proof-icon">tune</span>
+              <h3>Scalable platform</h3>
+              <p>Local-first on all major platforms. Routes to servers and cloud APIs on-demand.</p>
+            </article>
+          </div>
         </div>
       </div>
     </section>
