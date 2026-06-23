@@ -1058,7 +1058,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     if (activeId === id) setActiveId(null);
   }, [activeId]);
 
-  // --- Mobile bottom sheet logic ---
+  const handleRailKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
+    const list = e.currentTarget;
+    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (!options.length) return;
+    const currentIdx = options.findIndex(el =>
+      el === document.activeElement || el.contains(document.activeElement as Node),
+    );
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
+      options[next].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
+      options[prev].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      options[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      options[options.length - 1].focus();
+    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
+      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+        e.preventDefault();
+        handleSelectConversation(conversations[currentIdx].id);
+      }
+    }
+  }, [conversations, handleSelectConversation]);
+
+
   const handleRailToggle = useCallback(() => {
     if (window.innerWidth <= 480) {
       setMobileSheetOpen(prev => !prev);
@@ -1071,6 +1100,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setMobileSheetOpen(false);
     sheetTriggerRef.current?.focus();
   }, []);
+
+  const handleSheetKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
+    const list = e.currentTarget;
+    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (!options.length) return;
+    const currentIdx = options.findIndex(el =>
+      el === document.activeElement || el.contains(document.activeElement as Node),
+    );
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
+      options[next].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
+      options[prev].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      options[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      options[options.length - 1].focus();
+    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
+      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+        e.preventDefault();
+        handleSelectConversation(conversations[currentIdx].id);
+        closeMobileSheet();
+      }
+    }
+  }, [conversations, handleSelectConversation, closeMobileSheet]);
 
   // ESC closes mobile sheet
   useEffect(() => {
@@ -1839,18 +1898,24 @@ ${finalText}`
           </button>
         </div>
 
-        <ul className="rail__list" role="listbox" aria-label="Conversations">
-          {conversations.map(c => {
+        <ul className="rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleRailKeyDown}>
+          {conversations.map((c, idx) => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
+            const isSelected = c.id === activeId;
+            const isTabTarget = isSelected || (idx === 0 && !activeId);
+            const convTitle = c.title || deriveTitle(c.messages);
             return (
               <li
-                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                id={`rail-conv-${c.id}`}
+                className={`rail__item ${isSelected ? 'is-active' : ''}`}
                 key={c.id}
                 role="option"
+                aria-selected={isSelected}
+                tabIndex={isTabTarget ? 0 : -1}
                 onClick={() => handleSelectConversation(c.id)}
               >
                 <span className="rail__item-title">
-                  {c.title || deriveTitle(c.messages)}
+                  {convTitle}
                 </span>
                 <span className="rail__item-meta">
                   {streaming.streamingConvoIds.has(c.id) && (
@@ -1864,8 +1929,9 @@ ${finalText}`
                 <button
                   className="rail__item-delete"
                   onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label="Delete conversation"
+                  aria-label={`Delete conversation: ${convTitle}`}
                   title="Delete"
+                  tabIndex={-1}
                 >×</button>
               </li>
             );
@@ -1905,18 +1971,24 @@ ${finalText}`
           </svg>
           New Chat
         </button>
-        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations">
-          {conversations.map(c => {
+        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
+          {conversations.map((c, idx) => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
+            const isSelected = c.id === activeId;
+            const isTabTarget = isSelected || (idx === 0 && !activeId);
+            const convTitle = c.title || deriveTitle(c.messages);
             return (
               <li
-                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                id={`sheet-conv-${c.id}`}
+                className={`rail__item ${isSelected ? 'is-active' : ''}`}
                 key={c.id}
                 role="option"
+                aria-selected={isSelected}
+                tabIndex={isTabTarget ? 0 : -1}
                 onClick={() => { handleSelectConversation(c.id); closeMobileSheet(); }}
               >
                 <span className="rail__item-title">
-                  {c.title || deriveTitle(c.messages)}
+                  {convTitle}
                 </span>
                 <span className="rail__item-meta">
                   {streaming.streamingConvoIds.has(c.id) && (
@@ -1930,8 +2002,9 @@ ${finalText}`
                 <button
                   className="rail__item-delete"
                   onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label="Delete conversation"
+                  aria-label={`Delete conversation: ${convTitle}`}
                   title="Delete"
+                  tabIndex={-1}
                 >×</button>
               </li>
             );
