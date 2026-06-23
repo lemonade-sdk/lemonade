@@ -24,6 +24,7 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    unload_all_models,
 )
 from utils.test_models import (
     PORT,
@@ -52,6 +53,23 @@ class OllamaTests(ServerTestBase):
     def setUpClass(cls):
         """Set up class - verify server is running."""
         super().setUpClass()
+
+    def _dump_server_diagnostics(self, context):
+        """Print server state to make rare CI timeouts actionable."""
+        print(f"[DIAG] Server diagnostics after {context}")
+        for url in (
+            f"{self.base_url}/health",
+            f"{OLLAMA_BASE_URL}/api/ps",
+            f"{OLLAMA_BASE_URL}/live",
+        ):
+            try:
+                response = requests.get(url, timeout=TIMEOUT_DEFAULT)
+                print(
+                    f"[DIAG] GET {url} -> {response.status_code}: "
+                    f"{response.text[:1200]}"
+                )
+            except requests.RequestException as exc:
+                print(f"[DIAG] GET {url} failed: {exc}")
 
     def get_ollama_client(self):
         """Get an Ollama client pointed at the test server."""
@@ -321,49 +339,89 @@ class OllamaTests(ServerTestBase):
 
     def test_010_chat_streaming_with_tools_returns_complete_tool_call(self):
         """Test /api/chat streaming with tools returns complete Ollama tool calls."""
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        # This test uses the larger native tool-calling model. On macOS CI the
+        # preceding tests can leave the tiny endpoint model resident, and relying
+        # on implicit unload/load inside the streaming request has caused the
+        # request to hang until the 500s HTTP timeout. Make the heavy model
+        # transition explicit so failures are attributed to pull/load/chat.
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
 
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": TOOL_CALLING_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "Run the calculator_calculate tool with expression set to 1+1",
-                    }
-                ],
-                "tools": [SAMPLE_TOOL],
-                "stream": True,
-                "options": {"num_predict": 64},
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-            stream=True,
-        )
-        self.assertEqual(response.status_code, 200)
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        chunks = [
-            json.loads(line.decode("utf-8")) for line in response.iter_lines() if line
-        ]
-        self.assertGreater(len(chunks), 0)
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        tool_chunks = [
-            chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
-        ]
-        self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+            try:
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": TOOL_CALLING_MODEL,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Run the calculator_calculate tool with "
+                                    "expression set to 1+1"
+                                ),
+                            }
+                        ],
+                        "tools": [SAMPLE_TOOL],
+                        "stream": True,
+                        "options": {"num_predict": 64},
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                    stream=True,
+                )
+                self.assertEqual(response.status_code, 200)
 
-        tool_call = tool_chunks[0]["message"]["tool_calls"][0]
-        self.assertIn("id", tool_call)
-        self.assertEqual(tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"])
-        self.assertIsInstance(tool_call["function"]["arguments"], dict)
-        self.assertIn("expression", tool_call["function"]["arguments"])
-        self.assertTrue(chunks[-1].get("done", False))
-        self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+                chunks = [
+                    json.loads(line.decode("utf-8"))
+                    for line in response.iter_lines()
+                    if line
+                ]
+            except requests.exceptions.RequestException as exc:
+                self._dump_server_diagnostics("Ollama streaming tool-calling timeout")
+                self.fail(
+                    "Ollama streaming tool-calling request failed after "
+                    f"{TIMEOUT_MODEL_OPERATION}s timeout budget: {exc}"
+                )
+            self.assertGreater(len(chunks), 0)
+
+            tool_chunks = [
+                chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
+            ]
+            self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+
+            tool_call = tool_chunks[0]["message"]["tool_calls"][0]
+            self.assertIn("id", tool_call)
+            self.assertEqual(
+                tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"]
+            )
+            self.assertIsInstance(tool_call["function"]["arguments"], dict)
+            self.assertIn("expression", tool_call["function"]["arguments"])
+            self.assertTrue(chunks[-1].get("done", False))
+            self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+        finally:
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
 
     def test_011_chat_missing_model(self):
         """Test /api/chat returns 400 when model is missing."""
@@ -698,62 +756,90 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
-        # Use a model with native tool-calling support in its chat template;
-        # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
-        # autoparser ignores tools even with tool_choice required.
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        # This is the heaviest Ollama compatibility test in the suite. Start it
+        # from an empty loaded-model state so previous endpoint/CLI tests cannot
+        # leave another backend resident and turn the final inference into a CI
+        # timeout instead of a deterministic assertion.
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
 
-        response = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        try:
+            # Use a model with native tool-calling support in its chat template;
+            # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
+            # autoparser ignores tools even with tool_choice required.
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        anthropic_tool = {
-            "name": SAMPLE_TOOL["function"]["name"],
-            "description": SAMPLE_TOOL["function"].get("description", ""),
-            "input_schema": SAMPLE_TOOL["function"].get("parameters", {}),
-        }
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        payload = {
-            "model": TOOL_CALLING_MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Run the calculator_calculate tool with expression set to 1+1",
-                        }
-                    ],
-                }
-            ],
-            "tools": [anthropic_tool],
-            "tool_choice": {"type": "any"},
-            "max_tokens": 64,
-            "stream": False,
-        }
+            anthropic_tool = {
+                "name": SAMPLE_TOOL["function"]["name"],
+                "description": SAMPLE_TOOL["function"].get("description", ""),
+                "input_schema": SAMPLE_TOOL["function"].get("parameters", {}),
+            }
 
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
-            json=payload,
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+            payload = {
+                "model": TOOL_CALLING_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Run the calculator_calculate tool with expression set to 1+1",
+                            }
+                        ],
+                    }
+                ],
+                "tools": [anthropic_tool],
+                "tool_choice": {"type": "any"},
+                "max_tokens": 64,
+                "stream": False,
+            }
 
-        data = response.json()
-        self.assertIn("content", data)
-        tool_use_blocks = [b for b in data["content"] if b.get("type") == "tool_use"]
-        self.assertGreater(
-            len(tool_use_blocks), 0, "Expected at least one tool_use block"
-        )
-        self.assertEqual(data.get("stop_reason"), "tool_use")
+            try:
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+                    json=payload,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+            except requests.exceptions.Timeout as exc:
+                self._dump_server_diagnostics("Anthropic tool-calling timeout")
+                self.fail(
+                    "Anthropic tool-calling request timed out after "
+                    f"{TIMEOUT_MODEL_OPERATION}s: {exc}"
+                )
+
+            self.assertEqual(response.status_code, 200)
+
+            data = response.json()
+            self.assertIn("content", data)
+            tool_use_blocks = [
+                b for b in data["content"] if b.get("type") == "tool_use"
+            ]
+            self.assertGreater(
+                len(tool_use_blocks), 0, "Expected at least one tool_use block"
+            )
+            self.assertEqual(data.get("stop_reason"), "tool_use")
+        finally:
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
 
 
 if __name__ == "__main__":
