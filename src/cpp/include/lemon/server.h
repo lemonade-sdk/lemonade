@@ -51,6 +51,10 @@ public:
     // Get server status
     bool is_running() const;
 
+    // True if run() aborted startup (e.g. the port was already in use), so
+    // main() can report failure and exit non-zero.
+    bool startup_failed() const;
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -268,6 +272,7 @@ private:
     std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;
 
     bool running_;
+    bool startup_failed_ = false;
     std::atomic<bool> shutdown_requested_{false};
     std::atomic<bool> rebind_requested_{false};
     std::atomic<bool> metrics_access_logged_{false};

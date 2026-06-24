@@ -145,15 +145,57 @@ jobs:
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-          ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
-            > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
-          LEMOND_PID=$!
-          echo "Started lemond PID $LEMOND_PID"
+          # This validate job runs on a shared self-hosted runner, so the default
+          # port 13305 may already be held by another job. lemond now refuses to
+          # bind an in-use port, so start on a job-unique free port and pass it to
+          # validate_vllm.py and the shutdown call.
+          pick_free_port() {
+            if command -v python3 >/dev/null 2>&1; then
+              python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
+            fi
+            for _ in $(seq 1 50); do
+              local p=$(( (RANDOM % 20000) + 20000 ))
+              if ! ss -ltn 2>/dev/null | grep -q ":$p "; then echo "$p"; return 0; fi
+            done
+            return 1
+          }
+
+          LEMOND_PID=""
+          started=0
+          for start_attempt in $(seq 1 5); do
+            PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
+            echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
+            ./build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
+              > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+            LEMOND_PID=$!
+            for i in $(seq 1 30); do
+              if curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1; then
+                echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
+                started=1
+                break
+              fi
+              if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+                echo "lemond (PID $LEMOND_PID) exited prematurely on port $PORT"
+                cat "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true
+                break
+              fi
+              sleep 2
+            done
+            [ "$started" = "1" ] && break
+            echo "Start attempt $start_attempt failed; retrying on a new port..."
+            kill -9 "$LEMOND_PID" 2>/dev/null || true
+            sleep 1
+          done
+          if [ "$started" != "1" ]; then
+            echo "ERROR: lemond failed to start after multiple attempts"
+            exit 1
+          fi
 
           EXIT_CODE=0
           VALIDATION_ARGS=(
             test/validate_vllm.py
             --backend rocm
+            --port "$PORT"
             --output vllm_validation_rocm.json
             --logs-dir "$LOGS_DIR"
           )
@@ -164,7 +206,7 @@ jobs:
           .venv/bin/python "${VALIDATION_ARGS[@]}" || EXIT_CODE=$?
 
           # Shut the server down cleanly so logs flush.
-          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
           sleep 2
           kill $LEMOND_PID 2>/dev/null || true
 
