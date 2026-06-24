@@ -1328,10 +1328,7 @@
       '<nav class="hp-journey-toc" aria-label="' + escapeText(data.label) + '">' +
         '<ol class="hp-toc-list">' + sectionsHtml + '</ol>' +
       '</nav>' +
-      '<div class="hp-journey-slides">' +
-        '<div class="hp-slide-well" aria-hidden="true"></div>' +
-        slidesHtml +
-      '</div>';
+      '<div class="hp-journey-slides">' + slidesHtml + '</div>';
 
     tocEl = journeyEl.querySelector('.hp-journey-toc');
     slideEls = journeyEl.querySelectorAll('.hp-slide');
