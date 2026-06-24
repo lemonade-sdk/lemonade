@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -56,10 +57,20 @@ std::string CloudProviderRegistry::validate_base_url(const std::string& base_url
     if (base_url.empty()) {
         return "Base URL is required";
     }
+    if (std::any_of(base_url.begin(), base_url.end(), [](unsigned char c) {
+            return std::isspace(c) != 0;
+        })) {
+        return "Base URL must not contain whitespace";
+    }
     const std::string https = "https://";
     const std::string http = "http://";
     if (starts_with_scheme(base_url, https) ||
         starts_with_scheme(base_url, http)) {
+        const size_t host_start = base_url.find("://") + 3;
+        const size_t host_end = base_url.find_first_of("/?#", host_start);
+        if (host_end == host_start || host_start >= base_url.size()) {
+            return "Base URL must include a host";
+        }
         return "";
     }
     return "Base URL must start with https:// or http://";
@@ -106,6 +117,9 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
         Record r;
         r.name = entry["name"].get<std::string>();
         r.base_url = normalize_base_url(entry["base_url"].get<std::string>());
+        if (entry.contains("allow_insecure_http") && entry["allow_insecure_http"].is_boolean()) {
+            r.allow_insecure_http = entry["allow_insecure_http"].get<bool>();
+        }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
     }
@@ -115,23 +129,32 @@ json CloudProviderRegistry::to_config_array() const {
     std::shared_lock lock(mu_);
     json arr = json::array();
     for (const auto& r : installed_) {
-        arr.push_back({{"name", r.name}, {"base_url", r.base_url}});
+        arr.push_back({
+            {"name", r.name},
+            {"base_url", r.base_url},
+            {"allow_insecure_http", r.allow_insecure_http}
+        });
     }
     return arr;
 }
 
 bool CloudProviderRegistry::install(const std::string& provider,
-                                    const std::string& base_url) {
+                                    const std::string& base_url,
+                                    bool allow_insecure_http) {
     std::unique_lock lock(mu_);
     std::string normalized = normalize_base_url(base_url);
     for (auto& r : installed_) {
         if (r.name == provider) {
-            if (r.base_url == normalized) return false;
+            if (r.base_url == normalized &&
+                r.allow_insecure_http == allow_insecure_http) {
+                return false;
+            }
             r.base_url = normalized;
+            r.allow_insecure_http = allow_insecure_http;
             return true;
         }
     }
-    installed_.push_back({provider, normalized});
+    installed_.push_back({provider, normalized, allow_insecure_http});
     return true;
 }
 
@@ -163,6 +186,14 @@ std::string CloudProviderRegistry::base_url_for(const std::string& provider) con
         if (r.name == provider) return r.base_url;
     }
     return "";
+}
+
+bool CloudProviderRegistry::allow_insecure_http_for(const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.allow_insecure_http;
+    }
+    return false;
 }
 
 std::string CloudProviderRegistry::resolve_key(const std::string& provider) const {

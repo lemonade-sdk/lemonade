@@ -29,8 +29,9 @@ namespace lemon {
 class CloudProviderRegistry {
 public:
     struct Record {
-        std::string name;      // e.g. "fireworks", "openai"
-        std::string base_url;  // normalized: no trailing slash
+        std::string name;                         // e.g. "fireworks", "openai"
+        std::string base_url;                     // normalized: no trailing slash
+        bool allow_insecure_http = false;         // explicit opt-in for http:// + API key
     };
 
     struct AuthState {
@@ -52,7 +53,9 @@ public:
     // Idempotent. Adds the provider if absent, updates base_url if present.
     // Normalizes base_url (trims trailing slash). Returns true if the stored
     // record changed, false if it was already identical.
-    bool install(const std::string& provider, const std::string& base_url);
+    bool install(const std::string& provider,
+                 const std::string& base_url,
+                 bool allow_insecure_http = false);
 
     // Removes the provider record AND its runtime key. Returns true if a
     // record was removed.
@@ -65,6 +68,10 @@ public:
 
     // Base URL for a registered provider, or empty if not installed.
     std::string base_url_for(const std::string& provider) const;
+
+    // Whether this provider has explicit opt-in to send API keys to an
+    // http:// base URL. Irrelevant for https:// providers.
+    bool allow_insecure_http_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.

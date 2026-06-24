@@ -87,6 +87,7 @@ private:
     struct ResolvedCreds {
         std::string api_key;
         std::string base_url;
+        bool insecure_http_blocked = false;
     };
 
     // Looks up creds from the registry. Returns empty fields when the
@@ -99,6 +100,8 @@ private:
     json rewrite_model_field(const json& request) const;
     json missing_creds_error() const;
     std::string missing_creds_sse() const;
+    json insecure_http_error() const;
+    std::string insecure_http_sse() const;
 
     std::string provider_;       // e.g., "fireworks", "openai", "groq"
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
