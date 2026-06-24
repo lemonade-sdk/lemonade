@@ -306,3 +306,96 @@
   font-size: 13px;
   font-weight: 700;
 }
+
+/* "Serve the whole household" -- a sleek Lemonade server on a LIGHT stage, wired
+   down to three household devices (laptop/server/phone); a warm pulse cascades
+   down each wire and the device screen lights up on arrival. Same hub-and-spoke
+   layout as "Deploy everywhere". */
+.hp-household-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  /* Same light stage as the featured-apps board (.hp-appboard) -- reused, not
+     reinvented, so the two slides share one light theme. */
+  background:
+    radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+    linear-gradient(160deg, #fffdf4, #f5f3e8);
+}
+
+.hp-household-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hh-wire {
+  fill: none;
+  stroke: rgba(214, 150, 36, 0.5);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+/* Server emblem card (the wire origin). */
+.hh-card {
+  fill: #ffffff;
+  stroke: rgba(40, 34, 18, 0.1);
+  stroke-width: 1;
+}
+.hh-card-title {
+  fill: #2a2419;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+}
+.hh-card-ip {
+  fill: #a08f5e;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.hh-srv-glyph rect,
+.hh-srv-glyph line {
+  fill: none;
+  stroke: rgba(58, 50, 30, 0.62);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.hh-srv-led { fill: #f5a623; }
+
+/* Devices: stroked geometry, screens that warm up, soft contact shadows. */
+.hh-shadow { fill: rgba(60, 48, 16, 0.14); }
+/* Clean radial falloff (no blur filter) -- a soft halo, not a murky cloud. */
+.hh-halo { fill: url(#hhHalo); }
+
+.hh-dev rect,
+.hh-dev line,
+.hh-dev path {
+  fill: none;
+  stroke: rgba(54, 47, 30, 0.66);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hh-led { fill: rgba(54, 47, 30, 0.42); stroke: none; }
+.hh-screen { fill: #ffffff; }
+.hh-screen-warm { fill: url(#hhScreenOn); }
+.hh-screen-frame {
+  fill: none;
+  stroke: #f7ad33;
+  stroke-width: 1.7;
+}
+
+.hh-label {
+  fill: rgba(44, 38, 26, 0.84);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+/* The cascading pulse: a small crisp gradient core, a tight soft glow, and a
+   bright spark highlight -- a refined point of light, not a big blur. */
+.hh-dot-halo { fill: rgba(255, 170, 30, 0.5); filter: url(#hhGlow); }
+.hh-dot-core { fill: url(#hhDotFill); }
+.hh-dot-spark { fill: #fff7e0; }

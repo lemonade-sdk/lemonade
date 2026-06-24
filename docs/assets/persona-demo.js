@@ -132,8 +132,16 @@
           eyebrow: 'CLI',
           title: 'Learn the CLI',
           copy: 'Everything Lemonade does is one command away.',
-          demo: 'terminal-cli-chat',
+          demo: 'terminal-cli-launch',
           slides: [
+            {
+              label: 'Launch a coding agent',
+              demo: 'terminal-cli-launch',
+              caption: 'Run Claude Code, Codex, opencode, or pi on your own model — private, and free.',
+              captionHref: 'https://lemonade-server.ai/docs/guide/cli/#options-for-launch',
+              animationMode: 'once',
+              duration: 5400
+            },
             {
               label: 'Chat REPL',
               demo: 'terminal-cli-chat',
@@ -143,20 +151,12 @@
               duration: 3800
             },
             {
-              label: 'List backends',
-              demo: 'terminal-cli-backends',
-              caption: 'See every inference backend available on your machine.',
-              captionHref: 'https://lemonade-server.ai/docs/guide/cli/',
+              label: 'Manage your models',
+              demo: 'terminal-cli-library',
+              caption: 'Browse, pull, and load any model straight from the shell.',
+              captionHref: 'https://lemonade-server.ai/docs/guide/cli/#options-for-pull',
               animationMode: 'once',
-              duration: 3400
-            },
-            {
-              label: 'Set configuration',
-              demo: 'terminal-cli-config',
-              caption: 'Tune the server straight from the command line.',
-              captionHref: 'https://lemonade-server.ai/docs/guide/cli/',
-              animationMode: 'once',
-              duration: 3000
+              duration: 4200
             }
           ]
         },
@@ -176,11 +176,11 @@
             },
             {
               label: 'Serve the whole household',
-              demo: 'apps-selfhost',
-              caption: 'Give everyone polished, private AI with Open WebUI and Dream Server.',
+              demo: 'household-network',
+              caption: 'Your secured server streams private AI to every device — Open WebUI, Dream Server, and the mobile app.',
               captionHref: 'https://lemonade-server.ai/docs/integrations/open-webui/',
-              animationMode: 'once',
-              duration: 3600
+              animationMode: 'repeat',
+              duration: 5200
             }
           ]
         }
@@ -454,6 +454,22 @@
           { text: '✓ now serving at http://192.168.1.42:8000', kind: 'output', phase: 1, delay: 1960 }
         ]
       },
+      'terminal-cli-launch': {
+        title: 'Bash',
+        lines: [
+          { text: '# Pick a model and launch the agent', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ lemonade launch pi', kind: 'command', phase: 0, delay: 470 },
+          { text: '? Choose a model   ↑/↓ · ↵ to select', kind: 'output', phase: 0, delay: 820 },
+          { text: '  ❯ Qwen3-Coder-30B-A3B-Instruct-GGUF', kind: 'output', phase: 0, delay: 1080 },
+          { text: '    Devstral-Small-2507-GGUF', kind: 'output', phase: 0, delay: 1240 },
+          { text: '    GLM-4.7-Flash-GGUF', kind: 'output', phase: 0, delay: 1400 },
+          { text: '✓ pi is live  ·  100% local · $0 / token', kind: 'output', phase: 1, delay: 1820 },
+          { text: '', delay: 2120 },
+          { text: '  pi › build a CLI todo app with sqlite', kind: 'command', phase: 2, delay: 2420 },
+          { text: '  ● wrote todo.py, db.py, test_todo.py', kind: 'output', phase: 2, delay: 2820 },
+          { text: '  ● ran pytest   ✓ 8 passed', kind: 'output', phase: 2, delay: 3120 }
+        ]
+      },
       'terminal-cli-chat': {
         title: 'Bash',
         lines: [
@@ -464,28 +480,23 @@
           { text: 'Bright yellow teardrops', kind: 'output', phase: 1, delay: 1620 },
           { text: 'hang from the summer branches—', kind: 'output', phase: 1, delay: 1820 },
           { text: 'tart sunshine in your hand.', kind: 'output', phase: 1, delay: 2020 },
-          { text: '> /exit', kind: 'command', phase: 2, delay: 2420 }
+          { text: '', delay: 2220 },
+          { text: '> /exit', kind: 'command', phase: 2, delay: 2520 }
         ]
       },
-      'terminal-cli-backends': {
+      'terminal-cli-library': {
         title: 'Bash',
         lines: [
-          { text: '$ lemonade backends', kind: 'command', phase: 0, delay: 160 },
-          { text: 'RECIPE       ENGINE             DEVICE', kind: 'output', phase: 0, delay: 560 },
-          { text: 'llamacpp     Vulkan · ROCm      GPU / CPU', kind: 'output', phase: 0, delay: 800 },
-          { text: 'flm          FastFlowLM         NPU', kind: 'output', phase: 0, delay: 1000 },
-          { text: 'ryzenai      Hybrid             NPU', kind: 'output', phase: 0, delay: 1200 },
-          { text: 'whispercpp   whisper.cpp        CPU', kind: 'output', phase: 0, delay: 1400 },
-          { text: '✓ 4 backends available', kind: 'output', phase: 1, delay: 1760 }
-        ]
-      },
-      'terminal-cli-config': {
-        title: 'Bash',
-        lines: [
-          { text: '# Tune the server from the command line', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ lemonade config set llamacpp.backend=rocm port=8123', kind: 'command', phase: 0, delay: 520 },
-          { text: '✓ llamacpp.backend = rocm', kind: 'output', phase: 0, delay: 900 },
-          { text: '✓ port = 8123', kind: 'output', phase: 0, delay: 1120 }
+          { text: '# Manage your whole model library — no GUI', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ lemonade pull \\', kind: 'command', phase: 0, delay: 470 },
+          { text: '    Qwen3-Coder-30B-A3B-Instruct-GGUF', kind: 'command', phase: 0, delay: 720 },
+          { text: '✓ downloaded · ready to load', kind: 'output', phase: 0, delay: 1040 },
+          { text: '', delay: 1340 },
+          { text: '$ lemonade list --downloaded', kind: 'command', phase: 1, delay: 1640 },
+          { text: 'MODEL                       RECIPE', kind: 'output', phase: 1, delay: 1900 },
+          { text: 'Gemma-4-E2B-it-GGUF         llamacpp', kind: 'output', phase: 1, delay: 2100 },
+          { text: 'Qwen3-Coder-30B-A3B-GGUF    llamacpp', kind: 'output', phase: 1, delay: 2300 },
+          { text: 'kokoro-v1                   kokoro', kind: 'output', phase: 1, delay: 2500 }
         ]
       },
       'terminal-api-openai': {
@@ -1186,7 +1197,7 @@
       captionEl.hidden = !captionText;
     }
     frameEl.setAttribute('data-animation-mode', mode);
-    if (demoKind.indexOf('router-') === 0 || demoKind === 'spawn-app' || demoKind === 'deploy-everywhere') {
+    if (demoKind.indexOf('router-') === 0 || demoKind === 'spawn-app' || demoKind === 'deploy-everywhere' || demoKind === 'household-network') {
       // Flowchart diagrams come from the flowchart.js module; hand it our cadence.
       frameEl.innerHTML = window.LemonadeFlowchart.render(demoKind, {
         subsectionDelay: animationSubsectionDelay,

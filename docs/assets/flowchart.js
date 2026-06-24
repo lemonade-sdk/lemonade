@@ -824,6 +824,152 @@
     '</div>';
   }
 
+  // User "Serve the whole household": a sleek Lemonade server (bound to the LAN IP
+  // from the Secure-it slide) at the top, wired DOWN to the three household apps,
+  // each shown on the device it fits -- Open WebUI on a laptop, Dream Server on a
+  // NAS/server tower, Lemonade Mobile on a phone. A warm pulse cascades down each
+  // wire and the device's screen lights up on arrival. Same hub-and-spoke layout
+  // as "Deploy everywhere", but on a LIGHT stage. Pure SVG + SMIL: device glyphs
+  // are stroked geometry, labels are <text> with an explicit y (NOT
+  // dominant-baseline); soft shadows/glows come from SVG filters (no foreignObject,
+  // no backdrop-filter).
+  function householdDemo() {
+    var C = 5200;
+    var cycle = (C / 1000).toFixed(3) + 's';
+    function ranim(attr, vals, times) {
+      var v = vals.split(';'), k = times.split(';');
+      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
+      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
+    }
+    function f(n) { return (+n).toFixed(4); }
+
+    var fanX = 310, fanY = 116;   // wires fan from a single point under the server
+    var cy = 284;                 // device row centre
+    var devices = [
+      { app: 'Open WebUI',      id: 'open-webui',      type: 'laptop', x: 150 },
+      { app: 'Dream Server',    id: 'dream-server',    type: 'server', x: 310 },
+      { app: 'Lemonade Mobile', id: 'lemonade-mobile', type: 'phone',  x: 470 }
+    ];
+    var APP_LOGO = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/';
+
+    // The lit "screen" on each device -- where the app is shown. Returns the
+    // display rect; the warm glow + frame light it up when the pulse lands.
+    function screenRect(type, cx) {
+      if (type === 'laptop') return { x: cx - 43, y: cy - 30, w: 86, h: 54, rx: 5 };
+      if (type === 'phone')  return { x: cx - 20, y: cy - 36, w: 40, h: 74, rx: 7 };
+      return { x: cx - 25, y: cy - 18, w: 50, h: 54, rx: 6 };   // server front panel
+    }
+    // Square logo box centred in the screen -- the app shown "on" the device.
+    function logoBox(type, cx) {
+      if (type === 'laptop') return { x: cx - 20, y: cy - 23, s: 40 };
+      if (type === 'phone')  return { x: cx - 16, y: cy - 15, s: 32 };
+      return { x: cx - 20, y: cy - 11, s: 40 };
+    }
+    // Stroked device frame (no fill); LEDs/vents carry their own class.
+    function deviceOutline(type, cx) {
+      if (type === 'laptop') {
+        return '<rect x="' + (cx - 43) + '" y="' + (cy - 30) + '" width="86" height="54" rx="5"></rect>' +
+               '<path d="M ' + (cx - 56) + ' ' + (cy + 34) + ' L ' + (cx + 56) + ' ' + (cy + 34) + ' L ' + (cx + 45) + ' ' + (cy + 24) + ' L ' + (cx - 45) + ' ' + (cy + 24) + ' Z"></path>';
+      }
+      if (type === 'phone') {
+        return '<rect x="' + (cx - 25) + '" y="' + (cy - 46) + '" width="50" height="92" rx="11"></rect>' +
+               '<line x1="' + (cx - 5) + '" y1="' + (cy - 41) + '" x2="' + (cx + 5) + '" y2="' + (cy - 41) + '"></line>' +
+               '<line x1="' + (cx - 7) + '" y1="' + (cy + 42) + '" x2="' + (cx + 7) + '" y2="' + (cy + 42) + '"></line>';
+      }
+      // NAS / server tower: body with status LEDs + a vent line above the panel.
+      return '<rect x="' + (cx - 33) + '" y="' + (cy - 44) + '" width="66" height="88" rx="9"></rect>' +
+             '<circle class="hh-led" cx="' + (cx - 21) + '" cy="' + (cy - 34) + '" r="2.4"></circle>' +
+             '<circle class="hh-led" cx="' + (cx - 13) + '" cy="' + (cy - 34) + '" r="2.4"></circle>' +
+             '<line x1="' + (cx - 3) + '" y1="' + (cy - 34) + '" x2="' + (cx + 21) + '" y2="' + (cy - 34) + '"></line>';
+    }
+    function deviceShadow(type, cx) {
+      if (type === 'laptop') return '<ellipse class="hh-shadow" cx="' + cx + '" cy="' + (cy + 38) + '" rx="62" ry="8"></ellipse>';
+      if (type === 'phone')  return '<ellipse class="hh-shadow" cx="' + cx + '" cy="' + (cy + 54) + '" rx="30" ry="6.5"></ellipse>';
+      return '<ellipse class="hh-shadow" cx="' + cx + '" cy="' + (cy + 50) + '" rx="44" ry="7"></ellipse>';
+    }
+
+    var shadows = '', wires = '', blooms = '', screens = '', outlines = '', labels = '', dots = '';
+    devices.forEach(function (d, i) {
+      // Wire fans from one point below the server, splaying out to each device --
+      // the look that makes "Deploy everywhere" feel polished.
+      // Connect into each device's actual top edge (devices differ in height, so
+      // a fixed end-Y left the shorter laptop floating below its wire).
+      var topY = d.type === 'laptop' ? cy - 30 : (d.type === 'phone' ? cy - 46 : cy - 44);
+      var wire = 'M ' + fanX + ' ' + fanY + ' C ' + fanX + ' ' + (fanY + 92) + ', ' + d.x + ' ' + (topY - 58) + ', ' + d.x + ' ' + topY;
+
+      var s = i / 3;                       // even cascade across the cycle
+      var arrive = s + 0.13;
+      // Arrival window, defined relative to arrival and kept safely inside [0,1]
+      // for EVERY device -- the third device's window would otherwise run past 1
+      // and SMIL would silently drop it (that was the "phone never lights" bug).
+      var lit = '0;0;1;1;0';
+      var litTimes = '0;' + f(arrive - 0.03) + ';' + f(arrive) + ';' + f(arrive + 0.13) + ';' + f(arrive + 0.19);
+
+      shadows += deviceShadow(d.type, d.x);
+      wires += '<path class="hh-wire" d="' + wire + '"></path>';
+
+      blooms += '<ellipse class="hh-halo" cx="' + d.x + '" cy="' + (cy + 2) + '" rx="56" ry="52" opacity="0">' +
+          ranim('opacity', lit, litTimes) + '</ellipse>';
+
+      // Screen = white panel + warm backlight (behind the logo) + the app logo +
+      // a glowing amber frame. The warm/frame fade in when the pulse lands.
+      var sr = screenRect(d.type, d.x);
+      var lb = logoBox(d.type, d.x);
+      screens +=
+        '<rect class="hh-screen" x="' + sr.x + '" y="' + sr.y + '" width="' + sr.w + '" height="' + sr.h + '" rx="' + sr.rx + '"></rect>' +
+        '<rect class="hh-screen-warm" x="' + sr.x + '" y="' + sr.y + '" width="' + sr.w + '" height="' + sr.h + '" rx="' + sr.rx + '" opacity="0">' +
+          ranim('opacity', '0;0;0.4;0.4;0', litTimes) + '</rect>' +
+        '<image href="' + escapeText(APP_LOGO + d.id + '/logo.png') + '" x="' + lb.x + '" y="' + lb.y + '" width="' + lb.s + '" height="' + lb.s + '" preserveAspectRatio="xMidYMid meet"></image>' +
+        '<rect class="hh-screen-frame" x="' + sr.x + '" y="' + sr.y + '" width="' + sr.w + '" height="' + sr.h + '" rx="' + sr.rx + '" opacity="0">' +
+          ranim('opacity', lit, litTimes) + '</rect>';
+
+      outlines += '<g class="hh-dev">' + deviceOutline(d.type, d.x) + '</g>';
+      labels += '<text class="hh-label" x="' + d.x + '" y="' + (cy + 60) + '" text-anchor="middle">' + escapeText(d.app) + '</text>';
+
+      // A layered pulse (soft halo + bright gradient core) glides down the wire.
+      dots += '<g opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(arrive) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(arrive - 0.01) + ';' + f(arrive + 0.02)) +
+          '<circle class="hh-dot-halo" r="8"></circle>' +
+          '<circle class="hh-dot-core" r="4.6"></circle>' +
+          '<circle class="hh-dot-spark" r="1.5" cx="-1.3" cy="-1.4"></circle>' +
+        '</g>';
+    });
+
+    // Sleek server emblem up top: a 2-unit rack glyph + name + LAN IP, on a soft
+    // white card. This is the wire origin.
+    var scX = 310, scY = 78, scW = 220, scH = 66;
+    var gX = scX - scW / 2 + 36;
+    var serverCard =
+      '<rect class="hh-card" x="' + (scX - scW / 2) + '" y="' + (scY - scH / 2) + '" width="' + scW + '" height="' + scH + '" rx="14" filter="url(#hhShadow)"></rect>' +
+      '<g class="hh-srv-glyph" transform="translate(' + gX + ',' + scY + ')">' +
+        '<rect x="-15" y="-13" width="30" height="11" rx="2.5"></rect>' +
+        '<rect x="-15" y="2" width="30" height="11" rx="2.5"></rect>' +
+        '<line x1="-3" y1="-7.5" x2="9" y2="-7.5"></line>' +
+        '<line x1="-3" y1="7.5" x2="9" y2="7.5"></line>' +
+        '<circle class="hh-srv-led" cx="-9.5" cy="-7.5" r="1.8"></circle>' +
+        '<circle class="hh-srv-led" cx="-9.5" cy="7.5" r="1.8"></circle>' +
+      '</g>' +
+      '<text class="hh-card-title" x="' + (scX + 20) + '" y="' + (scY - 3) + '" text-anchor="middle">Lemonade Server</text>' +
+      '<text class="hh-card-ip" x="' + (scX + 20) + '" y="' + (scY + 17) + '" text-anchor="middle">192.168.1.42</text>';
+
+    var defs = '<defs>' +
+        '<filter id="hhShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#3a2f12" flood-opacity="0.16"></feDropShadow></filter>' +
+        '<filter id="hhGlow" x="-120%" y="-120%" width="340%" height="340%"><feGaussianBlur stdDeviation="2.4"></feGaussianBlur></filter>' +
+        '<radialGradient id="hhDotFill" cx="50%" cy="38%" r="60%"><stop offset="0%" stop-color="#fffaf0"></stop><stop offset="40%" stop-color="#ffb422"></stop><stop offset="100%" stop-color="#f2920a"></stop></radialGradient>' +
+        '<radialGradient id="hhHalo" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(255,198,84,0.46)"></stop><stop offset="52%" stop-color="rgba(255,198,84,0.16)"></stop><stop offset="100%" stop-color="rgba(255,198,84,0)"></stop></radialGradient>' +
+        '<linearGradient id="hhScreenOn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(255,237,188,0.92)"></stop><stop offset="100%" stop-color="rgba(255,208,104,0.82)"></stop></linearGradient>' +
+      '</defs>';
+
+    return '<div class="hp-household-demo">' +
+      '<svg class="hp-household-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+        defs +
+        shadows + wires + blooms + screens + outlines + labels +
+        serverCard + dots +
+      '</svg>' +
+    '</div>';
+  }
+
   function routerDemo(kind) {
     if (kind === 'router-hybrid') {
       // Hybrid = right SIZE & LOCATION: an easy ask stays local (fast, private,
@@ -889,6 +1035,7 @@
       }
       if (kind === 'spawn-app') return spawnDemo();
       if (kind === 'deploy-everywhere') return deployDemo();
+      if (kind === 'household-network') return householdDemo();
       return routerDemo(kind);
     }
   };
