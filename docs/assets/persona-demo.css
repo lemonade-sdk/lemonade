@@ -1798,28 +1798,80 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 }
 
 /* ======================================================================
-   "Connect any OpenAI-compatible app": a generic client's connection settings.
-   Timeline (one-shot on render): the Base URL types itself in (typewriter via a
-   stepped width), a cursor flies to the Connect button and presses it, then a
-   glowing-green "100+ models found!" status fades in.
+   "Connect any OpenAI-compatible app": the connection settings sit in a 16:9
+   modal floating over the (scrimmed) app window. Timeline (one-shot on render):
+   the Base URL types itself in (typewriter via a stepped width), a cursor flies
+   to the Connect button and presses it, then a glowing-green "100+ models found!"
+   status fades in to the RIGHT of the button.
    ====================================================================== */
-.hp-conn {
+.hp-conn-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  padding: 1.15rem 1.3rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  /* Faint app content behind the modal, so the window reads as a real app. */
+  background:
+    linear-gradient(180deg, rgba(45, 47, 47, 0.05) 0 2.4rem, transparent 2.4rem),
+    repeating-linear-gradient(180deg, transparent 0 3.2rem, rgba(45, 47, 47, 0.035) 3.2rem 3.25rem),
+    var(--surface);
 }
 
-.hp-conn-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.1rem; }
-.hp-conn-head-icon { font-size: 1.1rem; color: var(--primary-yellow-darker); }
+/* Dim scrim that lifts the modal off the app content. */
+.hp-conn-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 20, 14, 0.22);
+}
+
+/* The 16:9 dialog. overflow:visible so the click cursor isn't clipped at a corner. */
+.hp-conn-modal {
+  position: relative;
+  z-index: 1;
+  width: min(90%, 480px);
+  aspect-ratio: 16 / 9;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-heavy);
+}
+
+.hp-conn-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.hp-conn-modal-close { font-size: 1.05rem; color: var(--text-light); }
+
+.hp-conn-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.hp-conn-head-icon { font-size: 1.05rem; color: var(--primary-yellow-darker); }
 .hp-conn-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--font-display);
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 800;
   color: var(--text-primary);
 }
 
-.hp-conn-field-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.hp-conn-field-group { display: flex; flex-direction: column; gap: 0.28rem; }
 
 .hp-conn-label {
   font-family: var(--font-display);
@@ -1834,9 +1886,9 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-height: 2.2rem;
-  padding: 0.4rem 0.85rem;
-  border-radius: var(--radius);
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.66);
   border: 1px solid var(--outline-variant);
   overflow: hidden;
@@ -1873,20 +1925,27 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   color: var(--text-light);
 }
 
+/* Button + status share a row: the status fades in to the RIGHT of the button. */
+.hp-conn-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.15rem;
+}
+
 .hp-conn-btn {
   position: relative;
-  align-self: flex-start;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  margin-top: 0.3rem;
-  padding: 0.6rem 1.1rem;
+  padding: 0.55rem 1.05rem;
   border-radius: var(--radius-btn);
   background: var(--primary-yellow);
   color: var(--on-primary);
   font-family: var(--font-display);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 800;
   box-shadow: var(--shadow-yellow);
   animation: hp-conn-btn-press 0.3s ease 2.5s;
@@ -1918,11 +1977,14 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 .hp-conn-status {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.2rem;
+  gap: 0.45rem;
   opacity: 0;
-  transform: translateY(6px);
-  animation: hp-applist-in 0.45s ease 2.8s forwards;
+  transform: translateX(-6px);
+  animation: hp-conn-status-in 0.45s ease 2.8s forwards;
+}
+
+@keyframes hp-conn-status-in {
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .hp-conn-status-text {

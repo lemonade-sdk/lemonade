@@ -911,31 +911,40 @@
   // Pure-CSS timeline (see .hp-conn-* in persona-demo.css); one-shot on render.
   function connectDemo() {
     var body =
-      '<div class="hp-conn">' +
-        '<div class="hp-conn-head">' +
-          '<span class="material-symbols-outlined hp-conn-head-icon">power</span>' +
-          '<span class="hp-conn-head-title">Add a connection</span>' +
-        '</div>' +
-        '<div class="hp-conn-field-group">' +
-          '<span class="hp-conn-label">Base URL</span>' +
-          '<div class="hp-conn-field">' +
-            '<span class="hp-conn-typed">http://localhost:13305</span>' +
-            '<span class="hp-conn-caret"></span>' +
+      '<div class="hp-conn-stage">' +
+        '<div class="hp-conn-scrim"></div>' +
+        '<div class="hp-conn-modal">' +
+          '<div class="hp-conn-modal-head">' +
+            '<span class="hp-conn-head-title">' +
+              '<span class="material-symbols-outlined hp-conn-head-icon">power</span>Add a connection' +
+            '</span>' +
+            '<span class="material-symbols-outlined hp-conn-modal-close">close</span>' +
           '</div>' +
-        '</div>' +
-        '<div class="hp-conn-field-group">' +
-          '<span class="hp-conn-label">API Key</span>' +
-          '<div class="hp-conn-field">' +
-            '<span class="hp-conn-placeholder">Optional for local AI</span>' +
+          '<div class="hp-conn-modal-body">' +
+            '<div class="hp-conn-field-group">' +
+              '<span class="hp-conn-label">Base URL</span>' +
+              '<div class="hp-conn-field">' +
+                '<span class="hp-conn-typed">http://localhost:13305</span>' +
+                '<span class="hp-conn-caret"></span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="hp-conn-field-group">' +
+              '<span class="hp-conn-label">API Key</span>' +
+              '<div class="hp-conn-field">' +
+                '<span class="hp-conn-placeholder">Optional for local AI</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="hp-conn-actions">' +
+              '<button class="hp-conn-btn" type="button">' +
+                '<span class="material-symbols-outlined">link</span>Connect' +
+                CURSOR_SVG +
+              '</button>' +
+              '<div class="hp-conn-status">' +
+                '<span class="hp-conn-dot"></span>' +
+                '<span class="hp-conn-status-text">100+ models found!</span>' +
+              '</div>' +
+            '</div>' +
           '</div>' +
-        '</div>' +
-        '<button class="hp-conn-btn" type="button">' +
-          '<span class="material-symbols-outlined">link</span>Connect' +
-          CURSOR_SVG +
-        '</button>' +
-        '<div class="hp-conn-status">' +
-          '<span class="hp-conn-dot"></span>' +
-          '<span class="hp-conn-status-text">100+ models found!</span>' +
         '</div>' +
       '</div>';
     return appWindow('Any OpenAI Compatible App', body, 'hp-conn-window');
