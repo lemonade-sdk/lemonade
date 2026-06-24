@@ -1533,9 +1533,14 @@
     refreshActive();                     // set the initial live slide
   }
 
+  // Smooth-scroll a slide so its DEMO sits at the viewport centre -- the same target
+  // the magnet uses, so they agree (no double-motion). Used by TOC clicks + arrows.
   function jumpToGlobal(g) {
-    var el = document.getElementById('hp-slide-' + g);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!demoEls || !demoEls.length) return;
+    g = Math.max(0, Math.min(demoEls.length - 1, g));
+    var r = demoEls[g].getBoundingClientRect();
+    var delta = (r.top + r.height / 2) - window.innerHeight / 2;
+    window.scrollTo({ top: window.pageYOffset + delta, behavior: 'smooth' });
   }
 
   function rebuild(persona) {
@@ -1562,6 +1567,25 @@
     if (!btn) return;
     event.preventDefault();
     jumpToGlobal(Number(btn.getAttribute('data-global')) || 0);
+  });
+
+  // Up/Down arrows step between slides while the journey owns the screen (the magnet
+  // otherwise swallows their small native scroll). At a boundary they step out of the
+  // journey instead of fighting the magnet. Ignored when typing or with modifiers.
+  document.addEventListener('keydown', function(event) {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    var el = event.target;
+    if (el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+    if (!journeyEngaged() || currentActive < 0) return;   // only drive the journey while it owns the screen
+    var down = event.key === 'ArrowDown';
+    var next = currentActive + (down ? 1 : -1);
+    event.preventDefault();
+    if (next < 0 || next >= demoEls.length) {
+      window.scrollBy({ top: (down ? 1 : -1) * window.innerHeight * 0.92, behavior: 'smooth' });
+    } else {
+      jumpToGlobal(next);
+    }
   });
 
   // Hero CTA buttons (persona-aware labels toggled in CSS): the primary button
