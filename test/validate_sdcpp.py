@@ -3,9 +3,9 @@
 
 Expected server state: ``lemond`` is already running. This script switches
 Lemonade to the requested sd-cpp backend, then generates deterministic PNGs for
-all requested model/size combinations. It records enough evidence for reviewers:
-model, backend, prompt, seed, size, generated PNG path, byte size, and elapsed
-wall-clock time.
+all requested model/size combinations. It records review evidence: model,
+backend, prompt, seed, size, generated PNG path, byte size, request wall time,
+and whether an untimed warm-up was used before collecting timings.
 """
 
 from __future__ import annotations
@@ -83,6 +83,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only run the first model at the first size; intended for PR smoke checks.",
     )
+    parser.add_argument(
+        "--warmup",
+        action="store_true",
+        help=(
+            "Before recording timed images for each model, run one untimed generation "
+            "at the first requested size. This keeps per-image timings from being "
+            "dominated by backend/model install and load time."
+        ),
+    )
     parser.add_argument("--output", default="sdcpp_validation.json")
     parser.add_argument("--images-dir", default="sdcpp-validation-images")
     return parser.parse_args()
@@ -137,7 +146,7 @@ def generate_image(
     steps: int,
     seed: int,
     timeout: int,
-) -> tuple[bytes, dict[str, Any]]:
+) -> tuple[bytes, dict[str, Any], float]:
     width, height = size
     payload = {
         "model": model,
@@ -148,7 +157,9 @@ def generate_image(
         "n": 1,
         "response_format": "b64_json",
     }
+    started = time.monotonic()
     response = post_json(f"{api_base_url}/images/generations", payload, timeout=timeout)
+    request_elapsed_s = time.monotonic() - started
     if response.status_code != 200:
         raise RuntimeError(
             f"image generation failed for {model} {width}x{height}: "
@@ -156,7 +167,7 @@ def generate_image(
         )
     result = response.json()
     image_b64 = result["data"][0]["b64_json"]
-    return base64.b64decode(image_b64), result
+    return base64.b64decode(image_b64), result, request_elapsed_s
 
 
 def safe_slug(value: str) -> str:
@@ -177,6 +188,59 @@ def safe_label(backend: str, channel: str | None) -> str:
     return backend
 
 
+def record_failure(
+    args: argparse.Namespace,
+    label: str,
+    model: str,
+    size: tuple[int, int],
+    started: float,
+    exc: Exception,
+) -> dict[str, Any]:
+    width, height = size
+    return {
+        "backend": args.backend,
+        "channel": args.channel,
+        "label": label,
+        "model": model,
+        "prompt": args.prompt,
+        "size": f"{width}x{height}",
+        "steps": args.steps,
+        "seed": args.seed,
+        "pass": False,
+        "warmup": args.warmup,
+        "timing_scope": "request_wall_s_after_warmup" if args.warmup else "request_wall_s_cold",
+        "error": str(exc),
+        "request_elapsed_s": round(time.monotonic() - started, 3),
+        # Backward-compatible alias for older PR body renderers.
+        "elapsed_s": round(time.monotonic() - started, 3),
+    }
+
+
+def warmup_model(
+    api_base_url: str,
+    model: str,
+    prompt: str,
+    size: tuple[int, int],
+    steps: int,
+    seed: int,
+    timeout: int,
+    label: str,
+) -> float:
+    width, height = size
+    print(f"[INFO] Warming {model} {width}x{height} on {label}")
+    _image, _response_json, request_elapsed_s = generate_image(
+        api_base_url=api_base_url,
+        model=model,
+        prompt=prompt,
+        size=size,
+        steps=steps,
+        seed=seed,
+        timeout=timeout,
+    )
+    print(f"[INFO] Warmed {model} on {label} in {request_elapsed_s:.3f}s")
+    return request_elapsed_s
+
+
 def main() -> int:
     args = parse_args()
     sizes = args.size or [parse_size(value) for value in DEFAULT_SIZES]
@@ -193,6 +257,7 @@ def main() -> int:
 
     results: list[dict[str, Any]] = []
     overall_pass = True
+    warmup_elapsed_by_model: dict[str, float] = {}
 
     print(f"[INFO] Waiting for Lemonade server at {base_url}")
     wait_for_server(base_url)
@@ -200,6 +265,25 @@ def main() -> int:
     configure_backend(base_url, args.backend, args.channel)
 
     for model in models:
+        if args.warmup:
+            try:
+                warmup_elapsed_by_model[model] = warmup_model(
+                    api_base_url=api_base_url,
+                    model=model,
+                    prompt=args.prompt,
+                    size=sizes[0],
+                    steps=args.steps,
+                    seed=args.seed,
+                    timeout=args.timeout,
+                    label=label,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep JSON on all failures
+                overall_pass = False
+                print(f"[FAIL] warmup {model} on {label}: {exc}", file=sys.stderr)
+                for size in sizes:
+                    results.append(record_failure(args, label, model, size, time.monotonic(), exc))
+                continue
+
         for width, height in sizes:
             started = time.monotonic()
             record: dict[str, Any] = {
@@ -212,10 +296,13 @@ def main() -> int:
                 "steps": args.steps,
                 "seed": args.seed,
                 "pass": False,
+                "warmup": args.warmup,
+                "warmup_elapsed_s": round(warmup_elapsed_by_model.get(model, 0.0), 3) if args.warmup else 0.0,
+                "timing_scope": "request_wall_s_after_warmup" if args.warmup else "request_wall_s_cold",
             }
             try:
                 print(f"[INFO] Generating {model} {width}x{height} on {label}")
-                image, response_json = generate_image(
+                image, response_json, request_elapsed_s = generate_image(
                     api_base_url=api_base_url,
                     model=model,
                     prompt=args.prompt,
@@ -238,19 +325,22 @@ def main() -> int:
                         "width": actual_width,
                         "height": actual_height,
                         "image_path": str(image_path),
-                        "elapsed_s": round(time.monotonic() - started, 3),
+                        "request_elapsed_s": round(request_elapsed_s, 3),
+                        # Backward-compatible alias for older PR body renderers.
+                        "elapsed_s": round(request_elapsed_s, 3),
                         "created": response_json.get("created"),
                     }
                 )
                 print(
                     f"[OK] {model} {width}x{height}: wrote {image_path} "
-                    f"({len(image)} bytes, {record['elapsed_s']}s)"
+                    f"({len(image)} bytes, request {record['request_elapsed_s']}s)"
                 )
             except Exception as exc:  # noqa: BLE001 - keep JSON on all failures
                 overall_pass = False
                 record.update(
                     {
                         "error": str(exc),
+                        "request_elapsed_s": round(time.monotonic() - started, 3),
                         "elapsed_s": round(time.monotonic() - started, 3),
                     }
                 )
