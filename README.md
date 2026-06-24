@@ -111,9 +111,9 @@ For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provid
 
 <img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
+Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, **MLX**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
-Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
+Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF, ONNX, or MLX models from Hugging Face.
 
 **[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
@@ -135,7 +135,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="12"><strong>Text generation</strong></td>
       <td rowspan="6"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)</td>
@@ -165,6 +165,22 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
       <td>Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><code>lemon-mlx</code> (experimental)</td>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td><code>rocm</code></td>
+      <td>Strix Halo iGPU (<code>gfx1151</code>)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU or Apple Silicon</td>
+      <td>Linux, macOS</td>
     </tr>
     <tr>
       <td><code>flm</code></td>

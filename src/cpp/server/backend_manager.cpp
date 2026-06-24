@@ -483,13 +483,17 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
     // Do that here before inflating the install to a multi-file UX flow.
     const std::string os = get_current_os();
-    const bool is_rocm_stable_backend =
-        (recipe == "llamacpp" || recipe == "sd-cpp") &&
-        resolved_backend == "rocm-stable";
+
+    const bool needs_stable_rocm_runtime =
+        ((recipe == "llamacpp" || recipe == "sd-cpp") && resolved_backend == "rocm-stable") ||
+        (recipe == "lemon-mlx" && resolved_backend == "rocm");
+
     const bool therock_applicable =
-        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
+        needs_stable_rocm_runtime && will_install_therock(os, backend_versions_);
+
     const bool rocm_runtime_update_required =
         therock_applicable && backend_update_required(recipe, backend);
+
     const bool needs_therock_download =
         therock_applicable &&
         (rocm_runtime_update_required ||

@@ -35,6 +35,9 @@ static const json DEFAULTS = {
     // vLLM-specific options
     {"vllm_backend", ""},  // "" means auto-detect
     {"vllm_args", ""},     // Custom arguments to pass to vllm-server
+    // lemon-mlx-specific options
+    {"lemon-mlx_backend", ""},  // "" means auto-detect
+    {"lemon-mlx_args", ""},     // Custom arguments to pass to lemon-mlx server
     // Cloud recipe has no backend variants (provider selection lives on the
     // per-model cloud_provider field). The empty string satisfies Router's
     // per-backend-args lookup; cloud reads no backend-specific config.
@@ -65,7 +68,9 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"whispercpp_args", "--whispercpp-args"},
     {"moonshine_args", "--moonshine-args"},
     {"vllm_backend", "--vllm"},
-    {"vllm_args", "--vllm-args"}
+    {"vllm_args", "--vllm-args"},
+    {"lemon-mlx_backend", "--lemon-mlx"},
+    {"lemon-mlx_args", "--lemon-mlx-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -83,7 +88,11 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "sd-cpp") {
         keys = {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {
-        keys = {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
+        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
+    } else if (recipe == "lemon-mlx") {
+        return {"ctx_size", "lemon-mlx_backend", "lemon-mlx_args", "merge_args"};
+    } else {
+        return {};
     }
 
     // Add auto-eviction options for all recipes
@@ -261,6 +270,8 @@ static const json CLI_OPTIONS = {
     {"--moonshine-args", {{"option_name", "moonshine_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to moonshine-server"}}},
     {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"help", "vLLM backend to use"}, {"group", "vLLM Options"}}},
     {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to vllm-server"}, {"group", "vLLM Options"}}},
+    {"--lemon-mlx", {{"option_name", "lemon-mlx_backend"}, {"type_name", "BACKEND"}, {"help", "lemon-mlx backend to use"}, {"group", "Lemon-MLX Options"}}},
+    {"--lemon-mlx-args", {{"option_name", "lemon-mlx_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to lemon-mlx server"}, {"group", "Lemon-MLX Options"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
     // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
 };

@@ -513,6 +513,17 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_npu", {"XDNA2"}},
     }},
 
+    // lemon-mlx-engine - Apple Silicon Metal, Linux ROCm, and CPU fallback
+    {"lemon-mlx", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
+    {"lemon-mlx", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1151"}},
+    }},
+    {"lemon-mlx", "cpu", {"linux", "macos"}, {
+        {"cpu", {"x86_64", "arm64"}},
+    }},
+
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
@@ -678,7 +689,8 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
     bool is_vllm_rocm_backend = recipe == "vllm" && backend == "rocm";
-    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend) {
+    bool is_mlx_rocm_backend = recipe == "lemon-mlx" && backend == "rocm";
+    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend || is_mlx_rocm_backend) {
         if (needs_gfx1151_cwsr_fix()) {
             error_message = "Linux kernel missing support";
             return false;
@@ -1485,9 +1497,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
                 bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
                     (def.recipe == "llamacpp" && def.backend == "rocm") ||
-                    (def.recipe == "vllm" && def.backend == "rocm");
+                    (def.recipe == "vllm" && def.backend == "rocm") ||
+                    (def.recipe == "lemon-mlx" && def.backend == "rocm");
 
-                // Special action for ROCm backends on llamacpp/sd-cpp/vllm if CWSR fix is missing
+                // Special action for ROCm backends on llamacpp/sd-cpp/vllm/lemon-mlx if CWSR fix is missing
                 if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";

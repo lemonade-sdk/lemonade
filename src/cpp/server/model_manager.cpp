@@ -2075,6 +2075,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.size = JsonUtils::get_or_default<double>(*model_json, "size", 0.0);
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
