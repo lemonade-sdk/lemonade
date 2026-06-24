@@ -25,7 +25,7 @@
   var defaultAutoplayDelay = 5200;       // min cycle length
   var animationSubsectionDelay = 2450;   // per-subsection duration
   var animationSubsectionGap = 350;
-  var STEP_ICONS = ['explore', 'database', 'apps', 'terminal', 'dns'];  // people steps
+  var STEP_ICONS = ['explore', 'apps', 'terminal', 'dns'];  // people steps
   var personaSteps = {
     people: {
       title: 'Run AI on your personal hardware.',
@@ -37,41 +37,15 @@
         {
           eyebrow: 'Explore',
           title: 'Explore AI models',
-          copy: 'Run chat, image generation, coding, and speech models locally — all from one app.',
-          demo: 'explore-chat',
+          copy: 'Run chat, image, coding, and speech models locally — and manage your whole model library from one app.',
+          demo: 'explore-omni',
           slides: [
             {
-              label: 'Chat with LLMs',
-              demo: 'explore-chat',
-              caption: 'Chat with local LLMs about anything — fully private, running on your own hardware.',
-              duration: 3200
+              label: 'Chat, image, code & speech',
+              demo: 'explore-omni',
+              caption: 'One private, local conversation — chat, image generation, coding, and speech, all in the same app.',
+              duration: 9000
             },
-            {
-              label: 'Generate and edit images',
-              demo: 'explore-images',
-              caption: 'Generate and edit images from a text prompt with local image models.',
-              duration: 3200
-            },
-            {
-              label: 'Advanced coding agents',
-              demo: 'explore-coding',
-              caption: 'Power advanced coding agents with models tuned for software development.',
-              duration: 3200
-            },
-            {
-              label: 'Transcribe and generate speech',
-              demo: 'explore-speech',
-              caption: 'Transcribe and generate speech with local audio models.',
-              duration: 3200
-            }
-          ]
-        },
-        {
-          eyebrow: 'Models',
-          title: 'Set up your models',
-          copy: 'Lemonade helps you manage your library of models.',
-          demo: 'models-registry',
-          slides: [
             {
               label: 'Pull from the Lemonade registry',
               demo: 'models-registry',
@@ -624,6 +598,76 @@
     '</div>';
   }
 
+  // Converged "Explore" demo: ONE chatbot window whose transcript plays out every
+  // modality in a single conversation -- chat, then image gen, then coding, then
+  // speech. Same .hp-chatbot chrome as exploreDemo; the difference is the body holds
+  // every turn at once and playOmni() reveals them in sequence, scrolling the feed up
+  // so the newest turn stays in view (a real growing-chat feel). One-shot on render.
+  function omniDemo() {
+    var waveBars = new Array(26).join('<span></span>'); // 25 bars, matching the hero waveform
+    var turns = [
+      '<div class="hp-chat-user">What can I do with 128 GB of unified RAM?</div>',
+      '<div class="hp-chat-ai">Load up models like gpt-oss-120b or Qwen-Coder-Next for advanced tool use.</div>',
+      '<div class="hp-chat-user">Now paint a pitcher of lemonade like a renaissance master</div>',
+      '<div class="hp-demo-image-placeholder"></div>',
+      '<div class="hp-chat-user">Build a real-time dashboard that streams GPU metrics over WebSockets</div>',
+      '<pre class="hp-code-block"><code>' +
+        '<span class="hp-code-kw">async def</span> <span class="hp-code-fn">stream_gpu_metrics</span>(ws):\n' +
+        '    <span class="hp-code-kw">while</span> <span class="hp-code-lit">True</span>:\n' +
+        '        stats = <span class="hp-code-kw">await</span> gpu.poll()\n' +
+        '        <span class="hp-code-kw">await</span> ws.send_json(stats)\n' +
+        '        <span class="hp-code-kw">await</span> asyncio.sleep(<span class="hp-code-lit">0.5</span>)\n' +
+        '<span class="hp-code-ellipsis">...</span>' +
+      '</code></pre>',
+      '<div class="hp-chat-user">Now voice a welcome message for the dashboard</div>',
+      '<div class="hp-waveform">' + waveBars + '</div>'
+    ];
+    var feed = '<div class="hp-omni-feed">' + turns.map(function(t) {
+      return '<div class="hp-omni-turn">' + t + '</div>';
+    }).join('') + '</div>';
+    return '<div class="hp-app-window ice-card hp-chatbot hp-omni">' +
+      '<div class="hp-app-window-bar">' +
+        '<span class="hp-app-window-title">Lemonade</span>' +
+        '<span class="hp-app-window-dots"><i></i><i></i><i></i></span>' +
+      '</div>' +
+      '<div class="hp-chatbot-body">' + feed + '</div>' +
+      '<div class="hp-chatbot-input">' +
+        '<div class="hp-chatbot-field"><span class="hp-omni-placeholder">Ask anything — text, images, code, or speech…</span></div>' +
+        '<span class="hp-chatbot-send"><span class="material-symbols-outlined">arrow_upward</span></span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Drive the omni transcript: reveal each turn on a timer, then translate the feed
+  // up just enough to keep the freshly revealed turn in view. Measures real layout
+  // (offsetTop/offsetHeight) so it stays correct regardless of bubble wrapping. Runs
+  // once per render; honours reduced-motion by showing every turn statically.
+  function playOmni(frameEl) {
+    var body = frameEl.querySelector('.hp-chatbot-body');
+    var feed = frameEl.querySelector('.hp-omni-feed');
+    if (!body || !feed) return;
+    var turns = feed.querySelectorAll('.hp-omni-turn');
+    if (!turns.length) return;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      for (var r = 0; r < turns.length; r++) turns[r].classList.add('is-in');
+      return;
+    }
+    // ms to dwell before the NEXT turn arrives (longer after image/code responses).
+    var dwell = [700, 1150, 1300, 1550, 1300, 1650, 1300, 1500];
+    var t = 450;
+    for (var i = 0; i < turns.length; i++) {
+      (function(turn) {
+        window.setTimeout(function() {
+          turn.classList.add('is-in');
+          var overflow = turn.offsetTop + turn.offsetHeight - body.clientHeight + 14;
+          feed.style.transform = 'translateY(' + (overflow > 0 ? -overflow : 0) + 'px)';
+        }, t);
+      })(turns[i]);
+      t += dwell[i] || 1200;
+    }
+  }
+
   // A stylized mouse pointer that flies in and "clicks" UI in the model demos.
   // Movement (translate / right-top) lives on .hp-cursor; the click "press"
   // scales the inner <svg> -- kept on separate elements so the two never fight
@@ -897,6 +941,9 @@
         subsectionGap: animationSubsectionGap,
         minCycle: defaultAutoplayDelay
       });
+    } else if (demoKind === 'explore-omni') {
+      frameEl.innerHTML = omniDemo();
+      playOmni(frameEl);
     } else if (demoKind.indexOf('explore-') === 0) {
       frameEl.innerHTML = exploreDemo(demoKind);
     } else if (demoKind.indexOf('models-') === 0) {

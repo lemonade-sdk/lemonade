@@ -1006,6 +1006,51 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   }
 }
 
+/* ---- Omni: ONE conversation scrolling through every modality ------------
+   A single chatbot window whose transcript plays out chat -> image -> code ->
+   speech. playOmni() (persona-demo.js) reveals each .hp-omni-turn and translates
+   the feed up so the newest turn stays in view; CSS here only styles the per-turn
+   reveal and the smooth scroll. The body is the clip viewport (its overflow hides
+   turns that scroll above it, so nothing bleeds over the title bar). */
+.hp-omni .hp-chatbot-body {
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.hp-omni-feed {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-step1);
+  will-change: transform;
+  transition: transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* Each turn is a full-width flex column so the bubble/response inside keeps its own
+   left (user) / right (response) alignment via align-self. */
+.hp-omni-turn {
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.42s ease, transform 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.hp-omni-turn.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* The waveform's default top margin is for the standalone speech demo; inside the
+   omni feed the gap already spaces it. */
+.hp-omni-turn .hp-waveform { margin-top: 0; }
+.hp-omni-placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-light);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp-omni-feed { transition: none; }
+  .hp-omni-turn { transition: none; }
+}
+
 /* ======================================================================
    Model manager: list with download + progress (REUSABLE for backends)
    Shares the .hp-app-window chrome; the body is a vertical list whose rows
