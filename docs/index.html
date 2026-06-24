@@ -47,7 +47,7 @@
     <section class="hp-section hp-reveal" id="getting-started" data-cta-persona="people">
       <div class="hp-quickstart-card ice-card">
         <h2 class="hp-section-heading">Up and running in minutes.</h2>
-        <p class="hp-section-desc hp-quickstart-subtitle">Installation equips your computer with an AI runtime, GUI, CLI, and API endpoints to begin your AI journey.</p>
+        <p class="hp-section-desc hp-quickstart-subtitle">Installation equips your computer with an AI runtime, GUI, CLI, and API endpoints for your AI journey.</p>
         <div class="gs-platforms" id="gsPlatforms">
           <button class="gs-platform" type="button" data-platform="windows">
             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
@@ -407,7 +407,22 @@
   <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
   <script src="assets/flowchart.js"></script>
-  <script src="assets/persona-demo.js"></script>
+  <!-- Persona-demo: framework first (creates window.LemonadePersona), then the
+       shared primitives, then each persona's sections self-register. -->
+  <script src="assets/persona-demo/framework.js"></script>
+  <script src="assets/persona-demo/common.js"></script>
+  <script src="assets/persona-demo/people/_persona.js"></script>
+  <script src="assets/persona-demo/people/explore.js"></script>
+  <script src="assets/persona-demo/people/apps.js"></script>
+  <script src="assets/persona-demo/people/backends.js"></script>
+  <script src="assets/persona-demo/people/cli.js"></script>
+  <script src="assets/persona-demo/people/selfhost.js"></script>
+  <script src="assets/persona-demo/developers/_persona.js"></script>
+  <script src="assets/persona-demo/developers/runtime.js"></script>
+  <script src="assets/persona-demo/developers/routing.js"></script>
+  <script src="assets/persona-demo/developers/interfaces.js"></script>
+  <script src="assets/persona-demo/developers/backends.js"></script>
+  <script src="assets/persona-demo/developers/customize.js"></script>
   <script>
 
     // ---- Getting Started section ----
@@ -740,7 +755,7 @@
       }
 
       // lemonadePersonaChange is emitted ONLY on a real user persona switch
-      // (persona-demo.js), never on load — so every fire is a switch.
+      // (persona-demo/framework.js), never on load — so every fire is a switch.
       window.addEventListener('lemonadePersonaChange', function() {
         belowToggle.forEach(replay);
       });

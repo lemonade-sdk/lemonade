@@ -1,7 +1,7 @@
 /* ============================================================================
    Persona-demo hero — appearance
    ----------------------------------------------------------------------------
-   Styles for the interactive homepage hero driven by persona-demo.js: the
+   Styles for the interactive homepage hero driven by the persona-demo/ scripts: the
    promise, the persona-aware CTA, the zone heading, and the journey (a sticky
    TOC sidebar + slides scrolling past in a fixed-size demo box: terminals, app
    mockups, etc.). The router-flowchart styles the demos embed live in
@@ -1083,7 +1083,7 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 
 /* ---- Omni: ONE conversation scrolling through every modality ------------
    A single chatbot window whose transcript plays out chat -> image -> code ->
-   speech. playOmni() (persona-demo.js) reveals each .hp-omni-turn and translates
+   speech. playOmni() (persona-demo/people/explore.js) reveals each .hp-omni-turn and translates
    the feed up so the newest turn stays in view; CSS here only styles the per-turn
    reveal and the smooth scroll. The body is the clip viewport (its overflow hides
    turns that scroll above it, so nothing bleeds over the title bar). */
