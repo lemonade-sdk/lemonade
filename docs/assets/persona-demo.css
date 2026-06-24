@@ -13,7 +13,12 @@
   margin: 0;
   font-family: var(--font-display);
   max-width: 1100px;
-  font-size: clamp(4rem, 8.1vw, 6.125rem);
+  /* Fluid from a phone-safe floor up to the desktop cap. The lower bound is set
+     so the longest single word ("Refreshingly"/"intelligence") still fits the
+     narrowest phones — the title is allowed to wrap (see the ≤480 rule), but a
+     single word can't break, so the floor, not the wrap, is what prevents the
+     page from overflowing sideways. */
+  font-size: clamp(2.5rem, 8.1vw, 6.125rem);
   font-weight: 800;
   line-height: 0.92;
   letter-spacing: -0.035em;
@@ -21,6 +26,10 @@
   text-wrap: balance;
 }
 
+/* The title is intentionally broken into two phrases ("Refreshingly open" /
+   "intelligence."), so each line is an explicit block — these are deliberate
+   breaks, not auto-wrap. `nowrap` keeps each phrase whole on desktop; the ≤480
+   rule relaxes it so a phrase can wrap when it no longer fits a phone. */
 .hp-persona-title-line {
   display: block;
   white-space: nowrap;
@@ -30,20 +39,27 @@
   color: #F2B705;
 }
 
+/* The subtitle is two sentences, each on its own line. The promise is a centered
+   flex column, so with no width cap each line shrink-wraps to its own text —
+   which makes the block track the title's width instead of collapsing into a
+   narrow reading column under the oversized hero. Sentences are NOT capped here;
+   the ≤720 rule adds a reading-width cap for small screens. */
 .hp-persona-subtitle {
   margin: 0;
-  max-width: 48ch;
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: clamp(1.15rem, 2.05vw, 1.4375rem);
   font-weight: 500;
   line-height: 1.55;
-  text-wrap: balance;
 }
 
+/* One sentence per line. The break BETWEEN sentences is structural; breaks
+   WITHIN a sentence stay automatic, so the copy can change without re-tuning.
+   `text-wrap: balance` only matters once a sentence is long enough to wrap
+   (small screens), where it evens out that sentence's lines. */
 .hp-persona-subtitle-line {
   display: block;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 /* The promise (headline + subtitle) at the top of the page. */
@@ -2156,23 +2172,28 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 }
 
 /* ======================================================================
-   Developer: "Private & white-labeled" window (dark variant). The app is
-   branded as YourApp; inside it a locked-down private model library + an
-   API-key chip + a footer noting lemond runs hidden.
+   Developer: "Own the whole stack" window (dark variant). The app is
+   branded as Your App; inside it a control chip (gated by the dev's API
+   key) + private libraries of locked models AND backends + a footer
+   keeping the spotlight on the dev's brand.
    ====================================================================== */
+/* The whole group is centered in the fixed-height window's vertical middle so all
+   content reads as one balanced block instead of being pushed to the top/bottom. */
 .hp-private {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 1.2rem 1.4rem;
+  align-items: center;           /* center the chip + brand line over the columns */
+  justify-content: center;       /* group everything in the vertical middle */
+  gap: 1.3rem;
+  padding: 1.4rem 1.6rem;
 }
 
 .hp-private-keychip {
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.34rem 0.7rem;
+  padding: 0.34rem 0.75rem;
   border-radius: var(--radius-btn);
   background: rgba(252, 216, 70, 0.12);
   border: 1px solid rgba(252, 216, 70, 0.3);
@@ -2186,44 +2207,70 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 
 .hp-private-libhead {
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgba(248, 243, 218, 0.55);
+  color: rgba(248, 243, 218, 0.5);
+  margin-bottom: 0.7rem;
 }
 
-.hp-private-lib { display: flex; flex-direction: column; gap: 0.5rem; }
+/* Two columns (models | backends), each a stack of compact cards. Collapses to one
+   column only when very narrow. */
+.hp-private-cols {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0 1.5rem;
+}
 
-.hp-private-row {
+.hp-private-col { display: flex; flex-direction: column; }
+.hp-private-items { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.hp-private-card {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.6rem 0.85rem;
+  gap: 0.65rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   opacity: 0;
   transform: translateY(8px);
   animation: hp-appstore-in 0.42s ease forwards;
-  animation-delay: calc(var(--row, 0) * 0.12s + 0.15s);
+  animation-delay: calc(var(--row, 0) * 0.1s + 0.15s);
 }
 
-.hp-private-name { font-family: var(--font-mono); font-size: 0.82rem; color: #f4efdc; }
-.hp-private-tag { margin-left: auto; font-family: var(--font-body); font-size: 0.72rem; color: rgba(248, 243, 218, 0.55); }
-.hp-private-lock { flex: 0 0 auto; display: inline-flex; color: #fcd846; }
-.hp-private-lock .material-symbols-outlined { font-size: 1rem; }
+.hp-private-card-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.55rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
 
+.hp-private-card-icon .material-symbols-outlined { font-size: 1.05rem; }
+
+.hp-private-card-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+
+.hp-private-name { font-family: var(--font-mono); font-size: 0.8rem; color: #f4efdc; }
+.hp-private-sub { font-family: var(--font-body); font-size: 0.68rem; color: rgba(248, 243, 218, 0.5); }
+
+/* Brand line: bottom bracket of the centered group, mirroring the key chip on top. */
 .hp-private-foot {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.2rem;
+  gap: 0.45rem;
   font-family: var(--font-body);
-  font-size: 0.74rem;
-  color: rgba(248, 243, 218, 0.5);
+  font-size: 0.76rem;
+  color: rgba(248, 243, 218, 0.7);
 }
 
-.hp-private-foot .material-symbols-outlined { font-size: 0.95rem; }
+.hp-private-foot .material-symbols-outlined { font-size: 0.95rem; color: #fcd846; }
 
 /* ======================================================================
    Developer: "Backends and devices" board (dark variant). A grid of glass
@@ -2414,20 +2461,15 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 @media (max-width: 720px) {
   .hp-persona-promise { padding-left: 1rem; padding-right: 1rem; }
   .hp-persona-subtitle { max-width: 34rem; }
-  .hp-persona-subtitle-line {
-    display: inline;
-    white-space: normal;
-  }
-  .hp-persona-subtitle-line + .hp-persona-subtitle-line::before {
-    content: ' ';
-  }
   .hp-proof-band { padding-left: 1rem; padding-right: 1rem; }
   .hp-terminal-body pre { padding: 1rem; }
 }
 
 @media (max-width: 480px) {
   .hp-persona-promise { padding: 4rem 1rem 0; }
-  .hp-persona-title { font-size: clamp(3rem, 14vw, 4rem); }
+  /* Font size is owned by the fluid clamp on the base rule; here we only let the
+     deliberate desktop line breaks ("Refreshingly open" / "intelligence.") wrap
+     by word, since neither phrase fits on one line at phone widths. */
   .hp-persona-title-line {
     white-space: normal;
   }

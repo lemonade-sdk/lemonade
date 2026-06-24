@@ -189,7 +189,7 @@
     developers: {
       title: 'One router. Every backend. Any app.',
       subtitle: 'Embed lemond behind one clean OpenAI-compatible API and ship local AI across CPU, GPU, NPU, RAM, and cloud.',
-      zone: 'Dive into the software stack',
+      zone: 'Meet your new AI stack.',
       zoneSubtitle: 'From the embedded runtime up through the router, APIs, and backends that power local AI in your app.',
       label: 'Software stack',
       steps: [
@@ -216,9 +216,9 @@
               duration: 5200
             },
             {
-              label: 'Private & white-labeled',
+              label: 'Own the whole stack',
               demo: 'private-app',
-              caption: 'Ship your own inference stack — your models, your key, no Lemonade branding.',
+              caption: 'Bundle private models and backends, lock them to your API key, and keep every spotlight on your app.',
               captionHref: 'https://lemonade-server.ai/docs/embeddable/',
               animationMode: 'once',
               duration: 3400
@@ -272,20 +272,12 @@
               duration: 4000
             },
             {
-              label: 'Ollama API',
-              demo: 'terminal-api-ollama',
-              caption: 'Point any Ollama client at Lemonade.',
-              captionHref: 'https://lemonade-server.ai/docs/api/ollama/',
-              animationMode: 'once',
-              duration: 3400
-            },
-            {
-              label: 'Anthropic API',
-              demo: 'terminal-api-anthropic',
-              caption: 'The Anthropic Messages API, with tool use.',
+              label: 'Ollama & Anthropic API',
+              demo: 'terminal-api-compat',
+              caption: 'Bring any Ollama client — or Anthropic-API apps like Claude Code — to local models.',
               captionHref: 'https://lemonade-server.ai/docs/api/anthropic/',
               animationMode: 'once',
-              duration: 3000
+              duration: 4600
             }
           ]
         },
@@ -423,7 +415,7 @@
         title: 'Bash',
         lines: [
           { text: '# Tune the runtime live', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ curl -XPOST :8123/internal/set \\', kind: 'command', phase: 0, delay: 470 },
+          { text: '$ curl -XPOST :13305/internal/set \\', kind: 'command', phase: 0, delay: 470 },
           { text: '    -d \'{"ctx_size": 8192, "max_loaded_models": 3}\'', kind: 'command', phase: 0, delay: 720 },
           { text: '✓ settings applied', kind: 'output', phase: 0, delay: 1040 },
           { text: '', delay: 1340 },
@@ -451,7 +443,7 @@
           { text: '', delay: 1040 },
           { text: '# Make Lemonade reachable across your LAN', kind: 'comment', phase: 1, delay: 1320 },
           { text: '$ lemonade config set host=0.0.0.0', kind: 'command', phase: 1, delay: 1640 },
-          { text: '✓ now serving at http://192.168.1.42:8000', kind: 'output', phase: 1, delay: 1960 }
+          { text: '✓ now serving at http://192.168.1.42:13305', kind: 'output', phase: 1, delay: 1960 }
         ]
       },
       'terminal-cli-launch': {
@@ -503,13 +495,13 @@
         title: 'Bash',
         lines: [
           { text: '# Chat · image · speech over the OpenAI API', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ curl :8000/v1/chat/completions -d \'{"messages":[{"role":"user","content":"Population of Paris?"}]}\'', kind: 'command', phase: 0, delay: 480 },
+          { text: '$ curl :13305/v1/chat/completions -d \'{"messages":[{"role":"user","content":"Population of Paris?"}]}\'', kind: 'command', phase: 0, delay: 480 },
           { text: '{ "content": "Paris has about 2.2 million residents." }', kind: 'output', phase: 0, delay: 820 },
           { text: '', delay: 1120 },
-          { text: '$ curl :8000/v1/images/generations -d \'{"model":"SD-Turbo","prompt":"a lemon grove"}\'', kind: 'command', phase: 1, delay: 1420 },
+          { text: '$ curl :13305/v1/images/generations -d \'{"model":"SD-Turbo","prompt":"a lemon grove"}\'', kind: 'command', phase: 1, delay: 1420 },
           { text: '✓ generated 512×512 PNG', kind: 'output', phase: 1, delay: 1740 },
           { text: '', delay: 2000 },
-          { text: '$ curl :8000/v1/audio/speech -d \'{"model":"kokoro-v1","input":"Lemonade can speak!"}\'', kind: 'command', phase: 2, delay: 2300 },
+          { text: '$ curl :13305/v1/audio/speech -d \'{"model":"kokoro-v1","input":"Lemonade can speak!"}\'', kind: 'command', phase: 2, delay: 2300 },
           { text: '✓ speech.mp3 (1.2s)', kind: 'output', phase: 2, delay: 2620 }
         ]
       },
@@ -517,35 +509,27 @@
         title: 'Bash',
         lines: [
           { text: '# Manage models, backends, and configuration', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ curl :8000/api/v1/pull -d \'{"model_name":"Qwen3-4B-GGUF"}\'', kind: 'command', phase: 0, delay: 480 },
+          { text: '$ curl :13305/api/v1/pull -d \'{"model_name":"Qwen3-4B-GGUF"}\'', kind: 'command', phase: 0, delay: 480 },
           { text: '✓ installed Qwen3-4B-GGUF', kind: 'output', phase: 0, delay: 820 },
           { text: '', delay: 1100 },
-          { text: '$ curl :8000/api/v1/install -d \'{"recipe":"llamacpp","backend":"vulkan"}\'', kind: 'command', phase: 1, delay: 1400 },
+          { text: '$ curl :13305/api/v1/install -d \'{"recipe":"llamacpp","backend":"vulkan"}\'', kind: 'command', phase: 1, delay: 1400 },
           { text: '✓ backend ready: llamacpp:vulkan', kind: 'output', phase: 1, delay: 1740 },
           { text: '', delay: 2000 },
-          { text: '$ curl :8000/internal/set -d \'{"max_loaded_models":3}\'', kind: 'command', phase: 2, delay: 2300 },
+          { text: '$ curl :13305/internal/set -d \'{"max_loaded_models":3}\'', kind: 'command', phase: 2, delay: 2300 },
           { text: '✓ max_loaded_models = 3', kind: 'output', phase: 2, delay: 2620 }
         ]
       },
-      'terminal-api-ollama': {
+      'terminal-api-compat': {
         title: 'Bash',
         lines: [
-          { text: '# Point any Ollama client at Lemonade', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ curl :11434/api/chat -d \'{"model":"Qwen3-4B-GGUF","messages":[{"role":"user","content":"Hello"}]}\'', kind: 'command', phase: 0, delay: 520 },
-          { text: '{ "message": { "content": "Hello! How can I help you today?" } }', kind: 'output', phase: 0, delay: 900 },
+          { text: '# Your Ollama tools, pointed at Lemonade — unchanged', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ OLLAMA_HOST=localhost:13305 ollama run qwen3', kind: 'command', phase: 0, delay: 520 },
+          { text: '>>> Hello! Running 100% local on your GPU.', kind: 'output', phase: 0, delay: 900 },
           { text: '', delay: 1200 },
-          { text: '$ curl :11434/api/tags', kind: 'command', phase: 1, delay: 1500 },
-          { text: '{ "models": [ { "name": "Qwen3-4B-GGUF:latest" } ] }', kind: 'output', phase: 1, delay: 1840 }
-        ]
-      },
-      'terminal-api-anthropic': {
-        title: 'Bash',
-        lines: [
-          { text: '# The Anthropic Messages API, with tool use', kind: 'comment', phase: 0, delay: 160 },
-          { text: '$ curl :8000/api/messages -d \'{"max_tokens":100,"messages":[{"role":"user","content":"Say hello"}]}\'', kind: 'command', phase: 0, delay: 560 },
-          { text: '{ "content": [ { "type": "text", "text": "Hello! I am here to help." } ] }', kind: 'output', phase: 0, delay: 1000 },
-          { text: '', delay: 1300 },
-          { text: '# tool use + SSE streaming supported', kind: 'comment', phase: 1, delay: 1600 }
+          { text: '# Anthropic API — point Claude Code at local models', kind: 'comment', phase: 1, delay: 1600 },
+          { text: '$ ANTHROPIC_BASE_URL=http://localhost:13305 claude', kind: 'command', phase: 1, delay: 2000 },
+          { text: '● Qwen3-Coder · 100% local · $0 / token', kind: 'output', phase: 1, delay: 2380 },
+          { text: '● edited app.py · ran tests ✓ 8 passed', kind: 'output', phase: 2, delay: 2820 }
         ]
       },
       'terminal-customize-runtime': {
@@ -558,7 +542,7 @@
           { text: '✓ llamacpp.backend = rocm', kind: 'output', phase: 0, delay: 1240 },
           { text: '', delay: 1520 },
           { text: '# ...or live, with no restart', kind: 'comment', phase: 1, delay: 1800 },
-          { text: '$ curl :8000/internal/set -d \'{"ctx_size":16384}\'', kind: 'command', phase: 1, delay: 2120 },
+          { text: '$ curl :13305/internal/set -d \'{"ctx_size":16384}\'', kind: 'command', phase: 1, delay: 2120 },
           { text: '✓ applied', kind: 'output', phase: 1, delay: 2420 }
         ]
       },
@@ -571,7 +555,7 @@
           { text: '✓ bundled into your app folder', kind: 'output', phase: 0, delay: 1080 },
           { text: '', delay: 1360 },
           { text: '# launch hidden, locked to your app', kind: 'comment', phase: 1, delay: 1660 },
-          { text: '$ LEMONADE_API_KEY=app-secret lemond ./ --port 8000', kind: 'command', phase: 1, delay: 1980 },
+          { text: '$ LEMONADE_API_KEY=app-secret lemond ./ --port 13305', kind: 'command', phase: 1, delay: 1980 },
           { text: '✓ lemond running (private)', kind: 'output', phase: 1, delay: 2300 }
         ]
       }
@@ -1094,31 +1078,56 @@
     return appWindow('Any OpenAI Compatible App', body, 'hp-conn-window');
   }
 
-  // Developer "Private & white-labeled": an app window branded as the APP (not
-  // Lemonade) wrapping a private, locked-down lemond — a bundled model library, an
-  // API-key chip, and a footer noting lemond runs hidden. Dark variant to match the
-  // developer demos. (Real basis: models_dir, LEMONADE_API_KEY, headless binary.)
+  // Developer "Own the whole stack": an app window branded as the APP (Your App)
+  // commanding its own private lemond — a control chip showing the stack is gated by
+  // the dev's API key, a private library of bundled models AND backends (each locked),
+  // and a footer keeping the spotlight on the dev's brand. Dark variant to match the
+  // developer demos. (Real basis: models_dir, LEMONADE_API_KEY, custom backend_versions.)
   function privateApp() {
+    // Two columns of cards — models (by modality) + backends (by device). No per-row
+    // locks or stretched tags: the key chip and "Private" headers carry the locked-down
+    // meaning. Each card is an icon tile + name + sub-label; the grid and card stacks
+    // flex to fill the fixed-height window so there's no dead space.
     var models = [
-      { name: 'assistant-7b', tag: 'chat' },
-      { name: 'vision-4b', tag: 'vision' },
-      { name: 'voice-tiny', tag: 'speech' }
+      { name: 'assistant-7b', sub: 'chat', icon: 'chat' },
+      { name: 'vision-4b', sub: 'vision', icon: 'visibility' },
+      { name: 'voice-tiny', sub: 'speech', icon: 'mic' }
     ];
-    var rows = models.map(function(m, i) {
-      return '<div class="hp-private-row" style="--row:' + i + '">' +
-          '<span class="hp-private-name">' + escapeText(m.name) + '</span>' +
-          '<span class="hp-private-tag">' + escapeText(m.tag) + '</span>' +
-          '<span class="hp-private-lock"><span class="material-symbols-outlined">lock</span></span>' +
-        '</div>';
-    }).join('');
+    var backends = [
+      { name: 'llama.cpp', sub: 'GPU', icon: 'forum' },
+      { name: 'FastFlowLM', sub: 'NPU', icon: 'developer_board' },
+      { name: 'whisper.cpp', sub: 'CPU', icon: 'graphic_eq' }
+    ];
+    function cards(list, offset) {
+      return list.map(function(it, i) {
+        return '<div class="hp-private-card" style="--row:' + (offset + i) + '">' +
+            '<span class="hp-private-card-icon"><span class="material-symbols-outlined">' + escapeText(it.icon) + '</span></span>' +
+            '<span class="hp-private-card-text">' +
+              '<span class="hp-private-name">' + escapeText(it.name) + '</span>' +
+              '<span class="hp-private-sub">' + escapeText(it.sub) + '</span>' +
+            '</span>' +
+          '</div>';
+      }).join('');
+    }
+    // One cohesive group centered in the window's vertical middle: a key-chip header,
+    // the two private-stack columns, and a brand line — bracketed top and bottom so the
+    // composition reads as a single balanced block, not content scattered to the edges.
     var body =
       '<div class="hp-private">' +
-        '<div class="hp-private-keychip"><span class="material-symbols-outlined">key</span>Authorization: Bearer ••••••••</div>' +
-        '<div class="hp-private-libhead">Private model library</div>' +
-        '<div class="hp-private-lib">' + rows + '</div>' +
-        '<div class="hp-private-foot"><span class="material-symbols-outlined">visibility_off</span>lemond runs hidden — your brand only</div>' +
+        '<div class="hp-private-keychip"><span class="material-symbols-outlined">key</span>Secured with your API key</div>' +
+        '<div class="hp-private-cols">' +
+          '<div class="hp-private-col">' +
+            '<div class="hp-private-libhead">Private models</div>' +
+            '<div class="hp-private-items">' + cards(models, 0) + '</div>' +
+          '</div>' +
+          '<div class="hp-private-col">' +
+            '<div class="hp-private-libhead">Private backends</div>' +
+            '<div class="hp-private-items">' + cards(backends, 3) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="hp-private-foot"><span class="material-symbols-outlined">auto_awesome</span>The spotlight stays on your app</div>' +
       '</div>';
-    return appWindow('YourApp', body, 'hp-private-window is-dark');
+    return appWindow('Your App', body, 'hp-private-window is-dark');
   }
 
   // Developer "Backends and devices": a grid of glass icon-cards showing the breadth
@@ -1349,6 +1358,7 @@
     rendered = [];
     currentActive = -1;
     playedIndex = -1;
+    jumpIntent = -1;
   }
 
   // Pre-render a slide's demo in its START state as it nears the viewport, so an
@@ -1452,12 +1462,23 @@
   function refreshActive() {
     if (!demoEls || !demoEls.length) return;
     if (!journeyEngaged()) { clearActive(); return; }
-    var n = nearestSlide();
-    if (n.index === -1) return;
-    setHighlight(n.index);
+    // While an explicit jump is in flight, the clicked slide owns the focus -- the
+    // highlight must not flicker onto slides we merely scroll past on the way there.
+    var index, abs;
+    if (jumpIntent !== -1) {
+      index = jumpIntent;
+      var ri = demoEls[index].getBoundingClientRect();
+      abs = Math.abs((ri.top + ri.height / 2) - window.innerHeight / 2);
+    } else {
+      var n = nearestSlide();
+      if (n.index === -1) return;
+      index = n.index;
+      abs = n.abs;
+    }
+    setHighlight(index);
     var liveZone = Math.min(140, window.innerHeight * 0.14);
-    if (n.abs <= liveZone) {
-      if (playedIndex !== n.index) { playedIndex = n.index; replaySlide(n.index); }
+    if (abs <= liveZone) {
+      if (playedIndex !== index) { playedIndex = index; replaySlide(index); }
     } else {
       playedIndex = -1;   // left the live zone -> arm replay for whatever centres next
     }
@@ -1467,6 +1488,7 @@
   var snapTimer = null;
   var isSnapping = false;
   var snapTarget = -1;
+  var jumpIntent = -1;   // global slide the user explicitly asked for; the magnet must serve it
 
   function onJourneyScroll() {
     if (!scrollTicking) {
@@ -1493,6 +1515,16 @@
         (window.matchMedia('(max-width: 920px)').matches ||
          window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
     if (!journeyEngaged()) { isSnapping = false; snapTarget = -1; return; }   // don't grab on entry/exit
+    // An explicit jump is authoritative: serve its target, never override it with
+    // the nearest slide. If the smooth scroll stalled short, finish it; only when
+    // the clicked slide is centred do we release the intent back to the magnet.
+    if (jumpIntent !== -1) {
+      var ri = demoEls[jumpIntent].getBoundingClientRect();
+      var d = (ri.top + ri.height / 2) - window.innerHeight / 2;
+      if (Math.abs(d) < 6) { jumpIntent = -1; isSnapping = false; snapTarget = -1; return; }
+      window.scrollTo({ top: window.pageYOffset + d, behavior: 'smooth' });
+      return;
+    }
     var n = nearestSlide();
     if (n.index === -1) { isSnapping = false; snapTarget = -1; return; }
     if (n.abs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
@@ -1539,16 +1571,28 @@
     }
     window.addEventListener('scroll', onJourneyScroll, { passive: true });
     window.addEventListener('resize', onJourneyResize);
+    // A real user gesture mid-jump is fresh intent and must win: cancel the pending
+    // jump so the magnet stops pulling back to the clicked slide. (Our own smooth
+    // scroll fires `scroll`, not wheel/touchstart, so this never cancels the jump.)
+    window.addEventListener('wheel', cancelJumpIntent, { passive: true });
+    window.addEventListener('touchstart', cancelJumpIntent, { passive: true });
     positionToc();                       // centre the TOC for this build/viewport
     window.setTimeout(positionToc, 400); // re-centre once fonts/layout have settled
     refreshActive();                     // set the initial live slide
   }
 
+  function cancelJumpIntent() { jumpIntent = -1; }
+
   // Smooth-scroll a slide so its DEMO sits at the viewport centre -- the same target
   // the magnet uses, so they agree (no double-motion). Used by TOC clicks + arrows.
+  // Records the slide as the authoritative jump intent: the magnet serves it (it
+  // cannot hijack the scroll to a slide we pass on the way), and the highlight
+  // locks to it at once so the TOC reflects the click before the scroll arrives.
   function jumpToGlobal(g) {
     if (!demoEls || !demoEls.length) return;
     g = Math.max(0, Math.min(demoEls.length - 1, g));
+    jumpIntent = g;
+    setHighlight(g);
     var r = demoEls[g].getBoundingClientRect();
     var delta = (r.top + r.height / 2) - window.innerHeight / 2;
     window.scrollTo({ top: window.pageYOffset + delta, behavior: 'smooth' });
@@ -1559,8 +1603,11 @@
     if (snapTimer) { window.clearTimeout(snapTimer); snapTimer = null; }
     isSnapping = false;
     snapTarget = -1;
+    jumpIntent = -1;
     window.removeEventListener('scroll', onJourneyScroll);
     window.removeEventListener('resize', onJourneyResize);
+    window.removeEventListener('wheel', cancelJumpIntent);
+    window.removeEventListener('touchstart', cancelJumpIntent);
     buildJourney(persona);
     setupJourney();
     updateHeroPersonaSwitch(persona);
