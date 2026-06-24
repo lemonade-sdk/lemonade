@@ -10,6 +10,7 @@ import { useModels } from './hooks/useModels';
 interface CloudProviderRow {
   name: string;
   base_url: string;
+  allow_insecure_http: boolean;
   env_var: string;
   env_var_set: boolean;
   runtime_key_set: boolean;
@@ -41,6 +42,8 @@ const extractWarnings = (value: any): string[] => {
   return [];
 };
 
+const isHttpBaseUrl = (value: string): boolean => value.trim().toLowerCase().startsWith('http://');
+
 const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
   const response = await serverConfig.fetch('/system-info');
   if (!response.ok) return [];
@@ -52,6 +55,7 @@ const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
     .map((p: any) => ({
       name: String(p.name),
       base_url: typeof p.base_url === 'string' ? p.base_url : '',
+      allow_insecure_http: p.allow_insecure_http === true,
       env_var: typeof p.env_var === 'string' ? p.env_var : '',
       env_var_set: p.env_var_set === true,
       runtime_key_set: p.runtime_key_set === true,
@@ -88,12 +92,20 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, string> = {
+      const normalizedBaseUrl = baseUrl.trim();
+      const normalizedApiKey = apiKey.trim();
+      const needsInsecureOptIn = isHttpBaseUrl(normalizedBaseUrl) && !!normalizedApiKey;
+      if (needsInsecureOptIn && !window.confirm('Send this API key over http://? Traffic to this provider will not be encrypted.')) {
+        setBusy(false);
+        return;
+      }
+      const body: Record<string, string | boolean> = {
         backend: 'cloud',
         provider: provider.trim(),
-        base_url: baseUrl.trim(),
+        base_url: normalizedBaseUrl,
       };
-      if (apiKey.trim()) body.api_key = apiKey.trim();
+      if (needsInsecureOptIn) body.allow_insecure_http = true;
+      if (normalizedApiKey) body.api_key = normalizedApiKey;
       const response = await serverConfig.fetch('/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -239,10 +251,19 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
     }
     setBusy(true); setError(null);
     try {
+      const needsInsecureOptIn = isHttpBaseUrl(row.base_url) && !row.allow_insecure_http;
+      if (needsInsecureOptIn && !window.confirm('Send this API key over http://? Traffic to this provider will not be encrypted.')) {
+        setBusy(false);
+        return;
+      }
       const r = await serverConfig.fetch('/cloud/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: row.name, api_key: apiKey.trim() }),
+        body: JSON.stringify({
+          provider: row.name,
+          api_key: apiKey.trim(),
+          ...(needsInsecureOptIn ? { allow_insecure_http: true } : {}),
+        }),
       });
       if (r.status === 409) {
         const body = await r.json().catch(() => null);
@@ -264,7 +285,7 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
       setError(`Set auth failed: ${err instanceof Error ? err.message : String(err)}`);
       setBusy(false);
     }
-  }, [apiKey, row.env_var, row.name, onChanged, showSuccess, showWarning]);
+  }, [apiKey, row.allow_insecure_http, row.base_url, row.env_var, row.name, onChanged, showSuccess, showWarning]);
 
   const clearKey = useCallback(async () => {
     setBusy(true); setError(null);
