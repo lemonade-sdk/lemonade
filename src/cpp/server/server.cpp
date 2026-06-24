@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -197,6 +198,26 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/v0/system-stats" || path == "/v1/system-stats" ||
            path == "/api/v0/stats" || path == "/api/v1/stats" ||
            path == "/v0/stats" || path == "/v1/stats";
+}
+
+std::string join_warnings(const std::vector<std::string>& warnings) {
+    std::ostringstream joined;
+    for (size_t i = 0; i < warnings.size(); ++i) {
+        if (i > 0) {
+            joined << " | ";
+        }
+        joined << warnings[i];
+    }
+    return joined.str();
+}
+
+void attach_warnings(json& response, const std::vector<std::string>& warnings) {
+    if (warnings.empty()) {
+        return;
+    }
+    response["warnings"] = warnings;
+    // Backward-compatible single-string field for older clients.
+    response["warning"] = join_warnings(warnings);
 }
 
 } // namespace
@@ -3948,6 +3969,18 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
         }
         const auto provider = body["provider"].get<std::string>();
         const auto api_key = body["api_key"].get<std::string>();
+        bool allow_insecure_http = false;
+        if (body.contains("allow_insecure_http")) {
+            if (!body["allow_insecure_http"].is_boolean()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "allow_insecure_http must be a boolean when provided"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            allow_insecure_http = body["allow_insecure_http"].get<bool>();
+        }
         if (provider.empty() || api_key.empty()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -3966,6 +3999,26 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
                 {"type", "invalid_request_error"}}}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+
+        const std::string base_url = cloud_registry_->base_url_for(provider);
+        if (CloudProviderRegistry::is_http_base_url(base_url)) {
+            const bool already_allowed = cloud_registry_->allow_insecure_http_for(provider);
+            if (!allow_insecure_http && !already_allowed) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' uses http://. "
+                                "Set allow_insecure_http=true to explicitly opt in before "
+                                "storing or using an API key over plaintext HTTP."},
+                    {"type", "invalid_request_error"},
+                    {"code", "insecure_http_requires_opt_in"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (allow_insecure_http && !already_allowed) {
+                cloud_registry_->install(provider, base_url, true);
+                persist_cloud_providers();
+            }
         }
 
         // env-wins-over-runtime: if the env var is set, refuse the runtime
@@ -3990,12 +4043,18 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
         const auto state = cloud_registry_->auth_state(provider);
         nlohmann::json response = {
             {"provider", provider},
+            {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
             {"auth_state", {
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set}
             }},
             {"models_discovered", models_after}
         };
+        attach_warnings(
+            response,
+            CloudProviderRegistry::base_url_warnings(
+                base_url,
+                /*api_key_available=*/true));
         res.set_content(response.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;
@@ -4264,14 +4323,21 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         nlohmann::json providers = nlohmann::json::array();
         for (const auto& rec : cloud_registry_->list_installed()) {
             auto state = cloud_registry_->auth_state(rec.name);
-            providers.push_back({
+            nlohmann::json provider = {
                 {"name", rec.name},
                 {"base_url", rec.base_url},
+                {"allow_insecure_http", rec.allow_insecure_http},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
                 {"models_discovered", model_manager_->count_cloud_models(rec.name)}
-            });
+            };
+            attach_warnings(
+                provider,
+                CloudProviderRegistry::base_url_warnings(
+                    rec.base_url,
+                    state.env_var_set || state.runtime_key_set));
+            providers.push_back(std::move(provider));
         }
         system_info["cloud"] = {{"providers", providers}};
     }
@@ -5091,11 +5157,24 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         // (env var or POST /v1/cloud/auth). Shape:
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
+        //    allow_insecure_http: false,
         //    api_key: "..."}  // optional
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
+            bool allow_insecure_http = false;
+            if (request_json.contains("allow_insecure_http")) {
+                if (!request_json["allow_insecure_http"].is_boolean()) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error", {
+                        {"message", "allow_insecure_http must be a boolean when provided"},
+                        {"type", "invalid_request_error"}}}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                allow_insecure_http = request_json["allow_insecure_http"].get<bool>();
+            }
             if (provider.empty() || base_url.empty()) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
@@ -5120,9 +5199,23 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 res.set_content(error.dump(), "application/json");
                 return;
             }
+            const auto env_state = cloud_registry_->auth_state(provider);
+            if (CloudProviderRegistry::is_http_base_url(base_url) &&
+                !allow_insecure_http &&
+                (!api_key.empty() || env_state.env_var_set)) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' uses http://. "
+                                "Set allow_insecure_http=true to explicitly opt in before "
+                                "storing or using an API key over plaintext HTTP."},
+                    {"type", "invalid_request_error"},
+                    {"code", "insecure_http_requires_opt_in"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            cloud_registry_->install(provider, base_url);
+            cloud_registry_->install(provider, base_url, allow_insecure_http);
             persist_cloud_providers();
 
             // Best-effort optional auth: if api_key was supplied, treat this
@@ -5145,16 +5238,21 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"backend", "cloud"},
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
+                {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},
                     {"runtime_key_set", state.runtime_key_set}
                 }}
             };
+            std::vector<std::string> warnings = CloudProviderRegistry::base_url_warnings(
+                cloud_registry_->base_url_for(provider),
+                state.env_var_set || state.runtime_key_set);
             if (!api_key.empty() && !runtime_key_stored) {
-                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
-                    " is set; supplied api_key was ignored.";
+                warnings.push_back(CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.");
             }
+            attach_warnings(response, warnings);
             res.set_content(response.dump(), "application/json");
             return;
         }

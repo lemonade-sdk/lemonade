@@ -3,12 +3,29 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+namespace {
+
+std::string to_lower_copy(const std::string& value) {
+    std::string lower = value;
+    for (auto& c : lower) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return lower;
+}
+
+bool starts_with_scheme(const std::string& value, const std::string& scheme) {
+    return to_lower_copy(value).compare(0, scheme.size(), scheme) == 0;
+}
+
+} // namespace
 
 std::string CloudProviderRegistry::env_var_name(const std::string& provider) {
     std::string upper = provider;
@@ -40,32 +57,44 @@ std::string CloudProviderRegistry::validate_base_url(const std::string& base_url
     if (base_url.empty()) {
         return "Base URL is required";
     }
-    const std::string lower = [&]() {
-        std::string s = base_url;
-        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    }();
+    if (std::any_of(base_url.begin(), base_url.end(), [](unsigned char c) {
+            return std::isspace(c) != 0;
+        })) {
+        return "Base URL must not contain whitespace";
+    }
     const std::string https = "https://";
     const std::string http = "http://";
-    if (lower.compare(0, https.size(), https) == 0) {
+    if (starts_with_scheme(base_url, https) ||
+        starts_with_scheme(base_url, http)) {
+        const size_t host_start = base_url.find("://") + 3;
+        const size_t host_end = base_url.find_first_of("/?#", host_start);
+        if (host_end == host_start || host_start >= base_url.size()) {
+            return "Base URL must include a host";
+        }
         return "";
     }
-    if (lower.compare(0, http.size(), http) == 0) {
-        // Allow only loopback hosts so the Bearer API key isn't sent in
-        // plaintext on a typo'd scheme. Mock-provider tests use these.
-        const std::string host_and_rest = lower.substr(http.size());
-        auto host_end = host_and_rest.find_first_of(":/");
-        const std::string host = host_end == std::string::npos
-                                     ? host_and_rest
-                                     : host_and_rest.substr(0, host_end);
-        if (host == "localhost" || host == "127.0.0.1" || host == "[::1]") {
-            return "";
-        }
-        return "Base URL uses http:// to a non-loopback host (" + host +
-               "); refused because it would send the Bearer API key in plaintext. "
-               "Use https:// or set the host to localhost / 127.0.0.1 for local mocks.";
+    return "Base URL must start with https:// or http://";
+}
+
+bool CloudProviderRegistry::is_http_base_url(const std::string& base_url) {
+    return starts_with_scheme(base_url, "http://");
+}
+
+std::vector<std::string>
+CloudProviderRegistry::base_url_warnings(const std::string& base_url,
+                                         bool api_key_available) {
+    std::vector<std::string> warnings;
+    if (!is_http_base_url(base_url)) {
+        return warnings;
     }
-    return "Base URL must start with https:// (or http:// for localhost)";
+    warnings.push_back(
+        "Base URL uses http://; traffic to this provider is not encrypted.");
+    if (api_key_available) {
+        warnings.push_back(
+            "An API key is configured for this http:// provider; Lemonade will "
+            "send it as a Bearer token over plaintext HTTP.");
+    }
+    return warnings;
 }
 
 std::string CloudProviderRegistry::normalize_base_url(std::string url) {
@@ -88,6 +117,9 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
         Record r;
         r.name = entry["name"].get<std::string>();
         r.base_url = normalize_base_url(entry["base_url"].get<std::string>());
+        if (entry.contains("allow_insecure_http") && entry["allow_insecure_http"].is_boolean()) {
+            r.allow_insecure_http = entry["allow_insecure_http"].get<bool>();
+        }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
     }
@@ -97,23 +129,32 @@ json CloudProviderRegistry::to_config_array() const {
     std::shared_lock lock(mu_);
     json arr = json::array();
     for (const auto& r : installed_) {
-        arr.push_back({{"name", r.name}, {"base_url", r.base_url}});
+        arr.push_back({
+            {"name", r.name},
+            {"base_url", r.base_url},
+            {"allow_insecure_http", r.allow_insecure_http}
+        });
     }
     return arr;
 }
 
 bool CloudProviderRegistry::install(const std::string& provider,
-                                    const std::string& base_url) {
+                                    const std::string& base_url,
+                                    bool allow_insecure_http) {
     std::unique_lock lock(mu_);
     std::string normalized = normalize_base_url(base_url);
     for (auto& r : installed_) {
         if (r.name == provider) {
-            if (r.base_url == normalized) return false;
+            if (r.base_url == normalized &&
+                r.allow_insecure_http == allow_insecure_http) {
+                return false;
+            }
             r.base_url = normalized;
+            r.allow_insecure_http = allow_insecure_http;
             return true;
         }
     }
-    installed_.push_back({provider, normalized});
+    installed_.push_back({provider, normalized, allow_insecure_http});
     return true;
 }
 
@@ -145,6 +186,14 @@ std::string CloudProviderRegistry::base_url_for(const std::string& provider) con
         if (r.name == provider) return r.base_url;
     }
     return "";
+}
+
+bool CloudProviderRegistry::allow_insecure_http_for(const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.allow_insecure_http;
+    }
+    return false;
 }
 
 std::string CloudProviderRegistry::resolve_key(const std::string& provider) const {

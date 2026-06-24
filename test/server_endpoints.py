@@ -893,7 +893,11 @@ class EndpointTests(ServerTestBase):
             # (3) /cloud/auth stores the runtime key and triggers discovery.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "dummy-key"},
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, f"auth set failed: {resp.text}")
@@ -1004,7 +1008,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             requests.delete(
@@ -1056,7 +1064,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             # Load the model so the router holds a live CloudServer instance.
@@ -1163,7 +1175,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
 
@@ -1237,57 +1253,167 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(body["error"]["type"], "invalid_request_error")
         print("[OK] /install rejects non-[a-z0-9_-]+ provider names with 400")
 
-    def test_012h_install_rejects_insecure_http_base_url(self):
-        """An http:// base URL to a non-loopback host would leak the Bearer
-        API key in plaintext on every forwarded request. Refuse those at
-        install time. https:// and http://localhost are both allowed."""
-        # http:// to a non-loopback host: rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "httpguard",
-                "base_url": "http://api.example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
-        body = resp.json()
-        self.assertEqual(body["error"]["type"], "invalid_request_error")
-        self.assertIn("plaintext", body["error"]["message"].lower())
+    def test_012h_http_base_url_requires_opt_in_for_keys(self):
+        """Custom OpenAI-compatible backends may be on trusted LAN HTTP. Do
+        not block keyless URLs, but require explicit opt-in before Lemonade
+        stores or uses an API key over plaintext HTTP."""
+        installed = []
 
-        # gopher:// (any non-http(s) scheme): rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "schemeguard",
-                "base_url": "gopher://example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        def cleanup(provider):
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
-        # http://localhost: allowed (mock-provider tests need this).
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "localhttpguard",
-                "base_url": "http://localhost:1/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-        # Clean up the test provider so the registry doesn't accumulate state.
-        requests.post(
-            f"{self.base_url}/uninstall",
-            json={"backend": "cloud", "provider": "localhttpguard"},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        print(
-            "[OK] /install rejects http:// to non-loopback hosts, allows http://localhost"
-        )
+        try:
+            # http:// to a non-loopback host: accepted with a transport warning.
+            provider = "httpguard"
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": "http://api.example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            installed.append(provider)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertEqual(body["status"], "success")
+            warnings = body.get("warnings", [])
+            self.assertTrue(any("http://" in w for w in warnings), body)
+            self.assertFalse(any("Bearer token" in w for w in warnings), body)
+            self.assertIn("warning", body)
+
+            info = requests.get(
+                f"{self.base_url}/system-info",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            entry = next(
+                p
+                for p in info.get("cloud", {}).get("providers", [])
+                if p["name"] == provider
+            )
+            self.assertFalse(entry["allow_insecure_http"])
+            self.assertTrue(any("http://" in w for w in entry.get("warnings", [])))
+
+            # gopher:// (any non-http(s) scheme): still rejected.
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": "schemeguard",
+                    "base_url": "gopher://example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            # Bare http(s) schemes without hosts are rejected.
+            for bad_url in ["http://", "https://"]:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": "bareurl",
+                        "base_url": bad_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertIn("host", resp.json()["error"]["message"])
+
+            # Install + api_key in one request is rejected by default, then
+            # accepted with explicit allow_insecure_http opt-in.
+            provider = "httpkeyinstall"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-key"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+
+            # Auth after an HTTP install is rejected by default, then accepted
+            # with the same explicit opt-in.
+            provider = "httpkeyauth"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-auth"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={"provider": provider, "api_key": "dummy-key"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={
+                        "provider": provider,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+        finally:
+            for provider in installed:
+                cleanup(provider)
+
+        print("[OK] http:// cloud keys require explicit opt-in")
 
     def test_012i_cloud_refresh_is_idempotent_no_duplicates(self):
         """refresh_cloud_models must evict-then-emplace this provider's prior
@@ -1309,7 +1435,11 @@ class EndpointTests(ServerTestBase):
             # First auth: discover both upstream ids.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)
@@ -1319,7 +1449,11 @@ class EndpointTests(ServerTestBase):
             # eviction step removes the previous entries before re-emplacing.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)

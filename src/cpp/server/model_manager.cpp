@@ -1958,6 +1958,14 @@ void ModelManager::build_cache() {
                                            << " or POST /v1/cloud/auth)" << std::endl;
                 continue;
             }
+            if (CloudProviderRegistry::is_http_base_url(rec.base_url) &&
+                !rec.allow_insecure_http) {
+                LOG(WARNING, "ModelManager") << "Skipping cloud discovery for '"
+                                             << rec.name << "': http:// with API key "
+                                             << "requires allow_insecure_http=true"
+                                             << std::endl;
+                continue;
+            }
             std::vector<ModelInfo> discovered;
             try {
                 discovered = backends::CloudServer::discover_models(rec.name, api_key, rec.base_url);
@@ -2517,6 +2525,15 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         // Drop any stale entries for this provider but don't try to discover —
         // there's nothing to discover with. The contract is "models present
         // after refresh", so return 0 (not the evicted count).
+        evict_cloud_models(provider);
+        return 0;
+    }
+    if (CloudProviderRegistry::is_http_base_url(base_url) &&
+        !cloud_registry_->allow_insecure_http_for(provider)) {
+        LOG(WARNING, "ModelManager") << "Skipping cloud discovery for provider '"
+                                      << provider << "': http:// with API key "
+                                      << "requires allow_insecure_http=true"
+                                      << std::endl;
         evict_cloud_models(provider);
         return 0;
     }

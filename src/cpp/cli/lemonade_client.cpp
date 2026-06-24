@@ -134,6 +134,22 @@ std::string extract_server_error_message(const HttpError& error) {
     return error.what();
 }
 
+static void print_response_warnings(const json& value, const std::string& indent = "") {
+    if (value.contains("warnings") && value["warnings"].is_array()) {
+        for (const auto& warning : value["warnings"]) {
+            if (warning.is_string()) {
+                std::cout << indent << "Warning: " << warning.get<std::string>()
+                          << std::endl;
+            }
+        }
+        return;
+    }
+    if (value.contains("warning") && value["warning"].is_string()) {
+        std::cout << indent << "Warning: " << value["warning"].get<std::string>()
+                  << std::endl;
+    }
+}
+
 // Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
@@ -943,7 +959,7 @@ int LemonadeClient::list_recipes(bool show_all) const {
                             << "-" << std::endl;
                 }
             } else {
-                for (const auto& backend : recipe.backends) {                    
+                for (const auto& backend : recipe.backends) {
                     std::string recipe_col = first_backend ? recipe.name : "";
                     std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
@@ -1060,7 +1076,8 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
 
 int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             const std::string& base_url,
-                                            const std::string& api_key) {
+                                            const std::string& api_key,
+                                            bool allow_insecure_http) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1069,6 +1086,9 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
             {"provider", provider},
             {"base_url", base_url}
         };
+        if (allow_insecure_http) {
+            body["allow_insecure_http"] = true;
+        }
         if (!api_key.empty()) {
             body["api_key"] = api_key;
         }
@@ -1093,11 +1113,7 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
                       << response_json["models_discovered"].get<size_t>()
                       << std::endl;
         }
-        if (response_json.contains("warning")) {
-            std::cout << "Warning: "
-                      << response_json["warning"].get<std::string>()
-                      << std::endl;
-        }
+        print_response_warnings(response_json);
         return 0;
     } catch (const HttpError& e) {
         std::cerr << "Error installing cloud provider: "
@@ -1135,9 +1151,14 @@ int LemonadeClient::uninstall_cloud_provider(const std::string& provider) {
     }
 }
 
-int LemonadeClient::cloud_auth(const std::string& provider, const std::string& api_key) {
+int LemonadeClient::cloud_auth(const std::string& provider,
+                               const std::string& api_key,
+                               bool allow_insecure_http) {
     try {
         json body = {{"provider", provider}, {"api_key", api_key}};
+        if (allow_insecure_http) {
+            body["allow_insecure_http"] = true;
+        }
         std::string response = make_request("/api/v1/cloud/auth", "POST",
                                              body.dump(), "application/json");
         auto response_json = json::parse(response);
@@ -1147,6 +1168,7 @@ int LemonadeClient::cloud_auth(const std::string& provider, const std::string& a
                       << response_json["models_discovered"].get<size_t>()
                       << std::endl;
         }
+        print_response_warnings(response_json);
         return 0;
     } catch (const HttpError& e) {
         // 409 (env conflict) and 404 (not installed) come through here with
@@ -1204,6 +1226,7 @@ int LemonadeClient::cloud_list() const {
                       << ", runtime_key_set=" << (p.value("runtime_key_set", false) ? "yes" : "no")
                       << ", models_discovered=" << p.value("models_discovered", size_t{0})
                       << std::endl;
+            print_response_warnings(p, "    ");
         }
         return 0;
     } catch (const HttpError& e) {

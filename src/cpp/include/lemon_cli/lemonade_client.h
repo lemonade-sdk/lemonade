@@ -105,9 +105,12 @@ public:
     // server relies on env var or a later /v1/cloud/auth POST.
     int install_cloud_provider(const std::string& provider,
                                 const std::string& base_url,
-                                const std::string& api_key = "");
+                                const std::string& api_key = "",
+                                bool allow_insecure_http = false);
     int uninstall_cloud_provider(const std::string& provider);
-    int cloud_auth(const std::string& provider, const std::string& api_key);
+    int cloud_auth(const std::string& provider,
+                   const std::string& api_key,
+                   bool allow_insecure_http = false);
     int cloud_auth_clear(const std::string& provider);
     int cloud_list() const;
 
