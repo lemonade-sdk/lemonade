@@ -503,14 +503,21 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   align-items: start;        /* let the sticky TOC stick within the tall slides column */
 }
 
-/* The TOC sidebar: pinned to a fixed spot -- fixed x via its column, fixed y via
-   top. It stays put while the slides scroll past on the right. */
+/* The TOC sidebar: a full-height sticky column whose complete outline (every
+   section + every slide title) is centred vertically, so it fills its side of the
+   screen with respectable top/bottom padding instead of clustering up top. If the
+   outline is taller than the viewport it scrolls (safe center keeps the top
+   reachable). It stays put while the slides scroll past on the right. */
 .hp-journey-toc {
   position: sticky;
-  top: 6rem;
+  top: 0;
   align-self: start;
   min-width: 0;
-  max-height: calc(100vh - 7rem);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  padding: 2.5rem 0;
   overflow: auto;
 }
 
@@ -571,18 +578,19 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   box-shadow: var(--shadow-yellow);
 }
 
-/* Slide list: only the current section's expands (max-height accordion). */
+/* Slide list: the FULL outline is always shown (every section's slide titles), so
+   the product's breadth is visible at a glance. Non-current sections are quietly
+   de-emphasised; the current one brightens. */
 .hp-toc-slides {
   list-style: none;
-  margin: 0.1rem 0 0.3rem 1.7rem;        /* indent to align under the title */
+  margin: 0.1rem 0 0.55rem 1.7rem;        /* indent to align under the title */
   padding-left: 0.85rem;
   border-left: 2px solid var(--outline-variant);
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: max-height 0.35s ease, opacity 0.3s ease;
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
 }
-.hp-toc-section.is-current .hp-toc-slides { max-height: 18rem; opacity: 1; }
+.hp-toc-section.is-current .hp-toc-slides { opacity: 1; }
+.hp-toc-section.is-current .hp-toc-slides { border-left-color: var(--primary-yellow); }
 
 .hp-toc-slide {
   display: flex;
@@ -623,29 +631,63 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   display: flex;
   flex-direction: column;
 }
+/* Spotlight rhythm: slides are a FIXED distance apart regardless of viewport
+   height (the bug was min-height: 90vh, which grew the gaps on tall screens). The
+   constant vertical padding sets the demo-to-demo pitch; the demo stays a fixed
+   size so the cadence never changes with the window. */
 .hp-slide {
-  min-height: 90vh;
+  --slide-gap: 3.25rem;
+  padding: var(--slide-gap) 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1rem;
 }
-/* The opening slide hugs the zone heading: top-aligned and only as tall as its
-   content, so the first demo sits the same major-fourth gap below the heading as
-   the TOC does — instead of being centred in a full-height slide (a large void).
-   Later slides keep their full-height centred rhythm for the scroll-through feel. */
-.hp-slide:first-child {
-  min-height: auto;
-  justify-content: flex-start;
-}
-.hp-slide-demo {
+/* The opening slide hugs the zone heading instead of carrying a full top gap. */
+.hp-slide:first-child { padding-top: 0.5rem; }
+
+/* The stage holds the demo and draws the inlaid "well" -- a recessed socket that
+   marks the live zone. It is NOT clipped (the demo is), so the well can sit just
+   outside the demo. */
+.hp-slide-stage {
+  position: relative;
   width: min(600px, 100%);
   height: min(540px, 62vh);
+}
+/* The recessed well behind the active demo: a soft inset frame + tint that reads
+   as a socket the demo is seated in. Only shown for the active (centred) slide. */
+.hp-slide-stage::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 34px;
+  background: rgba(45, 47, 47, 0.05);
+  box-shadow: inset 0 2px 14px rgba(45, 47, 47, 0.14), inset 0 -1px 0 rgba(255, 255, 255, 0.55);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+.hp-slide.is-active .hp-slide-stage::before { opacity: 1; }
+
+.hp-slide-demo {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   position: relative;
   border-radius: 26px;
   box-shadow: var(--shadow-heavy);
+  /* Depth-of-field: inactive slides recede (smaller, dimmer, desaturated) so only
+     the one in the live zone reads as active. */
+  transform: scale(0.9);
+  opacity: 0.5;
+  filter: saturate(0.55);
+  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.45s ease, filter 0.45s ease;
+}
+.hp-slide.is-active .hp-slide-demo {
+  transform: scale(1);
+  opacity: 1;
+  filter: none;
 }
 /* Force every demo root to fill the box exactly (two-class selector so it beats
    the demos' own single-class width/height rules) -> uniform size by construction. */
@@ -657,12 +699,16 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   box-shadow: none;
 }
 /* Caption centred under the demo (descendant selector so it wins over the later,
-   left-aligned base .hp-demo-caption rule). */
+   left-aligned base .hp-demo-caption rule). It dims with its slide in the
+   depth-of-field so only the live slide's caption reads at full strength. */
 .hp-slide .hp-slide-caption {
   width: min(600px, 100%);
   margin: 0;
   text-align: center;
+  opacity: 0.45;
+  transition: opacity 0.45s ease;
 }
+.hp-slide.is-active .hp-slide-caption { opacity: 1; }
 
 /* ---- Journey on tablet/phone --------------------------------------------
    No room for a side-by-side sidebar. The TOC becomes a slim sticky top bar
@@ -677,7 +723,9 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-journey-toc {
     position: sticky;
     top: 0;
+    height: auto;            /* reset the desktop full-height column */
     max-height: none;
+    justify-content: flex-start;
     overflow: visible;
     padding: 0.6rem 0;
     background: var(--glass-bg-dense);
@@ -704,8 +752,22 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-toc-slide { width: auto; }
   .hp-toc-slide .hp-toc-slide-label { display: none; }
   .hp-toc-slide.is-active .hp-toc-slide-label { display: inline; }   /* label only for the active dot */
-  .hp-slide { min-height: 84vh; }
-  .hp-slide-demo { height: min(56vh, 440px); }
+  .hp-slide { --slide-gap: 2.25rem; }
+  .hp-slide-stage { height: min(56vh, 440px); }
+}
+
+/* Reduced motion: drop the depth-of-field scale/desaturate and all transitions --
+   show every slide crisp and still, no spotlight animation. */
+@media (prefers-reduced-motion: reduce) {
+  .hp-slide-demo {
+    transform: none;
+    opacity: 1;
+    filter: none;
+    transition: none;
+  }
+  .hp-slide .hp-slide-caption { opacity: 1; transition: none; }
+  .hp-slide-stage::before { transition: none; }
+  .hp-toc-slides { transition: none; }
 }
 
 /* Base caption styling (each slide's caption sits below its demo; the

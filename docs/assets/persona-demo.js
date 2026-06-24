@@ -1265,7 +1265,6 @@
   var rendered = [];
   var currentActive = -1;
   var renderIO = null;
-  var activeIO = null;
 
   function buildJourney(persona) {
     var data = personaSteps[persona] || personaSteps.people;
@@ -1301,7 +1300,7 @@
 
     var slidesHtml = globalSlides.map(function(entry, i) {
       return '<section class="hp-slide" id="hp-slide-' + i + '" data-global="' + i + '">' +
-          '<div class="hp-slide-demo"></div>' +
+          '<div class="hp-slide-stage"><div class="hp-slide-demo"></div></div>' +
           '<p class="hp-demo-caption hp-slide-caption" hidden></p>' +
         '</section>';
     }).join('');
@@ -1320,9 +1319,19 @@
     currentActive = -1;
   }
 
-  // Render a slide's demo + caption once, as it enters the viewport.
+  // Render a slide's demo + caption once, as it nears the viewport (so neighbours
+  // already hold content while they sit dimmed/shrunk in the depth-of-field).
   function renderSlide(i) {
     if (i < 0 || i >= demoEls.length || rendered[i]) return;
+    rendered[i] = true;
+    var entry = globalSlides[i];
+    renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex);
+  }
+
+  // Re-render a slide's demo (replays its animation). Used when a slide reaches the
+  // live zone so the animation plays THERE, not when it first scrolled into view.
+  function replaySlide(i) {
+    if (i < 0 || i >= demoEls.length) return;
     rendered[i] = true;
     var entry = globalSlides[i];
     renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex);
@@ -1331,7 +1340,11 @@
   function setActive(i) {
     if (i === currentActive) return;
     currentActive = i;
+    for (var s = 0; s < slideEls.length; s++) {
+      slideEls[s].classList.toggle('is-active', s === i);
+    }
     updateToc(i);
+    replaySlide(i);   // play the animation now that it's centred in the live zone
   }
 
   function updateToc(g) {
@@ -1349,24 +1362,47 @@
     }
   }
 
+  // Pick the slide whose demo centre is nearest the viewport centre -- the "live
+  // zone" -- and activate it (spotlight + animation replay). rAF-throttled so the
+  // scroll handler stays cheap. Only activates when a demo is genuinely near centre
+  // so an off-screen first slide doesn't get marked active before it's reached.
+  function updateActiveByCenter() {
+    if (!demoEls || !demoEls.length) return;
+    var centerY = window.innerHeight / 2;
+    var best = -1, bestDist = Infinity;
+    for (var i = 0; i < demoEls.length; i++) {
+      var r = demoEls[i].getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - centerY);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    if (best !== -1 && bestDist < window.innerHeight * 0.5) setActive(best);
+  }
+
+  var scrollTicking = false;
+  function onJourneyScroll() {
+    if (scrollTicking) return;
+    scrollTicking = true;
+    window.requestAnimationFrame(function() {
+      scrollTicking = false;
+      updateActiveByCenter();
+    });
+  }
+
   function setupJourney() {
-    // Render each slide's demo a little before it scrolls in, so it animates on
-    // the way into view (normal page behaviour).
+    // Render each slide's demo a little before it scrolls in, so neighbours hold
+    // content while they sit dimmed in the depth-of-field (the animation itself is
+    // replayed by setActive once the slide reaches the live zone).
     renderIO = new IntersectionObserver(function(entries) {
       entries.forEach(function(e) {
         if (e.isIntersecting) renderSlide(Number(e.target.getAttribute('data-global')) || 0);
       });
-    }, { rootMargin: '200px 0px 200px 0px', threshold: 0 });
-    // Highlight the TOC for whichever slide is crossing the middle of the viewport.
-    activeIO = new IntersectionObserver(function(entries) {
-      entries.forEach(function(e) {
-        if (e.isIntersecting) setActive(Number(e.target.getAttribute('data-global')) || 0);
-      });
-    }, { rootMargin: '-42% 0px -42% 0px', threshold: 0 });
+    }, { rootMargin: '100% 0px 100% 0px', threshold: 0 });
     for (var i = 0; i < slideEls.length; i++) {
       renderIO.observe(slideEls[i]);
-      activeIO.observe(slideEls[i]);
     }
+    window.addEventListener('scroll', onJourneyScroll, { passive: true });
+    window.addEventListener('resize', onJourneyScroll);
+    updateActiveByCenter();   // set the initial live slide
   }
 
   function jumpToGlobal(g) {
@@ -1376,7 +1412,8 @@
 
   function rebuild(persona) {
     if (renderIO) { renderIO.disconnect(); renderIO = null; }
-    if (activeIO) { activeIO.disconnect(); activeIO = null; }
+    window.removeEventListener('scroll', onJourneyScroll);
+    window.removeEventListener('resize', onJourneyScroll);
     buildJourney(persona);
     setupJourney();
     updateHeroPersonaSwitch(persona);
