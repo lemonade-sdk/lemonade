@@ -18,13 +18,13 @@ The application generates dynamic, context-aware interviewer personas based on a
 - **Privacy-First** - All data stored locally in JSON format
 - **Cross-Platform Desktop App** - Electron-based for Windows, macOS, and Linux
 
-## Prerequisites
+## Setup
+
+### Prerequisites
 
 1. **Install Lemonade Server** by following the [Lemonade Server Instructions](../guide/install/README.md)
 2. **Node.js 20+** - Download from [nodejs.org](https://nodejs.org/)
 3. **Git** - For cloning the repository
-
-## Setup
 
 ### 1. Clone and Install Dependencies
 
@@ -54,11 +54,11 @@ Interviewer uses multiple AI models for different capabilities. Pull the recomme
 # LLM for interview logic and feedback (recommended: Qwen3-Coder-30B-A3B-Instruct-GGUF)
 lemonade pull Qwen3-Coder-30B-A3B-Instruct-GGUF
 
-# Whisper-base for speech-to-text (automatic transcription)
-lemonade pull Whisper-base
+# Whisper-Base for speech-to-text (automatic transcription)
+lemonade pull Whisper-Base
 
 # Kokoro for text-to-speech (natural voice synthesis)
-lemonade pull Kokoro
+lemonade pull kokoro-v1
 ```
 
 ### 4. Run Interviewer
@@ -79,8 +79,8 @@ Based on testing, the following models work well with Interviewer:
 | Capability | Recommended Model |
 |------------|------------------|
 | LLM (Interview Logic) | Qwen3-Coder-30B-A3B-Instruct-GGUF |
-| ASR (Transcription) | Whisper-base |
-| TTS (Voice) | Kokoro |
+| ASR (Transcription) | Whisper-Base |
+| TTS (Voice) | kokoro-v1 |
 
 **Hardware Requirements:**
 - Tested on AMD Strix Halo with 128GB RAM
@@ -102,7 +102,7 @@ Interviewer leverages Lemonade Server for all AI inference:
 ```
 Interviewer App (Electron + React)
         |
-        | HTTP API (localhost:8000)
+        | HTTP API (localhost:13305)
         v
 Lemonade Server
         |
