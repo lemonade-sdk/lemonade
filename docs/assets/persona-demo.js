@@ -1404,13 +1404,48 @@
   }
 
   var scrollTicking = false;
+  var snapTimer = null;
+  var isSnapping = false;
+  var snapTarget = -1;
+
   function onJourneyScroll() {
-    if (scrollTicking) return;
-    scrollTicking = true;
-    window.requestAnimationFrame(function() {
-      scrollTicking = false;
-      updateActiveByCenter();
-    });
+    if (!scrollTicking) {
+      scrollTicking = true;
+      window.requestAnimationFrame(function() {
+        scrollTicking = false;
+        updateActiveByCenter();
+      });
+    }
+    // Magnetic centring: once scrolling settles, glide the nearest slide to centre.
+    if (snapTimer) window.clearTimeout(snapTimer);
+    snapTimer = window.setTimeout(snapToCenter, 140);
+  }
+
+  // After scrolling stops, glide the nearest slide so its demo sits dead-centre
+  // (where the activation rule then lights it up). This removes the need to land a
+  // slide on the centre line by hand. Scoped to the journey (only fires when a demo
+  // is genuinely near centre), skipped on mobile + under reduced motion, and
+  // self-limiting: it no-ops once centred and ignores the smooth scroll it triggers
+  // (by only re-snapping when the nearest slide actually changes).
+  function snapToCenter() {
+    if (!demoEls || !demoEls.length) return;
+    if (window.matchMedia &&
+        (window.matchMedia('(max-width: 920px)').matches ||
+         window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    var vc = window.innerHeight / 2;
+    var best = -1, bestAbs = Infinity, bestDelta = 0;
+    for (var i = 0; i < demoEls.length; i++) {
+      var r = demoEls[i].getBoundingClientRect();
+      var delta = (r.top + r.height / 2) - vc;
+      var abs = Math.abs(delta);
+      if (abs < bestAbs) { bestAbs = abs; best = i; bestDelta = delta; }
+    }
+    if (best === -1 || bestAbs > window.innerHeight * 0.6) { isSnapping = false; snapTarget = -1; return; }
+    if (bestAbs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
+    if (isSnapping && best === snapTarget) return;                       // already gliding there
+    isSnapping = true;
+    snapTarget = best;
+    window.scrollTo({ top: window.pageYOffset + bestDelta, behavior: 'smooth' });
   }
 
   function setupJourney() {
@@ -1437,6 +1472,9 @@
 
   function rebuild(persona) {
     if (renderIO) { renderIO.disconnect(); renderIO = null; }
+    if (snapTimer) { window.clearTimeout(snapTimer); snapTimer = null; }
+    isSnapping = false;
+    snapTarget = -1;
     window.removeEventListener('scroll', onJourneyScroll);
     window.removeEventListener('resize', onJourneyScroll);
     buildJourney(persona);
