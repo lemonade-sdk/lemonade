@@ -18,6 +18,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
@@ -41,6 +42,8 @@
 #else
     #include <sys/types.h>
     #include <sys/socket.h>
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <arpa/inet.h>   // inet_pton, htons
     #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
     #include <unistd.h>
 #endif
@@ -304,6 +307,11 @@ void Server::setup_http_servers() {
     };
     http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
     http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
+
+    // Keep cpp-httplib's default socket options here. httplib binds IPv6 with
+    // IPV6_V6ONLY=0, so "::" overlaps the IPv4 wildcard "0.0.0.0" and only the
+    // default SO_REUSEPORT lets the two coexist. Duplicate detection is done by
+    // port_is_available() in run(), not by making these listeners exclusive.
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -1197,6 +1205,52 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
+// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
+// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
+// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
+// socket left in TIME_WAIT by a just-exited server is still bindable.
+static bool port_is_available(int family, const std::string& host_ip, int port) {
+    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        return true;  // Can't probe; let the real bind path report any error.
+    }
+    auto close_sock = [&]() {
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+    };
+
+    int opt = 1;
+#ifdef _WIN32
+    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+               reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
+
+    sockaddr_storage ss{};
+    socklen_t len;
+    if (family == AF_INET) {
+        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
+        a->sin_family = AF_INET;
+        a->sin_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in);
+    } else {
+        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
+        a->sin6_family = AF_INET6;
+        a->sin6_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in6);
+    }
+
+    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
+    close_sock();
+    return available;
+}
+
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1210,6 +1264,26 @@ void Server::run() {
     if (ipv4.empty() && ipv6.empty()) {
         throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
+    }
+
+    // Fail fast if the port is already taken (usually another lemond). Detecting
+    // it here keeps the error from being buried under later startup logs.
+    {
+        std::string in_use_ip;
+        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+            in_use_ip = ipv4;
+        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+            in_use_ip = ipv6;
+        }
+        if (!in_use_ip.empty()) {
+            std::string msg = "Port " + std::to_string(port_) + " on " + in_use_ip +
+                " is already in use. Another Lemonade server (lemond) is likely "
+                "already running on this port. This instance will now exit.";
+            std::cerr << "[Server] ERROR: " << msg << std::endl;  // terminal visibility
+            LOG(ERROR, "Server") << msg << std::endl;
+            startup_failed_ = true;
+            return;
+        }
     }
 
     // Operators binding beyond loopback should secure the server with an API
@@ -1415,6 +1489,10 @@ void Server::set_shutdown_requested(bool requested) {
 
 bool Server::is_running() const {
     return running_;
+}
+
+bool Server::startup_failed() const {
+    return startup_failed_;
 }
 
 void Server::stop() {

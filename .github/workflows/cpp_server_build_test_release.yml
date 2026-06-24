@@ -1429,6 +1429,10 @@ jobs:
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
+          # These jobs run directly on shared self-hosted runners (no container
+          # network isolation), so the default port can be held by a concurrent
+          # job. Use a job-unique free port to avoid the collision.
+          port: auto
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv

@@ -142,6 +142,14 @@ int main(int argc, char** argv) {
         server.run();
         g_server_instance = nullptr;
 
+        // Startup aborted (e.g. port already in use): exit non-zero now and skip
+        // destructors, whose teardown logging would bury the error message.
+        if (server.startup_failed()) {
+            std::cout.flush();
+            std::cerr.flush();
+            std::_Exit(1);
+        }
+
         return 0;
 
     } catch (const std::exception& e) {
