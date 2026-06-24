@@ -1382,20 +1382,25 @@
     }
   }
 
-  // Pick the slide whose demo centre is nearest the viewport centre -- the "live
-  // zone" -- and activate it (spotlight + animation replay). rAF-throttled so the
-  // scroll handler stays cheap. Only activates when a demo is genuinely near centre
-  // so an off-screen first slide doesn't get marked active before it's reached.
+  // Activation rule: a slide goes live when its demo's centre reaches the vertical
+  // centre of the viewport, and stays live until the NEXT slide's centre reaches it.
+  // Equivalently, the active slide is the last one whose centre has scrolled to or
+  // above the middle of the screen. Why this rule: it guarantees a slide is actually
+  // centred -- whole demo (and caption) on screen -- before it activates, so a slide
+  // never goes live while merely poking in from the bottom; and because it's a
+  // single crossing threshold, the hand-off is flicker-free and behaves the same at
+  // any viewport height. (Demos are ordered top-to-bottom, so once one is below the
+  // centre line every later one is too -- we can stop scanning.)
   function updateActiveByCenter() {
     if (!demoEls || !demoEls.length) return;
     var centerY = window.innerHeight / 2;
-    var best = -1, bestDist = Infinity;
+    var chosen = -1;
     for (var i = 0; i < demoEls.length; i++) {
       var r = demoEls[i].getBoundingClientRect();
-      var d = Math.abs(r.top + r.height / 2 - centerY);
-      if (d < bestDist) { bestDist = d; best = i; }
+      if (r.top + r.height / 2 <= centerY) chosen = i;
+      else break;
     }
-    if (best !== -1 && bestDist < window.innerHeight * 0.5) setActive(best);
+    if (chosen !== -1) setActive(chosen);
   }
 
   var scrollTicking = false;
