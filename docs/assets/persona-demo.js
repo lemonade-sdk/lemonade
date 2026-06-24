@@ -87,6 +87,14 @@
               duration: 4200
             },
             {
+              label: 'Connect any OpenAI app',
+              demo: 'apps-connect',
+              caption: 'Point any OpenAI-compatible app at Lemonade — just set the base URL and connect.',
+              captionHref: 'https://lemonade-server.ai/docs/api/openai/',
+              animationMode: 'once',
+              duration: 4200
+            },
+            {
               label: 'Add as an MCP server',
               demo: 'apps-mcp',
               caption: 'Expose your local models as MCP tools any compatible client can call.',
@@ -896,6 +904,43 @@
     return appWindow('MCP Servers', body, 'hp-mcp-window');
   }
 
+  // "Connect any OpenAI-compatible app": a generic client's connection settings.
+  // The base URL types itself in, a cursor flies to the Connect button and clicks,
+  // then a glowing-green "100+ models found!" status confirms the handshake. The
+  // API key field stays empty (a local Lemonade server needs no key by default).
+  // Pure-CSS timeline (see .hp-conn-* in persona-demo.css); one-shot on render.
+  function connectDemo() {
+    var body =
+      '<div class="hp-conn">' +
+        '<div class="hp-conn-head">' +
+          '<span class="material-symbols-outlined hp-conn-head-icon">power</span>' +
+          '<span class="hp-conn-head-title">Add a connection</span>' +
+        '</div>' +
+        '<div class="hp-conn-field-group">' +
+          '<span class="hp-conn-label">Base URL</span>' +
+          '<div class="hp-conn-field">' +
+            '<span class="hp-conn-typed">http://localhost:13305</span>' +
+            '<span class="hp-conn-caret"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="hp-conn-field-group">' +
+          '<span class="hp-conn-label">API Key</span>' +
+          '<div class="hp-conn-field">' +
+            '<span class="hp-conn-placeholder">Optional for local AI</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="hp-conn-btn" type="button">' +
+          '<span class="material-symbols-outlined">link</span>Connect' +
+          CURSOR_SVG +
+        '</button>' +
+        '<div class="hp-conn-status">' +
+          '<span class="hp-conn-dot"></span>' +
+          '<span class="hp-conn-status-text">100+ models found!</span>' +
+        '</div>' +
+      '</div>';
+    return appWindow('Any OpenAI Compatible App', body, 'hp-conn-window');
+  }
+
   // Developer "Private & white-labeled": an app window branded as the APP (not
   // Lemonade) wrapping a private, locked-down lemond — a bundled model library, an
   // API-key chip, and a footer noting lemond runs hidden. Dark variant to match the
@@ -1010,6 +1055,8 @@
       frameEl.innerHTML = modelsDemo(demoKind);
     } else if (demoKind === 'apps-board') {
       frameEl.innerHTML = appBoard();
+    } else if (demoKind === 'apps-connect') {
+      frameEl.innerHTML = connectDemo();
     } else if (demoKind === 'apps-mcp') {
       frameEl.innerHTML = mcpDemo();
     } else if (demoKind.indexOf('apps-') === 0) {
