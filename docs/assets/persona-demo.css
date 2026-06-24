@@ -503,15 +503,18 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   align-items: start;        /* let the sticky TOC stick within the tall slides column */
 }
 
-/* The TOC sidebar: the complete outline (every section + every slide title) pinned
-   to the VERTICAL MIDLINE of the viewport. Centring on the 50% line directly (rather
-   than filling a 100vh box anchored at the grid top) means it reaches its proper,
-   centred position the moment the journey heading hits mid-screen on the way in --
-   not a slide later. If the outline is taller than the viewport it scrolls. */
+/* The TOC sidebar: the complete outline (every section + every slide title),
+   vertically centred and pinned while you're in the journey. It's centred by JS
+   setting the sticky `top` to (viewport - tocHeight)/2 -- NOT by a transform --
+   because centring via `top` keeps sticky's clamp intact: the element can never be
+   drawn above its containing block (the grid, which begins below the zone heading),
+   so the TOC never overlaps the heading on the way in. It sits just below the
+   heading during approach and pins centred once scrolled in. (`top` below is just a
+   no-JS fallback; positionToc() overrides it.) If the outline is taller than the
+   viewport it scrolls. */
 .hp-journey-toc {
   position: sticky;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 2rem;
   align-self: start;
   min-width: 0;
   max-height: 100vh;

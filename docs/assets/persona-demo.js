@@ -1491,6 +1491,29 @@
     window.scrollTo({ top: window.pageYOffset + n.delta, behavior: 'smooth' });
   }
 
+  // Centre the sticky TOC by setting its sticky `top` to (viewport - tocHeight) / 2,
+  // with NO transform. Centring via `top` (not transform) is what keeps it correct
+  // across the whole page: sticky clamps the element to its containing block (the
+  // grid, which starts below the zone heading), so the TOC can never render above
+  // the heading -- during approach it sits just under the heading, and it pins
+  // centred only once scrolled in. On mobile the TOC is a top bar, so clear the
+  // inline top and let the stylesheet own it. If the outline is taller than the
+  // viewport, top clamps to a small margin and the TOC scrolls.
+  function positionToc() {
+    if (!tocEl) return;
+    if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
+      tocEl.style.top = '';
+      return;
+    }
+    var top = Math.max(8, Math.round((window.innerHeight - tocEl.offsetHeight) / 2));
+    tocEl.style.top = top + 'px';
+  }
+
+  function onJourneyResize() {
+    positionToc();
+    onJourneyScroll();
+  }
+
   function setupJourney() {
     // Render each slide's demo a little before it scrolls in, so neighbours hold
     // content while they sit dimmed in the depth-of-field (the animation itself is
@@ -1504,8 +1527,10 @@
       renderIO.observe(slideEls[i]);
     }
     window.addEventListener('scroll', onJourneyScroll, { passive: true });
-    window.addEventListener('resize', onJourneyScroll);
-    refreshActive();   // set the initial live slide
+    window.addEventListener('resize', onJourneyResize);
+    positionToc();                       // centre the TOC for this build/viewport
+    window.setTimeout(positionToc, 400); // re-centre once fonts/layout have settled
+    refreshActive();                     // set the initial live slide
   }
 
   function jumpToGlobal(g) {
@@ -1519,7 +1544,7 @@
     isSnapping = false;
     snapTarget = -1;
     window.removeEventListener('scroll', onJourneyScroll);
-    window.removeEventListener('resize', onJourneyScroll);
+    window.removeEventListener('resize', onJourneyResize);
     buildJourney(persona);
     setupJourney();
     updateHeroPersonaSwitch(persona);
