@@ -20,7 +20,7 @@ The application generates dynamic, context-aware interviewer personas based on a
 
 ## Prerequisites
 
-1. **Install Lemonade Server** by following the [Lemonade Server Instructions](../README.md)
+1. **Install Lemonade Server** by following the [Lemonade Server Instructions](../guide/install/README.md)
 2. **Node.js 20+** - Download from [nodejs.org](https://nodejs.org/)
 3. **Git** - For cloning the repository
 

@@ -95,6 +95,7 @@ nav:
     - Claude Code: integrations/claude-code.md
     - CodeGPT: integrations/codeGPT.md
     - Continue: integrations/continue.md
+    - Interviewer: integrations/interviewer.md
     - LangChain: integrations/langchain.md
     - Lemon Zest: integrations/lemon-zest.md
     - Mindcraft: integrations/mindcraft.md
