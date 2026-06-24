@@ -413,12 +413,10 @@
           { text: '# Benchmark one model across backends', kind: 'comment', phase: 0, delay: 160 },
           { text: '$ lemonade bench Qwen3.5-4B --backends llamacpp,vllm', kind: 'command', phase: 0, delay: 470 },
           { text: '', delay: 820 },
-          { text: '  BACKEND      DEVICE     PROMPT t/s   DECODE t/s', kind: 'output', phase: 1, delay: 1180 },
-          { text: '  ─────────────────────────────────────────────', kind: 'output', phase: 1, delay: 1380 },
-          { text: '  llama.cpp    Vulkan        3120         78.4', kind: 'output', phase: 1, delay: 1700 },
-          { text: '  vLLM         ROCm          5840        104.2', kind: 'output', phase: 2, delay: 2200 },
-          { text: '', delay: 2500 },
-          { text: '✓ vLLM wins — 1.33x faster decode, 1.87x prompt', kind: 'output', phase: 3, delay: 2860 }
+          { text: '  BACKEND      DEVICE       PROMPT t/s   DECODE t/s', kind: 'output', phase: 1, delay: 1180 },
+          { text: '  ───────────────────────────────────────────────', kind: 'output', phase: 1, delay: 1380 },
+          { text: '  llama.cpp    Vulkan        ████         ████', kind: 'output', phase: 1, delay: 1700 },
+          { text: '  vLLM         ROCm          ████         ████', kind: 'output', phase: 2, delay: 2200 }
         ]
       },
       'terminal-dev-customize': {
@@ -740,7 +738,6 @@
         ? '<span class="hp-applist-act is-downloading" style="--swap-at:' + (item.swapAt || 1300) + 'ms">' +
             '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
             '<span class="hp-applist-progress" style="--p:100%"><i></i></span>' +
-            CURSOR_SVG +
           '</span>'
         : '<span class="hp-applist-act">' +
             '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
@@ -771,6 +768,71 @@
         { name: 'Ryzen AI SW', meta: 'NPU · Hybrid', downloading: true, swapAt: 3600 },
         { name: 'vLLM', meta: 'GPU · ROCm', downloading: true, swapAt: 5000 }
       ]
+    });
+  }
+
+  // One shared cursor that glides smoothly between the download buttons of an
+  // appWindowList (model manager + backend manager), pressing each in --swap-at
+  // order. Replaces the old per-row fly-in cursors so it reads as a single mouse
+  // moving down the list. Measures live button positions, so it works for either
+  // demo (all rows, or just a couple). One-shot; skipped under reduced motion.
+  function playDownloadCursor(frameEl) {
+    var list = frameEl.querySelector('.hp-applist');
+    if (!list) return;
+    var acts = list.querySelectorAll('.hp-applist-act.is-downloading');
+    if (!acts.length) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    var holder = document.createElement('div');
+    holder.innerHTML = CURSOR_SVG;
+    var cursor = holder.firstChild;
+    cursor.classList.add('hp-applist-cursor');
+    list.appendChild(cursor);
+
+    var TIP_X = 4, TIP_Y = 3;   // the pointer tip sits near the svg's top-left
+    function center(act) {
+      var dl = act.querySelector('.hp-applist-dl') || act;
+      var lr = list.getBoundingClientRect();
+      var r = dl.getBoundingClientRect();
+      return { x: r.left - lr.left + r.width / 2, y: r.top - lr.top + r.height / 2 };
+    }
+    function place(p) {
+      cursor.style.transform = 'translate(' + (p.x - TIP_X) + 'px, ' + (p.y - TIP_Y) + 'px)';
+    }
+    function press() {
+      var svg = cursor.querySelector('svg');
+      if (!svg) return;
+      svg.style.animation = 'none';
+      void svg.offsetWidth;
+      svg.style.animation = 'hp-cursor-press 0.22s ease';
+    }
+
+    var targets = [];
+    for (var i = 0; i < acts.length; i++) {
+      var sa = parseFloat(String(acts[i].style.getPropertyValue('--swap-at')).replace('ms', '')) || 1300;
+      targets.push({ act: acts[i], swapAt: sa });
+    }
+    targets.sort(function(a, b) { return a.swapAt - b.swapAt; });
+
+    var glideLead = 550;   // start moving to the next button this long before its click
+
+    // Fade in just up-left of the first button, then glide onto it.
+    window.setTimeout(function() {
+      var first = center(targets[0].act);
+      cursor.style.transition = 'none';
+      place({ x: first.x - 26, y: first.y - 22 });
+      void cursor.offsetWidth;
+      cursor.style.transition = '';
+      cursor.classList.add('is-in');
+      place(first);
+    }, Math.max(0, targets[0].swapAt - 600));
+
+    targets.forEach(function(t, idx) {
+      window.setTimeout(function() { place(center(t.act)); press(); }, t.swapAt);
+      var next = targets[idx + 1];
+      if (next) {
+        window.setTimeout(function() { place(center(next.act)); }, next.swapAt - glideLead);
+      }
     });
   }
 
@@ -1133,6 +1195,7 @@
       frameEl.innerHTML = exploreDemo(demoKind);
     } else if (demoKind.indexOf('models-') === 0) {
       frameEl.innerHTML = modelsDemo(demoKind);
+      playDownloadCursor(frameEl);
     } else if (demoKind === 'apps-board') {
       frameEl.innerHTML = appBoard();
     } else if (demoKind === 'apps-connect') {
@@ -1145,6 +1208,7 @@
       frameEl.innerHTML = privateApp();
     } else if (demoKind === 'backend-manager') {
       frameEl.innerHTML = backendManager();
+      playDownloadCursor(frameEl);
     } else if (demoKind.indexOf('backend-') === 0) {
       frameEl.innerHTML = backendBoard(demoKind);
     } else {
