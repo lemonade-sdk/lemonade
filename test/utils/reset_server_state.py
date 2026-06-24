@@ -98,6 +98,42 @@ def _print_diagnostics(port: int) -> None:
             print(f"[reset] GET {path} failed: {exc}")
 
 
+def _running_models(port: int):
+    response = _request_with_host_fallback(
+        "GET",
+        "/api/ps",
+        port=port,
+        headers=_auth_headers(),
+        timeout=5,
+    )
+    response.raise_for_status()
+    return response.json().get("models", [])
+
+
+def _wait_for_no_running_models(port: int, timeout: int) -> None:
+    deadline = time.time() + timeout
+    last_models = []
+    last_error = None
+
+    while time.time() < deadline:
+        try:
+            models = _running_models(port)
+            if not models:
+                return
+            last_models = models
+            last_error = None
+        except Exception as exc:  # noqa: BLE001 - diagnostic helper
+            last_error = str(exc)
+        time.sleep(1)
+
+    if last_error:
+        raise RuntimeError(f"Could not verify empty model state: {last_error}")
+    raise RuntimeError(
+        "Server still reports running models after unload: "
+        f"{str(last_models)[:1200]}"
+    )
+
+
 def reset_server_state(
     *,
     port: int = PORT,
@@ -131,9 +167,12 @@ def reset_server_state(
             timeout=30,
         )
         # Some server versions return 404 when no model is loaded. That still
-        # means the desired postcondition is true.
+        # means the desired postcondition is true. A 200 response can still be
+        # asynchronous while a backend is busy, so verify that /api/ps reaches
+        # the actual postcondition before declaring reset complete.
         if response.status_code not in (200, 404):
             response.raise_for_status()
+        _wait_for_no_running_models(port, timeout=timeout)
 
 
 def main(argv=None) -> int:
