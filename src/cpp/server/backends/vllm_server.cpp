@@ -77,6 +77,52 @@ static void add_reasoning_effort_template_kwargs(json& target, const json& sourc
         source["reasoning_effort"].get<std::string>() != "none";
 }
 
+static void backup_invalid_vllm_model_config(const std::string& config_path) {
+    fs::path backup_path = utils::path_from_utf8(config_path);
+    backup_path += ".corrupted";
+
+    std::error_code ec;
+    fs::rename(utils::path_from_utf8(config_path), backup_path, ec);
+    if (!ec) {
+        LOG(WARNING, "vLLM") << "Renamed invalid vLLM model config to "
+                             << utils::path_to_utf8(backup_path) << std::endl;
+    }
+}
+
+static json load_vllm_model_config(const std::string& config_path,
+                                   const std::string& model_name,
+                                   const std::string& model_id) {
+    const std::string fallback_message = "; continuing with user vllm_args only";
+    if (!fs::exists(utils::path_from_utf8(config_path))) {
+        LOG(WARNING, "vLLM") << "vLLM model config not found at "
+                             << config_path << fallback_message << std::endl;
+        return json::object();
+    }
+
+    json config;
+    try {
+        config = JsonUtils::load_from_file(config_path);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "vLLM") << "Ignoring unreadable vLLM model config at "
+                             << config_path << ": " << e.what()
+                             << fallback_message << std::endl;
+        backup_invalid_vllm_model_config(config_path);
+        return json::object();
+    }
+
+    try {
+        (void)resolve_vllm_args(model_name, model_id, config, "");
+    } catch (const std::exception& e) {
+        LOG(WARNING, "vLLM") << "Ignoring invalid vLLM model config at "
+                             << config_path << ": " << e.what()
+                             << fallback_message << std::endl;
+        backup_invalid_vllm_model_config(config_path);
+        return json::object();
+    }
+
+    return config;
+}
+
 json VLLMServer::prepare_openai_request(const json& request) {
     return with_legacy_token_limit(fit_openai_max_tokens_to_context(request));
 }
@@ -184,14 +230,8 @@ void VLLMServer::load(const std::string& model_name,
 
     std::string vllm_model_config_path =
         utils::get_resource_path("resources/vllm_model_config.json");
-    json vllm_model_config = json::object();
-    if (fs::exists(utils::path_from_utf8(vllm_model_config_path))) {
-        vllm_model_config = JsonUtils::load_from_file(vllm_model_config_path);
-    } else {
-        LOG(WARNING, "vLLM") << "vLLM model config not found at "
-                             << vllm_model_config_path
-                             << "; continuing with user vllm_args only" << std::endl;
-    }
+    json vllm_model_config =
+        load_vllm_model_config(vllm_model_config_path, model_name, model_id);
     VLLMArgResolution resolved_vllm_args =
         resolve_vllm_args(model_name, model_id, vllm_model_config, vllm_args);
 
