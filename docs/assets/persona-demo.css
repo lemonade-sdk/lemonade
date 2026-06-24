@@ -1733,54 +1733,64 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 }
 
 .hp-mcp-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.hp-mcp-col-config { gap: 0.45rem; }
+.hp-mcp-col-form { gap: 0.5rem; justify-content: center; }
 .hp-mcp-col-tools { gap: 0.5rem; }
 
-.hp-mcp-filebar {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+/* Left column: a compact "Add MCP server" form -- labelled fields instead of raw
+   JSON, so it's denser and reads like a real client's add-server dialog. */
+.hp-mcp-field-group { display: flex; flex-direction: column; gap: 0.24rem; }
+
+.hp-mcp-label {
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.hp-mcp-filebar .material-symbols-outlined { font-size: 0.92rem; color: var(--text-muted); }
-
-.hp-mcp-config {
-  flex: 1 1 auto;
+.hp-mcp-field {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  margin: 0;
-  padding: 0.7rem 0.85rem;
-  background: var(--surface-container-low);
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.95rem;
+  padding: 0.3rem 0.7rem;
   border-radius: var(--radius-md);
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 0.7rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
   overflow: hidden;
 }
 
-.hp-mcp-key { color: #8b5cf6; }
-.hp-mcp-str { color: #059669; }
-
-/* The freshly added lemonade entry, highlighted (clone so the soft band wraps each
-   line of the multi-line span). A one-shot glow draws the eye to what changed. */
-.hp-mcp-added {
-  border-radius: 4px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  background: rgba(252, 216, 70, 0.16);
-  animation: hp-mcp-glow 1.1s ease 0.2s 1;
+.hp-mcp-val {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-@keyframes hp-mcp-glow {
-  0% { background: rgba(252, 216, 70, 0.55); }
-  100% { background: rgba(252, 216, 70, 0.16); }
+.hp-mcp-val-mono { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-secondary); }
+
+.hp-mcp-field-caret { margin-left: auto; flex: 0 0 auto; font-size: 1rem; color: var(--text-light); }
+
+.hp-mcp-add-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-btn);
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-yellow);
 }
+
+.hp-mcp-add-btn .material-symbols-outlined { font-size: 1rem; }
 
 .hp-mcp-status {
   display: inline-flex;
@@ -2202,7 +2212,7 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-appstore-card,
   .hp-appboard-card,
   .hp-mcp-tool,
-  .hp-mcp-added,
+  .hp-mcp-dot,
   .hp-private-row,
   .hp-backend-card {
     animation: none;

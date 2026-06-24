@@ -886,24 +886,27 @@
           '</span>' +
         '</div>';
     }).join('');
-    var config =
-      '<pre class="hp-mcp-config"><code>' +
-        '{\n' +
-        '  <span class="hp-mcp-key">"mcpServers"</span>: {\n' +
-        '<span class="hp-mcp-added">    <span class="hp-mcp-key">"lemonade"</span>: {\n' +
-        '      <span class="hp-mcp-key">"url"</span>:\n' +
-        '        <span class="hp-mcp-str">"http://localhost:13305/mcp"</span>\n' +
-        '    }</span>\n' +
-        '  }\n' +
-        '}' +
-      '</code></pre>';
+    var fields = [
+      { label: 'Name', value: 'lemonade' },
+      { label: 'Server URL', value: 'http://localhost:13305/mcp', mono: true },
+      { label: 'Transport', value: 'Streamable HTTP', caret: true }
+    ];
+    var formFields = fields.map(function(f, i) {
+      return '<div class="hp-mcp-field-group" style="--row:' + i + '">' +
+          '<span class="hp-mcp-label">' + escapeText(f.label) + '</span>' +
+          '<div class="hp-mcp-field">' +
+            '<span class="hp-mcp-val' + (f.mono ? ' hp-mcp-val-mono' : '') + '">' + escapeText(f.value) + '</span>' +
+            (f.caret ? '<span class="material-symbols-outlined hp-mcp-field-caret">expand_more</span>' : '') +
+          '</div>' +
+        '</div>';
+    }).join('');
     var body =
       '<div class="hp-mcp-stage">' +
         '<div class="hp-mcp-scrim"></div>' +
         '<div class="hp-mcp-panel">' +
-          '<div class="hp-mcp-col hp-mcp-col-config">' +
-            '<div class="hp-mcp-filebar"><span class="material-symbols-outlined">description</span>mcp.json</div>' +
-            config +
+          '<div class="hp-mcp-col hp-mcp-col-form">' +
+            formFields +
+            '<button class="hp-mcp-add-btn" type="button"><span class="material-symbols-outlined">add</span>Add server</button>' +
           '</div>' +
           '<div class="hp-mcp-col hp-mcp-col-tools">' +
             '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Connected · 5 tools</div>' +
