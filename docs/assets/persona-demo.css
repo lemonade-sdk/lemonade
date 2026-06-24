@@ -1695,33 +1695,71 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
    lemonade entry added to mcp.json (highlighted), a connected status, and the
    five tools the gateway exposes (staggered in, as if discovered on connect).
    ====================================================================== */
-.hp-mcp {
+/* The content sits in a 16:9 panel floating over the (scrimmed) app window, in two
+   columns: the mcp.json config on the left, the connected status + tools on the
+   right. This fills the horizontal space and kills the tall, sparse single column. */
+.hp-mcp-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  padding: 1rem 1.15rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, rgba(45, 47, 47, 0.05) 0 2.4rem, transparent 2.4rem),
+    repeating-linear-gradient(180deg, transparent 0 3.2rem, rgba(45, 47, 47, 0.035) 3.2rem 3.25rem),
+    var(--surface);
 }
+
+.hp-mcp-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 20, 14, 0.22);
+}
+
+.hp-mcp-panel {
+  position: relative;
+  z-index: 1;
+  width: min(94%, 540px);
+  aspect-ratio: 16 / 9;
+  display: grid;
+  grid-template-columns: 1.18fr 1fr;
+  gap: 0.85rem;
+  padding: 0.95rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-heavy);
+}
+
+.hp-mcp-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.hp-mcp-col-config { gap: 0.45rem; }
+.hp-mcp-col-tools { gap: 0.5rem; }
 
 .hp-mcp-filebar {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   font-family: var(--font-display);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-secondary);
 }
 
-.hp-mcp-filebar .material-symbols-outlined { font-size: 0.95rem; color: var(--text-muted); }
+.hp-mcp-filebar .material-symbols-outlined { font-size: 0.92rem; color: var(--text-muted); }
 
 .hp-mcp-config {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   margin: 0;
   padding: 0.7rem 0.85rem;
   background: var(--surface-container-low);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 0.72rem;
-  line-height: 1.5;
+  font-size: 0.7rem;
+  line-height: 1.6;
   color: var(--text-secondary);
   overflow: hidden;
 }
@@ -1748,41 +1786,55 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  font-family: var(--font-body);
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .hp-mcp-dot {
+  flex: 0 0 auto;
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: #50c878;
-  box-shadow: 0 0 0 3px rgba(80, 200, 120, 0.18);
+  background: #34c759;
+  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5);
+  animation: hp-mcp-glow-dot 1.7s ease-out infinite 1.4s;
 }
 
-.hp-mcp-tools { display: flex; flex-direction: column; gap: 0.4rem; }
+@keyframes hp-mcp-glow-dot {
+  0%        { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5); }
+  70%, 100% { box-shadow: 0 0 0 5px rgba(52, 199, 89, 0); }
+}
+
+.hp-mcp-tools {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.34rem;
+}
 
 .hp-mcp-tool {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: var(--radius);
+  gap: 0.55rem;
+  padding: 0.36rem 0.55rem;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.66);
   box-shadow: var(--shadow-light);
   opacity: 0;
   transform: translateY(8px);
   animation: hp-appstore-in 0.4s ease forwards;
-  animation-delay: calc(var(--row, 0) * 0.1s + 0.5s);
+  animation-delay: calc(var(--row, 0) * 0.09s + 0.45s);
 }
 
 .hp-mcp-tool-icon { flex: 0 0 auto; display: inline-flex; color: var(--primary-yellow-darker); }
-.hp-mcp-tool-icon .material-symbols-outlined { font-size: 1.05rem; }
+.hp-mcp-tool-icon .material-symbols-outlined { font-size: 1.02rem; }
+.hp-mcp-tool-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .hp-mcp-tool-name {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1790,11 +1842,12 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   text-overflow: ellipsis;
 }
 .hp-mcp-tool-tag {
-  margin-left: auto;
-  flex: 0 0 auto;
   font-family: var(--font-body);
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ======================================================================

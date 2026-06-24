@@ -880,8 +880,10 @@
     var toolRows = tools.map(function(t, i) {
       return '<div class="hp-mcp-tool" style="--row:' + i + '">' +
           '<span class="hp-mcp-tool-icon"><span class="material-symbols-outlined">' + t.icon + '</span></span>' +
-          '<span class="hp-mcp-tool-name">' + escapeText(t.name) + '</span>' +
-          '<span class="hp-mcp-tool-tag">' + escapeText(t.tag) + '</span>' +
+          '<span class="hp-mcp-tool-text">' +
+            '<span class="hp-mcp-tool-name">' + escapeText(t.name) + '</span>' +
+            '<span class="hp-mcp-tool-tag">' + escapeText(t.tag) + '</span>' +
+          '</span>' +
         '</div>';
     }).join('');
     var config =
@@ -889,17 +891,25 @@
         '{\n' +
         '  <span class="hp-mcp-key">"mcpServers"</span>: {\n' +
         '<span class="hp-mcp-added">    <span class="hp-mcp-key">"lemonade"</span>: {\n' +
-        '      <span class="hp-mcp-key">"url"</span>: <span class="hp-mcp-str">"http://localhost:13305/mcp"</span>\n' +
+        '      <span class="hp-mcp-key">"url"</span>:\n' +
+        '        <span class="hp-mcp-str">"http://localhost:13305/mcp"</span>\n' +
         '    }</span>\n' +
         '  }\n' +
         '}' +
       '</code></pre>';
     var body =
-      '<div class="hp-mcp">' +
-        '<div class="hp-mcp-filebar"><span class="material-symbols-outlined">description</span>mcp.json</div>' +
-        config +
-        '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Lemonade connected — 5 tools available</div>' +
-        '<div class="hp-mcp-tools">' + toolRows + '</div>' +
+      '<div class="hp-mcp-stage">' +
+        '<div class="hp-mcp-scrim"></div>' +
+        '<div class="hp-mcp-panel">' +
+          '<div class="hp-mcp-col hp-mcp-col-config">' +
+            '<div class="hp-mcp-filebar"><span class="material-symbols-outlined">description</span>mcp.json</div>' +
+            config +
+          '</div>' +
+          '<div class="hp-mcp-col hp-mcp-col-tools">' +
+            '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Connected · 5 tools</div>' +
+            '<div class="hp-mcp-tools">' + toolRows + '</div>' +
+          '</div>' +
+        '</div>' +
       '</div>';
     return appWindow('MCP Servers', body, 'hp-mcp-window');
   }
