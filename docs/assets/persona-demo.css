@@ -628,9 +628,37 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
    demo root fills it, so all slides are identical in size (no reflow, no TOC
    shift). */
 .hp-journey-slides {
+  position: relative;          /* stacking context so the well can sit behind demos */
+  z-index: 0;
   display: flex;
   flex-direction: column;
 }
+
+/* The inlaid live-zone slot: ONE fixed recessed socket pinned at the centre of the
+   viewport. It never moves -- the slides scroll THROUGH it, and whichever demo is
+   in it is the active one. (Sticky + top:50% keeps it column-aligned and centred;
+   height:0 so it adds no layout; z-index:-1 puts it behind the demos so it frames
+   the active one and shows as an empty socket between slides.) */
+.hp-slide-well {
+  position: sticky;
+  top: 50%;
+  z-index: -1;
+  height: 0;
+  pointer-events: none;
+}
+.hp-slide-well::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
+  width: calc(min(600px, 100%) + 28px);
+  height: calc(min(540px, 62vh) + 28px);
+  border-radius: 34px;
+  background: rgba(45, 47, 47, 0.05);
+  box-shadow: inset 0 2px 16px rgba(45, 47, 47, 0.14), inset 0 -1px 0 rgba(255, 255, 255, 0.55);
+}
+
 /* Spotlight rhythm: slides are a FIXED distance apart regardless of viewport
    height (the bug was min-height: 90vh, which grew the gaps on tall screens). The
    constant vertical padding sets the demo-to-demo pitch; the demo stays a fixed
@@ -647,28 +675,11 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 /* The opening slide hugs the zone heading instead of carrying a full top gap. */
 .hp-slide:first-child { padding-top: 0.5rem; }
 
-/* The stage holds the demo and draws the inlaid "well" -- a recessed socket that
-   marks the live zone. It is NOT clipped (the demo is), so the well can sit just
-   outside the demo. */
 .hp-slide-stage {
   position: relative;
   width: min(600px, 100%);
   height: min(540px, 62vh);
 }
-/* The recessed well behind the active demo: a soft inset frame + tint that reads
-   as a socket the demo is seated in. Only shown for the active (centred) slide. */
-.hp-slide-stage::before {
-  content: '';
-  position: absolute;
-  inset: -16px;
-  border-radius: 34px;
-  background: rgba(45, 47, 47, 0.05);
-  box-shadow: inset 0 2px 14px rgba(45, 47, 47, 0.14), inset 0 -1px 0 rgba(255, 255, 255, 0.55);
-  opacity: 0;
-  transition: opacity 0.45s ease;
-  pointer-events: none;
-}
-.hp-slide.is-active .hp-slide-stage::before { opacity: 1; }
 
 .hp-slide-demo {
   width: 100%;
@@ -678,7 +689,7 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   border-radius: 26px;
   box-shadow: var(--shadow-heavy);
   /* Depth-of-field: inactive slides recede (smaller, dimmer, desaturated) so only
-     the one in the live zone reads as active. */
+     the one seated in the live-zone slot reads as active. */
   transform: scale(0.9);
   opacity: 0.5;
   filter: saturate(0.55);
@@ -688,6 +699,16 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   transform: scale(1);
   opacity: 1;
   filter: none;
+}
+
+/* Inactive slides hold STILL: freeze their demo's CSS animations. A pre-rendered
+   upcoming slide stays at frame 0 (its "before" look); a slide you've scrolled past
+   freezes at its finished frame. The animation only runs while the slide is active
+   (in the live zone), where setActive re-renders it to play from the start. */
+.hp-slide:not(.is-active) .hp-slide-demo *,
+.hp-slide:not(.is-active) .hp-slide-demo *::before,
+.hp-slide:not(.is-active) .hp-slide-demo *::after {
+  animation-play-state: paused !important;
 }
 /* Force every demo root to fill the box exactly (two-class selector so it beats
    the demos' own single-class width/height rules) -> uniform size by construction. */
@@ -703,6 +724,8 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
    depth-of-field so only the live slide's caption reads at full strength. */
 .hp-slide .hp-slide-caption {
   width: min(600px, 100%);
+  min-height: 2.7rem;        /* reserve ~2 lines so 1- vs 2-line captions don't
+                                change the slide height (keeps the pitch uniform) */
   margin: 0;
   text-align: center;
   opacity: 0.45;
@@ -754,6 +777,7 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-toc-slide.is-active .hp-toc-slide-label { display: inline; }   /* label only for the active dot */
   .hp-slide { --slide-gap: 2.25rem; }
   .hp-slide-stage { height: min(56vh, 440px); }
+  .hp-slide-well { display: none; }
 }
 
 /* Reduced motion: drop the depth-of-field scale/desaturate and all transitions --

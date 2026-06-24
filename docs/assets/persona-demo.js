@@ -1164,8 +1164,13 @@
     return '<div class="hp-backend-board">' + html + '</div>';
   }
 
-  // Render one slide's demo into a given section frame + caption.
-  function renderDemo(frameEl, captionEl, step, slideIndex) {
+  // Render one slide's demo into a given section frame + caption. When animate is
+  // false the demo is built in its START state -- JS players are not run and CSS
+  // animations are frozen by the .hp-slide:not(.is-active) rule -- so an upcoming
+  // (not-yet-reached) slide shows its "before" look, never its finished frame.
+  // setActive re-renders with animate=true so the animation plays in the live zone.
+  function renderDemo(frameEl, captionEl, step, slideIndex, animate) {
+    if (animate === undefined) animate = true;
     var slide = step.slides && step.slides[slideIndex];
     var demoKind = (slide && slide.demo) || step.demo;
     var captionText = slide && Object.prototype.hasOwnProperty.call(slide, 'caption') ? slide.caption : (step.copy || '');
@@ -1190,12 +1195,12 @@
       });
     } else if (demoKind === 'explore-omni') {
       frameEl.innerHTML = omniDemo();
-      playOmni(frameEl);
+      if (animate) playOmni(frameEl);
     } else if (demoKind.indexOf('explore-') === 0) {
       frameEl.innerHTML = exploreDemo(demoKind);
     } else if (demoKind.indexOf('models-') === 0) {
       frameEl.innerHTML = modelsDemo(demoKind);
-      playDownloadCursor(frameEl);
+      if (animate) playDownloadCursor(frameEl);
     } else if (demoKind === 'apps-board') {
       frameEl.innerHTML = appBoard();
     } else if (demoKind === 'apps-connect') {
@@ -1208,13 +1213,27 @@
       frameEl.innerHTML = privateApp();
     } else if (demoKind === 'backend-manager') {
       frameEl.innerHTML = backendManager();
-      playDownloadCursor(frameEl);
+      if (animate) playDownloadCursor(frameEl);
     } else if (demoKind.indexOf('backend-') === 0) {
       frameEl.innerHTML = backendBoard(demoKind);
     } else {
       frameEl.innerHTML = commandDemo(demoKind);
     }
-    startSvgAnimations(frameEl);
+    if (animate) startSvgAnimations(frameEl);
+    else freezeSvgAnimations(frameEl);
+  }
+
+  // Freeze SVG (SMIL) timelines at their start -- used for pre-rendered upcoming
+  // slides so a flowchart doesn't auto-play before it reaches the live zone.
+  function freezeSvgAnimations(container) {
+    if (!container || !container.querySelectorAll) return;
+    var svgs = container.querySelectorAll('svg');
+    for (var i = 0; i < svgs.length; i++) {
+      try {
+        if (svgs[i].setCurrentTime) svgs[i].setCurrentTime(0);
+        if (svgs[i].pauseAnimations) svgs[i].pauseAnimations();
+      } catch (e) {}
+    }
   }
 
   // WebKit/Safari does not begin SMIL timelines for SVG inserted via innerHTML
@@ -1309,7 +1328,10 @@
       '<nav class="hp-journey-toc" aria-label="' + escapeText(data.label) + '">' +
         '<ol class="hp-toc-list">' + sectionsHtml + '</ol>' +
       '</nav>' +
-      '<div class="hp-journey-slides">' + slidesHtml + '</div>';
+      '<div class="hp-journey-slides">' +
+        '<div class="hp-slide-well" aria-hidden="true"></div>' +
+        slidesHtml +
+      '</div>';
 
     tocEl = journeyEl.querySelector('.hp-journey-toc');
     slideEls = journeyEl.querySelectorAll('.hp-slide');
@@ -1319,22 +1341,23 @@
     currentActive = -1;
   }
 
-  // Render a slide's demo + caption once, as it nears the viewport (so neighbours
-  // already hold content while they sit dimmed/shrunk in the depth-of-field).
+  // Pre-render a slide's demo in its START state as it nears the viewport, so an
+  // upcoming neighbour shows its "before" look (not a finished animation) while it
+  // sits dimmed in the depth-of-field. The animation is played later, by setActive.
   function renderSlide(i) {
     if (i < 0 || i >= demoEls.length || rendered[i]) return;
     rendered[i] = true;
     var entry = globalSlides[i];
-    renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex);
+    renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex, false);
   }
 
-  // Re-render a slide's demo (replays its animation). Used when a slide reaches the
-  // live zone so the animation plays THERE, not when it first scrolled into view.
+  // Re-render a slide's demo and PLAY it. Used when a slide reaches the live zone so
+  // its animation runs THERE (from the start), not when it first scrolled into view.
   function replaySlide(i) {
     if (i < 0 || i >= demoEls.length) return;
     rendered[i] = true;
     var entry = globalSlides[i];
-    renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex);
+    renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex, true);
   }
 
   function setActive(i) {
