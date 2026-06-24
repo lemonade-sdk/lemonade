@@ -1168,7 +1168,7 @@
   // false the demo is built in its START state -- JS players are not run and CSS
   // animations are frozen by the .hp-slide:not(.is-active) rule -- so an upcoming
   // (not-yet-reached) slide shows its "before" look, never its finished frame.
-  // setActive re-renders with animate=true so the animation plays in the live zone.
+  // refreshActive replays with animate=true once the slide reaches the live zone.
   function renderDemo(frameEl, captionEl, step, slideIndex, animate) {
     if (animate === undefined) animate = true;
     var slide = step.slides && step.slides[slideIndex];
@@ -1282,7 +1282,8 @@
   var demoEls = null;
   var captionEls = null;
   var rendered = [];
-  var currentActive = -1;
+  var currentActive = -1;   // the highlighted (focused) slide
+  var playedIndex = -1;     // the slide whose animation has played for this arrival
   var renderIO = null;
 
   function buildJourney(persona) {
@@ -1336,11 +1337,12 @@
     captionEls = journeyEl.querySelectorAll('.hp-slide-caption');
     rendered = [];
     currentActive = -1;
+    playedIndex = -1;
   }
 
   // Pre-render a slide's demo in its START state as it nears the viewport, so an
   // upcoming neighbour shows its "before" look (not a finished animation) while it
-  // sits dimmed in the depth-of-field. The animation is played later, by setActive.
+  // sits dimmed in the depth-of-field. The animation is played later, by refreshActive.
   function renderSlide(i) {
     if (i < 0 || i >= demoEls.length || rendered[i]) return;
     rendered[i] = true;
@@ -1357,14 +1359,16 @@
     renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex, true);
   }
 
-  function setActive(i) {
+  // Depth-of-field + TOC highlight ONLY (no replay). Tracking focus while scrolling
+  // must not re-trigger animations -- replay is handled separately, gated to the
+  // live zone (see refreshActive).
+  function setHighlight(i) {
     if (i === currentActive) return;
     currentActive = i;
     for (var s = 0; s < slideEls.length; s++) {
       slideEls[s].classList.toggle('is-active', s === i);
     }
     updateToc(i);
-    replaySlide(i);   // play the animation now that it's centred in the live zone
   }
 
   function updateToc(g) {
@@ -1382,25 +1386,41 @@
     }
   }
 
-  // Activation rule: a slide goes live when its demo's centre reaches the vertical
-  // centre of the viewport, and stays live until the NEXT slide's centre reaches it.
-  // Equivalently, the active slide is the last one whose centre has scrolled to or
-  // above the middle of the screen. Why this rule: it guarantees a slide is actually
-  // centred -- whole demo (and caption) on screen -- before it activates, so a slide
-  // never goes live while merely poking in from the bottom; and because it's a
-  // single crossing threshold, the hand-off is flicker-free and behaves the same at
-  // any viewport height. (Demos are ordered top-to-bottom, so once one is below the
-  // centre line every later one is too -- we can stop scanning.)
-  function updateActiveByCenter() {
-    if (!demoEls || !demoEls.length) return;
-    var centerY = window.innerHeight / 2;
-    var chosen = -1;
+  // THE single source of truth for "which slide is focused": the one whose demo
+  // centre is nearest the viewport centre. Symmetric by construction -- both the
+  // highlight and the magnetic snap derive the focus from this one function, so they
+  // can never disagree. (That disagreement was the bug: the old activation used an
+  // asymmetric "last slide at/above centre" test while snap used nearest, so a slide
+  // snapped to centre could land a sub-pixel below the line and the previous slide
+  // stayed active.) Because snap centres nearestSlide() and the active slide IS
+  // nearestSlide(), a centred slide is always the active slide.
+  function nearestSlide() {
+    var vc = window.innerHeight / 2;
+    var best = -1, bestAbs = Infinity, bestDelta = 0;
     for (var i = 0; i < demoEls.length; i++) {
       var r = demoEls[i].getBoundingClientRect();
-      if (r.top + r.height / 2 <= centerY) chosen = i;
-      else break;
+      var delta = (r.top + r.height / 2) - vc;
+      var abs = delta < 0 ? -delta : delta;
+      if (abs < bestAbs) { bestAbs = abs; bestDelta = delta; best = i; }
     }
-    if (chosen !== -1) setActive(chosen);
+    return { index: best, abs: bestAbs, delta: bestDelta };
+  }
+
+  // React to the current scroll position: highlight the nearest slide, and once it
+  // has settled into the live zone (near centre) play its animation -- once per
+  // arrival. The replay is gated to the live zone (not the moment focus changes) so
+  // animations still run while the slide is centred, where the user can see them.
+  function refreshActive() {
+    if (!demoEls || !demoEls.length) return;
+    var n = nearestSlide();
+    if (n.index === -1 || n.abs > window.innerHeight * 0.6) return;   // outside the journey's reach
+    setHighlight(n.index);
+    var liveZone = Math.min(140, window.innerHeight * 0.14);
+    if (n.abs <= liveZone) {
+      if (playedIndex !== n.index) { playedIndex = n.index; replaySlide(n.index); }
+    } else {
+      playedIndex = -1;   // left the live zone -> arm replay for whatever centres next
+    }
   }
 
   var scrollTicking = false;
@@ -1413,7 +1433,7 @@
       scrollTicking = true;
       window.requestAnimationFrame(function() {
         scrollTicking = false;
-        updateActiveByCenter();
+        refreshActive();
       });
     }
     // Magnetic centring: once scrolling settles, glide the nearest slide to centre.
@@ -1421,37 +1441,30 @@
     snapTimer = window.setTimeout(snapToCenter, 140);
   }
 
-  // After scrolling stops, glide the nearest slide so its demo sits dead-centre
-  // (where the activation rule then lights it up). This removes the need to land a
-  // slide on the centre line by hand. Scoped to the journey (only fires when a demo
-  // is genuinely near centre), skipped on mobile + under reduced motion, and
-  // self-limiting: it no-ops once centred and ignores the smooth scroll it triggers
-  // (by only re-snapping when the nearest slide actually changes).
+  // After scrolling stops, glide the SAME slide refreshActive focuses on -- the
+  // nearest -- so its demo sits dead-centre. Removes the need to land a slide on the
+  // centre line by hand. Scoped to the journey (only fires when a demo is genuinely
+  // near centre), skipped on mobile + under reduced motion, and self-limiting: it
+  // no-ops once centred and ignores the smooth scroll it triggers (by only
+  // re-snapping when the nearest slide actually changes).
   function snapToCenter() {
     if (!demoEls || !demoEls.length) return;
     if (window.matchMedia &&
         (window.matchMedia('(max-width: 920px)').matches ||
          window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
-    var vc = window.innerHeight / 2;
-    var best = -1, bestAbs = Infinity, bestDelta = 0;
-    for (var i = 0; i < demoEls.length; i++) {
-      var r = demoEls[i].getBoundingClientRect();
-      var delta = (r.top + r.height / 2) - vc;
-      var abs = Math.abs(delta);
-      if (abs < bestAbs) { bestAbs = abs; best = i; bestDelta = delta; }
-    }
-    if (best === -1 || bestAbs > window.innerHeight * 0.6) { isSnapping = false; snapTarget = -1; return; }
-    if (bestAbs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
-    if (isSnapping && best === snapTarget) return;                       // already gliding there
+    var n = nearestSlide();
+    if (n.index === -1 || n.abs > window.innerHeight * 0.6) { isSnapping = false; snapTarget = -1; return; }
+    if (n.abs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
+    if (isSnapping && n.index === snapTarget) return;                  // already gliding there
     isSnapping = true;
-    snapTarget = best;
-    window.scrollTo({ top: window.pageYOffset + bestDelta, behavior: 'smooth' });
+    snapTarget = n.index;
+    window.scrollTo({ top: window.pageYOffset + n.delta, behavior: 'smooth' });
   }
 
   function setupJourney() {
     // Render each slide's demo a little before it scrolls in, so neighbours hold
     // content while they sit dimmed in the depth-of-field (the animation itself is
-    // replayed by setActive once the slide reaches the live zone).
+    // replayed by refreshActive once the slide reaches the live zone).
     renderIO = new IntersectionObserver(function(entries) {
       entries.forEach(function(e) {
         if (e.isIntersecting) renderSlide(Number(e.target.getAttribute('data-global')) || 0);
@@ -1462,7 +1475,7 @@
     }
     window.addEventListener('scroll', onJourneyScroll, { passive: true });
     window.addEventListener('resize', onJourneyScroll);
-    updateActiveByCenter();   // set the initial live slide
+    refreshActive();   // set the initial live slide
   }
 
   function jumpToGlobal(g) {
