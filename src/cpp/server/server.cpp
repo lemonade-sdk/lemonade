@@ -1,6 +1,7 @@
 #include "lemon/server.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
+#include "lemon/npu_gpu_pipeline_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
@@ -1964,6 +1965,58 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
+void Server::handle_npu_gpu_chat_completions(const nlohmann::json& request_json,
+                                             const ModelInfo& collection_info,
+                                             httplib::Response& res) {
+    try {
+        ensure_collection_loaded(collection_info);
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to load NPU+GPU collection '"
+                             << collection_info.model_name << "': " << e.what()
+                             << std::endl;
+        auto error_response = create_model_error(collection_info.model_name, e.what());
+        std::string error_code = error_response["error"]["code"].get<std::string>();
+        res.status = get_http_status_from_error(error_code);
+        res.set_content(error_response.dump(), "application/json");
+        return;
+    }
+
+    const bool is_streaming = request_json.contains("stream") &&
+                              request_json["stream"].is_boolean() &&
+                              request_json["stream"].get<bool>();
+
+    if (is_streaming) {
+        LOG(INFO, "Server") << "POST /api/v1/chat/completions - NPU+GPU collection (streaming): "
+                            << collection_info.model_name << std::endl;
+        res.set_header("Cache-Control", "no-cache");
+        res.set_header("Connection", "keep-alive");
+        res.set_header("X-Accel-Buffering", "no");
+        res.set_chunked_content_provider(
+            "text/event-stream",
+            [this, request_json, collection_info](size_t offset, httplib::DataSink& sink) {
+                if (offset > 0) return false;
+                NpuGpuPipelineOrchestrator orchestrator(
+                    *router_, *model_manager_,
+                    [this](const std::string& m) { auto_load_model_if_needed(m); });
+                orchestrator.chat_completion_stream(request_json, collection_info, sink);
+                return false;
+            });
+        return;
+    }
+
+    LOG(INFO, "Server") << "POST /api/v1/chat/completions - NPU+GPU collection: "
+                        << collection_info.model_name << std::endl;
+    NpuGpuPipelineOrchestrator orchestrator(
+        *router_, *model_manager_,
+        [this](const std::string& m) { auto_load_model_if_needed(m); });
+    json response = orchestrator.chat_completion(request_json, collection_info);
+    if (response.contains("error")) {
+        set_error_response(response, res);
+        return;
+    }
+    res.set_content(response.dump(), "application/json");
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -1993,7 +2046,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 if (model_manager_->model_exists(requested_model)) {
                     ModelInfo info = model_manager_->get_model_info(requested_model);
                     if (is_collection_recipe(info.recipe)) {
-                        handle_collection_chat_completions(request_json, info, res);
+                        if (info.recipe == COLLECTION_NPU_GPU_MODEL_RECIPE) {
+                            handle_npu_gpu_chat_completions(request_json, info, res);
+                        } else {
+                            handle_collection_chat_completions(request_json, info, res);
+                        }
                         return;
                     }
                 }

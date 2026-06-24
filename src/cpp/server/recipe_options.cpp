@@ -39,6 +39,9 @@ static const json DEFAULTS = {
     // per-model cloud_provider field). The empty string satisfies Router's
     // per-backend-args lookup; cloud reads no backend-specific config.
     {"cloud_backend", ""},
+    // NPU+GPU collection recipe: number of assistant-prefix tokens to draft on
+    // the NPU before handing continuation to the GPU verifier.
+    {"draft_tokens", 128},
 
     // Auto-eviction options
     {"auto_evict", nullptr},          // nullptr means fallback to global config
@@ -84,6 +87,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         keys = {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {
         keys = {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
+    } else if (recipe == "collection.npu_gpu") {
+        keys = {"draft_tokens"};
     }
 
     // Add auto-eviction options for all recipes

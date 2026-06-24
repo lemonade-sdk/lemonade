@@ -96,6 +96,10 @@ private:
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,
                                             httplib::Response& res);
+    // Server-side NPU draft + GPU verifier orchestration for collection.npu_gpu models.
+    void handle_npu_gpu_chat_completions(const nlohmann::json& request_json,
+                                         const ModelInfo& collection_info,
+                                         httplib::Response& res);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);

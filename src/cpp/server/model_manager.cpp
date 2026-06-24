@@ -3321,7 +3321,7 @@ void ModelManager::download_model(const std::string& model_name,
             if (auto err = validate_collection_request(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
-            LOG(INFO, "ModelManager") << "Registering new omni collection: " << model_name << std::endl;
+            LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
         } else {
             // Check that required arguments are provided
             if (actual_checkpoint.empty() || actual_recipe.empty()) {
@@ -5014,7 +5014,8 @@ std::optional<std::string> ModelManager::validate_collection_request(
         if (!checkpoint_pointer.empty()) {
             return std::nullopt;  // pointer-only HF-backed collection
         }
-        return std::string("recipe='collection.omni' requires a non-empty 'components' array");
+        return std::string("recipe='") + model_data.value("recipe", std::string("collection")) +
+               "' requires a non-empty 'components' array";
     }
     // An inline collection import carries its component definitions in a `models`
     // array. Every component must be *resolvable*: either it is already

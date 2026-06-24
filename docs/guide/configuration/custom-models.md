@@ -71,9 +71,9 @@ Supported registration flags:
 | Flag | Description |
 |------|-------------|
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `collection.omni`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `collection.omni`, `collection.npu_gpu`. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
-| `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
+| `--components MODEL [MODEL ...]` | Components for a collection (see below). Use with `--recipe collection.omni` or `--recipe collection.npu_gpu`. |
 
 ### Register an omni collection
 
@@ -88,6 +88,32 @@ lemonade pull user.MyKit \
 ```
 
 `lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
+
+### Register an NPU + GPU pipeline collection
+
+`recipe: "collection.npu_gpu"` registers a two-component chat pipeline for Strix Halo-style systems with an AMD NPU and a GPU-capable LLM backend. The first component must be an FLM model that runs on the NPU. The second component must be a non-FLM LLM, commonly a llama.cpp MTP model. At request time Lemonade asks the NPU model for a short assistant prefix, then continues the same chat with the GPU verifier model.
+
+```bash
+lemonade pull user.StrixPipeline \
+    --recipe collection.npu_gpu \
+    --components qwen3.5-0.8b-FLM Qwen3.6-27B-MTP-GGUF \
+    --label mtp
+```
+
+Tune the NPU prefix length per request with `npu_draft_tokens`:
+
+```bash
+curl http://localhost:13305/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "user.StrixPipeline",
+        "messages": [{"role": "user", "content": "Write one short sentence."}],
+        "max_tokens": 64,
+        "npu_draft_tokens": 12
+    }'
+```
+
+The pipeline needs enough loaded-model slots for both components; set `max_loaded_models` to at least `2` if your server uses the default single-model limit. This recipe does not replace llama.cpp's internal MTP implementation: if the verifier model is an MTP GGUF, Lemonade still enables llama.cpp draft-MTP for that GPU pass.
 
 ### Register a custom Omni Model from the desktop app
 

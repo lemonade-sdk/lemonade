@@ -7,9 +7,11 @@
 namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+constexpr const char* COLLECTION_NPU_GPU_MODEL_RECIPE = "collection.npu_gpu";
 
 inline bool is_collection_recipe(const std::string& recipe) {
-    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+    return recipe == COLLECTION_OMNI_MODEL_RECIPE ||
+           recipe == COLLECTION_NPU_GPU_MODEL_RECIPE;
 }
 
 enum class ModelState {
