@@ -1072,6 +1072,18 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   padding: var(--demo-step2) var(--demo-step3);
 }
 
+/* Optional category heading above a group of rows (e.g. the backend manager's
+   "Large Language Models"). Quiet, uppercase, sits flush above the list. */
+.hp-applist-category {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.1rem 0.2rem 0.05rem;
+}
+
 /* Same listing style as the app-store cards: no solid outline (DESIGN.md
    "No-Line"), a brighter translucent surface + soft ambient shadow. */
 .hp-applist-row {
@@ -1724,7 +1736,7 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   width: min(94%, 540px);
   aspect-ratio: 16 / 9;
   display: grid;
-  grid-template-columns: 1.18fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 0.85rem;
   padding: 0.95rem;
   border-radius: var(--radius-lg);

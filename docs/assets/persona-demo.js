@@ -25,7 +25,7 @@
   var defaultAutoplayDelay = 5200;       // min cycle length
   var animationSubsectionDelay = 2450;   // per-subsection duration
   var animationSubsectionGap = 350;
-  var STEP_ICONS = ['explore', 'apps', 'terminal', 'dns'];  // people steps
+  var STEP_ICONS = ['explore', 'apps', 'developer_board', 'terminal', 'dns'];  // people steps
   var personaSteps = {
     people: {
       title: 'Run AI on your personal hardware.',
@@ -101,6 +101,30 @@
               captionHref: 'https://lemonade-server.ai/docs/api/mcp/',
               animationMode: 'once',
               duration: 4200
+            }
+          ]
+        },
+        {
+          eyebrow: 'Backends',
+          title: 'Try the backends',
+          copy: 'Download inference engines and benchmark them on your own hardware.',
+          demo: 'backend-manager',
+          slides: [
+            {
+              label: 'Install inference engines',
+              demo: 'backend-manager',
+              caption: 'Download the inference engines you want — FastFlowLM, llama.cpp, Ryzen AI, and vLLM.',
+              captionHref: 'https://lemonade-server.ai/docs/embeddable/backends/',
+              animationMode: 'once',
+              duration: 7800
+            },
+            {
+              label: 'Benchmark with one command',
+              demo: 'terminal-bench',
+              caption: 'Compare backends head-to-head on your own hardware with lemonade bench.',
+              captionHref: 'https://lemonade-server.ai/docs/guide/cli/',
+              animationMode: 'once',
+              duration: 4600
             }
           ]
         },
@@ -383,6 +407,20 @@
 
   function commandDemo(kind) {
     var demos = {
+      'terminal-bench': {
+        title: 'Bash',
+        lines: [
+          { text: '# Benchmark one model across backends', kind: 'comment', phase: 0, delay: 160 },
+          { text: '$ lemonade bench Qwen3.5-4B --backends llamacpp,vllm', kind: 'command', phase: 0, delay: 470 },
+          { text: '', delay: 820 },
+          { text: '  BACKEND      DEVICE     PROMPT t/s   DECODE t/s', kind: 'output', phase: 1, delay: 1180 },
+          { text: '  ─────────────────────────────────────────────', kind: 'output', phase: 1, delay: 1380 },
+          { text: '  llama.cpp    Vulkan        3120         78.4', kind: 'output', phase: 1, delay: 1700 },
+          { text: '  vLLM         ROCm          5840        104.2', kind: 'output', phase: 2, delay: 2200 },
+          { text: '', delay: 2500 },
+          { text: '✓ vLLM wins — 1.33x faster decode, 1.87x prompt', kind: 'output', phase: 3, delay: 2860 }
+        ]
+      },
       'terminal-dev-customize': {
         title: 'Bash',
         lines: [
@@ -713,7 +751,27 @@
           act +
         '</div>';
     }).join('');
-    return appWindow(opts.title, '<div class="hp-applist">' + rows + '</div>', 'hp-applist-window');
+    var category = opts.category
+      ? '<div class="hp-applist-category">' + escapeText(opts.category) + '</div>'
+      : '';
+    return appWindow(opts.title, '<div class="hp-applist">' + category + rows + '</div>', 'hp-applist-window');
+  }
+
+  // "Try the backends": a backend manager mirroring the model manager -- a "Large
+  // Language Models" category, then the four LLM inference engines to download. All
+  // four are flagged downloading with staggered --swap-at, so the single cursor
+  // (one visible at a time) clicks each download button top-to-bottom in sequence.
+  function backendManager() {
+    return appWindowList({
+      title: 'Backend Manager',
+      category: 'Large Language Models',
+      items: [
+        { name: 'FastFlowLM', meta: 'NPU', downloading: true, swapAt: 800 },
+        { name: 'llama.cpp', meta: 'GPU · CPU', downloading: true, swapAt: 2200 },
+        { name: 'Ryzen AI SW', meta: 'NPU · Hybrid', downloading: true, swapAt: 3600 },
+        { name: 'vLLM', meta: 'GPU · ROCm', downloading: true, swapAt: 5000 }
+      ]
+    });
   }
 
   function modelsDemo(kind) {
@@ -1085,6 +1143,8 @@
       frameEl.innerHTML = appStore(demoKind);
     } else if (demoKind === 'private-app') {
       frameEl.innerHTML = privateApp();
+    } else if (demoKind === 'backend-manager') {
+      frameEl.innerHTML = backendManager();
     } else if (demoKind.indexOf('backend-') === 0) {
       frameEl.innerHTML = backendBoard(demoKind);
     } else {
