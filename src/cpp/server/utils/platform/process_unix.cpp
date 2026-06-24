@@ -18,6 +18,9 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
 
 #ifdef __linux__
 #include <sys/prctl.h>
@@ -81,6 +84,36 @@ static void preserve_capabilities_for_exec() {
     cap_free(caps);
 }
 #endif
+
+// Check whether a process is a zombie by reading /proc/<pid>/stat.
+// This is non-mutating — it does not reap the child.
+static bool is_zombie_by_proc(pid_t pid) {
+    char path[64];
+    std::snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        return false;
+    }
+    std::string line;
+    if (!std::getline(f, line)) {
+        return false;
+    }
+    auto open_paren = line.find('(');
+    if (open_paren == std::string::npos) {
+        return false;
+    }
+    auto close_paren = line.rfind(')');
+    if (close_paren == std::string::npos || close_paren <= open_paren) {
+        return false;
+    }
+    std::string rest = line.substr(close_paren + 1);
+    std::istringstream iss(rest);
+    char state;
+    if (!(iss >> state)) {
+        return false;
+    }
+    return state == 'Z';
+}
 
 class UnixProcessPlatform : public ProcessPlatform {
 public:
@@ -369,6 +402,10 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
         return false;
     }
 #endif
+
+    if (is_zombie_by_proc(handle.pid)) {
+        return false;
+    }
 
     errno = 0;
     return ::kill(handle.pid, 0) == 0 || errno == EPERM;
