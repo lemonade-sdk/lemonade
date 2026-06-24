@@ -177,6 +177,7 @@ struct CliConfig {
     std::string cloud_provider;
     std::string cloud_base_url;
     std::string cloud_api_key;
+    bool cloud_allow_insecure_http = false;
 
     // Chat REPL options
     bool chat_cli = false;
@@ -1211,6 +1212,8 @@ int main(int argc, char* argv[]) {
     cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
         "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
         ->type_name("KEY");
+    cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1220,6 +1223,8 @@ int main(int argc, char* argv[]) {
     cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
         "API key. If omitted you'll be prompted (TTY only).")
         ->type_name("KEY");
+    cloud_auth_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
 
     CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
     cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1457,7 +1462,8 @@ int main(int argc, char* argv[]) {
         if (cloud_install_cmd->count() > 0) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
-                                                  config.cloud_api_key);
+                                                  config.cloud_api_key,
+                                                  config.cloud_allow_insecure_http);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
@@ -1487,7 +1493,8 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
             }
-            return client.cloud_auth(config.cloud_provider, key);
+            return client.cloud_auth(config.cloud_provider, key,
+                                     config.cloud_allow_insecure_http);
         }
         if (cloud_clear_cmd->count() > 0) {
             return client.cloud_auth_clear(config.cloud_provider);

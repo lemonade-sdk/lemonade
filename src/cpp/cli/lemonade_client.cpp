@@ -1017,7 +1017,8 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
 
 int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             const std::string& base_url,
-                                            const std::string& api_key) {
+                                            const std::string& api_key,
+                                            bool allow_insecure_http) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1026,6 +1027,9 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
             {"provider", provider},
             {"base_url", base_url}
         };
+        if (allow_insecure_http) {
+            body["allow_insecure_http"] = true;
+        }
         if (!api_key.empty()) {
             body["api_key"] = api_key;
         }
@@ -1088,9 +1092,14 @@ int LemonadeClient::uninstall_cloud_provider(const std::string& provider) {
     }
 }
 
-int LemonadeClient::cloud_auth(const std::string& provider, const std::string& api_key) {
+int LemonadeClient::cloud_auth(const std::string& provider,
+                               const std::string& api_key,
+                               bool allow_insecure_http) {
     try {
         json body = {{"provider", provider}, {"api_key", api_key}};
+        if (allow_insecure_http) {
+            body["allow_insecure_http"] = true;
+        }
         std::string response = make_request("/api/v1/cloud/auth", "POST",
                                              body.dump(), "application/json");
         auto response_json = json::parse(response);
