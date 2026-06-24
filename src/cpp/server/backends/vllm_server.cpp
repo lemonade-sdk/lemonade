@@ -39,14 +39,6 @@ static std::string parse_quant_method(const std::string& config_json) {
     return "";
 }
 
-static json with_legacy_token_limit(const json& request) {
-    json modified_request = request;
-    if (modified_request.contains("max_completion_tokens") && !modified_request.contains("max_tokens")) {
-        modified_request["max_tokens"] = modified_request["max_completion_tokens"];
-    }
-    return modified_request;
-}
-
 static void copy_if_present(json& target, const json& source, const char* key) {
     if (source.contains(key)) {
         target[key] = source[key];
@@ -124,7 +116,7 @@ static json load_vllm_model_config(const std::string& config_path,
 }
 
 json VLLMServer::prepare_openai_request(const json& request) {
-    return with_legacy_token_limit(fit_openai_max_tokens_to_context(request));
+    return JsonUtils::with_legacy_max_tokens_alias(fit_openai_max_tokens_to_context(request));
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
