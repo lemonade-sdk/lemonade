@@ -76,31 +76,23 @@
           eyebrow: 'Apps',
           title: 'Connect to apps',
           copy: 'Hundreds of great AI apps connect to Lemonade.',
-          demo: 'apps-coding',
+          demo: 'apps-board',
           slides: [
             {
-              label: 'Coding agents',
-              demo: 'apps-coding',
-              caption: 'Generate software on your PC with no API costs.',
+              label: 'Featured apps',
+              demo: 'apps-board',
+              caption: 'From coding agents to productivity tools — connect the apps you already love, with no API costs.',
               captionHref: 'https://lemonade-server.ai/marketplace.html',
               animationMode: 'once',
-              duration: 3600
+              duration: 4200
             },
             {
-              label: 'Personal agents',
-              demo: 'apps-personal',
-              caption: 'Keep your data local and private.',
-              captionHref: 'https://lemonade-server.ai/marketplace.html',
+              label: 'Add as an MCP server',
+              demo: 'apps-mcp',
+              caption: 'Expose your local models as MCP tools any compatible client can call.',
+              captionHref: 'https://lemonade-server.ai/docs/api/mcp/',
               animationMode: 'once',
-              duration: 3600
-            },
-            {
-              label: 'Productivity',
-              demo: 'apps-productivity',
-              caption: 'Automate your work with private, local AI.',
-              captionHref: 'https://lemonade-server.ai/marketplace.html',
-              animationMode: 'once',
-              duration: 3600
+              duration: 4200
             }
           ]
         },
@@ -836,6 +828,74 @@
     return appWindow('Lemonade', body, 'hp-appstore-window');
   }
 
+  // "Connect to apps" overview: all nine featured apps on a single LIGHT stage (no
+  // window chrome), grouped by category. Mirrors the dev-persona backend board, but
+  // light. Cards are logo + name + description only -- no CTA buttons. Data is the
+  // same curated marketplace snapshot as appStore (the three non-self-host groups).
+  function appBoard() {
+    var groups = [
+      { label: 'Coding agents', kind: 'apps-coding' },
+      { label: 'Personal agents', kind: 'apps-personal' },
+      { label: 'Productivity', kind: 'apps-productivity' }
+    ];
+    var idx = 0;
+    var html = groups.map(function(g) {
+      var cards = (appCategories[g.kind] || []).map(function(app) {
+        var card = '<div class="hp-appboard-card" style="--card:' + idx + '">' +
+            '<div class="hp-appboard-head">' +
+              '<img class="hp-appboard-logo" src="' + APP_LOGO + escapeText(app.id) + '/logo.png" alt="" loading="lazy" />' +
+              '<span class="hp-appboard-name">' + escapeText(app.name) + '</span>' +
+            '</div>' +
+            '<span class="hp-appboard-desc">' + escapeText(app.desc) + '</span>' +
+          '</div>';
+        idx += 1;
+        return card;
+      }).join('');
+      return '<div class="hp-appboard-grouplabel">' + escapeText(g.label) + '</div>' +
+        '<div class="hp-appboard-grid">' + cards + '</div>';
+    }).join('');
+    return '<div class="hp-appboard">' + html + '</div>';
+  }
+
+  // "Add as an MCP server": a generic client's MCP-server settings panel showing the
+  // lemonade entry being added to mcp.json (highlighted), a connected status, and the
+  // tools it exposes. Mirrors the real /mcp gateway (Streamable HTTP) -- see
+  // docs/api/mcp.md: five tools, JSON-RPC over a single POST /mcp endpoint.
+  function mcpDemo() {
+    var tools = [
+      { icon: 'forum', name: 'lemonade_chat', tag: 'chat completion' },
+      { icon: 'image', name: 'lemonade_generate_image', tag: 'image generation' },
+      { icon: 'graphic_eq', name: 'lemonade_transcribe_audio', tag: 'transcription' },
+      { icon: 'auto_awesome', name: 'lemonade_omni', tag: 'multimodal' },
+      { icon: 'inventory_2', name: 'lemonade_list_models', tag: 'model discovery' }
+    ];
+    var toolRows = tools.map(function(t, i) {
+      return '<div class="hp-mcp-tool" style="--row:' + i + '">' +
+          '<span class="hp-mcp-tool-icon"><span class="material-symbols-outlined">' + t.icon + '</span></span>' +
+          '<span class="hp-mcp-tool-name">' + escapeText(t.name) + '</span>' +
+          '<span class="hp-mcp-tool-tag">' + escapeText(t.tag) + '</span>' +
+        '</div>';
+    }).join('');
+    var config =
+      '<pre class="hp-mcp-config"><code>' +
+        '{\n' +
+        '  <span class="hp-mcp-key">"mcpServers"</span>: {\n' +
+        '<span class="hp-mcp-added">    <span class="hp-mcp-key">"lemonade"</span>: {\n' +
+        '      <span class="hp-mcp-key">"url"</span>: <span class="hp-mcp-str">"http://localhost:13305/mcp"</span>\n' +
+        '    }</span>\n' +
+        '  }\n' +
+        '}' +
+      '</code></pre>';
+    var body =
+      '<div class="hp-mcp">' +
+        '<div class="hp-mcp-filebar"><span class="material-symbols-outlined">description</span>mcp.json</div>' +
+        config +
+        '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Lemonade connected — 5 tools available</div>' +
+        '<div class="hp-mcp-tools">' + toolRows + '</div>' +
+      '</div>';
+    return appWindow('MCP Servers', body, 'hp-mcp-window');
+  }
+
   // Developer "Private & white-labeled": an app window branded as the APP (not
   // Lemonade) wrapping a private, locked-down lemond — a bundled model library, an
   // API-key chip, and a footer noting lemond runs hidden. Dark variant to match the
@@ -948,6 +1008,10 @@
       frameEl.innerHTML = exploreDemo(demoKind);
     } else if (demoKind.indexOf('models-') === 0) {
       frameEl.innerHTML = modelsDemo(demoKind);
+    } else if (demoKind === 'apps-board') {
+      frameEl.innerHTML = appBoard();
+    } else if (demoKind === 'apps-mcp') {
+      frameEl.innerHTML = mcpDemo();
     } else if (demoKind.indexOf('apps-') === 0) {
       frameEl.innerHTML = appStore(demoKind);
     } else if (demoKind === 'private-app') {

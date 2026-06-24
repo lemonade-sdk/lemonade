@@ -1606,6 +1606,198 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
 }
 
 /* ======================================================================
+   "Connect to apps" board: all nine featured apps on a LIGHT stage (no window
+   chrome -- the board IS the light surface, mirroring the dev backend board).
+   Three category groups, each a row of three logo+name+description cards. No CTAs.
+   ====================================================================== */
+.hp-appboard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.4rem 1.5rem;
+  background:
+    radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+    linear-gradient(160deg, #fffdf4, #f5f3e8);
+}
+
+.hp-appboard-grouplabel {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.hp-appboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.hp-appboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.06s + 0.12s);
+}
+
+.hp-appboard-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hp-appboard-logo {
+  flex: 0 0 auto;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.2rem;
+}
+
+.hp-appboard-name {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-appboard-desc {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ======================================================================
+   "Add as an MCP server": a client's MCP-server settings panel. Shows the
+   lemonade entry added to mcp.json (highlighted), a connected status, and the
+   five tools the gateway exposes (staggered in, as if discovered on connect).
+   ====================================================================== */
+.hp-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem 1.15rem;
+}
+
+.hp-mcp-filebar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.hp-mcp-filebar .material-symbols-outlined { font-size: 0.95rem; color: var(--text-muted); }
+
+.hp-mcp-config {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-container-low);
+  border-radius: var(--radius);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+.hp-mcp-key { color: #8b5cf6; }
+.hp-mcp-str { color: #059669; }
+
+/* The freshly added lemonade entry, highlighted (clone so the soft band wraps each
+   line of the multi-line span). A one-shot glow draws the eye to what changed. */
+.hp-mcp-added {
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  background: rgba(252, 216, 70, 0.16);
+  animation: hp-mcp-glow 1.1s ease 0.2s 1;
+}
+
+@keyframes hp-mcp-glow {
+  0% { background: rgba(252, 216, 70, 0.55); }
+  100% { background: rgba(252, 216, 70, 0.16); }
+}
+
+.hp-mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.hp-mcp-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #50c878;
+  box-shadow: 0 0 0 3px rgba(80, 200, 120, 0.18);
+}
+
+.hp-mcp-tools { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.hp-mcp-tool {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-appstore-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.1s + 0.5s);
+}
+
+.hp-mcp-tool-icon { flex: 0 0 auto; display: inline-flex; color: var(--primary-yellow-darker); }
+.hp-mcp-tool-icon .material-symbols-outlined { font-size: 1.05rem; }
+.hp-mcp-tool-name {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hp-mcp-tool-tag {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ======================================================================
    Developer: "Private & white-labeled" window (dark variant). The app is
    branded as YourApp; inside it a locked-down private model library + an
    API-key chip + a footer noting lemond runs hidden.
@@ -1743,6 +1935,9 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-modelsearch-progress,
   .hp-modelsearch-progress i,
   .hp-appstore-card,
+  .hp-appboard-card,
+  .hp-mcp-tool,
+  .hp-mcp-added,
   .hp-private-row,
   .hp-backend-card {
     animation: none;
@@ -1750,6 +1945,8 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-applist-row,
   .hp-modelsearch-result,
   .hp-appstore-card,
+  .hp-appboard-card,
+  .hp-mcp-tool,
   .hp-private-row,
   .hp-backend-card { opacity: 1; transform: none; }
   /* settle into the finished state: progress filled, buttons gone, no cursor */
