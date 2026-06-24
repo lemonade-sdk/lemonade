@@ -1406,14 +1406,43 @@
     return { index: best, abs: bestAbs, delta: bestDelta };
   }
 
+  // Is the journey "engaged" -- does it own the screen? True only while the viewport
+  // centre lies within the journey's slide span (first slide's centre .. last
+  // slide's centre), plus a small tolerance so the first/last slides engage as they
+  // become substantially centred rather than at the exact pixel. This is the gate
+  // that stops the first slide grabbing focus while it merely peeks up from the
+  // bottom (you're still reading the section above): until its centre climbs to the
+  // lower third, the journey stays dormant. Symmetric, so it also releases you when
+  // you scroll out the bottom into the sections below.
+  function journeyEngaged() {
+    if (!demoEls || !demoEls.length) return false;
+    var vc = window.innerHeight / 2;
+    var m = window.innerHeight * 0.15;
+    var f = demoEls[0].getBoundingClientRect();
+    var l = demoEls[demoEls.length - 1].getBoundingClientRect();
+    var firstCenter = f.top + f.height / 2;
+    var lastCenter = l.top + l.height / 2;
+    return firstCenter <= vc + m && lastCenter >= vc - m;
+  }
+
+  // Drop the spotlight when the journey isn't engaged, so no slide is left crisp
+  // while you're above (or below) the journey.
+  function clearActive() {
+    playedIndex = -1;
+    if (currentActive === -1) return;
+    currentActive = -1;
+    for (var s = 0; s < slideEls.length; s++) slideEls[s].classList.remove('is-active');
+  }
+
   // React to the current scroll position: highlight the nearest slide, and once it
   // has settled into the live zone (near centre) play its animation -- once per
   // arrival. The replay is gated to the live zone (not the moment focus changes) so
   // animations still run while the slide is centred, where the user can see them.
   function refreshActive() {
     if (!demoEls || !demoEls.length) return;
+    if (!journeyEngaged()) { clearActive(); return; }
     var n = nearestSlide();
-    if (n.index === -1 || n.abs > window.innerHeight * 0.6) return;   // outside the journey's reach
+    if (n.index === -1) return;
     setHighlight(n.index);
     var liveZone = Math.min(140, window.innerHeight * 0.14);
     if (n.abs <= liveZone) {
@@ -1452,8 +1481,9 @@
     if (window.matchMedia &&
         (window.matchMedia('(max-width: 920px)').matches ||
          window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    if (!journeyEngaged()) { isSnapping = false; snapTarget = -1; return; }   // don't grab on entry/exit
     var n = nearestSlide();
-    if (n.index === -1 || n.abs > window.innerHeight * 0.6) { isSnapping = false; snapTarget = -1; return; }
+    if (n.index === -1) { isSnapping = false; snapTarget = -1; return; }
     if (n.abs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
     if (isSnapping && n.index === snapTarget) return;                  // already gliding there
     isSnapping = true;
