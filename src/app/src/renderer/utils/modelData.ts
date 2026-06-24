@@ -1,3 +1,5 @@
+import { isCollectionRecipe } from './recipeNames';
+
 export const USER_MODEL_PREFIX = 'user.';
 
 export interface ImageDefaults {
@@ -5,17 +7,23 @@ export interface ImageDefaults {
   cfg_scale?: number;
   width?: number;
   height?: number;
+  sampling_method?: string;
+  flow_shift?: number;
 }
 
 export interface ModelInfo {
   checkpoint: string;
-  checkpoints?: string[];
+  checkpoints?: Record<string, string>;
   recipe: string;
   suggested: boolean;
   size?: number;
   labels?: string[];
-  composite_models?: string[];
+  components?: string[];
   max_prompt_length?: number;
+  max_context_window?: number;
+  // Cloud models only: USD per 1M tokens, when the provider reports it.
+  cost_input_per_million?: number;
+  cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
   model_name?: string;
@@ -63,7 +71,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!checkpoint || !recipe) {
+  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -84,6 +92,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.max_prompt_length = maxPromptLength;
   }
 
+  const maxContextWindow = info['max_context_window'];
+  if (typeof maxContextWindow === 'number' && Number.isFinite(maxContextWindow)) {
+    normalized.max_context_window = maxContextWindow;
+  }
+
   const mmproj = info['mmproj'];
   if (typeof mmproj === 'string' && mmproj) {
     normalized.mmproj = mmproj;
@@ -99,9 +112,19 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.model_name = modelName;
   }
 
-  const compositeModels = info['composite_models'];
-  if (Array.isArray(compositeModels)) {
-    normalized.composite_models = compositeModels.filter((model): model is string => typeof model === 'string');
+  const components = info['components'];
+  if (Array.isArray(components)) {
+    normalized.components = components.filter((model): model is string => typeof model === 'string');
+  }
+
+  const checkpoints = info['checkpoints'];
+  if (isRecord(checkpoints)) {
+    const normalizedCheckpoints = Object.fromEntries(
+      Object.entries(checkpoints).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    );
+    if (Object.keys(normalizedCheckpoints).length > 0) {
+      normalized.checkpoints = normalizedCheckpoints;
+    }
   }
 
   const reasoning = info['reasoning'];
@@ -154,6 +177,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.max_prompt_length = model.max_prompt_length;
       }
 
+      if (typeof model.max_context_window === 'number' && Number.isFinite(model.max_context_window)) {
+        modelInfo.max_context_window = model.max_context_window;
+      }
+
       if (typeof model.mmproj === 'string' && model.mmproj) {
         modelInfo.mmproj = model.mmproj;
       }
@@ -166,8 +193,18 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.model_name = model.model_name;
       }
 
-      if (Array.isArray(model.composite_models)) {
-        modelInfo.composite_models = model.composite_models.filter((component: unknown): component is string => typeof component === 'string');
+      const components = model.components;
+      if (Array.isArray(components)) {
+        modelInfo.components = components.filter((component: unknown): component is string => typeof component === 'string');
+      }
+
+      if (model.checkpoints && typeof model.checkpoints === 'object' && !Array.isArray(model.checkpoints)) {
+        const checkpoints = Object.fromEntries(
+          Object.entries(model.checkpoints).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+        );
+        if (Object.keys(checkpoints).length > 0) {
+          modelInfo.checkpoints = checkpoints;
+        }
       }
 
       if (model.recipe_options && typeof model.recipe_options === 'object') {
@@ -182,6 +219,13 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.vision = model.vision;
       }
 
+      // cloud_provider distinguishes per-provider buckets in the Model
+      // Manager grouping (recipe="cloud" alone collapses all providers
+      // into a single sub-heading).
+      if (typeof model.cloud_provider === 'string' && model.cloud_provider) {
+        modelInfo.cloud_provider = model.cloud_provider;
+      }
+
       // Parse image_defaults if present (for sd-cpp models)
       if (model.image_defaults && typeof model.image_defaults === 'object') {
         modelInfo.image_defaults = {
@@ -189,6 +233,8 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
           cfg_scale: model.image_defaults.cfg_scale,
           width: model.image_defaults.width,
           height: model.image_defaults.height,
+          sampling_method: model.image_defaults.sampling_method,
+          flow_shift: model.image_defaults.flow_shift,
         };
       }
 
@@ -202,7 +248,117 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Server is the source of truth for all models (including user models)
-  // The /models?show_all=true endpoint returns both built-in and user models
+  // Cloud models are now served by lemond through /v1/models like every other
+  // recipe — the server discovers them from each installed provider as soon
+  // as an API key is resolvable (env var or POST /v1/cloud/auth). No
+  // client-side discovery, no per-client mirroring.
   return fetchBuiltInModelsFromAPI();
+};
+
+// ---------------------------------------------------------------------------
+// Model export — mirrors the CLI's validate_and_transform_model_json so GUI
+// and CLI produce the same import-ready file from the live /models/{id} object.
+// ---------------------------------------------------------------------------
+
+// Keys allowed in exported model files. Keep in sync with kKnownKeys in
+// src/cpp/cli/recipe_import.cpp. Notably excludes the user-specific runtime
+// fields (suggested, created, downloaded) and wire decorations (id, object,
+// owned_by) — the server regenerates those on import.
+const EXPORT_KNOWN_KEYS = new Set([
+  'checkpoint',
+  'checkpoints',
+  'components',
+  'model_name',
+  'models',
+  'image_defaults',
+  'labels',
+  'recipe',
+  'recipe_options',
+  'size',
+]);
+
+const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const entry = Object.fromEntries(
+    Object.entries(raw).filter(([key]) => EXPORT_KNOWN_KEYS.has(key))
+  );
+  if (typeof entry.model_name !== 'string' && typeof raw.id === 'string') {
+    entry.model_name = raw.id;
+  }
+  if (isRecord(entry.checkpoints) && 'checkpoint' in entry) {
+    delete entry.checkpoint;
+  }
+  return entry;
+};
+
+/**
+ * Normalize a live /models/{id} object into the import-ready file shape
+ * (pure; mirrors the CLI transform). Collections keep `components` and a
+ * `models` array with each component normalized by the same per-model
+ * transform.
+ */
+export const normalizeModelExportPayload = (
+  raw: Record<string, unknown>,
+  fallbackId = '',
+): { filename: string; payload: Record<string, unknown> } => {
+  const payload = toExportEntry(raw);
+
+  // The exported model itself is import-ready: registration uses the `user.`
+  // namespace, exactly like the CLI export transform.
+  const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
+  payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
+
+  if (isCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+    // Normalize each embedded component with the same transform. Components
+    // are leaf models: drop their (empty) collection fields and keep bare
+    // names — the server decides `user.` prefixing when registering them.
+    const models = Array.isArray(raw.models) ? raw.models : [];
+    payload.models = models.filter(isRecord).map((component) => {
+      const entry = toExportEntry(component);
+      if (Array.isArray(entry.components) && entry.components.length === 0) delete entry.components;
+      if (Array.isArray(entry.models) && entry.models.length === 0) delete entry.models;
+      return entry;
+    });
+  } else {
+    // Regular-model files carry no collection fields (the live API emits an
+    // empty `components` array on every model object).
+    delete payload.components;
+    delete payload.models;
+  }
+
+  const bareName = name.startsWith(USER_MODEL_PREFIX) ? name.slice(USER_MODEL_PREFIX.length) : name;
+  return { filename: `${bareName}.json`, payload };
+};
+
+/**
+ * Build an exportable model JSON the same way `lemonade export` does: fetch
+ * the live /models/{id} object and normalize it into the import-ready file
+ * shape.
+ */
+export const buildModelExportFile = async (
+  modelId: string,
+): Promise<{ filename: string; payload: Record<string, unknown> }> => {
+  const { serverFetch } = await import('./serverConfig');
+  const response = await serverFetch(`/models/${encodeURIComponent(modelId)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch model info for '${modelId}' (HTTP ${response.status}).`);
+  }
+  const raw: unknown = await response.json();
+  if (!isRecord(raw)) {
+    throw new Error(`Unexpected /models response for '${modelId}'.`);
+  }
+  return normalizeModelExportPayload(raw, modelId);
+};
+
+/** Trigger a browser download of an exported model/collection JSON. */
+export const downloadModelExportFile = async (modelId: string): Promise<void> => {
+  const { filename, payload } = await buildModelExportFile(modelId);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 };

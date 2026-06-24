@@ -22,7 +22,10 @@ struct CPUInfo : DeviceInfo {
 };
 
 struct GPUInfo : DeviceInfo {
+    int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
+    std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
+    std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
     double virtual_gb = 0.0;
 };
@@ -60,8 +63,12 @@ public:
     virtual CPUInfo get_cpu_device() = 0;
     virtual GPUInfo get_amd_igpu_device() = 0;
     virtual std::vector<GPUInfo> get_amd_dgpu_devices() = 0;
-    virtual std::vector<GPUInfo> get_nvidia_dgpu_devices() = 0;
+    virtual std::vector<GPUInfo> get_nvidia_gpu_devices() = 0;
     virtual NPUInfo get_npu_device() = 0;
+
+    // Apple Silicon unified-memory GPU. Only meaningful on macOS; the base
+    // implementation reports "unavailable" so non-Apple platforms need no stub.
+    virtual GPUInfo get_apple_silicon_device() { return GPUInfo{}; }
 
     // Common methods (can be overridden for detailed platform info)
     virtual std::string get_os_version();
@@ -102,6 +109,14 @@ public:
 
     // Device support detection
     static std::string get_rocm_arch();
+    static std::string get_cuda_arch();
+
+    // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).
+    // Return the physical CUDA device indices whose compute capability matches
+    // the selected release architecture, so callers can hide incompatible GPUs
+    // with CUDA_VISIBLE_DEVICES while still using all GPUs of the same arch.
+    static std::vector<int> get_cuda_device_indices_for_arch(const std::string& arch);
+    static std::string get_cuda_visible_devices_for_arch(const std::string& arch);
 
     // Detect if the device is an iGPU
     static bool get_has_igpu();
@@ -111,6 +126,10 @@ public:
 
     // Check if the process is running under systemd
     static bool is_running_under_systemd();
+
+    // Global GPU memory pressure across all processes (used/total in [0,1]),
+    // or -1.0 if no source is available. Used by the dynamic VRAM eviction engine.
+    static double get_global_vram_usage_pct();
 };
 
 // Windows implementation
@@ -122,7 +141,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Windows-specific fields
@@ -132,17 +151,26 @@ public:
     // Windows-specific methods
     std::string get_processor_name();
     std::string get_physical_memory();
-    std::string get_system_model();
-    std::string get_bios_version();
-    std::string get_max_clock_speed();
-    std::string get_windows_power_setting();
+
+    // POD used by read_cpu_hardware() (defined in system_info.cpp)
+    struct CpuHardware {
+        std::string brand;
+        int logical  = 0;
+        int physical = 0;
+    };
 
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);
     std::string get_driver_version(const std::string& device_name);
-    std::string get_npu_power_mode();
     double get_gpu_vram_dxdiag(const std::string& gpu_name);
     double get_gpu_vram_wmi(uint64_t adapter_ram);
+    double get_nvidia_vram_smi();
+
+    // dxdiag lists every GPU in one invocation, so we run it once and
+    // serve subsequent lookups from memory.
+    bool dxdiag_cache_loaded_ = false;
+    std::vector<std::pair<std::string, double>> dxdiag_vram_cache_;  // (card_name_lower, vram_gb)
+    void load_dxdiag_cache();
 };
 
 // Linux implementation
@@ -151,7 +179,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Linux-specific fields
@@ -181,8 +209,9 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
+    GPUInfo get_apple_silicon_device() override;
 
     // Override to add macOS-specific fields
     json get_system_info_dict() override;
@@ -202,12 +231,16 @@ std::unique_ptr<SystemInfo> create_system_info();
 // Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 
+// Helper to identify CUDA Compute Capability from a marketing GPU name
+// Returns an sm_XX token (e.g., "sm_75", "sm_86", "sm_120") or empty string if not recognized
+std::string identify_cuda_arch_from_name(const std::string& device_name);
+
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
 
 // FLM status (derived from system-info cache)
 struct FlmStatus {
-    std::string state;     // "unsupported","installable","update_required","action_required","installed"
+    std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"
     std::string version;
     std::string message;
     std::string action;
@@ -224,48 +257,18 @@ struct FlmStatus {
     }
 };
 
-// Cache management
+// In-memory system info cache (populated once on first access, held for process lifetime)
 class SystemInfoCache {
 public:
-    SystemInfoCache();
-
-    // Check if cache is valid
-    bool is_valid() const;
-
-    // Load cached hardware info
-    json load_hardware_info();
-
-    // Save hardware info to cache
-    void save_hardware_info(const json& hardware_info);
-
-    // Clear cache
-    void clear();
-
-    // Perform cleanup tasks needed when upgrading from older versions
-    // (e.g., deleting stale backend binaries)
-    void perform_upgrade_cleanup();
-
-    // Get cache file path
-    std::string get_cache_file_path() const { return cache_file_path_; }
-
-    // High-level function: Get complete system info (with cache handling and friendly messages)
+    // Get complete system info (hardware + recipes). Computed once, then cached in memory.
     static json get_system_info_with_cache();
 
-    // Invalidate recipes portion of cache (hardware stays cached).
-    // Call after installing/upgrading FLM so the next get_system_info_with_cache()
-    // re-evaluates backend availability.
+    // Invalidate recipes portion of cache so the next get_system_info_with_cache()
+    // re-evaluates backend availability (call after installing/upgrading a backend).
     static void invalidate_recipes();
 
     // Get FLM status from cached system-info (single source of truth)
     static FlmStatus get_flm_status();
-
-private:
-    std::string cache_file_path_;
-    std::string get_lemonade_version() const;
-    bool is_ci_mode() const;
-
-    // Helper to compare semantic versions (returns true if v1 < v2)
-    static bool is_version_less_than(const std::string& v1, const std::string& v2);
 };
 
 } // namespace lemon

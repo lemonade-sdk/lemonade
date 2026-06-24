@@ -36,6 +36,8 @@ export interface LlamaOptions {
   ctxSize: NumericOption;
   llamacppBackend: StringOption;
   llamacppArgs: StringOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -43,12 +45,24 @@ export interface WhisperOptions {
   recipe: 'whispercpp';
   whispercppBackend: StringOption;
   whispercppArgs: StringOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface MoonshineOptions {
+  recipe: 'moonshine';
+  moonshineArgs: StringOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -57,6 +71,7 @@ export type RyzenAIRecipe = 'ryzenai-llm';
 export interface RyzenAIOptions {
   recipe: RyzenAIRecipe;
   ctxSize: NumericOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -67,11 +82,23 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface VLLMOptions {
+  recipe: 'vllm';
+  ctxSize: NumericOption;
+  vllmBackend: StringOption;
+  vllmArgs: StringOption;
+  mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -136,6 +163,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Context size for the model',
   },
 
+  // Launch argument merging option
+  mergeArgs: {
+    type: 'boolean',
+    default: true,
+    label: 'Merge arguments',
+    description: 'Global and model arguments will be merged on model load',
+  },
+
   // LlamaCpp-specific options
   llamacppBackend: {
     type: 'string',
@@ -152,6 +187,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Custom arguments to pass to llama-server',
   },
 
+  // vLLM-specific options
+  vllmBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'vLLM backend to use',
+    isBackendOption: true,
+    backendRecipe: 'vllm',
+  },
+  vllmArgs: {
+    type: 'string',
+    default: '',
+    label: 'vLLM Arguments',
+    description: 'Custom arguments to pass to vllm-server',
+  },
+
   // WhisperCpp-specific options
   whispercppBackend: {
     type: 'string',
@@ -166,6 +217,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     default: '',
     label: 'WhisperCpp Arguments',
     description: 'Custom arguments to pass to whisper-server, for example --convert',
+  },
+
+  // Moonshine (streaming STT) options
+  moonshineArgs: {
+    type: 'string',
+    default: '',
+    label: 'Moonshine Arguments',
+    description: 'Custom arguments to pass to moonshine-server',
   },
 
   // Stable Diffusion options
@@ -221,24 +280,34 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     label: 'Save Options',
     description: 'Save these options in lemonade server for future loads',
   },
+
+  // Pin model option
+  pinned: {
+    type: 'boolean',
+    default: false,
+    label: 'Pin Model',
+    description: 'Pin this model to prevent it from being auto-evicted',
+  },
 };
 
 // =============================================================================
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
 
 /**
  * Maps recipe names to the option keys they support.
  * This mirrors the C++ get_keys_for_recipe() function in recipe_options.cpp
  */
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
-  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
-  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'saveOptions'],
-  'flm': ['ctxSize', 'saveOptions'],
-  'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
+  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'moonshine': ['moonshineArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'flm': ['ctxSize', 'mergeArgs', 'pinned', 'saveOptions'],
+  'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
+  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
 };
 
 /**
@@ -264,12 +333,16 @@ export function getOptionDefinition(key: string): OptionDef | undefined {
 
 const FRONTEND_TO_API_MAP: Record<string, string> = {
   ctxSize: 'ctx_size',
+  mergeArgs: 'merge_args',
   llamacppBackend: 'llamacpp_backend',
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
   whispercppArgs: 'whispercpp_args',
+  moonshineArgs: 'moonshine_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
+  vllmBackend: 'vllm_backend',
+  vllmArgs: 'vllm_args',
   saveOptions: 'save_options',
 };
 

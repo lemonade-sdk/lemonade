@@ -4,7 +4,19 @@ on:
   push:
     branches: ["main"]
   pull_request:
-  merge_group:
+    paths:
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "setup.sh"
+      - "test/server_cli2.py"
+      - "test/server_endpoints.py"
+      - "test/requirements.txt"
+      - "test/utils/**"
+      - ".github/workflows/linux_distro_builds.yml"
+      - ".github/actions/capture-server-logs/**"
+      - "!**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -20,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
 
     strategy:
       fail-fast: false
@@ -28,16 +42,13 @@ jobs:
           - distro: Arch
             image: archlinux:latest
             python: python
-          - distro: Debian
-            image: debian:trixie
-            python: python3
-          - distro: Fedora
-            image: fedora:latest
+          - distro: openSUSE
+            image: opensuse/tumbleweed:latest
             python: python3
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -64,7 +75,7 @@ jobs:
         run: |
           set -e
 
-          echo "Building lemond and lemonade-server on ${{ matrix.distro }}..."
+          echo "Building lemond and lemonade on ${{ matrix.distro }}..."
 
           # Build
           echo "Building binaries..."
@@ -78,19 +89,19 @@ jobs:
               exit 1
           fi
 
-          if [ ! -f "build/lemonade-server" ]; then
-              echo "ERROR: lemonade-server not found!"
+          if [ ! -f "build/lemonade" ]; then
+              echo "ERROR: lemonade not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
           fi
 
           echo "Binaries found successfully"
-          ls -lh build/lemond build/lemonade-server
+          ls -lh build/lemond build/lemonade
 
           echo "Verifying binary executability..."
           ./build/lemond --version
-          ./build/lemonade-server --version
+          ./build/lemonade --version
 
           echo "${{ matrix.distro }} build successful!"
 
@@ -103,8 +114,8 @@ jobs:
           ldd lemond
 
           echo ""
-          echo "=== lemonade-server dependencies ==="
-          ldd lemonade-server
+          echo "=== lemonade dependencies ==="
+          ldd lemonade
 
           echo ""
           echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
@@ -130,18 +141,22 @@ jobs:
           LEMONADE_CI_MODE: "True"
         run: |
           echo "Starting lemond in background..."
-          ./build/lemond --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond --port 13305 > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
 
           echo "Waiting for server to be ready..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
               echo "Server is running and healthy"
               exit 0
             fi
             sleep 2
           done
           echo "ERROR: Server did not start"
-          cat /tmp/lemonade-server.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemonade-server.log" 2>/dev/null || true
           exit 1
 
       - name: Run CLI tests
@@ -152,10 +167,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running CLI tests..."
-          python test/server_cli.py --server-binary "$SERVER_BINARY"
+          python test/server_cli2.py --cli-binary "$CLI_BINARY"
 
           echo "CLI tests PASSED!"
 
@@ -167,10 +182,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running endpoint tests..."
-          python test/server_endpoints.py --server-binary "$SERVER_BINARY"
+          python test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
           echo "Endpoint tests PASSED!"
 

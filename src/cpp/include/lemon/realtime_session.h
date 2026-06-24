@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include "streaming_audio_buffer.h"
 #include "vad.h"
+#include "utils/tcp_jsonl_client.h"
 
 namespace lemon {
 
@@ -22,10 +23,21 @@ class Router;
  * State for a single realtime transcription session.
  */
 struct RealtimeSession {
+    static json default_turn_detection_config() {
+        const SimpleVAD::Config defaults;
+        return {
+            {"threshold", defaults.energy_threshold},
+            {"silence_duration_ms", defaults.min_silence_ms},
+            {"prefix_padding_ms", defaults.min_speech_ms}
+        };
+    }
+
     std::string session_id;
     std::string model;
     StreamingAudioBuffer audio_buffer;
     SimpleVAD vad;
+    json turn_detection_config;
+    std::atomic<bool> turn_detection_enabled{true};
     std::atomic<bool> session_active{true};
 
     // Callback to send messages back to the WebSocket client
@@ -33,13 +45,22 @@ struct RealtimeSession {
 
     // Timestamps for audio tracking
     int64_t audio_start_ms = 0;  // Start of current speech segment
+    std::atomic<bool> vad_speech_window_open{false};
 
     // Interim transcription state
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
     std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
 
+    // Streaming backend connection (used when backend supports IStreamingTranscriptionServer).
+    // streaming_mutex guards streaming_client against concurrent forward/disconnect.
+    std::mutex streaming_mutex;
+    std::unique_ptr<utils::TcpJsonlClient> streaming_client;
+    std::atomic<bool> use_streaming_backend{false};
+
     RealtimeSession(const std::string& id)
-        : session_id(id), vad(SimpleVAD::Config{}) {}
+        : session_id(id),
+          vad(SimpleVAD::Config{}),
+          turn_detection_config(default_turn_detection_config()) {}
 };
 
 /**
@@ -119,6 +140,10 @@ private:
     // Generate unique session ID
     static std::string generate_session_id();
 
+    // Apply turn detection configuration to a session
+    void apply_turn_detection_config(std::shared_ptr<RealtimeSession> session,
+                                     const json& turn_detection);
+
     // Snapshot audio buffer and dispatch transcription to worker thread
     void transcribe_and_send(std::shared_ptr<RealtimeSession> session);
 
@@ -136,6 +161,14 @@ private:
 
     // Process VAD for a session
     void process_vad(std::shared_ptr<RealtimeSession> session);
+
+    // Streaming backend helpers
+    void connect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                 const std::string& base64_audio);
+    void forward_streaming_commit(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_clear(std::shared_ptr<RealtimeSession> session);
 
     // Get session by ID (returns nullptr if not found)
     std::shared_ptr<RealtimeSession> get_session(const std::string& session_id);

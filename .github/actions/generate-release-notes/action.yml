@@ -95,24 +95,67 @@ runs:
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
 
+        # Search for the release notes issue by exact title (e.g. "v10.8.0 release notes")
+        RELEASE_NOTES_ISSUE_BODY=$(gh issue list --repo "$REPO" \
+          --state open \
+          --search "\"$TAG_NAME release notes\" in:title" \
+          --json body --limit 1 \
+          | jq -r '.[0].body // ""' 2>/dev/null || echo "")
+
+        HEADLINE_SECTION=""
+        BREAKING_CHANGES_SECTION=""
+
+        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ]; then
+          echo "Found release notes issue, extracting Headline and Breaking Changes..."
+          HEADLINE_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
+            awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
+          BREAKING_CHANGES_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
+            awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
+        else
+          echo "No release notes issue found; Headline and Breaking Changes will need to be added manually."
+        fi
+
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
 
         {
-          echo "## Quick Install"
+          if [ -n "$HEADLINE_SECTION" ]; then
+            echo "$HEADLINE_SECTION"
+            echo ""
+          fi
+          if [ -n "$BREAKING_CHANGES_SECTION" ]; then
+            echo "$BREAKING_CHANGES_SECTION"
+            echo ""
+          fi
+        } > "$RELEASE_NOTES_FILE"
+
+        {
+          echo "## Lemonade Server"
           echo ""
           echo "| Operating System | Downloads |"
           echo "|------------------|-----------|"
-          echo "| **Windows** | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) (Server + App) · [lemonade-server-minimal.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-minimal.msi) (Server Only) |"
-          echo "| **Ubuntu 24.04+** | [Launchpad PPA](https://launchpad.net/~lemonade-team/+archive/ubuntu/stable) (Server) · [lemonade-app-${VERSION}-x86_64.AppImage](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-app-${VERSION}-x86_64.AppImage) (Companion Desktop App)  |"
-          echo "| **Fedora 43** | [lemonade-server-${VERSION}.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}.x86_64.rpm) (Server) · [lemonade-app-${VERSION}-x86_64.AppImage](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-app-${VERSION}-x86_64.AppImage) (Companion Desktop App)  |"
-          echo "| **macOS (beta)** | [Lemonade-${VERSION}-Darwin.pkg](https://github.com/$REPO/releases/download/$TAG_NAME/Lemonade-${VERSION}-Darwin.pkg) (Server + App) |"
+          echo "| **Windows** | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) |"
+          echo "| **Ubuntu 24.04+** | [Launchpad PPA](https://launchpad.net/~lemonade-team/+archive/ubuntu/stable) |"
+          echo "| **Debian 13** | [lemonade-server_${VERSION}-debian13_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server_${VERSION}-debian13_amd64.deb) |"
+          echo "| **Fedora 43** | [lemonade-server-${VERSION}-fc43.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}-fc43.x86_64.rpm) |"
+          echo "| **Fedora 44** | [lemonade-server-${VERSION}-fc44.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}-fc44.x86_64.rpm) |"
+          echo "| **macOS** | [Lemonade-${VERSION}-Darwin.pkg](https://github.com/$REPO/releases/download/$TAG_NAME/Lemonade-${VERSION}-Darwin.pkg) |"
           echo ""
-          echo "> **Other platforms?** See our [Installation Options](https://lemonade-server.ai/install_options.html) for [Docker](https://lemonade-server.ai/install_options.html#docker), [Snap](https://lemonade-server.ai/install_options.html#ubuntu), [Arch](https://lemonade-server.ai/install_options.html#arch), [Fedora](https://lemonade-server.ai/install_options.html#fedora), [Debian](https://lemonade-server.ai/install_options.html#debian), and more."
+          echo "> **Other platforms?** See our [Installation Options](https://lemonade-server.ai/docs/guide/install/) for [Docker](https://lemonade-server.ai/docs/guide/install/docker/), [Snap](https://lemonade-server.ai/docs/guide/install/ubuntu/#__tabbed_2_3), [Arch](https://lemonade-server.ai/docs/guide/install/arch/), [Debian](https://lemonade-server.ai/docs/guide/install/), and more."
+          echo ""
+          echo "## Embeddable Lemonade"
+          echo ""
+          echo "Portable binaries for bundling into your own installer. Run \`lemond ./\` as a subprocess."
+          echo ""
+          echo "| Platform | Download |"
+          echo "|----------|----------|"
+          echo "| **Ubuntu x64** | [lemonade-embeddable-${VERSION}-ubuntu-x64.tar.gz](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-ubuntu-x64.tar.gz) |"
+          echo "| **Windows x64** | [lemonade-embeddable-${VERSION}-windows-x64.zip](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-windows-x64.zip) |"
+          echo "| **macOS arm64** | [lemonade-embeddable-${VERSION}-macos-arm64.tar.gz](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-macos-arm64.tar.gz) |"
           echo ""
           echo "---"
           echo ""
-        } > "$RELEASE_NOTES_FILE"
+        } >> "$RELEASE_NOTES_FILE"
 
         # Build What's Changed section with thank you and collapsible details
         if [ -n "$WHATS_CHANGED_CONTENT" ]; then

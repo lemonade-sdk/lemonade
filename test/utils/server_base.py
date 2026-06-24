@@ -45,12 +45,13 @@ from .test_models import (
     STANDARD_MESSAGES,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
-    get_default_server_binary,
+    TIMEOUT_ROCM_INSTALL,
+    get_default_cli_binary,
 )
 
 # Global configuration set by parse_args()
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
     "wrapped_server": None,
     "backend": None,
     "modality": None,
@@ -84,10 +85,10 @@ def parse_args(additional_args=None, modality=None):
         help="Run tests in offline mode",
     )
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to server binary (default: lemonade-server in venv)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: build/lemonade)",
     )
     parser.add_argument(
         "--wrapped-server",
@@ -105,7 +106,7 @@ def parse_args(additional_args=None, modality=None):
     args, unknown = parser.parse_known_args()
 
     # Update global config
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
     _config["modality"] = modality
@@ -124,9 +125,9 @@ def get_config():
     return _config.copy()
 
 
-def get_server_binary():
-    """Get the server binary path."""
-    return _config["server_binary"]
+def get_cli_binary():
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"]
 
 
 def wait_for_server(port=PORT, timeout=60):
@@ -184,6 +185,68 @@ def unload_all_models(port=PORT):
     return response
 
 
+def _is_transient_pull_status(status_code):
+    return status_code in {408, 409, 429, 500, 502, 503, 504}
+
+
+def pull_model_with_retry(model_name, attempts=3, port=PORT):
+    """Pull a model with bounded retry for transient setup failures.
+
+    Test setup should tolerate one-off transient pull failures, but persistent
+    failures and permanent client errors should still fail with useful details.
+    """
+    last_status = None
+    last_body = ""
+    last_error = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        try:
+            response = requests.post(
+                f"http://localhost:{port}/api/v1/pull",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < attempts:
+                print(
+                    f"Transient /pull setup request failure for {model_name}: "
+                    f"{exc} (attempt {attempt}/{attempts}). Retrying..."
+                )
+                continue
+            break
+
+        if response.status_code == 200:
+            return response
+
+        last_status = response.status_code
+        last_body = response.text[:1000]
+
+        if _is_transient_pull_status(response.status_code) and attempt < attempts:
+            print(
+                f"Transient /pull setup failure for {model_name}: "
+                f"status={response.status_code}, attempt={attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    if last_error is not None and last_status is None:
+        raise AssertionError(
+            f"Expected 200 from /api/v1/pull for {model_name} after "
+            f"{attempts} attempt(s), last request failed with: {last_error}"
+        )
+
+    raise AssertionError(
+        f"Expected 200 from /api/v1/pull for {model_name} after "
+        f"{attempts} attempt(s), got {last_status}. Body: {last_body}"
+    )
+
+
 def _build_runtime_config(additional_server_args=None):
     """
     Translate CLI args (--wrapped-server, --backend, additional_server_args)
@@ -200,11 +263,11 @@ def _build_runtime_config(additional_server_args=None):
 
     # Map --wrapped-server + --backend to the correct recipe option key
     if wrapped_server == "llamacpp" and backend:
-        config["llamacpp_backend"] = backend
+        config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
-        config["sd-cpp_backend"] = backend
+        config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
-        config["whispercpp_backend"] = backend
+        config["whispercpp"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -218,13 +281,13 @@ def _build_runtime_config(additional_server_args=None):
             config["max_loaded_models"] = int(additional[i + 1])
             i += 2
         elif arg == "--llamacpp" and i + 1 < len(additional):
-            config["llamacpp_backend"] = additional[i + 1]
+            config["llamacpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
-            config["sd-cpp_backend"] = additional[i + 1]
+            config["sdcpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
-            config["whispercpp_backend"] = additional[i + 1]
+            config["whispercpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--ctx-size" and i + 1 < len(additional):
             config["ctx_size"] = int(additional[i + 1])
@@ -236,6 +299,57 @@ def _build_runtime_config(additional_server_args=None):
             i += 1
 
     return config
+
+
+# Recipes whose "rocm" backend resolves to the rocm-stable channel and therefore
+# trigger a TheRock runtime download on a cold cache (see will_install_therock in
+# backend_manager.cpp). Other rocm consumers (vllm, llamacpp rocm-nightly) bundle
+# their own runtime and do not need this.
+_THEROCK_RECIPES = ("llamacpp", "sd-cpp")
+
+
+def ensure_rocm_runtime():
+    """
+    Pre-warm the ROCm (TheRock) runtime before running rocm-backend tests.
+
+    On a cold cache, loading a rocm-stable model triggers a ~4.5 GB TheRock
+    download inside the first inference request, which can exceed the tighter
+    per-request inference timeout. Doing it here, as an explicit setup step with
+    a generous timeout, keeps that cost out of the test body and surfaces a
+    download/runtime failure as a clear, distinct setup error rather than a
+    confusing inference timeout.
+
+    No-op unless the active backend is "rocm" and the recipe is one that uses
+    the TheRock runtime. Idempotent: the server skips the download when TheRock
+    is already installed, so this is a fast check on a warm cache.
+    """
+    if _config.get("backend") != "rocm":
+        return
+    recipe = _config.get("wrapped_server")
+    if recipe not in _THEROCK_RECIPES:
+        return
+    if requests is None:
+        raise RuntimeError(
+            "ROCM_INSTALL_FAILED: the `requests` package is required to pre-warm "
+            "the ROCm (TheRock) runtime; install it with `pip install requests`."
+        )
+
+    print(f"\n=== Ensuring ROCm (TheRock) runtime for {recipe}:rocm ===")
+    try:
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/install",
+            json={"recipe": recipe, "backend": "rocm", "stream": False},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_ROCM_INSTALL,
+        )
+        response.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"ROCM_INSTALL_FAILED: ROCm runtime (TheRock) install failed for "
+            f"{recipe}:rocm. This is an environment/setup failure, not a test "
+            f"failure. Detail: {e}"
+        ) from e
+    print(f"ROCm (TheRock) runtime ready for {recipe}:rocm")
 
 
 class ServerTestBase(unittest.TestCase):
@@ -279,6 +393,10 @@ class ServerTestBase(unittest.TestCase):
             )
         print("Server is reachable on port %d" % PORT)
 
+        # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
+        # blow the per-request inference timeout inside the first test.
+        ensure_rocm_runtime()
+
         # Build and apply runtime config from CLI args + class-level args
         runtime_config = _build_runtime_config(cls.additional_server_args)
 
@@ -306,6 +424,7 @@ class ServerTestBase(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"
+        self.internal_url = f"http://localhost:{PORT}/internal"
         self.messages = STANDARD_MESSAGES.copy()
 
     def tearDown(self):
@@ -409,10 +528,11 @@ __all__ = [
     "ServerTestBase",
     "parse_args",
     "get_config",
-    "get_server_binary",
+    "get_cli_binary",
     "wait_for_server",
     "set_server_config",
     "unload_all_models",
+    "pull_model_with_retry",
     "run_server_tests",
     "OpenAI",
     "AsyncOpenAI",

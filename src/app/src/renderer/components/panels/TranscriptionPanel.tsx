@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
@@ -25,6 +25,10 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   runPreFlight, reset, showError,
 }) => {
   const { selectedModel, modelsData } = useModels();
+  const supportsRealtimeTranscription = useMemo(
+    () => !!selectedModel && (modelsData[selectedModel]?.labels?.includes('realtime-transcription') ?? false),
+    [selectedModel, modelsData],
+  );
   const [transcriptionFile, setTranscriptionFile] = useState<File | null>(null);
   const [transcriptionHistory, setTranscriptionHistory] = useState<Array<{ filename: string; text: string }>>([]);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
@@ -327,7 +331,7 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     />
                   </svg>
                 </button>
-                {window.isSecureContext && (
+                {window.isSecureContext && supportsRealtimeTranscription && (
                   <button
                     className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
                     onClick={isLiveRecording ? handleMicStop : handleMicStart}

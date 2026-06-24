@@ -1,29 +1,57 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lemon {
 
-// Model type classification for LRU cache management
-enum class ModelType {
-    LLM,        // Chat/completion models
-    EMBEDDING,  // Embedding models
-    RERANKING,  // Reranking models
-    AUDIO,      // Audio models (speech-to-text transcription)
-    IMAGE,      // Image generation models (text-to-image)
-    TTS         // Text to speech models
+constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+
+inline bool is_collection_recipe(const std::string& recipe) {
+    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+}
+
+enum class ModelState {
+    LOADING,
+    READY,
+    IN_USE,
+    DOWNSIZING,
+    DOWNSIZED,
+    EVICTING,
+    UNLOADED
 };
 
-// Device type flags for tracking hardware usage
-// Uses bitmask pattern for models that use multiple devices
+inline std::string model_state_to_string(ModelState state) {
+    switch (state) {
+        case ModelState::LOADING: return "loading";
+        case ModelState::READY: return "ready";
+        case ModelState::IN_USE: return "in_use";
+        case ModelState::DOWNSIZING: return "downsizing";
+        case ModelState::DOWNSIZED: return "downsized";
+        case ModelState::EVICTING: return "evicting";
+        case ModelState::UNLOADED: return "unloaded";
+        default: return "unknown";
+    }
+}
+
+enum class ModelType {
+    LLM,
+    EMBEDDING,
+    RERANKING,
+    TRANSCRIPTION,
+    IMAGE,
+    TTS
+};
+
+// Bitmask pattern for models that use multiple devices
 enum DeviceType : uint32_t {
     DEVICE_NONE = 0,
-    DEVICE_CPU  = 1 << 0,  // 0x01
-    DEVICE_GPU  = 1 << 1,  // 0x02
-    DEVICE_NPU  = 1 << 2   // 0x04
+    DEVICE_CPU  = 1 << 0,
+    DEVICE_GPU  = 1 << 1,
+    DEVICE_NPU  = 1 << 2
 };
 
-// Bitwise operators for DeviceType flags
 inline DeviceType operator|(DeviceType a, DeviceType b) {
     return static_cast<DeviceType>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
@@ -37,13 +65,12 @@ inline DeviceType& operator|=(DeviceType& a, DeviceType b) {
     return a;
 }
 
-// Helper functions
 inline std::string model_type_to_string(ModelType type) {
     switch (type) {
         case ModelType::LLM: return "llm";
         case ModelType::EMBEDDING: return "embedding";
         case ModelType::RERANKING: return "reranking";
-        case ModelType::AUDIO: return "audio";
+        case ModelType::TRANSCRIPTION: return "transcription";
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
         default: return "unknown";
@@ -68,8 +95,30 @@ inline std::string device_type_to_string(DeviceType device) {
     return result;
 }
 
-// Determine model type from labels
+// Determine model type from labels.
+//
+// Labels describe *capabilities* (what the model accepts or produces). ModelType
+// describes the *deployment mode* we spawn the backend subprocess in (LLM chat,
+// ASR, embedding, etc.) and the LRU bucket the router uses. These are different
+// concepts.
+//
+// Label semantics:
+//   "transcription"          → model can serve /audio/transcriptions (functional)
+//   "realtime-transcription" → model supports WebSocket /realtime streaming
+//   "chat-transcription"     → model accepts audio input in /chat/completions
+//
+// Resolution: chat-indicator labels win. The "transcription" label triggers
+// ModelType::TRANSCRIPTION only when no chat indicator is present (pure Whisper).
+// "chat-transcription" is an LLM input-modality label and does not change the
+// deployment mode.
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
+    for (const auto& label : labels) {
+        if (label == "vision" || label == "reasoning" ||
+            label == "tool-calling" || label == "tools" ||
+            label == "chat-transcription") {
+            return ModelType::LLM;
+        }
+    }
     for (const auto& label : labels) {
         if (label == "embeddings" || label == "embedding") {
             return ModelType::EMBEDDING;
@@ -77,8 +126,8 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "reranking") {
             return ModelType::RERANKING;
         }
-        if (label == "audio") {
-            return ModelType::AUDIO;
+        if (label == "transcription") {
+            return ModelType::TRANSCRIPTION;
         }
         if (label == "image") {
             return ModelType::IMAGE;
@@ -91,6 +140,7 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 }
 
 // Determine device type from recipe
+// Default device from recipe — individual backends override based on their config
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return DEVICE_GPU;
@@ -99,13 +149,17 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
+        return DEVICE_CPU;
+    } else if (recipe == "moonshine") {
+        return DEVICE_CPU;
     } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;  // stable-diffusion.cpp uses CPU (AVX2) by default
+        return DEVICE_CPU;
     } else if (recipe == "kokoro") {
-        return DEVICE_CPU;  // Kokoros runs on CPU
-    } else if (recipe == "experience") {
-        return DEVICE_NONE;  // Experience recipes orchestrate multiple component models
+        return DEVICE_CPU;
+    } else if (is_collection_recipe(recipe)) {
+        return DEVICE_NONE;
+    } else if (recipe == "cloud") {
+        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
     }
     return DEVICE_NONE;
 }

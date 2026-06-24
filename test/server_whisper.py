@@ -9,7 +9,7 @@ Usage:
     python server_whisper.py --wrapped-server whispercpp --backend npu
     python server_whisper.py --wrapped-server whispercpp --backend vulkan
     python server_whisper.py --wrapped-server flm
-    python server_whisper.py --server-binary /path/to/lemonade-server
+    python server_whisper.py --cli-binary /path/to/lemonade
 
     # Backward compatible (defaults to whispercpp):
     python server_whisper.py --backend cpu
@@ -98,14 +98,8 @@ class WhisperTests(ServerTestBase):
                 pass  # Ignore cleanup errors
         super().tearDownClass()
 
-    def test_001_transcription_basic(self):
-        """Test basic audio transcription with Whisper."""
-        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
-        self.assertTrue(
-            os.path.exists(self._test_audio_path),
-            f"Test audio file not found at {self._test_audio_path}",
-        )
-
+    def _load_whisper_model_or_fail(self):
+        """Load the configured Whisper model before positive transcription tests."""
         model = _get_whisper_model()
         whispercpp_backend = _get_whispercpp_backend()
 
@@ -121,11 +115,27 @@ class WhisperTests(ServerTestBase):
                 json=load_payload,
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            if load_response.status_code != 200:
-                self.skipTest(
-                    f"{whispercpp_backend} backend not available: {load_response.text}"
-                )
-                return
+            self.assertEqual(
+                load_response.status_code,
+                200,
+                (
+                    f"Failed to load model {model} with {whispercpp_backend} "
+                    f"backend: {load_response.text}"
+                ),
+            )
+
+        return model
+
+    def test_001_transcription_basic(self):
+        """Test basic audio transcription with Whisper."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+        self.assertTrue(
+            os.path.exists(self._test_audio_path),
+            f"Test audio file not found at {self._test_audio_path}",
+        )
+
+        model = self._load_whisper_model_or_fail()
+        whispercpp_backend = _get_whispercpp_backend()
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
@@ -161,7 +171,7 @@ class WhisperTests(ServerTestBase):
         """Test audio transcription with explicit language parameter."""
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
@@ -350,6 +360,37 @@ class WhisperTests(ServerTestBase):
             websocket_base_url=f"ws://localhost:{ws_port}",
         )
 
+    def _get_pcm16_chunks(self):
+        """Load test audio and split it into ~256ms PCM16 chunks."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        pcm_data = self._load_pcm16_from_wav()
+        self.assertGreater(len(pcm_data), 0, "PCM data should not be empty")
+        print(
+            f"[INFO] Loaded {len(pcm_data)} bytes of PCM16 audio "
+            f"({len(pcm_data) // 2} samples, "
+            f"{len(pcm_data) // 2 / 16000:.1f}s)"
+        )
+
+        chunk_size = 8192
+        chunks = [
+            pcm_data[i : i + chunk_size] for i in range(0, len(pcm_data), chunk_size)
+        ]
+        print(f"[INFO] Split into {len(chunks)} chunks")
+        return chunks
+
+    async def _drain_realtime_events(self, conn, timeout_s=0.25):
+        """Collect any pending realtime events until a short timeout expires."""
+        events = []
+        while True:
+            try:
+                event = await asyncio.wait_for(conn.recv(), timeout=timeout_s)
+                print(f"[INFO] Drained message: {event.type}")
+                events.append(event)
+            except asyncio.TimeoutError:
+                break
+        return events
+
     @skip_if_unsupported("realtime_websocket")
     def test_006_realtime_websocket_connect(self):
         """Test WebSocket connection and session creation via OpenAI SDK."""
@@ -396,25 +437,8 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_007_realtime_websocket_transcription())
 
     async def _test_007_realtime_websocket_transcription(self):
-        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
-
         model = _get_whisper_model()
-
-        # Load audio as PCM16 mono 16kHz
-        pcm_data = self._load_pcm16_from_wav()
-        self.assertGreater(len(pcm_data), 0, "PCM data should not be empty")
-        print(
-            f"[INFO] Loaded {len(pcm_data)} bytes of PCM16 audio "
-            f"({len(pcm_data) // 2} samples, "
-            f"{len(pcm_data) // 2 / 16000:.1f}s)"
-        )
-
-        # Split into ~256ms chunks (4096 samples * 2 bytes = 8192 bytes)
-        chunk_size = 8192
-        chunks = [
-            pcm_data[i : i + chunk_size] for i in range(0, len(pcm_data), chunk_size)
-        ]
-        print(f"[INFO] Split into {len(chunks)} chunks")
+        chunks = self._get_pcm16_chunks()
 
         client = self._make_openai_client()
 
@@ -464,6 +488,75 @@ class WhisperTests(ServerTestBase):
             "Transcription should not be empty",
         )
         print(f"[OK] WebSocket transcription result: {transcript}")
+
+    @skip_if_unsupported("realtime_websocket")
+    def test_008_realtime_manual_commit(self):
+        """Test manual-commit realtime transcription with turn_detection disabled."""
+        asyncio.run(self._test_008_realtime_manual_commit())
+
+    async def _test_008_realtime_manual_commit(self):
+        model = _get_whisper_model()
+        chunks = self._get_pcm16_chunks()
+
+        client = self._make_openai_client()
+
+        async with client.beta.realtime.connect(model=model) as conn:
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.created")
+
+            await conn.session.update(session={"model": model, "turn_detection": None})
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.updated")
+
+            print(f"[INFO] Sending {len(chunks)} audio chunks...")
+            for chunk in chunks:
+                b64 = base64.b64encode(chunk).decode("ascii")
+                await conn.input_audio_buffer.append(audio=b64)
+                await asyncio.sleep(0.01)
+
+            buffered_events = await self._drain_realtime_events(conn)
+            self.assertEqual(
+                [event.type for event in buffered_events],
+                [],
+                "Manual commit mode should not emit events while buffering audio",
+            )
+
+            print("[INFO] Committing audio buffer...")
+            await conn.input_audio_buffer.commit()
+
+            transcript = None
+            deadline = time.time() + TIMEOUT_MODEL_OPERATION
+            while time.time() < deadline:
+                try:
+                    event = await asyncio.wait_for(conn.recv(), timeout=30)
+                    print(f"[INFO] Received message: {event.type}")
+
+                    self.assertNotIn(
+                        event.type,
+                        {
+                            "input_audio_buffer.speech_started",
+                            "input_audio_buffer.speech_stopped",
+                            "conversation.item.input_audio_transcription.delta",
+                        },
+                        "Manual commit mode should not emit VAD or interim events",
+                    )
+
+                    if (
+                        event.type
+                        == "conversation.item.input_audio_transcription.completed"
+                    ):
+                        transcript = getattr(event, "transcript", "")
+                        break
+                except asyncio.TimeoutError:
+                    break
+
+        self.assertIsNotNone(transcript, "Should receive a transcription result")
+        self.assertGreater(
+            len(transcript.strip()),
+            0,
+            "Transcription should not be empty",
+        )
+        print(f"[OK] Manual commit transcription result: {transcript}")
 
 
 if __name__ == "__main__":

@@ -1,29 +1,99 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b8460",
-    "rocm": "b1217",
-    "metal": "b8460",
-    "cpu": "b8460"
+    "vulkan": "b9747",
+    "rocm-stable": "b9752",
+    "rocm-nightly": "b1292",
+    "cuda": "b9752",
+    "metal": "b9747",
+    "cpu": "b9747"
   },
   "whispercpp": {
-    "cpu": "v1.8.2",
-    "vulkan": "v1.8.2",
-    "rocm": "v1.8.2",
-    "npu": "v1.8.2"
+    "cpu": "v1.8.4",
+    "vulkan": "v1.8.4",
+    "rocm": "v1.8.4",
+    "npu": "v1.8.4",
+    "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-506-1f30df9",
-    "rocm": "master-506-1f30df9"
+    "cpu": "master-709-92a3b73",
+    "rocm-stable": "master-709-92a3b73",
+    "vulkan": "master-709-92a3b73",
+    "cuda": "master-685-db48014",
+    "metal": "master-709-92a3b73"
+  },
+  "therock": {
+    "version": "7.13.0",
+    "architectures": [
+      "gfx908",
+      "gfx90a",
+      "gfx942",
+      "gfx1100",
+      "gfx1101",
+      "gfx1102",
+      "gfx1103",
+      "gfx1150",
+      "gfx1151",
+      "gfx1152",
+      "gfx1200",
+      "gfx1201",
+      "gfx1010",
+      "gfx1011",
+      "gfx1012",
+      "gfx1030",
+      "gfx1031",
+      "gfx1032",
+      "gfx1033",
+      "gfx1034",
+      "gfx1035",
+      "gfx1036",
+      "gfx103X",
+      "gfx110X",
+      "gfx120X"
+    ],
+    "url_mapping": {
+      "gfx908": "gfx90X-dcgpu",
+      "gfx90a": "gfx90X-dcgpu",
+      "gfx942": "gfx94X-dcgpu",
+      "gfx103X": "gfx103X-all",
+      "gfx110X": "gfx110X-all",
+      "gfx120X": "gfx120X-all",
+      "gfx1100": "gfx110X-all",
+      "gfx1101": "gfx110X-all",
+      "gfx1102": "gfx110X-all",
+      "gfx1103": "gfx110X-all",
+      "gfx1150": "gfx1150",
+      "gfx1151": "gfx1151",
+      "gfx1152": "gfx1152",
+      "gfx1200": "gfx120X-all",
+      "gfx1201": "gfx120X-all",
+      "gfx1010": "gfx101X-dgpu",
+      "gfx1011": "gfx101X-dgpu",
+      "gfx1012": "gfx101X-dgpu",
+      "gfx1030": "gfx103X-all",
+      "gfx1031": "gfx103X-all",
+      "gfx1032": "gfx103X-all",
+      "gfx1033": "gfx103X-all",
+      "gfx1034": "gfx103X-all",
+      "gfx1035": "gfx103X-all",
+      "gfx1036": "gfx103X-all"
+    }
   },
   "ryzenai-llm": {
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v0.9.36"
+    "npu": "v0.9.43"
   },
   "kokoro": {
-    "cpu": "b16"
+    "cpu": "b17",
+    "metal": "b17"
+  },
+  "vllm": {
+    "rocm": "vllm0.20.1-rocm7.12.0"
+  },
+  "moonshine": {
+    "cpu": "moonshine0.0.62"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

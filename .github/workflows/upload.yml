@@ -19,7 +19,7 @@ jobs:
     name: Upload to PPA
     steps:
       - name: Download source package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.artifact }}
 

@@ -1,0 +1,509 @@
+#include "lemon_cli/recipe_import.h"
+
+#include "lemon/model_manager.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
+
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <random>
+#include <sstream>
+#include <vector>
+
+namespace lemon_cli {
+namespace {
+
+// Keys allowed in exported/imported model files. Keep in sync with
+// EXPORT_KNOWN_KEYS in src/app/src/renderer/utils/modelData.ts (the GUI's
+// mirror of this transform).
+const std::vector<std::string> kKnownKeys = {
+    "checkpoint",
+    "checkpoints",
+    "components",
+    "model_name",
+    "models",
+    "image_defaults",
+    "labels",
+    "recipe",
+    "recipe_options",
+    "size"
+};
+
+bool is_json_recipe_file(const nlohmann::json& entry) {
+    if (!entry.is_object()) {
+        return false;
+    }
+    if (!entry.contains("type") || !entry["type"].is_string() || entry["type"].get<std::string>() != "file") {
+        return false;
+    }
+    if (!entry.contains("name") || !entry["name"].is_string()) {
+        return false;
+    }
+    const std::string name = entry["name"].get<std::string>();
+    return name.size() >= 5 && name.substr(name.size() - 5) == ".json";
+}
+
+bool fetch_github_recipe_contents(const std::string& subpath,
+                                  nlohmann::json& response_out,
+                                  std::string& error_out) {
+    std::string api_path = "/repos/lemonade-sdk/recipes/contents";
+    if (!subpath.empty()) {
+        api_path += "/" + subpath;
+    }
+
+    std::map<std::string, std::string> headers = {
+        {"Accept", "application/vnd.github+json"},
+        {"X-GitHub-Api-Version", "2022-11-28"},
+        {"User-Agent", "lemonade-cli"}
+    };
+
+    lemon::utils::HttpResponse res;
+    try {
+        res = lemon::utils::HttpClient::get("https://api.github.com" + api_path, headers);
+    } catch (const std::exception& e) {
+        error_out = "GitHub API request failed: " + std::string(e.what());
+        return false;
+    }
+    if (res.status_code != 200) {
+        error_out = "GitHub API request failed with status " + std::to_string(res.status_code);
+        return false;
+    }
+
+    try {
+        response_out = nlohmann::json::parse(res.body);
+    } catch (const nlohmann::json::exception& e) {
+        error_out = std::string("Failed to parse GitHub API JSON: ") + e.what();
+        return false;
+    }
+
+    if (!response_out.is_array()) {
+        error_out = "Unexpected GitHub API response shape (expected array).";
+        return false;
+    }
+    return true;
+}
+
+int prompt_numbered_choice(const std::string& title,
+                           const std::vector<std::string>& options,
+                           bool allow_skip,
+                           const std::string& skip_label) {
+    if (options.empty()) {
+        return -2;
+    }
+
+    std::cout << title << std::endl;
+    if (allow_skip) {
+        std::cout << "  0) " << skip_label << std::endl;
+    }
+    for (size_t i = 0; i < options.size(); ++i) {
+        std::cout << "  " << (i + 1) << ") " << options[i] << std::endl;
+    }
+    std::cout << "Enter number: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        std::cerr << "Error: Failed to read selection." << std::endl;
+        return -2;
+    }
+
+    size_t parsed_chars = 0;
+    int selected = 0;
+    try {
+        selected = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return -2;
+    }
+
+    if (parsed_chars != input.size()) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return -2;
+    }
+
+    if (allow_skip && selected == 0) {
+        return -1;
+    }
+
+    if (selected < 1 || static_cast<size_t>(selected) > options.size()) {
+        std::cerr << "Error: Selection out of range." << std::endl;
+        return -2;
+    }
+
+    return selected - 1;
+}
+
+bool download_recipe_to_temp_file(const std::string& download_url,
+                                  std::filesystem::path& temp_file_out,
+                                  std::string& error_out) {
+    std::filesystem::path runtime_base = lemon::utils::path_from_utf8(lemon::utils::get_runtime_dir());
+
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    std::error_code ec;
+    std::filesystem::path temp_dir;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "recipe-import-" << nonce << "-" << std::hex << dis(rd);
+        std::filesystem::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (std::filesystem::create_directory(candidate, ec)) {
+            temp_dir = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir.empty()) {
+        error_out = "Failed to create temporary directory for recipe download";
+        return false;
+    }
+
+    temp_file_out = temp_dir / "recipe.json";
+
+    lemon::utils::DownloadResult result;
+    try {
+        result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
+    } catch (const std::exception& e) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
+        error_out = "Recipe download failed: " + std::string(e.what());
+        return false;
+    }
+
+    if (!result.success) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
+        error_out = "Recipe download failed: " + result.error_message;
+        if (result.http_code > 0) {
+            error_out += " (HTTP " + std::to_string(result.http_code) + ")";
+        }
+        return false;
+    }
+
+    return true;
+}
+
+// Shared per-object normalization for exported model JSON: `id` → `model_name`
+// rename, singular-checkpoint dedup, and kKnownKeys filtering. Applied to the
+// top-level model and to each element of a collection's `models` array.
+static void normalize_model_json_keys(nlohmann::json& obj) {
+    if ((!obj.contains("model_name") || !obj["model_name"].is_string()) &&
+        obj.contains("id") && obj["id"].is_string()) {
+        obj["model_name"] = obj["id"];
+    }
+
+    if (obj.contains("checkpoints") && obj["checkpoints"].is_object() &&
+        obj.contains("checkpoint")) {
+        obj.erase("checkpoint");
+    }
+
+    std::vector<std::string> keys_to_remove;
+    for (auto& [key, _] : obj.items()) {
+        if (std::find(kKnownKeys.begin(), kKnownKeys.end(), key) == kKnownKeys.end()) {
+            keys_to_remove.push_back(key);
+        }
+    }
+    for (const auto& key : keys_to_remove) {
+        obj.erase(key);
+    }
+}
+
+} // namespace
+
+bool validate_and_transform_model_json(nlohmann::json& model_data) {
+    if ((!model_data.contains("model_name") || !model_data["model_name"].is_string()) &&
+        !(model_data.contains("id") && model_data["id"].is_string())) {
+        std::cerr << "Error: JSON file must contain a 'model_name' string field" << std::endl;
+        return false;
+    }
+    normalize_model_json_keys(model_data);
+
+    std::string model_name = model_data["model_name"].get<std::string>();
+    if (lemon::is_reserved_registration_name(model_name)) {
+        std::cerr << "Error: Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+                  << "including as bare-name parts of a 'user.' alias. "
+                  << "Use 'user.<name>' for import where <name> does not begin "
+                  << "with 'extra.' or 'builtin.'." << std::endl;
+        return false;
+    }
+    if (!lemon::parse_canonical_id(model_name)) {
+        model_data["model_name"] = "user." + model_name;
+    }
+    // Already user.* — leave as-is.
+
+    if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
+        std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;
+        return false;
+    }
+
+    bool is_collection = lemon::is_collection_recipe(model_data["recipe"].get<std::string>());
+
+    bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
+    bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
+    if (!has_checkpoints && !has_checkpoint && !is_collection) {
+        // Collections have no weights of their own — their components carry the
+        // checkpoints — so the requirement only applies to regular models.
+        std::cerr << "Error: JSON file must contain either 'checkpoints' (object) or 'checkpoint' (string)" << std::endl;
+        return false;
+    }
+
+    // `components`/`models` describe collections; regular-model files stay free
+    // of them (the live API emits an empty `components` array for every model).
+    if (!is_collection) {
+        model_data.erase("components");
+        model_data.erase("models");
+    }
+
+    // Collections embed each component's definition in a `models` array; apply
+    // the same per-model normalization to every element. Unlike the top-level
+    // model, elements get no `user.` prefix — the server decides prefixing when
+    // registering them.
+    if (model_data.contains("models") && model_data["models"].is_array()) {
+        for (auto& component : model_data["models"]) {
+            if (!component.is_object()) continue;
+            normalize_model_json_keys(component);
+
+            // Components are leaf models; drop the (empty) collection fields the
+            // live API emits on every model object.
+            if (component.contains("components") && component["components"].empty()) {
+                component.erase("components");
+            }
+            if (component.contains("models") && component["models"].empty()) {
+                component.erase("models");
+            }
+        }
+    }
+
+    return true;
+}
+
+int import_model_from_json_file(lemonade::LemonadeClient& client,
+                                const std::string& json_path,
+                                std::string* imported_model_out) {
+    nlohmann::json model_data;
+
+    std::ifstream file(json_path);
+    if (!file.good()) {
+        std::cerr << "Error: Failed to open JSON file '" << json_path << "'" << std::endl;
+        return 1;
+    }
+
+    try {
+        model_data = nlohmann::json::parse(file);
+        file.close();
+
+        if (!validate_and_transform_model_json(model_data)) {
+            return 1;
+        }
+
+        if (imported_model_out != nullptr && model_data.contains("model_name") && model_data["model_name"].is_string()) {
+            *imported_model_out = model_data["model_name"].get<std::string>();
+        }
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "Error: Failed to parse JSON file '" << json_path << "': " << e.what() << std::endl;
+        return 1;
+    }
+
+    return client.pull_model(model_data);
+}
+
+bool list_remote_recipe_files(const std::string& repo_dir,
+                              std::vector<std::string>& recipe_files_out,
+                              std::string& error_out) {
+    recipe_files_out.clear();
+
+    if (repo_dir.empty()) {
+        error_out = "Recipe directory cannot be empty.";
+        return false;
+    }
+
+    nlohmann::json dir_entries;
+    if (!fetch_github_recipe_contents(repo_dir, dir_entries, error_out)) {
+        return false;
+    }
+
+    for (const auto& entry : dir_entries) {
+        if (!is_json_recipe_file(entry)) {
+            continue;
+        }
+        recipe_files_out.push_back(entry["name"].get<std::string>());
+    }
+
+    std::sort(recipe_files_out.begin(), recipe_files_out.end());
+    return true;
+}
+
+bool list_remote_recipe_directories(std::vector<std::string>& recipe_dirs_out,
+                                    std::string& error_out) {
+    recipe_dirs_out.clear();
+
+    nlohmann::json top_entries;
+    if (!fetch_github_recipe_contents("", top_entries, error_out)) {
+        return false;
+    }
+
+    for (const auto& entry : top_entries) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        if (!entry.contains("type") || !entry["type"].is_string() ||
+            entry["type"].get<std::string>() != "dir") {
+            continue;
+        }
+        if (!entry.contains("name") || !entry["name"].is_string()) {
+            continue;
+        }
+        recipe_dirs_out.push_back(entry["name"].get<std::string>());
+    }
+
+    std::sort(recipe_dirs_out.begin(), recipe_dirs_out.end());
+    return true;
+}
+
+int import_remote_recipe(lemonade::LemonadeClient& client,
+                         const std::string& repo_dir,
+                         const std::string& recipe_file,
+                         bool skip_prompt,
+                         bool yes,
+                         std::string* imported_model_out,
+                         bool allow_skip) {
+    std::string selected_dir = repo_dir;
+    const bool non_interactive = skip_prompt || yes;
+
+    if (non_interactive && selected_dir.empty()) {
+        std::cerr << "Error: Non-interactive mode requires --directory."
+                  << std::endl;
+        return 1;
+    }
+    if (non_interactive && recipe_file.empty()) {
+        std::cerr << "Error: Non-interactive mode requires --recipe-file." << std::endl;
+        return 1;
+    }
+
+    if (selected_dir.empty()) {
+        nlohmann::json top_entries;
+        std::string fetch_error;
+        if (!fetch_github_recipe_contents("", top_entries, fetch_error)) {
+            std::cerr << "Error: " << fetch_error << std::endl;
+            return 1;
+        }
+
+        std::vector<std::string> dir_names;
+        for (const auto& entry : top_entries) {
+            if (entry.is_object() && entry.contains("type") && entry["type"].is_string() &&
+                entry["type"].get<std::string>() == "dir" &&
+                entry.contains("name") && entry["name"].is_string()) {
+                dir_names.push_back(entry["name"].get<std::string>());
+            }
+        }
+
+        if (dir_names.empty()) {
+            std::cerr << "Error: No recipe directories found in lemonade-sdk/recipes." << std::endl;
+            return 1;
+        }
+
+        const int dir_idx = prompt_numbered_choice(
+            "Select a recipe directory:", dir_names, allow_skip, "Continue without recipe import");
+        if (dir_idx == -1) {
+            std::cout << "Skipping recipe import." << std::endl;
+            return 0;
+        }
+        if (dir_idx < 0) {
+            return 1;
+        }
+
+        selected_dir = dir_names[static_cast<size_t>(dir_idx)];
+    }
+
+    nlohmann::json dir_entries;
+    std::string fetch_error;
+    if (!fetch_github_recipe_contents(selected_dir, dir_entries, fetch_error)) {
+        std::cerr << "Error: " << fetch_error << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    std::vector<nlohmann::json> recipe_entries;
+    std::vector<std::string> recipe_names;
+    for (const auto& entry : dir_entries) {
+        if (is_json_recipe_file(entry)) {
+            recipe_entries.push_back(entry);
+            recipe_names.push_back(entry["name"].get<std::string>());
+        }
+    }
+
+    if (recipe_entries.empty()) {
+        std::cerr << "Error: No JSON recipes found in directory '" << selected_dir << "'." << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    nlohmann::json selected_entry;
+    if (!recipe_file.empty()) {
+        bool found = false;
+        for (const auto& entry : recipe_entries) {
+            if (entry["name"].get<std::string>() == recipe_file) {
+                selected_entry = entry;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std::cerr << "Error: Recipe file '" << recipe_file
+                      << "' not found in directory '" << selected_dir << "'." << std::endl;
+            return 1;
+        }
+    } else {
+        const int file_idx = prompt_numbered_choice(
+            "Select a recipe to import:", recipe_names, allow_skip, "Continue without recipe import");
+        if (file_idx == -1) {
+            std::cout << "Skipping recipe import." << std::endl;
+            return 0;
+        }
+        if (file_idx < 0) {
+            return 1;
+        }
+        selected_entry = recipe_entries[static_cast<size_t>(file_idx)];
+    }
+
+    if (!selected_entry.contains("download_url") || !selected_entry["download_url"].is_string()) {
+        std::cerr << "Error: Selected recipe does not expose a download URL." << std::endl;
+        return 1;
+    }
+
+    std::filesystem::path temp_file;
+    std::string download_error;
+    if (!download_recipe_to_temp_file(selected_entry["download_url"].get<std::string>(), temp_file, download_error)) {
+        std::cerr << "Error: " << download_error << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    int import_result = import_model_from_json_file(client, temp_file.string(), imported_model_out);
+    std::error_code rm_ec;
+    std::filesystem::remove(temp_file, rm_ec);
+    if (rm_ec) {
+        std::cerr << "Warning: Failed to remove temp recipe file '" << temp_file.string() << "'." << std::endl;
+    }
+    std::filesystem::remove(temp_file.parent_path(), rm_ec);
+
+    return import_result;
+}
+
+} // namespace lemon_cli

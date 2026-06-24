@@ -1,3 +1,10 @@
+# Local build output
+build
+
+# Node / Rust build artifacts (rebuilt inside the image)
+**/node_modules
+**/target
+
 # Git / repo metadata
 .git
 .github
@@ -7,13 +14,12 @@
 
 # Dev & CI tooling
 .devcontainer
+!.devcontainer/reinstall-cmake.sh
 .pylintrc
 
 # Docs
-docs
 mkdocs.yml
 README.md
-NOTICE.md
 LICENSE
 
 # Tests and Examples
@@ -27,3 +33,9 @@ setup.py
 
 # Misc
 *.md
+
+# Local build artifacts (must not be copied into build context)
+build/
+**/node_modules/
+**/target/
+**/dist/

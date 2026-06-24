@@ -5,10 +5,16 @@
 #include <filesystem>
 #include <cstdlib>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon_tray {
 namespace {
+
+constexpr const char* kDefaultAgentApiKey = "lemonade";
 
 std::string expand_home(const std::string& path) {
     if (path.empty() || path[0] != '~') {
@@ -49,89 +55,240 @@ bool file_is_executable(const std::string& candidate) {
 
     std::error_code ec;
     fs::path p(candidate);
-    return fs::exists(p, ec) && fs::is_regular_file(p, ec);
+    if (!(fs::exists(p, ec) && fs::is_regular_file(p, ec))) {
+        return false;
+    }
+
+#ifdef _WIN32
+    return true;
+#else
+    return ::access(p.c_str(), X_OK) == 0;
+#endif
+}
+
+void add_windows_npm_fallbacks(std::vector<std::string>& fallback_paths,
+                               const std::string& binary_base_name) {
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata) {
+        fallback_paths.push_back(std::string(appdata) + "\\npm\\" + binary_base_name + ".cmd");
+        fallback_paths.push_back(std::string(appdata) + "\\npm\\" + binary_base_name + ".exe");
+    }
+#else
+    (void)fallback_paths;
+    (void)binary_base_name;
+#endif
+}
+
+void append_codex_config_arg(std::vector<std::string>& args, const std::string& config_value) {
+    args.push_back("-c");
+    args.push_back(config_value);
+}
+
+void append_codex_config_args(std::vector<std::string>& args,
+                              const std::vector<std::string>& config_values) {
+    for (const auto& config_value : config_values) {
+        append_codex_config_arg(args, config_value);
+    }
+}
+void configure_claude_agent(const std::string& base_url,
+                            const std::string& model,
+                            const std::string& api_key,
+                            AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+#ifdef _WIN32
+    // npm puts a Unix shell script named just "claude" next to claude.cmd.
+    // Windows cannot run the shell script, so look for .cmd/.exe first.
+    config.binary_name = "claude.cmd";
+    config.binary_alternatives = {"claude.exe", "claude"};
+#else
+    config.binary_name = "claude";
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/claude",
+        "/usr/local/bin/claude"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "claude");
+
+    config.env_vars = {
+        // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
+        // Keep this as origin-only to avoid /v1/v1/messages.
+        {"ANTHROPIC_BASE_URL", base_url},
+        {"ANTHROPIC_AUTH_TOKEN", resolved_api_key},
+        // We want to keep this for agents that run workflows which query endpoints with auth
+        {"LEMONADE_API_KEY", resolved_api_key},
+        {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
+        {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
+        {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
+        {"CLAUDE_CODE_SUBAGENT_MODEL", model},
+        {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"},
+        {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"}
+    };
+    config.extra_args = {};
+    config.install_instructions = "Install Claude Code CLI and ensure 'claude' is on PATH.";
+}
+
+void configure_codex_agent(const std::string& base_url,
+                           const std::string& model,
+                           const std::string& api_key,
+                           const AgentLaunchOptions& launch_options,
+                           AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+    config.binary_name = "codex";
+#ifdef _WIN32
+    config.binary_alternatives = {"codex.cmd", "codex.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/codex",
+        "/usr/local/bin/codex"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "codex");
+
+    config.env_vars = {
+        {"OPENAI_API_KEY", resolved_api_key},
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+
+    const std::string responses_base_url = base_url + "/v1";
+    const std::string provider_name = launch_options.codex_model_provider.empty()
+        ? "lemonade"
+        : launch_options.codex_model_provider;
+
+
+    std::vector<std::string> codex_config_values = {
+        "model_provider=\"" + provider_name + "\"",
+        "show_raw_agent_reasoning=true",
+        "web_search=\"disabled\"",
+        "analytics.enabled=false",
+        "feedback.enabled=false"
+    };
+
+    if (!launch_options.codex_use_user_config) {
+        codex_config_values.insert(codex_config_values.begin(),
+            "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
+            "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }");
+    }
+
+    config.extra_args = {};
+    append_codex_config_args(config.extra_args, codex_config_values);
+    config.extra_args.push_back("-m");
+    config.extra_args.push_back(model);
+
+    config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
+}
+
+void configure_opencode_agent(const std::string& model,
+                              const std::string& api_key,
+                              AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+#ifdef _WIN32
+    config.binary_name = "opencode.cmd";
+    config.binary_alternatives = {"opencode.exe", "opencode"};
+#else
+    config.binary_name = "opencode";
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/opencode",
+        "/usr/local/bin/opencode",
+        "~/.local/bin/opencode"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "opencode");
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    config.extra_args = {
+        "-m",
+        "Lemonade/" + model
+    };
+    config.install_instructions =
+        "Install OpenCode CLI:\n"
+        "  curl -fsSL https://opencode.ai/install | bash\n"
+        "or:\n"
+        "  npm i -g opencode-ai";
+}
+
+void configure_pi_agent(const std::string& model,
+                        const std::string& api_key,
+                        AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+    config.binary_name = "pi";
+#ifdef _WIN32
+    config.binary_alternatives = {"pi.cmd", "pi.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/pi",
+        "/usr/local/bin/pi",
+        "~/.local/bin/pi"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "pi");
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    config.extra_args = {
+        "--provider", "Lemonade",
+        "--model", model
+    };
+    config.install_instructions =
+        "Install Pi coding agent:\n"
+        "  npm i -g @earendil-works/pi-coding-agent";
 }
 
 } // namespace
+
+std::string build_agent_server_base_url(const std::string& host, int port) {
+    if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
+        return "http://localhost:" + std::to_string(port);
+    }
+    return "http://" + host + ":" + std::to_string(port);
+}
+
+bool agent_needs_config_sync(const std::string& agent) {
+    return agent == "opencode" || agent == "pi";
+}
 
 bool build_agent_config(const std::string& agent,
                         const std::string& host,
                         int port,
                         const std::string& model,
+                        const std::string& api_key,
+                        const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message) {
-    const std::string base = "http://" + host + ":" + std::to_string(port);
+    const std::string base = build_agent_server_base_url(host, port);
 
     if (agent == "claude") {
-        config.binary_name = "claude";
-#ifdef _WIN32
-        config.binary_alternatives = {"claude.cmd", "claude.exe"};
-#else
-        config.binary_alternatives = {};
-#endif
-        config.fallback_paths = {
-            "~/.npm-global/bin/claude",
-            "/usr/local/bin/claude"
-        };
-#ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata) {
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\claude.cmd");
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\claude.exe");
-        }
-#endif
-        config.env_vars = {
-            // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
-            // Keep this as origin-only to avoid /v1/v1/messages.
-            {"ANTHROPIC_BASE_URL", base},
-            {"ANTHROPIC_API_KEY", "lemonade"},
-            {"ANTHROPIC_AUTH_TOKEN", "lemonade"},
-            {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
-            {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
-            {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
-            {"CLAUDE_CODE_SUBAGENT_MODEL", model},
-            {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"},
-            {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"}
-        };
-        config.extra_args = {};
-        config.install_instructions = "Install Claude Code CLI and ensure 'claude' is on PATH.";
+        configure_claude_agent(base, model, api_key, config);
         return true;
     }
 
     if (agent == "codex") {
-        config.binary_name = "codex";
-#ifdef _WIN32
-        config.binary_alternatives = {"codex.cmd", "codex.exe"};
-#else
-        config.binary_alternatives = {};
-#endif
-        config.fallback_paths = {
-            "~/.npm-global/bin/codex",
-            "/usr/local/bin/codex"
-        };
-#ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata) {
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\codex.cmd");
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\codex.exe");
-        }
-#endif
-        config.env_vars = {
-            {"OPENAI_BASE_URL", base + "/v1/"},
-            {"OPENAI_API_KEY", "lemonade"}
-        };
-        config.extra_args = {
-            "--oss",
-            "-m",
-            model,
-            "--config",
-            "web_search=\"disabled\""
-        };
-        config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
+        configure_codex_agent(base, model, api_key, launch_options, config);
         return true;
     }
 
-    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex.";
+    if (agent == "opencode") {
+        configure_opencode_agent(model, api_key, config);
+        return true;
+    }
+
+    if (agent == "pi") {
+        configure_pi_agent(model, api_key, config);
+        return true;
+    }
+
+    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi.";
     return false;
 }
 

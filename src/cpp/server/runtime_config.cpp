@@ -1,8 +1,16 @@
 #include "lemon/runtime_config.h"
-#include "lemon/recipe_options.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/path_utils.h"
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
+#include <utility>
+
+namespace fs = std::filesystem;
 
 namespace lemon {
 
@@ -10,35 +18,165 @@ const std::vector<std::string> RuntimeConfig::valid_log_levels_ = {
     "trace", "debug", "info", "warning", "error", "fatal", "none"
 };
 
-static bool is_recipe_key(const std::string& key) {
-    static const auto keys = RecipeOptions::known_keys();
-    return std::find(keys.begin(), keys.end(), key) != keys.end();
+// Global instance pointer (set once at startup, read from any thread after)
+static std::atomic<RuntimeConfig*> s_global_instance{nullptr};
+
+void RuntimeConfig::set_global(RuntimeConfig* instance) {
+    s_global_instance.store(instance, std::memory_order_release);
 }
 
-RuntimeConfig::RuntimeConfig(int port,
-                             const std::string& host,
-                             const std::string& log_level,
-                             const std::string& extra_models_dir,
-                             bool no_broadcast,
-                             long global_timeout,
-                             int max_loaded_models,
-                             const json& recipe_options)
-    : config_({
-        {"port", port},
-        {"host", host},
-        {"log_level", log_level},
-        {"extra_models_dir", extra_models_dir},
-        {"no_broadcast", no_broadcast},
-        {"global_timeout", global_timeout},
-        {"max_loaded_models", max_loaded_models}
-      }) {
-    // Merge recipe options into the flat config
-    for (auto& [key, value] : recipe_options.items()) {
-        config_[key] = value;
+RuntimeConfig* RuntimeConfig::global() {
+    return s_global_instance.load(std::memory_order_acquire);
+}
+
+static const std::vector<std::string> s_backend_names = {
+    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
+};
+
+static bool is_backend_name(const std::string& key) {
+    return std::find(s_backend_names.begin(), s_backend_names.end(), key) != s_backend_names.end();
+}
+
+// Backends that have a selectable "backend" key
+static const std::vector<std::string> s_selectable_backends = {
+    "llamacpp", "whispercpp", "sdcpp", "vllm"
+};
+
+static bool has_backend_selection(const std::string& config_section) {
+    return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
+                     config_section) != s_selectable_backends.end();
+}
+
+static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
+    json normalized = changes;
+    std::string message;
+
+    if (normalized.contains("rocm")) {
+        if (normalized.contains("rocm_channel") && normalized["rocm_channel"] != normalized["rocm"]) {
+            throw std::invalid_argument(
+                "Ambiguous ROCm channel settings: use only 'rocm_channel'");
+        }
+        normalized["rocm_channel"] = normalized["rocm"];
+        normalized.erase("rocm");
+    }
+
+    if (normalized.contains("rocm_channel") && normalized["rocm_channel"].is_string() &&
+        normalized["rocm_channel"].get<std::string>() == "preview") {
+        normalized["rocm_channel"] = "stable";
+        message = "rocm_channel=preview is deprecated; using rocm_channel=stable";
+        LOG(WARNING) << message << std::endl;
+    }
+
+    // Promote flat backend keys (e.g. "vllm_args", "llamacpp_backend") into
+    // their nested form ("vllm": {"args": ...}). Backend CLI flags and docs use
+    // the flat underscore form, but config.json stores backend options nested.
+    // Only keys whose prefix (before the first underscore) is a known backend
+    // are promoted; no top-level config key starts with a backend name, so this
+    // mapping is unambiguous. See issue #1824.
+    std::vector<std::string> flat_backend_keys;
+    for (auto& [key, value] : normalized.items()) {
+        size_t underscore = key.find('_');
+        if (underscore == std::string::npos) continue;
+        if (is_backend_name(key.substr(0, underscore))) {
+            flat_backend_keys.push_back(key);
+        }
+    }
+    for (const auto& key : flat_backend_keys) {
+        size_t underscore = key.find('_');
+        std::string backend = key.substr(0, underscore);
+        std::string field = key.substr(underscore + 1);
+        json value = normalized[key];
+
+        if (!normalized.contains(backend)) {
+            normalized[backend] = json::object();
+        } else if (!normalized[backend].is_object()) {
+            throw std::invalid_argument(
+                "Ambiguous config: '" + key + "' conflicts with non-object '" + backend + "'");
+        }
+        if (normalized[backend].contains(field) && normalized[backend][field] != value) {
+            throw std::invalid_argument(
+                "Ambiguous config: both '" + key + "' and '" + backend + "." + field +
+                "' were provided with different values");
+        }
+        normalized[backend][field] = value;
+        normalized.erase(key);
+    }
+
+    return {normalized, message};
+}
+
+std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
+    if (config_section == "sdcpp") return "sd-cpp";
+    return config_section;
+}
+
+std::string RuntimeConfig::recipe_to_config_section(const std::string& recipe) {
+    if (recipe == "sd-cpp") return "sdcpp";
+    return recipe;
+}
+
+void RuntimeConfig::validate_backend_choice(const std::string& config_section,
+                                             const std::string& value) {
+    if (value == "auto") return;
+
+    if (!has_backend_selection(config_section)) {
+        throw std::invalid_argument(
+            "'" + config_section + "' does not have a selectable backend");
+    }
+
+    std::string recipe = config_section_to_recipe(config_section);
+    auto result = SystemInfo::get_supported_backends(recipe);
+
+    if (std::find(result.backends.begin(), result.backends.end(), value)
+        == result.backends.end()) {
+        std::string allowed = "auto";
+        for (const auto& b : result.backends) {
+            allowed += ", " + b;
+        }
+        throw std::invalid_argument(
+            "'" + config_section + ".backend' must be one of: " + allowed);
     }
 }
 
-// --- Getters ---
+void RuntimeConfig::validate_bin_path(const std::string& config_section,
+                                       const std::string& key,
+                                       const std::string& value) {
+    // Reserved keywords:
+    //   ""        — alias for "builtin"
+    //   "builtin" — use the version pinned by lemonade in backend_versions.json
+    //   "latest"  — resolve to the most-recent upstream release at lemond start
+    if (value.empty() || value == "builtin" || value == "latest") return;
+
+    // Absolute-path values are treated as user-supplied binary directories and
+    // must exist. Relative-looking values intentionally fall through to the
+    // version-tag branch so backend pins are not interpreted relative to
+    // lemond's launch directory.
+    if (utils::looks_like_path(value)) {
+        if (!fs::exists(value)) {
+            throw std::invalid_argument(
+                "'" + config_section + "." + key + "' path does not exist: " + value
+                + ". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
+                  " or a path to a pre-downloaded binary.");
+        }
+        return;
+    }
+
+    // Anything else is treated as an upstream release tag (e.g. "b8664",
+    // "v1.8.2") and accepted verbatim. The download step surfaces a clear
+    // error if the tag does not exist on GitHub.
+}
+
+RuntimeConfig::RuntimeConfig(const json& config)
+    : config_(config) {
+    // Config is expected to already have defaults merged in (by ConfigFile::load).
+
+    // In CI mode, override log level to debug for easier diagnostics
+    const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
+    if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
+                    std::string(ci_mode) == "True" || std::string(ci_mode) == "TRUE")) {
+        config_["log_level"] = "debug";
+    }
+}
 
 int RuntimeConfig::port() const {
     std::shared_lock lock(mutex_);
@@ -48,6 +186,15 @@ int RuntimeConfig::port() const {
 std::string RuntimeConfig::host() const {
     std::shared_lock lock(mutex_);
     return config_["host"].get<std::string>();
+}
+
+int RuntimeConfig::websocket_port() const {
+    std::shared_lock lock(mutex_);
+    const auto& val = config_["websocket_port"];
+    if (val.is_string() && val.get<std::string>() == "auto") {
+        return 0;  // OS auto-assign
+    }
+    return val.get<int>();
 }
 
 std::string RuntimeConfig::log_level() const {
@@ -75,18 +222,180 @@ int RuntimeConfig::max_loaded_models() const {
     return config_["max_loaded_models"].get<int>();
 }
 
-json RuntimeConfig::recipe_options() const {
+std::string RuntimeConfig::models_dir() const {
     std::shared_lock lock(mutex_);
-    json result = json::object();
-    for (const auto& key : RecipeOptions::known_keys()) {
-        if (config_.contains(key)) {
-            result[key] = config_[key];
-        }
-    }
-    return result;
+    return config_["models_dir"].get<std::string>();
 }
 
-// --- Validation ---
+int RuntimeConfig::ctx_size() const {
+    std::shared_lock lock(mutex_);
+    return config_["ctx_size"].get<int>();
+}
+
+bool RuntimeConfig::auto_evict() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict")) {
+        return config_["auto_evict"].get<bool>();
+    }
+    return false;
+}
+
+double RuntimeConfig::auto_evict_threshold_pct() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict_threshold_pct")) {
+        return config_["auto_evict_threshold_pct"].get<double>();
+    }
+    // Default: start yielding VRAM at 90% global usage so other GPU apps
+    // (ComfyUI, Blender, games) can coexist before memory is fully exhausted.
+    return 0.90;
+}
+
+bool RuntimeConfig::offline() const {
+
+    std::shared_lock lock(mutex_);
+    return config_["offline"].get<bool>();
+}
+
+bool RuntimeConfig::no_fetch_executables() const {
+    std::shared_lock lock(mutex_);
+    return config_["no_fetch_executables"].get<bool>();
+}
+
+bool RuntimeConfig::disable_model_filtering() const {
+    std::shared_lock lock(mutex_);
+    return config_["disable_model_filtering"].get<bool>();
+}
+
+bool RuntimeConfig::enable_dgpu_gtt() const {
+    std::shared_lock lock(mutex_);
+    return config_["enable_dgpu_gtt"].get<bool>();
+}
+
+std::string RuntimeConfig::rocm_channel() const {
+    std::shared_lock lock(mutex_);
+    return config_["rocm_channel"].get<std::string>();
+}
+
+std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
+    std::string channel = rocm_channel();
+    // sd-cpp currently has no nightly artifacts; use stable builds.
+    if (recipe == "sd-cpp" && channel == "nightly") {
+        return "stable";
+    }
+    return channel;
+}
+
+json RuntimeConfig::backend_config(const std::string& backend_name) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains(backend_name) && config_[backend_name].is_object()) {
+        return config_[backend_name];
+    }
+    return json::object();
+}
+
+std::string RuntimeConfig::backend_string(const std::string& backend,
+                                           const std::string& key) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains(backend) && config_[backend].contains(key)) {
+        return config_[backend][key].get<std::string>();
+    }
+    return "";
+}
+
+bool RuntimeConfig::backend_bool(const std::string& backend,
+                                  const std::string& key) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains(backend) && config_[backend].contains(key)) {
+        return config_[backend][key].get<bool>();
+    }
+    return false;
+}
+
+int RuntimeConfig::backend_int(const std::string& backend,
+                                const std::string& key) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains(backend) && config_[backend].contains(key)) {
+        return config_[backend][key].get<int>();
+    }
+    return 0;
+}
+
+double RuntimeConfig::backend_double(const std::string& backend,
+                                      const std::string& key) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains(backend) && config_[backend].contains(key)) {
+        return config_[backend][key].get<double>();
+    }
+    return 0.0;
+}
+
+json RuntimeConfig::recipe_options(const std::string& backend) const {
+    std::shared_lock lock(mutex_);
+    json result = json::object();
+
+    // "auto" in config.json means auto-detect; the flat recipe_options format
+    // uses "" (empty string) for auto-detect, so we translate here.
+    auto resolve_auto = [](const json& val) -> json {
+        if (val.is_string() && val.get<std::string>() == "auto") return "";
+        return val;
+    };
+
+    const std::string backend_args = backend + "_args";
+
+    if (config_.contains("llamacpp")) {
+        const auto& lc = config_["llamacpp"];
+        if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
+        if (lc.contains(backend_args) && lc[backend_args] != "") {
+            result["llamacpp_args"] = lc[backend_args];
+        } else if (lc.contains("args")) {
+            result["llamacpp_args"] = lc["args"];
+        }
+        if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
+    }
+
+    if (config_.contains("whispercpp")) {
+        const auto& wc = config_["whispercpp"];
+        if (wc.contains("backend")) result["whispercpp_backend"] = resolve_auto(wc["backend"]);
+        if (wc.contains(backend_args) && wc[backend_args] != "") {
+            result["whispercpp_args"] = wc[backend_args];
+        } else if (wc.contains("args")) {
+            result["whispercpp_args"] = wc["args"];
+        }
+    }
+
+    if (config_.contains("moonshine")) {
+        const auto& ms = config_["moonshine"];
+        if (ms.contains(backend_args) && ms[backend_args] != "") {
+            result["moonshine_args"] = ms[backend_args];
+        } else if (ms.contains("args")) {
+            result["moonshine_args"] = ms["args"];
+        }
+    }
+
+    if (config_.contains("sdcpp")) {
+        const auto& sd = config_["sdcpp"];
+        if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
+        if (sd.contains(backend_args) && sd[backend_args] != "") {
+            result["sdcpp_args"] = sd[backend_args];
+        } else if (sd.contains("args")) {
+            result["sdcpp_args"] = sd["args"];
+        }
+        if (sd.contains("steps")) result["steps"] = sd["steps"];
+        if (sd.contains("cfg_scale")) result["cfg_scale"] = sd["cfg_scale"];
+        if (sd.contains("width")) result["width"] = sd["width"];
+        if (sd.contains("height")) result["height"] = sd["height"];
+    }
+
+    if (config_.contains("vllm")) {
+        const auto& vl = config_["vllm"];
+        if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);
+        if (vl.contains("args")) result["vllm_args"] = vl["args"];
+    }
+
+    if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
+
+    return result;
+}
 
 void RuntimeConfig::validate(const std::string& key, const json& value) const {
     if (key == "port") {
@@ -101,6 +410,22 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_string()) {
             throw std::invalid_argument("'host' must be a string");
         }
+    } else if (key == "websocket_port") {
+        if (value.is_string()) {
+            if (value.get<std::string>() != "auto") {
+                throw std::invalid_argument(
+                    "'websocket_port' must be \"auto\" or an integer 0-65535");
+            }
+        } else if (value.is_number_integer()) {
+            int p = value.get<int>();
+            if (p < 0 || p > 65535) {
+                throw std::invalid_argument(
+                    "'websocket_port' must be between 0 and 65535");
+            }
+        } else {
+            throw std::invalid_argument(
+                "'websocket_port' must be \"auto\" or an integer 0-65535");
+        }
     } else if (key == "log_level") {
         if (!value.is_string()) {
             throw std::invalid_argument("'log_level' must be a string");
@@ -111,13 +436,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
         }
-    } else if (key == "extra_models_dir") {
+    } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
-            throw std::invalid_argument("'extra_models_dir' must be a string");
+            throw std::invalid_argument("'" + key + "' must be a string");
         }
-    } else if (key == "no_broadcast") {
+    } else if (key == "no_broadcast" || key == "offline" ||
+               key == "no_fetch_executables" ||
+               key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
-            throw std::invalid_argument("'no_broadcast' must be a boolean");
+            throw std::invalid_argument("'" + key + "' must be a boolean");
         }
     } else if (key == "global_timeout") {
         if (!value.is_number_integer()) {
@@ -132,56 +459,166 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         int m = value.get<int>();
         if (m < -1 || m == 0) {
-            throw std::invalid_argument("'max_loaded_models' must be -1 (unlimited) or a positive integer");
+            throw std::invalid_argument(
+                "'max_loaded_models' must be -1 (unlimited) or a positive integer");
         }
-    } else if (is_recipe_key(key)) {
-        // Recipe options: accept strings, numbers, and integers
-        // (type enforcement is intentionally loose — RecipeOptions handles
-        // per-recipe interpretation at model load time)
-        if (!value.is_string() && !value.is_number()) {
-            throw std::invalid_argument("'" + key + "' must be a string or number");
+    } else if (key == "ctx_size") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'ctx_size' must be an integer");
+        }
+        if (value.get<int>() < -1) {
+            throw std::invalid_argument("'ctx_size' must be >= -1");
+        }
+    } else if (key == "auto_evict") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'auto_evict' must be a boolean");
+        }
+    } else if (key == "auto_evict_threshold_pct") {
+        if (!value.is_number()) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be a number");
+        }
+        if (value.get<double>() <= 0.0 || value.get<double>() > 1.0) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be between 0.0 and 1.0");
+        }
+    } else if (key == "config_version") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'config_version' must be an integer");
+        }
+        if (value.get<int>() < 1) {
+            throw std::invalid_argument("'config_version' must be >= 1");
+        }
+    } else if (key == "rocm_channel") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_channel' must be a string");
+        }
+        std::string channel = value.get<std::string>();
+        if (channel != "stable" && channel != "nightly") {
+            throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
+        }
+    } else if (is_backend_name(key)) {
+        if (!value.is_object()) {
+            throw std::invalid_argument("'" + key + "' must be an object");
+        }
+        // Validate each sub-key
+        for (auto& [sub_key, sub_value] : value.items()) {
+            validate_backend(key, sub_key, sub_value);
         }
     } else {
         throw std::invalid_argument("Unknown config key: '" + key + "'");
     }
 }
 
-// --- Unified setter ---
+void RuntimeConfig::validate_backend(const std::string& backend, const std::string& key,
+                                      const json& value) const {
+    if (key == "backend") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_backend_choice(backend, value.get<std::string>());
+    }
+    else if (key == "args" || key.find("_args") != std::string::npos) {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+    }
+    else if (key == "device") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+    }
+    else if (key.find("_bin") != std::string::npos) {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_bin_path(backend, key, value.get<std::string>());
+    }
+    else if (key == "prefer_system") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");
+        }
+    }
+    else if (key == "steps" || key == "width" || key == "height") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be an integer");
+        }
+        if (value.get<int>() <= 0) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
+        }
+    }
+    else if (key == "cfg_scale") {
+        if (!value.is_number()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a number");
+        }
+        if (value.get<double>() <= 0.0) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
+        }
+    }
+    else {
+        throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
+    }
+}
+
+void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
+    for (auto& [key, value] : changes.items()) {
+        if (value.is_object() && is_backend_name(key)) {
+            // Merge nested backend changes; record per-sub-key diffs.
+            if (!config_.contains(key)) {
+                config_[key] = json::object();
+            }
+            for (auto& [sub_key, sub_value] : value.items()) {
+                if (!config_[key].contains(sub_key) || config_[key][sub_key] != sub_value) {
+                    config_[key][sub_key] = sub_value;
+                    if (!applied_diff.contains(key)) {
+                        applied_diff[key] = json::object();
+                    }
+                    applied_diff[key][sub_key] = sub_value;
+                }
+            }
+        } else {
+            if (!config_.contains(key) || config_[key] != value) {
+                config_[key] = value;
+                applied_diff[key] = value;
+            }
+        }
+    }
+}
 
 json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effect_cb) {
     if (!changes.is_object() || changes.empty()) {
         throw std::invalid_argument("Request body must be a non-empty JSON object");
     }
 
+    auto [normalized_changes, message] = normalize_config_set_changes(changes);
+
     // Validate all keys before acquiring write lock
-    for (auto& [key, value] : changes.items()) {
+    for (auto& [key, value] : normalized_changes.items()) {
         validate(key, value);
     }
 
-    std::vector<std::string> changed_keys;
+    json applied_diff = json::object();
     json updated = json::object();
 
     {
         std::unique_lock lock(mutex_);
+        apply_changes(normalized_changes, applied_diff);
 
-        for (auto& [key, value] : changes.items()) {
-            if (!config_.contains(key) || config_[key] != value) {
-                config_[key] = value;
-                changed_keys.push_back(key);
-            }
+        // Build updated response
+        for (auto& [key, value] : normalized_changes.items()) {
             updated[key] = value;
         }
     } // Lock released
 
     // Execute side effects outside the lock
-    if (side_effect_cb && !changed_keys.empty()) {
-        side_effect_cb(changed_keys);
+    if (side_effect_cb && !applied_diff.empty()) {
+        side_effect_cb(applied_diff);
     }
 
-    return {{"status", "success"}, {"updated", updated}};
+    json response = {{"status", "success"}, {"updated", updated}};
+    if (!message.empty()) {
+        response["message"] = message;
+    }
+    return response;
 }
-
-// --- Snapshot ---
 
 json RuntimeConfig::snapshot() const {
     std::shared_lock lock(mutex_);

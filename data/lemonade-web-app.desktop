@@ -9,3 +9,4 @@ Icon=lemonade-app
 Terminal=false
 Categories=Development;Utility;
 Keywords=AI;LLM;GPU;NPU;Machine Learning;
+StartupWMClass=chrome-localhost__lemonade-Default

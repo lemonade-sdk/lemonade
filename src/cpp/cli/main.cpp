@@ -1,22 +1,40 @@
 #include "lemon_cli/lemonade_client.h"
+#include "lemon_cli/model_selection.h"
+#include "lemon_cli/recipe_import.h"
+#include "lemon_cli/hf_pull.h"
+#include "lemon_cli/bench.h"
+#include "lemon_cli/chat_repl.h"
+#include <lemon_cli/agent_config_file.h>
+#include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include <lemon_cli/opencode_profile.h>
+#include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
+#include <lemon/utils/custom_args.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <chrono>
+#include <thread>
 #include <unordered_set>
+#include <functional>
+#include <map>
+#include <vector>
+#include <optional>
 
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <shellapi.h>
+    #include <io.h>
+    #include <windows.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -25,111 +43,188 @@
     #include <sys/wait.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <termios.h>
 #endif
+
+#include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
     "embeddings",
     "hot",
+    "mtp",
     "reasoning",
     "reranking",
     "tool-calling",
     "vision"
 };
 
-static const std::vector<std::string> KNOWN_KEYS = {
-    "checkpoint",
-    "checkpoints",
-    "model_name",
-    "image_defaults",
-    "labels",
-    "recipe",
-    "recipe_options",
-    "size"
-};
-
 static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
-    "codex"
+    "codex",
+    "opencode",
+    "pi"
 };
+
+static bool prompt_agent_selection(std::string& agent_out) {
+    std::cout << "Select an agent to launch:" << std::endl;
+    for (size_t i = 0; i < SUPPORTED_AGENTS.size(); ++i) {
+        std::cout << "  " << (i + 1) << ") " << SUPPORTED_AGENTS[i] << std::endl;
+    }
+
+    std::cout << "Enter number: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        std::cerr << "Error: Failed to read agent selection." << std::endl;
+        return false;
+    }
+
+    size_t parsed_chars = 0;
+    int selected = 0;
+    try {
+        selected = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return false;
+    }
+
+    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > SUPPORTED_AGENTS.size()) {
+        std::cerr << "Error: Selection out of range." << std::endl;
+        return false;
+    }
+
+    agent_out = SUPPORTED_AGENTS[static_cast<size_t>(selected - 1)];
+    std::cout << "Selected agent: " << agent_out << std::endl;
+    return true;
+}
+
+static bool is_supported_agent_name(const std::string& token) {
+    return std::find(SUPPORTED_AGENTS.begin(), SUPPORTED_AGENTS.end(), token) != SUPPORTED_AGENTS.end();
+}
+
+static bool is_launch_provider_misuse(int argc, char* argv[]) {
+    bool saw_launch = false;
+    std::string launch_agent;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string token = argv[i];
+        if (!saw_launch) {
+            if (token == "launch") {
+                saw_launch = true;
+            }
+            continue;
+        }
+
+        if (token == "--provider" || token == "-p" ||
+            token.rfind("--provider=", 0) == 0 || token.rfind("-p=", 0) == 0) {
+            return launch_agent != "codex";
+        }
+
+        if (!token.empty() && token[0] != '-' && launch_agent.empty() && is_supported_agent_name(token)) {
+            launch_agent = token;
+        }
+    }
+
+    return false;
+}
+
+static void hide_option(CLI::Option* option) {
+    if (option != nullptr) {
+        option->group("");
+    }
+}
+
+static void hide_new_options(CLI::App& app, size_t start_index) {
+    std::vector<CLI::Option*> options = app.get_options();
+    for (size_t i = start_index; i < options.size(); ++i) {
+        hide_option(options[i]);
+    }
+}
 
 // Configuration structure for CLI options
 struct CliConfig {
     std::string host = "127.0.0.1";
-    int port = 8000;
+    int port = 13305;
     std::string api_key;
     std::string model;
+    std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
-    std::string install_backend;  // Format: "recipe:backend"
-    std::string uninstall_backend;  // Format: "recipe:backend"
+    std::optional<bool> pinned = std::nullopt;
+    std::string backend_spec;  // Format: "recipe:backend"
+    bool backends_showall = false;
+    bool force = false;
     std::string output_file;
     bool downloaded = false;
+    bool dry_run = false;
     std::string agent;
+    std::string repo_dir;
+    std::string recipe_file;
+    bool skip_prompt = false;
+    bool yes = false;
     int scan_duration = 30;
     bool json_output = false;
+    bool codex_use_user_config = false;
+    std::string codex_model_provider = "lemonade";
+    std::string agent_args;
+
+    // Cloud provider commands
+    std::string cloud_provider;
+    std::string cloud_base_url;
+    std::string cloud_api_key;
+
+    // Chat REPL options
+    bool chat_cli = false;
+    bool chat_no_stream = false;
+    std::string chat_system_prompt;
+
+    // Bench command options
+    lemon_cli::BenchCliOptions bench;
 };
 
-static bool validate_and_transform_model_json(nlohmann::json& model_data) {
-    // Validate model_name (or id -> model_name)
-    if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
-        if (model_data.contains("id") && model_data["id"].is_string()) {
-            model_data["model_name"] = model_data["id"];
-            model_data.erase("id");
-        } else {
-            std::cerr << "Error: JSON file must contain a 'model_name' string field" << std::endl;
-            return false;
+// Read a line from stdin with terminal echo disabled, so secrets (API keys,
+// passwords) don't linger in scrollback / screen-share. Returns the typed
+// line (without trailing newline). Falls back to plain getline if the
+// terminal can't be put into no-echo mode — better to keep the prompt
+// usable than to refuse it.
+static std::string read_secret_line() {
+    std::string out;
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    bool restored = false;
+    if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
+        SetConsoleMode(h, mode & ~ENABLE_ECHO_INPUT);
+        restored = true;
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        SetConsoleMode(h, mode);
+    }
+#else
+    struct termios old_tio{}, new_tio{};
+    bool restored = false;
+    if (tcgetattr(fileno(stdin), &old_tio) == 0) {
+        new_tio = old_tio;
+        new_tio.c_lflag &= ~ECHO;
+        if (tcsetattr(fileno(stdin), TCSANOW, &new_tio) == 0) {
+            restored = true;
         }
     }
-
-    // Prepend "user." to model_name if it doesn't already start with "user."
-    std::string model_name = model_data["model_name"].get<std::string>();
-    if (model_name.substr(0, 5) != "user.") {
-        model_data["model_name"] = "user." + model_name;
+    std::getline(std::cin, out);
+    if (restored) {
+        tcsetattr(fileno(stdin), TCSANOW, &old_tio);
     }
-
-    // Validate recipe
-    if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
-        std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;
-        return false;
-    }
-
-    // Validate checkpoints or checkpoint
-    bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
-    bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
-    if (!has_checkpoints && !has_checkpoint) {
-        std::cerr << "Error: JSON file must contain either 'checkpoints' (object) or 'checkpoint' (string)" << std::endl;
-        return false;
-    }
-
-    // If both checkpoints and checkpoint exist, remove checkpoint
-    if (has_checkpoints && has_checkpoint) {
-        model_data.erase("checkpoint");
-    }
-
-    // Remove unrecognized top-level keys after validation
-    std::vector<std::string> keys_to_remove;
-    for (auto& [key, _] : model_data.items()) {
-        bool is_known = false;
-        for (const auto& known_key : KNOWN_KEYS) {
-            if (key == known_key) {
-                is_known = true;
-                break;
-            }
-        }
-        if (!is_known) {
-            keys_to_remove.push_back(key);
-        }
-    }
-
-    for (const auto& key : keys_to_remove) {
-        model_data.erase(key);
-    }
-
-    return true;
+#endif
+    // Echo a newline so the cursor advances — the user's Enter was swallowed
+    // along with the rest of the input when echo was off.
+    std::cout << std::endl;
+    return out;
 }
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -222,31 +317,15 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
 }
 
 static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
-    nlohmann::json model_data;
-
-    // Load JSON from file
-    std::ifstream file(config.model);
-    if (!file.good()) {
-        std::cerr << "Error: Failed to open JSON file '" << config.model << "'" << std::endl;
-        return 1;
+    if (!config.model.empty()) {
+        return lemon_cli::import_model_from_json_file(client, config.model);
     }
 
-    try {
-        model_data = nlohmann::json::parse(file);
-        file.close();
-
-        if (!validate_and_transform_model_json(model_data)) {
-            return 1;
-        }
-    } catch (const nlohmann::json::exception& e) {
-        std::cerr << "Error: Failed to parse JSON file '" << config.model << "': " << e.what() << std::endl;
-        return 1;
-    }
-
-    return client.pull_model(model_data);
+    return lemon_cli::import_remote_recipe(client, config.repo_dir, config.recipe_file,
+                                           config.skip_prompt, config.yes, nullptr, true);
 }
 
-static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
     // Build model_data JSON from command line options
@@ -254,14 +333,69 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     model_data["recipe"] = config.recipe;
 
     if (!config.checkpoints.empty()) {
-        model_data["checkpoints"] = config.checkpoints;
+        nlohmann::json checkpoints = nlohmann::json::object();
+        for (const auto& [type, checkpoint] : config.checkpoints) {
+            checkpoints[type] = lemon_cli::normalize_huggingface_checkpoint_arg(checkpoint);
+        }
+        model_data["checkpoints"] = std::move(checkpoints);
+    }
+
+    if (!config.components.empty()) {
+        model_data["components"] = config.components;
     }
 
     if (!config.labels.empty()) {
         model_data["labels"] = config.labels;
     }
 
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
+}
+
+static bool has_manual_pull_options(const CliConfig& config) {
+    return !config.checkpoints.empty() || !config.recipe.empty() ||
+           !config.labels.empty() || !config.components.empty();
+}
+
+static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (has_manual_pull_options(config)) {
+        if (lemon::is_collection_recipe(config.recipe)) {
+            if (config.components.empty()) {
+                std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
+                          << std::endl;
+                std::cerr << "       See 'lemonade pull --help'." << std::endl;
+                return 1;
+            }
+            return handle_manual_pull_command(client, config);
+        }
+        if (config.checkpoints.empty()) {
+            std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
+                      << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
+        if (config.recipe.empty()) {
+            std::cerr << "Error: manual pull requires --recipe." << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
+        return handle_manual_pull_command(client, config);
+    }
+
+    std::string normalized_model = lemon_cli::normalize_huggingface_checkpoint_arg(config.model);
+
+    // If the argument looks like a Hugging Face checkpoint id (contains '/'),
+    // run the interactive HF flow that discovers variants and auto-fills the
+    // pull request. Otherwise treat it as a registered model name and pull by
+    // model_name only.
+    if (normalized_model.find('/') != std::string::npos) {
+        return lemon_cli::hf_pull_flow(client, normalized_model, false);
+    }
+
+    nlohmann::json model_data;
+    model_data["model_name"] = config.model;
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -272,7 +406,7 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
         return 1;
     }
 
-    if (!validate_and_transform_model_json(model_json)) {
+    if (!lemon_cli::validate_and_transform_model_json(model_json)) {
         return 1;
     }
 
@@ -303,13 +437,37 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
         return 1;
     }
 
-    // Check if model is downloaded
-    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
-        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
-        return 1;
+    // Pre-emptive capacity check
+    std::vector<std::string> labels;
+    if (model_info.contains("labels") && model_info["labels"].is_array()) {
+        for (const auto& label : model_info["labels"]) {
+            labels.push_back(label.get<std::string>());
+        }
+    }
+    lemon::ModelType model_type = lemon::get_model_type_from_labels(labels);
+    std::string type_str = lemon::model_type_to_string(model_type);
+
+    try {
+        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        auto health_json = nlohmann::json::parse(health_str);
+        if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
+            auto max_models = health_json["max_models"];
+            auto pinned_models = health_json["pinned_models"];
+            int max = max_models.value(type_str, -1);
+            int pinned_count = pinned_models.value(type_str, 0);
+            if (max != -1 && pinned_count >= max) {
+                std::cerr << "Warning: All slots (" << max << ") for model type '" << type_str
+                          << "' are occupied by pinned models. Loading will fail." << std::endl;
+            }
+        }
+    } catch (...) {
+        // Ignore errors checking health status pre-emptively
     }
 
-    bool is_downloaded = model_info["downloaded"].get<bool>();
+    bool is_downloaded = false;
+    if (model_info.contains("downloaded") && model_info["downloaded"].is_boolean()) {
+        is_downloaded = model_info["downloaded"].get<bool>();
+    }
 
     if (!is_downloaded) {
         std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
@@ -324,61 +482,249 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
 }
 
-static int handle_run_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    lemon_cli::ChatOptions options;
+    options.initial_model = config.model;
+    options.system_prompt = config.chat_system_prompt;
+    options.stream = !config.chat_no_stream;
+    return lemon_cli::run_chat_repl(client, options);
+}
+
+static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "run", true)) {
+        return 1;
+    }
+
     int load_result = handle_load_command(client, config);
     if (load_result != 0) {
         return load_result;
+    }
+
+    if (config.chat_cli) {
+        return handle_chat_command(client, config);
     }
 
     open_url(config.host, config.port);
     return 0;
 }
 
-static int handle_recipes_command(lemonade::LemonadeClient& client, const CliConfig& config) {
-    if (handle_backend_operation(config.install_backend, "Install",
-        [&client](const std::string& recipe, const std::string& backend) {
-            return client.install_backend(recipe, backend);
-        })) {
-            return 0;
-    } else if (handle_backend_operation(config.uninstall_backend, "Uninstall",
-        [&client](const std::string& recipe, const std::string& backend) {
-            return client.uninstall_backend(recipe, backend);
-        })) {
-            return 0;
+static int handle_backends_command(lemonade::LemonadeClient& client,
+                                   const CliConfig& config,
+                                   bool install_requested,
+                                   bool uninstall_requested) {
+    if (install_requested) {
+        int result = 0;
+        handle_backend_operation(config.backend_spec, "Install",
+            [&client, &config, &result](const std::string& recipe, const std::string& backend) {
+                result = client.install_backend(recipe, backend, config.force);
+                return result;
+            });
+        return result;
     }
 
-    return client.list_recipes();
+    if (uninstall_requested) {
+        int result = 0;
+        handle_backend_operation(config.backend_spec, "Uninstall",
+            [&client, &result](const std::string& recipe, const std::string& backend) {
+                result = client.uninstall_backend(recipe, backend);
+                return result;
+            });
+        return result;
+    }
+
+    return client.list_recipes(config.backends_showall);
 }
 
-static int handle_launch_command(const CliConfig& config) {
+static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
+    lemonade::LemonadeClient& client,
+    int context_window) {
+    static const std::unordered_set<std::string> non_llm_labels = {
+        "embeddings",
+        "reranking",
+        "transcription",
+        "image",
+        "tts",
+        "upscaling",
+        "edit"
+    };
+
+    std::vector<lemon_cli::AgentModelEntry> models;
+
+    try {
+        std::string response = client.make_request(
+            "/api/v1/models?show_all=false", "GET", "", "", 3000, 3000);
+        const nlohmann::json parsed = nlohmann::json::parse(response);
+
+        if (!parsed.contains("data") || !parsed["data"].is_array()) {
+            return models;
+        }
+
+        for (const auto& model : parsed["data"]) {
+            if (!model.is_object() || !model.contains("id") || !model["id"].is_string()) {
+                continue;
+            }
+
+            bool is_llm = true;
+            if (model.contains("labels") && model["labels"].is_array()) {
+                for (const auto& label : model["labels"]) {
+                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
+                        is_llm = false;
+                        break;
+                    }
+                }
+            }
+
+            if (!is_llm) {
+                continue;
+            }
+
+            const std::string model_id = model["id"].get<std::string>();
+            models.push_back({model_id, model_id + " (local)", context_window});
+        }
+    } catch (const std::exception&) {
+        // Non-fatal: we still include the selected model below.
+    }
+
+    return models;
+}
+
+static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
+                                         const CliConfig& config) {
+    constexpr int default_context_window = 40960;
+    std::vector<lemon_cli::AgentModelEntry> models =
+        fetch_llm_models_for_sync(client, default_context_window);
+
+    bool selected_present = false;
+    for (const auto& model : models) {
+        if (model.id == config.model) {
+            selected_present = true;
+            break;
+        }
+    }
+
+    if (!selected_present) {
+        models.push_back({config.model, config.model + " (local)", default_context_window});
+    }
+
+    const lemon_cli::AgentConfigProfile* profile = nullptr;
+    if (config.agent == "opencode") {
+        profile = &lemon_cli::opencode_profile();
+    } else if (config.agent == "pi") {
+        profile = &lemon_cli::pi_profile();
+    }
+
+    if (profile == nullptr) {
+        return;
+    }
+
+    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+
+    const std::string base_url =
+        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
+
+    std::string error_message;
+    if (!lemon_cli::sync_agent_config_file(*profile,
+                                           "Lemonade",
+                                           base_url,
+                                           config_api_key,
+                                           models,
+                                           error_message)) {
+        std::cerr << "Warning: Failed to sync " << config.agent
+                  << " config: " << error_message << std::endl;
+        std::cerr << "Continuing with launch anyway..." << std::endl;
+    }
+
+    if (config.agent == "pi") {
+        // Only write settings.json if pi doesn't already have a default provider/model.
+        // This preserves existing user configuration while providing seamless first-time UX.
+        if (!lemon_cli::pi_has_default_config()) {
+            std::string settings_error;
+            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
+                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        }
+    }
+}
+
+static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
+        return 1;
+    }
+
+    const bool model_was_missing = config.model.empty();
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent)) {
+        return 1;
+    }
+
+    if (model_was_missing) {
+        // Interactive model resolution for launch already handled recipe selection/import choices.
+    } else {
+        std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
+    }
+
+    if (lemon_tray::agent_needs_config_sync(config.agent)) {
+        sync_agent_config_for_launch(client, config);
+    }
+
     lemon_tray::AgentConfig agent_config;
+    lemon_tray::AgentLaunchOptions launch_options;
     std::string config_error;
+
+    launch_options.codex_use_user_config = config.codex_use_user_config;
+    launch_options.codex_model_provider = config.codex_model_provider;
 
     // Build agent config
     if (!lemon_tray::build_agent_config(config.agent, config.host, config.port, config.model,
+                                         config.api_key, launch_options,
                                          agent_config, config_error)) {
-        std::cerr << "Failed to build agent config: " << config_error << std::endl;
+        LOG(ERROR, "AgentBuilder") << "Failed to build agent config: " << config_error << std::endl;
         return 1;
+    }
+
+    if (config.api_key.empty()) {
+        std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
+    } else {
+        std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
+    }
+
+    if (!config.agent_args.empty()) {
+        std::vector<std::string> user_args = lemon::utils::parse_custom_args(config.agent_args);
+        agent_config.extra_args.insert(agent_config.extra_args.end(), user_args.begin(), user_args.end());
     }
 
     // Find agent binary
     const std::string agent_binary = lemon_tray::find_agent_binary(agent_config);
     if (agent_binary.empty()) {
-        std::cerr << "Agent binary not found for " << config.agent << std::endl;
+        LOG(ERROR, "AgentBuilder") << "Agent binary not found for " << config.agent << std::endl;
         if (!agent_config.install_instructions.empty()) {
-            std::cerr << agent_config.install_instructions << std::endl;
+            LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
         return 1;
     }
 
-    // Preload model (and check if server reachable)
-    lemonade::LemonadeClient client(config.host, config.port, config.api_key);
-    if (client.load_model(config.model, config.recipe_options)) {
-        return 1;
-    }
+    std::cout << "Loading model in background: " << config.model << std::endl;
+
+    // Trigger load asynchronously so launch is non-blocking for agent startup.
+    std::thread([host = config.host,
+                 port = config.port,
+                 api_key = config.api_key,
+                 model = config.model,
+                 recipe_options = config.recipe_options]() {
+        try {
+            lemonade::LemonadeClient async_client(host, port, api_key);
+            nlohmann::json request_body = recipe_options;
+            request_body["model_name"] = model;
+            request_body["save_options"] = false;
+            // Keep async load silent to avoid disrupting interactive agent UIs.
+            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+        } catch (const std::exception& e) {
+            (void)e;
+        }
+    }).detach();
 
     std::cout << "Launching " << config.agent << "..." << std::endl;
 
@@ -393,7 +739,7 @@ static int handle_launch_command(const CliConfig& config) {
             false,
             agent_config.env_vars);
     } catch (const std::exception& e) {
-        std::cerr << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        LOG(ERROR, "AgentLauncher") << "Error: Failed to launch agent process: " << e.what() << std::endl;
         return 1;
     }
 
@@ -471,7 +817,7 @@ struct BeaconListener {
 
 // Listen for a UDP beacon from localhost and return the server's HTTP port, or 0 if none found
 static int discover_local_server_port() {
-    BeaconListener listener(8000, 250);
+    BeaconListener listener(13305, 250);
     if (!listener.valid) return 0;
 
     auto start_time = std::chrono::steady_clock::now();
@@ -529,8 +875,190 @@ static int discover_local_server_port() {
     return 0;
 }
 
+static std::string json_value_to_string(const nlohmann::json& val) {
+    if (val.is_string()) return val.get<std::string>();
+    if (val.is_boolean()) return val.get<bool>() ? "true" : "false";
+    if (val.is_number_integer()) return std::to_string(val.get<int64_t>());
+    if (val.is_number_float()) {
+        std::ostringstream oss;
+        oss << val.get<double>();
+        return oss.str();
+    }
+    return val.dump();
+}
+
+static std::string normalize_key(std::string s) {
+    std::replace(s.begin(), s.end(), '-', '_');
+    return s;
+}
+
+static bool is_strict_numeric(const std::string& s, bool allow_dot) {
+    if (s.empty()) return false;
+    size_t start = (s[0] == '-') ? 1 : 0;
+    if (start >= s.size()) return false;
+    bool has_dot = false;
+    for (size_t i = start; i < s.size(); ++i) {
+        if (s[i] == '.' && allow_dot && !has_dot) { has_dot = true; continue; }
+        if (s[i] < '0' || s[i] > '9') return false;
+    }
+    return true;
+}
+
+static nlohmann::json parse_typed_value(const std::string& value) {
+    // Strict integer: optional minus, then digits only (no hex, no scientific)
+    if (is_strict_numeric(value, false)) {
+        try { return std::stoi(value); } catch (...) {}
+    }
+    // Strict double: digits with exactly one decimal point
+    if (is_strict_numeric(value, true) && value.find('.') != std::string::npos) {
+        try { return std::stod(value); } catch (...) {}
+    }
+    if (value == "true") return true;
+    if (value == "false") return false;
+    return value;
+}
+
+static int handle_config_view(lemonade::LemonadeClient& client) {
+    try {
+        std::string response = client.make_request("/internal/config");
+        auto config = nlohmann::json::parse(response);
+
+        struct Row { std::string key; std::string value; };
+        std::vector<std::pair<std::string, std::vector<Row>>> sections;
+        size_t max_width = 0;
+
+        std::vector<Row> general;
+        std::vector<std::string> nested_keys;
+        for (auto& [key, val] : config.items()) {
+            if (key == "config_version") continue;
+            if (val.is_object()) {
+                nested_keys.push_back(key);
+            } else {
+                max_width = std::max(max_width, key.size());
+                general.push_back({key, json_value_to_string(val)});
+            }
+        }
+        if (!general.empty()) {
+            sections.push_back({"General", std::move(general)});
+        }
+
+        for (const auto& section_key : nested_keys) {
+            std::vector<Row> rows;
+            for (auto& [field, val] : config[section_key].items()) {
+                std::string dk = section_key + "." + field;
+                max_width = std::max(max_width, dk.size());
+                rows.push_back({dk, json_value_to_string(val)});
+            }
+            if (!rows.empty()) {
+                sections.push_back({section_key, std::move(rows)});
+            }
+        }
+
+        max_width += 4;
+
+        std::cout << "Server Configuration" << std::endl;
+        std::cout << std::string(max_width + 30, '-') << std::endl;
+        for (const auto& [name, rows] : sections) {
+            std::cout << std::endl;
+            std::cout << "  [" << name << "]" << std::endl;
+            for (const auto& row : rows) {
+                std::string display_val = row.value.empty() ? "(empty)" : row.value;
+                std::cout << "  " << std::left << std::setw(static_cast<int>(max_width))
+                          << row.key << display_val << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+        std::cout << "To change a value:  lemonade config set port=9000 llamacpp.backend=rocm"
+                  << std::endl;
+
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error fetching config: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+static int handle_config_set(lemonade::LemonadeClient& client,
+                             const std::vector<std::string>& raw_args) {
+    nlohmann::json updates = nlohmann::json::object();
+
+    for (const auto& arg : raw_args) {
+        size_t eq_pos = arg.find('=');
+        if (eq_pos == std::string::npos || eq_pos == 0) {
+            std::cerr << "Error: expected key=value, got '" << arg << "'" << std::endl;
+            return 1;
+        }
+        std::string key = arg.substr(0, eq_pos);
+        std::string value = arg.substr(eq_pos + 1);
+
+        size_t dot_pos = key.find('.');
+        if (dot_pos != std::string::npos) {
+            std::string section = key.substr(0, dot_pos);
+            std::string field = normalize_key(key.substr(dot_pos + 1));
+
+            if (!updates.contains(section)) {
+                updates[section] = nlohmann::json::object();
+            }
+            updates[section][field] = parse_typed_value(value);
+        } else {
+            updates[normalize_key(key)] = parse_typed_value(value);
+        }
+    }
+
+    if (updates.empty()) {
+        std::cerr << "Error: no key-value pairs specified" << std::endl;
+        std::cerr << "Usage: lemonade config set key=value [key=value ...]" << std::endl;
+        std::cerr << "Example: lemonade config set llamacpp.backend=rocm port=8123" << std::endl;
+        return 1;
+    }
+
+    try {
+        std::string response = client.make_request(
+            "/internal/set", "POST", updates.dump(), "application/json");
+        auto result = nlohmann::json::parse(response);
+        if (result.contains("message") && result["message"].is_string()) {
+            std::cout << result["message"].get<std::string>() << std::endl;
+        }
+        if (result.contains("updated")) {
+            std::cout << "Configuration updated:" << std::endl;
+            std::cout << result["updated"].dump(4) << std::endl;
+        } else {
+            std::cout << result.dump(4) << std::endl;
+        }
+        return 0;
+    } catch (const lemonade::HttpError& e) {
+        if (e.status_code() == 400) {
+            try {
+                auto error = nlohmann::json::parse(e.response_body());
+                if (error.contains("error") && error["error"].is_string()) {
+                    std::string message = error["error"].get<std::string>();
+                    const std::string prefix = "Unknown config key: '";
+
+                    if (message.rfind(prefix, 0) == 0 && !message.empty() && message.back() == '\'') {
+                        std::string key = message.substr(prefix.size(),
+                                                         message.size() - prefix.size() - 1);
+                        std::cerr << "Error setting config: unknown config key `" << key << "`"
+                                  << std::endl;
+                        std::cerr << "Run `lemonade config` to see valid keys." << std::endl;
+                        return 1;
+                    }
+                }
+            } catch (const nlohmann::json::exception&) {
+            }
+        }
+
+        std::cerr << "Error setting config: " << lemonade::extract_server_error_message(e)
+                  << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error setting config: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 static int handle_scan_command(const CliConfig& config) {
-    const int beacon_port = 8000;
+    const int beacon_port = 13305;
     const int scan_duration_seconds = config.scan_duration;
 
     std::cout << "Scanning for network beacons on port " << beacon_port << " for "
@@ -630,79 +1158,225 @@ int main(int argc, char* argv[]) {
     // Quick start commands
     CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+    CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
-    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
+    backends_cmd->alias("recipes");
+    backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
+    CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
+    CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
 
+    // Config commands
+    CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
+    CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)")->group("Subcommands");
+    config_set_cmd->allow_extras(true);
+    config_set_cmd->fallthrough(false);
+
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
-    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Model management");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
+    CLI::App* pull_cmd = app.add_subcommand("pull",
+        "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* pin_cmd = app.add_subcommand("pin", "Pin a loaded model to prevent eviction")->group("Model management");
+    CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
+    CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
 
     // List options
-    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
+    list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
+    list_cmd->add_option("name_filter", config.list_filter,
+        "Optional case-insensitive model-name filter; supports * wildcards")
+        ->type_name("NAME_FILTER");
 
-    // Install/uninstall options for recipes command
-    recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)")->type_name("SPEC");
-    recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)")->type_name("SPEC");
+    // Backend management options
+    backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
+    backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
+    backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
+
+    // Cloud provider commands. `cloud` is a subcommand group with install /
+    // uninstall / auth / list. Mirrors the `backends` group shape on purpose
+    // so muscle memory transfers.
+    CLI::App* cloud_cmd = app.add_subcommand("cloud", "Manage cloud OpenAI-compatible providers")->group("Server");
+    CLI::App* cloud_install_cmd = cloud_cmd->add_subcommand("install", "Register a cloud provider")->group("Subcommands");
+    cloud_install_cmd->add_option("provider", config.cloud_provider, "Provider name (e.g. fireworks, openai)")->required()->type_name("PROVIDER");
+    cloud_install_cmd->add_option("--base-url", config.cloud_base_url, "OpenAI-compat base URL (must include /v1)")->required()->type_name("URL");
+    cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
+        "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
+        ->type_name("KEY");
+
+    CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
+    cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_auth_cmd = cloud_cmd->add_subcommand("auth", "Set a runtime API key (in-memory only)")->group("Subcommands");
+    cloud_auth_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+    cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
+        "API key. If omitted you'll be prompted (TTY only).")
+        ->type_name("KEY");
+
+    CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
+    cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
 
     // Pull options
-    pull_cmd->add_option("model", config.model, "Model name to pull")->required()->type_name("MODEL");
-    pull_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
+    pull_cmd->add_option("model", config.model,
+        "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
+        ->required()
+        ->type_name("MODEL_OR_CHECKPOINT");
+    pull_cmd->add_option("--checkpoint", config.checkpoints,
+        "Add a TYPE CHECKPOINT pair for a custom user.* model. Repeat for multi-file models.")
+        ->group("Manual Configuration Options")
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    pull_cmd->add_option("--recipe", config.recipe, "Model recipe (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+    pull_cmd->add_option("--recipe", config.recipe,
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
+        ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
-    pull_cmd->add_option("--label", config.labels, "Add label to model")
+    pull_cmd->add_option("--label", config.labels, "Add a label to the custom user.* model")
+        ->group("Manual Configuration Options")
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->add_option("--components", config.components,
+        "Components for a user.* omni collection (use with --recipe collection.omni). "
+        "Components must already be registered (built-in or previously pulled user.* models).")
+        ->group("Manual Configuration Options")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    pull_cmd->footer(
+        "Manual Configuration Guide:\n"
+        "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
 
     // Import options
-    import_cmd->add_option("json_file", config.model, "Path to JSON file")->required()->type_name("JSON_FILE");
+    import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
+    import_cmd->add_option("--directory", config.repo_dir,
+        "Remote recipe directory to query (e.g., coding-agents)")->type_name("DIR");
+    import_cmd->add_option("--recipe-file", config.recipe_file,
+        "Remote recipe JSON filename to import from the selected directory")->type_name("FILE");
+    import_cmd->add_flag("--skip-prompt", config.skip_prompt,
+        "Run non-interactively (requires --directory and --recipe-file for remote import)");
+    import_cmd->add_flag("--yes", config.yes,
+        "Alias for --skip-prompt to support non-interactive scripting");
 
     // Delete options
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
+    static bool load_pinned_flag = false;
     load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
-    run_cmd->add_option("model", config.model, "Model name to run")->required()->type_name("MODEL");
+    static bool run_pinned_flag = false;
+    run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
+    run_cmd->add_flag("--chat-cli", config.chat_cli,
+        "After loading, open an interactive chat REPL in the terminal instead of the browser");
+
+    // Chat options
+    chat_cmd->add_option("model", config.model,
+        "Model to chat with (optional; uses currently loaded model if omitted)")->type_name("MODEL");
+    chat_cmd->add_option("--system", config.chat_system_prompt,
+        "System prompt to seed the conversation")->type_name("TEXT");
+    chat_cmd->add_flag("--no-stream", config.chat_no_stream,
+        "Disable streaming; print the full response when it is ready");
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
+
+    // Pin/unpin options
+    pin_cmd->add_option("model", config.model, "Model name to pin")->required()->type_name("MODEL");
+    unpin_cmd->add_option("model", config.model, "Model name to unpin")->required()->type_name("MODEL");
 
     // Export options
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch options
-    launch_cmd->add_option("agent", config.agent, "Agent name to launch")
-        ->required()
-        ->type_name("AGENT")
-        ->check(CLI::IsMember(SUPPORTED_AGENTS));
-    launch_cmd->add_option("--model", config.model, "Model name to load")->required()->type_name("MODEL");
+    auto add_common_launch_options = [&config](CLI::App& cmd) {
+        cmd.add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
+        cmd.add_option("--directory", config.repo_dir,
+            "Remote recipe directory used only if you choose recipe import at prompt")
+            ->type_name("DIR");
+        cmd.add_option("--recipe-file", config.recipe_file,
+            "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
+        cmd.add_option("--agent-args", config.agent_args,
+            "Custom arguments to pass directly to the launched agent process")
+            ->type_name("ARGS")
+            ->default_val(config.agent_args);
+    };
+
+    size_t launch_option_count = launch_cmd->get_options().size();
+    add_common_launch_options(*launch_cmd);
+    hide_new_options(*launch_cmd, launch_option_count);
+    launch_option_count = launch_cmd->get_options().size();
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
+    hide_new_options(*launch_cmd, launch_option_count);
+
+    CLI::Option* codex_provider_opt = nullptr;
+    for (const std::string& agent_name : SUPPORTED_AGENTS) {
+        CLI::App* agent_cmd =
+            launch_cmd->add_subcommand(agent_name, "Launch " + agent_name + " with a model")
+                ->group("Agents");
+        agent_cmd->callback([&config, agent_name]() { config.agent = agent_name; });
+        add_common_launch_options(*agent_cmd);
+
+        if (agent_name == "codex") {
+            codex_provider_opt = agent_cmd->add_option("--provider,-p", config.codex_model_provider,
+                "Use model provider name for Codex instead of Lemonade-injected provider definition")
+                ->type_name("PROVIDER")
+                ->default_val(config.codex_model_provider)
+                ->expected(0, 1);
+        }
+    }
 
     // Scan options
     scan_cmd->add_option("--duration", config.scan_duration, "Scan duration in seconds")->default_val(config.scan_duration)->type_name("SECONDS");
 
+    // Cleanup cache options
+    cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
+
+    // Bench command
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
+
     // Parse arguments
-    CLI11_PARSE(app, argc, argv);
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) {
+        if (is_launch_provider_misuse(argc, argv)) {
+            std::cerr << "Error: --provider is only supported for 'lemonade launch codex'." << std::endl;
+            return 1;
+        }
+        return app.exit(e);
+    }
+
+    if (load_cmd->count() > 0) {
+        if (load_cmd->count("--pinned") > 0) {
+            config.pinned = load_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    } else if (run_cmd->count() > 0) {
+        if (run_cmd->count("--pinned") > 0) {
+            config.pinned = run_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    }
+    config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port
@@ -722,6 +1396,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // If set, LEMONADE_ADMIN_API_KEY takes precedence over the regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key && admin_api_key[0]) {
+        config.api_key = admin_api_key;
+    }
+
     // Create client
     lemonade::LemonadeClient client(config.host, config.port, config.api_key);
 
@@ -730,7 +1410,7 @@ int main(int argc, char* argv[]) {
         if (config.json_output) {
             // Verify the server is actually reachable before reporting its port.
             // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers (e.g. lemonade-server stop) to target the wrong process.
+            // which could cause callers to target the wrong process.
             bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
             if (!reachable) {
                 std::cerr << "Server is not running" << std::endl;
@@ -743,8 +1423,13 @@ int main(int argc, char* argv[]) {
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
-        return client.list_models(!config.downloaded);
+        return client.list_models(!config.downloaded, config.list_filter);
     } else if (pull_cmd->count() > 0) {
+        if (config.model.empty()) {
+            std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
         return handle_pull_command(client, config);
     } else if (import_cmd->count() > 0) {
         return handle_import_command(client, config);
@@ -752,21 +1437,84 @@ int main(int argc, char* argv[]) {
         return client.delete_model(config.model);
     } else if (run_cmd->count() > 0) {
         return handle_run_command(client, config);
+    } else if (chat_cmd->count() > 0) {
+        return handle_chat_command(client, config);
     } else if (load_cmd->count() > 0) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (pin_cmd->count() > 0) {
+        return client.pin_model(config.model, true);
+    } else if (unpin_cmd->count() > 0) {
+        return client.pin_model(config.model, false);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
-    } else if (recipes_cmd->count() > 0) {
-        return handle_recipes_command(client, config);
+    } else if (backends_cmd->count() > 0) {
+        return handle_backends_command(client, config,
+                                       backends_install_cmd->count() > 0,
+                                       backends_uninstall_cmd->count() > 0);
+    } else if (cloud_cmd->count() > 0) {
+        if (cloud_install_cmd->count() > 0) {
+            return client.install_cloud_provider(config.cloud_provider,
+                                                  config.cloud_base_url,
+                                                  config.cloud_api_key);
+        }
+        if (cloud_uninstall_cmd->count() > 0) {
+            return client.uninstall_cloud_provider(config.cloud_provider);
+        }
+        if (cloud_auth_cmd->count() > 0) {
+            // Interactive prompt only when the user didn't pass --api-key and
+            // stdin is a TTY. In non-interactive contexts (CI, pipes) refuse
+            // rather than silently hang on getline.
+            std::string key = config.cloud_api_key;
+            if (key.empty()) {
+#ifdef _WIN32
+                bool is_tty = _isatty(_fileno(stdin)) != 0;
+#else
+                bool is_tty = isatty(fileno(stdin)) != 0;
+#endif
+                if (!is_tty) {
+                    std::cerr << "Error: --api-key is required when stdin is not a TTY"
+                              << std::endl;
+                    return 1;
+                }
+                std::cout << "API key for " << config.cloud_provider
+                          << " (input hidden): ";
+                std::cout.flush();
+                key = read_secret_line();
+                if (key.empty()) {
+                    std::cerr << "Error: empty API key" << std::endl;
+                    return 1;
+                }
+            }
+            return client.cloud_auth(config.cloud_provider, key);
+        }
+        if (cloud_clear_cmd->count() > 0) {
+            return client.cloud_auth_clear(config.cloud_provider);
+        }
+        if (cloud_list_cmd->count() > 0) {
+            return client.cloud_list();
+        }
+        // No subcommand specified: print help.
+        std::cout << cloud_cmd->help() << std::endl;
+        return 0;
     } else if (launch_cmd->count() > 0) {
-        return handle_launch_command(config);
+        return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
         open_url(config.host, config.port, "/?logs=true");
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
+    } else if (config_cmd->count() > 0) {
+        if (config_set_cmd->count() > 0) {
+            return handle_config_set(client, config_set_cmd->remaining());
+        }
+        return handle_config_view(client);
+    } else if (cleanup_cmd->count() > 0) {
+        return client.cleanup_cache(config.dry_run);
+    } else if (bench_cmd->count() > 0) {
+        auto bench_config = lemon_cli::build_bench_config(config.output_file, config.bench);
+        return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

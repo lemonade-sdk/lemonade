@@ -14,9 +14,16 @@ namespace lemon {
 namespace utils {
 
 struct HttpResponse {
-    int status_code;
+    int status_code = 0;
     std::string body;
     std::map<std::string, std::string> headers;
+
+    // Transport status from libcurl. For non-streaming callers this remains
+    // CURLE_OK/0 because transport errors are thrown. Streaming callers need the
+    // original code so they can distinguish a clean [DONE] from an interrupted
+    // backend connection that happened after HTTP headers were received.
+    int curl_code = 0;
+    std::string curl_error;
 };
 
 struct MultipartField {
@@ -37,6 +44,7 @@ struct DownloadResult {
     size_t bytes_downloaded = 0;      // Bytes downloaded in this attempt
     size_t total_bytes = 0;           // Total file size (if known)
     bool can_resume = false;          // Whether partial download can be resumed
+    bool disk_full = false;            // True if download failed due to insufficient disk space
 };
 
 // Progress callback returns bool: true = continue, false = cancel download
@@ -49,14 +57,21 @@ struct DownloadOptions {
     int initial_retry_delay_ms = 1000; // Initial delay between retries (doubles each time)
     int max_retry_delay_ms = 60000;   // Maximum delay between retries (1 minute)
     bool resume_partial = true;       // Resume partial downloads if possible
-    int low_speed_limit = 1000;       // Minimum bytes/sec before timeout (1KB/s)
-    int low_speed_time = 60;          // Seconds below low_speed_limit before timeout
+    int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
+    int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+
+    // Optional content verification. expected_hash accepts plain hex or
+    // prefixed values like "sha256:<hex>", "sha1:<hex>", or
+    // "git-sha1:<hex>". git-sha1 verifies the Git blob object id, i.e.
+    // SHA1("blob <size>\0" + file bytes), which is what Hugging Face uses
+    // for non-LFS file ETags. SHA256 is used for LFS objects and release assets.
+    std::string expected_hash;
+    std::string expected_hash_algorithm;
 };
 
 class HttpClient {
 public:
-    // Set default timeout for all requests
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
@@ -65,9 +80,10 @@ public:
         return default_timeout_seconds_;
     }
 
-    // Simple GET request
+    // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
-                           const std::map<std::string, std::string>& headers = {});
+                           const std::map<std::string, std::string>& headers = {},
+                           long timeout_seconds = 0);
 
     // Simple POST request
     static HttpResponse post(const std::string& url,

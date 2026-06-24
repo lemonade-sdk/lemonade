@@ -20,6 +20,7 @@ Usage:
 """
 
 import asyncio
+import os
 import time
 import requests
 import numpy as np
@@ -66,6 +67,44 @@ class LLMTests(ServerTestBase):
     def setUpClass(cls):
         """Verify server and apply multi-model config."""
         super().setUpClass()
+
+    @skip_if_unsupported("static_max_context_window")
+    def test_000_model_info_includes_max_context_window(self):
+        """Downloaded GGUF and installed FLM text models expose static context metadata."""
+        model = self.get_test_model("llm")
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.get(
+            f"{self.base_url}/models/{model}",
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not data.get("downloaded", False):
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": model, "stream": False},
+                headers=headers,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            pull_response.raise_for_status()
+
+            response = requests.get(
+                f"{self.base_url}/models/{model}",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        self.assertIn("max_context_window", data)
+        self.assertIsInstance(data["max_context_window"], int)
+        self.assertGreater(data["max_context_window"], 0)
 
     # =========================================================================
     # CHAT COMPLETIONS TESTS
@@ -708,47 +747,42 @@ class LLMTests(ServerTestBase):
         model2 = MULTI_MODEL_SECONDARY
         model3 = MULTI_MODEL_TERTIARY
 
+        def load_model(model_name):
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response.raise_for_status()
+            return response
+
         # Load first two models (fills the limit)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model1},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model1)
         time.sleep(1)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model2},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model2)
         time.sleep(1)
 
         # Verify both are loaded
         response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 
-        # Access model2 to make it more recent than model1
-        requests.post(
-            f"{self.base_url}/chat/completions",
-            json={
-                "model": model2,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 5,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        # Touch model2 again to make it more recent than model1.
+        #
+        # Use /load instead of inference here: this test validates LRU bookkeeping,
+        # not backend generation. Re-loading an already loaded model updates the
+        # router access time without depending on model-specific inference behavior.
+        load_model(model2)
         time.sleep(1)
 
         # Load third model (should evict model1 as it's LRU)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model3},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model3)
         time.sleep(1)
 
         # Verify only 2 models loaded and model1 was evicted
         response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 
@@ -784,6 +818,174 @@ class LLMTests(ServerTestBase):
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 0)
 
+    # =========================================================================
+    # LLAMA.CPP SPECIFIC TESTS
+    # =========================================================================
+
+    @skip_if_unsupported("slots")
+    def test_023_slots(self):
+        """Test the /api/v1/slots endpoint for llamacpp backend."""
+        # First ensure a model is loaded
+        model = self.get_test_model("llm")
+
+        # Load the model
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        # Test the slots endpoint
+        response = requests.get(f"{self.base_url}/slots", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        print(f"Slots response: {data}")
+
+        # Basic validation that we get a JSON response
+        # The exact structure may vary, but we should at least get valid JSON
+        self.assertIsInstance(data, (dict, list))
+
+        # If it's a list, it should contain slot information
+        if isinstance(data, list):
+            # Check that each slot has expected fields if any slots exist
+            for slot in data:
+                self.assertIsInstance(slot, dict)
+                # Slots typically have an id field
+                if "id" in slot:
+                    self.assertIsInstance(slot["id"], int)
+
+        # If it's a dict, it might be an error or wrapper object, but is not acceptable
+        elif isinstance(data, dict):
+            # If there's an error, it should have an error field
+            if "error" in data:
+                self.assertIsInstance(data["error"], str)
+                self.fail(
+                    f"Error response from /api/v1/slots endpoint: {data['error']}"
+                )
+            else:
+                # Fail
+                self.fail("Unexpected response format for /api/v1/slots endpoint")
+
+        # Now erase one of the slots
+        if isinstance(data, list) and len(data) > 0:
+            slot_id_to_erase = data[0].get("id")
+            if slot_id_to_erase is not None:
+                erase_response = requests.post(
+                    f"{self.base_url}/slots/{slot_id_to_erase}?action=erase",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                if erase_response.status_code == 200:
+                    erase_data = erase_response.json()
+                    print(f"Slots erase response: {erase_data}")
+                    if "id_slot" in erase_data:
+                        self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
+                    elif "error" in erase_data:
+                        # Received an error response from the erase endpoint, this may be because the server
+                        # was not started with the --slot-save-path argument
+                        print(
+                            f"Slots erase backend error response: {erase_data['error']}"
+                        )
+                        pass
+                    else:
+                        self.fail(
+                            f"Unexpected response from slots erase endpoint: {erase_data}"
+                        )
+                else:
+                    error_data = erase_response.json()
+                    print(f"Slots erase error response: {error_data}")
+                    self.fail(
+                        f"Failed to erase slot with id {slot_id_to_erase}, "
+                        f"status code: {erase_response.status_code}"
+                    )
+
+            else:
+                self.fail("No slot id found to erase in /api/v1/slots response")
+        else:
+            self.fail("No slots available to test erasure in /api/v1/slots endpoint")
+
+    @skip_if_unsupported("tokenize")
+    def test_024_tokenize(self):
+        """Test the /api/v1/tokenize endpoint for llamacpp backend."""
+        # First ensure a model is loaded
+        model = self.get_test_model("llm")
+
+        # Load the model
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        # Test the tokenize endpoint defaults (with_pieces = false)
+        payload = {"content": "Hello world!"}
+        response = requests.post(
+            f"{self.base_url}/tokenize",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        print(f"Tokenize default response: {data}")
+
+        # Test the tokenize endpoint with pieces
+        payload = {"content": "Hello World!", "with_pieces": True}
+        response = requests.post(
+            f"{self.base_url}/tokenize",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data_with_pieces = response.json()
+        print(f"Tokenize response with pieces: {data_with_pieces}")
+
+        # Basic validation that we get a JSON response with a tokens list for default response
+        self.assertIsInstance(data, dict)
+        self.assertIn("tokens", data)
+        tokens = data["tokens"]
+        self.assertIsInstance(tokens, list)
+        self.assertGreater(len(tokens), 0, "Tokens list should not be empty")
+
+        # Basic validation that we get a JSON response with a tokens list for with_pieces response
+        self.assertIsInstance(data_with_pieces, dict)
+        self.assertIn("tokens", data_with_pieces)
+        tokens_with_pieces = data_with_pieces["tokens"]
+        self.assertIsInstance(tokens_with_pieces, list)
+        self.assertGreater(
+            len(tokens_with_pieces), 0, "Tokens list should not be empty"
+        )
+
+        # Verify that the response conforms to the specified JSON output for default response
+        for token in tokens:
+            # Format 1: List of integers
+            if isinstance(token, int):
+                continue
+
+        # Verify that the response conforms to the specified JSON output for with_pieces response
+        for token in tokens_with_pieces:
+            # Formats 2 & 3: List of objects with id and piece
+            self.assertIsInstance(
+                token, dict, f"Token should be an int or a dict, got {type(token)}"
+            )
+            self.assertIn("id", token)
+            self.assertIn("piece", token)
+            self.assertIsInstance(token["id"], int)
+
+            # piece can be string (Format 2) or list of integers (Format 3)
+            if isinstance(token["piece"], str):
+                continue
+            elif isinstance(token["piece"], list):
+                for byte_val in token["piece"]:
+                    self.assertIsInstance(byte_val, int)
+            else:
+                self.fail(f"Unexpected type for piece: {type(token['piece'])}")
+
+        print("[OK] Tokenize response format verified")
+
 
 if __name__ == "__main__":
-    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS", modality="llm")
+    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING/SLOTS TESTS", modality="llm")

@@ -37,7 +37,7 @@ runs:
     # For GitHub-hosted runners, use actions/setup-python
     - name: Setup Python (GitHub-hosted)
       if: ${{ !contains(runner.name, 'stx') && !contains(runner.name, 'rai') && !contains(runner.name, 'selfhost') }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python-version }}
 

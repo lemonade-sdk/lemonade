@@ -7,11 +7,13 @@
  * Falls back to localhost + port discovery when no explicit URL is provided.
  */
 
+import { tauriReady } from '../tauriShim';
+
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
 class ServerConfig {
-  private port: number = 8000;
+  private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
   private portListeners: Set<PortChangeListener> = new Set();
@@ -22,31 +24,22 @@ class ServerConfig {
   private initPromise: Promise<void> | null = null;
 
   constructor() {
-    // Initialize from Electron API on startup
+    // Initialize from the host (Tauri invoke bridge or web-app mock) on startup.
+    // Event listeners are registered inside initialize() rather than here
+    // because window.api is installed asynchronously by tauriShim.ts and is
+    // not yet available during synchronous module-graph evaluation.
     this.initPromise = this.initialize();
-
-    // Listen for port updates from main process (only relevant for localhost mode)
-    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
-      window.api.onServerPortUpdated((port: number) => {
-        // Only update port if we're not using an explicit URL
-        if (!this.explicitBaseUrl) {
-          this.setPort(port);
-        }
-      });
-
-      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
-        if (this.explicitBaseUrl != baseURL) {
-            this.setUpdatedURL(baseURL);
-        }
-
-        if (this.apiKey != apiKey) {
-           this.setUpdatedAPIKey(apiKey);
-        }
-      });
-    }
   }
 
   private async initialize(): Promise<void> {
+    // Wait for tauriShim.ts to finish installing window.api. Both
+    // installTauriApi() and this method are kicked off during module
+    // evaluation as fire-and-forget promises; without this await,
+    // initialize() races installTauriApi() and loses — every window.api
+    // check below sees undefined, and we fall through to localhost:13305
+    // with no API key.
+    await tauriReady;
+
     try {
       // Get API Key if available
       if (typeof window !== 'undefined'&& window.api?.getServerAPIKey) {
@@ -71,10 +64,9 @@ class ServerConfig {
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
+          this.initialized = true;
+          return;
         }
-
-        this.initialized = true;
-        return;
       }
 
       // No explicit URL - use localhost with port discovery
@@ -91,6 +83,28 @@ class ServerConfig {
       console.error('Failed to initialize server config:', error);
       this.initialized = true;
     }
+
+    // Register event listeners AFTER the first await-cycle so window.api is
+    // guaranteed to be installed. tauriShim.ts installs window.api via a
+    // fire-and-forget async call that completes on the microtask queue; the
+    // constructor runs synchronously during module-graph evaluation and would
+    // see window.api as undefined if we registered there.
+    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
+      window.api.onServerPortUpdated((port: number) => {
+        if (!this.explicitBaseUrl) {
+          this.setPort(port);
+        }
+      });
+
+      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
+        if (this.explicitBaseUrl != baseURL) {
+          this.setUpdatedURL(baseURL);
+        }
+        if (this.apiKey != apiKey) {
+          this.setUpdatedAPIKey(apiKey);
+        }
+      });
+    }
   }
 
   /**
@@ -106,7 +120,7 @@ class ServerConfig {
    * Check if using an explicit remote server URL
    */
   isRemoteServer(): boolean {
-    return this.explicitBaseUrl !== null;
+    return !!this.explicitBaseUrl;
   }
 
   /**
@@ -134,14 +148,6 @@ class ServerConfig {
   }
 
   /**
-   * Get the server hostname
-   */
-  getServerHost(): string {
-    const url = new URL(this.getServerBaseUrl());
-    return url.hostname;
-  }
-
-  /**
    * Get the server API key
    */
   getAPIKey(): string {
@@ -149,6 +155,31 @@ class ServerConfig {
       return this.apiKey;
     }
     return '';
+  }
+
+  /**
+   * Build a WebSocket URL. With wsPort, targets the dedicated websocket port
+   * advertised by /health; without it, targets the main HTTP port (which
+   * accepts WebSocket upgrades for /realtime and /logs/stream). Going through
+   * URL rather than string concat is what makes this correct for IPv6
+   * literals — URL.host preserves the brackets that hostname does not. The
+   * configured API key is appended automatically when set.
+   */
+  buildWebSocketUrl(path: string, wsPort?: number, query?: URLSearchParams): string {
+    const url = new URL(this.getServerBaseUrl());
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (wsPort !== undefined) {
+      url.port = String(wsPort);
+    }
+    url.pathname = url.pathname.replace(/\/$/, '') + path;
+
+    const params = new URLSearchParams(query);
+    const apiKey = this.getAPIKey();
+    if (apiKey) {
+      params.set('api_key', apiKey);
+    }
+    url.search = params.toString();
+    return url.toString();
   }
 
   /**
@@ -163,10 +194,12 @@ class ServerConfig {
     }
   }
 
-  private setUpdatedURL(baseURL: string) {
-    if (this.explicitBaseUrl != baseURL) {
-      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${baseURL}`);
-      this.explicitBaseUrl = baseURL;
+  private setUpdatedURL(baseURL: string | null) {
+    const nextBaseUrl = baseURL?.trim() || null;
+
+    if (this.explicitBaseUrl !== nextBaseUrl) {
+      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${nextBaseUrl}`);
+      this.explicitBaseUrl = nextBaseUrl;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -182,7 +215,7 @@ class ServerConfig {
   }
 
   /**
-   * Discover the server port by calling lemonade-server --status
+   * Discover the server port via a UDP beacon from the local lemond instance.
    * Returns a promise that resolves with the discovered port, or null if discovery is disabled
    */
   async discoverPort(): Promise<number | null> {
@@ -283,9 +316,13 @@ class ServerConfig {
    * (only attempts discovery in localhost mode)
    */
   async fetch(endpoint: string, opts?: RequestInit): Promise<Response> {
+    await this.waitForInit();
+
     const fullUrl = endpoint.startsWith('http')
       ? endpoint
-      : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      : endpoint.startsWith('/internal/')
+        ? `${this.getServerBaseUrl()}${endpoint}`
+        : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const options = { ...opts };
 
@@ -329,10 +366,11 @@ export const serverConfig = new ServerConfig();
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
-export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
+export const buildWebSocketUrl = (path: string, wsPort?: number, query?: URLSearchParams) =>
+  serverConfig.buildWebSocketUrl(path, wsPort, query);
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);

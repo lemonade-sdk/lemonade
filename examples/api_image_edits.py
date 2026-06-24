@@ -54,7 +54,7 @@ def edit_image_with_openai_client(image_path, backend="cpu"):
 
     # Point to local lemonade server
     client = OpenAI(
-        base_url="http://localhost:8000/api/v1",
+        base_url="http://localhost:13305/api/v1",
         api_key="not-needed",  # Lemonade doesn't require API key
     )
 
@@ -111,7 +111,7 @@ def edit_image_with_requests(image_path, backend="cpu"):
         }
 
         response = requests.post(
-            "http://localhost:8000/api/v1/images/edits",
+            "http://localhost:13305/api/v1/images/edits",
             files=files,
             data=data,
             timeout=600,  # 10 minutes for image generation

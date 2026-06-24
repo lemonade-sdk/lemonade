@@ -65,7 +65,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload Debian package
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-deb
           path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
@@ -115,7 +115,7 @@ jobs:
 
       - name: Upload source package
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-source-package
           path: ${{ steps.build_source.outputs.output-dir }}/*

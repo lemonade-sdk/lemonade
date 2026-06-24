@@ -59,8 +59,8 @@ runs:
           LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
           for candidate in \
             "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
-            /tmp/lemonade-server.log \
-            /tmp/lemond.log; do
+            "$RUNNER_TEMP/lemonade-server.log" \
+            "$RUNNER_TEMP/lemond.log"; do
             if [ -f "$candidate" ]; then
               echo "=== Last 200 lines of $candidate ==="
               tail -200 "$candidate"
@@ -69,20 +69,19 @@ runs:
             fi
           done
 
-          # Systemd journal (works when server runs as lemonade-server.service)
+          # Systemd journal (works when server runs as lemond.service)
           if [ "$found" = "false" ] && command -v journalctl > /dev/null 2>&1; then
-            echo "=== Last 200 lines from journalctl for lemonade-server ==="
-            sudo journalctl -u lemonade-server --no-pager -n 200 2>/dev/null | tee server-logs/journald-lemonade-server.log || true
-            if [ -s server-logs/journald-lemonade-server.log ]; then
+            echo "=== Last 200 lines from journalctl for lemond ==="
+            sudo journalctl -u lemond --no-pager -n 200 2>/dev/null | tee server-logs/journald-lemond.log || true
+            if [ -s server-logs/journald-lemond.log ]; then
               found=true
             else
-              rm -f server-logs/journald-lemonade-server.log
+              rm -f server-logs/journald-lemond.log
             fi
           fi
         fi
 
-        # --- Any platform: glob for /tmp/lemonade*.log ---
-        for f in /tmp/lemonade*.log; do
+        for f in "$RUNNER_TEMP"/lemonade*.log "$RUNNER_TEMP"/lemond*.log; do
           if [ -f "$f" ]; then
             echo "--- $f ---"
             tail -50 "$f"
@@ -97,7 +96,7 @@ runs:
 
     - name: Upload server logs
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: server-logs/

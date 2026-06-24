@@ -13,11 +13,11 @@ jobs:
       name: Build and publish lemonade-server.ai website
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@main
+        - uses: actions/checkout@v5
           with:
             fetch-depth: 0
         - name: Set up Python
-          uses: actions/setup-python@v5
+          uses: actions/setup-python@v6
           with:
             python-version: "3.10"
         - name: Create virtual environment and install dependencies
@@ -26,23 +26,24 @@ jobs:
             venvPython=".venv/bin/python"
             venvPip=".venv/bin/pip"
             $venvPython -m pip install --upgrade pip
-            $venvPip install -r docs/assets/mkdocs_requirements.txt
+            $venvPip install -r docs/assets/docs_requirements.txt
         - name: Configure git
           run: |
             git config --global user.name "Lemonade Bot"
             git config --global user.email "lemonade@amd.com"
-        - name: Capture main branch commit hash
+        - name: Capture release commit hash
           run: |
-            echo "MAIN_COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+            echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+            echo "RELEASE_COMMIT_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
         - name: Merge into website branch
           run: |
             git checkout website
-            git merge origin/main -X theirs
+            git merge "$RELEASE_COMMIT" -X theirs
         - name: Update README with marketplace apps
           run: |
             venvPython=".venv/bin/python"
             $venvPython docs/update_readme_marketplace.py
-        - name: Run mkdocs update script
+        - name: Run docs build script
           run: |
             venvPython=".venv/bin/python"
             $venvPython docs/publish_website_docs.py
@@ -52,6 +53,6 @@ jobs:
             if git diff --staged --quiet; then
               echo "No changes to commit, skipping commit step"
             else
-              git commit -m "Update website for: ${MAIN_COMMIT_HASH}"
+              git commit -m "Update website for: ${RELEASE_COMMIT_SHORT}"
             fi
             git push

@@ -1,8 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 :root {
-  --docs-page-title-color: #1a1a1a;
-  --docs-page-subtitle-color: #444444;
+  --docs-page-title-color: var(--text-primary, #2D2F2F);
+  --docs-page-subtitle-color: var(--text-secondary, #474747);
   --docs-side-text: #6b6148;
   --docs-side-text-strong: #3a301a;
   --docs-side-label: #6d613f;
@@ -13,20 +11,11 @@
   --docs-side-active-text: #fffef7;
 }
 
-/* Shared top navigation */
-.navbar,
-.navbar a,
-.navbar .brand-title {
-  font-family: 'Inter', 'Segoe UI', 'Arial', sans-serif;
-}
-
 /* Shared non-index page background */
 #models-page-body,
 #news-page-body,
 #marketplace-body {
-  background:
-    radial-gradient(circle at top, rgba(255, 237, 172, 0.12), transparent 42%),
-    #fffbe6 !important;
+  background: linear-gradient(to bottom, #FFFFFF 0px, #FFFFFF 541px, #FFF9C4 1804px, #FFF9C4 100%) !important;
 }
 
 /* Remove pre-footer hairline on docs subpages */
@@ -43,24 +32,23 @@
 
 .docs-page-title {
   margin: 0 0 16px;
-  font-size: 3.5rem;
-  font-weight: 400;
+  font-family: var(--font-display, 'Plus Jakarta Sans', sans-serif);
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 800;
   color: var(--docs-page-title-color);
-  line-height: 1.05;
+  line-height: 1.12;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .docs-page-subtitle {
   margin: 0 auto;
   max-width: 700px;
-  font-size: 1.125rem;
+  font-size: clamp(0.96rem, 1.65vw, 1.08rem);
   font-weight: 500;
-  font-family: 'Inter', 'Segoe UI', 'Arial', sans-serif;
+  font-family: var(--font-body, 'Manrope', sans-serif);
   color: var(--docs-page-subtitle-color);
-  line-height: 1.6;
+  line-height: 1.65;
   text-align: center;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] .docs-page-title {

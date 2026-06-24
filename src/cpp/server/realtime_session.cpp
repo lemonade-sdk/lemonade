@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <cmath>
+#include <thread>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -49,6 +50,55 @@ std::string RealtimeSessionManager::generate_session_id() {
     return id;
 }
 
+void RealtimeSessionManager::apply_turn_detection_config(
+    std::shared_ptr<RealtimeSession> session,
+    const json& turn_detection) {
+    if (turn_detection.is_null()) {
+        session->turn_detection_enabled = false;
+        session->turn_detection_config = nullptr;
+        session->vad.reset();
+        session->vad_speech_window_open = false;
+        session->last_interim_transcription_ms = 0;
+        return;
+    }
+
+    SimpleVAD::Config vad_config;
+    if (session->turn_detection_config.is_object()) {
+        vad_config.energy_threshold = session->turn_detection_config.value(
+            "threshold",
+            vad_config.energy_threshold
+        );
+        vad_config.min_silence_ms = session->turn_detection_config.value(
+            "silence_duration_ms",
+            vad_config.min_silence_ms
+        );
+        vad_config.min_speech_ms = session->turn_detection_config.value(
+            "prefix_padding_ms",
+            vad_config.min_speech_ms
+        );
+    }
+
+    if (turn_detection.is_object()) {
+        if (turn_detection.contains("threshold")) {
+            vad_config.energy_threshold = turn_detection["threshold"].get<float>();
+        }
+        if (turn_detection.contains("silence_duration_ms")) {
+            vad_config.min_silence_ms = turn_detection["silence_duration_ms"].get<int>();
+        }
+        if (turn_detection.contains("prefix_padding_ms")) {
+            vad_config.min_speech_ms = turn_detection["prefix_padding_ms"].get<int>();
+        }
+    }
+
+    session->vad.set_config(vad_config);
+    session->turn_detection_config = {
+        {"threshold", vad_config.energy_threshold},
+        {"silence_duration_ms", vad_config.min_silence_ms},
+        {"prefix_padding_ms", vad_config.min_speech_ms}
+    };
+    session->turn_detection_enabled = true;
+}
+
 std::string RealtimeSessionManager::create_session(
     std::function<void(const json&)> send_callback,
     const json& config
@@ -65,21 +115,11 @@ std::string RealtimeSessionManager::create_session(
 
     // Configure VAD if specified
     if (config.contains("turn_detection")) {
-        const auto& td = config["turn_detection"];
-        SimpleVAD::Config vad_config;
-
-        if (td.contains("threshold")) {
-            vad_config.energy_threshold = td["threshold"].get<float>();
-        }
-        if (td.contains("silence_duration_ms")) {
-            vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
-        }
-        if (td.contains("prefix_padding_ms")) {
-            vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
-        }
-
-        session->vad.set_config(vad_config);
+        apply_turn_detection_config(session, config["turn_detection"]);
     }
+
+    // Attempt to connect to a streaming backend if one is available
+    connect_streaming_backend(session);
 
     {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
@@ -114,21 +154,11 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
     }
 
     if (config.contains("turn_detection")) {
-        const auto& td = config["turn_detection"];
-        SimpleVAD::Config vad_config;
-
-        if (td.contains("threshold")) {
-            vad_config.energy_threshold = td["threshold"].get<float>();
-        }
-        if (td.contains("silence_duration_ms")) {
-            vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
-        }
-        if (td.contains("prefix_padding_ms")) {
-            vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
-        }
-
-        session->vad.set_config(vad_config);
+        apply_turn_detection_config(session, config["turn_detection"]);
     }
+
+    // Reconnect streaming backend if model changed
+    connect_streaming_backend(session);
 
     // Send session updated message (OpenAI-compatible)
     if (session->send_message) {
@@ -136,7 +166,8 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
             {"type", "session.updated"},
             {"session", {
                 {"id", session_id},
-                {"model", session->model}
+                {"model", session->model},
+                {"turn_detection", session->turn_detection_config}
             }}
         };
         session->send_message(updated_msg);
@@ -146,6 +177,12 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
 void RealtimeSessionManager::append_audio(const std::string& session_id, const std::string& base64_audio) {
     auto session = get_session(session_id);
     if (!session || !session->session_active) {
+        return;
+    }
+
+    // If connected to a streaming backend, forward audio directly
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_audio(session, base64_audio);
         return;
     }
 
@@ -159,8 +196,10 @@ void RealtimeSessionManager::append_audio(const std::string& session_id, const s
                   << "ms (" << session->audio_buffer.sample_count() << " samples)" << std::endl;
     }
 
-    // Process VAD with recent audio
-    process_vad(session);
+    // In manual-commit mode, buffer audio only and skip server-side VAD/interim work.
+    if (session->turn_detection_enabled.load()) {
+        process_vad(session);
+    }
 }
 
 void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> session) {
@@ -188,6 +227,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
         case SimpleVAD::Event::SpeechStart: {
             LOG(DEBUG, "RealtimeSession") << "VAD: SpeechStart detected" << std::endl;
             session->audio_start_ms = session->vad.speech_start_ms();
+            session->vad_speech_window_open = true;
             session->last_interim_transcription_ms = 0;  // Reset interim tracking for new utterance
 
             if (session->send_message) {
@@ -213,6 +253,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
             }
 
             // Trigger final transcription (clears buffer)
+            session->vad_speech_window_open = false;
             transcribe_and_send(session);
             break;
         }
@@ -282,7 +323,36 @@ void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession>
 
 void RealtimeSessionManager::commit_audio(const std::string& session_id) {
     auto session = get_session(session_id);
-    if (!session || session->audio_buffer.empty()) {
+    if (!session) {
+        return;
+    }
+
+    // If streaming backend is active, forward commit and skip buffering
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_commit(session);
+        return;
+    }
+
+    if (session->turn_detection_enabled.load() && !session->vad_speech_window_open.load()) {
+        if (!session->audio_buffer.empty()) {
+            LOG(DEBUG, "RealtimeSession")
+                << "Ignoring commit with no active VAD speech window; clearing buffered audio"
+                << std::endl;
+        }
+        session->audio_buffer.clear();
+        session->vad.reset();
+        session->last_interim_transcription_ms = 0;
+
+        if (session->send_message) {
+            json msg = {
+                {"type", "input_audio_buffer.cleared"}
+            };
+            session->send_message(msg);
+        }
+        return;
+    }
+
+    if (session->audio_buffer.empty()) {
         return;
     }
 
@@ -295,6 +365,7 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
     }
 
     // Trigger transcription
+    session->vad_speech_window_open = false;
     transcribe_and_send(session);
 }
 
@@ -304,8 +375,17 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
         return;
     }
 
+    // Forward clear to the streaming backend, keeping the stream open so
+    // subsequent appends keep streaming. The backend replies with
+    // input_audio_buffer.cleared, which is forwarded to the client.
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_clear(session);
+        return;
+    }
+
     session->audio_buffer.clear();
     session->vad.reset();
+    session->vad_speech_window_open = false;
 
     if (session->send_message) {
         json msg = {
@@ -325,6 +405,7 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
     std::string model = session->model;
     session->audio_buffer.clear();
     session->vad.reset();
+    session->vad_speech_window_open = false;
     session->last_interim_transcription_ms = 0;  // Reset for next utterance
 
     // Dispatch transcription to worker thread so it doesn't block the WebSocket callback
@@ -413,13 +494,145 @@ void RealtimeSessionManager::transcribe_wav(
     }
 }
 
-void RealtimeSessionManager::close_session(const std::string& session_id) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session || !router_) {
+        return;
+    }
 
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-        it->second->session_active = false;
-        sessions_.erase(it);
+    std::string address = router_->get_streaming_transcription_address(session->model);
+    if (address.empty()) {
+        // Backend does not support streaming transcription
+        disconnect_streaming_backend(session);
+        return;
+    }
+
+    {
+        // If already connected to the same address, nothing to do
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
+        if (session->use_streaming_backend.load() && session->streaming_client &&
+            session->streaming_client->is_connected()) {
+            return;
+        }
+    }
+
+    // Disconnect any existing streaming connection
+    disconnect_streaming_backend(session);
+
+    // Capture weak_ptr: the session owns the client, and the client's read
+    // thread owns this callback — a shared_ptr capture would be a cycle.
+    std::weak_ptr<RealtimeSession> weak_session = session;
+    auto client = std::make_unique<utils::TcpJsonlClient>();
+    auto callback = [weak_session](const json& msg) {
+        auto session = weak_session.lock();
+        if (!session || !session->session_active.load() || !session->send_message) {
+            return;
+        }
+        // Forward backend events to the WebSocket client. The streaming
+        // backend speaks OpenAI Realtime event types; pass through the text
+        // events (delta/completed) and the stream-level audio events
+        // (speech_started/speech_stopped/committed) the UI listens for.
+        std::string event_type = msg.value("type", "");
+        if (event_type == "conversation.item.input_audio_transcription.delta" ||
+            event_type == "conversation.item.input_audio_transcription.completed" ||
+            event_type == "input_audio_buffer.speech_started" ||
+            event_type == "input_audio_buffer.speech_stopped" ||
+            event_type == "input_audio_buffer.committed" ||
+            event_type == "input_audio_buffer.cleared" ||
+            event_type == "session.updated") {
+            session->send_message(msg);
+        }
+    };
+
+    // Retry with backoff: the backend's TCP listener starts on a separate
+    // thread from its HTTP health endpoint, so a session created right after
+    // model load can otherwise race it and silently lose streaming.
+    bool ok = false;
+    for (int attempt = 0; attempt < 10 && !ok; ++attempt) {
+        if (attempt > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        ok = client->connect(address, callback);
+    }
+
+    if (ok) {
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
+        session->streaming_client = std::move(client);
+        session->use_streaming_backend.store(true);
+        LOG(INFO, "RealtimeSession") << "Connected to streaming backend at " << address << std::endl;
+    } else {
+        LOG(WARNING, "RealtimeSession") << "Failed to connect to streaming backend at " << address << std::endl;
+    }
+}
+
+void RealtimeSessionManager::disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    session->use_streaming_backend.store(false);
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (session->streaming_client) {
+        session->streaming_client->close();
+        session->streaming_client.reset();
+    }
+}
+
+void RealtimeSessionManager::forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                                     const std::string& base64_audio) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.append"},
+        {"audio", base64_audio}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_commit(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.commit"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_clear(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.clear"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::close_session(const std::string& session_id) {
+    std::shared_ptr<RealtimeSession> session;
+    {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = sessions_.find(session_id);
+        if (it != sessions_.end()) {
+            session = it->second;
+            session->session_active = false;
+            sessions_.erase(it);
+        }
+    }
+    if (session) {
+        disconnect_streaming_backend(session);
     }
 }
 

@@ -21,17 +21,35 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-InstallParams KokoroServer::get_install_params(const std::string& /*backend*/, const std::string& version) {
+namespace {
+// Kokoro doesn't expose backend selection through RuntimeConfig; we resolve it
+// from the host platform so each OS gets the right binary archive.
+std::string default_kokoro_backend() {
+#if defined(__APPLE__)
+    return "metal";
+#else
+    return "cpu";
+#endif
+}
+}
+
+InstallParams KokoroServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
     params.repo = "lemonade-sdk/Kokoros";
 
+    if (backend == "cpu") {
 #ifdef _WIN32
-    params.filename = "kokoros-windows-x86_64.tar.gz";
+        params.filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
-    params.filename = "kokoros-linux-x86_64.tar.gz";
-#else
-    throw std::runtime_error("Unsupported platform for kokoros");
+        params.filename = "kokoros-linux-x86_64.tar.gz";
 #endif
+    } else if (backend == "metal") {
+#if defined(__APPLE__)
+        params.filename = "kokoros-darwin-arm64-metal.tar.gz";
+#endif
+    } else {
+        throw std::runtime_error("[KokoroServer] Unknown kokoros backend: " + backend);
+    }
 
     return params;
 }
@@ -49,7 +67,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Loading model: " << model_name << std::endl;
 
     // Install kokoros if needed
-    backend_manager_->install_backend(SPEC.recipe, "cpu");
+    const std::string backend = default_kokoro_backend();
+    backend_manager_->install_backend(SPEC.recipe, backend);
 
     // Use pre-resolved model path
     fs::path model_path = fs::path(model_info.resolved_path());
@@ -69,7 +88,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Using model: " << model_index["model"] << std::endl;
 
     // Get koko executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
 
     // Choose a port
     port_ = choose_port();
@@ -81,7 +100,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
-    env_vars.push_back({"ESPEAK_DATA_PATH", exe_dir.string() + "espeak-ng-data"});
+    env_vars.push_back({"ESPEAK_DATA_PATH", (exe_dir / "espeak-ng-data").string()});
 #ifndef _WIN32
     std::string lib_path = exe_dir.string();
     // Preserve existing LD_LIBRARY_PATH if it exists
@@ -106,7 +125,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     };
 
     // Launch the subprocess
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -114,12 +133,13 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         false,
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start koko process");
     }
 
-    LOG(INFO, "KokoroServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "KokoroServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -129,11 +149,11 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 }
 
 void KokoroServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        port_ = 0;
-        process_handle_ = {nullptr, 0};
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
 }
 

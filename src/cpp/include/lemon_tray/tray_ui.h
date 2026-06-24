@@ -58,6 +58,7 @@ private:
     std::pair<bool, std::vector<LoadedModelInfo>> fetch_server_state();
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
+    void fetch_runtime_config();
 
     // Menu
     void build_menu();
@@ -72,6 +73,7 @@ private:
     void on_unload_specific_model(const std::string& model_name);
     void on_change_port(int new_port);
     void on_change_context_size(int new_ctx_size);
+    void on_change_max_loaded_models(int new_max);
     void on_show_logs();
     void on_open_documentation();
     void on_quit();
@@ -94,6 +96,7 @@ private:
     // State
     int port_;
     std::string host_;
+    int max_loaded_models_ = 1;  // Mirrors server config; default 1 per configuration.md
     bool silent_;  // Suppress startup notification
     std::unique_ptr<TrayInterface> tray_;
 
