@@ -121,6 +121,56 @@ jobs:
           path: ${{ steps.build_source.outputs.output-dir }}/*
           retention-days: 30
 
+  package-arm64:
+    name: Build (ARM64)
+    needs: prepare-matrix
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.distro }}${{ matrix.release }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: ${{ matrix.release }}
+          codename: ${{ matrix.codename }}
+
+      - name: Catch missing build-deps
+        run: |
+          apt-get update && apt-get build-dep . -y
+
+      - name: Build binary package
+        id: build_binary
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-${{ matrix.codename }}-arm64-deb
+          path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
+          retention-days: 30
+
   upload-stable:
     name: Upload (Stable)
     strategy:
