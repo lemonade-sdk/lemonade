@@ -34,6 +34,9 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+
+private:
+    std::string model_path_;  // Filesystem path for model name rewriting
 };
 
 } // namespace backends

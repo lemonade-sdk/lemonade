@@ -49,11 +49,14 @@ void MLXServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for: " + model_name);
     }
 
-    if (!fs::exists(model_path)) {
-        throw std::runtime_error("Model path does not exist: " + model_path);
+    if (!fs::exists(model_path) || !fs::is_directory(model_path)) {
+        throw std::runtime_error("Model path does not exist or is not a directory: " + model_path);
     }
 
-    LOG(DEBUG, "MLX") << "Using model path: " << model_path << std::endl;
+    // Store model path for later request rewriting (mlx-server matches by path)
+    model_path_ = model_path;
+
+    LOG(DEBUG, "MLX") << "Using model path: " << model_path_ << std::endl;
 
     // Choose port
     port_ = choose_port();
@@ -63,19 +66,33 @@ void MLXServer::load(const std::string& model_name,
     std::string executable = BackendUtils::get_backend_binary_path(SPEC, "system");
 
     // Build command line arguments
-    // mlx-server <model_path> --port <PORT> --host 127.0.0.1
+    // mlx-server <model_path> --port <PORT> --host 127.0.0.1 --no-download
     std::vector<std::string> args;
-    args.push_back(model_path);
+    args.push_back(model_path_);
     args.push_back("--port");
     args.push_back(std::to_string(port_));
     args.push_back("--host");
     args.push_back("127.0.0.1");
+    args.push_back("--no-download");
 
     LOG(INFO, "MLX") << "Starting mlx-server on port " << port_ << "..." << std::endl;
 
-    // Start process
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true);
+    // Build environment: propagate ROCm paths for the subprocess
+    std::string env_vars;
+#if defined(__linux__)
+    const char* ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (ld_path) {
+        env_vars = std::string("LD_LIBRARY_PATH=") + ld_path;
+    }
+    const char* rocm_dir = std::getenv("ROCm_DIR");
+    if (rocm_dir) {
+        if (!env_vars.empty()) env_vars += "\n";
+        env_vars += std::string("ROCm_DIR=") + rocm_dir;
+    }
+#endif
+
+    // Start process (always inherit stderr for debugging)
+    process_handle_ = ProcessManager::start_process(executable, args, env_vars, true, true);
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
@@ -101,15 +118,30 @@ void MLXServer::unload() {
 }
 
 json MLXServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    // Rewrite model name to the filesystem path expected by mlx-server
+    json modified = request;
+    if (!model_path_.empty()) {
+        modified["model"] = model_path_;
+    }
+    return forward_request("/v1/chat/completions", modified);
 }
 
 json MLXServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    json modified = request;
+    if (!model_path_.empty()) {
+        modified["model"] = model_path_;
+    }
+    return forward_request("/v1/completions", modified);
 }
 
+// mlx-server does not have a /v1/responses endpoint.
+// Map responses requests to chat/completions with minimal transformation.
 json MLXServer::responses(const json& request) {
-    return forward_request("/v1/responses", request);
+    json modified = request;
+    if (!model_path_.empty()) {
+        modified["model"] = model_path_;
+    }
+    return forward_request("/v1/chat/completions", modified);
 }
 
 } // namespace backends

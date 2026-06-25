@@ -1,1686 +1,1700 @@
 {
-    "Qwen2.5-0.5B-Instruct-CPU": {
-        "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 0.834
-    },
-    "Llama-3.2-1B-Instruct-CPU": {
-        "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
-        "recipe": "ryzenai-llm",
-        "suggested": false,
-        "size": 1.76
-    },
-    "Llama-3.2-3B-Instruct-CPU": {
-        "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
-        "recipe": "ryzenai-llm",
-        "suggested": false,
-        "size": 3.38
-    },
-    "Phi-3-Mini-Instruct-CPU": {
-        "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.39
-    },
-    "Qwen-1.5-7B-Chat-CPU": {
-        "checkpoint": "amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 6.32
-    },
-    "DeepSeek-R1-Distill-Llama-8B-CPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 6.2
-    },
-    "DeepSeek-R1-Distill-Qwen-7B-CPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 6.2
-    },
-    "AMD-OLMo-1B-SFT-DPO-Hybrid": {
-        "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 1.48
-    },
-    "CodeLlama-7b-Instruct-hf-Hybrid": {
-        "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.24,
-        "labels": [
-            "coding"
-        ]
-    },
-    "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.09,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "DeepSeek-R1-Distill-Qwen-1.5B-Hybrid": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.19,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.67,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Llama-2-7b-chat-hf-Hybrid": {
-        "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.31
-    },
-    "Llama-2-7b-hf-Hybrid": {
-        "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.31
-    },
-    "Llama-3.1-8B-Hybrid": {
-        "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.09
-    },
-    "Llama-3.2-1B-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 1.89
-    },
-    "Llama-3.2-1B-Instruct-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 1.89
-    },
-    "Llama-3.2-3B-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-3B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.28
-    },
-    "Llama-3.2-3B-Instruct-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.28
-    },
-    "Meta-Llama-3-8B-Hybrid": {
-        "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.06
-    },
-    "Meta-Llama-3.1-8B-Instruct-Hybrid": {
-        "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.09
-    },
-    "Mistral-7B-Instruct-v0.1-Hybrid": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.84
-    },
-    "Mistral-7B-Instruct-v0.2-Hybrid": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.84
-    },
-    "Mistral-7B-Instruct-v0.3-Hybrid": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.85
-    },
-    "Mistral-7B-v0.3-Hybrid": {
-        "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.85
-    },
-    "Phi-3-mini-128k-instruct-Hybrid": {
-        "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.21
-    },
-    "Phi-3-mini-4k-instruct-Hybrid": {
-        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.19
-    },
-    "Phi-3.5-mini-instruct-Hybrid": {
-        "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.21
-    },
-    "Phi-4-mini-instruct-Hybrid": {
-        "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 5.47
-    },
-    "Phi-4-mini-reasoning-Hybrid": {
-        "checkpoint": "amd/Phi-4-mini-reasoning-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 5.47,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Qwen-2.5-1.5B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.17
-    },
-    "Qwen1.5-7B-Chat-Hybrid": {
-        "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.83
-    },
-    "Qwen2-1.5B-Hybrid": {
-        "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.19
-    },
-    "Qwen2-7B-Hybrid": {
-        "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.68
-    },
-    "Qwen2.5-0.5B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 0.828
-    },
-    "Qwen2.5-14B-instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-14B-instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 16.5
-    },
-    "Qwen2.5-3B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5_3B_Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 3.97
-    },
-    "Qwen2.5-7B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.65
-    },
-    "Qwen2.5-Coder-0.5B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-Coder-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 0.828,
-        "labels": [
-            "coding"
-        ]
-    },
-    "Qwen2.5-Coder-1.5B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.17,
-        "labels": [
-            "coding"
-        ]
-    },
-    "Qwen2.5-Coder-7B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.65,
-        "labels": [
-            "coding"
-        ]
-    },
-    "Qwen3-1.7B-Hybrid": {
-        "checkpoint": "amd/Qwen3-1.7B-awq-quant-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.55,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Qwen3-14B-Hybrid": {
-        "checkpoint": "amd/Qwen3-14B-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 16.5,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Qwen3-4B-Hybrid": {
-        "checkpoint": "amd/Qwen3-4B-awq-quant-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 5.17,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Qwen3-8B-Hybrid": {
-        "checkpoint": "amd/Qwen3-8B-awq-quant-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.42,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "SmolLM-135M-Instruct-Hybrid": {
-        "checkpoint": "amd/SmolLM-135M-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 0.232
-    },
-    "SmolLM2-135M-Instruct-Hybrid": {
-        "checkpoint": "amd/SmolLM2-135M-Instruct-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 0.233
-    },
-    "chatglm3-6b-Hybrid": {
-        "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 6.9
-    },
-    "gemma-2-2b-Hybrid": {
-        "checkpoint": "amd/gemma-2-2b-onnx-ryzenai-1.7-hybrid",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.04
-    },
-    "CodeLlama-7b-Instruct-hf-NPU": {
-        "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.54,
-        "labels": [
-            "coding"
-        ]
-    },
-    "DeepSeek-R1-Distill-Llama-8B-NPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.3,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "DeepSeek-R1-Distill-Qwen-1.5B-NPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.3,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "DeepSeek-R1-Distill-Qwen-7B-NPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.87,
-        "labels": [
-            "reasoning"
-        ]
-    },
-    "Gemma-3-4b-it-mm-NPU": {
-        "checkpoint": "amd/Gemma-3-4b-it-mm-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 6.68,
-        "labels": [
-            "vision"
-        ]
-    },
-    "Llama-2-7b-chat-hf-NPU": {
-        "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.47
-    },
-    "Llama-2-7b-hf-NPU": {
-        "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.47
-    },
-    "Llama-3.1-8B-NPU": {
-        "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.3
-    },
-    "Llama-3.2-1B-Instruct-NPU": {
-        "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 1.96
-    },
-    "Llama-3.2-1B-NPU": {
-        "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 1.96
-    },
-    "Meta-Llama-3-8B-NPU": {
-        "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.23
-    },
-    "Meta-Llama-3.1-8B-Instruct-NPU": {
-        "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.3
-    },
-    "Mistral-7B-Instruct-v0.1-NPU": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.01
-    },
-    "Mistral-7B-Instruct-v0.2-NPU": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.01
-    },
-    "Mistral-7B-Instruct-v0.3-NPU": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.09
-    },
-    "Mistral-7B-v0.3-NPU": {
-        "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.09
-    },
-    "Phi-3-mini-128k-instruct-NPU": {
-        "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.35
-    },
-    "Phi-3-mini-4k-instruct-NPU": {
-        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.3
-    },
-    "Phi-3.5-mini-instruct-NPU": {
-        "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.35
-    },
-    "Phi-4-mini-instruct-NPU": {
-        "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 5.59
-    },
-    "Qwen-2.5-1.5B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.25
-    },
-    "Qwen1.5-7B-Chat-NPU": {
-        "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 9.02
-    },
-    "Qwen2-1.5B-NPU": {
-        "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.3
-    },
-    "Qwen2-7B-NPU": {
-        "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.88
-    },
-    "Qwen2.5-3B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 4.1
-    },
-    "Qwen2.5-7B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.83
-    },
-    "Qwen2.5-Coder-1.5B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 2.25,
-        "labels": [
-            "coding"
-        ]
-    },
-    "Qwen2.5-Coder-7B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 8.83,
-        "labels": [
-            "coding"
-        ]
-    },
-    "chatglm3-6b-NPU": {
-        "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 7.04
-    },
-    "gpt-oss-20b-NPU": {
-        "checkpoint": "amd/gpt-oss-20b-onnx-ryzenai-npu",
-        "recipe": "ryzenai-llm",
-        "suggested": true,
-        "size": 13.4
-    },
-    "Qwen3-0.6B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 0.38
-    },
-    "Tiny-Test-Model-GGUF": {
-        "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "size": 0.18
-    },
-    "Qwen3-1.7B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 1.06
-    },
-    "Qwen3-4B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-4B-GGUF:Q4_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 2.38
-    },
-    "Qwen3-8B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_1",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 5.25
-    },
-    "DeepSeek-Qwen3-8B-GGUF": {
-        "checkpoint": "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_1",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 5.25
-    },
-    "Qwen3-14B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-14B-GGUF:Q4_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 8.54
-    },
-    "Qwen3-4B-Instruct-2507-GGUF": {
-        "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling"
-        ],
-        "size": 2.5
-    },
-    "Qwen3-30B-A3B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 17.4
-    },
-    "Qwen3-30B-A3B-Instruct-2507-GGUF": {
-        "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling"
-        ],
-        "size": 17.4
-    },
-    "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
-        "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "coding",
-            "tool-calling",
-            "hot"
-        ],
-        "size": 18.6
-    },
-    "Qwen3-Coder-Next-GGUF": {
-        "checkpoint": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "coding",
-            "tool-calling",
-            "hot"
-        ],
-        "size": 48.0
-    },
-    "Nemotron-3-Nano-30B-A3B-GGUF": {
-        "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [],
-        "size": 22.8
-    },
-    "Gemma-3-4b-it-GGUF": {
-        "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
-        "mmproj": "mmproj-model-f16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 3.34
-    },
-    "Gemma-4-26B-A4B-it-GGUF": {
-        "checkpoint": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "tool-calling",
-            "vision",
-            "llamacpp"
-        ],
-        "size": 18.1
-    },
-    "Gemma-4-31B-it-GGUF": {
-        "checkpoint": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "tool-calling",
-            "vision",
-            "llamacpp"
-        ],
-        "size": 19.5
-    },
-    "Gemma-4-12B-it-GGUF": {
-        "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling",
-            "vision",
-            "llamacpp"
-        ],
-        "size": 7.29
-    },
-    "Gemma-4-26B-A4B-it-MTP-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
-            "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
-            "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
-        },
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "tool-calling",
-            "vision",
-            "llamacpp",
-            "mtp"
-        ],
-        "size": 18.5
-    },
-    "Gemma-4-31B-it-MTP-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
-            "draft": "unsloth/gemma-4-31B-it-GGUF:mtp-gemma-4-31B-it.gguf",
-            "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
-        },
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "tool-calling",
-            "vision",
-            "llamacpp",
-            "mtp"
-        ],
-        "size": 20.0
-    },
-    "Gemma-4-12B-it-MTP-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
-            "draft": "unsloth/gemma-4-12b-it-GGUF:mtp-gemma-4-12b-it.gguf",
-            "mmproj": "unsloth/gemma-4-12b-it-GGUF:mmproj-F16.gguf"
-        },
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling",
-            "llamacpp",
-            "vision",
-            "mtp"
-        ],
-        "size": 7.75
-    },
-    "Gemma-4-E4B-it-GGUF": {
-        "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling",
-            "vision",
-            "llamacpp"
-        ],
-        "size": 5.97
-    },
-    "Gemma-4-E2B-it-GGUF": {
-        "checkpoint": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling",
-            "vision",
-            "llamacpp"
-        ],
-        "size": 4.09
-    },
-    "Bonsai-8B-gguf": {
-        "checkpoint": "prism-ml/Bonsai-8B-gguf:Q1_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "llamacpp"
-        ],
-        "size": 1.16
-    },
-    "Bonsai-4B-gguf": {
-        "checkpoint": "prism-ml/Bonsai-4B-gguf:Q1_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "llamacpp"
-        ],
-        "size": 0.572
-    },
-    "Bonsai-1.7B-gguf": {
-        "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Q1_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "llamacpp"
-        ],
-        "size": 0.25
-    },
-    "Phi-4-mini-instruct-GGUF": {
-        "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 2.49
-    },
-    "LFM2-1.2B-GGUF": {
-        "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 0.731
-    },
-    "LFM2.5-1.2B-Instruct-GGUF": {
-        "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 0.731
-    },
-    "LFM2.5-8B-A1B": {
-        "checkpoint": "LiquidAI/LFM2.5-8B-A1B-GGUF:LFM2.5-8B-A1B-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 5.16
-    },
-    "PromptBridge-0.6b-Alpha-GGUF": {
-        "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "size": 0.397
-    },
-    "Jan-nano-128k-GGUF": {
-        "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 2.5
-    },
-    "Jan-v1-4B-GGUF": {
-        "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 2.5
-    },
-    "Llama-3.2-1B-Instruct-GGUF": {
-        "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 0.834
-    },
-    "Llama-3.2-3B-Instruct-GGUF": {
-        "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 2.06
-    },
-    "SmolLM3-3B-GGUF": {
-        "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 1.94
-    },
-    "Ministral-3-3B-Instruct-2512-GGUF": {
-        "checkpoint": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
-        "mmproj": "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 2.99
-    },
-    "Qwen2.5-VL-7B-Instruct-GGUF": {
-        "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 6.04
-    },
-    "Qwen2.5-VL-3B-Instruct-GGUF": {
-        "checkpoint": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 3.27
-    },
-    "Qwen3-VL-4B-Instruct-GGUF": {
-        "checkpoint": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 3.33
-    },
-    "Qwen3-VL-8B-Instruct-GGUF": {
-        "checkpoint": "Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision"
-        ],
-        "size": 6.19
-    },
-    "Qwen2.5-Omni-7B-GGUF": {
-        "checkpoint": "ggml-org/Qwen2.5-Omni-7B-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "hf_load": true,
-        "labels": [
-            "vision",
-            "chat-transcription"
-        ],
-        "size": 7.33
-    },
-    "Qwen2.5-Omni-3B-GGUF": {
-        "checkpoint": "ggml-org/Qwen2.5-Omni-3B-GGUF:Q4_K_M",
-        "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "hf_load": true,
-        "labels": [
-            "vision",
-            "chat-transcription"
-        ],
-        "size": 4.73
-    },
-    "Qwen3-Next-80B-A3B-Instruct-GGUF": {
-        "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling"
-        ],
-        "size": 46.1
-    },
-    "Qwen3.5-0.8B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 0.764
-    },
-    "Qwen3.5-2B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 2.01
-    },
-    "Qwen3.5-4B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "hot"
-        ],
-        "size": 3.58
-    },
-    "Qwen3.5-4B-MTP-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-4B-MTP-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "mtp"
-        ],
-        "size": 3.66
-    },
-    "Qwen3.5-9B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-9B-GGUF:Qwen3.5-9B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 6.88
-    },
-    "Qwen3.5-35B-A3B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 23.1
-    },
-    "Qwen3.5-122B-A10B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-122B-A10B-GGUF:UD-Q4_K_XL",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 77.9
-    },
-    "Qwen3.5-122B-A10B-MTP-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-122B-A10B-MTP-GGUF:UD-Q4_K_XL",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "mtp"
-        ],
-        "size": 79.6
-    },
-    "Qwen3.5-27B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.5-27B-GGUF:Qwen3.5-27B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 18.5
-    },
-    "Qwen3.6-35B-A3B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "hot"
-        ],
-        "size": 23.3
-    },
-    "Qwen3.6-35B-A3B-MTP-GGUF": {
-        "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "mtp"
-        ],
-        "size": 23.8
-    },
-    "Qwen3.6-27B-GGUF": {
-        "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling"
-        ],
-        "size": 18.5
-    },
-    "Qwen3.6-27B-MTP-GGUF": {
-        "checkpoint": "unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "vision",
-            "tool-calling",
-            "mtp",
-            "hot"
-        ],
-        "size": 18.8
-    },
-    "Llama-4-Scout-17B-16E-Instruct-GGUF": {
-        "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "vision"
-        ],
-        "size": 63.2
-    },
-    "Cogito-v2-llama-109B-MoE-GGUF": {
-        "checkpoint": "unsloth/cogito-v2-preview-llama-109B-MoE-GGUF:Q4_K_M",
-        "mmproj": "mmproj-F16.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "vision"
-        ],
-        "size": 65.4
-    },
-    "nomic-embed-text-v1-GGUF": {
-        "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "embeddings"
-        ],
-        "size": 0.0781
-    },
-    "nomic-embed-text-v2-moe-GGUF": {
-        "checkpoint": "nomic-ai/nomic-embed-text-v2-moe-GGUF:Q8_0",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "embeddings"
-        ],
-        "size": 0.51
-    },
-    "Qwen3-Embedding-0.6B-GGUF": {
-        "checkpoint": "Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "embeddings"
-        ],
-        "size": 0.64
-    },
-    "Qwen3-Embedding-4B-GGUF": {
-        "checkpoint": "Qwen/Qwen3-Embedding-4B-GGUF:Qwen3-Embedding-4B-Q8_0.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "embeddings"
-        ],
-        "size": 4.28
-    },
-    "Qwen3-Embedding-8B-GGUF": {
-        "checkpoint": "Qwen/Qwen3-Embedding-8B-GGUF:Qwen3-Embedding-8B-Q8_0.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "embeddings"
-        ],
-        "size": 8.05
-    },
-    "bge-reranker-v2-m3-GGUF": {
-        "checkpoint": "pqnet/bge-reranker-v2-m3-Q8_0-GGUF",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reranking"
-        ],
-        "size": 0.636
-    },
-    "jina-reranker-v1-tiny-en-GGUF": {
-        "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "reranking"
-        ],
-        "size": 0.0367
-    },
-    "Devstral-Small-2507-GGUF": {
-        "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "coding",
-            "tool-calling"
-        ],
-        "size": 14.3
-    },
-    "Qwen2.5-Coder-32B-Instruct-GGUF": {
-        "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "coding"
-        ],
-        "size": 19.9
-    },
-    "gpt-oss-120b-GGUF": {
-        "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 62.8
-    },
-    "gpt-oss-20b-GGUF": {
-        "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 11.6
-    },
-    "gpt-oss-120b-mxfp-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 63.4
-    },
-    "gpt-oss-20b-mxfp4-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "hot",
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 12.1
-    },
-    "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
-        "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 67.7
-    },
-    "GLM-4.7-Flash-GGUF": {
-        "checkpoint": "unsloth/GLM-4.7-Flash-GGUF:GLM-4.7-Flash-UD-Q4_K_XL.gguf",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling"
-        ],
-        "size": 17.5
-    },
-    "Playable1-GGUF": {
-        "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "labels": [
-            "coding"
-        ],
-        "size": 4.68
-    },
-    "granite-4.0-h-tiny-GGUF": {
-        "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "labels": [
-            "tool-calling"
-        ],
-        "size": 4.25
-    },
-    "LFM2-8B-A1B-GGUF": {
-        "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 5.04
-    },
-    "LFM2-24B-A2B-GGUF": {
-        "checkpoint": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
-        "recipe": "llamacpp",
-        "suggested": true,
-        "size": 14.4
-    },
-    "Whisper-Tiny": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-            "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 0.075
-    },
-    "Whisper-Base": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-base.bin",
-            "npu_cache": "amd/whisper-base-onnx-npu:ggml-base-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 0.148
-    },
-    "Whisper-Small": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-small.bin",
-            "npu_cache": "amd/whisper-small-onnx-npu:ggml-small-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 0.488
-    },
-    "Whisper-Medium": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-medium.bin",
-            "npu_cache": "amd/whisper-medium-onnx-npu:ggml-medium-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 1.53
-    },
-    "Whisper-Large-v3": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-large-v3.bin",
-            "npu_cache": "amd/whisper-large-v3-onnx-npu:ggml-large-v3-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 3.1
-    },
-    "Whisper-Large-v3-Turbo": {
-        "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
-            "npu_cache": "amd/whisper-large-turbo-onnx-npu:ggml-large-v3-turbo-encoder-vitisai.rai"
-        },
-        "recipe": "whispercpp",
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription",
-            "hot"
-        ],
-        "size": 1.62
-    },
-    "Moonshine-Tiny-Streaming": {
-        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
-        "recipe": "moonshine",
-        "moonshine_arch": 2,
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 0.202
-    },
-    "Moonshine-Small-Streaming": {
-        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
-        "recipe": "moonshine",
-        "moonshine_arch": 4,
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription"
-        ],
-        "size": 0.431
-    },
-    "Moonshine-Medium-Streaming": {
-        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
-        "recipe": "moonshine",
-        "moonshine_arch": 5,
-        "suggested": true,
-        "labels": [
-            "transcription",
-            "realtime-transcription",
-            "hot"
-        ],
-        "size": 1.08
-    },
-    "SD-Turbo": {
-        "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 5.21,
-        "image_defaults": {
-            "steps": 4,
-            "cfg_scale": 1.0,
-            "width": 512,
-            "height": 512
-        }
-    },
-    "SD-Turbo-GGUF": {
-        "checkpoint": "Green-Sky/SD-Turbo-GGUF:sd_turbo-f16-q8_0.gguf",
-        "recipe": "sd-cpp",
-        "labels": [
-            "image"
-        ],
-        "size": 2.02,
-        "image_defaults": {
-            "steps": 4,
-            "cfg_scale": 1.0,
-            "width": 512,
-            "height": 512
-        }
-    },
-    "SDXL-Turbo": {
-        "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 6.94,
-        "image_defaults": {
-            "steps": 4,
-            "cfg_scale": 1.0,
-            "width": 512,
-            "height": 512
-        }
-    },
-    "SD-1.5": {
-        "checkpoint": "stable-diffusion-v1-5/stable-diffusion-v1-5:v1-5-pruned.safetensors",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 7.7,
-        "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 7.5,
-            "width": 512,
-            "height": 512
-        }
-    },
-    "SDXL-Base-1.0": {
-        "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0:sd_xl_base_1.0.safetensors",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 6.94,
-        "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 7.5,
-            "width": 1024,
-            "height": 1024
-        }
-    },
-    "Flux-2-Klein-4B": {
-        "checkpoints": {
-            "main": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
-            "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/text_encoders/qwen_3_4b.safetensors",
-            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/vae/flux2-vae.safetensors"
-        },
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image",
-            "edit"
-        ],
-        "size": 16.1,
-        "image_defaults": {
-            "steps": 4,
-            "cfg_scale": 1,
-            "width": 1024,
-            "height": 1024
-        }
-    },
-    "Flux-2-Klein-9B-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf",
-            "text_encoder": "unsloth/Qwen3-8B-GGUF:Qwen3-8B-Q8_0.gguf",
-            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors"
-        },
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image",
-            "edit"
-        ],
-        "size": 19.0,
-        "image_defaults": {
-            "steps": 4,
-            "cfg_scale": 1,
-            "width": 256,
-            "height": 256
-        }
-    },
-    "Qwen-Image-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/Qwen-Image-GGUF:qwen-image-Q4_K_M.gguf",
-            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
-            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
-        },
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 18.2,
-        "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 2.5,
-            "width": 512,
-            "height": 512,
-            "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
-            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
-        }
-    },
-    "Qwen-Image-2512-GGUF": {
-        "checkpoints": {
-            "main": "unsloth/Qwen-Image-2512-GGUF:qwen-image-2512-Q5_0.gguf",
-            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
-            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
-        },
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 19.4,
-        "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 2.5,
-            "width": 512,
-            "height": 512,
-            "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
-            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
-        }
-    },
-    "Z-Image-Turbo": {
-        "checkpoints": {
-            "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
-            "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
-            "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
-        },
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "image"
-        ],
-        "size": 20.7,
-        "image_defaults": {
-            "steps": 9,
-            "cfg_scale": 1,
-            "width": 1024,
-            "height": 1024
-        }
-    },
-    "LMX-Omni-52B-Halo": {
-        "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
-        "recipe": "collection.omni",
-        "suggested": true,
-        "size": 44.77
-    },
-    "LMX-Omni-5.5B-Lite": {
-        "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
-        "recipe": "collection.omni",
-        "suggested": true,
-        "size": 9.30
-    },
-    "Ultra Collection": {
-        "checkpoint": "",
-        "recipe": "collection.omni",
-        "suggested": false,
-        "components": [
-            "Qwen3.5-35B-A3B-GGUF",
-            "Flux-2-Klein-9B-GGUF",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
-    },
-    "Lite Collection": {
-        "checkpoint": "",
-        "recipe": "collection.omni",
-        "suggested": false,
-        "components": [
-            "Qwen3.5-4B-GGUF",
-            "SD-Turbo",
-            "Whisper-Tiny",
-            "kokoro-v1"
-        ]
-    },
-    "kokoro-v1": {
-        "checkpoint": "mikkoph/kokoro-onnx",
-        "recipe": "kokoro",
-        "suggested": true,
-        "labels": [
-            "tts"
-        ],
-        "size": 0.354
-    },
-    "RealESRGAN-x4plus": {
-        "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "upscaling",
-            "image"
-        ],
-        "size": 0.064
-    },
-    "RealESRGAN-x4plus-anime": {
-        "checkpoint": "amd/realesrgan-x4plus-anime-6b:RealESRGAN_x4plus_anime_6B.pth",
-        "recipe": "sd-cpp",
-        "suggested": true,
-        "labels": [
-            "upscaling",
-            "image"
-        ],
-        "size": 0.017
-    },
-    "Qwen3.5-0.8B-FP16-vLLM": {
-        "checkpoint": "Qwen/Qwen3.5-0.8B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning"
-        ],
-        "size": 1.77
-    },
-    "Qwen3.5-2B-FP16-vLLM": {
-        "checkpoint": "Qwen/Qwen3.5-2B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 4.57
-    },
-    "Qwen3.5-4B-FP16-vLLM": {
-        "checkpoint": "Qwen/Qwen3.5-4B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning",
-            "hot",
-            "tool-calling"
-        ],
-        "size": 9.34
-    },
-    "Qwen3.5-9B-FP16-vLLM": {
-        "checkpoint": "Qwen/Qwen3.5-9B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning",
-            "tool-calling"
-        ],
-        "size": 19.3
+  "Qwen2.5-0.5B-Instruct-CPU": {
+    "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 0.834
+  },
+  "Llama-3.2-1B-Instruct-CPU": {
+    "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
+    "recipe": "ryzenai-llm",
+    "suggested": false,
+    "size": 1.76
+  },
+  "Llama-3.2-3B-Instruct-CPU": {
+    "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
+    "recipe": "ryzenai-llm",
+    "suggested": false,
+    "size": 3.38
+  },
+  "Phi-3-Mini-Instruct-CPU": {
+    "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.39
+  },
+  "Qwen-1.5-7B-Chat-CPU": {
+    "checkpoint": "amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 6.32
+  },
+  "DeepSeek-R1-Distill-Llama-8B-CPU": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 6.2
+  },
+  "DeepSeek-R1-Distill-Qwen-7B-CPU": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 6.2
+  },
+  "AMD-OLMo-1B-SFT-DPO-Hybrid": {
+    "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 1.48
+  },
+  "CodeLlama-7b-Instruct-hf-Hybrid": {
+    "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.24,
+    "labels": [
+      "coding"
+    ]
+  },
+  "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.09,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "DeepSeek-R1-Distill-Qwen-1.5B-Hybrid": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.19,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.67,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Llama-2-7b-chat-hf-Hybrid": {
+    "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.31
+  },
+  "Llama-2-7b-hf-Hybrid": {
+    "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.31
+  },
+  "Llama-3.1-8B-Hybrid": {
+    "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.09
+  },
+  "Llama-3.2-1B-Hybrid": {
+    "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 1.89
+  },
+  "Llama-3.2-1B-Instruct-Hybrid": {
+    "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 1.89
+  },
+  "Llama-3.2-3B-Hybrid": {
+    "checkpoint": "amd/Llama-3.2-3B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.28
+  },
+  "Llama-3.2-3B-Instruct-Hybrid": {
+    "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.28
+  },
+  "Meta-Llama-3-8B-Hybrid": {
+    "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.06
+  },
+  "Meta-Llama-3.1-8B-Instruct-Hybrid": {
+    "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.09
+  },
+  "Mistral-7B-Instruct-v0.1-Hybrid": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.84
+  },
+  "Mistral-7B-Instruct-v0.2-Hybrid": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.84
+  },
+  "Mistral-7B-Instruct-v0.3-Hybrid": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.85
+  },
+  "Mistral-7B-v0.3-Hybrid": {
+    "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.85
+  },
+  "Phi-3-mini-128k-instruct-Hybrid": {
+    "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.21
+  },
+  "Phi-3-mini-4k-instruct-Hybrid": {
+    "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.19
+  },
+  "Phi-3.5-mini-instruct-Hybrid": {
+    "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.21
+  },
+  "Phi-4-mini-instruct-Hybrid": {
+    "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 5.47
+  },
+  "Phi-4-mini-reasoning-Hybrid": {
+    "checkpoint": "amd/Phi-4-mini-reasoning-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 5.47,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Qwen-2.5-1.5B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.17
+  },
+  "Qwen1.5-7B-Chat-Hybrid": {
+    "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.83
+  },
+  "Qwen2-1.5B-Hybrid": {
+    "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.19
+  },
+  "Qwen2-7B-Hybrid": {
+    "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.68
+  },
+  "Qwen2.5-0.5B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 0.828
+  },
+  "Qwen2.5-14B-instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-14B-instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 16.5
+  },
+  "Qwen2.5-3B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5_3B_Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 3.97
+  },
+  "Qwen2.5-7B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.65
+  },
+  "Qwen2.5-Coder-0.5B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-Coder-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 0.828,
+    "labels": [
+      "coding"
+    ]
+  },
+  "Qwen2.5-Coder-1.5B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.17,
+    "labels": [
+      "coding"
+    ]
+  },
+  "Qwen2.5-Coder-7B-Instruct-Hybrid": {
+    "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.65,
+    "labels": [
+      "coding"
+    ]
+  },
+  "Qwen3-1.7B-Hybrid": {
+    "checkpoint": "amd/Qwen3-1.7B-awq-quant-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.55,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Qwen3-14B-Hybrid": {
+    "checkpoint": "amd/Qwen3-14B-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 16.5,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Qwen3-4B-Hybrid": {
+    "checkpoint": "amd/Qwen3-4B-awq-quant-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 5.17,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Qwen3-8B-Hybrid": {
+    "checkpoint": "amd/Qwen3-8B-awq-quant-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.42,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "SmolLM-135M-Instruct-Hybrid": {
+    "checkpoint": "amd/SmolLM-135M-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 0.232
+  },
+  "SmolLM2-135M-Instruct-Hybrid": {
+    "checkpoint": "amd/SmolLM2-135M-Instruct-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 0.233
+  },
+  "chatglm3-6b-Hybrid": {
+    "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 6.9
+  },
+  "gemma-2-2b-Hybrid": {
+    "checkpoint": "amd/gemma-2-2b-onnx-ryzenai-1.7-hybrid",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.04
+  },
+  "CodeLlama-7b-Instruct-hf-NPU": {
+    "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.54,
+    "labels": [
+      "coding"
+    ]
+  },
+  "DeepSeek-R1-Distill-Llama-8B-NPU": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.3,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "DeepSeek-R1-Distill-Qwen-1.5B-NPU": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.3,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "DeepSeek-R1-Distill-Qwen-7B-NPU": {
+    "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.87,
+    "labels": [
+      "reasoning"
+    ]
+  },
+  "Gemma-3-4b-it-mm-NPU": {
+    "checkpoint": "amd/Gemma-3-4b-it-mm-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 6.68,
+    "labels": [
+      "vision"
+    ]
+  },
+  "Llama-2-7b-chat-hf-NPU": {
+    "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.47
+  },
+  "Llama-2-7b-hf-NPU": {
+    "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.47
+  },
+  "Llama-3.1-8B-NPU": {
+    "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.3
+  },
+  "Llama-3.2-1B-Instruct-NPU": {
+    "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 1.96
+  },
+  "Llama-3.2-1B-NPU": {
+    "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 1.96
+  },
+  "Meta-Llama-3-8B-NPU": {
+    "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.23
+  },
+  "Meta-Llama-3.1-8B-Instruct-NPU": {
+    "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.3
+  },
+  "Mistral-7B-Instruct-v0.1-NPU": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.01
+  },
+  "Mistral-7B-Instruct-v0.2-NPU": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.01
+  },
+  "Mistral-7B-Instruct-v0.3-NPU": {
+    "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.09
+  },
+  "Mistral-7B-v0.3-NPU": {
+    "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.09
+  },
+  "Phi-3-mini-128k-instruct-NPU": {
+    "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.35
+  },
+  "Phi-3-mini-4k-instruct-NPU": {
+    "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.3
+  },
+  "Phi-3.5-mini-instruct-NPU": {
+    "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.35
+  },
+  "Phi-4-mini-instruct-NPU": {
+    "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 5.59
+  },
+  "Qwen-2.5-1.5B-Instruct-NPU": {
+    "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.25
+  },
+  "Qwen1.5-7B-Chat-NPU": {
+    "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 9.02
+  },
+  "Qwen2-1.5B-NPU": {
+    "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.3
+  },
+  "Qwen2-7B-NPU": {
+    "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.88
+  },
+  "Qwen2.5-3B-Instruct-NPU": {
+    "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 4.1
+  },
+  "Qwen2.5-7B-Instruct-NPU": {
+    "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.83
+  },
+  "Qwen2.5-Coder-1.5B-Instruct-NPU": {
+    "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 2.25,
+    "labels": [
+      "coding"
+    ]
+  },
+  "Qwen2.5-Coder-7B-Instruct-NPU": {
+    "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 8.83,
+    "labels": [
+      "coding"
+    ]
+  },
+  "chatglm3-6b-NPU": {
+    "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 7.04
+  },
+  "gpt-oss-20b-NPU": {
+    "checkpoint": "amd/gpt-oss-20b-onnx-ryzenai-npu",
+    "recipe": "ryzenai-llm",
+    "suggested": true,
+    "size": 13.4
+  },
+  "Qwen3-0.6B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 0.38
+  },
+  "Tiny-Test-Model-GGUF": {
+    "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "size": 0.18
+  },
+  "Qwen3-1.7B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 1.06
+  },
+  "Qwen3-4B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-4B-GGUF:Q4_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 2.38
+  },
+  "Qwen3-8B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_1",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 5.25
+  },
+  "DeepSeek-Qwen3-8B-GGUF": {
+    "checkpoint": "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_1",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 5.25
+  },
+  "Qwen3-14B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-14B-GGUF:Q4_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 8.54
+  },
+  "Qwen3-4B-Instruct-2507-GGUF": {
+    "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling"
+    ],
+    "size": 2.5
+  },
+  "Qwen3-30B-A3B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 17.4
+  },
+  "Qwen3-30B-A3B-Instruct-2507-GGUF": {
+    "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling"
+    ],
+    "size": 17.4
+  },
+  "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
+    "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "coding",
+      "tool-calling",
+      "hot"
+    ],
+    "size": 18.6
+  },
+  "Qwen3-Coder-Next-GGUF": {
+    "checkpoint": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "coding",
+      "tool-calling",
+      "hot"
+    ],
+    "size": 48.0
+  },
+  "Nemotron-3-Nano-30B-A3B-GGUF": {
+    "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [],
+    "size": 22.8
+  },
+  "Gemma-3-4b-it-GGUF": {
+    "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 3.34
+  },
+  "Gemma-4-26B-A4B-it-GGUF": {
+    "checkpoint": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "tool-calling",
+      "vision",
+      "llamacpp"
+    ],
+    "size": 18.1
+  },
+  "Gemma-4-31B-it-GGUF": {
+    "checkpoint": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "tool-calling",
+      "vision",
+      "llamacpp"
+    ],
+    "size": 19.5
+  },
+  "Gemma-4-12B-it-GGUF": {
+    "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling",
+      "vision",
+      "llamacpp"
+    ],
+    "size": 7.29
+  },
+  "Gemma-4-26B-A4B-it-MTP-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+      "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+      "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
+    },
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "tool-calling",
+      "vision",
+      "llamacpp",
+      "mtp"
+    ],
+    "size": 18.5
+  },
+  "Gemma-4-31B-it-MTP-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+      "draft": "unsloth/gemma-4-31B-it-GGUF:mtp-gemma-4-31B-it.gguf",
+      "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
+    },
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "tool-calling",
+      "vision",
+      "llamacpp",
+      "mtp"
+    ],
+    "size": 20.0
+  },
+  "Gemma-4-12B-it-MTP-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+      "draft": "unsloth/gemma-4-12b-it-GGUF:mtp-gemma-4-12b-it.gguf",
+      "mmproj": "unsloth/gemma-4-12b-it-GGUF:mmproj-F16.gguf"
+    },
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling",
+      "llamacpp",
+      "vision",
+      "mtp"
+    ],
+    "size": 7.75
+  },
+  "Gemma-4-E4B-it-GGUF": {
+    "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling",
+      "vision",
+      "llamacpp"
+    ],
+    "size": 5.97
+  },
+  "Gemma-4-E2B-it-GGUF": {
+    "checkpoint": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling",
+      "vision",
+      "llamacpp"
+    ],
+    "size": 4.09
+  },
+  "Bonsai-8B-gguf": {
+    "checkpoint": "prism-ml/Bonsai-8B-gguf:Q1_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "llamacpp"
+    ],
+    "size": 1.16
+  },
+  "Bonsai-4B-gguf": {
+    "checkpoint": "prism-ml/Bonsai-4B-gguf:Q1_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "llamacpp"
+    ],
+    "size": 0.572
+  },
+  "Bonsai-1.7B-gguf": {
+    "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Q1_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "llamacpp"
+    ],
+    "size": 0.25
+  },
+  "Phi-4-mini-instruct-GGUF": {
+    "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 2.49
+  },
+  "LFM2-1.2B-GGUF": {
+    "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 0.731
+  },
+  "LFM2.5-1.2B-Instruct-GGUF": {
+    "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 0.731
+  },
+  "LFM2.5-8B-A1B": {
+    "checkpoint": "LiquidAI/LFM2.5-8B-A1B-GGUF:LFM2.5-8B-A1B-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 5.16
+  },
+  "PromptBridge-0.6b-Alpha-GGUF": {
+    "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "size": 0.397
+  },
+  "Jan-nano-128k-GGUF": {
+    "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 2.5
+  },
+  "Jan-v1-4B-GGUF": {
+    "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 2.5
+  },
+  "Llama-3.2-1B-Instruct-GGUF": {
+    "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 0.834
+  },
+  "Llama-3.2-3B-Instruct-GGUF": {
+    "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 2.06
+  },
+  "SmolLM3-3B-GGUF": {
+    "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 1.94
+  },
+  "Ministral-3-3B-Instruct-2512-GGUF": {
+    "checkpoint": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+    "mmproj": "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 2.99
+  },
+  "Qwen2.5-VL-7B-Instruct-GGUF": {
+    "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 6.04
+  },
+  "Qwen2.5-VL-3B-Instruct-GGUF": {
+    "checkpoint": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 3.27
+  },
+  "Qwen3-VL-4B-Instruct-GGUF": {
+    "checkpoint": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 3.33
+  },
+  "Qwen3-VL-8B-Instruct-GGUF": {
+    "checkpoint": "Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision"
+    ],
+    "size": 6.19
+  },
+  "Qwen2.5-Omni-7B-GGUF": {
+    "checkpoint": "ggml-org/Qwen2.5-Omni-7B-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "hf_load": true,
+    "labels": [
+      "vision",
+      "chat-transcription"
+    ],
+    "size": 7.33
+  },
+  "Qwen2.5-Omni-3B-GGUF": {
+    "checkpoint": "ggml-org/Qwen2.5-Omni-3B-GGUF:Q4_K_M",
+    "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "hf_load": true,
+    "labels": [
+      "vision",
+      "chat-transcription"
+    ],
+    "size": 4.73
+  },
+  "Qwen3-Next-80B-A3B-Instruct-GGUF": {
+    "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling"
+    ],
+    "size": 46.1
+  },
+  "Qwen3.5-0.8B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 0.764
+  },
+  "Qwen3.5-2B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 2.01
+  },
+  "Qwen3.5-4B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "hot"
+    ],
+    "size": 3.58
+  },
+  "Qwen3.5-4B-MTP-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-4B-MTP-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "mtp"
+    ],
+    "size": 3.66
+  },
+  "Qwen3.5-9B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-9B-GGUF:Qwen3.5-9B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 6.88
+  },
+  "Qwen3.5-35B-A3B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 23.1
+  },
+  "Qwen3.5-122B-A10B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-122B-A10B-GGUF:UD-Q4_K_XL",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 77.9
+  },
+  "Qwen3.5-122B-A10B-MTP-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-122B-A10B-MTP-GGUF:UD-Q4_K_XL",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "mtp"
+    ],
+    "size": 79.6
+  },
+  "Qwen3.5-27B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.5-27B-GGUF:Qwen3.5-27B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 18.5
+  },
+  "Qwen3.6-35B-A3B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "hot"
+    ],
+    "size": 23.3
+  },
+  "Qwen3.6-35B-A3B-MTP-GGUF": {
+    "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "mtp"
+    ],
+    "size": 23.8
+  },
+  "Qwen3.6-27B-GGUF": {
+    "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling"
+    ],
+    "size": 18.5
+  },
+  "Qwen3.6-27B-MTP-GGUF": {
+    "checkpoint": "unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "vision",
+      "tool-calling",
+      "mtp",
+      "hot"
+    ],
+    "size": 18.8
+  },
+  "Llama-4-Scout-17B-16E-Instruct-GGUF": {
+    "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "vision"
+    ],
+    "size": 63.2
+  },
+  "Cogito-v2-llama-109B-MoE-GGUF": {
+    "checkpoint": "unsloth/cogito-v2-preview-llama-109B-MoE-GGUF:Q4_K_M",
+    "mmproj": "mmproj-F16.gguf",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "vision"
+    ],
+    "size": 65.4
+  },
+  "nomic-embed-text-v1-GGUF": {
+    "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "embeddings"
+    ],
+    "size": 0.0781
+  },
+  "nomic-embed-text-v2-moe-GGUF": {
+    "checkpoint": "nomic-ai/nomic-embed-text-v2-moe-GGUF:Q8_0",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "embeddings"
+    ],
+    "size": 0.51
+  },
+  "Qwen3-Embedding-0.6B-GGUF": {
+    "checkpoint": "Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "embeddings"
+    ],
+    "size": 0.64
+  },
+  "Qwen3-Embedding-4B-GGUF": {
+    "checkpoint": "Qwen/Qwen3-Embedding-4B-GGUF:Qwen3-Embedding-4B-Q8_0.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "embeddings"
+    ],
+    "size": 4.28
+  },
+  "Qwen3-Embedding-8B-GGUF": {
+    "checkpoint": "Qwen/Qwen3-Embedding-8B-GGUF:Qwen3-Embedding-8B-Q8_0.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "embeddings"
+    ],
+    "size": 8.05
+  },
+  "bge-reranker-v2-m3-GGUF": {
+    "checkpoint": "pqnet/bge-reranker-v2-m3-Q8_0-GGUF",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reranking"
+    ],
+    "size": 0.636
+  },
+  "jina-reranker-v1-tiny-en-GGUF": {
+    "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "reranking"
+    ],
+    "size": 0.0367
+  },
+  "Devstral-Small-2507-GGUF": {
+    "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "coding",
+      "tool-calling"
+    ],
+    "size": 14.3
+  },
+  "Qwen2.5-Coder-32B-Instruct-GGUF": {
+    "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "coding"
+    ],
+    "size": 19.9
+  },
+  "gpt-oss-120b-GGUF": {
+    "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 62.8
+  },
+  "gpt-oss-20b-GGUF": {
+    "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 11.6
+  },
+  "gpt-oss-120b-mxfp-GGUF": {
+    "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 63.4
+  },
+  "gpt-oss-20b-mxfp4-GGUF": {
+    "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "hot",
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 12.1
+  },
+  "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
+    "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 67.7
+  },
+  "GLM-4.7-Flash-GGUF": {
+    "checkpoint": "unsloth/GLM-4.7-Flash-GGUF:GLM-4.7-Flash-UD-Q4_K_XL.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling"
+    ],
+    "size": 17.5
+  },
+  "Playable1-GGUF": {
+    "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
+    "recipe": "llamacpp",
+    "suggested": false,
+    "labels": [
+      "coding"
+    ],
+    "size": 4.68
+  },
+  "granite-4.0-h-tiny-GGUF": {
+    "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+      "tool-calling"
+    ],
+    "size": 4.25
+  },
+  "LFM2-8B-A1B-GGUF": {
+    "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 5.04
+  },
+  "LFM2-24B-A2B-GGUF": {
+    "checkpoint": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "size": 14.4
+  },
+  "Whisper-Tiny": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
+      "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 0.075
+  },
+  "Whisper-Base": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-base.bin",
+      "npu_cache": "amd/whisper-base-onnx-npu:ggml-base-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 0.148
+  },
+  "Whisper-Small": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-small.bin",
+      "npu_cache": "amd/whisper-small-onnx-npu:ggml-small-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 0.488
+  },
+  "Whisper-Medium": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-medium.bin",
+      "npu_cache": "amd/whisper-medium-onnx-npu:ggml-medium-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 1.53
+  },
+  "Whisper-Large-v3": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-large-v3.bin",
+      "npu_cache": "amd/whisper-large-v3-onnx-npu:ggml-large-v3-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 3.1
+  },
+  "Whisper-Large-v3-Turbo": {
+    "checkpoints": {
+      "main": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
+      "npu_cache": "amd/whisper-large-turbo-onnx-npu:ggml-large-v3-turbo-encoder-vitisai.rai"
+    },
+    "recipe": "whispercpp",
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription",
+      "hot"
+    ],
+    "size": 1.62
+  },
+  "Moonshine-Tiny-Streaming": {
+    "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
+    "recipe": "moonshine",
+    "moonshine_arch": 2,
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 0.202
+  },
+  "Moonshine-Small-Streaming": {
+    "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
+    "recipe": "moonshine",
+    "moonshine_arch": 4,
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription"
+    ],
+    "size": 0.431
+  },
+  "Moonshine-Medium-Streaming": {
+    "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
+    "recipe": "moonshine",
+    "moonshine_arch": 5,
+    "suggested": true,
+    "labels": [
+      "transcription",
+      "realtime-transcription",
+      "hot"
+    ],
+    "size": 1.08
+  },
+  "SD-Turbo": {
+    "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 5.21,
+    "image_defaults": {
+      "steps": 4,
+      "cfg_scale": 1.0,
+      "width": 512,
+      "height": 512
     }
+  },
+  "SD-Turbo-GGUF": {
+    "checkpoint": "Green-Sky/SD-Turbo-GGUF:sd_turbo-f16-q8_0.gguf",
+    "recipe": "sd-cpp",
+    "labels": [
+      "image"
+    ],
+    "size": 2.02,
+    "image_defaults": {
+      "steps": 4,
+      "cfg_scale": 1.0,
+      "width": 512,
+      "height": 512
+    }
+  },
+  "SDXL-Turbo": {
+    "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 6.94,
+    "image_defaults": {
+      "steps": 4,
+      "cfg_scale": 1.0,
+      "width": 512,
+      "height": 512
+    }
+  },
+  "SD-1.5": {
+    "checkpoint": "stable-diffusion-v1-5/stable-diffusion-v1-5:v1-5-pruned.safetensors",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 7.7,
+    "image_defaults": {
+      "steps": 20,
+      "cfg_scale": 7.5,
+      "width": 512,
+      "height": 512
+    }
+  },
+  "SDXL-Base-1.0": {
+    "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0:sd_xl_base_1.0.safetensors",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 6.94,
+    "image_defaults": {
+      "steps": 20,
+      "cfg_scale": 7.5,
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "Flux-2-Klein-4B": {
+    "checkpoints": {
+      "main": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
+      "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/text_encoders/qwen_3_4b.safetensors",
+      "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/vae/flux2-vae.safetensors"
+    },
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image",
+      "edit"
+    ],
+    "size": 16.1,
+    "image_defaults": {
+      "steps": 4,
+      "cfg_scale": 1,
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "Flux-2-Klein-9B-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf",
+      "text_encoder": "unsloth/Qwen3-8B-GGUF:Qwen3-8B-Q8_0.gguf",
+      "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors"
+    },
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image",
+      "edit"
+    ],
+    "size": 19.0,
+    "image_defaults": {
+      "steps": 4,
+      "cfg_scale": 1,
+      "width": 256,
+      "height": 256
+    }
+  },
+  "Qwen-Image-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/Qwen-Image-GGUF:qwen-image-Q4_K_M.gguf",
+      "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+      "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+    },
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 18.2,
+    "image_defaults": {
+      "steps": 20,
+      "cfg_scale": 2.5,
+      "width": 512,
+      "height": 512,
+      "sampling_method": "euler",
+      "flow_shift": 3.0
+    },
+    "recipe_options": {
+      "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+    }
+  },
+  "Qwen-Image-2512-GGUF": {
+    "checkpoints": {
+      "main": "unsloth/Qwen-Image-2512-GGUF:qwen-image-2512-Q5_0.gguf",
+      "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+      "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+    },
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 19.4,
+    "image_defaults": {
+      "steps": 20,
+      "cfg_scale": 2.5,
+      "width": 512,
+      "height": 512,
+      "sampling_method": "euler",
+      "flow_shift": 3.0
+    },
+    "recipe_options": {
+      "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+    }
+  },
+  "Z-Image-Turbo": {
+    "checkpoints": {
+      "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+      "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+      "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
+    },
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "image"
+    ],
+    "size": 20.7,
+    "image_defaults": {
+      "steps": 9,
+      "cfg_scale": 1,
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "LMX-Omni-52B-Halo": {
+    "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
+    "recipe": "collection.omni",
+    "suggested": true,
+    "size": 44.77
+  },
+  "LMX-Omni-5.5B-Lite": {
+    "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
+    "recipe": "collection.omni",
+    "suggested": true,
+    "size": 9.3
+  },
+  "Ultra Collection": {
+    "checkpoint": "",
+    "recipe": "collection.omni",
+    "suggested": false,
+    "components": [
+      "Qwen3.5-35B-A3B-GGUF",
+      "Flux-2-Klein-9B-GGUF",
+      "Whisper-Large-v3-Turbo",
+      "kokoro-v1"
+    ]
+  },
+  "Lite Collection": {
+    "checkpoint": "",
+    "recipe": "collection.omni",
+    "suggested": false,
+    "components": [
+      "Qwen3.5-4B-GGUF",
+      "SD-Turbo",
+      "Whisper-Tiny",
+      "kokoro-v1"
+    ]
+  },
+  "kokoro-v1": {
+    "checkpoint": "mikkoph/kokoro-onnx",
+    "recipe": "kokoro",
+    "suggested": true,
+    "labels": [
+      "tts"
+    ],
+    "size": 0.354
+  },
+  "RealESRGAN-x4plus": {
+    "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "upscaling",
+      "image"
+    ],
+    "size": 0.064
+  },
+  "RealESRGAN-x4plus-anime": {
+    "checkpoint": "amd/realesrgan-x4plus-anime-6b:RealESRGAN_x4plus_anime_6B.pth",
+    "recipe": "sd-cpp",
+    "suggested": true,
+    "labels": [
+      "upscaling",
+      "image"
+    ],
+    "size": 0.017
+  },
+  "Qwen3.5-0.8B-FP16-vLLM": {
+    "checkpoint": "Qwen/Qwen3.5-0.8B",
+    "recipe": "vllm",
+    "suggested": true,
+    "labels": [
+      "reasoning"
+    ],
+    "size": 1.77
+  },
+  "Qwen3.5-2B-FP16-vLLM": {
+    "checkpoint": "Qwen/Qwen3.5-2B",
+    "recipe": "vllm",
+    "suggested": true,
+    "labels": [
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 4.57
+  },
+  "Qwen3.5-4B-FP16-vLLM": {
+    "checkpoint": "Qwen/Qwen3.5-4B",
+    "recipe": "vllm",
+    "suggested": true,
+    "labels": [
+      "reasoning",
+      "hot",
+      "tool-calling"
+    ],
+    "size": 9.34
+  },
+  "Qwen3.5-9B-FP16-vLLM": {
+    "checkpoint": "Qwen/Qwen3.5-9B",
+    "recipe": "vllm",
+    "suggested": true,
+    "labels": [
+      "reasoning",
+      "tool-calling"
+    ],
+    "size": 19.3
+  },
+  "MLX-Llama-3.2-1B-Instruct": {
+    "checkpoint": "/home/bcloud/models/llama-1b",
+    "recipe": "mlx",
+    "suggested": true,
+    "size": 1.0,
+    "downloaded": true,
+    "checkpoints": {
+      "main": "/home/bcloud/models/llama-1b"
+    },
+    "labels": [
+      "mlx"
+    ],
+    "max_context_window": 131072
+  }
 }
