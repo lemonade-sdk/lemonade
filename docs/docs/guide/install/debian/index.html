@@ -1148,6 +1148,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/documentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/getting-started/" class="md-nav__link">
         
   
@@ -2191,10 +2219,25 @@
 
 <h2 id="debian-installation">Debian Installation</h2>
 <p>Lemonade is built for Debian 13 (Trixie).</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Prerequisites</label><label for="__tabbed_1_2">Installation</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>Lemonade depends on <strong><code>libcpp-httplib0.41</code></strong> which is not available in Debian 13's
+default repositories (it ships <code>libcpp-httplib0.18</code> only). You must enable the
+<a href="https://backports.debian.org/">Debian Backports</a> repository first:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Add the backports repository</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;deb http://deb.debian.org/debian trixie-backports main&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/apt/sources.list.d/backports.list
+sudo<span class="w"> </span>apt<span class="w"> </span>update
+</code></pre></div>
+</div>
+<div class="tabbed-block">
 <p>Get the <code>.deb</code> from the <a href="https://github.com/lemonade-sdk/lemonade/releases">latest release</a>:
 <code>lemonade-server_&lt;version&gt;-debian13_amd64.deb</code></p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./lemonade-server_*-debian13_amd64.deb
 </code></pre></div>
+</div>
+</div>
+</div>
 <p>Enable and start the service:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--now<span class="w"> </span>lemond
 </code></pre></div>

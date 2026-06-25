@@ -1654,6 +1654,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/documentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/getting-started/" class="md-nav__link">
         
   
@@ -3262,7 +3290,7 @@
 </tr>
 <tr>
 <td><code>backends</code></td>
-<td>List available recipes and backends. Use <code>install</code> or <code>uninstall</code> to manage backends.</td>
+<td>List supported recipes and backends or list all available recipes and backends with <code>--all</code>. Use <code>install</code> or <code>uninstall</code> to manage backends.</td>
 </tr>
 <tr>
 <td><code>cloud</code></td>
@@ -3920,8 +3948,9 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--output<span class="w"> </span>model.json<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cat<span class="w"> </span>model.json
 </code></pre></div>
 <h2 id="options-for-backends">Options for backends</h2>
-<p>The <code>backends</code> command lists available recipes and their backends. Use the <code>install</code> and <code>uninstall</code> subcommands to manage them:</p>
+<p>The <code>backends</code> command lists supported recipes and their backends. Use <code>--all</code> to list all available backends or use the <code>install</code> and <code>uninstall</code> subcommands to manage them:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends
+lemonade<span class="w"> </span>backends<span class="w"> </span>--all
 lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>SPEC<span class="w"> </span><span class="o">[</span>--force<span class="o">]</span>
 lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span class="w"> </span>SPEC
 </code></pre></div>
@@ -3935,7 +3964,11 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span c
 <tbody>
 <tr>
 <td><code>lemonade backends</code></td>
-<td>List available recipes and backends</td>
+<td>List supported recipes and backends</td>
+</tr>
+<tr>
+<td><code>lemonade backends --all</code></td>
+<td>List all available recipes and backends</td>
 </tr>
 <tr>
 <td><code>lemonade backends install SPEC</code></td>
@@ -3952,11 +3985,14 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span c
 </tbody>
 </table>
 <p><strong>Notes:</strong>
-- Available backends depend on your system and the recipe
-- Use <code>lemonade backends</code> to list all available recipes and backends</p>
+- Supported backends depend on your system and the recipe
+- Use <code>lemonade backends --all</code> to list all available recipes and backends</p>
 <p><strong>Examples:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># List all available recipes and backends</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># List supported recipes and backends</span>
 lemonade<span class="w"> </span>backends
+
+<span class="c1"># List all available recipes and backends</span>
+lemonade<span class="w"> </span>backends<span class="w"> </span>--all
 
 <span class="c1"># Install Vulkan backend for llamacpp</span>
 lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:vulkan
@@ -4264,6 +4300,11 @@ lemonade<span class="w"> </span>scan<span class="w"> </span>--duration<span clas
 <td>Model reloaded</td>
 </tr>
 <tr>
+<td><code>--response-log FILE</code></td>
+<td>Write response produced by the benchmark to a JSONL logfile, for later quality evaluation.</td>
+<td>-</td>
+</tr>
+<tr>
 <td><code>--llamacpp-args ARGS</code></td>
 <td>Custom args for llama-server (e.g. <code>"-b 2048 -ub 1024"</code>). Repeat for multiple arg sets.</td>
 <td>—</td>
@@ -4384,6 +4425,8 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 <p>With <code>--json</code>, results are emitted as structured JSON. Use <code>--output FILE</code> to save them for later comparison with <code>--compare</code>.
 The top-level JSON always includes a <code>models</code> array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes <code>duration_ms</code> stats (<code>mean</code>, <code>min</code>, <code>max</code>, <code>p50</code>, <code>p95</code>) representing end-to-end request time per run.</p>
+<p>With <code>--response-log FILE</code>, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.</p>
 <h3 id="comparison-mode">Comparison Mode</h3>
 <p>Pass <code>--compare PREVIOUS.json</code> to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.</p>
 <p>Model matching behavior:

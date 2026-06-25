@@ -1091,6 +1091,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../documentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -2599,11 +2627,11 @@
 <tbody>
 <tr>
 <td><code>lemon-prod</code></td>
-<td>Runner is a production lemonade-sdk runner. <strong>Every self-hosted runner job must include this label.</strong> It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes or special-purpose runners like <code>repo-manager</code>) that happen to share capability labels.</td>
+<td>Runner is a production lemonade-sdk runner. <strong>Every production self-hosted runner job must include this label.</strong> It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes) that happen to share capability labels. Special-purpose runners (e.g. <code>repo-manager</code>) use their own dedicated labels and intentionally omit <code>lemon-prod</code>.</td>
 </tr>
 </tbody>
 </table>
-<p>Without <code>lemon-prod</code>, a job that requests only <code>[self-hosted, Linux]</code> could run on <em>any</em> self-hosted Linux machine registered to the org. All production runners carry this label; runners that are not part of the production inference pool must not have it.</p>
+<p>Without <code>lemon-prod</code>, a job that requests only <code>[self-hosted, Linux]</code> could run on <em>any</em> self-hosted Linux machine registered to the org. All production inference runners carry this label; special-purpose runners that are not part of the production pool must not have it.</p>
 <h3 id="capability-labels">Capability labels</h3>
 <p>These describe <em>what a runner can do</em>. A workflow should request only the capability labels it actually needs.</p>
 <table>
@@ -2766,7 +2794,7 @@
 </ul>
 </li>
 <li>Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include <code>on: pull request:</code> in your workflow until after a reviewer has signed off.</li>
-<li><strong>Always include <code>lemon-prod</code></strong> in every self-hosted <code>runs-on</code> list (see <a href="#pool-membership-label">Pool membership label</a>). For example, <code>runs-on: [Windows, xdna2, lemon-prod]</code> for NPU work, <code>runs-on: [Linux, vulkan, rocm, lemon-prod]</code> for a job that exercises both GPU backends. CPU-only self-hosted jobs use <code>[self-hosted, Windows, lemon-prod]</code> / <code>[self-hosted, Linux, lemon-prod]</code>, but prefer GitHub-hosted runners (<code>windows-latest</code>, <code>ubuntu-latest</code>) for CPU-only work when possible.</li>
+<li><strong>Always include <code>lemon-prod</code></strong> in every <em>production</em> self-hosted <code>runs-on</code> list (see <a href="#pool-membership-label">Pool membership label</a>). For example, <code>runs-on: [Windows, xdna2, lemon-prod]</code> for NPU work, <code>runs-on: [Linux, vulkan, rocm, lemon-prod]</code> for a job that exercises both GPU backends. CPU-only self-hosted jobs use <code>[self-hosted, Windows, lemon-prod]</code> / <code>[self-hosted, Linux, lemon-prod]</code>, but prefer GitHub-hosted runners (<code>windows-latest</code>, <code>ubuntu-latest</code>) for CPU-only work when possible. Special-purpose runners with their own dedicated labels (e.g. <code>[self-hosted, linux, repo-manager]</code>) are the exception and should not include <code>lemon-prod</code>.</li>
 <li>Be very considerate about installing software on to the runners:<ul>
 <li>Installing software into the CWD (e.g., a path of <code>.\</code>) is always ok, because that will end up in <code>C:\actions-runner\_work\REPO</code>, which is always wiped between tests.</li>
 <li>Installing software into <code>AppData</code>, <code>Program Files</code>, etc. is not advisable because that software will persist across tests. See the <a href="#new-runner-setup">setup</a> section to see which software is already expected on the system.</li>
