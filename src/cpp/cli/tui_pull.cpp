@@ -29,11 +29,11 @@ using ftxui::Component;
 using ftxui::Element;
 using ftxui::Event;
 using ftxui::Input;
+using ftxui::InputOption;
 using ftxui::Menu;
 using ftxui::MenuOption;
 using ftxui::Renderer;
 using ftxui::ScreenInteractive;
-using ftxui::Toggle;
 using ftxui::border;
 using ftxui::bold;
 using ftxui::color;
@@ -451,7 +451,7 @@ int pull_progress_tui(lemonade::LemonadeClient& client,
         return false;
     });
 
-    auto screen = ScreenInteractive::TerminalOutput();
+    auto screen = ScreenInteractive::Fullscreen();
     screen_ptr = &screen;
     screen.Loop(root);
 
@@ -615,8 +615,14 @@ bool pull_tui(lemonade::LemonadeClient& client,
         return true;
     };
 
-    auto source_toggle = Toggle(&source_modes, &source_mode);
-    auto model_input = Input(&model_search, "Search registered models");
+    refresh_built_ins();
+
+    MenuOption source_option = MenuOption::Toggle();
+    source_option.on_change = refresh_built_ins;
+    auto source_toggle = Menu(&source_modes, &source_mode, source_option);
+    InputOption model_option;
+    model_option.on_change = refresh_built_ins;
+    auto model_input = Input(&model_search, "Search registered models", model_option);
     auto hf_input = Input(&hf_search, "Search Hugging Face or type owner/repo");
     auto model_menu = Menu(&model_entries, &model_selected, MenuOption::Vertical());
     auto hf_menu = Menu(&hf_entries, &hf_selected, MenuOption::Vertical());
@@ -666,7 +672,6 @@ bool pull_tui(lemonade::LemonadeClient& client,
     });
 
     auto renderer = Renderer(layout, [&] {
-        refresh_built_ins();
         Element search_section = vbox({
             source_toggle->Render(),
             source_mode == 0 ? model_input->Render() : hf_input->Render(),
@@ -743,7 +748,7 @@ bool pull_tui(lemonade::LemonadeClient& client,
         return false;
     });
 
-    auto screen = ScreenInteractive::TerminalOutput();
+    auto screen = ScreenInteractive::Fullscreen();
     screen_ptr = &screen;
     search_controls->TakeFocus();
     screen.Loop(root);
