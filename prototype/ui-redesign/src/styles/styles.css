@@ -7936,12 +7936,275 @@ input, textarea {
 
 .manager--detail {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 232px 280px minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
 }
 
-/* ── Model list panel (left) ──────────────────────────────────── */
+/* Responsive nav-rail toggle — hidden on wide viewports (rail always shown) */
+.manager__nav-toggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.manager__nav-toggle:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: -2px; }
+.manager__nav-toggle:hover { color: var(--text-primary); }
+
+/* ── Left navigation rail (new three-pane left column) ────────── */
+
+.model-nav-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  box-sizing: border-box;
+}
+
+/* 1. Preset quick-search + New */
+.model-nav-rail__preset-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.model-nav-rail__preset-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.model-nav-rail__preset-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.model-nav-rail__preset-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px 0 28px;
+  font-size: var(--text-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.model-nav-rail__preset-input:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.model-nav-rail__new-btn { white-space: nowrap; flex-shrink: 0; }
+
+/* 2. Primary nav */
+.model-nav-rail__primary {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-nav-rail__nav-item,
+.model-nav-rail__cat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+}
+
+.model-nav-rail__nav-item:hover,
+.model-nav-rail__cat-item:hover { background: var(--surface-2); color: var(--text-primary); }
+
+.model-nav-rail__nav-item:focus-visible,
+.model-nav-rail__cat-item:focus-visible,
+.model-nav-rail__section-toggle:focus-visible,
+.model-nav-rail__tag:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
+}
+
+.model-nav-rail__nav-item--active,
+.model-nav-rail__cat-item--active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent-fg) 30%, transparent);
+  color: var(--accent-fg);
+}
+
+.model-nav-rail__nav-icon,
+.model-nav-rail__cat-icon { flex-shrink: 0; }
+
+.model-nav-rail__nav-label,
+.model-nav-rail__cat-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-nav-rail__nav-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.model-nav-rail__nav-item--active .model-nav-rail__nav-count,
+.model-nav-rail__cat-item--active .model-nav-rail__nav-count { color: var(--accent-fg); }
+
+/* 3 & 5. Collapsible sections */
+.model-nav-rail__section { display: flex; flex-direction: column; gap: 2px; }
+
+.model-nav-rail__section-head { margin: 0; }
+
+.model-nav-rail__section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.model-nav-rail__section-toggle:hover { color: var(--text-secondary); }
+
+.model-nav-rail__cat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 4. Backends select */
+.model-nav-rail__backends { display: flex; flex-direction: column; gap: 4px; }
+
+.model-nav-rail__backends-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 var(--space-2);
+}
+
+.model-nav-rail__backends-select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: auto;
+}
+
+.model-nav-rail__backends-select:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
+
+/* 5. Tag chips */
+.model-nav-rail__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px var(--space-2) 0;
+}
+
+.model-nav-rail__tag {
+  padding: 3px 8px;
+  font-size: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.model-nav-rail__tag:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+.model-nav-rail__tag--active {
+  background: var(--accent-soft);
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+}
+
+.model-nav-rail__tag--recommended { color: var(--accent-fg); }
+
+/* 6. Storage meter */
+.model-nav-rail__storage {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.model-nav-rail__storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.model-nav-rail__storage-label { color: var(--text-tertiary); }
+.model-nav-rail__storage-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.model-nav-rail__storage-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.model-nav-rail__storage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-fg);
+}
+
+/* ── Model list panel (middle) ────────────────────────────────── */
 
 .model-list-panel {
   display: flex;
@@ -8091,6 +8354,19 @@ input, textarea {
 .model-list-panel__filter-option--active { color: var(--accent-fg); font-weight: 600; }
 
 /* Count badge */
+/* Custom-model action group — grounded button group at the TOP of the list */
+.model-list-panel__add-group {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.model-list-panel__add-btn { flex: 1; justify-content: center; }
+
 .model-list-panel__count {
   padding: var(--space-2) var(--space-3) var(--space-1);
   font-size: 10px;
@@ -8601,6 +8877,22 @@ input, textarea {
     overflow: hidden;
     height: 100%;
   }
+
+  /* Show the nav-rail toggle button */
+  .manager__nav-toggle { display: inline-flex; width: 100%; box-sizing: border-box; }
+
+  /* Hide the nav rail by default; reveal when toggled open */
+  .manager--detail .model-nav-rail { display: none; }
+  .manager--detail.manager--nav-open .model-nav-rail {
+    display: flex;
+    height: auto;
+    max-height: 70vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* When the nav rail is open, hide the list beneath it */
+  .manager--detail.manager--nav-open .model-list-panel { display: none; }
 
   /* Default state: show list only */
   .manager--detail .model-list-panel {

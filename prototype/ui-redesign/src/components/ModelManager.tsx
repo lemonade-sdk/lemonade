@@ -9,6 +9,8 @@ import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, START
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
 import { ModelListPanel } from './ModelListPanel';
+import type { PrimaryFilter } from './ModelListPanel';
+import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -962,6 +964,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  // Left nav-rail filter dimensions (client-local, derived from the model list).
+  const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
+  const [backendFilter, setBackendFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [navRailOpen, setNavRailOpen] = useState(false);
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -2421,8 +2428,35 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     </section>
   );
   return (
-    <div className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}`}>
-      {/* Left panel: searchable/filterable model list */}
+    <div className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${navRailOpen ? ' manager--nav-open' : ''}`}>
+      {/* Responsive: toggle the left nav rail on narrow viewports */}
+      <button
+        type="button"
+        className="manager__nav-toggle"
+        aria-expanded={navRailOpen}
+        aria-controls="model-nav-rail"
+        onClick={() => setNavRailOpen(v => !v)}
+      >
+        <Icon name="sliders-horizontal" size={15} aria-hidden="true" />
+        <span>Filters</span>
+      </button>
+
+      {/* Left rail: navigation / filter dimensions */}
+      <ModelNavRail
+        allModels={allModels}
+        loadedNames={loadedNames}
+        pinnedNames={pinnedNameSet}
+        primaryFilter={primaryFilter}
+        onPrimaryFilterChange={(f) => { setPrimaryFilter(f); setNavRailOpen(false); }}
+        categoryFilter={filterTab}
+        onCategoryFilterChange={(f) => { setFilterTab(f); setNavRailOpen(false); }}
+        backendFilter={backendFilter}
+        onBackendFilterChange={setBackendFilter}
+        tagFilter={tagFilter}
+        onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
+      />
+
+      {/* Middle panel: searchable/filterable model list */}
       <ModelListPanel
         allModels={allModels}
         loadedNames={loadedNames}
@@ -2438,6 +2472,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         onSearchChange={setSearchQuery}
         filterTab={filterTab}
         onFilterChange={setFilterTab}
+        primaryFilter={primaryFilter}
+        backendFilter={backendFilter}
+        tagFilter={tagFilter}
         searchInputRef={searchRef}
         onAddCustomModel={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}
         onAddOmniCollection={() => openCustomForm('omni-collection')}

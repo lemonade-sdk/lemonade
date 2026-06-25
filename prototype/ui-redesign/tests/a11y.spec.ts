@@ -2423,3 +2423,211 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 });
+
+// ─── Left navigation rail — three-pane model view (#2355 follow-up) ──────────
+//
+// fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
+// rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
+// (right). The left rail surfaces filter dimensions — primary nav (All/
+// Downloaded/My Models/Favorites), collapsible Categories, a Backends select,
+// collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
+// list (no lemond). Selecting any of them filters the middle list.
+// Range: A124–A136.
+
+test.describe('Accessibility — left navigation rail (#2355 three-pane)', () => {
+  async function goToModelsWithNavMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.model-nav-rail', { state: 'attached' });
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── Landmark & structure ─────────────────────────────────────────────────
+
+  test('A124 — left rail is a <nav> landmark with an accessible name', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const rail = page.locator('nav.model-nav-rail');
+    await expect(rail).toBeVisible();
+    expect(await rail.getAttribute('aria-label')).toBeTruthy();
+  });
+
+  // ── Primary nav ──────────────────────────────────────────────────────────
+
+  test('A125 — primary nav items are buttons with counts that are not the only signal', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const allBtn = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'All Models' });
+    await expect(allBtn).toBeVisible();
+    // Visible count chip plus an sr-only "N models" phrase so the count is not
+    // conveyed by the digit alone.
+    const accName = (await allBtn.getAttribute('aria-label')) ?? (await allBtn.textContent()) ?? '';
+    expect(accName.toLowerCase()).toContain('models');
+  });
+
+  test('A126 — selecting a primary nav item exposes selected state via aria-current and filters the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const before = await page.locator('.model-list-item').count();
+    const downloaded = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Downloaded' });
+    await downloaded.click();
+    await page.waitForTimeout(150);
+    expect(await downloaded.getAttribute('aria-current')).toBe('true');
+    const after = await page.locator('.model-list-item').count();
+    // Two of four mock models are downloaded.
+    expect(after).toBeLessThan(before);
+    expect(after).toBe(2);
+  });
+
+  test('A127 — primary nav is keyboard operable (focus + Enter selects)', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
+    await fav.focus();
+    await expect(fav).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(120);
+    expect(await fav.getAttribute('aria-current')).toBe('true');
+  });
+
+  // ── Categories (collapsible) ─────────────────────────────────────────────
+
+  test('A128 — Categories section header is a button with aria-expanded that toggles the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Categories' });
+    expect(await toggle.getAttribute('aria-expanded')).toBe('true');
+    await expect(page.locator('#nav-categories')).toBeVisible();
+    await toggle.click();
+    await page.waitForTimeout(100);
+    expect(await toggle.getAttribute('aria-expanded')).toBe('false');
+    await expect(page.locator('#nav-categories')).toBeHidden();
+  });
+
+  test('A129 — selecting a category filters the middle list (Audio → whisper only)', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const audio = page.locator('.model-nav-rail__cat-item').filter({ hasText: 'Audio' });
+    await audio.click();
+    await page.waitForTimeout(150);
+    expect(await audio.getAttribute('aria-current')).toBe('true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Whisper');
+  });
+
+  // ── Backends select ──────────────────────────────────────────────────────
+
+  test('A130 — Backends select is labelled and filters the list by recipe', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const select = page.locator('#nav-backend-select');
+    // Associated label.
+    const labelText = await page.locator('label[for="nav-backend-select"]').textContent();
+    expect((labelText ?? '').toLowerCase()).toContain('backend');
+    await select.selectOption('whispercpp');
+    await page.waitForTimeout(150);
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+  });
+
+  // ── Tags (collapsible chips) ─────────────────────────────────────────────
+
+  test('A131 — Tags section uses aria-pressed chips that filter the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const llamaTag = page.locator('.model-nav-rail__tag').filter({ hasText: /^Llama$/ });
+    await expect(llamaTag).toBeVisible();
+    expect(await llamaTag.getAttribute('aria-pressed')).toBe('false');
+    await llamaTag.click();
+    await page.waitForTimeout(150);
+    expect(await llamaTag.getAttribute('aria-pressed')).toBe('true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Llama');
+  });
+
+  // ── Storage meter ────────────────────────────────────────────────────────
+
+  test('A132 — Storage meter is a role=progressbar with value range and accessible name', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const bar = page.locator('.model-nav-rail__storage-bar');
+    await expect(bar).toHaveAttribute('role', 'progressbar');
+    expect(await bar.getAttribute('aria-valuenow')).toBeTruthy();
+    expect(await bar.getAttribute('aria-valuemin')).toBe('0');
+    const max = await bar.getAttribute('aria-valuemax');
+    expect(Number(max)).toBeGreaterThan(0);
+    // Accessible name via aria-label.
+    expect((await bar.getAttribute('aria-label')) ?? '').not.toBe('');
+  });
+
+  // ── Custom-model buttons (moved to TOP) ──────────────────────────────────
+
+  test('A133 — custom-model buttons are a grounded group at the top and keyboard reachable', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const group = page.locator('.model-list-panel__add-group');
+    await expect(group).toBeVisible();
+    const customBtn = group.getByRole('button', { name: /custom model/i });
+    const omniBtn = group.getByRole('button', { name: /omni collection/i });
+    await expect(customBtn).toBeVisible();
+    await expect(omniBtn).toBeVisible();
+    await customBtn.focus();
+    await expect(customBtn).toBeFocused();
+    // The group sits above the model list in DOM order (top of the area).
+    const groupBox = await group.boundingBox();
+    const listBox = await page.locator('.model-list-panel__list').boundingBox();
+    expect(groupBox && listBox && groupBox.y < listBox.y).toBeTruthy();
+  });
+
+  // ── Responsive nav toggle ────────────────────────────────────────────────
+
+  test('A134 — on narrow viewport the nav toggle controls the rail and is keyboard reachable', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 900 });
+    await goToModelsWithNavMock(page);
+    const toggle = page.locator('.manager__nav-toggle');
+    await expect(toggle).toBeVisible();
+    expect(await toggle.getAttribute('aria-controls')).toBe('model-nav-rail');
+    expect(await toggle.getAttribute('aria-expanded')).toBe('false');
+    // Rail hidden until toggled.
+    await expect(page.locator('.model-nav-rail')).toBeHidden();
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(150);
+    expect(await toggle.getAttribute('aria-expanded')).toBe('true');
+    await expect(page.locator('.model-nav-rail')).toBeVisible();
+  });
+
+  // ── Axe scan ─────────────────────────────────────────────────────────────
+
+  test('A135 — three-pane model view with the left rail passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+
+  test('A136 — preset quick-search input in the rail is labelled', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const input = page.locator('#nav-preset-search');
+    await expect(input).toBeVisible();
+    // Associated <label> (sr-only) provides the accessible name.
+    const hasLabel = await page.locator('label[for="nav-preset-search"]').count();
+    expect(hasLabel).toBeGreaterThan(0);
+  });
+});

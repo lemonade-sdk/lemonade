@@ -3,8 +3,70 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete  
-**Test status (2026-06-25):** All 139 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A118–A123 added for left-rail pin/favorite parity)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete  
+**Test status (2026-06-25):** All 152 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A124–A136 added for the left navigation rail / three-pane model view)
+
+---
+
+## Group G — Left navigation rail, three-pane model view (#2355 follow-up, 2026-06-25)
+
+fl0rianr posted a canonical three-pane target: a NEW left **navigation** rail (`ModelNavRail.tsx`) + the existing `ModelListPanel.tsx` (middle, unchanged in layout) + `ModelDetailPanel.tsx` (right). The rail surfaces filter dimensions — primary nav, collapsible Categories, a Backends select, collapsible Tags, and a Storage meter — all derived **client-side** from the model list the prototype already loads (no lemond). Selecting any dimension filters the middle list via shared predicates exported from `ModelListPanel.tsx`.
+
+### G1 — Primary navigation list
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `<nav class="model-nav-rail" aria-label="Model filters">` contains a `<ul role="list">` of `<button>`s (All Models / Downloaded / My Models / Favorites). The active item exposes `aria-current="true"`. Each button has a visible count chip plus an `sr-only` "N models" phrase, so the count is never conveyed by the digit alone. Buttons are natively keyboard operable (focus + Enter/Space).
+- **WCAG:** 1.3.1, 1.4.1 (count not the only signal), 2.1.1, 4.1.2
+
+### G2 — Collapsible Categories & Tags sections
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** Each section header is an `<h2>` wrapping a `<button aria-expanded aria-controls>` that toggles the body (`#nav-categories`, `#nav-tags`). Category items are buttons in a `<ul role="list">` with `aria-current` on the active one. Tag chips are `<button aria-pressed>` inside a `role="group"` labelled "Filter by tag"; selecting a chip filters the middle list and toggling re-selects/clears.
+- **WCAG:** 1.3.1, 2.1.1, 4.1.2
+
+### G3 — Backends select
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `<select id="nav-backend-select">` associated with `<label for="nav-backend-select">Backends</label>`. Options are distinct recipes (with counts) derived from the model list; selecting one filters the middle list by recipe.
+- **WCAG:** 1.3.1, 2.1.1, 4.1.2
+
+### G4 — Storage meter
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `role="progressbar"` with `aria-valuenow`/`aria-valuemin`/`aria-valuemax`, an `aria-valuetext`, and an `aria-label="Model storage used"`. Used space is derived from downloaded model sizes when present; total capacity is a **MOCK** placeholder (`512 GB`) because no client-available disk-usage source exists and lemond is off-limits.
+- **WCAG:** 1.3.1, 4.1.2
+
+### G5 — Custom-model buttons moved to the top
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** The "+ Custom model" / "+ Omni collection" buttons moved from the bottom footer of `ModelListPanel` to a grounded `role="group"` (`.model-list-panel__add-group`, with its own background) at the **top** of the list area, per fl0rianr. Both remain keyboard reachable.
+- **WCAG:** 1.4.1, 2.1.1
+
+### G6 — Responsive nav-rail toggle
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** At ≤700px the rail is hidden behind a `.manager__nav-toggle` button (`aria-expanded`, `aria-controls="model-nav-rail"`) that stacks the rail above the list when opened. Keeps the list-first → tap-to-detail responsive pattern intact and the rail keyboard reachable.
+- **WCAG:** 1.4.10 (Reflow), 2.1.1, 4.1.2
+
+### G7 — Status dot retained (no "Downloaded" badge)
+
+- **Status:** ✅ **Confirmed 2026-06-25**
+- **What:** Per fl0rianr, downloaded status stays a simple dot (`.model-list-item__dot--ready`) rather than a separate text badge. Status remains in each row's `aria-label`.
+- **WCAG:** 1.4.1
+
+**Note (POC / deferred):** The rail's top "Search presets…" input + "+ New" button are accessible POC placeholders (labelled input, `aria-label`ed button); preset management lives in the model-detail Presets tab per fl0rianr's "2) a". Wiring of preset quick-create is deferred and flagged for fl0rianr's confirmation.
+
+**Tests added:** A124–A136 (13 tests) in `tests/a11y.spec.ts`.
+- A124: rail `<nav>` landmark with accessible name
+- A125–A127: primary nav counts (not sole signal), `aria-current` + list filtering, keyboard operability
+- A128–A129: collapsible Categories (`aria-expanded` toggle) + category filtering
+- A130: labelled Backends select filters by recipe
+- A131: Tags `aria-pressed` chips filter the list
+- A132: Storage meter `role="progressbar"` value range + accessible name
+- A133: custom-model buttons grounded group at the top, keyboard reachable
+- A134: responsive nav toggle (`aria-controls`/`aria-expanded`) reveals the rail
+- A135: full three-pane view passes WCAG 2.1 AA axe-core scan
+- A136: preset quick-search input is labelled
 
 ---
 

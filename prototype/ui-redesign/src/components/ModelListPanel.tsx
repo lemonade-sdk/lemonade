@@ -13,7 +13,7 @@ import { activeDownloadForModel, type DownloadListItem } from '../features/downl
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
-function listModelName(m: ModelInfo): string {
+export function listModelName(m: ModelInfo): string {
   return String((m as any).model_name ?? m.name ?? m.id ?? '').trim();
 }
 
@@ -28,7 +28,7 @@ function listFmtSize(gb: number): string {
   return '< 1 MB';
 }
 
-function listRecipeBadgeText(recipe: string): string {
+export function listRecipeBadgeText(recipe: string): string {
   const n = String(recipe || '').toLowerCase();
   switch (n) {
     case 'llamacpp': return 'llama.cpp';
@@ -74,7 +74,7 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
 ];
 
-function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
+export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
   const cap = capabilityFromModelInfo(m);
   if (filter === 'omni') {
@@ -84,6 +84,60 @@ function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
   if (filter === 'llm') return cap === 'chat' || cap === 'unknown';
   return (cap as string) === filter;
+}
+
+/* ── Left-nav-rail filter dimensions ─────────────────────────────
+   These predicates are the single source of truth shared by the
+   middle list (filtering) and the left nav rail (deriving counts),
+   so both stay perfectly in sync. All derivation is client-side from
+   the model list the prototype already loads — no lemond calls. */
+
+/** Primary nav buckets in the left rail. */
+export type PrimaryFilter = 'all' | 'downloaded' | 'my-models' | 'favorites';
+
+/** A model counts as "downloaded" if it is locally present or running. */
+export function modelIsDownloaded(m: ModelInfo, loadedNames: Set<string>): boolean {
+  const name = listModelName(m);
+  return loadedNames.has(name) || Boolean((m as any).downloaded);
+}
+
+/** Custom / user-registered models (client-local store). */
+export function modelIsCustom(m: ModelInfo): boolean {
+  return (m as any).custom === true;
+}
+
+export function modelMatchesPrimary(
+  m: ModelInfo,
+  primary: PrimaryFilter,
+  loadedNames: Set<string>,
+  pinnedNames?: Set<string>,
+): boolean {
+  switch (primary) {
+    case 'downloaded': return modelIsDownloaded(m, loadedNames);
+    case 'my-models': return modelIsCustom(m);
+    case 'favorites': return pinnedNames?.has(listModelName(m).toLowerCase()) ?? false;
+    case 'all':
+    default: return true;
+  }
+}
+
+/** Backend filter — `backend` is 'all' or a lowercased recipe id. */
+export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
+  if (!backend || backend === 'all') return true;
+  return String((m as any).recipe || '').toLowerCase() === backend;
+}
+
+/** Curated tag chips (model families + size hints) shown in the left rail. */
+export const TAG_CHIPS: string[] = ['Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+
+/** A tag matches when it appears in the model's labels OR its name/family. */
+export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
+  if (!tag) return true;
+  const t = tag.toLowerCase();
+  const labels = (m.labels || []).map(l => String(l).toLowerCase());
+  if (labels.includes(t)) return true;
+  const hay = `${listModelName(m)} ${m.display_name || ''}`.toLowerCase();
+  return hay.includes(t);
 }
 
 /* ── Types ───────────────────────────────────────────────────── */
@@ -110,6 +164,12 @@ export interface ModelListPanelProps {
   onSearchChange: (q: string) => void;
   filterTab: FilterTab;
   onFilterChange: (tab: FilterTab) => void;
+  /** Primary nav bucket selected in the left rail. */
+  primaryFilter?: PrimaryFilter;
+  /** Backend filter ('all' or lowercased recipe id) from the left rail. */
+  backendFilter?: string;
+  /** Active tag chip from the left rail (null = no tag filter). */
+  tagFilter?: string | null;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onAddCustomModel?: () => void;
   onAddOmniCollection?: () => void;
@@ -132,6 +192,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onSearchChange,
   filterTab,
   onFilterChange,
+  primaryFilter = 'all',
+  backendFilter = 'all',
+  tagFilter = null,
   searchInputRef,
   onAddCustomModel,
   onAddOmniCollection,
@@ -157,6 +220,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       // Filter by type
       if (!modelMatchesFilter(m, filterTab)) continue;
+
+      // Left-rail filter dimensions (primary bucket / backend / tag)
+      if (!modelMatchesPrimary(m, primaryFilter, loadedNames, pinnedNames)) continue;
+      if (!modelMatchesBackend(m, backendFilter)) continue;
+      if (!modelMatchesTag(m, tagFilter)) continue;
 
       // Filter by search
       if (q) {
@@ -225,7 +293,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, primaryFilter, backendFilter, tagFilter]);
 
   // Keyboard navigation on the list (ArrowUp/Down/Home/End)
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -264,6 +332,31 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       <div className="model-list-panel__title manager__title">
         <h1>Models</h1>
       </div>
+
+      {/* Custom model / Omni collection actions — grounded button group at the
+          top of the list area (moved from the bottom per fl0rianr). */}
+      {(onAddCustomModel || onAddOmniCollection) && (
+        <div className="model-list-panel__add-group" role="group" aria-label="Add custom models">
+          {onAddCustomModel && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny model-list-panel__add-btn manager__custom-btn"
+              onClick={onAddCustomModel}
+            >
+              + Custom model
+            </button>
+          )}
+          {onAddOmniCollection && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny model-list-panel__add-btn manager__custom-btn manager__custom-btn--omni"
+              onClick={onAddOmniCollection}
+            >
+              + Omni collection
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Search bar */}
       <div className="model-list-panel__search-row">
@@ -455,30 +548,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           </li>
         )}
       </ul>
-
-      {/* Custom model / Omni collection actions */}
-      {(onAddCustomModel || onAddOmniCollection) && (
-        <div className="model-list-panel__footer" aria-label="Add custom models">
-          {onAddCustomModel && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny manager__custom-btn"
-              onClick={onAddCustomModel}
-            >
-              + Custom model
-            </button>
-          )}
-          {onAddOmniCollection && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny manager__custom-btn manager__custom-btn--omni"
-              onClick={onAddOmniCollection}
-            >
-              + Omni collection
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 };
