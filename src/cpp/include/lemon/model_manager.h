@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
 #include "directory_watcher.h"
+#include "gguf_reader.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -85,10 +86,7 @@ struct ModelInfo {
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
     // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
-    int64_t gguf_block_count = 0;       // number of transformer blocks (layers)
-    int64_t gguf_embedding_length = 0;  // hidden size
-    int64_t gguf_head_count_kv = 0;     // KV attention heads
-    int64_t gguf_key_length = 0;        // key head dimension
+    GgufMetadata gguf;
     RecipeOptions recipe_options;
 
     // Multi-model support fields

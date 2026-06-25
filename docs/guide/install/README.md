@@ -16,6 +16,9 @@ Lemonade is available on a broad range of platforms.
 
     [Debian instructions](./debian.md).
 
+    > **Note:** Debian 13 requires the [Debian Backports](https://backports.debian.org/) repository
+    > for `libcpp-httplib0.41` (Debian 13 ships only `libcpp-httplib0.18`).
+
 === "Docker"
 
     [Docker instructions](./docker.md).
