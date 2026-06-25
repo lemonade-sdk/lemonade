@@ -14,6 +14,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include <optional>
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -523,6 +524,42 @@ public:
             return {true, ""};
         }
         return {binary_found, ""};
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string&, const std::string& install_error,
+        const std::string& default_install_command) const override {
+        // FLM needs richer state to guide users through manual setup (installing
+        // the .deb, xrt drivers, etc.) rather than an automatic backend install.
+        bool is_not_installed = install_error.empty()
+                             || install_error.find("not installed") != std::string::npos
+                             || install_error.find("not found") != std::string::npos;
+        bool is_version_mismatch = install_error.find("requires") != std::string::npos;
+
+        UnavailableState s;
+        if (is_not_installed) {
+            s.state = "installable";
+        } else if (is_version_mismatch) {
+            s.state = "update_required";
+        } else {
+            s.state = "action_required";
+        }
+        s.message = install_error;
+        s.attach_installed_version = !is_not_installed;
+
+#ifdef __linux__
+        (void)default_install_command;
+        s.action = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
+#elif defined(_WIN32)
+        if (!is_not_installed && !is_version_mismatch) {
+            s.action = "Visit https://lemonade-server.ai/driver_install.html";
+        } else {
+            s.action = default_install_command;
+        }
+#else
+        s.action = default_install_command;
+#endif
+        return s;
     }
 };
 }  // namespace

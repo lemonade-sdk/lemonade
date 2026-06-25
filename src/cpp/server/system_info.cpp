@@ -1316,41 +1316,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            // FLM on Linux needs richer state to guide users through manual setup
-            // (installing .deb, xrt drivers, etc.)
-            if (def.recipe == "flm") {
-                bool is_not_installed = install_error.empty()
-                                     || install_error.find("not installed") != std::string::npos
-                                     || install_error.find("not found") != std::string::npos;
-                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
-
-                if (is_not_installed) {
-                    backend["state"] = "installable";
-                } else if (is_version_mismatch) {
-                    backend["state"] = "update_required";
-                } else {
-                    backend["state"] = "action_required";
-                }
-                backend["message"] = install_error;
-
-                if (!is_not_installed) {
+            // Backends with bespoke unavailable-state guidance (flm: a system .deb
+            // + drivers needing manual setup) classify themselves; everyone else
+            // uses the generic installable/no-fetch default below.
+            const std::string default_install_command = get_install_command(def.recipe, def.backend);
+            if (auto st = backends::ops_for(def.recipe)->classify_unavailable(
+                    def.backend, install_error, default_install_command)) {
+                backend["state"] = st->state;
+                backend["message"] = st->message;
+                backend["action"] = st->action;
+                if (st->attach_installed_version) {
                     std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
                         backend["version"] = installed_version;
                     }
                 }
-
-#ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
-#elif defined(_WIN32)
-                if (!is_not_installed && !is_version_mismatch) {
-                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
-                } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                }
-#else
-                backend["action"] = get_install_command(def.recipe, def.backend);
-#endif
             } else {
                 auto* cfg = RuntimeConfig::global();
                 bool no_fetch = cfg && cfg->no_fetch_executables();
@@ -1369,7 +1349,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
+                    backend["action"] = default_install_command;
                 }
             }
         } else {

@@ -137,6 +137,29 @@ public:
         (void)backend;
         return {binary_found, ""};
     }
+
+    // The /system-info state for a backend variant that is supported but not
+    // currently available (install probe failed).
+    struct UnavailableState {
+        std::string state;    // "installable" | "update_required" | "action_required"
+        std::string message;  // shown to the user
+        std::string action;   // remediation (a URL or an install command)
+        bool attach_installed_version = false;  // surface the installed version too
+    };
+
+    // Classify a "supported but not available" backend variant for /system-info,
+    // given the install probe's error text and the generic install command the
+    // caller would otherwise use. Return nullopt to use the generic
+    // installable/no-fetch default. flm overrides: it is a system .deb + drivers
+    // needing manual setup, so its states and remediation links differ.
+    virtual std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string& install_error,
+        const std::string& default_install_command) const {
+        (void)backend;
+        (void)install_error;
+        (void)default_install_command;
+        return std::nullopt;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.
