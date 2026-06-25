@@ -253,6 +253,11 @@ const ModelPresetsTab: React.FC<{
     requestAnimationFrame(() => changeBtnRef.current?.focus());
   }, []);
 
+  const navigateToPresets = useCallback(() => {
+    // Client-local deep-link to the global Presets page (no lemond involvement).
+    window.dispatchEvent(new CustomEvent('lemonade:navigate', { detail: { view: 'presets' } }));
+  }, []);
+
   if (!isActive) return null;
 
   const previewLines = effectivePresetParamPreviewLines(linkedPreset, model, undefined);
@@ -268,7 +273,7 @@ const ModelPresetsTab: React.FC<{
       <section className="detail-presets__linked-section" aria-label="Linked preset">
         <h3 className="detail-presets__section-title">Linked preset</h3>
         <div
-          className="detail-presets__linked-card"
+          className="detail-presets__card detail-presets__linked-card"
           aria-current="true"
           aria-label={`Active preset: ${linkedPreset.name}`}
         >
@@ -281,9 +286,9 @@ const ModelPresetsTab: React.FC<{
             <p className="detail-presets__card-desc">{linkedPreset.description}</p>
           )}
           {previewLines.length > 0 && (
-            <div className="detail-presets__card-params" aria-label="Preset parameters">
-              {previewLines.map(line => <span key={line} className="detail-presets__param-line">{line}</span>)}
-            </div>
+            <p className="detail-presets__card-meta" aria-label="Preset parameters">
+              {previewLines.join(' · ')}
+            </p>
           )}
           {linkedPreset.id !== DEFAULT_PRESET.id && (
             <div className="detail-presets__linked-actions">
@@ -362,58 +367,79 @@ const ModelPresetsTab: React.FC<{
         )}
       </section>
 
-      {/* Compatible presets */}
+      {/* Recommended / compatible presets — a neat grid of compact cards */}
       {compatiblePresets.length > 0 && (
-        <section className="detail-presets__recommended-section" aria-label="Compatible presets">
-          <h3 className="detail-presets__section-title">Compatible presets</h3>
-          <div
-            className="detail-presets__preset-list"
-            role="listbox"
-            aria-label="Compatible presets — select to attach"
+        <section className="detail-presets__recommended-section" aria-label="Recommended presets">
+          <div className="detail-presets__section-head">
+            <h3 className="detail-presets__section-title">Recommended presets</h3>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny detail-presets__browse-btn"
+              onClick={navigateToPresets}
+              aria-label="Browse all presets in the Presets page"
+            >
+              Browse presets
+            </button>
+          </div>
+          <ul
+            className="detail-presets__preset-grid"
+            role="list"
+            aria-label="Recommended presets — select to attach"
           >
             {compatiblePresets.map(preset => {
               const isLinked = preset.id === linkedPresetId;
               const paramLines = effectivePresetParamPreviewLines(preset, model, undefined);
               return (
-                <div
+                <li
                   key={preset.id}
-                  role="option"
-                  aria-selected={isLinked}
-                  className={`detail-presets__preset-card${isLinked ? ' detail-presets__preset-card--selected' : ''}`}
+                  aria-current={isLinked ? 'true' : undefined}
+                  className={`detail-presets__card detail-presets__preset-card detail-presets__preset-card--sm${isLinked ? ' detail-presets__preset-card--selected' : ''}`}
                   aria-label={`${preset.name}${isLinked ? ' (currently linked)' : ''}`}
                 >
                   <div className="detail-presets__card-header">
                     <PresetIcon preset={preset} size={13} />
                     <strong className="detail-presets__card-name">{preset.name}</strong>
-                    {isLinked && <span className="detail-presets__card-badge detail-presets__card-badge--linked" aria-hidden="true">Linked</span>}
+                    {isLinked && <span className="detail-presets__card-badge detail-presets__card-badge--linked">Linked</span>}
                   </div>
                   {preset.description && (
                     <p className="detail-presets__card-desc">{preset.description}</p>
                   )}
                   {paramLines.length > 0 && (
-                    <div className="detail-presets__card-params">
-                      {paramLines.map(line => <span key={line} className="detail-presets__param-line">{line}</span>)}
-                    </div>
+                    <p className="detail-presets__card-meta">{paramLines.join(' · ')}</p>
                   )}
-                  {!isLinked && (
-                    <button
-                      type="button"
-                      className="btn btn--primary btn--tiny detail-presets__attach-btn"
-                      onClick={() => handleAttach(preset)}
-                      aria-label={`${linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch to' : 'Attach'} preset "${preset.name}" for ${name}`}
-                    >
-                      {linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch' : 'Attach'}
-                    </button>
-                  )}
-                </div>
+                  <div className="detail-presets__card-footer">
+                    {isLinked ? (
+                      <span className="detail-presets__card-linked-note">Currently linked</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--tiny detail-presets__attach-btn"
+                        onClick={() => handleAttach(preset)}
+                        aria-label={`${linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch to' : 'Attach'} preset "${preset.name}" for ${name}`}
+                      >
+                        {linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch' : 'Attach'}
+                      </button>
+                    )}
+                  </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         </section>
       )}
 
       {compatiblePresets.length === 0 && (
-        <p className="detail-presets__empty">No compatible presets found. Create a preset in the Presets page and set the model type to match this model.</p>
+        <div className="detail-presets__empty-block">
+          <p className="detail-presets__empty">No compatible presets found. Create a preset in the Presets page and set the model type to match this model.</p>
+          <button
+            type="button"
+            className="btn btn--ghost btn--tiny detail-presets__browse-btn"
+            onClick={navigateToPresets}
+            aria-label="Manage presets in the Presets page"
+          >
+            Manage presets
+          </button>
+        </div>
       )}
     </div>
   );

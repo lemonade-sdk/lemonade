@@ -2631,3 +2631,139 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(hasLabel).toBeGreaterThan(0);
   });
 });
+
+// ─── 28. Model-detail Presets tab — neat compact card grid (#2424 fl0rianr) ───
+//
+// fl0rianr asked for the model-detail Presets tab to render presets as a neat
+// grid of small focused cards (matching the global Presets-page cards), not
+// full-width stacked rows. The linked preset sits above as a single highlighted
+// card; recommended presets render in a responsive grid. Each Attach/Switch
+// button names its preset, linked/active state is exposed via text + aria (not
+// color only), and the inline Change dialog still works.
+// Range: A137–A141.
+
+test.describe('Accessibility — model-detail Presets card grid (#2424)', () => {
+  async function goToPresetsTab(
+    page: Page,
+    opts: { applied?: Record<string, string> } = {},
+  ): Promise<void> {
+    const applied = opts.applied ?? {};
+    await page.addInitScript((appliedJson: string) => {
+      const presets = [
+        {
+          id: 'p-balanced', name: 'Balanced', description: 'Reliable defaults for everyday chat and general use.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
+        },
+        {
+          id: 'p-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, and debugging.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
+        },
+        {
+          id: 'p-creative', name: 'Creative', description: 'Higher creativity for brainstorming and writing.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: false,
+        },
+      ];
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+      localStorage.setItem('lemonade:guest:shared:applied_presets', appliedJson);
+    }, JSON.stringify(applied));
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(150);
+  }
+
+  test('A137 — recommended presets render as a grid of compact cards (not full-width rows)', async ({ page }) => {
+    await goToPresetsTab(page);
+    // The old row container is gone; the new grid is present.
+    await expect(page.locator('.detail-presets__preset-list')).toHaveCount(0);
+    const grid = page.locator('.detail-presets__preset-grid');
+    await expect(grid).toBeVisible();
+    await expect(grid).toHaveAttribute('role', 'list');
+    // Multiple compact cards rendered as a grid.
+    const cards = grid.locator('.detail-presets__preset-card');
+    expect(await cards.count()).toBeGreaterThanOrEqual(2);
+    const display = await grid.evaluate(el => getComputedStyle(el).display);
+    expect(display).toBe('grid');
+  });
+
+  test('A138 — each Attach/Switch button has an accessible name that includes its preset name', async ({ page }) => {
+    await goToPresetsTab(page);
+    const attachButtons = page.locator('.detail-presets__attach-btn');
+    const count = await attachButtons.count();
+    expect(count).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i < count; i++) {
+      const label = await attachButtons.nth(i).getAttribute('aria-label');
+      expect(label).toMatch(/(Attach|Switch to) preset ".+" for /);
+    }
+  });
+
+  test('A139 — linked/active state is exposed via text + aria, not color alone', async ({ page }) => {
+    // Link "Balanced" so it is both the active linked card and the selected option.
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+
+    // Linked card above carries aria-current + visible "Active" badge text.
+    const linkedCard = page.locator('.detail-presets__linked-card');
+    await expect(linkedCard).toHaveAttribute('aria-current', 'true');
+    await expect(linkedCard.locator('.detail-presets__card-badge--linked')).toHaveText(/Active/i);
+
+    // The matching card in the grid exposes aria-current + a text "Linked" badge.
+    const selected = page.locator('.detail-presets__preset-card--selected');
+    await expect(selected).toHaveAttribute('aria-current', 'true');
+    await expect(selected).toContainText(/Linked/i);
+    // Selected card shows a text note instead of an Attach button (state not by color only).
+    await expect(selected.locator('.detail-presets__card-linked-note')).toBeVisible();
+  });
+
+  test('A140 — Change dialog still opens from the linked card and closes', async ({ page }) => {
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await expect(changeBtn).toBeVisible();
+    await changeBtn.click();
+    await page.waitForTimeout(100);
+    const chooser = page.locator('.detail-presets__change-chooser');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('role', 'dialog');
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('.detail-presets__chooser-close').click();
+    await page.waitForTimeout(100);
+    await expect(chooser).not.toBeVisible();
+  });
+
+  test('A141 — the Presets card grid passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+    await expect(page.locator('.detail-presets__preset-grid')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});

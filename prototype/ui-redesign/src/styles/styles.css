@@ -8754,15 +8754,20 @@ input, textarea {
   margin: 0 0 var(--space-2);
 }
 
-.detail-presets__linked-card,
-.detail-presets__preset-card {
-  background: var(--surface-2);
+/* Shared card base — a slightly smaller, focused version of the global
+ * .recipe-card (Presets page) so the model-detail presets feel consistent. */
+.detail-presets__card {
+  position: relative;
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface-1) 100%);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
 }
 
 .detail-presets__linked-card {
@@ -8770,9 +8775,25 @@ input, textarea {
   background: color-mix(in srgb, var(--accent-fg) 6%, transparent);
 }
 
+/* Linked preset sits above as a single highlighted card */
+.detail-presets__linked-card {
+  padding: var(--space-3) var(--space-4);
+}
+
+.detail-presets__preset-card--sm:hover {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-3) 0%, var(--surface-2) 100%);
+  transform: translateY(-1px);
+}
+
 .detail-presets__preset-card--selected {
   border-color: color-mix(in srgb, var(--accent-fg) 40%, transparent);
   background: color-mix(in srgb, var(--accent-fg) 10%, transparent);
+}
+
+.detail-presets__preset-card:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
 }
 
 .detail-presets__card-header {
@@ -8783,11 +8804,18 @@ input, textarea {
 
 .detail-presets__card-name {
   flex: 1;
+  min-width: 0;
   font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-presets__card-badge {
+  flex: none;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
@@ -8805,39 +8833,76 @@ input, textarea {
 .detail-presets__card-desc {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  line-height: var(--leading-snug);
   margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.detail-presets__card-params {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.detail-presets__param-line {
+/* Compact meta line: e.g. "temp 0.70 · ctx 4096 · tools ON" */
+.detail-presets__card-meta {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-tertiary);
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 1px 6px;
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-subtle);
+  word-break: break-word;
 }
 
-.detail-presets__attach-btn,
+.detail-presets__card-footer {
+  display: flex;
+  align-items: center;
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+
+.detail-presets__attach-btn { align-self: flex-start; }
+
+.detail-presets__card-linked-note {
+  font-size: 10px;
+  color: var(--accent-fg);
+  letter-spacing: 0.02em;
+}
+
 .detail-presets__detach-btn {
   align-self: flex-start;
   margin-top: var(--space-1);
 }
 
-.detail-presets__preset-list {
+/* Recommended presets — a neat responsive grid of compact cards */
+.detail-presets__preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.detail-presets__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.detail-presets__section-head .detail-presets__section-title { margin: 0; }
+
+.detail-presets__empty-block {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
 }
 
 .detail-presets__empty {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+  margin: 0;
 }
 
 /* ── Files tab stub ───────────────────────────────────────────── */

@@ -3,8 +3,31 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete  
-**Test status (2026-06-25):** All 152 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A124–A136 added for the left navigation rail / three-pane model view)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete  
+**Test status (2026-06-25):** All 157 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A137–A141 added for the model-detail Presets compact card grid)
+
+---
+
+## Group H — Model-detail Presets card grid (#2424 fl0rianr, 2026-06-25)
+
+fl0rianr's 18:12Z feedback on PR #2424: the model-detail **Presets** tab rendered the linked + compatible presets as full-width stacked **rows**; he wanted "neat cards — a slightly smaller, focused version of the cards in the global preset view." Restyled `ModelDetailPanel.tsx`'s `ModelPresetsTab` so the **Linked preset** sits above as a single highlighted card and the **Recommended presets** render as a neat responsive **grid of compact cards** (icon + name, 1–2 line description, a compact `temp · ctx · tools` / `steps · cfg` meta line, and an Attach/Switch action), visually consistent with the global `.recipe-card` (Presets page) but smaller and focused.
+
+**a11y decisions:**
+- The recommended grid is a `<ul role="list">` of `<li>` cards (NOT `role="listbox"`/`option`). An option is an interactive role; placing the per-card Attach/Switch `<button>` inside it triggers axe `nested-interactive` (focusable descendant of an interactive element). `listitem` is non-interactive, so a button inside is allowed.
+- Linked/active state is exposed via **text + ARIA, not color alone**: the linked card carries `aria-current="true"` + a visible "Active" badge; the matching grid card carries `aria-current="true"` + a "Linked" text badge and a "Currently linked" note in place of the Attach button.
+- Every Attach/Switch button's `aria-label` names its preset and the model, e.g. `Attach preset "Balanced" for Llama-3.1-8B` (relabels to `Switch to preset …` when a non-default preset is already linked).
+- The inline Change chooser (`role="dialog"`, `aria-modal`, focus return to the Change button) is unchanged and still works.
+- A "Browse presets" / "Manage presets" deep-link dispatches a client-local `lemonade:navigate` CustomEvent that `App.tsx` listens for to switch to the global Presets view (no lemond involvement).
+- Cards wrap/grid down gracefully via `grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))`.
+
+**Tests added:** A137–A141 (5 tests) in `tests/a11y.spec.ts`.
+- A137: recommended presets render as a `role="list"` grid of compact cards (old `.detail-presets__preset-list` row container gone; `display: grid`)
+- A138: each Attach/Switch button's accessible name includes its preset name
+- A139: linked/active state exposed via text + `aria-current` (not color only)
+- A140: Change dialog still opens from the linked card and closes
+- A141: the Presets card grid passes WCAG 2.1 AA axe-core scan
+
+**Files changed:** `ModelDetailPanel.tsx`, `App.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -834,4 +857,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-25 by Mattingly (Group H: left-rail pin/favorite parity #2355 — re-wired client-local pin store into ModelListPanel; non-button pin span + aria-keyshortcuts="P"; tests A118–A123)*
+*Last updated: 2026-06-25 by Mattingly (Group H: model-detail Presets card grid #2424 — rows → neat compact card grid matching global preset cards; `<ul role="list">` to avoid nested-interactive; aria-current + text badges; tests A137–A141)*
