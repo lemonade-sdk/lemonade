@@ -202,7 +202,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
         agent_selected = static_cast<int>(std::distance(agents.begin(), agent_it));
     }
 
-    std::vector<std::string> modes = {"Recipes", "Local", "Rec", "All"};
+    std::vector<std::string> modes = {"Recipes", "Downloaded", "Recommended", "All"};
     int mode = state.model.empty() ? 0 : 3;
     int focus = 0;
     bool accepted = false;
@@ -351,7 +351,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
                 section_box("Options", options, focus == 2) | flex,
                 section_box("Actions", hbox({launch_button->Render(), text(" "), quit_button->Render()}), focus == 3),
             }),
-            text("Tab next  Shift+Tab prev  / search  Enter launch  q quit") | dim,
+            text("Tab next  Shift+Tab previous  / search  Enter launch  q quit") | dim,
         });
     });
 
