@@ -1,0 +1,21 @@
+{
+  "model_name": "user.Router-Empty-Match",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF"
+    ],
+    "default_model": "Qwen3-8B-GGUF",
+    "rules": [
+      {
+        "id": "empty",
+        "match": {},
+        "route_to": "Qwen3-8B-GGUF"
+      }
+    ]
+  }
+}

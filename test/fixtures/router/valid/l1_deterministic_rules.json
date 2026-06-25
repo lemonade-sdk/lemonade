@@ -1,0 +1,50 @@
+{
+  "model_name": "user.Router-L1",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF",
+    "vllm.qwen3-32b"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF",
+      "vllm.qwen3-32b"
+    ],
+    "default_model": "vllm.qwen3-32b",
+    "rules": [
+      {
+        "id": "keep-private",
+        "match": {
+          "keywords_any": ["ssn", "credit card"],
+          "max_chars": 2000
+        },
+        "route_to": "Qwen3-8B-GGUF",
+        "outputs": {
+          "verdict": "warn"
+        }
+      },
+      {
+        "id": "support",
+        "match": {
+          "all": [
+            {
+              "any": [
+                {
+                  "keywords_any": ["return", "refund"]
+                },
+                {
+                  "regex": "\\btrack (my )?order\\b"
+                }
+              ]
+            },
+            {
+              "has_images": false
+            }
+          ]
+        },
+        "route_to": "vllm.qwen3-32b"
+      }
+    ]
+  }
+}

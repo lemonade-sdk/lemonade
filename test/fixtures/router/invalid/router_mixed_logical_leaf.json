@@ -1,0 +1,28 @@
+{
+  "model_name": "user.Router-Mixed-Logical-Leaf",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF"
+    ],
+    "default_model": "Qwen3-8B-GGUF",
+    "rules": [
+      {
+        "id": "mixed",
+        "match": {
+          "any": [
+            {
+              "keywords_any": ["return"]
+            }
+          ],
+          "max_chars": 1000
+        },
+        "route_to": "Qwen3-8B-GGUF"
+      }
+    ]
+  }
+}

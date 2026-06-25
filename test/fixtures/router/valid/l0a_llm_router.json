@@ -1,0 +1,24 @@
+{
+  "model_name": "user.Router-L0a",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF",
+    "vllm.qwen3-32b",
+    "claude-haiku-4-5",
+    "Qwen3-1.7B-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF",
+      "vllm.qwen3-32b",
+      "claude-haiku-4-5"
+    ],
+    "default_model": "Qwen3-8B-GGUF",
+    "router": {
+      "type": "llm",
+      "model": "Qwen3-1.7B-GGUF",
+      "prompt": "Route to the cheapest model that can handle the request."
+    }
+  }
+}

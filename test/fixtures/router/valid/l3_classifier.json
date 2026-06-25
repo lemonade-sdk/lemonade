@@ -1,0 +1,39 @@
+{
+  "model_name": "user.Router-L3",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF",
+    "vllm.qwen3-32b",
+    "pii-detector-small"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF",
+      "vllm.qwen3-32b"
+    ],
+    "default_model": "vllm.qwen3-32b",
+    "classifiers": [
+      {
+        "id": "pii",
+        "type": "classifier",
+        "model": "pii-detector-small",
+        "labels": ["PII", "NO_PII"],
+        "default_label": "PII",
+        "on_error": "match_true"
+      }
+    ],
+    "rules": [
+      {
+        "id": "keep-private",
+        "match": {
+          "classifier": "pii"
+        },
+        "route_to": "Qwen3-8B-GGUF",
+        "outputs": {
+          "verdict": "warn"
+        }
+      }
+    ]
+  }
+}

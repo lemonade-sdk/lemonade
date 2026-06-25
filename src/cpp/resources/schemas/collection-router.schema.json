@@ -1,0 +1,376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lemonade-sdk.github.io/schemas/collection-router.schema.json",
+  "title": "Lemonade collection.router model",
+  "description": "Schema for Lemonade Router collection model definitions.",
+  "type": "object",
+  "required": ["model_name", "recipe", "components", "routing"],
+  "properties": {
+    "model_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recipe": {
+      "const": "collection.router"
+    },
+    "checkpoint": {
+      "type": "string"
+    },
+    "checkpoints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "models": {
+      "description": "Optional embedded component model definitions for redistribution.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "routing": {
+      "$ref": "#/$defs/routing"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "routing": {
+      "type": "object",
+      "required": ["candidates", "default_model"],
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "default_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/classifier"
+          }
+        },
+        "router": {
+          "$ref": "#/$defs/llmRouter"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": ["router"]
+        },
+        {
+          "required": ["rules"],
+          "properties": {
+            "rules": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "match", "route_to"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match": {
+          "$ref": "#/$defs/matchExpression"
+        },
+        "route_to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "matchExpression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/anyExpression"
+        },
+        {
+          "$ref": "#/$defs/allExpression"
+        },
+        {
+          "$ref": "#/$defs/notExpression"
+        },
+        {
+          "$ref": "#/$defs/leafCondition"
+        }
+      ]
+    },
+    "anyExpression": {
+      "type": "object",
+      "required": ["any"],
+      "properties": {
+        "any": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/matchExpression"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "allExpression": {
+      "type": "object",
+      "required": ["all"],
+      "properties": {
+        "all": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/matchExpression"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "notExpression": {
+      "type": "object",
+      "required": ["not"],
+      "properties": {
+        "not": {
+          "$ref": "#/$defs/matchExpression"
+        }
+      },
+      "additionalProperties": false
+    },
+    "leafCondition": {
+      "type": "object",
+      "properties": {
+        "keywords_any": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "keywords_all": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "regex": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "has_tools": {
+          "type": "boolean"
+        },
+        "has_images": {
+          "type": "boolean"
+        },
+        "classifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_score": {
+          "$ref": "#/$defs/score"
+        },
+        "max_score": {
+          "$ref": "#/$defs/score"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": ["keywords_any"]
+        },
+        {
+          "required": ["keywords_all"]
+        },
+        {
+          "required": ["regex"]
+        },
+        {
+          "required": ["min_chars"]
+        },
+        {
+          "required": ["max_chars"]
+        },
+        {
+          "required": ["has_tools"]
+        },
+        {
+          "required": ["has_images"]
+        },
+        {
+          "required": ["classifier"]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": ["min_score"]
+          },
+          "then": {
+            "required": ["classifier"]
+          }
+        },
+        {
+          "if": {
+            "required": ["max_score"]
+          },
+          "then": {
+            "required": ["classifier"]
+          }
+        },
+        {
+          "if": {
+            "required": ["label"]
+          },
+          "then": {
+            "required": ["classifier"]
+          }
+        }
+      ]
+    },
+    "classifier": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/semanticSimilarityClassifier"
+        },
+        {
+          "$ref": "#/$defs/textClassifier"
+        }
+      ]
+    },
+    "semanticSimilarityClassifier": {
+      "type": "object",
+      "required": ["id", "type", "model", "candidates"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "semantic_similarity"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidates": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "on_error": {
+          "$ref": "#/$defs/onError"
+        }
+      },
+      "additionalProperties": false
+    },
+    "textClassifier": {
+      "type": "object",
+      "required": ["id", "type", "model"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "classifier",
+            "pii_detection",
+            "prompt_safety",
+            "language_detection",
+            "domain_classification",
+            "complexity",
+            "sentiment"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "default_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "on_error": {
+          "$ref": "#/$defs/onError"
+        }
+      },
+      "additionalProperties": false
+    },
+    "llmRouter": {
+      "type": "object",
+      "required": ["type", "model", "prompt"],
+      "properties": {
+        "type": {
+          "const": "llm"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "on_error": {
+          "$ref": "#/$defs/onError"
+        }
+      },
+      "additionalProperties": false
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "onError": {
+      "enum": ["match_false", "match_true"]
+    }
+  }
+}

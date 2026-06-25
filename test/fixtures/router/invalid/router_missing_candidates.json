@@ -1,0 +1,20 @@
+{
+  "model_name": "user.Router-Missing-Candidates",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF"
+  ],
+  "routing": {
+    "default_model": "Qwen3-8B-GGUF",
+    "rules": [
+      {
+        "id": "local",
+        "match": {
+          "keywords_any": ["local"]
+        },
+        "route_to": "Qwen3-8B-GGUF"
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "model_name": "user.Router-Invalid-Classifier-Type",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF",
+    "unknown-classifier-model"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF"
+    ],
+    "default_model": "Qwen3-8B-GGUF",
+    "classifiers": [
+      {
+        "id": "bad",
+        "type": "unknown",
+        "model": "unknown-classifier-model"
+      }
+    ],
+    "rules": [
+      {
+        "id": "bad-route",
+        "match": {
+          "classifier": "bad"
+        },
+        "route_to": "Qwen3-8B-GGUF"
+      }
+    ]
+  }
+}

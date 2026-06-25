@@ -1,0 +1,39 @@
+{
+  "model_name": "user.Router-L2",
+  "recipe": "collection.router",
+  "checkpoint": "",
+  "components": [
+    "Qwen3-8B-GGUF",
+    "vllm.qwen3-32b",
+    "nomic-embed-text-v1.5-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3-8B-GGUF",
+      "vllm.qwen3-32b"
+    ],
+    "default_model": "vllm.qwen3-32b",
+    "classifiers": [
+      {
+        "id": "sim_returns",
+        "type": "semantic_similarity",
+        "model": "nomic-embed-text-v1.5-GGUF",
+        "candidates": [
+          "how do I return an item",
+          "track my order",
+          "refund policy"
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "id": "support",
+        "match": {
+          "classifier": "sim_returns",
+          "min_score": 0.75
+        },
+        "route_to": "vllm.qwen3-32b"
+      }
+    ]
+  }
+}
