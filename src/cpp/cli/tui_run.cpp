@@ -31,11 +31,13 @@ using ftxui::bold;
 using ftxui::color;
 using ftxui::dim;
 using ftxui::flex;
+using ftxui::frame;
 using ftxui::gauge;
 using ftxui::hbox;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
+using ftxui::vscroll_indicator;
 
 namespace Container = ftxui::Container;
 
@@ -267,6 +269,8 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
         const double visible_count = static_cast<double>(std::max<size_t>(1, filtered.size()));
         const double all_count = static_cast<double>(std::max<size_t>(1, models.size()));
 
+        Element model_list = menu->Render() | vscroll_indicator | frame;
+
         return vbox({
             text("Lemonade Run") | bold,
             hbox({
@@ -274,7 +278,7 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
                 section_box("Mode", mode_toggle->Render(), focus == 1),
             }),
             hbox({
-                section_box("Models", menu->Render(), focus == 2) | flex,
+                section_box("Models", model_list, focus == 2) | flex,
                 section_box("Details", details, false) | flex,
             }) | flex,
             hbox({
