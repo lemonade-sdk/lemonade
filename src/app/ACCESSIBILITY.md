@@ -3,8 +3,38 @@
 **Date:** 2026-06-14  
 **Branch:** `kpoin/ui-accessibility`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete  
-**Test status (2026-06-22):** All 58 automated tests passing, 7 skipped, 0 failed on `feat/gui3-backend-a11y`
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete  
+**Test status (2026-06-25):** All 106 automated tests passing, 7 skipped, 0 failed on `feat/gui3-mcp-dashboard` (A89–A90 added in review pass)
+
+---
+
+## Group D — MCP Gateway panel (2026-06-25, `feat/gui3-mcp-dashboard`)
+
+Adds a new read-only MCP dashboard section to `ConnectView.tsx` exposing the existing `POST /mcp` Streamable HTTP endpoint.
+
+### D1 — #2417: Endpoint URL visibility + copy-to-clipboard
+
+- **Status:** ✅ **Fixed 2026-06-25**
+- **What:** MCP endpoint URL is derived from the current server base URL + `/mcp`. Displayed in a labelled read-only `<input>` with a "Copy" `<button>`. The button has `aria-label="Copy MCP endpoint URL to clipboard"`. A persistent `<div role="status" aria-live="polite" aria-atomic="true">` always rendered in DOM carries the copy confirmation message ("Copied") — empty at rest so NVDA live region announcements trigger correctly on update.
+- **WCAG:** 4.1.2 (Name, Role, Value), 4.1.3 (Status Messages)
+
+### D2 — #2417: Health/status indicator
+
+- **Status:** ✅ **Fixed 2026-06-25**
+- **What:** Pings the MCP endpoint (initialize + tools/list) on connection and shows connected/unavailable/checking/idle. Implemented as `<div role="status" aria-live="polite" aria-atomic="true">` with a text label ("Connected", "Unavailable", etc.) beside a decorative dot. Not color-only — text label is always present.
+- **WCAG:** 1.4.1 (Use of Color), 4.1.3 (Status Messages)
+
+### D3 — #2417: Exposed tools list
+
+- **Status:** ✅ **Fixed 2026-06-25** (handshake hardened 2026-06-25 in review pass)
+- **What:** Calls `POST /mcp` with spec-aligned handshake: (1) `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`; validates response (HTTP ok + no JSON-RPC `error` + `result.protocolVersion` present) and surfaces an accessible `role="alert"` error state on failure without proceeding to tools/list. (2) `notifications/initialized` notification (no `id`, with `MCP-Protocol-Version: 2025-06-18` header). (3) `tools/list` (with same protocol header + `Mcp-Session-Id` if server returned one). Stale-async guard via `AbortController` (aborted on disconnect, new connect, and unmount). Clipboard copy guarded for unsupported/insecure contexts — falls back to accessible "Copy not supported — select and copy manually" message via the existing aria-live region. Renders returned tools (name + description) in a `<ul aria-label="MCP tools">`. Auth header (`Authorization: Bearer <key>`) passed via existing `api.apiKey`. Refresh button has `aria-label="Refresh MCP tools list"`.
+- **WCAG:** 4.1.2 (Name, Role, Value)
+
+**Tests added:** A80–A90 (11 tests) in `tests/a11y.spec.ts`.  
+- A80–A88: original MCP panel a11y checks  
+- A89: behavioral — MCP request sequence, params, and MCP-Protocol-Version/Mcp-Session-Id headers  
+- A90: error — failed `initialize` surfaces accessible error; tools list absent; status not Connected  
+**Files changed:** `McpPanel.tsx`, `ConnectView.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -69,6 +99,9 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 | 22 | Preset card exposes metadata to AT (#2345) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 | 23 | Capability chip toggle-button semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 (revised 2026-06-22) |
 | 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 25 | MCP endpoint URL + copy-to-clipboard (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
+| 26 | MCP health/status indicator — not color-only (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
+| 27 | MCP tools list accessible labels + live states (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
 
 ---
 
