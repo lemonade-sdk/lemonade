@@ -34,6 +34,7 @@ using ftxui::flex;
 using ftxui::frame;
 using ftxui::gauge;
 using ftxui::hbox;
+using ftxui::paragraph;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
@@ -50,6 +51,15 @@ std::string to_lower(std::string value) {
 
 bool contains_case_insensitive(const std::string& value, const std::string& needle) {
     return to_lower(value).find(to_lower(needle)) != std::string::npos;
+}
+
+std::string shorten_middle(const std::string& value, size_t max_length) {
+    if (value.size() <= max_length || max_length < 8) {
+        return value;
+    }
+    const size_t head = (max_length - 3) / 2;
+    const size_t tail = max_length - 3 - head;
+    return value.substr(0, head) + "..." + value.substr(value.size() - tail);
 }
 
 std::string labels_to_string(const std::vector<std::string>& labels) {
@@ -118,9 +128,8 @@ std::vector<std::string> model_menu_entries(const std::vector<lemonade::ModelInf
     entries.reserve(filtered.size());
     for (int index : filtered) {
         const auto& model = models[static_cast<size_t>(index)];
-        std::string status = model.downloaded ? "downloaded" : "missing";
-        std::string recipe = model.recipe.empty() ? "-" : model.recipe;
-        entries.push_back(model.id + "  [" + status + "]  " + recipe);
+        std::string status = model.downloaded ? "local" : "pull";
+        entries.push_back(shorten_middle(model.id, 42) + "  [" + status + "]");
     }
     if (entries.empty()) {
         entries.push_back("No models match the current filter");
@@ -135,6 +144,10 @@ Element section_box(const std::string& title, Element content, bool focused) {
         body = body | color(ftxui::Color::Cyan);
     }
     return body | border;
+}
+
+Element detail_row(const std::string& label, const std::string& value) {
+    return hbox({text(label) | bold, paragraph(value.empty() ? "-" : value) | flex});
 }
 
 }  // namespace
@@ -243,11 +256,11 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
         if (model != nullptr) {
             const std::string labels = labels_to_string(model->labels);
             details = vbox({
-                hbox({text("Model: ") | bold, text(model->id)}),
-                hbox({text("Recipe: ") | bold, text(model->recipe.empty() ? "-" : model->recipe)}),
-                hbox({text("Status: ") | bold, text(model->downloaded ? "downloaded" : "missing, will pull before load")}),
-                hbox({text("Checkpoint: ") | bold, text(model->checkpoint.empty() ? "-" : model->checkpoint)}),
-                hbox({text("Labels: ") | bold, text(labels.empty() ? "-" : labels)}),
+                detail_row("Model: ", model->id),
+                detail_row("Recipe: ", model->recipe),
+                detail_row("Status: ", model->downloaded ? "downloaded" : "missing, will pull before load"),
+                detail_row("Checkpoint: ", model->checkpoint),
+                detail_row("Labels: ", labels),
             });
         }
 
@@ -290,7 +303,7 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
                 text(std::to_string(filtered.size()) + "/" + std::to_string(models.size())),
                 text(" "),
                 gauge(visible_count / all_count) | flex,
-                text("  Tab next  Shift+Tab previous  / search  Enter load  q quit") | dim,
+                text("  Tab next  Shift+Tab prev  / search  Enter load  q quit") | dim,
             }),
         });
     });
