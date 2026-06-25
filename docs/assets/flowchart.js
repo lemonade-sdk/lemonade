@@ -955,19 +955,20 @@
   }
 
   // Developer "Deploy everywhere": on a dark stage (the same surface as the
-  // Smart Router / "The stack" demos -- NOT an app-window chrome). A curated
-  // GALLERY of supported device/OS combos (no empty matrix cells -- only real
-  // machines): a Windows laptop, a macOS all-in-one (iMac), and Linux shown as a
-  // bare, tight 2x2 grid of distro logos (Ubuntu, Arch, Debian, Fedora) -- no
-  // device chrome, the logos carry it and mean "every distro". A line under each
-  // names the hardware it runs on (AMD / NVIDIA / Vulkan as the Intel-&-other-GPU
-  // proxy; Apple silicon on the Mac). A "Your App" window -- titled "Your App",
-  // with the embedded "lemond" component (the SAME lemonMark used on the Engines
-  // & Hardware slide) inside it -- fans wires down and a dot cascades to each
-  // machine, which POWERS ON as it arrives
-  // (logos brighten; devices also light a warm screen + gold frame). Repeats;
-  // resets at the loop wrap. Pure SVG + SMIL (cross-browser; no foreignObject):
-  // device glyphs are geometry, labels are <text> with an explicit y.
+  // Smart Router / "The stack" demos -- NOT an app-window chrome). ONE connected
+  // flowchart, top to bottom: Your App (with the embedded "lemond" component) ->
+  // OPERATING SYSTEMS -> the HARDWARE they run on.
+  //  - OS layer: a Windows laptop, Linux as a bare 2x2 distro-logo grid (Ubuntu,
+  //    Arch, Debian, Fedora), and a macOS all-in-one (iMac) on the right.
+  //  - Hardware layer: four weighty vendor pills (chip glyph + name). Windows and
+  //    Linux SHARE AMD / NVIDIA / Vulkan (the Intel-&-other-GPU proxy); macOS sits
+  //    directly above Apple. Edges are real: Windows/Linux each branch to all
+  //    three x86/GPU pills, macOS only to Apple.
+  //  - Flow: stage 1 the app fans a dot to each OS (logos brighten); stage 2 each
+  //    OS branches dots down to its hardware (pill rims glow on arrival). No warm-
+  //    screen / gold-frame flash on any device -- all behave identically.
+  // Repeats; resets at the loop wrap. Pure SVG + SMIL (cross-browser; no
+  // foreignObject): glyphs are geometry, labels are <text> with an explicit y.
   function deployDemo() {
     var C = 5200;
     var cycle = (C / 1000).toFixed(3) + 's';
@@ -979,97 +980,128 @@
     }
     function f(n) { return (+n).toFixed(4); }
 
-    var appX = 310, appY = 108;       // wire origin (app-window bottom-centre)
+    var appX = 310, appY = 108;       // app-window bottom-centre (flow origin)
     var PLAT = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/';
-    var cy = 262, nameY = cy + 66, vendY = cy + 84;   // screen centre + label rows
-    var colX = [124, 310, 496];       // wide spread to fill the stage
+    var cy = 198, osNameY = 256, branchY = 268;   // OS-icon centre, name row, wire-out
+    var cyHW = 346, pillW = 100, pillH = 48, pillTop = cyHW - pillH / 2;
 
-    // Supported device/OS combos. Windows + macOS are drawn as devices (laptop /
-    // all-in-one); Linux is a bare, tight 2x2 grid of distro logos (no device
-    // chrome) so the cross-distro logos carry it on their own.
-    var cards = [
-      { os: 'Windows', type: 'laptop', logos: ['windows.png'], vendors: 'AMD · NVIDIA · Vulkan' },
-      { os: 'macOS',   type: 'aio',    logos: ['apple.png'], white: true, vendors: 'Apple silicon' },
-      { os: 'Linux',   type: 'grid',   logos: ['ubuntu.png', 'arch_linux.png', 'debian.png', 'fedora.png'], vendors: 'AMD · NVIDIA · Vulkan' }
+    // Hardware the OSes run on (Vulkan = the Intel-&-other-GPU proxy). AMD/NVIDIA/
+    // Vulkan group under the Windows+Linux pair; Apple sits under macOS.
+    var hwPills = {
+      amd:    { name: 'AMD',    cx: 110 },
+      nvidia: { name: 'NVIDIA', cx: 216 },
+      vulkan: { name: 'Vulkan', cx: 322 },
+      apple:  { name: 'Apple',  cx: 498 }
+    };
+    // OS nodes -> the hardware each runs on. Evenly spaced with Linux centred.
+    // Windows + Linux SHARE AMD/NVIDIA/Vulkan; macOS sits on the right, directly
+    // above Apple. One connected graph: App -> OS -> hardware.
+    var oses = [
+      { os: 'Windows', cx: 122, type: 'laptop', logos: ['windows.png'], hw: ['amd', 'nvidia', 'vulkan'] },
+      { os: 'Linux',   cx: 310, type: 'grid',   logos: ['ubuntu.png', 'arch_linux.png', 'debian.png', 'fedora.png'], hw: ['amd', 'nvidia', 'vulkan'] },
+      { os: 'macOS',   cx: 498, type: 'aio',    logos: ['apple.png'], white: true, hw: ['apple'] }
     ];
 
-    // Device glyph = a lit screen (which hosts the OS logo) + a form-factor base.
-    // `top` is where the wire connects. Pure geometry; renders identically across
-    // engines. (Linux uses no device -- see the 'grid' branch below.)
-    function deviceParts(type, x) {
-      if (type === 'aio') {         // all-in-one (iMac): display in a bezel + chin, on a foot
-        return { screen: { x: x - 44, y: cy - 32, w: 88, h: 52, rx: 6 }, top: cy - 38,
-          base: '<rect x="' + (x - 50) + '" y="' + (cy - 38) + '" width="100" height="74" rx="11"></rect>' +
-                '<line x1="' + x + '" y1="' + (cy + 36) + '" x2="' + x + '" y2="' + (cy + 46) + '"></line>' +
-                '<line x1="' + (x - 20) + '" y1="' + (cy + 46) + '" x2="' + (x + 20) + '" y2="' + (cy + 46) + '"></line>' };
-      }
-      // laptop: clamshell screen + keyboard base
-      return { screen: { x: x - 50, y: cy - 31, w: 100, h: 62, rx: 7 }, top: cy - 31,
-        base: '<path d="M ' + (x - 60) + ' ' + (cy + 44) + ' L ' + (x + 60) + ' ' + (cy + 44) + ' L ' + (x + 50) + ' ' + (cy + 31) + ' L ' + (x - 50) + ' ' + (cy + 31) + ' Z"></path>' };
-    }
+    var a1 = 0.18, a2 = 0.40;         // app->OS arrival, OS->hardware arrival
 
-    // The dot that cascades down a wire and fades as it lands.
-    function dotFor(wire, s, arrive) {
-      return '<circle class="hp-deploy-dot" r="6" cx="0" cy="0" opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(arrive) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(arrive - 0.01) + ';' + f(arrive + 0.02)) +
+    function deviceParts(type, x) {
+      if (type === 'aio') {           // all-in-one (iMac): display in a bezel + chin, on a foot
+        return { screen: { x: x - 35, y: cy - 27, w: 70, h: 44, rx: 6 }, top: cy - 32,
+          base: '<rect x="' + (x - 42) + '" y="' + (cy - 32) + '" width="84" height="60" rx="10"></rect>' +
+                '<line x1="' + x + '" y1="' + (cy + 28) + '" x2="' + x + '" y2="' + (cy + 38) + '"></line>' +
+                '<line x1="' + (x - 17) + '" y1="' + (cy + 38) + '" x2="' + (x + 17) + '" y2="' + (cy + 38) + '"></line>' };
+      }
+      return { screen: { x: x - 40, y: cy - 24, w: 80, h: 48, rx: 6 }, top: cy - 24,
+        base: '<path d="M ' + (x - 48) + ' ' + (cy + 35) + ' L ' + (x + 48) + ' ' + (cy + 35) + ' L ' + (x + 40) + ' ' + (cy + 24) + ' L ' + (x - 40) + ' ' + (cy + 24) + ' Z"></path>' };
+    }
+    // Cubic wire with vertical control handles (smooth S between two stacked nodes).
+    function vwire(x1, y1, x2, y2, co) {
+      return 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + (y1 + co) + ', ' + x2 + ' ' + (y2 - co) + ', ' + x2 + ' ' + y2;
+    }
+    // ONE continuous dot per App->OS->hardware edge. It travels the whole path in
+    // a single animateMotion (no teleport): app -> into the OS device -> down past
+    // the label -> out to the hardware pill. keyPoints/keyTimes pin it so it
+    // reaches the OS at a1 and the hardware at a2 regardless of segment lengths.
+    // (Edges sharing an OS overlap on the app->OS leg, then branch apart.)
+    function flowDot(cx, osTop, hwCx) {
+      var co1 = Math.max(16, (osTop - appY) * 0.5);
+      var path = 'M ' + appX + ' ' + appY +
+        ' C ' + appX + ' ' + (appY + co1) + ', ' + cx + ' ' + (osTop - co1) + ', ' + cx + ' ' + osTop +
+        ' L ' + cx + ' ' + branchY +
+        ' C ' + cx + ' ' + (branchY + 28) + ', ' + hwCx + ' ' + (pillTop - 28) + ', ' + hwCx + ' ' + pillTop;
+      var d1 = Math.hypot(cx - appX, osTop - appY), d2 = branchY - osTop, d3 = Math.hypot(hwCx - cx, pillTop - branchY);
+      var kOS = (d1 + d2 * 0.5) / (d1 + d2 + d3 || 1);     // path fraction at the OS device
+      return '<circle class="hp-deploy-dot" r="5.5" cx="0" cy="0" opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(path) + '" keyPoints="0;0;' + f(kOS) + ';1;1" keyTimes="0;0.04;' + f(a1) + ';' + f(a2) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;0.04;0.07;' + f(a2) + ';' + f(a2 + 0.04)) +
         '</circle>';
     }
-
-    var wires = '', nodes = '', dots = '';
-    cards.forEach(function (card, i) {
-      var cx = colX[i];
-      var s = 0.08 + i * 0.17, arrive = s + 0.14;
-      var on = '0;' + f(arrive - 0.02) + ';' + f(arrive + 0.04) + ';0.95;1';
-
-      if (card.type === 'grid') {
-        // Bare, tight 2x2 distro-logo grid -- NO device chrome. The logos do the
-        // work; they brighten in place when the cascade dot lands.
-        var gs = 44, g = 23;            // logo box + offset -> snug grid, tiny gap
-        var pos = [[cx - g, cy - g], [cx + g, cy - g], [cx - g, cy + g], [cx + g, cy + g]];
-        var grid = '';
-        card.logos.forEach(function (file, k) {
-          grid += '<image href="' + PLAT + file + '" x="' + (pos[k][0] - gs / 2) + '" y="' + (pos[k][1] - gs / 2) + '" width="' + gs + '" height="' + gs + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
-        });
-        var gTop = cy - g - gs / 2;
-        var gwire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 84) + ', ' + cx + ' ' + (gTop - 70) + ', ' + cx + ' ' + gTop;
-        wires += '<path class="hp-deploy-wire" d="' + gwire + '"></path>';
-        nodes += '<g class="hp-deploy-machine">' + grid +
-            '<text class="hp-deploy-osname" x="' + cx + '" y="' + nameY + '" text-anchor="middle" opacity="0.5">' +
-              escapeText(card.os) + ranim('opacity', '0.5;0.5;1;1;0.5', on) + '</text>' +
-            '<text class="hp-deploy-vendors" x="' + cx + '" y="' + vendY + '" text-anchor="middle" opacity="0.4">' +
-              escapeText(card.vendors) + ranim('opacity', '0.4;0.4;1;1;0.4', on) + '</text>' +
-          '</g>';
-        dots += dotFor(gwire, s, arrive);
-        return;
+    function chipGlyph() {
+      var s = '<rect x="-8" y="-8" width="16" height="16" rx="2.5"></rect>' +
+              '<rect class="hp-deploy-chip-die" x="-3.5" y="-3.5" width="7" height="7" rx="1.5"></rect>';
+      for (var k = -4; k <= 4; k += 4) {
+        s += '<line x1="' + k + '" y1="-8" x2="' + k + '" y2="-11.5"></line>' +
+             '<line x1="' + k + '" y1="8" x2="' + k + '" y2="11.5"></line>' +
+             '<line x1="-8" y1="' + k + '" x2="-11.5" y2="' + k + '"></line>' +
+             '<line x1="8" y1="' + k + '" x2="11.5" y2="' + k + '"></line>';
       }
+      return s;
+    }
 
-      var p = deviceParts(card.type, cx);
-      var sc = p.screen;
-      var scCy = sc.y + sc.h / 2;     // screen centre (AIO display sits above device cy)
-      var wire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 84) + ', ' + cx + ' ' + (p.top - 70) + ', ' + cx + ' ' + p.top;
-      var wcls = card.white ? ' class="hp-deploy-logo-white"' : '';
-      var ls = Math.min(sc.w, sc.h) - 18;
-      var logos = '<image' + wcls + ' href="' + PLAT + card.logos[0] + '" x="' + (cx - ls / 2) + '" y="' + (scCy - ls / 2) + '" width="' + ls + '" height="' + ls + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
+    // ---- Build the wires + one continuous dot per edge. Each dot rides the whole
+    // App -> OS -> hardware path; OS logos brighten as it passes (a1), hardware
+    // pills glow as it lands (a2).
+    var wires = '', nodes = '', dots = '';
+    var osBright = '0.3;0.3;1;1;0.3', osT = '0;' + f(a1 - 0.06) + ';' + f(a1) + ';0.92;1';
+    var labelT = '0.5;0.5;1;1;0.5';
+    oses.forEach(function (o) {
+      var cx = o.cx;
+      var p = o.type === 'grid' ? null : deviceParts(o.type, cx);
+      var osTop = p ? p.top : cy - 36;     // grid top (g 19 + gs/2 17)
 
-      wires += '<path class="hp-deploy-wire" d="' + wire + '"></path>';
-      nodes += '<g class="hp-deploy-machine">' +
-          // warm screen backlight (lights on arrival, behind the logo)
-          '<rect class="hp-deploy-screen-warm" x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '" opacity="0">' +
-            ranim('opacity', '0;0;0.5;0.5;0', on) + '</rect>' +
-          logos +
-          // resting device outline (the "off" machine): screen border + base
-          '<g class="hp-deploy-dev"><rect x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '"></rect>' + p.base + '</g>' +
-          // gold frame that lights the screen on arrival
-          '<rect class="hp-deploy-frame" x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '" opacity="0">' +
-            ranim('opacity', '0;0;1;1;0', on) + '</rect>' +
-          // OS name + the hardware it runs on
-          '<text class="hp-deploy-osname" x="' + cx + '" y="' + nameY + '" text-anchor="middle" opacity="0.5">' +
-            escapeText(card.os) + ranim('opacity', '0.5;0.5;1;1;0.5', on) + '</text>' +
-          '<text class="hp-deploy-vendors" x="' + cx + '" y="' + vendY + '" text-anchor="middle" opacity="0.4">' +
-            escapeText(card.vendors) + ranim('opacity', '0.4;0.4;1;1;0.4', on) + '</text>' +
+      // app -> this OS wire (the continuous dot below rides app->OS->hardware).
+      var w1 = vwire(appX, appY, cx, osTop, Math.max(16, (osTop - appY) * 0.5));
+      wires += '<path class="hp-deploy-wire" d="' + w1 + '"></path>';
+
+      // OS glyph (device + logo, or bare distro grid)
+      var glyph = '';
+      if (o.type === 'grid') {
+        var gs = 34, g = 19;
+        var pos = [[cx - g, cy - g], [cx + g, cy - g], [cx - g, cy + g], [cx + g, cy + g]];
+        o.logos.forEach(function (file, k) {
+          glyph += '<image href="' + PLAT + file + '" x="' + (pos[k][0] - gs / 2) + '" y="' + (pos[k][1] - gs / 2) + '" width="' + gs + '" height="' + gs + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', osBright, osT) + '</image>';
+        });
+      } else {
+        var sc = p.screen, scCy = sc.y + sc.h / 2;
+        var wcls = o.white ? ' class="hp-deploy-logo-white"' : '';
+        var ls = Math.min(sc.w, sc.h) - 16;
+        glyph = '<image' + wcls + ' href="' + PLAT + o.logos[0] + '" x="' + (cx - ls / 2) + '" y="' + (scCy - ls / 2) + '" width="' + ls + '" height="' + ls + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', osBright, osT) + '</image>' +
+          '<g class="hp-deploy-dev"><rect x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '"></rect>' + p.base + '</g>';
+      }
+      nodes += '<g class="hp-deploy-machine">' + glyph +
+          '<text class="hp-deploy-osname" x="' + cx + '" y="' + osNameY + '" text-anchor="middle" opacity="0.5">' +
+            escapeText(o.os) + ranim('opacity', labelT, osT) + '</text>' +
         '</g>';
-      dots += dotFor(wire, s, arrive);
+
+      // OS -> each hardware pill it runs on: a wire + a continuous app->OS->pill dot.
+      o.hw.forEach(function (key) {
+        var w2 = vwire(cx, branchY, hwPills[key].cx, pillTop, 28);
+        wires += '<path class="hp-deploy-wire" d="' + w2 + '"></path>';
+        dots += flowDot(cx, osTop, hwPills[key].cx);
+      });
+    });
+
+    // ---- Hardware pills: weighty cards (chip glyph + vendor name). Each pill's
+    // rim glows when its OS-dots arrive (a2). Rendered once per pill.
+    var glowT = '0;' + f(a2 - 0.05) + ';' + f(a2) + ';0.92;1';
+    var hw = '';
+    Object.keys(hwPills).forEach(function (key) {
+      var pl = hwPills[key], cxP = pl.cx, rx = cxP - pillW / 2;
+      var gw = 22 + 9 + pl.name.length * 8.6, gx = cxP - gw / 2;   // centre chip+name group
+      hw += '<rect class="hp-deploy-pill" x="' + rx + '" y="' + pillTop + '" width="' + pillW + '" height="' + pillH + '" rx="12"></rect>' +
+        '<rect class="hp-deploy-pill-glow" x="' + rx + '" y="' + pillTop + '" width="' + pillW + '" height="' + pillH + '" rx="12" opacity="0">' + ranim('opacity', '0;0;1;1;0', glowT) + '</rect>' +
+        '<g class="hp-deploy-chip" transform="translate(' + (gx + 11).toFixed(1) + ',' + cyHW + ')">' + chipGlyph() + '</g>' +
+        '<text class="hp-deploy-vendorname" x="' + (gx + 31).toFixed(1) + '" y="' + (cyHW + 5) + '">' + escapeText(pl.name) + '</text>';
     });
 
     // "Your App" window -- the title bar names the APP ("Your App"); the body
@@ -1095,7 +1127,7 @@
     return '<div class="hp-deploy-demo">' +
       '<svg class="hp-deploy-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
         '<defs>' + routerGlowFilter() + '</defs>' +
-        wires + app + nodes + dots +
+        wires + hw + app + nodes + dots +
       '</svg>' +
     '</div>';
   }
