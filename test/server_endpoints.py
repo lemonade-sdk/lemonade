@@ -23,6 +23,9 @@ Usage:
 import json
 import os
 import platform
+import socket
+import subprocess
+import time
 import unittest
 import shutil
 import tempfile
@@ -40,6 +43,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
     SHARED_REPO_MODEL_B_NAME,
@@ -53,6 +57,47 @@ from utils.test_models import (
     get_hf_cache_dir,
     get_hf_cache_dir_candidates,
 )
+
+
+def _resolve_lemond_binary():
+    """Locate the lemond daemon binary for the duplicate-port test.
+
+    Prefers the binary built alongside this checkout; falls back to whatever is
+    on PATH. Returns None if neither exists so the test can skip cleanly rather
+    than fail on a machine without a built daemon.
+    """
+    candidate = get_default_lemond_binary()
+    if candidate and os.path.exists(candidate):
+        return candidate
+    return shutil.which("lemond")
+
+
+def _pick_free_port():
+    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
+
+    Binding to port 0 lets the kernel pick a free port; we read it back and
+    close the socket immediately. Both lemond instances in the duplicate-port
+    test target this port, which is independent of the suite's server on PORT.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+def _lemond_health_ok(port, headers):
+    """True if lemond answers a 200 on /api/v1/health at the given port."""
+    try:
+        response = requests.get(
+            f"http://localhost:{port}/api/v1/health",
+            headers=headers,
+            timeout=2,
+        )
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
 
 
 class EndpointTests(ServerTestBase):
@@ -848,7 +893,11 @@ class EndpointTests(ServerTestBase):
             # (3) /cloud/auth stores the runtime key and triggers discovery.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "dummy-key"},
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, f"auth set failed: {resp.text}")
@@ -959,7 +1008,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             requests.delete(
@@ -1011,7 +1064,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             # Load the model so the router holds a live CloudServer instance.
@@ -1118,7 +1175,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
 
@@ -1192,57 +1253,167 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(body["error"]["type"], "invalid_request_error")
         print("[OK] /install rejects non-[a-z0-9_-]+ provider names with 400")
 
-    def test_012h_install_rejects_insecure_http_base_url(self):
-        """An http:// base URL to a non-loopback host would leak the Bearer
-        API key in plaintext on every forwarded request. Refuse those at
-        install time. https:// and http://localhost are both allowed."""
-        # http:// to a non-loopback host: rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "httpguard",
-                "base_url": "http://api.example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
-        body = resp.json()
-        self.assertEqual(body["error"]["type"], "invalid_request_error")
-        self.assertIn("plaintext", body["error"]["message"].lower())
+    def test_012h_http_base_url_requires_opt_in_for_keys(self):
+        """Custom OpenAI-compatible backends may be on trusted LAN HTTP. Do
+        not block keyless URLs, but require explicit opt-in before Lemonade
+        stores or uses an API key over plaintext HTTP."""
+        installed = []
 
-        # gopher:// (any non-http(s) scheme): rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "schemeguard",
-                "base_url": "gopher://example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        def cleanup(provider):
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
-        # http://localhost: allowed (mock-provider tests need this).
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "localhttpguard",
-                "base_url": "http://localhost:1/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-        # Clean up the test provider so the registry doesn't accumulate state.
-        requests.post(
-            f"{self.base_url}/uninstall",
-            json={"backend": "cloud", "provider": "localhttpguard"},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        print(
-            "[OK] /install rejects http:// to non-loopback hosts, allows http://localhost"
-        )
+        try:
+            # http:// to a non-loopback host: accepted with a transport warning.
+            provider = "httpguard"
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": "http://api.example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            installed.append(provider)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertEqual(body["status"], "success")
+            warnings = body.get("warnings", [])
+            self.assertTrue(any("http://" in w for w in warnings), body)
+            self.assertFalse(any("Bearer token" in w for w in warnings), body)
+            self.assertIn("warning", body)
+
+            info = requests.get(
+                f"{self.base_url}/system-info",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            entry = next(
+                p
+                for p in info.get("cloud", {}).get("providers", [])
+                if p["name"] == provider
+            )
+            self.assertFalse(entry["allow_insecure_http"])
+            self.assertTrue(any("http://" in w for w in entry.get("warnings", [])))
+
+            # gopher:// (any non-http(s) scheme): still rejected.
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": "schemeguard",
+                    "base_url": "gopher://example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            # Bare http(s) schemes without hosts are rejected.
+            for bad_url in ["http://", "https://"]:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": "bareurl",
+                        "base_url": bad_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertIn("host", resp.json()["error"]["message"])
+
+            # Install + api_key in one request is rejected by default, then
+            # accepted with explicit allow_insecure_http opt-in.
+            provider = "httpkeyinstall"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-key"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+
+            # Auth after an HTTP install is rejected by default, then accepted
+            # with the same explicit opt-in.
+            provider = "httpkeyauth"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-auth"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={"provider": provider, "api_key": "dummy-key"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={
+                        "provider": provider,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+        finally:
+            for provider in installed:
+                cleanup(provider)
+
+        print("[OK] http:// cloud keys require explicit opt-in")
 
     def test_012i_cloud_refresh_is_idempotent_no_duplicates(self):
         """refresh_cloud_models must evict-then-emplace this provider's prior
@@ -1264,7 +1435,11 @@ class EndpointTests(ServerTestBase):
             # First auth: discover both upstream ids.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)
@@ -1274,7 +1449,11 @@ class EndpointTests(ServerTestBase):
             # eviction step removes the previous entries before re-emplacing.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)
@@ -3261,6 +3440,115 @@ class EndpointTests(ServerTestBase):
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    def test_035_second_lemond_on_busy_port_exits_nonzero(self):
+        """A second lemond on an in-use port must refuse to start and exit non-zero.
+
+        Regression test for the duplicate-port guard: lemond preflight-probes the
+        listen port and if another server already holds it, prints a clear error
+        to stderr and exits non-zero instead of silently failing to bind. This
+        test starts a real lemond on a fresh port, launches a second lemond on the
+        same port, and asserts the second one (a) exits non-zero, (b) reports the
+        port is already in use, and (c) leaves the first server healthy.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_dupport_")
+        first_log_path = os.path.join(cache_dir, "first_lemond.log")
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        first = None
+        second = None
+        try:
+            # --- Start the first lemond and wait until it is healthy ---
+            with open(first_log_path, "w", encoding="utf-8") as first_log:
+                first = subprocess.Popen(
+                    cmd,
+                    stdout=first_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            deadline = time.time() + 60
+            first_healthy = False
+            while time.time() < deadline:
+                if first.poll() is not None:
+                    break  # exited early; surface the log below
+                if _lemond_health_ok(port, headers):
+                    first_healthy = True
+                    break
+                time.sleep(1)
+
+            if not first_healthy:
+                with open(first_log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"First lemond never became healthy on port {port}.\n"
+                    f"=== lemond log ===\n{log}"
+                )
+
+            # --- Start the second lemond on the SAME port; it must refuse ---
+            second = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=os.environ.copy(),
+            )
+            try:
+                out, err = second.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                second.kill()
+                out, err = second.communicate()
+                self.fail(
+                    "Second lemond did not exit; it should fail fast on the "
+                    f"in-use port {port}."
+                )
+
+            combined = f"{out or ''}\n{err or ''}"
+
+            self.assertNotEqual(
+                second.returncode,
+                0,
+                "Second lemond on an in-use port must exit non-zero, "
+                f"got exit code 0.\n=== output ===\n{combined}",
+            )
+            self.assertIn(
+                "already in use",
+                combined.lower(),
+                "Second lemond should report the port is already in use.\n"
+                f"=== output ===\n{combined}",
+            )
+
+            # --- The original server must still be healthy ---
+            self.assertTrue(
+                _lemond_health_ok(port, headers),
+                "First lemond should remain healthy after the duplicate was "
+                "rejected.",
+            )
+
+            print(
+                f"[OK] Second lemond on in-use port {port} exited "
+                f"{second.returncode} and first server stayed healthy"
+            )
+        finally:
+            for proc in (second, first):
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_034_shared_repo_variant_resolves_after_refs_main_advances(self):
         """Regression for #2300: two models sharing one HF repo with different

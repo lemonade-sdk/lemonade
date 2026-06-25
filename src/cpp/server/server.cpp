@@ -18,6 +18,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
@@ -32,6 +33,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -41,6 +43,8 @@
 #else
     #include <sys/types.h>
     #include <sys/socket.h>
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <arpa/inet.h>   // inet_pton, htons
     #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
     #include <unistd.h>
 #endif
@@ -196,6 +200,26 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/v0/stats" || path == "/v1/stats";
 }
 
+std::string join_warnings(const std::vector<std::string>& warnings) {
+    std::ostringstream joined;
+    for (size_t i = 0; i < warnings.size(); ++i) {
+        if (i > 0) {
+            joined << " | ";
+        }
+        joined << warnings[i];
+    }
+    return joined.str();
+}
+
+void attach_warnings(json& response, const std::vector<std::string>& warnings) {
+    if (warnings.empty()) {
+        return;
+    }
+    response["warnings"] = warnings;
+    // Backward-compatible single-string field for older clients.
+    response["warning"] = join_warnings(warnings);
+}
+
 } // namespace
 
 
@@ -304,6 +328,11 @@ void Server::setup_http_servers() {
     };
     http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
     http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
+
+    // Keep cpp-httplib's default socket options here. httplib binds IPv6 with
+    // IPV6_V6ONLY=0, so "::" overlaps the IPv4 wildcard "0.0.0.0" and only the
+    // default SO_REUSEPORT lets the two coexist. Duplicate detection is done by
+    // port_is_available() in run(), not by making these listeners exclusive.
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -1197,6 +1226,52 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
+// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
+// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
+// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
+// socket left in TIME_WAIT by a just-exited server is still bindable.
+static bool port_is_available(int family, const std::string& host_ip, int port) {
+    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        return true;  // Can't probe; let the real bind path report any error.
+    }
+    auto close_sock = [&]() {
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+    };
+
+    int opt = 1;
+#ifdef _WIN32
+    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+               reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
+
+    sockaddr_storage ss{};
+    socklen_t len;
+    if (family == AF_INET) {
+        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
+        a->sin_family = AF_INET;
+        a->sin_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in);
+    } else {
+        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
+        a->sin6_family = AF_INET6;
+        a->sin6_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in6);
+    }
+
+    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
+    close_sock();
+    return available;
+}
+
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1210,6 +1285,26 @@ void Server::run() {
     if (ipv4.empty() && ipv6.empty()) {
         throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
+    }
+
+    // Fail fast if the port is already taken (usually another lemond). Detecting
+    // it here keeps the error from being buried under later startup logs.
+    {
+        std::string in_use_ip;
+        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+            in_use_ip = ipv4;
+        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+            in_use_ip = ipv6;
+        }
+        if (!in_use_ip.empty()) {
+            std::string msg = "Port " + std::to_string(port_) + " on " + in_use_ip +
+                " is already in use. Another Lemonade server (lemond) is likely "
+                "already running on this port. This instance will now exit.";
+            std::cerr << "[Server] ERROR: " << msg << std::endl;  // terminal visibility
+            LOG(ERROR, "Server") << msg << std::endl;
+            startup_failed_ = true;
+            return;
+        }
     }
 
     // Operators binding beyond loopback should secure the server with an API
@@ -1415,6 +1510,10 @@ void Server::set_shutdown_requested(bool requested) {
 
 bool Server::is_running() const {
     return running_;
+}
+
+bool Server::startup_failed() const {
+    return startup_failed_;
 }
 
 void Server::stop() {
@@ -2833,7 +2932,7 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
 
 bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
     for (const auto& file_pair : req.form.files) {
-        if (file_pair.first == "image") {
+        if (file_pair.first == "image" || file_pair.first == "image[]") {
             const auto& file = file_pair.second;
             out["image_data"] = utils::JsonUtils::base64_encode(file.content);
             out["image_filename"] = file.filename;
@@ -3871,6 +3970,18 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
         }
         const auto provider = body["provider"].get<std::string>();
         const auto api_key = body["api_key"].get<std::string>();
+        bool allow_insecure_http = false;
+        if (body.contains("allow_insecure_http")) {
+            if (!body["allow_insecure_http"].is_boolean()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "allow_insecure_http must be a boolean when provided"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            allow_insecure_http = body["allow_insecure_http"].get<bool>();
+        }
         if (provider.empty() || api_key.empty()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -3889,6 +4000,26 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
                 {"type", "invalid_request_error"}}}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+
+        const std::string base_url = cloud_registry_->base_url_for(provider);
+        if (CloudProviderRegistry::is_http_base_url(base_url)) {
+            const bool already_allowed = cloud_registry_->allow_insecure_http_for(provider);
+            if (!allow_insecure_http && !already_allowed) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' uses http://. "
+                                "Set allow_insecure_http=true to explicitly opt in before "
+                                "storing or using an API key over plaintext HTTP."},
+                    {"type", "invalid_request_error"},
+                    {"code", "insecure_http_requires_opt_in"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (allow_insecure_http && !already_allowed) {
+                cloud_registry_->install(provider, base_url, true);
+                persist_cloud_providers();
+            }
         }
 
         // env-wins-over-runtime: if the env var is set, refuse the runtime
@@ -3913,12 +4044,18 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
         const auto state = cloud_registry_->auth_state(provider);
         nlohmann::json response = {
             {"provider", provider},
+            {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
             {"auth_state", {
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set}
             }},
             {"models_discovered", models_after}
         };
+        attach_warnings(
+            response,
+            CloudProviderRegistry::base_url_warnings(
+                base_url,
+                /*api_key_available=*/true));
         res.set_content(response.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;
@@ -4139,14 +4276,21 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         nlohmann::json providers = nlohmann::json::array();
         for (const auto& rec : cloud_registry_->list_installed()) {
             auto state = cloud_registry_->auth_state(rec.name);
-            providers.push_back({
+            nlohmann::json provider = {
                 {"name", rec.name},
                 {"base_url", rec.base_url},
+                {"allow_insecure_http", rec.allow_insecure_http},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
                 {"models_discovered", model_manager_->count_cloud_models(rec.name)}
-            });
+            };
+            attach_warnings(
+                provider,
+                CloudProviderRegistry::base_url_warnings(
+                    rec.base_url,
+                    state.env_var_set || state.runtime_key_set));
+            providers.push_back(std::move(provider));
         }
         system_info["cloud"] = {{"providers", providers}};
     }
@@ -4965,11 +5109,24 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         // (env var or POST /v1/cloud/auth). Shape:
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
+        //    allow_insecure_http: false,
         //    api_key: "..."}  // optional
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
+            bool allow_insecure_http = false;
+            if (request_json.contains("allow_insecure_http")) {
+                if (!request_json["allow_insecure_http"].is_boolean()) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error", {
+                        {"message", "allow_insecure_http must be a boolean when provided"},
+                        {"type", "invalid_request_error"}}}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                allow_insecure_http = request_json["allow_insecure_http"].get<bool>();
+            }
             if (provider.empty() || base_url.empty()) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
@@ -4994,9 +5151,23 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 res.set_content(error.dump(), "application/json");
                 return;
             }
+            const auto env_state = cloud_registry_->auth_state(provider);
+            if (CloudProviderRegistry::is_http_base_url(base_url) &&
+                !allow_insecure_http &&
+                (!api_key.empty() || env_state.env_var_set)) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' uses http://. "
+                                "Set allow_insecure_http=true to explicitly opt in before "
+                                "storing or using an API key over plaintext HTTP."},
+                    {"type", "invalid_request_error"},
+                    {"code", "insecure_http_requires_opt_in"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            cloud_registry_->install(provider, base_url);
+            cloud_registry_->install(provider, base_url, allow_insecure_http);
             persist_cloud_providers();
 
             // Best-effort optional auth: if api_key was supplied, treat this
@@ -5019,16 +5190,21 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"backend", "cloud"},
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
+                {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},
                     {"runtime_key_set", state.runtime_key_set}
                 }}
             };
+            std::vector<std::string> warnings = CloudProviderRegistry::base_url_warnings(
+                cloud_registry_->base_url_for(provider),
+                state.env_var_set || state.runtime_key_set);
             if (!api_key.empty() && !runtime_key_stored) {
-                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
-                    " is set; supplied api_key was ignored.";
+                warnings.push_back(CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.");
             }
+            attach_warnings(response, warnings);
             res.set_content(response.dump(), "application/json");
             return;
         }

@@ -394,6 +394,11 @@ CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
     }
     creds.api_key = registry_->resolve_key(provider_);
     creds.base_url = registry_->base_url_for(provider_);
+    if (!creds.api_key.empty() &&
+        CloudProviderRegistry::is_http_base_url(creds.base_url) &&
+        !registry_->allow_insecure_http_for(provider_)) {
+        creds.insecure_http_blocked = true;
+    }
     // The registry already normalizes base_url on install, but a defensive
     // strip here keeps the contract local — anyone tracing post_with_auth
     // can see the joined URL can't double-slash.
@@ -441,6 +446,30 @@ std::string CloudServer::missing_creds_sse() const {
     return "data: " + err.dump() + "\n\n";
 }
 
+json CloudServer::insecure_http_error() const {
+    const std::string msg =
+        "Cloud provider '" + provider_ + "' uses http:// with an API key. "
+        "Reinstall or re-authenticate with allow_insecure_http=true to opt in.";
+    return ErrorResponse::create(
+        msg,
+        ErrorType::BACKEND_ERROR,
+        {{"provider", provider_}, {"code", "insecure_http_requires_opt_in"}}
+    );
+}
+
+std::string CloudServer::insecure_http_sse() const {
+    const std::string msg =
+        "Cloud provider '" + provider_ + "' uses http:// with an API key. "
+        "Reinstall or re-authenticate with allow_insecure_http=true to opt in.";
+    json err = {{"error", {
+        {"message", msg},
+        {"type", "backend_error"},
+        {"provider", provider_},
+        {"code", "insecure_http_requires_opt_in"}
+    }}};
+    return "data: " + err.dump() + "\n\n";
+}
+
 json CloudServer::rewrite_model_field(const json& request) const {
     json modified = request;
     modified["model"] = upstream_model_;
@@ -456,6 +485,9 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
                                   const ResolvedCreds& creds, long timeout_seconds) {
     if (!loaded_) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+    if (creds.insecure_http_blocked) {
+        return insecure_http_error();
     }
     if (creds.api_key.empty() || creds.base_url.empty()) {
         return missing_creds_error();
@@ -565,6 +597,12 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     }
 
     ResolvedCreds creds = resolve_creds();
+    if (creds.insecure_http_blocked) {
+        std::string error_msg = insecure_http_sse();
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        return;
+    }
     if (creds.api_key.empty() || creds.base_url.empty()) {
         std::string error_msg = missing_creds_sse();
         sink.write(error_msg.c_str(), error_msg.size());
@@ -841,6 +879,14 @@ public:
                                       << "': no API key resolvable (set "
                                       << CloudProviderRegistry::env_var_name(rec.name)
                                       << " or POST /v1/cloud/auth)" << std::endl;
+                continue;
+            }
+            // Don't send the API key to a plaintext http:// endpoint unless the
+            // provider explicitly opted in (AGENTS.md invariant #11).
+            if (CloudProviderRegistry::is_http_base_url(rec.base_url) && !rec.allow_insecure_http) {
+                LOG(WARNING, "CloudOps") << "Skipping cloud discovery for '" << rec.name
+                                         << "': http:// with API key requires allow_insecure_http=true"
+                                         << std::endl;
                 continue;
             }
             try {

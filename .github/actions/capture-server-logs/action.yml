@@ -81,7 +81,7 @@ runs:
           fi
         fi
 
-        for f in "$RUNNER_TEMP"/lemonade*.log; do
+        for f in "$RUNNER_TEMP"/lemonade*.log "$RUNNER_TEMP"/lemond*.log; do
           if [ -f "$f" ]; then
             echo "--- $f ---"
             tail -50 "$f"

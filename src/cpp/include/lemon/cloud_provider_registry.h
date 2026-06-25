@@ -29,8 +29,9 @@ namespace lemon {
 class CloudProviderRegistry {
 public:
     struct Record {
-        std::string name;      // e.g. "fireworks", "openai"
-        std::string base_url;  // normalized: no trailing slash
+        std::string name;                         // e.g. "fireworks", "openai"
+        std::string base_url;                     // normalized: no trailing slash
+        bool allow_insecure_http = false;         // explicit opt-in for http:// + API key
     };
 
     struct AuthState {
@@ -52,7 +53,9 @@ public:
     // Idempotent. Adds the provider if absent, updates base_url if present.
     // Normalizes base_url (trims trailing slash). Returns true if the stored
     // record changed, false if it was already identical.
-    bool install(const std::string& provider, const std::string& base_url);
+    bool install(const std::string& provider,
+                 const std::string& base_url,
+                 bool allow_insecure_http = false);
 
     // Removes the provider record AND its runtime key. Returns true if a
     // record was removed.
@@ -65,6 +68,10 @@ public:
 
     // Base URL for a registered provider, or empty if not installed.
     std::string base_url_for(const std::string& provider) const;
+
+    // Whether this provider has explicit opt-in to send API keys to an
+    // http:// base URL. Irrelevant for https:// providers.
+    bool allow_insecure_http_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.
@@ -100,12 +107,21 @@ public:
     // string on OK, a human-readable error message otherwise.
     static std::string validate_provider_name(const std::string& provider);
 
-    // Validates a candidate base URL: must be https:// (any host), or
-    // http:// limited to localhost / 127.0.0.1 / ::1 so the mock-provider
-    // tests still work. Anything else is rejected — a typo'd scheme would
-    // leak the Bearer API key in plaintext on every forwarded request.
+    // Validates a candidate base URL: must be https:// or http://. Plain HTTP
+    // is allowed because custom backends can legitimately live on a trusted LAN,
+    // but callers should surface base_url_warnings() so the user understands
+    // the transport tradeoff.
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_base_url(const std::string& base_url);
+
+    // Returns true for an http:// base URL, false for https:// or invalid input.
+    static bool is_http_base_url(const std::string& base_url);
+
+    // Non-blocking warnings for a validated base URL. When api_key_available is
+    // true, includes a stronger warning that Lemonade will send Bearer auth over
+    // plaintext HTTP.
+    static std::vector<std::string> base_url_warnings(const std::string& base_url,
+                                                      bool api_key_available);
 
 private:
     static std::string normalize_base_url(std::string url);

@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/gguf_capabilities.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <filesystem>
@@ -777,15 +778,12 @@ public:
             return;
         }
         info.max_context_window = meta.context_length;
-        info.gguf_block_count = meta.block_count;
-        info.gguf_embedding_length = meta.embedding_length;
-        info.gguf_head_count_kv = meta.head_count_kv;
-        info.gguf_key_length = meta.key_length;
+        info.gguf = std::move(meta);
         // GGUF vision/tool metadata are LLM capabilities. Don't apply them to
         // embedding/reranking models, or labels like tool-calling would
         // reclassify the model away from its endpoint type.
         if (info.type == ModelType::LLM) {
-            apply_gguf_capability_labels(info.labels, meta.caps);
+            apply_gguf_capability_labels(info.labels, info.gguf.caps);
         }
     }
 
