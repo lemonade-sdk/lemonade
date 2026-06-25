@@ -36,10 +36,12 @@ using ftxui::bold;
 using ftxui::color;
 using ftxui::dim;
 using ftxui::flex;
+using ftxui::frame;
 using ftxui::hbox;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
+using ftxui::vscroll_indicator;
 
 namespace Container = ftxui::Container;
 
@@ -308,11 +310,13 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
             codex_config_checkbox->Render(),
         });
 
+        Element model_list = model_menu->Render() | vscroll_indicator | frame | flex;
+
         return vbox({
             text("Lemonade Launch") | bold,
             hbox({
                 section_box("Agent", agent_menu->Render(), focus == 0),
-                section_box("Models", vbox({search_input->Render(), mode_toggle->Render(), model_menu->Render()}), focus == 1) | flex,
+                section_box("Models", vbox({search_input->Render(), mode_toggle->Render(), model_list}), focus == 1) | flex,
                 section_box("Details", details, false) | flex,
             }) | flex,
             hbox({
