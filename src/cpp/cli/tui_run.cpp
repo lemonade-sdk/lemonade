@@ -21,11 +21,11 @@ using ftxui::Component;
 using ftxui::Element;
 using ftxui::Event;
 using ftxui::Input;
+using ftxui::InputOption;
 using ftxui::Menu;
 using ftxui::MenuOption;
 using ftxui::Renderer;
 using ftxui::ScreenInteractive;
-using ftxui::Toggle;
 using ftxui::border;
 using ftxui::bold;
 using ftxui::color;
@@ -205,8 +205,14 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
         return &models[static_cast<size_t>(filtered[static_cast<size_t>(selected)])];
     };
 
-    auto search_input = Input(&search, "Search models, labels, recipes");
-    auto mode_toggle = Toggle(&modes, &mode);
+    refresh_filter();
+
+    InputOption search_option;
+    search_option.on_change = refresh_filter;
+    auto search_input = Input(&search, "Search models, labels, recipes", search_option);
+    MenuOption mode_option = MenuOption::Toggle();
+    mode_option.on_change = refresh_filter;
+    auto mode_toggle = Menu(&modes, &mode, mode_option);
     auto menu = Menu(&entries, &selected, MenuOption::Vertical());
     auto save_checkbox = Checkbox("Save options for future runs", &save_options);
     auto set_pin_checkbox = Checkbox("Set pin state", &set_pin);
@@ -249,8 +255,6 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
     });
 
     auto renderer = Renderer(layout, [&] {
-        refresh_filter();
-
         const lemonade::ModelInfo* model = selected_model();
         Element details = text("No model selected") | dim;
         if (model != nullptr) {
@@ -338,7 +342,7 @@ bool run_tui(lemonade::LemonadeClient& client, RunTuiState& state) {
         return false;
     });
 
-    auto screen = ScreenInteractive::TerminalOutput();
+    auto screen = ScreenInteractive::Fullscreen();
     screen_ptr = &screen;
     search_input->TakeFocus();
     screen.Loop(root);
