@@ -42,6 +42,7 @@ using ftxui::flex;
 using ftxui::frame;
 using ftxui::gauge;
 using ftxui::hbox;
+using ftxui::paragraph;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
@@ -59,6 +60,15 @@ std::string to_lower(std::string value) {
 
 bool contains_case_insensitive(const std::string& value, const std::string& needle) {
     return to_lower(value).find(to_lower(needle)) != std::string::npos;
+}
+
+std::string shorten_middle(const std::string& value, size_t max_length) {
+    if (value.size() <= max_length || max_length < 8) {
+        return value;
+    }
+    const size_t head = (max_length - 3) / 2;
+    const size_t tail = max_length - 3 - head;
+    return value.substr(0, head) + "..." + value.substr(value.size() - tail);
 }
 
 std::string url_encode(const std::string& s) {
@@ -103,8 +113,8 @@ std::string variant_label(const json& variant) {
         ? variant["files"].size()
         : 1;
     const uint64_t size = variant.value("size_bytes", static_cast<uint64_t>(0));
-    return name + "  " + std::to_string(files) + (files == 1 ? " file  " : " files  ") +
-           human_size(size);
+    return shorten_middle(name, 40) + "  " + std::to_string(files) +
+           (files == 1 ? " file  " : " files  ") + human_size(size);
 }
 
 std::vector<int> filter_models(const std::vector<lemonade::ModelInfo>& models,
@@ -137,8 +147,8 @@ std::vector<std::string> built_in_entries(const std::vector<lemonade::ModelInfo>
     std::vector<std::string> entries;
     for (int index : filtered) {
         const auto& model = models[static_cast<size_t>(index)];
-        entries.push_back(model.id + "  [" + (model.downloaded ? "downloaded" : "missing") +
-                          "]  " + (model.recipe.empty() ? "-" : model.recipe));
+        entries.push_back(shorten_middle(model.id, 42) + "  [" +
+                          (model.downloaded ? "local" : "pull") + "]");
     }
     if (entries.empty()) {
         entries.push_back("No models match the current filter");
@@ -186,6 +196,15 @@ std::vector<std::string> search_huggingface(const std::string& query, std::strin
         error = e.what();
     }
     return results;
+}
+
+std::vector<std::string> display_entries(const std::vector<std::string>& values) {
+    std::vector<std::string> entries;
+    entries.reserve(values.size());
+    for (const auto& value : values) {
+        entries.push_back(shorten_middle(value, 44));
+    }
+    return entries;
 }
 
 Element section_box(const std::string& title, Element content, bool focused) {
@@ -386,7 +405,7 @@ int pull_progress_tui(lemonade::LemonadeClient& client,
         Element body = vbox({
             text("Pulling " + snapshot.model_name) | bold,
             separator(),
-            hbox({text("Status: ") | bold, text(snapshot.status)}),
+            hbox({text("Status: ") | bold, paragraph(snapshot.status) | flex}),
             hbox({text(count_label), text(file_label)}),
             gauge(progress),
             text(bytes_label),
@@ -395,7 +414,7 @@ int pull_progress_tui(lemonade::LemonadeClient& client,
             body = vbox({body, text("Total: " + format_bytes(snapshot.total_download_size))});
         }
         if (!snapshot.error.empty()) {
-            body = vbox({body, text(snapshot.error) | color(ftxui::Color::Red)});
+            body = vbox({body, paragraph(snapshot.error) | color(ftxui::Color::Red)});
         }
         if (snapshot.done) {
             body = vbox({body, text("Done. Press Close or q.") | dim});
@@ -472,6 +491,7 @@ bool pull_tui(lemonade::LemonadeClient& client,
     std::vector<std::string> model_entries = built_in_entries(models, filtered_models);
     int model_selected = 0;
     std::vector<std::string> hf_results;
+    std::vector<std::string> hf_entries;
     int hf_selected = 0;
     json variants_response;
     std::vector<std::string> variant_entries = {"Search and select a Hugging Face repo"};
@@ -599,7 +619,7 @@ bool pull_tui(lemonade::LemonadeClient& client,
     auto model_input = Input(&model_search, "Search registered models");
     auto hf_input = Input(&hf_search, "Search Hugging Face or type owner/repo");
     auto model_menu = Menu(&model_entries, &model_selected, MenuOption::Vertical());
-    auto hf_menu = Menu(&hf_results, &hf_selected, MenuOption::Vertical());
+    auto hf_menu = Menu(&hf_entries, &hf_selected, MenuOption::Vertical());
     auto variant_menu = Menu(&variant_entries, &variant_selected, MenuOption::Vertical());
     auto name_input = Input(&registration_name, "user model name");
 
@@ -607,6 +627,7 @@ bool pull_tui(lemonade::LemonadeClient& client,
     auto search_button = Button("Search HF", [&] {
         std::string error;
         hf_results = search_huggingface(hf_search, error);
+        hf_entries = display_entries(hf_results);
         hf_selected = 0;
         status = error.empty()
             ? "Found " + std::to_string(hf_results.size()) + " Hugging Face repositories"
@@ -672,9 +693,9 @@ bool pull_tui(lemonade::LemonadeClient& client,
             }) | flex,
             hbox({
                 section_box("Actions", hbox({pull_button->Render(), text(" "), quit_button->Render()}), focus == 4),
-                section_box("Status", text(status), false) | flex,
+                section_box("Status", paragraph(status), false) | flex,
             }),
-            text("Tab next  Shift+Tab previous  / search  Enter inspect/pull  q quit") | dim,
+            text("Tab next  Shift+Tab prev  / search  Enter inspect/pull  q quit") | dim,
         });
     });
 
