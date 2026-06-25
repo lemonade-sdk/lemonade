@@ -34,6 +34,8 @@
 #define ROUTING_FIXTURE_DIR "test/cpp/fixtures/routing"
 #endif
 
+using lemon::Classifier;
+using lemon::ClassifierContext;
 using lemon::ClassifierServices;
 using lemon::Condition;
 using lemon::ConditionPtr;
@@ -150,7 +152,44 @@ struct ConstCondition : Condition {
         return value;
     }
 };
+
+// A model-backed classifier: declares labels + a default, as the registry reads
+// them to resolve condition `label` refs.
+struct LabeledClassifier : Classifier {
+    LabeledClassifier()
+        : Classifier("pii", "classifier", OnError::MatchTrue,
+                     {"PII", "NO_PII"}, std::string("PII")) {}
+    Score evaluate(const ClassifierContext&) const override {
+        Score s;
+        s.labels["PII"] = 1.0;
+        return s;
+    }
+};
+
+// A semantic_similarity classifier: no declared labels (scores under "").
+struct SimClassifier : Classifier {
+    SimClassifier() : Classifier("sim", "semantic_similarity", OnError::MatchFalse) {}
+    Score evaluate(const ClassifierContext&) const override {
+        Score s;
+        s.labels[""] = 0.5;
+        return s;
+    }
+};
 } // namespace
+
+static void test_classifier_contract() {
+    LabeledClassifier lc;
+    check(lc.id() == "pii" && lc.type() == "classifier", "Classifier carries id/type");
+    check(lc.on_error() == OnError::MatchTrue, "Classifier carries on_error");
+    check(lc.labels().size() == 2 && lc.labels()[0] == "PII",
+          "Classifier exposes declared labels for ref resolution");
+    check(lc.default_label().has_value() && *lc.default_label() == "PII",
+          "Classifier exposes default_label");
+
+    SimClassifier sc;
+    check(sc.labels().empty() && !sc.default_label().has_value(),
+          "semantic_similarity declares no labels (any label ref on it is invalid)");
+}
 
 static void test_condition_seam() {
     RouteContext ctx;
@@ -304,6 +343,7 @@ static void test_fixtures() {
 int main() {
     test_types_construct();
     test_condition_seam();
+    test_classifier_contract();
     test_fake_services();
     test_engine_constructs();
     test_fixtures();

@@ -174,13 +174,28 @@ public:
     const std::string& type() const { return type_; }
     OnError on_error() const { return on_error_; }
 
+    // Declared output labels and the optional default. Intrinsic to the
+    // declaration, so the registry resolves condition `label` refs against
+    // labels() and falls back to default_label() when a condition omits `label`
+    // — no sidecar metadata table. semantic_similarity declares no labels
+    // (it scores under the empty-string key, read via Score::primary), so its
+    // labels() is empty and default_label() is nullopt — which correctly makes
+    // any `label` ref on a similarity condition invalid.
+    const std::vector<std::string>& labels() const { return labels_; }
+    const std::optional<std::string>& default_label() const { return default_label_; }
+
 protected:
-    Classifier(std::string id, std::string type, OnError on_error)
-        : id_(std::move(id)), type_(std::move(type)), on_error_(on_error) {}
+    Classifier(std::string id, std::string type, OnError on_error,
+               std::vector<std::string> labels = {},
+               std::optional<std::string> default_label = std::nullopt)
+        : id_(std::move(id)), type_(std::move(type)), on_error_(on_error),
+          labels_(std::move(labels)), default_label_(std::move(default_label)) {}
 
     std::string id_;
     std::string type_;
     OnError on_error_ = OnError::MatchFalse;
+    std::vector<std::string> labels_;
+    std::optional<std::string> default_label_;
 };
 
 using ClassifierPtr = std::shared_ptr<Classifier>;
