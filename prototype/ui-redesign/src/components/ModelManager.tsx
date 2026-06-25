@@ -8,6 +8,8 @@ import { collectionComponentLabel, getCollectionComponents, isCollectionModel, i
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
+import { ModelListPanel } from './ModelListPanel';
+import { ModelDetailPanel } from './ModelDetailPanel';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -956,6 +958,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
+  const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [showAllAvailable, setShowAllAvailable] = useState(false);
@@ -984,10 +987,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
-  const [presetRailCollapsed, setPresetRailCollapsed] = useState(false);
-  const [selectedRailPresetId, setSelectedRailPresetId] = useState<string>(DEFAULT_PRESET.id);
-  const [presetRailHovered, setPresetRailHovered] = useState(false);
-  const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
   const hasVisibleModelsRef = useRef(false);
@@ -1624,32 +1623,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return withLoadedRecipeOptions(info, loaded);
   }, [allModels, focusedModelName, loadedModels]);
   const focusedPreset = focusedModelName ? activePresetForName(focusedModelName) : null;
-  const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
-  const railSummaryPreset = (focusedModelName && focusedPreset) ? focusedPreset : selectedRailPreset;
-  const highlightedPresetId = presetRailHovered ? (hoveredRailPresetId || selectedRailPreset.id) : null;
-  const assignedToRailSummaryPreset = useMemo(
-    () => allModels.filter(m => canShowPresetHighlight(m) && activePresetForName(modelName(m)).id === railSummaryPreset.id),
-    [allModels, activePresetForName, railSummaryPreset.id],
-  );
-
-  const handlePresetRailPick = useCallback((preset: Preset) => {
-    setSelectedRailPresetId(preset.id);
-    if (!focusedModelInfo || !focusedModelName) return;
-    if (preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo)) {
-      setPresetNotice(`“${preset.name}” is not compatible with ${focusedModelName}.`);
-      window.setTimeout(() => setPresetNotice(null), 2800);
-      return;
-    }
-    setAppliedPresets(prev => {
-      const next = { ...prev };
-      if (preset.id === DEFAULT_PRESET.id) delete next[focusedModelName];
-      else next[focusedModelName] = preset.id;
-      saveApplied(next);
-      return next;
-    });
-    setPresetNotice(`${focusedModelName} → ${preset.name}`);
-    window.setTimeout(() => setPresetNotice(null), 2200);
-  }, [focusedModelInfo, focusedModelName]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
@@ -1985,11 +1958,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
     const activePreset = activePresetForName(m.model_name);
     const isPinned = pinnedNameSet.has(m.model_name.toLowerCase());
-    const isPresetHighlighted = Boolean(highlightedPresetId
-      && activePreset.id === highlightedPresetId
-      && (info ? canShowPresetHighlight(info) : !loadedIsVirtualOmniCollection(m)));
     return (
-      <div className={`row row--running${isActive ? ' row--active' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={m.model_name}>
+      <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={() => toggleDetail(m.model_name)} aria-expanded={expandedModel === m.model_name}>
             <div className="row__main">
@@ -2085,12 +2055,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const cap = capabilityFromModelInfo(m);
     const isPinned = pinnedNameSet.has(name.toLowerCase());
     const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
-    const isPresetHighlighted = Boolean(highlightedPresetId
-      && activePreset.id === highlightedPresetId
-      && canShowPresetHighlight(m));
 
     return (
-      <div className={`row${expandedModel === name ? ' row--expanded' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={name}>
+      <div className={`row${expandedModel === name ? ' row--expanded' : ''}`} key={name}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={() => toggleDetail(name)} aria-expanded={expandedModel === name}>
             <div className="row__main">
@@ -2341,58 +2308,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
-  const renderPresetRail = () => (
-    <aside
-      className={`context-rail context-rail--presets${presetRailCollapsed ? ' is-collapsed' : ''}`}
-      aria-label="Preset rail"
-      onMouseEnter={() => setPresetRailHovered(true)}
-      onMouseLeave={() => { setPresetRailHovered(false); setHoveredRailPresetId(null); }}
-    >
-      <div className="context-rail__head">
-        <button type="button" className="context-rail__toggle" onClick={() => setPresetRailCollapsed(v => !v)} aria-label="Toggle preset rail">☰</button>
-        <div className="context-rail__title-wrap">
-          <span className="context-rail__eyebrow">By model</span>
-          <strong className="context-rail__title">{focusedModelName ? `For ${focusedModelName}` : 'Presets'}</strong>
-        </div>
-      </div>
-      <div className="context-rail__body">
-        <div className="preset-rail-summary">
-          <span className="preset-rail-summary__label">Selected preset</span>
-          <strong><PresetIcon preset={railSummaryPreset} /> {railSummaryPreset.name}</strong>
-          <span>{focusedModelName ? 'Active for this model' : `${assignedToRailSummaryPreset.length} model${assignedToRailSummaryPreset.length === 1 ? '' : 's'} assigned`}</span>
-          <span className="preset-param-lines">{effectivePresetParamPreviewLines(railSummaryPreset, focusedModelInfo, focusedModelInfo ? contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize) : serverDefaultCtxSize).map(line => <span key={line}>{line}</span>)}</span>
-        </div>
-        <p className="context-rail__hint">
-          {focusedModelName ? 'Click a preset to assign it to this model. Backend selection stays automatic.' : 'Hover or pick a preset to outline matching models.'}
-        </p>
-        <div className="preset-rail-list">
-          {allPresets.map(preset => {
-            const isActive = focusedModelName ? focusedPreset?.id === preset.id : selectedRailPreset.id === preset.id;
-            const disabled = Boolean(focusedModelInfo && preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo));
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                className={`preset-rail-card${isActive ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}`}
-                onClick={() => handlePresetRailPick(preset)}
-                onMouseEnter={() => setHoveredRailPresetId(preset.id)}
-                onFocus={() => setHoveredRailPresetId(preset.id)}
-                onBlur={() => setHoveredRailPresetId(null)}
-                title={disabled ? 'Incompatible with selected model' : preset.description}
-              >
-                <span className="preset-rail-card__icon">{isActive ? <Icon name="check" size={13} /> : <PresetIcon preset={preset} />}</span>
-                <span className="preset-rail-card__text">
-                  <strong>{preset.name}</strong>
-                  <span className="preset-rail-card__params preset-param-lines">{(focusedModelInfo ? effectivePresetParamPreviewLines(preset, focusedModelInfo, contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize)) : presetParamPreviewLines(preset, undefined, serverDefaultCtxSize)).map(line => <span key={line}>{line}</span>)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
-      </div>
-    </aside>
-  );
 
 
   /* ── Keyboard shortcut ───────────────────────────────────── */
@@ -2505,79 +2420,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     </section>
   );
   return (
-    <div className={`manager manager--with-rail${presetRailCollapsed ? ' context-rail-collapsed' : ''}`}>
-      {renderPresetRail()}
-      <div className="manager__main">
-      <div className="manager__head">
-        <div className="manager__title">
-          <h1>Models</h1>
-          <div className="manager__stats">
-            <span className="manager__stat">
-              <span className="manager__stat-num">{displayLoadedModels.length}</span> running
-            </span>
-            <span className="manager__stat-sep">·</span>
-            <span className="manager__stat">
-              <span className="manager__stat-num">{totalDownloaded}</span> downloaded
-            </span>
-            <span className="manager__stat-sep">·</span>
-            <span className="manager__stat">
-              <span className="manager__stat-num">{allModels.length}</span> available
-            </span>
-            {totalPulling > 0 && (
-              <>
-                <span className="manager__stat-sep">·</span>
-                <span className="manager__stat manager__stat--active">
-                  <span className="manager__stat-num">{totalPulling}</span> downloading
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+    <div className="manager manager--detail">
+      {/* Left panel: searchable/filterable model list */}
+      <ModelListPanel
+        allModels={allModels}
+        loadedNames={loadedNames}
+        pulling={pulling}
+        downloadItems={downloadItems}
+        selectedModelId={selectedDetailModelId}
+        onSelectModel={(id) => { setSelectedDetailModelId(id); if (showCustomForm) closeCustomForm(); }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filterTab={filterTab}
+        onFilterChange={setFilterTab}
+        searchInputRef={searchRef}
+        onAddCustomModel={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}
+        onAddOmniCollection={() => openCustomForm('omni-collection')}
+      />
 
-        {/* Search & filter bar */}
-        <div className="manager__toolbar">
-          <div className="manager__search">
-            <span className="manager__search-icon">⌕</span>
-            <input
-              ref={searchRef}
-              className="manager__search-input"
-              type="text"
-              placeholder="Search models… (Ctrl+K)"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="manager__search-clear" onClick={() => setSearchQuery('')}>×</button>
-            )}
-          </div>
-          <div className="manager__custom-actions">
-            <button className="btn btn--ghost manager__custom-btn" onClick={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}>+ Custom model</button>
-            <button className="btn btn--ghost manager__custom-btn manager__custom-btn--omni" onClick={() => openCustomForm('omni-collection')}>+ Omni collection</button>
-            <input
-              ref={customJsonInputRef}
-              className="hidden-file-input"
-              type="file"
-              accept="application/json,.json"
-              onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
-            />
-          </div>
-          <div className="manager__filters">
-            {FILTER_TABS.map(tab => (
-              <button
-                key={tab.key}
-                className={`manager__filter${filterTab === tab.key ? ' manager__filter--active' : ''}`}
-                onClick={() => setFilterTab(tab.key)}
-              >
-                <span className="manager__filter-icon"><CapabilityIcon capability={tab.icon} size={13} /></span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="manager__body">
-        {showCustomForm && (
+      {/* Right panel: custom form overlay OR model detail */}
+      {showCustomForm ? (
+        <div className="manager__detail-form-panel">
           <section className="zone custom-model-form" aria-label={`Add ${customFormTitle}`}>
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
@@ -2718,95 +2581,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </div>
             </form>
           </section>
-        )}
-
-        {modelsLoading && (
-          <section className="zone" aria-label="Loading models">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Loading models…</span>
-              <span className="zone__rule" />
-            </div>
-            <div className="manager__loading">Refreshing Lemonade model registry…</div>
-          </section>
-        )}
-
-        {shouldPinHuggingFaceZone && renderHuggingFaceZone()}
-
-        {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
-
-        {pinnedVisibleModels.length > 0 && (
-          <section className="zone zone--pinned">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Pinned Models</span>
-              <span className="zone__count">{pinnedVisibleModels.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {pinnedVisibleModels.map(m => renderModelRow(m, downloaded.some(d => modelName(d).toLowerCase() === modelName(m).toLowerCase())))}
-          </section>
-        )}
-
-        {/* Running zone */}
-        {filteredRunning.length > 0 && (
-          <section className="zone zone--running">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--running" />
-              <span className="zone__title">Loaded Models</span>
-              <span className="zone__count">{filteredRunning.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {filteredRunning.map(m => renderRunningModel(m))}
-          </section>
-        )}
-
-        {/* Downloaded / Ready zone */}
-        {visibleFilteredDownloaded.length > 0 && (
-          <section className="zone zone--downloaded">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Downloaded</span>
-              <span className="zone__count">{visibleFilteredDownloaded.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {visibleFilteredDownloaded.map(m => renderModelRow(m, true))}
-          </section>
-        )}
-
-        {/* Available zone */}
-        {visibleFilteredAvailable.length > 0 && (
-          <section className="zone">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Lemonade Registry</span>
-              <span className="zone__count">{visibleFilteredAvailable.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {visibleAvailable.map(m => renderModelRow(m, false))}
-            {hiddenAvailableCount > 0 && (
-              <button
-                className="zone__show-more"
-                onClick={() => setShowAllAvailable(true)}
-              >
-                Show {hiddenAvailableCount} more models
-              </button>
-            )}
-          </section>
-        )}
-
-        {!shouldPinHuggingFaceZone && renderHuggingFaceZone()}
-
-        <div className={`manager__empty${showManagerEmpty ? '' : ' manager__empty--hidden'}`} aria-hidden={!showManagerEmpty}>
-          <span className="manager__empty-icon">{api.isConnected ? <Icon name="box" size={42} /> : <Icon name="plug" size={42} />}</span>
-          <p>{api.isConnected
-            ? 'No models found matching your search.'
-            : 'Connect to a Lemonade server to see models.'
-          }</p>
+          <input
+            ref={customJsonInputRef}
+            className="hidden-file-input"
+            type="file"
+            accept="application/json,.json"
+            onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
+          />
+          {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
         </div>
-      </div>
-      </div>
+      ) : (
+        <ModelDetailPanel
+          model={selectedDetailModelId
+            ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
+            : null}
+          loadedModel={selectedDetailModelId
+            ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
+            : null}
+          loadingModel={loadingModel}
+          pulling={pulling}
+          loadError={loadError}
+          onLoad={handleLoad}
+          onUnload={handleUnload}
+          onPull={handlePull}
+          onPullAndLoad={handlePullAndLoad}
+          onDelete={handleDelete}
+          onCancelPull={handleCancelPull}
+          serverDefaultCtxSize={serverDefaultCtxSize}
+        />
+      )}
     </div>
   );
 };
 
-export default ModelManager;
+export default ModelManager;

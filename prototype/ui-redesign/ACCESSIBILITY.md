@@ -1,14 +1,62 @@
 # Accessibility Plan — Lemonade UI Redesign Prototype
 
-**Date:** 2026-06-14  
-**Branch:** `kpoin/ui-accessibility`  
+**Date:** 2026-06-25  
+**Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete  
-**Test status (2026-06-25):** All 106 automated tests passing, 7 skipped, 0 failed on `feat/gui3-mcp-dashboard` (A89–A90 added in review pass)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete  
+**Test status (2026-06-25):** All 121 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A91–A105 added for Slice 1)
 
 ---
 
-## Group D — MCP Gateway panel (2026-06-25, `feat/gui3-mcp-dashboard`)
+## Group E — Master-detail model view (#2355 Slice 1, 2026-06-25)
+
+Replaces the old preset-rail layout with an email-client-style master-detail split in `ModelManager.tsx`, using new `ModelListPanel.tsx` (left) and `ModelDetailPanel.tsx` (right). Old `renderPresetRail()` is removed.
+
+### E1 — #2355: Left model list panel
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `ModelListPanel` renders a `<ul role="listbox" aria-label="Model list">` with `<li role="option" aria-selected>` items. Search input `<input id="model-list-search" role="searchbox">` is associated with `<label htmlFor="model-list-search">`. Filter popover trigger has `aria-haspopup="dialog"` and `aria-expanded`. Filter popover itself has `role="dialog"`. Keyboard nav: ArrowUp/Down/Home/End on the listbox move focus + selection. The listbox receives `tabIndex={0}` when no item is selected so the scrollable region is always keyboard-accessible (fixes `scrollable-region-focusable` axe rule). Title `<h1>Models</h1>` inside `.manager__title` preserves the existing test assertion on `.manager__title h1`.
+- **WCAG:** 1.3.1 (Info and Relationships), 2.1.1 (Keyboard), 4.1.2 (Name, Role, Value)
+
+### E2 — #2355: Right model detail panel with tablist
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `ModelDetailPanel` renders `role="tablist"` with `role="tab"` buttons (roving tabindex, `aria-selected`, `aria-controls`) and `role="tabpanel"` panels (`aria-labelledby`). Tabs: README (Markdown via markdown-it + DOMPurify), Presets (preset linking via `presetStore.ts`), Files (stub, deferred). ArrowLeft/Right/Home/End navigate tabs. Focus moves to the panel heading when model selection changes. Action buttons carry model-qualified `aria-label`s (e.g. `"Load Llama-3.1-8B"`). Empty state panel shown when no model is selected.
+- **WCAG:** 1.3.1, 2.1.1, 4.1.2
+
+### E3 — #2355: Preset linking in Presets tab
+
+- **Status:** ✅ **Implemented 2026-06-25**
+- **What:** `ModelPresetsTab` uses `presetStore.ts` `loadApplied`/`saveApplied` for client-local preset linking (localStorage). Linked preset card has `aria-current="true"`. Detach button has a qualifying `aria-label`. Attach buttons on candidate presets carry `aria-label="Attach preset "X" to ModelName"`. A `role="status" aria-live="polite"` region announces the attach confirmation.
+- **WCAG:** 4.1.2, 4.1.3
+
+### E4 — #2355: Funnel filter icon (the only new icon)
+
+- **Status:** ✅ **Added 2026-06-25**
+- **What:** Added `'funnel'` to `IconName` in `Icon.tsx` with the matching SVG path. Used on the filter toggle button in `ModelListPanel`.
+- **WCAG:** 1.1.1 (icon buttons have explicit `aria-label`; icon SVG has `aria-hidden="true"`)
+
+**Tests added:** A91–A105 (15 tests) in `tests/a11y.spec.ts`.  
+- A91–A92: layout landmarks and heading  
+- A93–A94: search input association and filtering  
+- A95–A96: funnel filter button ARIA attributes and popover  
+- A97–A99: listbox role + option role + keyboard navigation  
+- A100–A101: tablist ARIA structure + keyboard tab navigation  
+- A102–A103: Presets tab keyboard reachability and panel label  
+- A104: Custom model / Omni collection buttons visible + keyboard-accessible  
+- A105: Full axe-core WCAG 2.1 AA scan with mock data + selected model  
+
+**Files changed:** `ModelDetailPanel.tsx` (new), `ModelListPanel.tsx` (new), `ModelManager.tsx`, `Icon.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `tests/features.spec.ts`, `ACCESSIBILITY.md`.
+
+**Deferred to follow-up slices:**
+- Files tab (stub only in Slice 1)
+- Full recommended-preset card polish
+- Sorting refinements  
+- #2356 (Update-preset-while-loaded — builds on detail panel)
+
+---
+
+
 
 Adds a new read-only MCP dashboard section to `ConnectView.tsx` exposing the existing `POST /mcp` Streamable HTTP endpoint.
 

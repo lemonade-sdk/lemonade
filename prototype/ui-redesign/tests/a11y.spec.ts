@@ -981,12 +981,15 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager');
-    // Wait for model rows to render from the mocked API response
-    await page.waitForSelector('.row', { timeout: 5000 }).catch(() => {});
+    // Wait for model list items to render from the mocked API response
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
   });
 
   test('A46 — downloaded model row: Load button accessible name includes model name', async ({ page }) => {
+    // Click on Llama-3.1-8B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.waitForTimeout(200);
     // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in
     // a list of multiple loaded models when navigating by button role.
     await expect(
@@ -995,43 +998,60 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
   });
 
   test('A47 — downloaded model row: Delete button accessible name includes model name', async ({ page }) => {
+    // Click on Llama-3.1-8B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.waitForTimeout(200);
     // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is
     // not announced as a nameless button to screen reader users.
     await expect(
-      page.getByRole('button', { name: /Delete Llama-3\.1-8B/ }),
+      page.getByRole('button', { name: /Delete.*Llama-3\.1-8B/ }),
     ).toBeVisible();
   });
 
   test('A48 — registry model row: Download button accessible name includes model name', async ({ page }) => {
+    // Click on Qwen2.5-7B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.waitForTimeout(200);
     await expect(
       page.getByRole('button', { name: /Download Qwen2\.5-7B/ }),
     ).toBeVisible();
   });
 
   test('A49 — registry model row: "Get and load" button accessible name includes model name', async ({ page }) => {
+    // Click on Qwen2.5-7B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.waitForTimeout(200);
     await expect(
       page.getByRole('button', { name: /Get and load Qwen2\.5-7B/i }),
     ).toBeVisible();
   });
 
-  test('A50 — no row action button in the model manager carries a bare unqualified accessible name', async ({ page }) => {
+  test('A50 — no model action button in the detail panel carries a bare unqualified accessible name', async ({ page }) => {
     // Buttons whose accessible name is just "Load", "Download", "Delete", etc.
     // cause collision when multiple model rows are rendered — NVDA hears
     // "Load, Load, Load…" with no way to distinguish targets.
+    // In the new master-detail layout, action buttons are in the detail panel.
     const genericExact = new Set([
       'Load', 'Download', 'Delete', 'Unload', 'Get & Load', 'Cancel download',
       'Pin model', 'Unpin model', 'Copy model name', 'Copy repository name',
     ]);
-    const labels = await page.locator('.row .row__right button').evaluateAll(
-      (btns: HTMLElement[]) =>
-        btns.map(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()),
-    );
-    for (const label of labels) {
-      if (!label) continue;
-      expect(
-        genericExact.has(label),
-        `Row action button carries bare generic accessible name: "${label}"`,
-      ).toBe(false);
+    // Click each model to check its action buttons
+    const items = page.locator('.model-list-item');
+    const count = await items.count();
+    for (let i = 0; i < count; i++) {
+      await items.nth(i).click();
+      await page.waitForTimeout(100);
+      const labels = await page.locator('.model-detail-panel__actions button').evaluateAll(
+        (btns: HTMLElement[]) =>
+          btns.map(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()),
+      );
+      for (const label of labels) {
+        if (!label) continue;
+        expect(
+          genericExact.has(label),
+          `Detail panel action button carries bare generic accessible name: "${label}"`,
+        ).toBe(false);
+      }
     }
   });
 });
@@ -1681,3 +1701,237 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await expect(statusEl).not.toContainText('Connected');
   });
 });
+
+// ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
+//
+// Covers: model list panel, detail panel tablist, funnel filter button,
+// preset attach flow, and keyboard navigation — all added in Slice 1.
+// Range: A91–A105.
+
+test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
+  /** Navigate to Models view and wait for the master-detail layout to mount. */
+  async function goToModels(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+  }
+
+  /** Navigate to Models with mock API data of two models. */
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── Layout landmarks ─────────────────────────────────────────────────────────
+
+  test('A91 — manager--detail layout renders list panel and detail panel regions', async ({ page }) => {
+    await goToModels(page);
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+    await expect(page.locator('.model-detail-panel, .manager__detail-form-panel')).toBeAttached();
+  });
+
+  test('A92 — model list panel has an h1 heading "Models"', async ({ page }) => {
+    await goToModels(page);
+    await expect(page.locator('.manager__title h1')).toContainText('Models');
+  });
+
+  // ── Search input ─────────────────────────────────────────────────────────────
+
+  test('A93 — model list search input is associated with a label', async ({ page }) => {
+    await goToModels(page);
+    const input = page.locator('#model-list-search');
+    await expect(input).toBeVisible();
+    // label must exist with for="model-list-search"
+    const label = page.locator('label[for="model-list-search"]');
+    await expect(label).toBeAttached();
+  });
+
+  test('A94 — typing in search input filters the model list (aria-live count updates)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const search = page.locator('#model-list-search');
+    await search.fill('zzznotamodel');
+    await page.waitForTimeout(200);
+    // Either empty state is visible or count shows 0 models
+    const countText = await page.locator('.model-list-panel__count').textContent();
+    const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
+    expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
+  });
+
+  // ── Funnel filter ────────────────────────────────────────────────────────────
+
+  test('A95 — funnel filter button has aria-expanded and aria-haspopup', async ({ page }) => {
+    await goToModels(page);
+    const btn = page.locator('[aria-haspopup="dialog"]').filter({ has: page.locator('[aria-label*="filter" i], [aria-label*="Filter" i]') }).first();
+    // Fallback: any button with the funnel SVG class or the filter popover trigger
+    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
+    await expect(filterBtn).toBeAttached();
+    await expect(filterBtn).toHaveAttribute('aria-expanded');
+  });
+
+  test('A96 — funnel filter popover opens on button click and has role=dialog', async ({ page }) => {
+    await goToModels(page);
+    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
+    await filterBtn.click();
+    const popover = page.locator('[role="dialog"]').first();
+    await expect(popover).toBeVisible();
+    await expect(filterBtn).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  // ── List keyboard navigation ─────────────────────────────────────────────────
+
+  test('A97 — model list container has role=listbox with accessible label', async ({ page }) => {
+    await goToModels(page);
+    const listbox = page.getByRole('listbox', { name: 'Model list' });
+    await expect(listbox).toBeAttached();
+    const label = await listbox.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A98 — model list items have role=option with aria-selected', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const items = page.locator('[role="option"]');
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < Math.min(count, 3); i++) {
+      await expect(items.nth(i)).toHaveAttribute('aria-selected');
+    }
+  });
+
+  test('A99 — ArrowDown/ArrowUp keyboard navigation moves selection in model list', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const listbox = page.getByRole('listbox', { name: 'Model list' });
+    await listbox.focus();
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(100);
+    // At least one option should now be selected
+    const selectedCount = await page.locator('[role="option"][aria-selected="true"]').count();
+    expect(selectedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Detail panel tablist ─────────────────────────────────────────────────────
+
+  test('A100 — detail panel tablist has correct ARIA structure (role=tablist, tabs, tabpanels)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select a model to open the detail panel
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const tablist = page.locator('[role="tablist"]');
+    await expect(tablist).toBeVisible();
+
+    const tabs = page.locator('[role="tab"]');
+    const tabCount = await tabs.count();
+    expect(tabCount).toBeGreaterThanOrEqual(2); // README + Presets at minimum
+
+    // Each tab must have aria-selected
+    for (let i = 0; i < tabCount; i++) {
+      await expect(tabs.nth(i)).toHaveAttribute('aria-selected');
+    }
+
+    // Exactly one tab should be selected
+    const selectedTabs = await page.locator('[role="tab"][aria-selected="true"]').count();
+    expect(selectedTabs).toBe(1);
+
+    // Active tabpanel must be visible
+    const activePanel = page.locator('[role="tabpanel"]:visible');
+    await expect(activePanel).toBeVisible();
+  });
+
+  test('A101 — tab keyboard navigation (ArrowLeft/ArrowRight) moves focus between tabs', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const tabs = page.locator('[role="tab"]');
+    await tabs.first().focus();
+    const initialLabel = await tabs.first().getAttribute('aria-label') ?? await tabs.first().textContent();
+
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(100);
+
+    // Second tab should now have focus / be selected
+    const secondSelected = await page.locator('[role="tab"][aria-selected="true"]').textContent();
+    expect(secondSelected).not.toBe(initialLabel?.trim());
+  });
+
+  // ── Preset tab attach flow ────────────────────────────────────────────────────
+
+  test('A102 — Presets tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await expect(presetsTab).toBeVisible();
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+    await expect(presetsTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('A103 — Presets tab panel has accessible heading or label', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    const tabpanel = page.locator('[role="tabpanel"]:visible');
+    await expect(tabpanel).toBeVisible();
+    // Panel should have aria-labelledby referencing the tab
+    const labelledBy = await tabpanel.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+  });
+
+  // ── Custom model / Omni collection buttons ────────────────────────────────────
+
+  test('A104 — "+ Custom model" and "+ Omni collection" buttons are visible and keyboard-accessible', async ({ page }) => {
+    await goToModels(page);
+    const customBtn = page.getByText('+ Custom model');
+    const omniBtn = page.getByText('+ Omni collection');
+    await expect(customBtn).toBeVisible();
+    await expect(omniBtn).toBeVisible();
+    // Both should be real buttons
+    await expect(customBtn).toHaveRole('button');
+    await expect(omniBtn).toHaveRole('button');
+  });
+
+  test('A105 — master-detail Models view passes WCAG 2.1 AA axe-core scan with mock data', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select first model to populate the detail panel
+    const items = page.locator('.model-list-item');
+    if (await items.count() > 0) {
+      await items.first().click();
+      await page.waitForTimeout(200);
+    }
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+

@@ -10,7 +10,7 @@ export type IconName =
   | 'search' | 'search-check' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
-  | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord';
+  | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel';
 
 interface IconProps {
   name: IconName;
@@ -86,6 +86,7 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'newspaper': return <><path d="M4 5h13a3 3 0 013 3v11H7a3 3 0 01-3-3z" /><path d="M4 16a3 3 0 003 3" /><path d="M8 8h6" /><path d="M8 12h8" /><path d="M8 15h5" /></>;
       case 'github': return <><path d="M9 19c-4.5 1.4-4.5-2.2-6-2.7" /><path d="M15 22v-3.9a3.4 3.4 0 00-.9-2.6c3-.3 6.1-1.5 6.1-6.7a5.2 5.2 0 00-1.4-3.6 4.8 4.8 0 00-.1-3.6s-1.1-.4-3.7 1.4a12.8 12.8 0 00-6.7 0C5.7.2 4.6.6 4.6.6a4.8 4.8 0 00-.1 3.6A5.2 5.2 0 003.1 7.8c0 5.2 3.1 6.4 6.1 6.7a3 3 0 00-.8 1.8V22" /></>;
       case 'discord': return <><path d="M8.6 7.5a11 11 0 016.8 0" /><path d="M7.2 18.5c-1.5-.4-2.8-1.1-4-2.2.4-4.2 1.5-7.5 3.4-10a12.9 12.9 0 013.5-1.1l.4.8a11.8 11.8 0 013 0l.4-.8a12.9 12.9 0 013.5 1.1c1.9 2.5 3 5.8 3.4 10a10.2 10.2 0 01-4 2.2l-.9-1.4a9.5 9.5 0 01-7.8 0z" /><circle cx="9.5" cy="12.5" r="1" /><circle cx="14.5" cy="12.5" r="1" /></>;
+      case 'funnel': return <path d="M3 4h18l-7 9v6l-4-2V13L3 4z" />;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();
