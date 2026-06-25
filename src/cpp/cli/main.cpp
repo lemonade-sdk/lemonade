@@ -4,6 +4,7 @@
 #include "lemon_cli/hf_pull.h"
 #include "lemon_cli/bench.h"
 #include "lemon_cli/chat_repl.h"
+#include "lemon_cli/tui_run.h"
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
@@ -172,6 +173,7 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::optional<bool> tui_override = std::nullopt;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -494,8 +496,50 @@ static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig
     return lemon_cli::run_chat_repl(client, options);
 }
 
+static bool stdin_stdout_are_tty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0 && _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(fileno(stdin)) != 0 && isatty(fileno(stdout)) != 0;
+#endif
+}
+
+static bool config_tui_enabled(lemonade::LemonadeClient& client) {
+    try {
+        std::string response = client.make_request("/api/v1/health", "GET", "", "", 500, 500);
+        auto health = nlohmann::json::parse(response);
+        if (health.contains("tui") && health["tui"].is_boolean()) {
+            return health["tui"].get<bool>();
+        }
+    } catch (const std::exception&) {
+    }
+    return true;
+}
+
+static bool should_use_tui(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (config.tui_override.has_value()) {
+        return config.tui_override.value() && stdin_stdout_are_tty();
+    }
+    return stdin_stdout_are_tty() && config_tui_enabled(client);
+}
+
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!lemon_cli::resolve_model_if_missing(client, config.model, "run", true)) {
+    if (should_use_tui(client, config)) {
+        lemon_cli::RunTuiState tui_state;
+        tui_state.model = config.model;
+        tui_state.recipe_options = config.recipe_options;
+        tui_state.save_options = config.save_options;
+        tui_state.pinned = config.pinned;
+        tui_state.chat_cli = config.chat_cli;
+        if (!lemon_cli::run_tui(client, tui_state)) {
+            return 1;
+        }
+        config.model = tui_state.model;
+        config.recipe_options = tui_state.recipe_options;
+        config.save_options = tui_state.save_options;
+        config.pinned = tui_state.pinned;
+        config.chat_cli = tui_state.chat_cli;
+    } else if (!lemon_cli::resolve_model_if_missing(client, config.model, "run", true)) {
         return 1;
     }
 
@@ -1154,6 +1198,12 @@ int main(int argc, char* argv[]) {
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
+    bool tui_flag = false;
+    bool no_tui_flag = false;
+    auto* tui_opt = app.add_flag("--tui", tui_flag, "Use the terminal UI for supported commands");
+    auto* no_tui_opt = app.add_flag("--no-tui", no_tui_flag, "Use legacy text prompts for supported commands");
+    tui_opt->excludes(no_tui_opt);
+    no_tui_opt->excludes(tui_opt);
 
     // Subcommands
     // Quick start commands
@@ -1382,6 +1432,11 @@ int main(int argc, char* argv[]) {
         }
     }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
+    if (tui_opt->count() > 0) {
+        config.tui_override = true;
+    } else if (no_tui_opt->count() > 0) {
+        config.tui_override = false;
+    }
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port
