@@ -41,11 +41,6 @@ public:
 
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace vllm {
 // Factory for the vllm backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

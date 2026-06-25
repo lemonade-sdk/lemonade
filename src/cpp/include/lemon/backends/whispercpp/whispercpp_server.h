@@ -67,11 +67,6 @@ private:
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace whispercpp {
 // Factory for the whispercpp backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

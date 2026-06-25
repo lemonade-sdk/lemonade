@@ -38,11 +38,6 @@ public:
     void audio_speech(const json& request, httplib::DataSink& sink) override;
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace kokoro {
 // Factory for the kokoro backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

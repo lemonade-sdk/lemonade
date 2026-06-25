@@ -30,6 +30,14 @@ struct BackendContext {
 
 using BackendCreateFn = std::unique_ptr<WrappedServer> (*)(const BackendContext&);
 
+// Convenience for the common create(): construct a server class from the
+// standard (log_level, model_manager, backend_manager) context fields. Backends
+// needing extra constructor arguments (cloud, ryzenai) build theirs by hand.
+template <typename T>
+std::unique_ptr<WrappedServer> make_server(const BackendContext& ctx) {
+    return std::make_unique<T>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
+}
+
 // Binds a descriptor (what the backend is) to its server class's create() (how
 // it runs). The generated factory registry supplies one per backend. This API is
 // server-only: it references server classes via create(), so it is compiled into

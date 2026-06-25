@@ -667,7 +667,7 @@ namespace backends {
 namespace llamacpp {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return std::make_unique<LlamaCppServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
+    return make_server<LlamaCppServer>(ctx);
 }
 
 namespace {

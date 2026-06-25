@@ -61,11 +61,6 @@ private:
     bool is_loaded_ = false;
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace fastflowlm {
 // Factory for the fastflowlm backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

@@ -49,11 +49,6 @@ public:
     json tokenize(const json& request) override;
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace llamacpp {
 // Factory for the llamacpp backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

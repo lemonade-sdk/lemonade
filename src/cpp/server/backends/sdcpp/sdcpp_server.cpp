@@ -754,7 +754,7 @@ namespace backends {
 namespace sdcpp {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return std::make_unique<SDServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
+    return make_server<SDServer>(ctx);
 }
 
 

@@ -48,11 +48,6 @@ private:
     int tcp_port_ = 0;     // Port for line-delimited JSON streaming
 };
 
-} // namespace backends
-} // namespace lemon
-
-namespace lemon {
-namespace backends {
 namespace moonshine {
 // Factory for the moonshine backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);

@@ -319,7 +319,7 @@ namespace backends {
 namespace vllm {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return std::make_unique<VLLMServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
+    return make_server<VLLMServer>(ctx);
 }
 
 

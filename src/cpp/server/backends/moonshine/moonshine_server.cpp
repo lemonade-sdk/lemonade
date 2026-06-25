@@ -368,7 +368,7 @@ namespace backends {
 namespace moonshine {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return std::make_unique<MoonshineServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
+    return make_server<MoonshineServer>(ctx);
 }
 
 
