@@ -530,6 +530,13 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"moonshine", "cpu", {"macos"}, {
         {"cpu", {"arm64"}},
     }},
+
+    // MLX - Metal/ROCm inference server (requires mlx-server built from source)
+    // Works on macOS (Metal) and Linux (ROCm)
+    {"mlx", "system", {"macos", "linux"}, {
+        {"metal", {}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+    }},
 };
 
 // ============================================================================
