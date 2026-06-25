@@ -323,11 +323,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   VLLMServer::get_install_params, /*split=*/true);
-    return &kSpec;
-}
+const BackendSpec* spec() { return make_spec<VLLMServer>(descriptor, /*split=*/true); }
 const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace vllm
 }  // namespace backends

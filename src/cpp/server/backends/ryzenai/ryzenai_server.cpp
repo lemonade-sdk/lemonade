@@ -220,10 +220,7 @@ const BackendSpec* spec() {
                                    ::lemon::RyzenAIServer::get_install_params, /*split=*/false);
     return &kSpec;
 }
-const BackendOps* ops() {
-    static const RyzenAiOps kOps;
-    return &kOps;
-}
+const BackendOps* ops() { return single_ops<RyzenAiOps>(); }
 }  // namespace ryzenai
 }  // namespace backends
 }  // namespace lemon

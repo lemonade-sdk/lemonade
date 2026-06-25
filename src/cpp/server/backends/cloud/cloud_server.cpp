@@ -906,10 +906,7 @@ public:
 }  // namespace
 
 const BackendSpec* spec() { return nullptr; }
-const BackendOps* ops() {
-    static const CloudOps kOps;
-    return &kOps;
-}
+const BackendOps* ops() { return single_ops<CloudOps>(); }
 }  // namespace cloud
 }  // namespace backends
 }  // namespace lemon

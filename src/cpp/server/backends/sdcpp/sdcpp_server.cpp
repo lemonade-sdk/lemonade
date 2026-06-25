@@ -758,11 +758,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   SDServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
+const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
 const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace sdcpp
 }  // namespace backends

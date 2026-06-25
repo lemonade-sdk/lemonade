@@ -763,15 +763,8 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   WhisperServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
-const BackendOps* ops() {
-    static const WhisperOps kOps;
-    return &kOps;
-}
+const BackendSpec* spec() { return make_spec<WhisperServer>(descriptor); }
+const BackendOps* ops() { return single_ops<WhisperOps>(); }
 }  // namespace whispercpp
 }  // namespace backends
 }  // namespace lemon

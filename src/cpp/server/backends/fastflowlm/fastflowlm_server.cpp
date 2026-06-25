@@ -564,15 +564,8 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   FastFlowLMServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
-const BackendOps* ops() {
-    static const FlmOps kOps;
-    return &kOps;
-}
+const BackendSpec* spec() { return make_spec<FastFlowLMServer>(descriptor); }
+const BackendOps* ops() { return single_ops<FlmOps>(); }
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon

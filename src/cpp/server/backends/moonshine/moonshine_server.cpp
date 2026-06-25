@@ -407,15 +407,8 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   MoonshineServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
-const BackendOps* ops() {
-    static const MoonshineOps kOps;
-    return &kOps;
-}
+const BackendSpec* spec() { return make_spec<MoonshineServer>(descriptor); }
+const BackendOps* ops() { return single_ops<MoonshineOps>(); }
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

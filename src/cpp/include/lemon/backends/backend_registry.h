@@ -38,6 +38,15 @@ std::unique_ptr<WrappedServer> make_server(const BackendContext& ctx) {
     return std::make_unique<T>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
+// Construct-on-first-use singleton for a stateless ops class, giving the
+// registry a stable pointer. Backends with no custom behavior return
+// default_backend_ops() from their ops() instead.
+template <typename T>
+const BackendOps* single_ops() {
+    static const T kOps;
+    return &kOps;
+}
+
 // Binds a descriptor (what the backend is) to its server class's create() (how
 // it runs). The generated factory registry supplies one per backend. This API is
 // server-only: it references server classes via create(), so it is compiled into

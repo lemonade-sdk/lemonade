@@ -861,15 +861,8 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   LlamaCppServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
-const BackendOps* ops() {
-    static const LlamaCppOps kOps;
-    return &kOps;
-}
+const BackendSpec* spec() { return make_spec<LlamaCppServer>(descriptor); }
+const BackendOps* ops() { return single_ops<LlamaCppOps>(); }
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

@@ -240,15 +240,8 @@ public:
 };
 }  // namespace
 
-const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
-                                   KokoroServer::get_install_params, /*split=*/false);
-    return &kSpec;
-}
-const BackendOps* ops() {
-    static const KokoroOps kOps;
-    return &kOps;
-}
+const BackendSpec* spec() { return make_spec<KokoroServer>(descriptor); }
+const BackendOps* ops() { return single_ops<KokoroOps>(); }
 }  // namespace kokoro
 }  // namespace backends
 }  // namespace lemon
