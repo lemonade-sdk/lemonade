@@ -476,6 +476,9 @@ export interface ModelDetailPanelProps {
   onToggleFavorite?: (name: string) => void;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
+  /** True when the registry has no models at all (empty state guidance differs
+      from the normal "nothing selected yet" copy). */
+  noModelsAvailable?: boolean;
 }
 
 type DetailTab = 'readme' | 'presets' | 'files';
@@ -501,6 +504,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   isFavorite = false,
   onToggleFavorite,
   onBack,
+  noModelsAvailable = false,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('readme');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -540,7 +544,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         )}
         <div className="model-detail-panel__placeholder">
           <Icon name="model" size={40} aria-hidden="true" />
-          <p>Select a model to view details</p>
+          <p>{noModelsAvailable ? 'No models found' : 'No model selected'}</p>
+          <p className="model-detail-panel__placeholder-sub">
+            {noModelsAvailable
+              ? 'No models are available in the registry yet. Pull a model or adjust your filters to get started.'
+              : 'Select a model from the list to view its details.'}
+          </p>
         </div>
       </div>
     );

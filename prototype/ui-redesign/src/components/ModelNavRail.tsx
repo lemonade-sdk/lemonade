@@ -19,7 +19,7 @@
  * download sizes where available, falling back to MOCK placeholder values.
  */
 import React, { useMemo, useState } from 'react';
-import type { ModelInfo } from '../api';
+import type { ModelInfo, StorageInfo } from '../api';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import {
@@ -39,7 +39,8 @@ const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconNa
   { key: 'all', label: 'All Models', iconName: 'library' },
   { key: 'downloaded', label: 'Downloaded', iconName: 'download' },
   { key: 'my-models', label: 'My Models', iconName: 'box' },
-  { key: 'favorites', label: 'Favorites', iconName: 'pin' },
+  // Favorites is a DISTINCT concept from Pinned (#2424): star icon, own store.
+  { key: 'favorites', label: 'Favorites', iconName: 'star' },
 ];
 
 const CATEGORY_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
@@ -53,11 +54,21 @@ const CATEGORY_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName 
 ];
 
 /* ── Storage (POC) ───────────────────────────────────────────────
-   No lemond disk-usage endpoint is available to the client, so the
-   total capacity is a MOCK placeholder. Used space is derived from the
-   sizes of downloaded models when present, otherwise a MOCK value. */
-const MOCK_TOTAL_STORAGE_GB = 512;
-const MOCK_USED_STORAGE_GB = 128;
+   Preferred source is real disk stats via `storageInfo` (api.getStorageInfo()).
+   When lemond exposes no disk-usage endpoint (current POC reality), the meter
+   falls back to a derived estimate: used = sum of downloaded model sizes, total
+   = a headroom-rounded capacity above that — never a hardcoded literal. */
+const BYTES_PER_GB = 1024 * 1024 * 1024;
+
+/** Round up to a "nice" capacity (GB) that leaves headroom above `usedGb`. */
+function deriveFallbackTotalGb(usedGb: number): number {
+  const steps = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
+  const target = Math.max(usedGb * 2, usedGb + 8, 16);
+  for (const step of steps) {
+    if (step >= target) return step;
+  }
+  return Math.ceil(target / 1024) * 1024;
+}
 
 /* ── Props ───────────────────────────────────────────────────── */
 
@@ -65,6 +76,8 @@ export interface ModelNavRailProps {
   allModels: ModelInfo[];
   loadedNames: Set<string>;
   pinnedNames: Set<string>;
+  /** Favorited model names (distinct from pinned) — drives the Favorites count. */
+  favoriteNames: Set<string>;
   primaryFilter: PrimaryFilter;
   onPrimaryFilterChange: (f: PrimaryFilter) => void;
   categoryFilter: FilterTab;
@@ -73,6 +86,12 @@ export interface ModelNavRailProps {
   onBackendFilterChange: (b: string) => void;
   tagFilter: string | null;
   onTagFilterChange: (t: string | null) => void;
+  /** Real disk usage of the model-storage drive, when available (else null →
+      derived fallback). Sourced from api.getStorageInfo(). */
+  storageInfo?: StorageInfo | null;
+  /** Count of HuggingFace search matches. When > 0, a "Hugging Face" nav entry
+      appears below the primary list; clicking it filters to HF results. */
+  hfCount?: number;
   /** id used by the responsive nav toggle's aria-controls. */
   id?: string;
 }
@@ -83,6 +102,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   allModels,
   loadedNames,
   pinnedNames,
+  favoriteNames,
   primaryFilter,
   onPrimaryFilterChange,
   categoryFilter,
@@ -91,6 +111,8 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onBackendFilterChange,
   tagFilter,
   onTagFilterChange,
+  storageInfo,
+  hfCount = 0,
   id = 'model-nav-rail',
 }) => {
   const [categoriesOpen, setCategoriesOpen] = useState(true);
@@ -98,16 +120,16 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
-    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, 'my-models': 0, favorites: 0 };
+    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, 'my-models': 0, favorites: 0, huggingface: 0 };
     for (const m of allModels) {
       if (!listModelName(m)) continue;
       counts.all += 1;
-      if (modelMatchesPrimary(m, 'downloaded', loadedNames, pinnedNames)) counts.downloaded += 1;
-      if (modelMatchesPrimary(m, 'my-models', loadedNames, pinnedNames)) counts['my-models'] += 1;
-      if (modelMatchesPrimary(m, 'favorites', loadedNames, pinnedNames)) counts.favorites += 1;
+      if (modelMatchesPrimary(m, 'downloaded', loadedNames, favoriteNames)) counts.downloaded += 1;
+      if (modelMatchesPrimary(m, 'my-models', loadedNames, favoriteNames)) counts['my-models'] += 1;
+      if (modelMatchesPrimary(m, 'favorites', loadedNames, favoriteNames)) counts.favorites += 1;
     }
     return counts;
-  }, [allModels, loadedNames, pinnedNames]);
+  }, [allModels, loadedNames, favoriteNames]);
 
   const categoryCounts = useMemo<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
@@ -147,19 +169,27 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
     return counts;
   }, [allModels]);
 
-  // ── Storage meter (derived where possible, else MOCK) ───────
+  // ── Storage meter ───────────────────────────────────────────
+  // Prefer REAL disk stats (storageInfo). When unavailable in the POC, derive
+  // a graceful estimate from downloaded model sizes — no hardcoded capacity.
   const storage = useMemo(() => {
+    if (storageInfo && storageInfo.totalBytes > 0) {
+      const usedGb = Math.max(0, Math.round(storageInfo.usedBytes / BYTES_PER_GB));
+      const totalGb = Math.max(1, Math.round(storageInfo.totalBytes / BYTES_PER_GB));
+      const pct = Math.min(100, Math.round((storageInfo.usedBytes / storageInfo.totalBytes) * 100));
+      return { used: usedGb, total: totalGb, pct, real: true };
+    }
     let usedGb = 0;
     for (const m of allModels) {
-      const downloaded = modelMatchesPrimary(m, 'downloaded', loadedNames, pinnedNames);
+      const downloaded = modelMatchesPrimary(m, 'downloaded', loadedNames, favoriteNames);
       const size = Number((m as any).size);
       if (downloaded && Number.isFinite(size) && size > 0) usedGb += size;
     }
-    const used = usedGb > 0 ? Math.round(usedGb) : MOCK_USED_STORAGE_GB;
-    const total = MOCK_TOTAL_STORAGE_GB;
+    const used = Math.max(1, Math.round(usedGb));
+    const total = deriveFallbackTotalGb(used);
     const pct = Math.min(100, Math.round((used / total) * 100));
-    return { used, total, pct };
-  }, [allModels, loadedNames, pinnedNames]);
+    return { used, total, pct, real: false };
+  }, [storageInfo, allModels, loadedNames, favoriteNames]);
 
   return (
     <nav className="model-nav-rail" id={id} aria-label="Model filters">
@@ -183,9 +213,25 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             </li>
           );
         })}
+        {/* HuggingFace search results — only present while a search is active.
+            Positioned BELOW My Models and Favorites (#2424). Count reflects the
+            current HF search matches; clicking filters the middle list to them. */}
+        {hfCount > 0 && (
+          <li>
+            <button
+              type="button"
+              className={`model-nav-rail__nav-item${primaryFilter === 'huggingface' ? ' model-nav-rail__nav-item--active' : ''}`}
+              aria-current={primaryFilter === 'huggingface' ? 'true' : undefined}
+              onClick={() => onPrimaryFilterChange('huggingface')}
+            >
+              <Icon name="hugging-face" size={15} aria-hidden="true" className="model-nav-rail__nav-icon" />
+              <span className="model-nav-rail__nav-label">Hugging Face</span>
+              <span className="model-nav-rail__nav-count" aria-hidden="true">{hfCount}</span>
+              <span className="sr-only">{`, ${hfCount} HuggingFace search results`}</span>
+            </button>
+          </li>
+        )}
       </ul>
-
-      {/* 2. Categories (collapsible) */}
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
           <button
@@ -283,17 +329,17 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
       {/* 5. Storage meter */}
       <div className="model-nav-rail__storage">
         <div className="model-nav-rail__storage-row">
-          <span className="model-nav-rail__storage-label">Storage</span>
+          <span className="model-nav-rail__storage-label">Storage{storage.real ? '' : ' (est.)'}</span>
           <span className="model-nav-rail__storage-value">{`${storage.used} GB / ${storage.total} GB`}</span>
         </div>
         <div
           className="model-nav-rail__storage-bar"
           role="progressbar"
-          aria-label="Model storage used"
+          aria-label={storage.real ? 'Model storage used' : 'Model storage used (estimated)'}
           aria-valuenow={storage.used}
           aria-valuemin={0}
           aria-valuemax={storage.total}
-          aria-valuetext={`${storage.used} of ${storage.total} gigabytes used`}
+          aria-valuetext={`${storage.used} of ${storage.total} gigabytes used${storage.real ? '' : ' (estimated)'}`}
         >
           <span className="model-nav-rail__storage-fill" style={{ width: `${storage.pct}%` }} aria-hidden="true" />
         </div>

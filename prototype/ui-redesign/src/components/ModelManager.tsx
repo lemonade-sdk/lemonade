@@ -613,6 +613,28 @@ function savePinnedModels(scope: string, names: string[]): void {
   } catch {}
 }
 
+// Favorites are a DISTINCT client-local concept from Pinned (fl0rianr #2424).
+// Pinned models float to the top of the middle list; favorites is a separate
+// filter/count surfaced by the left-rail "Favorites" (star) entry. Stored under
+// a separate `favorite_models` key so the two never alias.
+function favoriteModelsKey(scope: string): string {
+  return scopedStorageKey(scope, 'favorite_models');
+}
+
+function loadFavoriteModels(scope: string): string[] {
+  try {
+    const raw = localStorage.getItem(favoriteModelsKey(scope));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(v => String(v).trim()).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+function saveFavoriteModels(scope: string, names: string[]): void {
+  try {
+    localStorage.setItem(favoriteModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
+  } catch {}
+}
+
 /* ── Filter / search types ─────────────────────────────────── */
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
@@ -990,6 +1012,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModels(accountSession.storageScope));
+  const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels(accountSession.storageScope));
+  // Multi-select functional capability filter driven by the funnel popover.
+  const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
+  // Real disk usage for the storage meter (null until/unless lemond exposes it).
+  const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -1017,7 +1044,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => {
     setPinnedModels(loadPinnedModels(accountSession.storageScope));
+    setFavoriteModels(loadFavoriteModels(accountSession.storageScope));
   }, [accountSession.storageScope]);
+
+  // Fetch real model-storage disk stats. Returns null in the POC (lemond has no
+  // disk endpoint yet) → the rail derives a graceful fallback. Re-runs when the
+  // model set changes so the meter refreshes as downloads complete.
+  useEffect(() => {
+    let cancelled = false;
+    api.getStorageInfo()
+      .then(info => { if (!cancelled) setStorageInfo(info); })
+      .catch(() => { if (!cancelled) setStorageInfo(null); });
+    return () => { cancelled = true; };
+  }, [models.length]);
 
   useEffect(() => {
     const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
@@ -1485,6 +1524,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     });
   };
 
+  const toggleFavoriteModel = (name: string) => {
+    setFavoriteModels(prev => {
+      const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
+      const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
+      saveFavoriteModels(accountSession.storageScope, next);
+      return next;
+    });
+  };
+
   const activeTtsModelName = ttsPlaybackSettings.modelName;
 
   const toggleTtsSpeechModel = (name: string) => {
@@ -1677,6 +1725,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
 
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
+  const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
   const { downloaded, available } = useMemo(() => {
     const dl: ModelInfo[] = [];
@@ -1769,6 +1818,33 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const localIds = new Set(allModels.map(m => modelName(m).toLowerCase()));
     return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
   }, [hfResults, allModels, filterTab]);
+
+  // The "Hugging Face" rail entry is live only while a search yields HF matches.
+  const hfSearchActive = filteredHfResults.length > 0;
+
+  // Map HF search results into ModelInfo rows so the SAME middle list can render
+  // them when the Hugging Face nav entry is selected (#2424 item 5).
+  const hfModelInfos = useMemo<ModelInfo[]>(() => filteredHfResults.map(r => ({
+    id: r.id,
+    name: r.id,
+    display_name: r.modelId || r.id,
+    labels: [...(Array.isArray(r.tags) ? r.tags : []), ...(r.pipeline_tag ? [r.pipeline_tag] : [])],
+    downloads: r.downloads,
+    recipe: 'huggingface',
+    huggingface: true,
+  } as ModelInfo)), [filteredHfResults]);
+
+  // When the HF search clears, drop out of the HF view back to All Models.
+  useEffect(() => {
+    if (!hfSearchActive && primaryFilter === 'huggingface') {
+      setPrimaryFilter('all');
+    }
+  }, [hfSearchActive, primaryFilter]);
+
+  // The middle list shows HF results when the HF nav entry is active, otherwise
+  // the normal local registry.
+  const hfMode = primaryFilter === 'huggingface' && hfSearchActive;
+  const listModels = hfMode ? hfModelInfos : allModels;
 
   /* ── Toggle detail ───────────────────────────────────────── */
   const toggleDetail = (name: string) => {
@@ -2446,6 +2522,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         allModels={allModels}
         loadedNames={loadedNames}
         pinnedNames={pinnedNameSet}
+        favoriteNames={favoriteNameSet}
         primaryFilter={primaryFilter}
         onPrimaryFilterChange={(f) => { setPrimaryFilter(f); setNavRailOpen(false); }}
         categoryFilter={filterTab}
@@ -2454,11 +2531,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         onBackendFilterChange={setBackendFilter}
         tagFilter={tagFilter}
         onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
+        storageInfo={storageInfo}
+        hfCount={filteredHfResults.length}
       />
 
       {/* Middle panel: searchable/filterable model list */}
       <ModelListPanel
-        allModels={allModels}
+        allModels={listModels}
         loadedNames={loadedNames}
         pulling={pulling}
         downloadItems={downloadItems}
@@ -2470,16 +2549,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        filterTab={filterTab}
+        filterTab={hfMode ? 'all' : filterTab}
         onFilterChange={setFilterTab}
+        capabilityFilter={capabilityFilter}
+        onCapabilityFilterChange={setCapabilityFilter}
         primaryFilter={primaryFilter}
-        backendFilter={backendFilter}
-        tagFilter={tagFilter}
+        backendFilter={hfMode ? 'all' : backendFilter}
+        tagFilter={hfMode ? null : tagFilter}
         searchInputRef={searchRef}
         onAddCustomModel={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}
         onAddOmniCollection={() => openCustomForm('omni-collection')}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
+        favoriteNames={favoriteNameSet}
       />
 
       {/* Right panel: custom form overlay OR model detail */}
@@ -2637,7 +2719,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       ) : (
         <ModelDetailPanel
           model={selectedDetailModelId
-            ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
+            ? (listModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
             : null}
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
@@ -2652,8 +2734,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}
           serverDefaultCtxSize={serverDefaultCtxSize}
-          isFavorite={selectedDetailModelId ? pinnedNameSet.has(selectedDetailModelId.toLowerCase()) : false}
-          onToggleFavorite={togglePinnedModel}
+          isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
+          onToggleFavorite={toggleFavoriteModel}
+          noModelsAvailable={allModels.length === 0}
           onBack={() => {
             setMobileDetailOpen(false);
             // Return focus to the selected list item

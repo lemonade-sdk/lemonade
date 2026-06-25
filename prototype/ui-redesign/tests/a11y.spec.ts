@@ -2829,7 +2829,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect(((await star.getAttribute('aria-label')) ?? '').toLowerCase()).toContain('remove');
   });
 
-  test('A143 — favoriting in the detail panel updates the Favorites nav count and persists', async ({ page }) => {
+  test('A143 — favoriting in the detail panel updates the Favorites nav count and persists to a DISTINCT favorites store', async ({ page }) => {
     await goToModelsRefined(page);
     await page.locator('.model-list-item').first().click();
     await page.waitForTimeout(150);
@@ -2840,16 +2840,23 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
     await expect(fav).toContainText('1');
 
-    // Reuses the SAME client-local pin store — a *pinned_models key exists.
-    const persisted = await page.evaluate(() => {
+    // Favorites is a DISTINCT concept from Pinned (#2424): it must persist to a
+    // SEPARATE favorite_models key, NOT the pinned_models store.
+    const stores = await page.evaluate(() => {
+      let favorite: string | null = null;
+      let pinned: string | null = null;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.endsWith('pinned_models')) return localStorage.getItem(key);
+        if (!key) continue;
+        if (key.endsWith('favorite_models')) favorite = localStorage.getItem(key);
+        if (key.endsWith('pinned_models')) pinned = localStorage.getItem(key);
       }
-      return null;
+      return { favorite, pinned };
     });
-    expect(persisted, 'favorite must persist to the existing pinned_models store').toBeTruthy();
-    expect((persisted ?? '').toLowerCase()).toContain('llama-3.1-8b');
+    expect(stores.favorite, 'favorite must persist to a separate favorite_models store').toBeTruthy();
+    expect((stores.favorite ?? '').toLowerCase()).toContain('llama-3.1-8b');
+    // The pinned store must NOT have been touched by favoriting.
+    expect((stores.pinned ?? '').toLowerCase()).not.toContain('llama-3.1-8b');
   });
 
   // ── 3. "Back to models" only on narrow viewports ─────────────────────────
@@ -2865,7 +2872,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
   // ── 4. Funnel filter: capabilities only + opaque background ───────────────
 
-  test('A145 — the funnel filter popover filters by capability and has a solid background', async ({ page }) => {
+  test('A145 — the funnel filter popover filters by functional capability tags and has a solid background', async ({ page }) => {
     await goToModelsRefined(page);
     const filterBtn = page.locator('.model-list-panel__filter-btn');
     await filterBtn.click();
@@ -2874,9 +2881,12 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(popover).toBeVisible();
     await expect(popover).toContainText(/capabilit/i);
 
-    // The options are the capability categories (LLM / Omni / Image / Audio / TTS / Embed) + All.
+    // Options are the functional capability tags PRESENT in the data — the four
+    // mock models expose Chat, Tool use, Audio and Image (multi-select toggles).
     const options = popover.locator('.model-list-panel__filter-option');
-    await expect(options).toHaveCount(7);
+    await expect(options).toHaveCount(4);
+    await expect(popover).toContainText(/Tool use/i);
+    await expect(popover).toContainText(/Audio/i);
 
     // Background must be opaque (not transparent) so list content does not bleed through.
     const bg = await popover.evaluate(el => getComputedStyle(el).backgroundColor);
@@ -2884,13 +2894,15 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect(bg).not.toBe('transparent');
   });
 
-  test('A146 — picking a capability in the funnel popover filters the list', async ({ page }) => {
+  test('A146 — toggling a capability in the funnel popover filters the list (multi-select)', async ({ page }) => {
     await goToModelsRefined(page);
     await page.locator('.model-list-panel__filter-btn').click();
     await page.waitForTimeout(120);
     const audio = page.locator('.model-list-panel__filter-option').filter({ hasText: /Audio/ });
     await audio.click();
     await page.waitForTimeout(150);
+    // The toggle reports its pressed state (multi-select stays open).
+    await expect(audio).toHaveAttribute('aria-pressed', 'true');
     const rows = page.locator('.model-list-item');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Whisper');
@@ -2916,14 +2928,95 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(storage).toBeVisible();
   });
 
-  // ── Axe scan with a favorite set + filter open ───────────────────────────
+  // ── 6. Capability icons on rows + empty-state in detail pane (#2424) ──────
 
-  test('A148 — refined model view passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+  test('A149 — middle-list rows show multiple capability icons with an accessible label', async ({ page }) => {
     await goToModelsRefined(page);
-    await page.locator('.model-list-item').first().click();
+    // The Llama row exposes both Chat and Tool-use capabilities → ≥2 icons.
+    const llamaRow = page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' });
+    const caps = llamaRow.locator('.model-list-item__caps');
+    await expect(caps).toHaveAttribute('role', 'img');
+    const label = (await caps.getAttribute('aria-label')) ?? '';
+    expect(label.toLowerCase()).toContain('capabilities');
+    expect(label).toMatch(/Tool use/i);
+    // Multiple capability icon slots rendered for this multi-capability model.
+    const iconCount = await caps.locator('.model-list-item__cap').count();
+    expect(iconCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test('A150 — the "no model selected" empty state lives in the detail pane, NOT the middle list', async ({ page }) => {
+    await goToModelsRefined(page);
+    // Nothing selected yet: the middle list must NOT render an empty placeholder…
+    await expect(page.locator('.model-list-panel__empty')).toHaveCount(0);
+    // …and the model rows are still present (the list is populated).
+    expect(await page.locator('.model-list-item').count()).toBeGreaterThan(0);
+    // The empty/placeholder message belongs to the RIGHT detail pane.
+    const placeholder = page.locator('.model-detail-panel__placeholder');
+    await expect(placeholder).toBeVisible();
+    await expect(placeholder).toContainText(/no model selected/i);
+  });
+
+  // ── 7. Storage meter uses derived data, not the 32/512 mock (#2424) ───────
+
+  test('A151 — Storage meter derives from data (no hardcoded 512 GB) and labels the estimate', async ({ page }) => {
+    await goToModelsRefined(page);
+    const value = page.locator('.model-nav-rail__storage-value');
+    const text = (await value.textContent()) ?? '';
+    // Downloaded mock sizes total 11 GB → derived capacity is a headroom bucket
+    // (32 GB), never the old 512 GB literal.
+    expect(text).not.toContain('512');
+    expect(text).toMatch(/\d+\s*GB\s*\/\s*\d+\s*GB/);
+    const bar = page.locator('.model-nav-rail__storage-bar');
+    // Without a real disk source in the POC the meter is flagged as estimated.
+    expect(((await bar.getAttribute('aria-label')) ?? '').toLowerCase()).toContain('estimat');
+    expect(Number(await bar.getAttribute('aria-valuemax'))).not.toBe(512);
+  });
+
+  // ── 8. HuggingFace search nav entry in the left rail (#2424) ──────────────
+
+  async function goToModelsRefinedWithHf(page: Page): Promise<void> {
+    await page.route('**huggingface.co/api/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'org/Mistral-7B-GGUF', modelId: 'org/Mistral-7B-GGUF', likes: 10, downloads: 999, tags: ['gguf', 'text-generation'], pipeline_tag: 'text-generation' },
+          { id: 'org/Phi-3-GGUF', modelId: 'org/Phi-3-GGUF', likes: 5, downloads: 500, tags: ['gguf'], pipeline_tag: 'text-generation' },
+        ]),
+      }),
+    );
+    await goToModelsRefined(page);
+  }
+
+  test('A152 — a HuggingFace nav entry appears below the primary list on search, shows the count, is keyboard operable, and clears', async ({ page }) => {
+    await goToModelsRefinedWithHf(page);
+    const search = page.locator('#model-list-search');
+    await search.fill('mistral');
+    // Allow the debounced HF search (400ms) + render to settle.
+    await page.waitForTimeout(900);
+
+    const hf = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' });
+    await expect(hf).toBeVisible();
+    await expect(hf).toContainText('2');
+
+    // Keyboard operable: focus + Enter selects it and filters the middle list.
+    await hf.focus();
+    await page.keyboard.press('Enter');
     await page.waitForTimeout(150);
-    await page.locator('.model-detail-panel__fav-btn').click();
-    await page.locator('.model-list-panel__filter-btn').click();
+    expect(await hf.getAttribute('aria-current')).toBe('true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows.first()).toContainText(/Mistral-7B|Phi-3/);
+
+    // Clearing the search removes the HF entry entirely.
+    await search.fill('');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' })).toHaveCount(0);
+  });
+
+  test('A153 — the model view with an active HuggingFace search passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsRefinedWithHf(page);
+    await page.locator('#model-list-search').fill('mistral');
+    await page.waitForTimeout(900);
+    await page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' }).click();
     await page.waitForTimeout(150);
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])

@@ -8320,6 +8320,40 @@ input, textarea {
 .model-list-panel__filter-option:hover { background: var(--surface-2); color: var(--text-primary); }
 .model-list-panel__filter-option:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
 .model-list-panel__filter-option--active { color: var(--accent-fg); font-weight: 600; }
+.model-list-panel__filter-option[aria-pressed="true"] { background: var(--surface-2); }
+
+.model-list-panel__filter-empty {
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.model-list-panel__filter-clear {
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--accent-fg);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.model-list-panel__filter-clear:hover { background: var(--surface-2); }
+.model-list-panel__filter-clear:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
+
+/* Capability icons on a model row — one per functional capability tag (#2424). */
+.model-list-item__caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-tertiary);
+}
+.model-list-item__caps .model-list-item__cap {
+  display: inline-flex;
+  align-items: center;
+}
 
 /* Count badge */
 /* Custom-model action group — grounded button group at the TOP of the list */
@@ -8525,6 +8559,15 @@ input, textarea {
   gap: var(--space-3);
   color: var(--text-tertiary);
   font-size: var(--text-sm);
+  text-align: center;
+  max-width: 28rem;
+  padding: 0 var(--space-4);
+}
+.model-detail-panel__placeholder p { margin: 0; }
+.model-detail-panel__placeholder-sub {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
 }
 
 .model-detail-panel__head {

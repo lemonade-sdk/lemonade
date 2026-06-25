@@ -10,6 +10,7 @@ export type IconName =
   | 'search' | 'search-check' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
+  | 'star' | 'hugging-face'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel';
 
 interface IconProps {
@@ -81,6 +82,8 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'brain': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3" /><path d="M15 4a3 3 0 013 3v.4a3.5 3.5 0 012.5 3.6 3.5 3.5 0 01-2.5 3.4V17a3 3 0 01-3 3" /><path d="M9 4v16M15 4v16M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2" /></>;
       case 'rocket': return <><path d="M5 19c1.5-.4 2.8-1.2 3.8-2.2" /><path d="M15 14l-5-5c1.8-3.2 4.8-5.3 9-6 0 4.2-2 7.2-5.2 9" /><path d="M9 15l-3 3" /><path d="M14 9h.01" /><path d="M7 11l-3 1 2-4 4-2" /><path d="M13 17l-1 3 4-2 2-4" /></>;
       case 'pin': return <><path d="M12 17v5" /><path d="M5 17h14v-2l-4-4V5l2-2V2H7v1l2 2v6l-4 4v2z" /></>;
+      case 'star': return <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.5 1.3 6.5L12 17.8 6.1 20.8l1.3-6.5-4.9-4.5 6.6-.7z" />;
+      case 'hugging-face': return <><circle cx="12" cy="12" r="9" /><path d="M8.5 14a4 4 0 007 0" /><path d="M9 10h.01" /><path d="M15 10h.01" /></>;
       case 'speech': return <><path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z" /><path d="M8 9h8" /><path d="M8 13h5" /></>;
       case 'book-open': return <><path d="M12 7v14" /><path d="M3 5.5A2.5 2.5 0 015.5 3H12v18H5.5A2.5 2.5 0 013 18.5z" /><path d="M21 5.5A2.5 2.5 0 0018.5 3H12v18h6.5a2.5 2.5 0 002.5-2.5z" /></>;
       case 'newspaper': return <><path d="M4 5h13a3 3 0 013 3v11H7a3 3 0 01-3-3z" /><path d="M4 16a3 3 0 003 3" /><path d="M8 8h6" /><path d="M8 12h8" /><path d="M8 15h5" /></>;
@@ -99,12 +102,13 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
   );
 };
 
-export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tools' | 'reasoning' | 'mtp';
+export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tool' | 'tools' | 'reasoning' | 'mtp';
 
 export function capabilityIconName(capability: CapabilityIconTarget): IconName {
   switch (capability) {
     case 'all': return 'globe';
     case 'popular': return 'flame';
+    case 'tool': return 'wrench';
     case 'tools': return 'wrench';
     case 'reasoning': return 'brain';
     case 'mtp': return 'rocket';

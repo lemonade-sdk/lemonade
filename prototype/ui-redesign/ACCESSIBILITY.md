@@ -3,8 +3,36 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete  
-**Test status (2026-06-25):** All 164 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A142–A148 added for the #2424 model-view refinements)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete  
+**Test status (2026-06-25):** All 168 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A149–A153 added for the #2424 second-round merge items)
+
+---
+
+## Group J — Model view merge items (#2424 fl0rianr 2nd review, 2026-06-25)
+
+fl0rianr's second-round review on PR #2424 raised five merge-blocking items, all addressed in `prototype/ui-redesign/`:
+
+1. **Favorites is now DISTINCT from Pinned.** Added a separate client-local `favorite_models` localStorage store (`favoriteModelsKey`/`loadFavoriteModels`/`saveFavoriteModels`, `favoriteModels` state, `toggleFavoriteModel`, `favoriteNameSet` in `ModelManager.tsx`) — no longer aliasing `pinned_models`. The detail-panel star toggles FAVORITE; the left-rail "Favorites" nav entry uses a STAR icon (was a pin); its count reflects `favoriteNames`. Pinned remains its own concept (pinned rows still float to the top of the middle list).
+2. **"No model selected" empty state moved to the RIGHT detail pane.** Removed the registry-empty `model-list-panel__empty` `<li>` from the middle list (it now only renders for an active search-with-no-matches). `ModelDetailPanel`'s placeholder shows "No model selected" / "No models found" (with a `noModelsAvailable` prop driving the guidance copy).
+3. **Funnel = functional capability tags; rows show multiple capability icons.** Added a capability-tags model (`CapabilityTag`, `CAPABILITY_TAG_ORDER`, `CAPABILITY_TAG_LABELS`, `modelCapabilityTags`, `modelMatchesCapabilityTags` in `modelCapabilities.ts`). The funnel is now a MULTI-SELECT (`capabilityFilter: Set<string>`) listing the capability tags present in the data (Popular, Chat, Omni, Vision, Tool use, Reasoning, Code, Audio, Image, Speech, Embeddings, Reranking). Each middle-row renders one small icon per capability (`model-list-item__caps`, `role="img"` + label). Popover stays opaque (`--surface-3`).
+4. **Storage meter uses real-or-derived data, no 32/512 mock.** Removed the hardcoded literals. Added `api.getStorageInfo()` which probes `system-info` for a future disk field and returns real bytes when present, else `null`. `ModelNavRail` consumes a `storageInfo` prop: real stats when available, otherwise a graceful estimate (used = Σ downloaded model sizes, total = a headroom-rounded bucket via `deriveFallbackTotalGb`, never a fixed literal). The meter is labelled "(est.)" / "estimated" in the fallback path. **POC limitation surfaced to fl0rianr** — lemond exposes no disk endpoint and is off-limits.
+5. **Hugging Face nav entry in the left rail.** When the model search triggers an HF search with matches, a "Hugging Face" entry appears BELOW My Models/Favorites (star) showing the live match count; clicking it (`primaryFilter='huggingface'`) feeds the HF results (mapped to `ModelInfo`) into the middle list. It disappears and resets to All Models when the search clears.
+
+**a11y decisions:**
+- The Favorites star and capability icons convey state/meaning via text labels, never color alone. Each row's capability cluster is a single `role="img"` with an aria-label listing every capability ("Capabilities: Chat, Tool use").
+- The HF nav entry is a real `<button>` with `aria-current` and an sr-only count phrase; it is keyboard operable (focus + Enter).
+- The storage progressbar keeps `aria-valuenow/min/max` and an `aria-valuetext`/label that marks estimated data when no real source is available.
+
+**Tests added:** A149–A153 (5 tests) in `tests/a11y.spec.ts`; A143/A145/A146 updated for the new behaviour.
+- A149: middle-list rows show multiple capability icons with an accessible label
+- A150: the "no model selected" empty state lives in the detail pane, not the middle list
+- A151: Storage meter derives from data (no hardcoded 512 GB) and labels the estimate
+- A152: a HuggingFace nav entry appears on search, shows the count, is keyboard operable, and clears
+- A153: the model view with an active HuggingFace search passes WCAG 2.1 AA axe-core scan
+
+**Files changed:** `modelCapabilities.ts`, `Icon.tsx`, `api.ts`, `ModelDetailPanel.tsx`, `ModelNavRail.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
+
+---
 
 ---
 
@@ -24,7 +52,7 @@ fl0rianr's PR #2424 review raised five items, all addressed in `prototype/ui-red
 
 **Tests added:** A142–A148 (7 tests) in `tests/a11y.spec.ts`.
 - A142: detail favorite star is an `aria-pressed` toggle naming the model
-- A143: favoriting updates the Favorites nav count and persists to the existing `pinned_models` store
+- A143: favoriting updates the Favorites nav count and persists (store split into a DISTINCT `favorite_models` key in Group J — see below)
 - A144: "Back to models" is hidden on desktop widths
 - A145: funnel popover filters by capability and has a solid (non-transparent) background
 - A146: picking a capability in the funnel popover filters the list

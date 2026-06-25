@@ -6,9 +6,17 @@
  */
 import React, { useCallback, useRef, useMemo, useState } from 'react';
 import type { ModelInfo, LoadedModel } from '../api';
-import { capabilityFromModelInfo } from '../modelCapabilities';
+import {
+  capabilityFromModelInfo,
+  modelCapabilityTags,
+  modelMatchesCapabilityTags,
+  CAPABILITY_TAG_ORDER,
+  CAPABILITY_TAG_LABELS,
+  type CapabilityTag,
+} from '../modelCapabilities';
 import { Icon, CapabilityIcon } from './Icon';
 import type { IconName } from './Icon';
+import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -93,7 +101,7 @@ export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
    the model list the prototype already loads — no lemond calls. */
 
 /** Primary nav buckets in the left rail. */
-export type PrimaryFilter = 'all' | 'downloaded' | 'my-models' | 'favorites';
+export type PrimaryFilter = 'all' | 'downloaded' | 'my-models' | 'favorites' | 'huggingface';
 
 /** A model counts as "downloaded" if it is locally present or running. */
 export function modelIsDownloaded(m: ModelInfo, loadedNames: Set<string>): boolean {
@@ -110,15 +118,23 @@ export function modelMatchesPrimary(
   m: ModelInfo,
   primary: PrimaryFilter,
   loadedNames: Set<string>,
-  pinnedNames?: Set<string>,
+  favoriteNames?: Set<string>,
 ): boolean {
   switch (primary) {
     case 'downloaded': return modelIsDownloaded(m, loadedNames);
     case 'my-models': return modelIsCustom(m);
-    case 'favorites': return pinnedNames?.has(listModelName(m).toLowerCase()) ?? false;
+    case 'favorites': return favoriteNames?.has(listModelName(m).toLowerCase()) ?? false;
+    // Hugging Face results are supplied as their own list, so every entry matches.
+    case 'huggingface': return true;
     case 'all':
     default: return true;
   }
+}
+
+/** Map a functional capability tag onto its icon target (tags reuse the
+    capability icon set; 'tool' shares the wrench glyph). */
+export function capabilityTagIconTarget(tag: CapabilityTag): CapabilityIconTarget {
+  return tag as CapabilityIconTarget;
 }
 
 /** Backend filter — `backend` is 'all' or a lowercased recipe id. */
@@ -164,6 +180,9 @@ export interface ModelListPanelProps {
   onSearchChange: (q: string) => void;
   filterTab: FilterTab;
   onFilterChange: (tab: FilterTab) => void;
+  /** Selected functional capability tags (multi-select funnel). Empty = no filter. */
+  capabilityFilter?: Set<string>;
+  onCapabilityFilterChange?: (next: Set<string>) => void;
   /** Primary nav bucket selected in the left rail. */
   primaryFilter?: PrimaryFilter;
   /** Backend filter ('all' or lowercased recipe id) from the left rail. */
@@ -173,10 +192,12 @@ export interface ModelListPanelProps {
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onAddCustomModel?: () => void;
   onAddOmniCollection?: () => void;
-  /** Lowercased set of pinned (favorited) model names. Client-local, no lemond. */
+  /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
   pinnedNames?: Set<string>;
-  /** Toggle a model's pinned/favorite state. Receives the model name. */
+  /** Toggle a model's pinned state. Receives the model name. */
   onTogglePin?: (name: string) => void;
+  /** Lowercased set of favorited model names (distinct from pinned). Client-local. */
+  favoriteNames?: Set<string>;
 }
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
@@ -192,6 +213,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onSearchChange,
   filterTab,
   onFilterChange,
+  capabilityFilter,
+  onCapabilityFilterChange,
   primaryFilter = 'all',
   backendFilter = 'all',
   tagFilter = null,
@@ -200,6 +223,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onAddOmniCollection,
   pinnedNames,
   onTogglePin,
+  favoriteNames,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('name');
@@ -222,9 +246,12 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       if (!modelMatchesFilter(m, filterTab)) continue;
 
       // Left-rail filter dimensions (primary bucket / backend / tag)
-      if (!modelMatchesPrimary(m, primaryFilter, loadedNames, pinnedNames)) continue;
+      if (!modelMatchesPrimary(m, primaryFilter, loadedNames, favoriteNames)) continue;
       if (!modelMatchesBackend(m, backendFilter)) continue;
       if (!modelMatchesTag(m, tagFilter)) continue;
+
+      // Funnel: functional capability tags (multi-select). Empty = no filter.
+      if (!modelMatchesCapabilityTags(m, capabilityFilter ?? new Set())) continue;
 
       // Filter by search
       if (q) {
@@ -286,14 +313,35 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       });
     }
 
-    // Pinned (favorited) models always float to the top, preserving the
-    // chosen sort order within the pinned and unpinned groups. Client-local only.
+    // Pinned models always float to the top, preserving the chosen sort order
+    // within the pinned and unpinned groups. Client-local only; distinct from
+    // favorites (which is a separate filter/count, not a sort).
     if (pinnedNames && pinnedNames.size > 0) {
       result.sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false));
     }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, primaryFilter, backendFilter, tagFilter]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilter, tagFilter, capabilityFilter]);
+
+  // Funnel options: the union of functional capability tags present across the
+  // models, in canonical order. Derived client-side from the model labels —
+  // "Define the capability set from the mock model data" (fl0rianr #2424).
+  const availableCapabilityTags = useMemo<CapabilityTag[]>(() => {
+    const present = new Set<CapabilityTag>();
+    for (const m of allModels) {
+      if (!listModelName(m)) continue;
+      for (const tag of modelCapabilityTags(m)) present.add(tag);
+    }
+    return CAPABILITY_TAG_ORDER.filter(tag => present.has(tag));
+  }, [allModels]);
+
+  const capabilityFilterSize = capabilityFilter?.size ?? 0;
+  const toggleCapability = useCallback((tag: CapabilityTag) => {
+    if (!onCapabilityFilterChange) return;
+    const next = new Set(capabilityFilter ?? new Set<string>());
+    if (next.has(tag)) next.delete(tag); else next.add(tag);
+    onCapabilityFilterChange(next);
+  }, [capabilityFilter, onCapabilityFilterChange]);
 
   // Keyboard navigation on the list (ArrowUp/Down/Home/End)
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -389,9 +437,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           <button
             ref={filterBtnRef}
             type="button"
-            className={`model-list-panel__filter-btn${filterOpen ? ' model-list-panel__filter-btn--open' : ''}${filterTab !== 'all' ? ' model-list-panel__filter-btn--active' : ''}`}
+            className={`model-list-panel__filter-btn${filterOpen ? ' model-list-panel__filter-btn--open' : ''}${capabilityFilterSize > 0 ? ' model-list-panel__filter-btn--active' : ''}`}
             onClick={handleFilterBtnClick}
-            aria-label="Filter models by capability"
+            aria-label={capabilityFilterSize > 0 ? `Filter models by capability (${capabilityFilterSize} active)` : 'Filter models by capability'}
             aria-expanded={filterOpen}
             aria-haspopup="dialog"
           >
@@ -418,18 +466,33 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                 </button>
               </div>
               <div className="model-list-panel__filter-options" role="group" aria-label="Model capability filter">
-                {FILTER_TABS.map(tab => (
+                {availableCapabilityTags.length === 0 && (
+                  <span className="model-list-panel__filter-empty">No capabilities available</span>
+                )}
+                {availableCapabilityTags.map(tag => {
+                  const active = capabilityFilter?.has(tag) ?? false;
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={`model-list-panel__filter-option${active ? ' model-list-panel__filter-option--active' : ''}`}
+                      onClick={() => toggleCapability(tag)}
+                      aria-pressed={active}
+                    >
+                      <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
+                      {CAPABILITY_TAG_LABELS[tag]}
+                    </button>
+                  );
+                })}
+                {capabilityFilterSize > 0 && (
                   <button
-                    key={tab.key}
                     type="button"
-                    className={`model-list-panel__filter-option${filterTab === tab.key ? ' model-list-panel__filter-option--active' : ''}`}
-                    onClick={() => { onFilterChange(tab.key); setFilterOpen(false); }}
-                    aria-pressed={filterTab === tab.key}
+                    className="model-list-panel__filter-clear"
+                    onClick={() => onCapabilityFilterChange?.(new Set())}
                   >
-                    <CapabilityIcon capability={tab.key === 'llm' ? 'chat' : tab.key === 'embedding' ? 'embedding' : tab.key as any} size={12} />
-                    {tab.label}
+                    Clear all
                   </button>
-                ))}
+                )}
               </div>
             </div>
           )}
@@ -474,7 +537,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
           const isSelected = mId === selectedModelId;
-          const cap = capabilityFromModelInfo(model);
+          const capTags = modelCapabilityTags(model);
 
           return (
             <li
@@ -507,8 +570,12 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   {model.size != null && model.size > 0 && (
                     <span className="model-list-item__size">{listFmtSize(model.size)}</span>
                   )}
-                  <span className="model-list-item__cap">
-                    <CapabilityIcon capability={cap} size={10} aria-hidden="true" />
+                  <span className="model-list-item__caps" role="img" aria-label={`Capabilities: ${capTags.map(t => CAPABILITY_TAG_LABELS[t]).join(', ')}`}>
+                    {capTags.map(tag => (
+                      <span key={tag} className="model-list-item__cap" title={CAPABILITY_TAG_LABELS[tag]}>
+                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={10} aria-hidden="true" />
+                      </span>
+                    ))}
                   </span>
                 </span>
               </span>
@@ -541,10 +608,14 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           );
         })}
 
-        {flatList.length === 0 && (
+        {/* Search-no-match feedback stays in the middle list. The "no model
+            selected" / empty-registry placeholder now lives in the RIGHT detail
+            pane (ModelDetailPanel) per fl0rianr #2424 — it must NOT leak into the
+            top of the model list. */}
+        {flatList.length === 0 && searchQuery && (
           <li className="model-list-panel__empty manager__empty" aria-live="polite">
             <Icon name="search" size={18} aria-hidden="true" />
-            <span>{searchQuery ? 'No models match your search.' : 'No models found.'}</span>
+            <span>No models match your search.</span>
           </li>
         )}
       </ul>
