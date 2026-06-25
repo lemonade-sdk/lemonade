@@ -40,6 +40,7 @@ runs:
           build_profiles="bootstrap-ftxui"
         fi
         DEB_BUILD_PROFILES="$build_profiles" apt-get build-dep . -y
+        echo "DEB_BUILD_PROFILES=$build_profiles" >> "$GITHUB_ENV"
 
     - name: Build Debian package
       id: build
