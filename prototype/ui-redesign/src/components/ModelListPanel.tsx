@@ -88,6 +88,8 @@ function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
 
 /* ── Types ───────────────────────────────────────────────────── */
 
+export type SortBy = 'name' | 'size' | 'last-used' | 'downloads';
+
 export type ModelStatus = 'running' | 'downloaded' | 'available' | 'downloading';
 
 export interface FlatModelEntry {
@@ -130,13 +132,14 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onAddOmniCollection,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>('name');
   const filterBtnRef = useRef<HTMLButtonElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const defaultSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = (searchInputRef ?? defaultSearchRef) as React.RefObject<HTMLInputElement>;
 
-  // Build flat sorted list: running → downloaded → available
+  // Build flat list filtered by search + type; sort based on sortBy
   const flatList = useMemo((): FlatModelEntry[] => {
     const q = searchQuery.trim().toLowerCase();
     const result: FlatModelEntry[] = [];
@@ -171,16 +174,45 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       result.push({ model: m, status, downloadPct: pullPct });
     }
 
-    // Sort: running first, then downloaded, then available
-    const rank: Record<ModelStatus, number> = { running: 0, downloaded: 1, downloading: 1, available: 2 };
-    result.sort((a, b) => {
-      const r = rank[a.status] - rank[b.status];
-      if (r !== 0) return r;
-      return listModelDisplayName(a.model).localeCompare(listModelDisplayName(b.model));
-    });
+    if (sortBy === 'name') {
+      // Default: running → downloaded → available, then alphabetical within group
+      const rank: Record<ModelStatus, number> = { running: 0, downloaded: 1, downloading: 1, available: 2 };
+      result.sort((a, b) => {
+        const r = rank[a.status] - rank[b.status];
+        if (r !== 0) return r;
+        return listModelDisplayName(a.model).localeCompare(listModelDisplayName(b.model));
+      });
+    } else if (sortBy === 'size') {
+      result.sort((a, b) => {
+        const sa = a.model.size ?? -1;
+        const sb = b.model.size ?? -1;
+        if (sa !== sb) return sb - sa; // largest first; unknown size (-1) sinks to bottom
+        return listModelDisplayName(a.model).localeCompare(listModelDisplayName(b.model));
+      });
+    } else if (sortBy === 'last-used') {
+      // Graceful fallback to name if last_used absent
+      result.sort((a, b) => {
+        const la: string | null = (a.model as any).last_used ?? null;
+        const lb: string | null = (b.model as any).last_used ?? null;
+        if (la && lb) return new Date(lb).getTime() - new Date(la).getTime();
+        if (la) return -1;
+        if (lb) return 1;
+        return listModelDisplayName(a.model).localeCompare(listModelDisplayName(b.model));
+      });
+    } else if (sortBy === 'downloads') {
+      // Graceful fallback to name if download_count absent
+      result.sort((a, b) => {
+        const da: number | null = (a.model as any).downloads ?? (a.model as any).download_count ?? null;
+        const db: number | null = (b.model as any).downloads ?? (b.model as any).download_count ?? null;
+        if (da !== null && db !== null) return db - da; // most downloads first
+        if (da !== null) return -1;
+        if (db !== null) return 1;
+        return listModelDisplayName(a.model).localeCompare(listModelDisplayName(b.model));
+      });
+    }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy]);
 
   // Keyboard navigation on the list (ArrowUp/Down/Home/End)
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -295,6 +327,23 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Sort control */}
+      <div className="model-list-panel__sort-row">
+        <label htmlFor="model-list-sort" className="model-list-panel__sort-label">Sort</label>
+        <select
+          id="model-list-sort"
+          className="model-list-panel__sort-select"
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as SortBy)}
+          aria-label="Sort models by"
+        >
+          <option value="name">Name (A–Z)</option>
+          <option value="size">Size (largest first)</option>
+          <option value="last-used">Last used</option>
+          <option value="downloads">Download count</option>
+        </select>
       </div>
 
       {/* List count */}

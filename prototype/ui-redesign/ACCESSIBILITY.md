@@ -3,8 +3,8 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete  
-**Test status (2026-06-25):** All 121 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A91–A105 added for Slice 1)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete  
+**Test status (2026-06-25):** All 131 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A106–A115 added for reconciliation)
 
 ---
 
@@ -51,11 +51,46 @@ Replaces the old preset-rail layout with an email-client-style master-detail spl
 **Deferred to follow-up slices:**
 - Files tab (stub only in Slice 1)
 - Full recommended-preset card polish
-- Sorting refinements  
 - #2356 (Update-preset-while-loaded — builds on detail panel)
 
 ---
 
+## Group F — #2355 Slice 1 reconciliation — fl0rianr 2026-06-25 clarifications
+
+Closes 4 gaps against @fl0rianr's six-point clarification comment (2026-06-25T16:30Z).
+
+### F1 — README checkpoint derivation (tightened)
+
+- **Status:** ✅ **Fixed 2026-06-25**
+- **What:** `hfReadmeUrl` replaced by `deriveHFRepo(checkpoint, checkpoints)` in `ModelDetailPanel.tsx`. Now tries `model.checkpoint` first, then `model.checkpoints.main`, then first value in `model.checkpoints` map. Strips `:variant` suffix via `.split(':')[0]`. Validates with regex `/^[\w.-]+\/[\w.-]+$/` before attempting fetch — non-matching values are silently skipped (no fetch attempt, README placeholder shown). `ModelReadmeTab` caches by derived URL. HF link in the header also uses `deriveHFRepo`.
+- **WCAG:** 1.3.1, 4.1.2 (no new a11y concern; tightened correctness)
+
+### F2 — Sort controls (model list)
+
+- **Status:** ✅ **Added 2026-06-25**
+- **What:** `ModelListPanel` now renders a `<label htmlFor="model-list-sort">Sort</label>` + `<select id="model-list-sort">` with four options: Name (A–Z, default), Size (largest first), Last used, Download count. Sort logic in `flatList` useMemo: Name keeps the status-group ordering (running → downloaded → available) as secondary sort; Size/Last used/Downloads are primary with graceful fallback to name when the relevant data is absent. No crash when `last_used` or `downloads` fields are missing.
+- **WCAG:** 1.3.1, 2.1.1, 4.1.2 (labeled form control, keyboard-operable `<select>`)
+
+### F3 — Responsive list-first pattern
+
+- **Status:** ✅ **Added 2026-06-25**
+- **What:** At `max-width: 700px`, `ModelManager` adds `.manager--detail-mobile-open` class to the grid container when a model is selected. CSS hides the list and shows the detail panel (not stacked — mutually exclusive). A "Back to models" `<button class="model-detail-panel__back-btn" aria-label="Back to models list">` is injected at the top of `ModelDetailPanel` when `onBack` prop is provided. Focus moves to the detail heading on open (`panelHeadingRef` focus in `useEffect`) and back to the selected `[data-model-id]` list item on Back (via `document.querySelector` + `focus()`).
+- **WCAG:** 2.1.1 (keyboard), 2.4.3 (focus order), 4.1.2 (button accessible name)
+
+### F4 — Presets tab — Change linked preset (inline chooser)
+
+- **Status:** ✅ **Added 2026-06-25**
+- **What:** When a non-default preset is linked, the linked preset card gains a "Change" `<button aria-haspopup="dialog" aria-expanded>`. Clicking it toggles an inline `<div role="dialog" aria-label="Switch linked preset" aria-modal="true">` rendered directly in the Presets tab, listing compatible presets (excluding the currently linked one) as clickable `<li role="option">` buttons with aria-labels. Selecting one calls `handleAttach` and closes the chooser, returning focus to the Change button. A ✕ close button also returns focus. The compatible presets list below continues to show "Switch" (renamed from "Attach" when a non-default preset is linked) for direct in-list attaching.
+- **WCAG:** 2.1.1, 2.4.3, 4.1.2
+
+**Tests added:** A106–A115 (10 tests) in `tests/a11y.spec.ts`.
+- A106–A109: sort control label, options, default value, keyboard operability
+- A110–A113: narrow viewport list-first, model selection shows detail, Back button label, Back returns to list
+- A114–A115: preset Change button ARIA attributes, chooser dialog opens/closes with focus
+
+**Files changed:** `ModelDetailPanel.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
+
+---
 
 
 Adds a new read-only MCP dashboard section to `ConnectView.tsx` exposing the existing `POST /mcp` Streamable HTTP endpoint.

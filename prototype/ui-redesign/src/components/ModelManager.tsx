@@ -959,6 +959,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [showAllAvailable, setShowAllAvailable] = useState(false);
@@ -2420,7 +2421,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     </section>
   );
   return (
-    <div className="manager manager--detail">
+    <div className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}`}>
       {/* Left panel: searchable/filterable model list */}
       <ModelListPanel
         allModels={allModels}
@@ -2428,7 +2429,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         pulling={pulling}
         downloadItems={downloadItems}
         selectedModelId={selectedDetailModelId}
-        onSelectModel={(id) => { setSelectedDetailModelId(id); if (showCustomForm) closeCustomForm(); }}
+        onSelectModel={(id) => {
+          setSelectedDetailModelId(id);
+          setMobileDetailOpen(true);
+          if (showCustomForm) closeCustomForm();
+        }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         filterTab={filterTab}
@@ -2608,6 +2613,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}
           serverDefaultCtxSize={serverDefaultCtxSize}
+          onBack={() => {
+            setMobileDetailOpen(false);
+            // Return focus to the selected list item
+            if (selectedDetailModelId) {
+              requestAnimationFrame(() => {
+                const sel = document.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(selectedDetailModelId)}"]`);
+                sel?.focus();
+              });
+            }
+          }}
         />
       )}
     </div>

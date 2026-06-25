@@ -47,11 +47,30 @@ function recipeDisplayLabel(recipe: string): string {
   }
 }
 
-function hfReadmeUrl(checkpoint: string): string | null {
-  if (!checkpoint) return null;
-  const repo = checkpoint.split(':')[0];
-  if (!repo.includes('/')) return null;
-  return `https://huggingface.co/${repo}/raw/main/README.md`;
+/** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
+const HF_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+
+/**
+ * Derive the best-effort HF repo from model.checkpoint or model.checkpoints.main
+ * (falling back to the first available checkpoint value).
+ * Strips the variant/file suffix after `:`.
+ * Returns null if no valid `owner/repo` can be derived.
+ */
+function deriveHFRepo(
+  checkpoint: string | null | undefined,
+  checkpoints: Record<string, string> | null | undefined,
+): string | null {
+  const candidates: (string | undefined)[] = [
+    checkpoint ?? undefined,
+    checkpoints?.main,
+    ...(checkpoints ? Object.values(checkpoints) : []),
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const repo = c.split(':')[0].trim();
+    if (HF_REPO_RE.test(repo)) return repo;
+  }
+  return null;
 }
 
 /* ── Shared markdown-it instance for README rendering ─────────── */
@@ -74,36 +93,39 @@ const readmeCache = new Map<string, string>();
 
 /* ── README tab ──────────────────────────────────────────────── */
 
-const ModelReadmeTab: React.FC<{ checkpoint: string | undefined | null; isActive: boolean }> = ({ checkpoint, isActive }) => {
+const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const checkpoint = model ? String((model as any).checkpoint || '') : '';
+  const checkpoints = model ? ((model as any).checkpoints as Record<string, string> | null ?? null) : null;
+  const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
+  const readmeUrl = hfRepo ? `https://huggingface.co/${hfRepo}/raw/main/README.md` : null;
+
   const [readme, setReadme] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isActive) return;
-    if (!checkpoint) { setReadme(''); return; }
-    const url = hfReadmeUrl(checkpoint);
-    if (!url) { setReadme(''); return; }
+    if (!readmeUrl) { setReadme(''); return; }
 
-    const cached = readmeCache.get(checkpoint);
+    const cached = readmeCache.get(readmeUrl);
     if (cached !== undefined) { setReadme(cached); return; }
 
     let cancelled = false;
     setLoading(true);
-    fetch(url)
+    fetch(readmeUrl)
       .then(r => r.ok ? r.text() : null)
       .then(text => {
         if (cancelled) return;
         const content = text || '';
-        readmeCache.set(checkpoint, content);
+        readmeCache.set(readmeUrl, content);
         setReadme(content);
       })
       .catch(() => {
-        if (!cancelled) { readmeCache.set(checkpoint ?? '', ''); setReadme(''); }
+        if (!cancelled) { readmeCache.set(readmeUrl, ''); setReadme(''); }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [checkpoint, isActive]);
+  }, [readmeUrl, isActive]);
 
   if (loading) {
     return (
@@ -142,7 +164,10 @@ const ModelPresetsTab: React.FC<{
   const [allPresets, setAllPresets] = useState<Preset[]>(() => allStoredPresets());
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(() => loadApplied());
   const [notice, setNotice] = useState<string | null>(null);
+  const [showChooser, setShowChooser] = useState(false);
   const liveRef = useRef<HTMLDivElement>(null);
+  const changeBtnRef = useRef<HTMLButtonElement>(null);
+  const chooserRef = useRef<HTMLDivElement>(null);
 
   // Reload when preset store changes
   useEffect(() => {
@@ -153,6 +178,19 @@ const ModelPresetsTab: React.FC<{
     window.addEventListener(PRESET_STORE_EVENT, handler);
     return () => window.removeEventListener(PRESET_STORE_EVENT, handler);
   }, []);
+
+  // Close chooser when model changes
+  useEffect(() => { setShowChooser(false); }, [name]);
+
+  // Focus first focusable element in chooser when it opens
+  useEffect(() => {
+    if (showChooser) {
+      requestAnimationFrame(() => {
+        const first = chooserRef.current?.querySelector<HTMLElement>('button:not(.detail-presets__chooser-close), [tabindex="0"]');
+        first?.focus();
+      });
+    }
+  }, [showChooser]);
 
   const linkedPresetId = appliedPresets[name] || DEFAULT_PRESET.id;
   const linkedPreset = allPresets.find(p => p.id === linkedPresetId) || DEFAULT_PRESET;
@@ -177,6 +215,17 @@ const ModelPresetsTab: React.FC<{
     setNotice(msg);
     setTimeout(() => setNotice(null), 2500);
   }, [name]);
+
+  const handleAttachFromChooser = useCallback((preset: Preset) => {
+    handleAttach(preset);
+    setShowChooser(false);
+    requestAnimationFrame(() => changeBtnRef.current?.focus());
+  }, [handleAttach]);
+
+  const handleCloseChooser = useCallback(() => {
+    setShowChooser(false);
+    requestAnimationFrame(() => changeBtnRef.current?.focus());
+  }, []);
 
   if (!isActive) return null;
 
@@ -211,16 +260,80 @@ const ModelPresetsTab: React.FC<{
             </div>
           )}
           {linkedPreset.id !== DEFAULT_PRESET.id && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny detail-presets__detach-btn"
-              onClick={() => handleAttach(DEFAULT_PRESET)}
-              aria-label={`Detach preset "${linkedPreset.name}" from ${name}, reset to default`}
-            >
-              Reset to default
-            </button>
+            <div className="detail-presets__linked-actions">
+              <button
+                ref={changeBtnRef}
+                type="button"
+                className="btn btn--primary btn--tiny detail-presets__change-btn"
+                onClick={() => setShowChooser(v => !v)}
+                aria-label={`Change linked preset for ${name}`}
+                aria-expanded={showChooser}
+                aria-haspopup="dialog"
+              >
+                Change
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--tiny detail-presets__detach-btn"
+                onClick={() => handleAttach(DEFAULT_PRESET)}
+                aria-label={`Detach preset "${linkedPreset.name}" from ${name}, reset to default`}
+              >
+                Reset to default
+              </button>
+            </div>
           )}
         </div>
+
+        {/* Inline change-preset chooser */}
+        {showChooser && (
+          <div
+            ref={chooserRef}
+            className="detail-presets__change-chooser"
+            role="dialog"
+            aria-label="Switch linked preset"
+            aria-modal="true"
+          >
+            <div className="detail-presets__chooser-head">
+              <span className="detail-presets__chooser-title">Switch to a different preset</span>
+              <button
+                type="button"
+                className="detail-presets__chooser-close btn btn--ghost btn--tiny"
+                onClick={handleCloseChooser}
+                aria-label="Close preset chooser"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+            {compatiblePresets.filter(p => p.id !== linkedPresetId).length === 0 ? (
+              <p className="detail-presets__chooser-empty">
+                {compatiblePresets.length === 0
+                  ? 'No compatible presets available. Create one in the Presets page.'
+                  : 'No other compatible presets to switch to.'}
+              </p>
+            ) : (
+              <ul className="detail-presets__chooser-list" role="listbox" aria-label="Select a preset to switch to">
+                {compatiblePresets
+                  .filter(p => p.id !== linkedPresetId)
+                  .map(preset => (
+                    <li key={preset.id} role="option" aria-selected={false}>
+                      <button
+                        type="button"
+                        className="detail-presets__chooser-option"
+                        onClick={() => handleAttachFromChooser(preset)}
+                        aria-label={`Switch to preset "${preset.name}"`}
+                      >
+                        <PresetIcon preset={preset} size={12} />
+                        <span className="detail-presets__chooser-option-name">{preset.name}</span>
+                        {preset.description && (
+                          <span className="detail-presets__chooser-option-desc">{preset.description}</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Compatible presets */}
@@ -261,9 +374,9 @@ const ModelPresetsTab: React.FC<{
                       type="button"
                       className="btn btn--primary btn--tiny detail-presets__attach-btn"
                       onClick={() => handleAttach(preset)}
-                      aria-label={`Attach preset "${preset.name}" to ${name}`}
+                      aria-label={`${linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch to' : 'Attach'} preset "${preset.name}" for ${name}`}
                     >
-                      Attach
+                      {linkedPreset.id !== DEFAULT_PRESET.id ? 'Switch' : 'Attach'}
                     </button>
                   )}
                 </div>
@@ -305,6 +418,8 @@ export interface ModelDetailPanelProps {
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
+  /** Called when the "Back to models" button is clicked (narrow viewports). */
+  onBack?: () => void;
 }
 
 type DetailTab = 'readme' | 'presets' | 'files';
@@ -327,6 +442,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onPullAndLoad,
   onDelete,
   onCancelPull,
+  onBack,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('readme');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -354,6 +470,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   if (!model) {
     return (
       <div className="model-detail-panel model-detail-panel--empty" aria-label="Model detail">
+        {onBack && (
+          <button
+            type="button"
+            className="model-detail-panel__back-btn"
+            onClick={onBack}
+            aria-label="Back to models list"
+          >
+            ← Back to models
+          </button>
+        )}
         <div className="model-detail-panel__placeholder">
           <Icon name="model" size={40} aria-hidden="true" />
           <p>Select a model to view details</p>
@@ -365,6 +491,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const name = mdName(model);
   const recipe = String((model as any).recipe || '');
   const checkpoint = String((model as any).checkpoint || '');
+  const checkpoints = (model as any).checkpoints as Record<string, string> | null ?? null;
+  const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
   const isLoaded = !!loadedModel;
   const isLoadingThis = loadingModel === name;
   const isPulling = pulling[name] !== undefined;
@@ -374,6 +502,18 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   return (
     <div className="model-detail-panel" role="region" aria-label={`Model details: ${name}`}>
+
+      {/* Back button for narrow viewports */}
+      {onBack && (
+        <button
+          type="button"
+          className="model-detail-panel__back-btn"
+          onClick={onBack}
+          aria-label="Back to models list"
+        >
+          ← Back to models
+        </button>
+      )}
 
       {/* Header */}
       <div className="model-detail-panel__head">
@@ -492,10 +632,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         )}
 
         {/* HF link */}
-        {checkpoint && hfReadmeUrl(checkpoint) && (
+        {hfRepo && (
           <a
             className="model-detail-panel__hf-link"
-            href={`https://huggingface.co/${checkpoint.split(':')[0]}`}
+            href={`https://huggingface.co/${hfRepo}`}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`View ${name} on Hugging Face (opens in new tab)`}
@@ -541,7 +681,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           hidden={activeTab !== tab.id}
         >
           {tab.id === 'readme' && (
-            <ModelReadmeTab checkpoint={checkpoint} isActive={activeTab === 'readme'} />
+            <ModelReadmeTab model={model} isActive={activeTab === 'readme'} />
           )}
           {tab.id === 'presets' && (
             <ModelPresetsTab model={model} isActive={activeTab === 'presets'} />

@@ -1935,3 +1935,266 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   });
 });
 
+// ─── 24. #2355 Slice 1 reconciliation — sort, responsive, README derivation, preset change ──
+//
+// Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications:
+//   A: README checkpoint derivation (tightened regex + checkpoints.main fallback)
+//   B: Sort controls (labeled select with 4 options)
+//   C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
+//   D: Presets tab Change inline chooser (attach + detach already present)
+// Range: A106–A115.
+
+test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarifications)', () => {
+  async function goToModels(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+  }
+
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+              checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── B: Sort controls ─────────────────────────────────────────────────────────
+
+  test('A106 — sort control is a labelled <select> with accessible name', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toBeVisible();
+    await expect(sortSelect).toHaveRole('combobox');
+
+    // Label must reference the select
+    const label = page.locator('label[for="model-list-sort"]');
+    await expect(label).toBeVisible();
+  });
+
+  test('A107 — sort control offers Name, Size, Last used, Download count options', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toBeVisible();
+
+    const opts = await sortSelect.locator('option').allTextContents();
+    expect(opts.some(t => /name/i.test(t))).toBe(true);
+    expect(opts.some(t => /size/i.test(t))).toBe(true);
+    expect(opts.some(t => /last.used/i.test(t))).toBe(true);
+    expect(opts.some(t => /download/i.test(t))).toBe(true);
+  });
+
+  test('A108 — sort select default value is Name (alphabetical)', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toHaveValue('name');
+  });
+
+  test('A109 — sort select is keyboard-operable (can change value via keyboard)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await sortSelect.focus();
+    await sortSelect.selectOption('size');
+    await expect(sortSelect).toHaveValue('size');
+    // Revert
+    await sortSelect.selectOption('name');
+    await expect(sortSelect).toHaveValue('name');
+  });
+
+  // ── C: Responsive list-first ──────────────────────────────────────────────────
+
+  test('A110 — on narrow viewport (640px), detail panel is hidden until model selected', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    // Detail panel should not be visible before selection
+    const detailPanel = page.locator('.model-detail-panel');
+    await expect(detailPanel).not.toBeVisible();
+
+    // List should be visible
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+  });
+
+  test('A111 — on narrow viewport, selecting a model shows the detail panel and hides the list', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    // Detail visible, list hidden
+    await expect(page.locator('.model-detail-panel')).toBeVisible();
+    await expect(page.locator('.model-list-panel')).not.toBeVisible();
+  });
+
+  test('A112 — narrow viewport detail view has a "Back to models" button with accessible label', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const backBtn = page.locator('.model-detail-panel__back-btn');
+    await expect(backBtn).toBeVisible();
+    await expect(backBtn).toHaveRole('button');
+    const label = await backBtn.getAttribute('aria-label');
+    expect(label).toMatch(/back.+model/i);
+  });
+
+  test('A113 — Back button returns to list view and restores list visibility', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const backBtn = page.locator('.model-detail-panel__back-btn');
+    await backBtn.click();
+    await page.waitForTimeout(200);
+
+    // List back, detail hidden
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+    await expect(page.locator('.model-detail-panel')).not.toBeVisible();
+  });
+
+  // ── D: Preset Change inline chooser ──────────────────────────────────────────
+
+  test('A114 — preset Change button has aria-expanded and aria-haspopup="dialog"', async ({ page }) => {
+    // Inject a user preset via localStorage before page load
+    await page.addInitScript(() => {
+      // Seed a user preset compatible with LLM (chat), using scoped key
+      const preset = {
+        id: 'test-preset-1',
+        name: 'Test Chat Preset',
+        description: 'Seed preset for testing',
+        applies_to: ['chat'],
+        recipe_options: {},
+        sampling: {},
+        engine_hint: 'auto',
+        starter: false,
+        auto_opt_run_id: null,
+        auto_opt_enabled: true,
+        system_prompt_id: 'none',
+        system_prompts: [],
+        tools_enabled: false,
+      };
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
+      // Link the preset to Llama-3.1-8B
+      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-1' }));
+    });
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    // Navigate to Presets tab
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    // Change button should be visible (non-default preset is linked)
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await expect(changeBtn).toBeVisible();
+    await expect(changeBtn).toHaveAttribute('aria-haspopup', 'dialog');
+    const expanded = await changeBtn.getAttribute('aria-expanded');
+    expect(expanded).toBe('false');
+  });
+
+  test('A115 — preset Change chooser opens as role=dialog when Change clicked', async ({ page }) => {
+    await page.addInitScript(() => {
+      const preset = {
+        id: 'test-preset-2',
+        name: 'Alt Chat Preset',
+        description: 'Another preset',
+        applies_to: ['chat'],
+        recipe_options: {},
+        sampling: {},
+        engine_hint: 'auto',
+        starter: false,
+        auto_opt_run_id: null,
+        auto_opt_enabled: true,
+        system_prompt_id: 'none',
+        system_prompts: [],
+        tools_enabled: false,
+      };
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
+      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-2' }));
+    });
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await changeBtn.click();
+    await page.waitForTimeout(100);
+
+    // Chooser dialog should be visible
+    const chooser = page.locator('.detail-presets__change-chooser');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('role', 'dialog');
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
+
+    // Close chooser
+    const closeBtn = page.locator('.detail-presets__chooser-close');
+    await closeBtn.click();
+    await page.waitForTimeout(100);
+    await expect(chooser).not.toBeVisible();
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'false');
+  });
+});
