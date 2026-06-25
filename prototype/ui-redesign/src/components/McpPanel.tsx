@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import api, { ConnectionStatus } from '../api';
 
+const MCP_PROTOCOL_VERSION = '2025-06-18';
+// Matches package.json "version"; declared as a constant to avoid a
+// dynamic require() in the browser bundle.
+const CLIENT_VERSION = '0.1.0';
+
 interface McpTool {
   name: string;
   description?: string;
@@ -13,11 +18,27 @@ export interface McpPanelProps {
   connectionStatus: ConnectionStatus;
 }
 
-function buildMcpHeaders(): Record<string, string> {
+function buildMcpHeaders(
+  opts: { sessionId?: string; includeProtocolVersion?: boolean } = {},
+): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   const key = api.apiKey;
   if (key) h['Authorization'] = `Bearer ${key}`;
+  if (opts.includeProtocolVersion) h['MCP-Protocol-Version'] = MCP_PROTOCOL_VERSION;
+  if (opts.sessionId) h['Mcp-Session-Id'] = opts.sessionId;
   return h;
+}
+
+/** Combine an AbortController signal with a per-request timeout signal. */
+function makeSignal(staleSignal: AbortSignal, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (typeof (AbortSignal as unknown as Record<string, unknown>).any === 'function') {
+    return (AbortSignal as unknown as { any: (s: AbortSignal[]) => AbortSignal }).any([
+      staleSignal,
+      timeout,
+    ]);
+  }
+  return staleSignal;
 }
 
 const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
@@ -27,30 +48,78 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
   const [toolsLoading, setToolsLoading] = useState(false);
   const [copyNotice, setCopyNotice] = useState('');
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // AbortController for stale-async guard: aborted on disconnect, new connect, or unmount.
+  const abortRef = useRef<AbortController | null>(null);
 
   const mcpUrl = `${api.baseUrl}/mcp`;
 
   const fetchTools = useCallback(async () => {
+    // Cancel any in-flight sequence from a prior call.
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
     setToolsLoading(true);
     setToolsError(null);
     setMcpStatus('checking');
     try {
-      const headers = buildMcpHeaders();
-
-      // MCP Streamable HTTP: initialize handshake first (protocol v2025-06-18)
-      await fetch(mcpUrl, {
+      // ── Step 1: initialize handshake (spec 2025-06-18) ───────────────────
+      const initRes = await fetch(mcpUrl, {
         method: 'POST',
-        headers,
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
-        signal: AbortSignal.timeout(8000),
+        headers: buildMcpHeaders(),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: MCP_PROTOCOL_VERSION,
+            capabilities: { tools: {} },
+            clientInfo: { name: 'lemonade-gui3', version: CLIENT_VERSION },
+          },
+        }),
+        signal: makeSignal(signal, 8000),
       });
+      if (!initRes.ok) throw new Error(`initialize HTTP ${initRes.status}`);
 
-      // Then request the tools list
+      const initData = (await initRes.json()) as {
+        result?: { protocolVersion?: string };
+        error?: { message?: string };
+      };
+      if (initData.error) {
+        throw new Error(initData.error.message || 'initialize JSON-RPC error');
+      }
+      if (!initData.result?.protocolVersion) {
+        throw new Error('initialize response missing protocolVersion');
+      }
+
+      // Capture optional session ID; include in all subsequent requests.
+      const sessionId = initRes.headers.get('Mcp-Session-Id') ?? undefined;
+
+      if (signal.aborted) return;
+
+      const postInitHeaders = buildMcpHeaders({ sessionId, includeProtocolVersion: true });
+
+      // ── Step 2: notifications/initialized (no id — it is a notification) ─
+      try {
+        await fetch(mcpUrl, {
+          method: 'POST',
+          headers: postInitHeaders,
+          body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+          signal,
+        });
+      } catch {
+        // Notifications are fire-and-forget; network/parse errors are acceptable.
+      }
+
+      if (signal.aborted) return;
+
+      // ── Step 3: tools/list ────────────────────────────────────────────────
       const res = await fetch(mcpUrl, {
         method: 'POST',
-        headers,
+        headers: postInitHeaders,
         body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
-        signal: AbortSignal.timeout(8000),
+        signal: makeSignal(signal, 8000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as {
@@ -58,13 +127,18 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
         error?: { message?: string };
       };
       if (data.error) throw new Error(data.error.message || 'JSON-RPC error');
+
+      if (signal.aborted) return;
+
       setTools(Array.isArray(data.result?.tools) ? data.result!.tools : []);
       setMcpStatus('connected');
     } catch (err) {
+      // Discard stale results from aborted requests.
+      if ((err as { name?: string }).name === 'AbortError') return;
       setToolsError(err instanceof Error ? err.message : String(err));
       setMcpStatus('unavailable');
     } finally {
-      setToolsLoading(false);
+      if (!signal.aborted) setToolsLoading(false);
     }
   }, [mcpUrl]);
 
@@ -72,20 +146,33 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
     if (connectionStatus === 'connected') {
       void fetchTools();
     } else {
+      // Abort in-flight sequence and reset state.
+      if (abortRef.current) abortRef.current.abort();
       setMcpStatus('idle');
       setTools([]);
       setToolsError(null);
+      setToolsLoading(false);
     }
+    return () => {
+      // Abort on unmount to prevent stale state updates.
+      if (abortRef.current) abortRef.current.abort();
+    };
   }, [connectionStatus, fetchTools]);
 
   const handleCopy = () => {
+    if (!navigator.clipboard?.writeText) {
+      setCopyNotice('Copy not supported \u2014 select and copy manually');
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopyNotice(''), 2500);
+      return;
+    }
     navigator.clipboard
       .writeText(mcpUrl)
       .then(() => {
         setCopyNotice('Copied');
       })
       .catch(() => {
-        setCopyNotice('Copy failed');
+        setCopyNotice('Copy not supported \u2014 select and copy manually');
       })
       .finally(() => {
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current);

@@ -4,7 +4,7 @@
 **Branch:** `kpoin/ui-accessibility`  
 **Scope:** `prototype/ui-redesign/` only  
 **Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete  
-**Test status (2026-06-25):** All 103 automated tests passing, 7 skipped, 0 failed on `feat/gui3-mcp-dashboard`
+**Test status (2026-06-25):** All 106 automated tests passing, 7 skipped, 0 failed on `feat/gui3-mcp-dashboard` (A89–A90 added in review pass)
 
 ---
 
@@ -26,12 +26,15 @@ Adds a new read-only MCP dashboard section to `ConnectView.tsx` exposing the exi
 
 ### D3 — #2417: Exposed tools list
 
-- **Status:** ✅ **Fixed 2026-06-25**
-- **What:** Calls `POST /mcp` with JSON-RPC 2.0 `initialize` then `tools/list` (protocol 2025-06-18, POST-only, no SSE). Renders returned tools (name + description) in a `<ul aria-label="MCP tools">`. Loading/error/empty states are all accessible (role="alert" on error, `aria-live`/`aria-busy` on loading). Auth header (`Authorization: Bearer <key>`) passed via existing `api.apiKey`. Refresh button has `aria-label="Refresh MCP tools list"`.
+- **Status:** ✅ **Fixed 2026-06-25** (handshake hardened 2026-06-25 in review pass)
+- **What:** Calls `POST /mcp` with spec-aligned handshake: (1) `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`; validates response (HTTP ok + no JSON-RPC `error` + `result.protocolVersion` present) and surfaces an accessible `role="alert"` error state on failure without proceeding to tools/list. (2) `notifications/initialized` notification (no `id`, with `MCP-Protocol-Version: 2025-06-18` header). (3) `tools/list` (with same protocol header + `Mcp-Session-Id` if server returned one). Stale-async guard via `AbortController` (aborted on disconnect, new connect, and unmount). Clipboard copy guarded for unsupported/insecure contexts — falls back to accessible "Copy not supported — select and copy manually" message via the existing aria-live region. Renders returned tools (name + description) in a `<ul aria-label="MCP tools">`. Auth header (`Authorization: Bearer <key>`) passed via existing `api.apiKey`. Refresh button has `aria-label="Refresh MCP tools list"`.
 - **WCAG:** 4.1.2 (Name, Role, Value)
 
-**Tests added:** A80–A88 (9 tests) in `tests/a11y.spec.ts`.  
-**Files changed:** `McpPanel.tsx` (new), `ConnectView.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
+**Tests added:** A80–A90 (11 tests) in `tests/a11y.spec.ts`.  
+- A80–A88: original MCP panel a11y checks  
+- A89: behavioral — MCP request sequence, params, and MCP-Protocol-Version/Mcp-Session-Id headers  
+- A90: error — failed `initialize` surfaces accessible error; tools list absent; status not Connected  
+**Files changed:** `McpPanel.tsx`, `ConnectView.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 

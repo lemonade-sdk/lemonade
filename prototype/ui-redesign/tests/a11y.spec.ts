@@ -1555,4 +1555,129 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
     expect(serious, formatViolations(serious)).toHaveLength(0);
   });
+
+  test('A89 — MCP handshake: initialize→notifications/initialized→tools/list in order with correct params and MCP-Protocol-Version + Mcp-Session-Id headers', async ({ page }) => {
+    // Capture all /mcp requests in order so we can assert the sequence.
+    type CapturedRequest = {
+      method: string;
+      headers: Record<string, string>;
+      body: Record<string, unknown>;
+    };
+    const captured: CapturedRequest[] = [];
+
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/mcp**', async route => {
+      const body = route.request().postDataJSON() as {
+        method?: string; id?: number; params?: Record<string, unknown>;
+      };
+      const headers = route.request().headers();
+      captured.push({ method: body?.method ?? '', headers, body: body ?? {} });
+
+      if (body?.method === 'initialize') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          // Expose header so the cross-origin fetch can read it via Response.headers.get()
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Mcp-Session-Id',
+            'Mcp-Session-Id': 'sess-abc-123',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-mcp', version: '1.0.0' } },
+          }),
+        });
+      } else if (body?.method === 'notifications/initialized') {
+        // Notifications return 202 with empty body per Streamable HTTP spec.
+        await route.fulfill({ status: 202, body: '' });
+      } else {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body?.id, result: { tools: MCP_TOOLS } }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+
+    // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
+    expect(captured.length).toBeGreaterThanOrEqual(3);
+
+    // (a) initialize is first with correct params
+    const initReq = captured[0];
+    expect(initReq.method).toBe('initialize');
+    const initParams = (initReq.body as { params?: Record<string, unknown> }).params ?? {};
+    expect(initParams['protocolVersion']).toBe('2025-06-18');
+    expect(initParams['capabilities']).toMatchObject({ tools: {} });
+    const clientInfo = initParams['clientInfo'] as Record<string, string> | undefined;
+    expect(clientInfo?.['name']).toBe('lemonade-gui3');
+    expect(typeof clientInfo?.['version']).toBe('string');
+
+    // (b) notifications/initialized is second (no id field — it is a notification)
+    const notifReq = captured[1];
+    expect(notifReq.method).toBe('notifications/initialized');
+    expect((notifReq.body as { id?: unknown }).id).toBeUndefined();
+
+    // (c) tools/list is third
+    const toolsReq = captured[2];
+    expect(toolsReq.method).toBe('tools/list');
+
+    // (d) subsequent requests carry MCP-Protocol-Version and Mcp-Session-Id headers
+    // (HTTP headers are lowercased by the browser/node fetch internals)
+    expect(notifReq.headers['mcp-protocol-version']).toBe('2025-06-18');
+    expect(notifReq.headers['mcp-session-id']).toBe('sess-abc-123');
+    expect(toolsReq.headers['mcp-protocol-version']).toBe('2025-06-18');
+    expect(toolsReq.headers['mcp-session-id']).toBe('sess-abc-123');
+  });
+
+  test('A90 — MCP initialize failure: accessible error state shown, tools list absent, status not Connected', async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/mcp**', async route => {
+      const body = route.request().postDataJSON() as { method?: string; id?: number };
+      if (body?.method === 'initialize') {
+        // Server rejects with a JSON-RPC error in the response body.
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            error: { code: -32600, message: 'Unsupported protocol version' },
+          }),
+        });
+      } else {
+        // Should not be reached; fulfil defensively.
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body?.id, result: { tools: [] } }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
+    // Allow async flow to settle
+    await page.waitForTimeout(600);
+
+    // Accessible error alert is visible and contains the server error message.
+    const errorEl = page.locator('[data-mcp-tools-error]');
+    await expect(errorEl).toBeVisible();
+    await expect(errorEl).toContainText('Unsupported protocol version');
+
+    // Tools list must NOT be rendered.
+    await expect(page.locator('[data-mcp-tools-list]')).toHaveCount(0);
+
+    // Status indicator must not claim 'Connected'.
+    const statusEl = page.locator('[data-mcp-status]');
+    await expect(statusEl).not.toContainText('Connected');
+  });
 });
