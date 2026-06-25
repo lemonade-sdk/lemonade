@@ -1496,8 +1496,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 }
             }
         } else {
+            bool is_vllm_rocm = def.recipe == "vllm" && def.backend == "rocm";
+            auto normalize_expected_version = [is_vllm_rocm](const std::string& version) {
+                return is_vllm_rocm ? strip_rocm_release_target_suffix(version) : version;
+            };
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
-            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            std::string expected_version = normalize_expected_version(get_expected_backend_version(def.recipe, def.backend));
 
             // The user's *_bin pin overrides what the state machine considers
             // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1511,7 +1515,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         expected_version.clear();
                     } else {
                         // Bare upstream tag — that tag IS what the user expects.
-                        expected_version = user_pin;
+                        // vllm-rocm user pins may be base versions or full per-target
+                        // release tags; normalize either form to the base version so
+                        // status matches the install path's current-target suffix.
+                        expected_version = normalize_expected_version(user_pin);
                     }
                 }
             }
@@ -1576,8 +1583,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         latest_tag = bm->get_or_resolve_latest_tag(def.recipe, def.backend);
                     }
                 }
-                if (!latest_tag.empty()
-                    && version_compare(installed_version, latest_tag) < 0) {
+                std::string installed_version_for_compare = normalize_expected_version(installed_version);
+                std::string latest_tag_for_compare = normalize_expected_version(latest_tag);
+                if (!latest_tag_for_compare.empty()
+                    && version_compare(installed_version_for_compare, latest_tag_for_compare) < 0) {
                     backend["state"] = "update_available";
                     backend["message"] = "Newer upstream release available: " + latest_tag;
                     backend["action"] = get_install_command(def.recipe, def.backend);
@@ -1925,6 +1934,82 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
+std::string rocm_arch_to_release_target(const std::string& arch) {
+    // ROCm backend release repos (whisper.cpp-rocm, vllm-rocm, llamacpp-rocm
+    // nightly) publish discrete RDNA GPUs under a *family* target while APUs ship
+    // per-specific ISA. get_rocm_arch() returns the specific ISA (e.g. gfx1201)
+    // which is right for TheRock runtime paths but does not exist as a per-target
+    // asset name. Collapse discrete dGPU ISAs to their family here.
+    //
+    // Specific ISA -> release target:
+    //   gfx1010-1012            -> (no asset family published; pass through)
+    //   gfx1030-1036            -> gfx103X   (RDNA2 dGPU)
+    //   gfx1100-1103            -> gfx110X   (RDNA3 dGPU)
+    //   gfx1200/1201            -> gfx120X   (RDNA4 dGPU)
+    //   gfx1150/1151/1152       -> unchanged (APU, published per-specific)
+    //   gfx90X / gfx94X / etc.  -> unchanged (handled elsewhere / pass through)
+    //   already-family (gfx1XXX with trailing X) and unknown -> unchanged
+    if (arch.empty()) {
+        return arch;
+    }
+
+    // Already a family target (trailing 'X') or non-gfx token: leave as-is.
+    if (arch.back() == 'X' || arch.compare(0, 3, "gfx") != 0) {
+        return arch;
+    }
+
+    // APUs are published per-specific ISA; do not collapse them.
+    if (arch == "gfx1150" || arch == "gfx1151" || arch == "gfx1152") {
+        return arch;
+    }
+
+    // Match a 4-digit RDNA gfx token: gfx<major><minor><step>, e.g. gfx1201.
+    // Collapse the trailing step nibble to 'X' to form the family target for the
+    // RDNA dGPU families that publish family assets (gfx103X/110X/120X).
+    if (arch.size() == 7) {
+        const std::string base3 = arch.substr(3, 3);  // e.g. "120" from gfx1201
+        if (base3 == "103" || base3 == "110" || base3 == "120") {
+            return "gfx" + base3 + "X";
+        }
+    }
+
+    // Anything else (data-center gfx90X/94X already family, gfx101X dGPU, etc.)
+    // passes through unchanged.
+    return arch;
+}
+
+std::string strip_rocm_release_target_suffix(const std::string& version) {
+    const size_t dash = version.rfind("-gfx");
+    if (dash == std::string::npos) {
+        return version;
+    }
+
+    const std::string token = version.substr(dash + 1);  // gfx...
+    if (token.compare(0, 3, "gfx") != 0) {
+        return version;
+    }
+
+    auto is_hex = [](char ch) {
+        return (ch >= '0' && ch <= '9') ||
+               (ch >= 'a' && ch <= 'f') ||
+               (ch >= 'A' && ch <= 'F');
+    };
+
+    const std::string rest = token.substr(3);
+    bool valid_gfx_suffix = false;
+    if (rest.size() == 3) {
+        // e.g. gfx90a
+        valid_gfx_suffix = std::all_of(rest.begin(), rest.end(), is_hex);
+    } else if (rest.size() == 4) {
+        // e.g. gfx1151, gfx120X, gfx110X
+        valid_gfx_suffix = std::all_of(rest.begin(), rest.end(), is_hex) ||
+                           (std::all_of(rest.begin(), rest.begin() + 3, is_hex) &&
+                            (rest[3] == 'X' || rest[3] == 'x'));
+    }
+
+    return valid_gfx_suffix ? version.substr(0, dash) : version;
+}
+
 // Linux: identify NPU architecture from sysfs accel subsystem
 // Checks /sys/class/accel/*/device/driver for amdxdna, then reads number of columns
 // If amdxdna not loaded, fall back to PCI device IDs
@@ -2133,6 +2218,12 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+}
+
+std::string SystemInfo::get_rocm_release_target() {
+    // Same GPU selection as get_rocm_arch(), but mapped to the per-target asset
+    // name used by ROCm backend release repos. See rocm_arch_to_release_target().
+    return rocm_arch_to_release_target(get_rocm_arch());
 }
 
 static int cuda_sm_value(const std::string& arch) {

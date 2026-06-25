@@ -109,6 +109,13 @@ public:
 
     // Device support detection
     static std::string get_rocm_arch();
+    // ROCm backend release assets (whisper.cpp-rocm, vllm-rocm, llamacpp-rocm
+    // nightly) are published per *release target*: discrete RDNA GPUs ship under
+    // a family target (gfx110X / gfx120X / gfx103X) while APUs ship per-specific
+    // ISA (gfx1150 / gfx1151 / gfx1152). get_rocm_arch() returns the specific ISA
+    // (e.g. gfx1201), which is correct for TheRock runtime paths but 404s on these
+    // per-target asset names. Use this when constructing such asset filenames.
+    static std::string get_rocm_release_target();
     static std::string get_cuda_arch();
 
     // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).
@@ -230,6 +237,18 @@ std::unique_ptr<SystemInfo> create_system_info();
 // Helper to identify ROCm architecture from GPU name
 // Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+
+// Map a specific ROCm ISA (e.g. "gfx1201") to the *release target* name used in
+// ROCm backend asset filenames (e.g. "gfx120X"). Discrete RDNA GPUs collapse to
+// a family target (gfx1030-103X, gfx1100-110X, gfx1200/1201-120X); APUs
+// (gfx1150/1151/1152) and already-family or unknown values pass through
+// unchanged. Pure function with no hardware dependency so it can be unit-tested.
+std::string rocm_arch_to_release_target(const std::string& arch);
+
+// Remove a final ROCm gfx release-target suffix from a release tag, if present.
+// Example: "vllm0.22.1-rocm7.13.0-gfx120X" -> "vllm0.22.1-rocm7.13.0".
+// Returns the original string unchanged when the final segment is not a gfx token.
+std::string strip_rocm_release_target_suffix(const std::string& version);
 
 // Helper to identify CUDA Compute Capability from a marketing GPU name
 // Returns an sm_XX token (e.g., "sm_75", "sm_86", "sm_120") or empty string if not recognized

@@ -164,7 +164,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
-        std::string target_arch = SystemInfo::get_rocm_arch();
+        // llamacpp-rocm nightly publishes per release target (gfx103X/110X/120X
+        // for discrete RDNA GPUs, gfx1150/1151/1152 for APUs), not per specific
+        // ISA. Map gfx1201 -> gfx120X so the asset resolves.
+        std::string target_arch = SystemInfo::get_rocm_release_target();
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly")

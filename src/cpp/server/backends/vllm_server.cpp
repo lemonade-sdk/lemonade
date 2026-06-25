@@ -79,7 +79,11 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/vllm-rocm";
-        std::string target_arch = SystemInfo::get_rocm_arch();
+        // vllm-rocm publishes one release per *release target*: gfx120X for RDNA4
+        // dGPUs, gfx1151 for Strix Halo APU, etc. get_rocm_arch() returns the
+        // specific ISA (gfx1201) which has no matching release tag and 404s, so
+        // map to the release target.
+        std::string target_arch = SystemInfo::get_rocm_release_target();
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("vllm", "rocm")
@@ -87,8 +91,8 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
         }
 #ifdef __linux__
         // One release per GPU target since 0.19.1: release tag is
-        // {version}-{target_arch}, e.g. vllm0.20.1-rocm7.12.0-gfx1151.
-        std::string release_tag = version + "-" + target_arch;
+        // {version}-{target_arch}, e.g. vllm0.22.1-rocm7.13.0-gfx120X.
+        std::string release_tag = strip_rocm_release_target_suffix(version) + "-" + target_arch;
         params.version_override = release_tag;
         params.filename = release_tag + "-x64.tar.gz";
 #else

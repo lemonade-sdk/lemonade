@@ -90,7 +90,7 @@
     "metal": "b17"
   },
   "vllm": {
-    "rocm": "vllm0.20.1-rocm7.12.0"
+    "rocm": "vllm0.22.1-rocm7.13.0"
   },
   "moonshine": {
     "cpu": "moonshine0.0.62"

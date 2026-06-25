@@ -31,7 +31,7 @@ curl -X POST http://localhost:13305/api/v1/install \
   -d '{"recipe": "vllm", "backend": "rocm"}'
 ```
 
-The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`) from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm/releases). The base version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json); the `-{gfx_target}` suffix is appended at runtime from `SystemInfo::get_rocm_arch()`, so a single pin covers all supported architectures.
+The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx120X`) from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm/releases). The base version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json); Lemonade appends the machine's ROCm release target at runtime. Discrete RDNA GPUs use family release targets such as `gfx110X`/`gfx120X` even when the physical ISA is specific (for example, `gfx1201`), while APUs keep their specific targets such as `gfx1151`. User pins may be either the base version or a full per-target release tag; Lemonade normalizes either form to the current machine's target so the happy path does not require knowing the asset naming convention.
 
 ## Use
 

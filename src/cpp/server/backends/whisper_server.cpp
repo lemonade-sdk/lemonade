@@ -94,7 +94,11 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("Unsupported platform for whisper.cpp cpu backend");
 #endif
     } else if (backend == "rocm") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        // whisper.cpp-rocm publishes per release target (gfx120X family for RDNA4
+        // dGPUs, gfx1151 for Strix Halo APU, etc.), not per specific ISA. Use the
+        // release-target mapping so gfx1201 resolves to the published gfx120X
+        // asset instead of 404ing.
+        std::string rocm_arch = SystemInfo::get_rocm_release_target();
         if (rocm_arch.empty()) {
             throw std::runtime_error(SystemInfo::get_unsupported_backend_error("whispercpp", "rocm"));
         }
