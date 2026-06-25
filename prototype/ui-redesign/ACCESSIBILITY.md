@@ -4,7 +4,7 @@
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
 **Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete  
-**Test status (2026-06-25):** All 131 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A106–A115 added for reconciliation)
+**Test status (2026-06-25):** All 133 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A116–A117 added for README raw-HTML rendering fix)
 
 ---
 
@@ -89,6 +89,21 @@ Closes 4 gaps against @fl0rianr's six-point clarification comment (2026-06-25T16
 - A114–A115: preset Change button ARIA attributes, chooser dialog opens/closes with focus
 
 **Files changed:** `ModelDetailPanel.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
+
+---
+
+### Group G — Model README raw-HTML rendering (#2355 README tab fix)
+
+- **Status:** ✅ **Added 2026-06-25**
+- **Problem:** The README tab built its markdown-it instance with `{ html: false }`, which *escaped* any raw HTML embedded in Hugging Face model READMEs (e.g. `<div align="center">`, `<img>`, badges, tables). The user saw literal `<div ...>` tags as text instead of formatted content.
+- **Fix:** `ModelDetailPanel.tsx` — flipped the README `MarkdownIt` instance to `{ html: true }`. This is safe because the rendered output already passes through the strict `README_PURIFY_CONFIG` DOMPurify allowlist (no `script`/`style`/`iframe`/`object`/`form`/event-handler attrs) before `dangerouslySetInnerHTML` injection — the same render→sanitize pattern used in `MarkdownMessage.tsx`. Added a defensive `stripFrontmatter()` helper that removes a well-formed leading YAML frontmatter block (`---` … `---`) so HF metadata does not render as a stray `<hr>` + dumped key/value text. Conservatively widened the allowlist with common, safe tags (`tfoot`, `caption`, `colgroup`, `col`, `picture`, `source`, `sup`, `sub`, `kbd`, `samp`, `var`) and attrs (`srcset`, `align`, `colspan`, `rowspan`).
+- **WCAG:** 1.3.1 (info & relationships — semantic structure now renders instead of literal markup text)
+
+**Tests added:** A116–A117 (2 tests) in `tests/a11y.spec.ts`.
+- A116: raw HTML in a README renders as real DOM elements (`div[align]`, `strong`, `img`) and NOT as escaped/literal `<div`/`&lt;div` text. HF README fetch mocked via Playwright route.
+- A117: a leading YAML frontmatter block is stripped — the real heading renders and frontmatter keys (`license:`, `pipeline_tag`) are not shown.
+
+**Files changed:** `ModelDetailPanel.tsx`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -737,4 +752,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-22 by Mattingly (GUI3 preset a11y items #2338 #2339 #2345 #2350 #2352; BackendManager #2343 #2344 #2351; model row qualified names #2341; download progress bar semantics #2342; Group E: conversation rail listbox + account menu modal dialog; Group F: combobox semantics, durable form labels, icon names)*
+*Last updated: 2026-06-25 by Mattingly (Group G: model README raw-HTML rendering fix #2355 — markdown-it html:true behind DOMPurify allowlist + YAML frontmatter strip; tests A116–A117)*

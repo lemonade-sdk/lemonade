@@ -2198,3 +2198,105 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await expect(changeBtn).toHaveAttribute('aria-expanded', 'false');
   });
 });
+
+// ─── 25. Model README raw-HTML rendering (#2355 README tab fix) ───────────────
+//
+// HF model READMEs commonly embed raw HTML (<div align="center">, <img>, badges,
+// tables). The README tab previously used markdown-it { html: false }, which
+// ESCAPED that markup so it appeared as literal text. Fix: html:true behind the
+// existing strict DOMPurify allowlist + a leading YAML frontmatter strip.
+// Range: A116–A117.
+
+test.describe('Accessibility — model README raw-HTML rendering (#2355)', () => {
+  async function goToModelsWithReadme(page: Page, readmeBody: string): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+              checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
+          ],
+        }),
+      }),
+    );
+    // Mock the Hugging Face README fetch the component performs against
+    // https://huggingface.co/${hfRepo}/raw/main/README.md
+    await page.route('**/huggingface.co/**/raw/main/README.md', async route =>
+      route.fulfill({ contentType: 'text/plain', body: readmeBody }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    // README is the default tab; wait for the rendered container.
+    await page.waitForSelector('.detail-readme', { timeout: 5000 });
+    await page.waitForTimeout(200);
+  }
+
+  test('A116 — raw HTML in README renders as real DOM elements, not escaped text', async ({ page }) => {
+    const readme = [
+      '# Model Card',
+      '',
+      '<div align="center"><strong>Centered Heading</strong></div>',
+      '',
+      '<img src="https://example.com/badge.svg" alt="build badge">',
+      '',
+      'Some normal markdown text.',
+    ].join('\n');
+
+    await goToModelsWithReadme(page, readme);
+
+    const container = page.locator('.detail-readme');
+    await expect(container).toBeVisible();
+
+    // Raw HTML must materialise as actual elements inside the README container.
+    await expect(container.locator('div[align="center"]')).toHaveCount(1);
+    await expect(container.locator('strong', { hasText: 'Centered Heading' })).toHaveCount(1);
+    await expect(container.locator('img[alt="build badge"]')).toHaveCount(1);
+
+    // And it must NOT appear as literal/escaped text.
+    const text = (await container.innerText()).toLowerCase();
+    expect(text).not.toContain('<div');
+    expect(text).not.toContain('&lt;div');
+    expect(text).not.toContain('<strong');
+    expect(text).not.toContain('<img');
+  });
+
+  test('A117 — leading YAML frontmatter block is stripped before rendering', async ({ page }) => {
+    const readme = [
+      '---',
+      'license: apache-2.0',
+      'pipeline_tag: text-generation',
+      'tags:',
+      '  - text-generation',
+      '---',
+      '',
+      '# Real Heading',
+      '',
+      'Body content goes here.',
+    ].join('\n');
+
+    await goToModelsWithReadme(page, readme);
+
+    const container = page.locator('.detail-readme');
+    await expect(container).toBeVisible();
+
+    // The real heading must render.
+    await expect(container.locator('h1', { hasText: 'Real Heading' })).toHaveCount(1);
+
+    // Frontmatter keys must NOT be visible as dumped text.
+    const text = await container.innerText();
+    expect(text).not.toContain('license: apache-2.0');
+    expect(text).not.toContain('pipeline_tag');
+  });
+});

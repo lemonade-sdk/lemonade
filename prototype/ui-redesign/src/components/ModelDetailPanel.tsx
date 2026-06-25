@@ -75,19 +75,45 @@ function deriveHFRepo(
 
 /* ── Shared markdown-it instance for README rendering ─────────── */
 
-const readmeMd = new MarkdownIt({ html: false, linkify: true, typographer: true });
+// html:true is safe here because the rendered output is passed through the
+// strict DOMPurify allowlist (README_PURIFY_CONFIG) below before injection.
+// HF model READMEs commonly embed raw HTML (<div align="center">, <img>,
+// tables, badges); with html:false markdown-it escapes those to literal text.
+const readmeMd = new MarkdownIt({ html: true, linkify: true, typographer: true });
 
 const README_PURIFY_CONFIG: DOMPurify.Config = {
   ALLOWED_TAGS: [
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr',
     'ul', 'ol', 'li', 'dl', 'dt', 'dd',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    'div', 'span', 'a', 'img',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+    'div', 'span', 'a', 'img', 'picture', 'source',
     'strong', 'em', 'b', 'i', 'u', 's', 'del', 'mark', 'code', 'pre',
+    'sup', 'sub', 'kbd', 'samp', 'var',
     'blockquote', 'details', 'summary', 'figure', 'figcaption', 'abbr',
   ],
-  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height'],
+  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'srcset', 'alt', 'title', 'width', 'height', 'align', 'colspan', 'rowspan'],
 };
+
+/**
+ * Strip a leading YAML frontmatter block from an HF README.
+ * HF READMEs begin with metadata delimited by `---` ... `---`. With html:true
+ * this would otherwise render as a stray <hr> plus dumped key/value text.
+ * Defensive: only strips a well-formed leading block; never throws.
+ */
+function stripFrontmatter(source: string): string {
+  if (typeof source !== 'string') return '';
+  const leading = source.replace(/^\s+/, '');
+  if (!leading.startsWith('---\n') && !leading.startsWith('---\r\n')) return source;
+  const lines = leading.split('\n');
+  // lines[0] is the opening '---'; find the next line that is exactly '---'.
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].replace(/\r$/, '').trim() === '---') {
+      return lines.slice(i + 1).join('\n');
+    }
+  }
+  // No closing delimiter found: not a well-formed block, leave untouched.
+  return source;
+}
 
 const readmeCache = new Map<string, string>();
 
@@ -144,7 +170,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     );
   }
 
-  const html = DOMPurify.sanitize(readmeMd.render(readme), README_PURIFY_CONFIG);
+  const html = DOMPurify.sanitize(readmeMd.render(stripFrontmatter(readme)), README_PURIFY_CONFIG);
 
   return (
     <div
