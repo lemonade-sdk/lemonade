@@ -9,6 +9,7 @@ decision `trace` — never in the engine.
 | Schema | Describes |
 |--------|-----------|
 | `route_policy.schema.json` | The `routing` block embedded in a `collection.router` collection JSON. Invoked like `collection.omni`: point the OpenAI `model` field at the collection name. |
+| `request.schema.json` | The request-side extension fields on the OpenAI chat body: `metadata` (string-valued routing inputs) and the optional `route_trace`. Validates only those fields (`additionalProperties: true`); no `version` (rides on the stock OpenAI request). |
 | `decision.schema.json` | The `x_lemonade_route` decision object attached additively to the chat response. |
 
 ## Versioning

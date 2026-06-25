@@ -289,6 +289,16 @@ static void test_fixtures() {
               dec.contains("matched_rule") && dec.contains("default_used") &&
               dec.contains("trace"),
           "decision_example.json carries version/route_to/matched_rule/default_used/trace");
+
+    // Request extension example: metadata is a string map, route_trace a bool.
+    json req = load_json("request_example.json");
+    json md = req.contains("metadata") ? req["metadata"] : json::object();
+    bool meta_strings = req.contains("metadata") && md.is_object();
+    for (auto& kv : md.items()) {
+        if (!kv.value().is_string()) meta_strings = false;
+    }
+    check(meta_strings && req.value("route_trace", false) == true,
+          "request_example.json carries string-valued metadata and route_trace");
 }
 
 int main() {

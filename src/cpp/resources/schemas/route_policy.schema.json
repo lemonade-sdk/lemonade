@@ -106,7 +106,15 @@
           "default": "match_false"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "semantic_similarity" } } },
+          "then": { "required": ["model", "reference_phrases"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
+          "then": { "required": ["model"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
+          "then": { "required": ["model", "prompt"] } }
+      ]
     },
     "rule": {
       "type": "object",
@@ -137,11 +145,15 @@
         "label": { "type": "string" },
         "min_score": {
           "description": "Frozen v1 semantics: inclusive lower bound (score >= min_score). When neither min_score nor max_score is given, the band defaults to min_score: 0.5.",
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         },
         "max_score": {
           "description": "Frozen v1 semantics: inclusive upper bound (score <= max_score).",
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         },
         "keywords_any": {
           "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",

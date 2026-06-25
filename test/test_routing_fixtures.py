@@ -39,9 +39,11 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
             os.path.join(SCHEMA_DIR, "route_policy.schema.json")
         )
         cls.decision_schema = _load(os.path.join(SCHEMA_DIR, "decision.schema.json"))
+        cls.request_schema = _load(os.path.join(SCHEMA_DIR, "request.schema.json"))
         # Fail loudly if a schema is itself malformed.
         jsonschema.Draft202012Validator.check_schema(cls.route_policy_schema)
         jsonschema.Draft202012Validator.check_schema(cls.decision_schema)
+        jsonschema.Draft202012Validator.check_schema(cls.request_schema)
 
     def test_route_policy_fixtures_validate(self):
         validator = jsonschema.Draft202012Validator(self.route_policy_schema)
@@ -58,6 +60,35 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
     def test_decision_example_validates(self):
         doc = _load(os.path.join(FIXTURE_DIR, "decision_example.json"))
         jsonschema.validate(doc, self.decision_schema)
+
+    def test_request_example_validates(self):
+        doc = _load(os.path.join(FIXTURE_DIR, "request_example.json"))
+        jsonschema.validate(doc, self.request_schema)
+
+    def test_request_rejects_non_string_metadata(self):
+        """metadata values must be strings (list values are comma-encoded)."""
+        validator = jsonschema.Draft202012Validator(self.request_schema)
+        bad = {"metadata": {"task_class": ["payment", "checkout"]}}
+        self.assertTrue(list(validator.iter_errors(bad)))
+
+    def test_classifier_type_specific_requirements(self):
+        """Conditional `required` by classifier type: e.g. semantic_similarity
+        needs reference_phrases, llm needs prompt."""
+        validator = jsonschema.Draft202012Validator(self.route_policy_schema)
+        base = {
+            "version": "1",
+            "recipe": "collection.router",
+            "routing": {
+                "candidates": ["a"],
+                "default_model": "a",
+                "classifiers": [
+                    {"id": "x", "type": "semantic_similarity", "model": "m"}
+                ],
+                "rules": [{"id": "r", "match": {"classifier": "x"}, "route_to": "a"}],
+            },
+        }
+        # Missing reference_phrases for semantic_similarity -> invalid.
+        self.assertTrue(list(validator.iter_errors(base)))
 
     def test_locked_structural_invariants(self):
         """Cross-field invariants the JSON Schema cannot express: default_model
