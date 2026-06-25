@@ -1,0 +1,10 @@
+{
+  "x_lemonade_route": {
+    "route_to": "Qwen3-8B-GGUF",
+    "matched_rule": "keep-private",
+    "default_used": false,
+    "outputs": {
+      "verdict": "warn"
+    }
+  }
+}

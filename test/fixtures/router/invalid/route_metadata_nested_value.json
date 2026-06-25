@@ -1,0 +1,14 @@
+{
+  "model": "user.Router-Shopping",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you help with checkout?"
+    }
+  ],
+  "metadata": {
+    "task_class": "payment",
+    "site_tags": ["shopping", "checkout"]
+  },
+  "route_trace": true
+}

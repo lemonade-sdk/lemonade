@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lemonade-sdk.github.io/schemas/route-decision.schema.json",
+  "title": "Lemonade route decision and request extensions",
+  "description": "Schema for Lemonade Router request extensions and additive route response object.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/routeRequestExtensions"
+    },
+    {
+      "$ref": "#/$defs/routeResponseExtensions"
+    },
+    {
+      "$ref": "#/$defs/xLemonadeRoute"
+    }
+  ],
+  "$defs": {
+    "routeRequestExtensions": {
+      "type": "object",
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        },
+        "route_trace": {
+          "type": "boolean"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["metadata"]
+        },
+        {
+          "required": ["route_trace"]
+        }
+      ],
+      "additionalProperties": true
+    },
+    "routeResponseExtensions": {
+      "type": "object",
+      "required": ["x_lemonade_route"],
+      "properties": {
+        "x_lemonade_route": {
+          "$ref": "#/$defs/xLemonadeRoute"
+        }
+      },
+      "additionalProperties": true
+    },
+    "xLemonadeRoute": {
+      "type": "object",
+      "required": ["route_to", "matched_rule", "default_used", "outputs"],
+      "properties": {
+        "route_to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "matched_rule": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default_used": {
+          "type": "boolean"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "trace": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/traceEntry"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "traceEntry": {
+      "type": "object",
+      "required": ["condition", "result"],
+      "properties": {
+        "condition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result": {
+          "type": "boolean"
+        },
+        "classifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1
+        },
+        "on_error": {
+          "enum": ["match_false", "match_true"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

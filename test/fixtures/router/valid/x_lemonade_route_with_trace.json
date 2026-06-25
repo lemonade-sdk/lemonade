@@ -1,0 +1,23 @@
+{
+  "x_lemonade_route": {
+    "route_to": "Qwen3-8B-GGUF",
+    "matched_rule": "keep-private",
+    "default_used": false,
+    "outputs": {
+      "verdict": "warn"
+    },
+    "trace": [
+      {
+        "condition": "classifier:pii",
+        "classifier": "pii",
+        "label": "PII",
+        "score": 0.81,
+        "result": true
+      },
+      {
+        "condition": "keywords_any",
+        "result": false
+      }
+    ]
+  }
+}
