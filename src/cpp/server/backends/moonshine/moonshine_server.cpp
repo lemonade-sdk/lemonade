@@ -8,8 +8,10 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include <cctype>
 #include <iostream>
 #include <filesystem>
+#include <optional>
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -370,12 +372,50 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
+namespace {
+class MoonshineOps : public BackendOps {
+public:
+    std::optional<std::vector<std::string>> select_checkpoint_files(
+        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
+        // A Moonshine variant names a directory (e.g. "medium-streaming-en/quantized");
+        // download every file under it.
+        std::string folder_prefix = main_variant;
+        if (!folder_prefix.empty() && folder_prefix.back() != '/') {
+            folder_prefix += "/";
+        }
+        auto starts_with_ci = [](const std::string& s, const std::string& p) {
+            if (s.size() < p.size()) return false;
+            for (size_t i = 0; i < p.size(); ++i) {
+                if (std::tolower(static_cast<unsigned char>(s[i])) !=
+                    std::tolower(static_cast<unsigned char>(p[i]))) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        std::vector<std::string> files;
+        for (const auto& f : repo_files) {
+            if (starts_with_ci(f, folder_prefix)) {
+                files.push_back(f);
+            }
+        }
+        if (files.empty()) {
+            throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
+        }
+        return files;
+    }
+};
+}  // namespace
+
 const BackendSpec* spec() {
     static const BackendSpec kSpec(descriptor.recipe, descriptor.binary,
                                    MoonshineServer::get_install_params, /*split=*/false);
     return &kSpec;
 }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() {
+    static const MoonshineOps kOps;
+    return &kOps;
+}
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

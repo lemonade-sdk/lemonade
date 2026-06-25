@@ -3535,7 +3535,11 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
-        bool is_moonshine = info.recipe == "moonshine";
+
+        // Backends with a bespoke artifact layout (moonshine = a directory of
+        // files) select their own download set; nullopt = the default paths.
+        auto backend_files =
+            backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3545,22 +3549,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             } else {
                 throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
-        } else if (is_moonshine) {
-            // Moonshine variant is a directory path (e.g., "medium-streaming-en/quantized")
-            // Download all files under that directory
-            std::string folder_prefix = main_variant;
-            if (!folder_prefix.empty() && folder_prefix.back() != '/') {
-                folder_prefix += "/";
-            }
-            for (const auto& file : repo_files) {
-                if (starts_with_ignore_case(file, folder_prefix)) {
-                    files_to_download[main_repo_id].push_back(file);
-                }
-            }
-            if (files_to_download[main_repo_id].empty()) {
-                throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
-            }
-            LOG(INFO, "ModelManager") << "Moonshine: downloading " << files_to_download[main_repo_id].size()
+        } else if (backend_files) {
+            files_to_download[main_repo_id] = std::move(*backend_files);
+            LOG(INFO, "ModelManager") << info.recipe << ": downloading "
+                                      << files_to_download[main_repo_id].size()
                                       << " files from " << main_variant << std::endl;
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback (server-side only)
@@ -66,6 +67,18 @@ public:
     virtual std::string find_imported_checkpoint(const std::string& import_dir) const {
         (void)import_dir;
         return "";
+    }
+
+    // Select the repo-relative files to download for the main checkpoint
+    // `main_variant`, for backends whose artifact layout isn't a GGUF file.
+    // Return nullopt to use the default GGUF selection. (Direct single-file
+    // variants — .safetensors/.pth/.ckpt — are handled generically upstream.)
+    // moonshine overrides: its variant names a directory of files to fetch.
+    virtual std::optional<std::vector<std::string>> select_checkpoint_files(
+        const std::string& main_variant, const std::vector<std::string>& repo_files) const {
+        (void)main_variant;
+        (void)repo_files;
+        return std::nullopt;
     }
 
     // Models supplied at runtime rather than from server_models.json (descriptor
