@@ -69,6 +69,14 @@ public:
         return "";
     }
 
+    // Validate a user-supplied checkpoint string when registering a new model.
+    // Return an error message if invalid, "" if acceptable. Default: accept.
+    // llamacpp requires a :variant on GGUF checkpoints.
+    virtual std::string validate_registration_checkpoint(const std::string& checkpoint) const {
+        (void)checkpoint;
+        return "";
+    }
+
     // Select the repo-relative files to download for the main checkpoint
     // `main_variant`, for backends whose artifact layout isn't a GGUF file.
     // Return nullopt to use the default GGUF selection. (Direct single-file

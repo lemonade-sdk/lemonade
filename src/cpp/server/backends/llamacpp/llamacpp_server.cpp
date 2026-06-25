@@ -804,6 +804,20 @@ public:
         return resolve_gguf_path(import_dir, "");
     }
 
+    std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
+        // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
+        std::string lower = checkpoint;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.find("gguf") != std::string::npos &&
+            checkpoint.find(':') == std::string::npos) {
+            return "You are required to provide a 'variant' in the checkpoint field when "
+                   "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
+                   "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                   "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf";
+        }
+        return "";
+    }
+
     std::string validate_checkpoint_file(const std::string& resolved_path) const override {
         // A .gguf file in the cache must start with the GGUF magic, else it's a
         // truncated/corrupt download and the model is not really present.

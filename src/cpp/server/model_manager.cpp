@@ -2681,20 +2681,11 @@ void ModelManager::download_model(const std::string& model_name,
                 );
             }
 
-            // Validate GGUF models (llamacpp recipe) require a variant
-            if (actual_recipe == "llamacpp") {
-                std::string checkpoint_lower = actual_checkpoint;
-                std::transform(checkpoint_lower.begin(), checkpoint_lower.end(),
-                              checkpoint_lower.begin(), ::tolower);
-                if (checkpoint_lower.find("gguf") != std::string::npos &&
-                    actual_checkpoint.find(':') == std::string::npos) {
-                    throw std::runtime_error(
-                        "You are required to provide a 'variant' in the checkpoint field when "
-                        "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                        "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
-                    );
-                }
+            // Backend-specific checkpoint validation (llamacpp: GGUF needs :variant).
+            if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
+                    actual_checkpoint);
+                !err.empty()) {
+                throw std::runtime_error(err);
             }
 
             LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
