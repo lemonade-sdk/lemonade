@@ -39,14 +39,11 @@ void MLXServer::load(const std::string& model_name,
                      bool do_not_upgrade) {
     LOG(INFO, "MLX") << "Loading model: " << model_name << std::endl;
 
-    int ctx_size = options.get_option("ctx_size");
-    std::string mlx_args = options.get_option("mlx_args");
-
     // MLX uses a local model directory path.
     // The checkpoint field in server_models.json is the path on disk.
-    std::string model_path = model_info.resolved_path();
+    std::string model_path = model_info.checkpoint();
     if (model_path.empty()) {
-        model_path = model_info.checkpoint();
+        model_path = model_info.resolved_path();
     }
     if (model_path.empty()) {
         throw std::runtime_error("Model path not found for: " + model_name);
@@ -73,16 +70,6 @@ void MLXServer::load(const std::string& model_name,
     args.push_back(std::to_string(port_));
     args.push_back("--host");
     args.push_back("127.0.0.1");
-
-    // Append custom mlx_args if provided
-    if (!mlx_args.empty()) {
-        LOG(DEBUG, "MLX") << "Adding custom arguments: " << mlx_args << std::endl;
-        std::istringstream iss(mlx_args);
-        std::string arg;
-        while (iss >> arg) {
-            args.push_back(arg);
-        }
-    }
 
     LOG(INFO, "MLX") << "Starting mlx-server on port " << port_ << "..." << std::endl;
 
