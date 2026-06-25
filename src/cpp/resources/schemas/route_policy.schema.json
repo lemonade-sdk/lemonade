@@ -95,8 +95,8 @@
           "description": "Used when a condition omits `label`.",
           "type": "string"
         },
-        "candidates": {
-          "description": "semantic_similarity only: exemplar phrases embedded once and compared by cosine.",
+        "reference_phrases": {
+          "description": "semantic_similarity only: exemplar phrases embedded once and compared to the input by cosine. Named distinctly from routing.candidates (the routing targets) to avoid overloading that core term.",
           "type": "array",
           "items": { "type": "string" }
         },
