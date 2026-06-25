@@ -1754,6 +1754,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add version information
     response["version"] = LEMON_VERSION_STRING;
+    response["tui"] = config_ ? config_->snapshot().value("tui", true) : true;
 
     // Add model loaded information like Python implementation
     std::string loaded_model = router_->get_loaded_model();
