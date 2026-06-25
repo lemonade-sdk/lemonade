@@ -4551,6 +4551,24 @@ body.install-options {
   line-height: 1.65;
 }
 
+/* Inline links in body copy use the page's theme-safe gold accent
+   (--accent-gold reads dark-on-dark in the dark scheme, so brighten it
+   to --primary-yellow there) instead of the unreadable default blue. */
+.hp-section-desc a {
+  color: var(--accent-gold);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-section-desc a {
+  color: var(--primary-yellow);
+}
+
+.hp-section-desc a:hover {
+  text-decoration: none;
+}
+
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;

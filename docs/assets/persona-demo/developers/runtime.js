@@ -20,7 +20,7 @@
       {
         label: 'Deploy everywhere',
         demo: 'deploy-everywhere',
-        caption: 'Any OS, any vendor — one build runs everywhere.',
+        caption: 'Any OS, any vendor — lemonade runs everywhere.',
         captionHref: 'https://lemonade-server.ai/docs/embeddable/',
         animationMode: 'repeat'
       },

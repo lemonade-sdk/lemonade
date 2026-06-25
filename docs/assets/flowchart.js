@@ -961,9 +961,10 @@
   // bare, tight 2x2 grid of distro logos (Ubuntu, Arch, Debian, Fedora) -- no
   // device chrome, the logos carry it and mean "every distro". A line under each
   // names the hardware it runs on (AMD / NVIDIA / Vulkan as the Intel-&-other-GPU
-  // proxy; Apple silicon on the Mac). A roomy "Your App" window (a lemon mark --
-  // the SAME lemonMark used on the Engines & Hardware slide -- + tagline) fans
-  // wires down and a dot cascades to each machine, which POWERS ON as it arrives
+  // proxy; Apple silicon on the Mac). A "Your App" window -- titled "Your App",
+  // with the embedded "lemond" component (the SAME lemonMark used on the Engines
+  // & Hardware slide) inside it -- fans wires down and a dot cascades to each
+  // machine, which POWERS ON as it arrives
   // (logos brighten; devices also light a warm screen + gold frame). Repeats;
   // resets at the loop wrap. Pure SVG + SMIL (cross-browser; no foreignObject):
   // device glyphs are geometry, labels are <text> with an explicit y.
@@ -1071,17 +1072,26 @@
       dots += dotFor(wire, s, arrive);
     });
 
-    // "Your App": a roomy window -- a glowing lemon (lemond) mark + name + tagline.
+    // "Your App" window -- the title bar names the APP ("Your App"); the body
+    // holds the embedded "lemond" component (lemon mark + wordmark), so the
+    // graphic reads as an app that INCLUDES lemonade, not an app that IS lemonade.
     var app =
       '<g class="hp-deploy-app">' +
         '<rect x="195" y="14" width="230" height="94" rx="13"></rect>' +
-        '<line x1="195" y1="40" x2="425" y2="40"></line>' +
-        '<circle cx="210" cy="28" r="3"></circle><circle cx="221" cy="28" r="3"></circle><circle cx="232" cy="28" r="3"></circle>' +
-        lemonMark(236, 72, 12) +
-        '<text class="hp-deploy-applabel" x="262" y="67">Your App</text>' +
-        '<text class="hp-deploy-appsub" x="262" y="87">one build, every platform</text>' +
+        '<line x1="195" y1="42" x2="425" y2="42"></line>' +
+        '<circle cx="212" cy="29" r="3"></circle><circle cx="223" cy="29" r="3"></circle><circle cx="234" cy="29" r="3"></circle>' +
+        '<text class="hp-deploy-apptitle" x="310" y="33" text-anchor="middle">Your App</text>' +
+        lemonMark(236, 76, 12) +
+        '<text class="hp-deploy-lemond" x="262" y="72">lemond</text>' +
+        '<text class="hp-deploy-appsub" x="262" y="91">embedded local AI</text>' +
       '</g>';
 
+    // The lemon mark reuses lemonMark's #hpRouterGlow (same as the Engines &
+    // Hardware lemon). The earlier "big white glow" was NOT the filter -- it was
+    // the translucent window letting the stage's bright gold-radial through behind
+    // the lemon, on which the wide glow read as a pale bloom. The opaque-dark
+    // window fill (see .hp-deploy-app rect) fixes it: on a flat-dark backdrop the
+    // same wide glow spreads thin and faint, exactly like the stack slide.
     return '<div class="hp-deploy-demo">' +
       '<svg class="hp-deploy-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
         '<defs>' + routerGlowFilter() + '</defs>' +
@@ -1379,131 +1389,6 @@
     '</div>';
   }
 
-  // Developer "Ever-expanding models": a left-to-right assembly line telling the
-  // three-step story behind why your app keeps getting better for free --
-  //   (1) new models ship upstream all the time,
-  //   (2) the model goes INTO the engine that adds support for it,
-  //   (3) engine + model travel into Your App together, no work on your side.
-  // A hype model chip is released (NEW), glides into the engine (which catches
-  // it), and the two leave as one "engine + model" package that docks into Your
-  // App. Models are the ACTUAL HuggingFace-trending picks (GLM-5.2, DeepSeek-V4,
-  // Qwen3.6, plus a trending image model). Pure SVG + SMIL (cross-browser).
-  function modelsDemo() {
-    var C = 9000;
-    var cycle = (C / 1000).toFixed(3) + 's';
-    function ranim(attr, vals, times) {
-      var v = vals.split(';'), k = times.split(';');
-      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
-      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
-    }
-    function f(n) { return (+n).toFixed(4); }
-
-    // Currently HuggingFace-trending models, each mapped to the engine that adds
-    // support for it (most new LLMs land via llama.cpp; new image models via
-    // stable-diffusion.cpp).
-    var lanes = [
-      { model: 'GLM-5.2', engine: 'llama.cpp' },
-      { model: 'Krea-2-Turbo', engine: 'stable-diffusion.cpp' },
-      { model: 'DeepSeek-V4-Pro', engine: 'llama.cpp' },
-      { model: 'Qwen3.6-35B', engine: 'llama.cpp' }
-    ];
-
-    var railY = 222;
-    var st1 = 92, st2 = 300;                 // release point, engine point
-    var appX = 450, appW = 158, appCx = appX + appW / 2;
-    var slotYs = [182, 226, 270, 314];
-
-    // Three numbered zone headers across the top.
-    function zoneHead(cx, n, label) {
-      return '<g class="hp-flow-head">' +
-        '<circle class="hp-flow-num" cx="' + cx + '" cy="78" r="12"></circle>' +
-        '<text class="hp-flow-numtext" x="' + cx + '" y="82" text-anchor="middle">' + n + '</text>' +
-        '<text class="hp-flow-zonelabel" x="' + cx + '" y="112" text-anchor="middle">' + escapeText(label) + '</text>' +
-      '</g>';
-    }
-    var heads = zoneHead(st1, '1', 'New models ship') +
-      zoneHead(st2, '2', 'Into the engine') +
-      zoneHead(appCx, '3', 'Live in your app');
-
-    // The conveyor rail + chevrons + the upstream "release" source glyph.
-    function chevron(x) {
-      return '<path class="hp-flow-chevron" d="M ' + x + ' ' + (railY - 5) + ' L ' + (x + 6) + ' ' + railY + ' L ' + x + ' ' + (railY + 5) + '"></path>';
-    }
-    var rail = '<line class="hp-flow-rail" x1="' + st1 + '" y1="' + railY + '" x2="' + appX + '" y2="' + railY + '"></line>' +
-      chevron(190) + chevron(398);
-    var source = '<g class="hp-flow-source"><circle cx="' + st1 + '" cy="' + railY + '" r="13"></circle>' +
-      '<path d="M ' + st1 + ' ' + (railY - 8) + ' L ' + st1 + ' ' + (railY + 8) + ' M ' + (st1 - 8) + ' ' + railY + ' L ' + (st1 + 8) + ' ' + railY +
-        ' M ' + (st1 - 5.5) + ' ' + (railY - 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY + 5.5) + ' M ' + (st1 - 5.5) + ' ' + (railY + 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY - 5.5) + '"></path></g>';
-
-    // Your App panel (the dock) + its empty slots.
-    var app = '<g class="hp-flow-app"><rect x="' + appX + '" y="144" width="' + appW + '" height="216" rx="14"></rect>' +
-      '<circle cx="' + (appX + 16) + '" cy="160" r="2.6"></circle><circle cx="' + (appX + 25) + '" cy="160" r="2.6"></circle><circle cx="' + (appX + 34) + '" cy="160" r="2.6"></circle>' +
-      '</g>';
-    var slots = slotYs.map(function (y) {
-      return '<rect class="hp-flow-slot" x="' + (appCx - 72) + '" y="' + (y - 20) + '" width="144" height="40" rx="9"></rect>';
-    }).join('');
-
-    var models = '', engineNodes = '', merges = '', packages = '', slotGlows = '';
-    var stagger = 0.18;
-    lanes.forEach(function (lane, i) {
-      var s = i * stagger;
-      var slotY = slotYs[i];
-      var t = { in1: s + 0.04, atEng: s + 0.13, merge: s + 0.16, leaveEng: s + 0.25, dock: s + 0.34 };
-
-      // 1) the new model chip flies from the source INTO the engine, fading out
-      //    on arrival (absorbed by the engine).
-      models += '<g opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" ' +
-            'path="M ' + st1 + ' ' + railY + ' L ' + st2 + ' ' + railY + '" keyPoints="0;0;1;1" keyTimes="0;' + f(t.in1) + ';' + f(t.atEng) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng - 0.005) + ';' + f(t.atEng + 0.02)) +
-          '<rect class="hp-flow-chip" x="-56" y="-15" width="112" height="30" rx="8"></rect>' +
-          '<text class="hp-flow-chip-label" x="6" y="4" text-anchor="middle">' + escapeText(lane.model) + '</text>' +
-          '<g class="hp-flow-new" transform="translate(44,-15)" opacity="0">' +
-            ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng - 0.01) + ';' + f(t.atEng + 0.01)) +
-            '<rect x="-17" y="-9" width="34" height="17" rx="8.5"></rect><text x="0" y="4" text-anchor="middle">NEW</text>' +
-          '</g>' +
-        '</g>';
-
-      // 2) the engine node sits on the rail; it catches the model, then hands off
-      //    to the combined package (so it fades out as the package forms).
-      engineNodes += '<g class="hp-flow-engine" opacity="0">' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s + 0.05) + ';' + f(s + 0.09) + ';' + f(t.merge) + ';' + f(t.merge + 0.03)) +
-          '<rect x="' + (st2 - 70) + '" y="' + (railY - 15) + '" width="140" height="30" rx="8"></rect>' +
-          '<text class="hp-flow-engine-label" x="' + st2 + '" y="' + (railY + 4) + '" text-anchor="middle">' + escapeText(lane.engine) + '</text>' +
-        '</g>';
-
-      // a soft flash when the model lands in the engine
-      merges += '<ellipse class="hp-flow-merge" cx="' + st2 + '" cy="' + railY + '" rx="46" ry="27" opacity="0">' +
-          ranim('opacity', '0;0;0.85;0', '0;' + f(t.atEng) + ';' + f(t.merge) + ';' + f(t.merge + 0.08)) +
-        '</ellipse>';
-
-      // 3) the "engine + model" package leaves the engine together and docks in
-      //    the app (model name on top, "via <engine>" + a support check below).
-      packages += '<g opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" ' +
-            'path="M ' + st2 + ' ' + railY + ' L ' + appCx + ' ' + slotY + '" keyPoints="0;0;1;1" keyTimes="0;' + f(t.leaveEng) + ';' + f(t.dock) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(t.merge) + ';' + f(t.merge + 0.03) + ';0.95;0.99') +
-          '<rect class="hp-flow-pkg" x="-75" y="-20" width="150" height="40" rx="9"></rect>' +
-          '<text class="hp-flow-pkg-model" x="-6" y="-3" text-anchor="middle">' + escapeText(lane.model) + '</text>' +
-          '<text class="hp-flow-pkg-via" x="-6" y="12" text-anchor="middle">via ' + escapeText(lane.engine) + '</text>' +
-          '<g class="hp-flow-check" transform="translate(60,-20)"><circle cx="0" cy="0" r="9"></circle><path d="M -3.6 0 L -1 3.2 L 3.6 -3.6"></path></g>' +
-        '</g>';
-
-      // the dock slot lights up as the package lands
-      slotGlows += '<rect class="hp-flow-slot-glow" x="' + (appCx - 72) + '" y="' + (slotY - 20) + '" width="144" height="40" rx="9" opacity="0">' +
-          ranim('opacity', '0;0;1;1;0.6', '0;' + f(t.dock) + ';' + f(t.dock + 0.02) + ';' + f(t.dock + 0.1) + ';' + f(t.dock + 0.2)) +
-        '</rect>';
-    });
-
-    return '<div class="hp-models-demo">' +
-      '<svg class="hp-models-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
-        '<defs>' + routerGlowFilter() + '</defs>' +
-        heads + rail + source + app + slots + slotGlows +
-        merges + engineNodes + models + packages +
-      '</svg>' +
-    '</div>';
-  }
-
   function routerDemo(kind) {
     if (kind === 'router-hybrid') {
       // Hybrid = right TIER: requests stay local by default (free, private), and
@@ -1592,7 +1477,6 @@
       if (kind === 'deploy-everywhere') return deployDemo();
       if (kind === 'household-network') return householdDemo();
       if (kind === 'backend-stack') return stackDemo();
-      if (kind === 'backend-models') return modelsDemo();
       return routerDemo(kind);
     }
   };

@@ -343,19 +343,36 @@
 }
 .hp-deploy-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-/* "Your App" window -- the wire origin: a lemon (lemond) mark + name + tagline. */
+/* "Your App" window -- the wire origin. The title bar names the APP; the body
+   holds the embedded "lemond" component (lemon mark + gold wordmark).
+   A near-opaque dark fill (NOT translucent) so the stage's top gold-radial glow
+   is occluded behind it -- otherwise the lemon's glow blooms into that bright
+   wash. This gives the lemon the same dark backdrop as the Engines & Hardware
+   slide, so the two marks read identically. */
 .hp-deploy-app rect {
-  fill: rgba(255, 255, 255, 0.05);
+  fill: rgba(22, 20, 13, 0.92);
   stroke: rgba(248, 243, 218, 0.5);
   stroke-width: 1.5;
 }
 .hp-deploy-app line { stroke: rgba(248, 243, 218, 0.28); stroke-width: 1; }
-.hp-deploy-app circle { fill: rgba(248, 243, 218, 0.5); }
-.hp-deploy-applabel {
+/* Direct child only: the title-bar dots. A bare `.hp-deploy-app circle` would
+   also win over the nested lemon's .hp-stack-lemon-rind/-hub (same specificity
+   class, but this descendant rule outranks them), filling the lemon's interior
+   and hub with this pale colour -- which read as the "washed" lemon. */
+.hp-deploy-app > circle { fill: rgba(248, 243, 218, 0.5); }
+/* Title-bar app name. */
+.hp-deploy-apptitle {
   fill: #f4efdc;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
+}
+/* The embedded component: "lemond" gold wordmark (matches the stack slide) + sub. */
+.hp-deploy-lemond {
+  fill: #ffe76a;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
 }
 .hp-deploy-appsub {
   fill: rgba(248, 243, 218, 0.55);
