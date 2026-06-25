@@ -798,7 +798,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
   });
 
-  test('20 — Models page shows all four zones with correct labels', async ({ page }) => {
+  test('20 — Models page shows model list panel with search', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
@@ -806,39 +806,32 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForSelector('.manager');
 
-    // HuggingFace zone should always be visible (not conditional on search)
-    const hfZone = page.locator('.zone--hf');
-    await expect(hfZone).toBeVisible();
+    // New master-detail layout: left panel with search input
+    const listPanel = page.locator('.model-list-panel');
+    await expect(listPanel).toBeVisible();
 
-    // HuggingFace zone title should say "HuggingFace" (not "Explore — HuggingFace")
-    await expect(hfZone.locator('.zone__title')).toContainText('HuggingFace');
-    await expect(hfZone.locator('.zone__title')).not.toContainText('Explore');
+    // Search input should be present and operable
+    const searchInput = page.locator('.manager__search-input');
+    await expect(searchInput).toBeVisible();
 
-    // HuggingFace should show the prompt when no search text
-    await expect(hfZone.locator('.hf-zone__empty')).toContainText('Type at least 2 characters');
-
-    // When disconnected, empty state should show appropriate message
+    // When disconnected / no models, empty state should show appropriate message
     const emptyState = page.locator('.manager__empty');
     if (await emptyState.isVisible().catch(() => false)) {
       const text = await emptyState.textContent();
-      // Should say either "Connect to a Lemonade server" or "No models found"
-      expect(text).toMatch(/Connect to a Lemonade server|No models found/);
+      expect(text).toMatch(/Connect to a Lemonade server|No models found|No models match/);
     }
 
-    // Search triggers HuggingFace search
-    const searchInput = page.locator('.manager__search-input');
-    await searchInput.fill('llama');
-    await page.waitForTimeout(1500); // debounce (400ms) + network time
+    // Model count annotation should be present (even "0 models")
+    const countEl = page.locator('.model-list-panel__count');
+    await expect(countEl).toBeVisible();
 
-    // HuggingFace zone should show results, loading spinner, or "no results" message
-    const hfEmpty = hfZone.locator('.hf-zone__empty');
-    const hfRows = hfZone.locator('.row--hf');
-    const hfLoading = hfZone.locator('.hf-zone__loading');
-    const hasResults = await hfRows.count() > 0;
-    const hasEmpty = await hfEmpty.isVisible().catch(() => false);
-    const isLoading = await hfLoading.isVisible().catch(() => false);
-    // One of these states should be true
-    expect(hasResults || hasEmpty || isLoading).toBeTruthy();
+    // Typing into search filters the list
+    await searchInput.fill('zzznotamodel');
+    await page.waitForTimeout(200);
+    // Either empty state appears, or count shows 0
+    const countText = await countEl.textContent();
+    const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
+    expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
 
     await page.screenshot({ path: 'screenshots/20-models-zones.png', fullPage: true });
   });

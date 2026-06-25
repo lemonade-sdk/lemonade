@@ -207,3 +207,67 @@ export function selectPreferredLoadedModel(loadedModels: LoadedModel[]): LoadedM
 
 export function modelDisplayName(model: ModelSnapshot | null | undefined): string { return model?.name || 'Assistant'; }
 export function modelInitial(model: ModelSnapshot | null | undefined): string { return modelDisplayName(model).charAt(0).toUpperCase(); }
+
+/* ── Functional capability tags (PR #2424 fl0rianr) ────────────────
+   A single model can expose MULTIPLE functional capabilities (tool use,
+   vision, popular, audio, …). These drive BOTH the funnel multi-select
+   filter and the capability icons shown on each middle-panel row. They are
+   derived client-side from the model's labels plus its base modality — no
+   lemond calls. */
+export type CapabilityTag =
+  | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
+  | 'code' | 'audio' | 'image' | 'tts' | 'embedding' | 'reranking';
+
+/** Canonical display order for tags (funnel options + row icons). */
+export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
+  'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
+  'code', 'audio', 'image', 'tts', 'embedding', 'reranking',
+];
+
+export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
+  popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
+  tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
+  image: 'Image', tts: 'Speech (TTS)', embedding: 'Embeddings', reranking: 'Reranking',
+};
+
+/** Label/tag aliases that map a model's free-form labels onto a capability. */
+const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
+  popular: ['popular', 'trending', 'featured', 'recommended'],
+  chat: ['chat', 'llm', 'text', 'language', 'instruct', 'text-generation'],
+  omni: ['omni', 'multimodal', 'multi-modal'],
+  vision: ['vision', 'vlm', 'vision-language', 'image-input', 'image-text-to-text'],
+  tool: ['tool', 'tools', 'tool-use', 'tool-calling', 'tools-enabled', 'function-calling'],
+  reasoning: ['reasoning', 'thinking', 'reasoner', 'mtp'],
+  code: ['code', 'coding', 'coder'],
+  audio: ['audio', 'transcription', 'asr', 'stt', 'speech-to-text', 'realtime-transcription'],
+  image: ['image', 'image-generation', 'diffusion', 'edit', 'upscaling', 'text-to-image'],
+  tts: ['tts', 'speech', 'text-to-speech'],
+  embedding: ['embedding', 'embeddings'],
+  reranking: ['reranking', 'reranker'],
+};
+
+const BASE_CAPABILITY_TAG: Partial<Record<ModelCapability, CapabilityTag>> = {
+  chat: 'chat', omni: 'omni', image: 'image', audio: 'audio',
+  tts: 'tts', embedding: 'embedding', reranking: 'reranking',
+};
+
+/** All functional capability tags a model exposes (always ≥1, ordered). */
+export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
+  const labels = (model.labels || []).map(l => String(l).toLowerCase().trim()).filter(Boolean);
+  const labelSet = new Set(labels);
+  const found = new Set<CapabilityTag>();
+  for (const tag of CAPABILITY_TAG_ORDER) {
+    if (CAPABILITY_TAG_ALIASES[tag].some(alias => labelSet.has(alias))) found.add(tag);
+  }
+  const base = BASE_CAPABILITY_TAG[capabilityFromModelInfo(model)];
+  if (base) found.add(base);
+  if (found.size === 0) found.add('chat');
+  return CAPABILITY_TAG_ORDER.filter(tag => found.has(tag));
+}
+
+/** True when the model has at least one of the selected capability tags
+    (empty selection = no capability filter applied). */
+export function modelMatchesCapabilityTags(model: ModelInfo, selected: Set<string>): boolean {
+  if (!selected || selected.size === 0) return true;
+  return modelCapabilityTags(model).some(tag => selected.has(tag));
+}
