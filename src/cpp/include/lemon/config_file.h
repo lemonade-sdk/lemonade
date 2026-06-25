@@ -73,8 +73,13 @@ static inline bool config_migrate(json& config,
         current_version = 2;
     }
 
+    if (current_version < 3) {
+        config["config_version"] = 3;
+        current_version = 3;
+    }
+
     // Run any future migrations here as the version increments.
-    // if (current_version < 3) { ... }
+    // if (current_version < 4) { ... }
 
     return true;
 }
