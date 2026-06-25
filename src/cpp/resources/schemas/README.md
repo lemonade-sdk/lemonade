@@ -56,8 +56,11 @@ These are enforced mechanically, not just by convention:
   schema. A **released** major is immutable — any change fails CI (ship a new
   major instead). An **unreleased** major may change, but only with a refreshed
   lock in the same diff (`python test/test_schema_lock.py --update`), so every
-  schema edit is a visible, reviewed change rather than silent drift. (v1 is
-  `released: false` until schema sign-off; flip it to `true` at release.)
+  schema edit is a visible, reviewed change rather than silent drift. (v1 stays
+  `released: false` through implementation — the design is signed off, but the
+  schema can still be refined with a reviewed lock refresh until the engine
+  ships. Flip to `true` at product release, when real policies exist in the wild
+  and immutability actually protects users.)
 - `test/test_routing_fixtures.py` keeps the schemas self-valid and the example
   fixtures conformant.
 - A frozen conformance corpus (golden policy → expected `Decision`) will enforce
