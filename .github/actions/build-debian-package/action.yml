@@ -21,7 +21,25 @@ runs:
       shell: bash
       run: |
         set -e
-        apt-get update && apt-get build-dep . -y
+        apt-get update
+        build_profiles=""
+        if ! apt-cache show libftxui-dev >/dev/null 2>&1; then
+          apt-get install -y ca-certificates cmake g++ git ninja-build
+          tmp_dir="$(mktemp -d)"
+          git clone --depth 1 --branch v5.0.0 https://github.com/ArthurSonzogni/FTXUI.git "$tmp_dir/ftxui"
+          cmake -S "$tmp_dir/ftxui" -B "$tmp_dir/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DFTXUI_BUILD_DOCS=OFF \
+            -DFTXUI_BUILD_EXAMPLES=OFF \
+            -DFTXUI_BUILD_TESTS=OFF \
+            -DFTXUI_ENABLE_INSTALL=ON
+          cmake --build "$tmp_dir/build"
+          cmake --install "$tmp_dir/build"
+          rm -rf "$tmp_dir"
+          build_profiles="bootstrap-ftxui"
+        fi
+        DEB_BUILD_PROFILES="$build_profiles" apt-get build-dep . -y
 
     - name: Build Debian package
       id: build
