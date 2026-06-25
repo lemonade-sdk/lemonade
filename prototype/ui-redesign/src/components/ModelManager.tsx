@@ -2652,6 +2652,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}
           serverDefaultCtxSize={serverDefaultCtxSize}
+          isFavorite={selectedDetailModelId ? pinnedNameSet.has(selectedDetailModelId.toLowerCase()) : false}
+          onToggleFavorite={togglePinnedModel}
           onBack={() => {
             setMobileDetailOpen(false);
             // Return focus to the selected list item

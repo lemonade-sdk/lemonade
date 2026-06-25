@@ -7937,7 +7937,15 @@ input, textarea {
 .manager--detail {
   display: grid;
   grid-template-columns: 232px 280px minmax(0, 1fr);
+  /* Override the `auto 1fr` rows inherited from `.manager` so the panes are
+     constrained to the viewport height. Without this, the panes land in the
+     `auto` row and grow to content height — making the left rail (categories,
+     backends, tags, storage) overflow and clip the bottom of the screen with
+     no way to scroll. A single bounded row lets each pane's own
+     `overflow-y: auto` take over. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -7971,48 +7979,6 @@ input, textarea {
   padding: var(--space-3) var(--space-2) var(--space-2);
   box-sizing: border-box;
 }
-
-/* 1. Preset quick-search + New */
-.model-nav-rail__preset-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.model-nav-rail__preset-search {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-.model-nav-rail__preset-icon {
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.model-nav-rail__preset-input {
-  width: 100%;
-  box-sizing: border-box;
-  height: 30px;
-  padding: 0 8px 0 28px;
-  font-size: var(--text-xs);
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-}
-
-.model-nav-rail__preset-input:focus-visible {
-  outline: 2px solid var(--accent-focus);
-  outline-offset: 0;
-  border-color: transparent;
-}
-
-.model-nav-rail__new-btn { white-space: nowrap; flex-shrink: 0; }
 
 /* 2. Primary nav */
 .model-nav-rail__primary {
@@ -8300,7 +8266,9 @@ input, textarea {
   top: calc(100% + 4px);
   right: 0;
   z-index: 50;
-  background: var(--surface-overlay);
+  /* Solid, opaque surface so list content behind the popover does not bleed
+     through (the previous `--surface-overlay` token is undefined → transparent). */
+  background: var(--surface-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: var(--space-2);
@@ -8983,11 +8951,19 @@ input, textarea {
     height: 100%;
     overflow-y: auto;
   }
+
+  /* "Back to models" is only useful on narrow viewports where the list and
+     detail are mutually exclusive. Higher specificity than the base
+     `display:none` rule (which appears later in the file) so it wins here. */
+  .manager--detail .model-detail-panel__back-btn { display: inline-flex; }
 }
 
-/* ── Back button (visible on narrow viewports via onBack prop) ─── */
+/* ── Back button (visible on narrow viewports only) ────────────── */
+/* Hidden on desktop — the list is always visible in the three-pane layout, so
+   "Back to models" is redundant. It is re-enabled inside the ≤700px media
+   query below, where the list and detail are mutually exclusive. */
 .model-detail-panel__back-btn {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
@@ -9003,6 +8979,33 @@ input, textarea {
 
 .model-detail-panel__back-btn:hover { background: var(--surface-2); }
 .model-detail-panel__back-btn:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: -2px; }
+
+/* ── Favorite (star) toggle in the detail header ───────────────── */
+.model-detail-panel__fav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.model-detail-panel__fav-icon { font-size: 16px; line-height: 1; }
+
+.model-detail-panel__fav-btn:hover { background: var(--surface-3); color: var(--text-primary); }
+.model-detail-panel__fav-btn:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
+
+.model-detail-panel__fav-btn--on {
+  color: #facc15;
+  border-color: #facc15;
+}
+.model-detail-panel__fav-btn--on:hover { color: #facc15; }
 
 /* ── Preset Change inline chooser ──────────────────────────────── */
 .detail-presets__linked-actions {

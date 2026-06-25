@@ -391,7 +391,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             type="button"
             className={`model-list-panel__filter-btn${filterOpen ? ' model-list-panel__filter-btn--open' : ''}${filterTab !== 'all' ? ' model-list-panel__filter-btn--active' : ''}`}
             onClick={handleFilterBtnClick}
-            aria-label="Filter models"
+            aria-label="Filter models by capability"
             aria-expanded={filterOpen}
             aria-haspopup="dialog"
           >
@@ -407,7 +407,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               aria-modal="false"
             >
               <div className="model-list-panel__filter-popover-head">
-                <span>Filter by type</span>
+                <span>Filter by capability</span>
                 <button
                   type="button"
                   className="model-list-panel__filter-popover-close"
@@ -417,7 +417,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   <Icon name="x" size={13} />
                 </button>
               </div>
-              <div className="model-list-panel__filter-options" role="group" aria-label="Model type filter">
+              <div className="model-list-panel__filter-options" role="group" aria-label="Model capability filter">
                 {FILTER_TABS.map(tab => (
                   <button
                     key={tab.key}

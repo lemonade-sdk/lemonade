@@ -8,13 +8,11 @@
  *   └──────────────┴──────────────────┴─────────────────────────┘
  *
  * The rail surfaces filter dimensions that drive the middle list:
- *   1. Preset quick-search + "+ New" (POC placeholder — presets live in the
- *      model-detail Presets tab per fl0rianr's "2) a"; wiring deferred).
- *   2. Primary nav: All Models / Downloaded / My Models / Favorites.
- *   3. CATEGORIES (collapsible): All / LLM / Omni / Image / Audio / TTS / Embed.
- *   4. Backends (collapsible select): filter by recipe.
- *   5. TAGS (collapsible): model-family + size chips.
- *   6. Storage meter (role="progressbar").
+ *   1. Primary nav: All Models / Downloaded / My Models / Favorites.
+ *   2. CATEGORIES (collapsible): All / LLM / Omni / Image / Audio / TTS / Embed.
+ *   3. Backends (collapsible select): filter by recipe.
+ *   4. TAGS (collapsible): model-family + size chips.
+ *   5. Storage meter (role="progressbar").
  *
  * ALL counts/categories/tags/backends are derived CLIENT-SIDE from the model
  * list the prototype already loads — no lemond calls. Storage uses derived
@@ -95,7 +93,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onTagFilterChange,
   id = 'model-nav-rail',
 }) => {
-  const [presetQuery, setPresetQuery] = useState('');
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
 
@@ -166,27 +163,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 
   return (
     <nav className="model-nav-rail" id={id} aria-label="Model filters">
-      {/* 1. Preset quick-search + New (POC placeholder) */}
-      <div className="model-nav-rail__preset-row">
-        <div className="model-nav-rail__preset-search">
-          <Icon name="search" size={13} aria-hidden="true" className="model-nav-rail__preset-icon" />
-          <label htmlFor="nav-preset-search" className="sr-only">Search presets</label>
-          <input
-            id="nav-preset-search"
-            type="text"
-            className="model-nav-rail__preset-input"
-            placeholder="Search presets…"
-            value={presetQuery}
-            onChange={e => setPresetQuery(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
-        <button type="button" className="btn btn--ghost btn--tiny model-nav-rail__new-btn" aria-label="New preset">
-          + New
-        </button>
-      </div>
-
-      {/* 2. Primary nav */}
+      {/* 1. Primary nav */}
       <ul className="model-nav-rail__primary" role="list">
         {PRIMARY_ITEMS.map(item => {
           const active = primaryFilter === item.key;
@@ -208,7 +185,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         })}
       </ul>
 
-      {/* 3. Categories (collapsible) */}
+      {/* 2. Categories (collapsible) */}
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
           <button
@@ -246,7 +223,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         )}
       </section>
 
-      {/* 4. Backends select */}
+      {/* 3. Backends select */}
       <div className="model-nav-rail__backends">
         <label htmlFor="nav-backend-select" className="model-nav-rail__backends-label">Backends</label>
         <select
@@ -262,7 +239,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         </select>
       </div>
 
-      {/* 5. Tags (collapsible) */}
+      {/* 4. Tags (collapsible) */}
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
           <button
@@ -303,7 +280,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         )}
       </section>
 
-      {/* 6. Storage meter */}
+      {/* 5. Storage meter */}
       <div className="model-nav-rail__storage">
         <div className="model-nav-rail__storage-row">
           <span className="model-nav-rail__storage-label">Storage</span>

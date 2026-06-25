@@ -470,6 +470,10 @@ export interface ModelDetailPanelProps {
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
+  /** Whether this model is currently marked a favorite (client-local pin store). */
+  isFavorite?: boolean;
+  /** Toggle this model's favorite/pin state. Receives the model name. */
+  onToggleFavorite?: (name: string) => void;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
 }
@@ -494,6 +498,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onPullAndLoad,
   onDelete,
   onCancelPull,
+  isFavorite = false,
+  onToggleFavorite,
   onBack,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('readme');
@@ -606,6 +612,18 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
         {/* Primary actions */}
         <div className="model-detail-panel__actions" aria-label={`Actions for ${name}`}>
+          {onToggleFavorite && (
+            <button
+              type="button"
+              className={`model-detail-panel__fav-btn${isFavorite ? ' model-detail-panel__fav-btn--on' : ''}`}
+              onClick={() => onToggleFavorite(name)}
+              aria-pressed={isFavorite}
+              aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <span aria-hidden="true" className="model-detail-panel__fav-icon">{isFavorite ? '★' : '☆'}</span>
+            </button>
+          )}
           {isPulling ? (
             <>
               <div className="row__progress">

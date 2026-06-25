@@ -2622,13 +2622,13 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A136 — preset quick-search input in the rail is labelled', async ({ page }) => {
+  test('A136 — preset quick-search and "+ New" are removed from the nav rail (#2424)', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const input = page.locator('#nav-preset-search');
-    await expect(input).toBeVisible();
-    // Associated <label> (sr-only) provides the accessible name.
-    const hasLabel = await page.locator('label[for="nav-preset-search"]').count();
-    expect(hasLabel).toBeGreaterThan(0);
+    await expect(page.locator('.model-nav-rail')).toBeVisible();
+    // The preset search box and "+ New" button no longer belong in the rail.
+    await expect(page.locator('#nav-preset-search')).toHaveCount(0);
+    await expect(page.locator('.model-nav-rail__preset-row')).toHaveCount(0);
+    await expect(page.locator('.model-nav-rail__new-btn')).toHaveCount(0);
   });
 });
 
@@ -2758,6 +2758,173 @@ test.describe('Accessibility — model-detail Presets card grid (#2424)', () => 
   test('A141 — the Presets card grid passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
     await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
     await expect(page.locator('.detail-presets__preset-grid')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── PR #2424 maintainer refinements (fl0rianr 2026-06-25) ──────────────────
+//
+// Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
+// reuses the existing client-local pin store and updates the Favorites nav
+// count; (2) the preset search + "+ New" removed from the left rail (covered by
+// the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
+// (4) the funnel filter scoped to CAPABILITIES with a solid opaque popover
+// background; (5) the left rail scrolls independently instead of clipping the
+// lower part of the screen when its sections are expanded.
+// Range: A142–A148.
+
+test.describe('Accessibility — model view refinements (#2424)', () => {
+  async function goToModelsRefined(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── 1. Favorite star toggle in the detail panel ──────────────────────────
+
+  test('A142 — detail panel favorite star is an aria-pressed toggle naming the model', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    const star = page.locator('.model-detail-panel__fav-btn');
+    await expect(star).toBeVisible();
+    await expect(star).toHaveRole('button');
+    // Off state: not pressed, label invites adding to favorites and names the model.
+    expect(await star.getAttribute('aria-pressed')).toBe('false');
+    const offLabel = (await star.getAttribute('aria-label')) ?? '';
+    expect(offLabel.toLowerCase()).toContain('favorite');
+    expect(offLabel).toContain('Llama-3.1-8B');
+    // Toggle on.
+    await star.click();
+    await page.waitForTimeout(120);
+    expect(await star.getAttribute('aria-pressed')).toBe('true');
+    expect(((await star.getAttribute('aria-label')) ?? '').toLowerCase()).toContain('remove');
+  });
+
+  test('A143 — favoriting in the detail panel updates the Favorites nav count and persists', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    await page.locator('.model-detail-panel__fav-btn').click();
+    await page.waitForTimeout(150);
+
+    // Favorites primary-nav entry now reports one model (via its sr-only phrase).
+    const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
+    await expect(fav).toContainText('1');
+
+    // Reuses the SAME client-local pin store — a *pinned_models key exists.
+    const persisted = await page.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.endsWith('pinned_models')) return localStorage.getItem(key);
+      }
+      return null;
+    });
+    expect(persisted, 'favorite must persist to the existing pinned_models store').toBeTruthy();
+    expect((persisted ?? '').toLowerCase()).toContain('llama-3.1-8b');
+  });
+
+  // ── 3. "Back to models" only on narrow viewports ─────────────────────────
+
+  test('A144 — "Back to models" is hidden on desktop widths', async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    // Present in the DOM but visually hidden on desktop.
+    await expect(page.locator('.model-detail-panel__back-btn')).toBeHidden();
+  });
+
+  // ── 4. Funnel filter: capabilities only + opaque background ───────────────
+
+  test('A145 — the funnel filter popover filters by capability and has a solid background', async ({ page }) => {
+    await goToModelsRefined(page);
+    const filterBtn = page.locator('.model-list-panel__filter-btn');
+    await filterBtn.click();
+    await page.waitForTimeout(120);
+    const popover = page.locator('.model-list-panel__filter-popover');
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(/capabilit/i);
+
+    // The options are the capability categories (LLM / Omni / Image / Audio / TTS / Embed) + All.
+    const options = popover.locator('.model-list-panel__filter-option');
+    await expect(options).toHaveCount(7);
+
+    // Background must be opaque (not transparent) so list content does not bleed through.
+    const bg = await popover.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+    expect(bg).not.toBe('transparent');
+  });
+
+  test('A146 — picking a capability in the funnel popover filters the list', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-panel__filter-btn').click();
+    await page.waitForTimeout(120);
+    const audio = page.locator('.model-list-panel__filter-option').filter({ hasText: /Audio/ });
+    await audio.click();
+    await page.waitForTimeout(150);
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Whisper');
+  });
+
+  // ── 5. Left rail scrolls instead of clipping ─────────────────────────────
+
+  test('A147 — the left nav rail is independently scrollable and reaches the Storage meter', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 600 });
+    await goToModelsRefined(page);
+    const rail = page.locator('.model-nav-rail');
+    await expect(rail).toBeVisible();
+    // The rail must own its own scroll area …
+    const overflowY = await rail.evaluate(el => getComputedStyle(el).overflowY);
+    expect(overflowY).toBe('auto');
+    // … and must not exceed the viewport height (no clipping past the screen).
+    const box = await rail.boundingBox();
+    expect(box, 'rail bounding box').toBeTruthy();
+    expect((box!.y + box!.height)).toBeLessThanOrEqual(601);
+    // The Storage meter stays reachable by scrolling within the rail.
+    const storage = page.locator('.model-nav-rail__storage');
+    await storage.scrollIntoViewIfNeeded();
+    await expect(storage).toBeVisible();
+  });
+
+  // ── Axe scan with a favorite set + filter open ───────────────────────────
+
+  test('A148 — refined model view passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    await page.locator('.model-detail-panel__fav-btn').click();
+    await page.locator('.model-list-panel__filter-btn').click();
+    await page.waitForTimeout(150);
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
       .analyze();

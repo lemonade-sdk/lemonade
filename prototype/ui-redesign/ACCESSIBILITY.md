@@ -3,8 +3,35 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete  
-**Test status (2026-06-25):** All 157 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A137–A141 added for the model-detail Presets compact card grid)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete  
+**Test status (2026-06-25):** All 164 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A142–A148 added for the #2424 model-view refinements)
+
+---
+
+## Group I — Model view refinements (#2424 fl0rianr review, 2026-06-25)
+
+fl0rianr's PR #2424 review raised five items, all addressed in `prototype/ui-redesign/`:
+
+1. **Favorite star toggle in the detail panel.** `ModelDetailPanel` now renders a star (☆/★) toggle button in the header actions row. It reuses the EXISTING client-local pin/favorite store (`pinned_models` localStorage via `togglePinnedModel`/`pinnedNameSet` in `ModelManager.tsx`) — no parallel store. The Favorites nav-rail count reflects it immediately. The icon button is an `aria-pressed` toggle whose `aria-label` names the model and the action ("Add … to favorites" / "Remove … from favorites").
+2. **Removed preset search + "+ New" from the left rail.** Deleted the `model-nav-rail__preset-row` (search box + button) and its state/CSS. Model search remains in the middle pane.
+3. **"Back to models" hidden on desktop.** `.model-detail-panel__back-btn` is now `display:none` at desktop widths and only re-enabled inside the `≤700px` media query (with raised specificity `.manager--detail .model-detail-panel__back-btn` so it wins over the later base rule).
+4. **Funnel filter scoped to capabilities + opaque popover.** The popover already filtered by capability categories; relabelled to "Filter by capability" and the button/group `aria-label`s updated. The popover background was `var(--surface-overlay)` (an undefined token → transparent); switched to the solid `var(--surface-3)` surface so list content no longer bleeds through.
+5. **Left rail no longer clips the screen.** Root cause: `.manager--detail` inherited `grid-template-rows: auto 1fr` from `.manager`, so the panes landed in the content-sized `auto` row and grew past the viewport with no scroll. Added `grid-template-rows: minmax(0, 1fr)` (+ `min-height: 0`) so the row is bounded to the viewport and each pane's own `overflow-y:auto` (the rail's included) takes over. The Storage meter stays reachable by scrolling the rail.
+
+**a11y decisions:**
+- The favorite toggle is a real `<button>` with `aria-pressed`; the glyph is `aria-hidden` so the state is conveyed by the label, not the star colour.
+- "Back to models" is kept in the DOM (not conditionally unmounted) and hidden via CSS, so the narrow-viewport behaviour is purely responsive.
+
+**Tests added:** A142–A148 (7 tests) in `tests/a11y.spec.ts`.
+- A142: detail favorite star is an `aria-pressed` toggle naming the model
+- A143: favoriting updates the Favorites nav count and persists to the existing `pinned_models` store
+- A144: "Back to models" is hidden on desktop widths
+- A145: funnel popover filters by capability and has a solid (non-transparent) background
+- A146: picking a capability in the funnel popover filters the list
+- A147: the left nav rail is independently scrollable and reaches the Storage meter
+- A148: refined model view (favorite set + filter open) passes WCAG 2.1 AA axe-core scan
+
+**Files changed:** `ModelDetailPanel.tsx`, `ModelNavRail.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -89,7 +116,7 @@ fl0rianr posted a canonical three-pane target: a NEW left **navigation** rail (`
 - A133: custom-model buttons grounded group at the top, keyboard reachable
 - A134: responsive nav toggle (`aria-controls`/`aria-expanded`) reveals the rail
 - A135: full three-pane view passes WCAG 2.1 AA axe-core scan
-- A136: preset quick-search input is labelled
+- A136: preset quick-search and "+ New" removed from the nav rail (#2424)
 
 ---
 
@@ -857,4 +884,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-25 by Mattingly (Group H: model-detail Presets card grid #2424 — rows → neat compact card grid matching global preset cards; `<ul role="list">` to avoid nested-interactive; aria-current + text badges; tests A137–A141)*
+*Last updated: 2026-06-25 by Mattingly (Group I: model-view refinements #2424 — favorite star toggle reusing the pin store, preset search/+New removed from rail, Back-to-models desktop-hidden, funnel scoped to capabilities + opaque popover, rail grid-row scroll fix; tests A142–A148)*
