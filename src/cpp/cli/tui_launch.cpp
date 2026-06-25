@@ -26,12 +26,12 @@ using ftxui::Component;
 using ftxui::Element;
 using ftxui::Event;
 using ftxui::Input;
+using ftxui::InputOption;
 using ftxui::Maybe;
 using ftxui::Menu;
 using ftxui::MenuOption;
 using ftxui::Renderer;
 using ftxui::ScreenInteractive;
-using ftxui::Toggle;
 using ftxui::border;
 using ftxui::bold;
 using ftxui::color;
@@ -252,9 +252,15 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
         return &models[static_cast<size_t>(filtered[static_cast<size_t>(selected_model)])];
     };
 
+    refresh_filter();
+
     auto agent_menu = Menu(&agents, &agent_selected, MenuOption::Vertical());
-    auto search_input = Input(&search, "Search launch models");
-    auto mode_toggle = Toggle(&modes, &mode);
+    InputOption search_option;
+    search_option.on_change = refresh_filter;
+    auto search_input = Input(&search, "Search launch models", search_option);
+    MenuOption mode_option = MenuOption::Toggle();
+    mode_option.on_change = refresh_filter;
+    auto mode_toggle = Menu(&modes, &mode, mode_option);
     auto model_menu = Menu(&entries, &selected_model, MenuOption::Vertical());
     auto ctx_input = Input(&ctx_size, "auto");
     auto backend_input = Input(&llamacpp_backend, "auto");
@@ -294,7 +300,6 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
     auto layout = Container::Vertical({agent_section, model_section, options_section, actions_section});
 
     auto renderer = Renderer(layout, [&] {
-        refresh_filter();
         const auto* model = selected_info();
         Element details = text("No model selected") | dim;
         if (mode == 0) {
@@ -388,7 +393,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
         return false;
     });
 
-    auto screen = ScreenInteractive::TerminalOutput();
+    auto screen = ScreenInteractive::Fullscreen();
     screen_ptr = &screen;
     agent_section->TakeFocus();
     screen.Loop(root);
