@@ -96,6 +96,7 @@ export interface FlatModelEntry {
   model: ModelInfo;
   status: ModelStatus;
   downloadPct?: number;
+  pinned?: boolean;
 }
 
 export interface ModelListPanelProps {
@@ -112,6 +113,10 @@ export interface ModelListPanelProps {
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onAddCustomModel?: () => void;
   onAddOmniCollection?: () => void;
+  /** Lowercased set of pinned (favorited) model names. Client-local, no lemond. */
+  pinnedNames?: Set<string>;
+  /** Toggle a model's pinned/favorite state. Receives the model name. */
+  onTogglePin?: (name: string) => void;
 }
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
@@ -130,6 +135,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   searchInputRef,
   onAddCustomModel,
   onAddOmniCollection,
+  pinnedNames,
+  onTogglePin,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('name');
@@ -171,7 +178,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         status = 'available';
       }
 
-      result.push({ model: m, status, downloadPct: pullPct });
+      result.push({ model: m, status, downloadPct: pullPct, pinned: pinnedNames?.has(mName.toLowerCase()) ?? false });
     }
 
     if (sortBy === 'name') {
@@ -211,8 +218,14 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       });
     }
 
+    // Pinned (favorited) models always float to the top, preserving the
+    // chosen sort order within the pinned and unpinned groups. Client-local only.
+    if (pinnedNames && pinnedNames.size > 0) {
+      result.sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false));
+    }
+
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames]);
 
   // Keyboard navigation on the list (ArrowUp/Down/Home/End)
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -239,7 +252,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
   const handleItemKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>, modelId: string) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectModel(modelId); }
-  }, [onSelectModel]);
+    else if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
+  }, [onSelectModel, onTogglePin]);
 
   // Close filter popover on outside click
   const handleFilterBtnClick = () => setFilterOpen(v => !v);
@@ -362,7 +376,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
         onKeyDown={handleListKeyDown}
       >
-        {flatList.map(({ model, status, downloadPct }) => {
+        {flatList.map(({ model, status, downloadPct, pinned }) => {
           const mId = listModelName(model);
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
@@ -376,10 +390,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               tabIndex={isSelected ? 0 : -1}
               aria-selected={isSelected}
               data-model-id={mId}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''} model-list-item--${status}`}
+              aria-keyshortcuts={onTogglePin ? 'P' : undefined}
+              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${recipe ? `, ${listRecipeBadgeText(recipe)}` : ''}`}
+              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${recipe ? `, ${listRecipeBadgeText(recipe)}` : ''}`}
             >
               {/* Backend badge */}
               {recipe && (
@@ -413,6 +428,22 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                 )}
                 {status === 'downloaded' && <span className="model-list-item__dot model-list-item__dot--ready" />}
               </span>
+
+              {/* Pin / favorite (client-local). Rendered as a non-button so it
+                  does not nest an interactive control inside role="option"
+                  (axe nested-interactive). Pointer users click it; keyboard/AT
+                  users toggle via the "P" shortcut on the focused row, and the
+                  pinned state is exposed in the row's aria-label. */}
+              {onTogglePin && (
+                <span
+                  className={`model-list-item__pin row__pin${pinned ? ' row__pin--active model-list-item__pin--active' : ''}`}
+                  onClick={e => { e.stopPropagation(); onTogglePin(mId); }}
+                  aria-hidden="true"
+                  title={pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`}
+                >
+                  <Icon name="pin" size={12} aria-hidden="true" />
+                </span>
+              )}
             </li>
           );
         })}

@@ -8226,6 +8226,27 @@ input, textarea {
   color: var(--accent-fg);
 }
 
+/* Pin / favorite affordance — compact, revealed on hover/selection or when pinned */
+.model-list-item__pin {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.model-list-item:hover .model-list-item__pin,
+.model-list-item--selected .model-list-item__pin,
+.model-list-item:focus-visible .model-list-item__pin,
+.model-list-item--pinned .model-list-item__pin {
+  opacity: 1;
+}
+
+.model-list-item__pin--active {
+  opacity: 1;
+}
+
 .model-list-panel__empty {
   display: flex;
   flex-direction: column;

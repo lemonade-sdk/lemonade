@@ -2441,6 +2441,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         searchInputRef={searchRef}
         onAddCustomModel={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}
         onAddOmniCollection={() => openCustomForm('omni-collection')}
+        pinnedNames={pinnedNameSet}
+        onTogglePin={togglePinnedModel}
       />
 
       {/* Right panel: custom form overlay OR model detail */}

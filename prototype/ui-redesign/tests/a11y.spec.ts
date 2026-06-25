@@ -2300,3 +2300,126 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
     expect(text).not.toContain('pipeline_tag');
   });
 });
+
+// ─── 26. #2355 left-rail parity — pin / favorite (client-local) ───────────────
+//
+// fl0rianr feedback (2026-06-25): the master-detail rail dropped the original
+// rail's pin/favorite affordance. Re-wired the existing client-local pin store
+// (localStorage `pinned_models`, no lemond) into ModelListPanel. Pinned models
+// float to the top; the affordance is a non-button span (so it does not nest an
+// interactive control inside role="option"), and keyboard/AT users toggle via
+// the "P" shortcut on the focused row, with pinned state in the row aria-label.
+// Range: A118–A123.
+
+test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  test('A118 — each model row exposes a pin affordance with an accessible title', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const pins = page.locator('.model-list-item__pin');
+    const count = await pins.count();
+    expect(count).toBeGreaterThan(0);
+    // Title communicates the pin action to pointer users.
+    const title = await pins.first().getAttribute('title');
+    expect((title ?? '').toLowerCase()).toContain('pin');
+  });
+
+  test('A119 — pin affordance is NOT a nested interactive button inside role="option"', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const pin = page.locator('.model-list-item__pin').first();
+    // It must be a span (not a button/anchor/input) so role=option does not nest
+    // an interactive control (axe nested-interactive).
+    const tag = await pin.evaluate(el => el.tagName.toLowerCase());
+    expect(tag).toBe('span');
+    // No button inside any option row.
+    expect(await page.locator('[role="option"] button').count()).toBe(0);
+  });
+
+  test('A120 — clicking the pin toggles the row pinned state and aria-label', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const row = page.locator('.model-list-item').first();
+    const pin = row.locator('.model-list-item__pin');
+    await pin.click();
+    await page.waitForTimeout(100);
+    // The (now-pinned) model floats to the top; assert the first row is pinned.
+    const firstRow = page.locator('.model-list-item').first();
+    await expect(firstRow).toHaveClass(/model-list-item--pinned/);
+    const label = await firstRow.getAttribute('aria-label');
+    expect((label ?? '').toLowerCase()).toContain('pinned');
+    // Unpin and verify the pinned class is removed.
+    await firstRow.locator('.model-list-item__pin').click();
+    await page.waitForTimeout(100);
+    expect(await page.locator('.model-list-item--pinned').count()).toBe(0);
+  });
+
+  test('A121 — selected row is keyboard-operable: "P" toggles pin (aria-keyshortcuts)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select a model (focus moves to the detail panel in master-detail), then
+    // return focus to the now-focusable selected row (tabIndex 0) — the path a
+    // keyboard user takes via Shift+Tab — and press the advertised "P" shortcut.
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    const selected = page.locator('.model-list-item--selected');
+    // The shortcut must be advertised to assistive tech.
+    expect(await selected.getAttribute('aria-keyshortcuts')).toBe('P');
+    await selected.focus();
+    await page.keyboard.press('p');
+    await page.waitForTimeout(100);
+    const pinnedCount = await page.locator('.model-list-item--pinned').count();
+    expect(pinnedCount).toBe(1);
+    const label = await page.locator('.model-list-item--pinned').first().getAttribute('aria-label');
+    expect((label ?? '').toLowerCase()).toContain('pinned');
+  });
+
+  test('A122 — pinned state persists client-locally to localStorage (no lemond)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.waitForTimeout(100);
+    const persisted = await page.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.endsWith('pinned_models')) return localStorage.getItem(key);
+      }
+      return null;
+    });
+    expect(persisted, 'a *pinned_models localStorage key should exist').toBeTruthy();
+    expect((persisted ?? '').length).toBeGreaterThan(2); // non-empty JSON array
+  });
+
+  test('A123 — model list with a pinned row passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.waitForTimeout(150);
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});

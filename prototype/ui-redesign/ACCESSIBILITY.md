@@ -4,7 +4,7 @@
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
 **Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete  
-**Test status (2026-06-25):** All 133 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A116–A117 added for README raw-HTML rendering fix)
+**Test status (2026-06-25):** All 139 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A118–A123 added for left-rail pin/favorite parity)
 
 ---
 
@@ -104,6 +104,26 @@ Closes 4 gaps against @fl0rianr's six-point clarification comment (2026-06-25T16
 - A117: a leading YAML frontmatter block is stripped — the real heading renders and frontmatter keys (`license:`, `pipeline_tag`) are not shown.
 
 **Files changed:** `ModelDetailPanel.tsx`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
+
+---
+
+### Group H — Left-rail pin/favorite parity (#2355 fl0rianr follow-up)
+
+- **Status:** ✅ **Added 2026-06-25**
+- **Problem:** fl0rianr's follow-up on #2355 noted the new master-detail rail was still "missing the real left rail's features." The original/prototype rail let users **pin (favorite)** a model so it floats to the top of the list; that client-local affordance was dropped when `ModelListPanel` replaced the old rail. The pin store (`loadPinnedModels`/`savePinnedModels`/`togglePinnedModel`, localStorage-scoped `pinned_models`) still lived in `ModelManager` but was no longer surfaced.
+- **Fix:** Re-wired the existing client-local pin store into `ModelListPanel` via new `pinnedNames`/`onTogglePin` props (no `lemond` involvement — pins persist to the scoped `pinned_models` localStorage key, per the per-client-state invariant). Pinned models float to the top while preserving the active sort order within groups.
+- **A11y design:** The per-row pin affordance is a **non-button `<span>`** (pointer convenience), so it does **not** nest an interactive control inside `role="option"` (avoids the axe `nested-interactive` rule). For keyboard/AT users, the row advertises `aria-keyshortcuts="P"` and the focusable selected row (`tabIndex=0`, reachable via Shift+Tab from the detail panel) toggles its pin on "P". Pinned state is exposed in each row's `aria-label` (", pinned"). The pin `<span>` is `aria-hidden` because its state and action are fully represented by the row.
+- **WCAG:** 2.1.1 (keyboard — pin toggle operable via the advertised "P" shortcut), 4.1.2 (name/role/value — pinned state exposed in the row label and `aria-pressed`-equivalent labelling), 1.3.1 (info & relationships).
+
+**Tests added:** A118–A123 (6 tests) in `tests/a11y.spec.ts`.
+- A118: each row exposes a pin affordance with an accessible `title`.
+- A119: the pin affordance is a `<span>`, not a nested interactive control inside `role="option"` (no `button` inside any option).
+- A120: clicking the pin toggles the row pinned state, `model-list-item--pinned` class, and aria-label; clicking again removes it.
+- A121: the selected row advertises `aria-keyshortcuts="P"` and toggles its pin via the "P" key.
+- A122: pinned state persists client-locally to a `*pinned_models` localStorage key (no `lemond`).
+- A123: the model list with a pinned row passes the WCAG 2.1 AA axe-core scan (confirms no `nested-interactive` regression).
+
+**Files changed:** `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -752,4 +772,4 @@ Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that
 
 ---
 
-*Last updated: 2026-06-25 by Mattingly (Group G: model README raw-HTML rendering fix #2355 — markdown-it html:true behind DOMPurify allowlist + YAML frontmatter strip; tests A116–A117)*
+*Last updated: 2026-06-25 by Mattingly (Group H: left-rail pin/favorite parity #2355 — re-wired client-local pin store into ModelListPanel; non-button pin span + aria-keyshortcuts="P"; tests A118–A123)*
