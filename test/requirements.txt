@@ -20,6 +20,9 @@ prometheus-client
 # Numerical computing (required for embedding similarity tests)
 numpy
 
+# JSON Schema validation (required for router schema contract tests)
+jsonschema
+
 # WebSocket client (required for realtime transcription tests)
 websockets
 
