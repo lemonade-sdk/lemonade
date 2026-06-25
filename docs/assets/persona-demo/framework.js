@@ -537,7 +537,12 @@
   }
 
   journeyEl.addEventListener('click', function(event) {
-    var btn = event.target.closest && event.target.closest('[data-global]');
+    if (!event.target.closest) return;
+    // A real link (e.g. a slide caption hyperlink) lives inside a [data-global]
+    // slide section, so let its navigation through instead of swallowing the click
+    // with a jump + preventDefault.
+    if (event.target.closest('a[href]')) return;
+    var btn = event.target.closest('[data-global]');
     if (!btn) return;
     event.preventDefault();
     jumpToGlobal(Number(btn.getAttribute('data-global')) || 0);

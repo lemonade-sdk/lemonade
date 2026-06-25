@@ -7,7 +7,7 @@
     title: 'One router. Every backend. Any app.',
     subtitle: 'Embed lemond behind one clean OpenAI-compatible API and ship local AI across CPU, GPU, NPU, RAM, and cloud.',
     zone: 'Meet your new AI stack.',
-    zoneSubtitle: 'From the embedded runtime up through the router, APIs, and backends that power local AI in your app.',
+    zoneSubtitle: 'Lemonade takes care of every aspect of setting up and executing AI models so that you can focus on what makes your apps and agents unique.',
     label: 'Software stack'
   });
 })();

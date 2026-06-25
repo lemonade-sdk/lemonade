@@ -20,7 +20,7 @@
       {
         label: 'Deploy everywhere',
         demo: 'deploy-everywhere',
-        caption: 'Compatible with every mainstream PC.',
+        caption: 'Any OS, any vendor — one build runs everywhere.',
         captionHref: 'https://lemonade-server.ai/docs/embeddable/',
         animationMode: 'repeat'
       },

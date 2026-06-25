@@ -1,78 +1,33 @@
-// Developers · section 3 · "Backends and devices"
-// Slides: the inference engines board + the devices/acceleration board.
+// Developers · section 3 · "One stack, every model"
+// Two flowchart demos that each land a value prop:
+//   1. The stack       -- lemond is the abstraction layer over engines + devices.
+//   2. Expanding models -- engines keep shipping; new models appear in your app.
+// Both are pure-SVG + SMIL diagrams rendered by the shared flowchart engine.
 (function () {
   var P = window.LemonadePersona;
   if (!P) return;
   var h = P.helpers;
-  var escapeText = h.escapeText;
 
   P.registerSection('developers', 3, {
-    title: 'Backends and devices',
+    title: 'One stack, every model',
     slides: [
       {
-        label: 'Inference engines',
-        demo: 'backend-engines',
-        caption: 'One API, many engines — chat, image, speech, and more.',
+        label: 'Engines & hardware, handled for you',
+        demo: 'backend-stack',
+        caption: 'Your app calls one API — lemond runs the engines and picks the hardware for you.',
         captionHref: 'https://lemonade-server.ai/docs/embeddable/backends/',
-        animationMode: 'once'
+        animationMode: 'repeat'
       },
       {
-        label: 'Devices & acceleration',
-        demo: 'backend-devices',
-        caption: 'Optimized for every device — GPU, NPU, and CPU.',
-        captionHref: 'https://lemonade-server.ai/docs/guide/configuration/llamacpp/',
-        animationMode: 'once'
+        label: 'Ever-expanding models',
+        demo: 'backend-models',
+        caption: 'Engines keep shipping. New models show up in your app automatically.',
+        captionHref: 'models.html',
+        animationMode: 'repeat'
       }
     ]
   });
 
-  // Developer "Backends and devices": grids of glass icon-cards showing the breadth
-  // of engines / device acceleration. Dark variant. Material icons (no external logos).
-  var ENGINES_BOARD = [
-    { label: 'Core', items: [
-      { icon: 'forum', name: 'llama.cpp', tag: 'chat · embed · rerank' },
-      { icon: 'image', name: 'stable-diffusion.cpp', tag: 'image' },
-      { icon: 'graphic_eq', name: 'whisper.cpp', tag: 'transcription' },
-      { icon: 'campaign', name: 'Kokoro', tag: 'text-to-speech' },
-      { icon: 'mic', name: 'Moonshine', tag: 'streaming ASR' }
-    ] },
-    { label: 'Specialized', items: [
-      { icon: 'bolt', name: 'vLLM', tag: 'LLM · ROCm' },
-      { icon: 'memory', name: 'RyzenAI', tag: 'NPU' },
-      { icon: 'developer_board', name: 'FastFlowLM', tag: 'NPU · multimodal' }
-    ] }
-  ];
-  var DEVICES_BOARD = [
-    { items: [
-      { icon: 'view_in_ar', name: 'Vulkan', tag: 'any GPU' },
-      { icon: 'memory', name: 'ROCm', tag: 'AMD' },
-      { icon: 'memory', name: 'CUDA', tag: 'NVIDIA' },
-      { icon: 'laptop_mac', name: 'Metal', tag: 'Apple' },
-      { icon: 'developer_board', name: 'CPU', tag: 'x86 · ARM' },
-      { icon: 'bolt', name: 'NPU', tag: 'Ryzen AI' }
-    ] }
-  ];
-
-  // Render a board's groups (no window chrome -- the board itself is the dark
-  // surface): an optional group label + a grid of cards, --card running across groups.
-  function renderBoard(groups) {
-    var idx = 0;
-    var html = groups.map(function(g) {
-      var cards = g.items.map(function(it) {
-        var card = '<div class="hp-backend-card" style="--card:' + idx + '">' +
-            '<span class="hp-backend-icon"><span class="material-symbols-outlined">' + it.icon + '</span></span>' +
-            '<span class="hp-backend-name">' + escapeText(it.name) + '</span>' +
-            '<span class="hp-backend-tag">' + escapeText(it.tag) + '</span>' +
-          '</div>';
-        idx += 1;
-        return card;
-      }).join('');
-      return (g.label ? '<div class="hp-backend-grouplabel">' + escapeText(g.label) + '</div>' : '') +
-        '<div class="hp-backend-grid">' + cards + '</div>';
-    }).join('');
-    return '<div class="hp-backend-board">' + html + '</div>';
-  }
-
-  P.registerDemo('backend-engines', function(frame) { frame.innerHTML = renderBoard(ENGINES_BOARD); });
-  P.registerDemo('backend-devices', function(frame) { frame.innerHTML = renderBoard(DEVICES_BOARD); });
+  P.registerDemo('backend-stack', function (frame) { h.renderFlowchart(frame, 'backend-stack'); });
+  P.registerDemo('backend-models', function (frame) { h.renderFlowchart(frame, 'backend-models'); });
 })();

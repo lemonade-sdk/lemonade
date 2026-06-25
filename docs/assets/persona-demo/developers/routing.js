@@ -1,5 +1,5 @@
 // Developers · section 1 · "Smart Router"
-// Slides: omni virtual models + cloud/local hybrid routing (both flowcharts).
+// Slides: omni virtual models + cloud-and-server tier routing (both flowcharts).
 (function () {
   var P = window.LemonadePersona;
   if (!P) return;
@@ -16,9 +16,9 @@
         animationMode: 'repeat'
       },
       {
-        label: 'Cloud/local hybrid',
+        label: 'Cloud and server routing',
         demo: 'router-hybrid',
-        caption: 'Cloud models when needed, local by default.',
+        caption: 'A smart router keeps every request local by default — escalating to your server or the cloud only when the task demands it.',
         captionHref: 'https://lemonade-server.ai/docs/guide/configuration/cloud/',
         animationMode: 'repeat'
       }

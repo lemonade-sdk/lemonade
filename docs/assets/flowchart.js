@@ -48,7 +48,12 @@
   // sum below stays under that. The holds are deliberately long: most of the
   // route is spent dwelling so the reader can actually SEE the input and output
   // artifacts (travel is quick, dwell is generous).
-  var routerFlow = {
+  // Default phase budget. A diagram can slow itself down (e.g. the hybrid demo,
+  // whose three scenarios each need time to read) by passing a `flow` override to
+  // routerDiagram; `routerFlow` is reassigned to the merged values per render, so
+  // every timing function below picks them up. `cadence` (route spacing) is bumped
+  // alongside it so the longer routes still don't overlap.
+  var routerFlowBase = {
     requestHold: 260,   // dot dwells in the request pill while the input shows
     travelHalf: 400,    // request-center -> model-center (and the mirror leg)
     modelHold: 320,     // dot dwells in the model pill while it "thinks"
@@ -58,13 +63,17 @@
     glowLead: 150,      // pill bloom starts this early as the dot approaches
     glowFade: 200       // pill bloom ramp-down after the dot leaves
   };
+  var routerFlow = routerFlowBase;
 
   // Shared filter region. filterUnits="userSpaceOnUse" with an explicit region
   // spanning the viewBox is deliberate: the default (objectBoundingBox) derives
   // the region from each element's bounding box, which collapses to zero area for
   // axis-aligned geometry (a horizontal wire has a zero-height bbox) and makes the
   // filtered glow vanish. A fixed user-space region keeps every glow working.
-  var FILTER_REGION = 'filterUnits="userSpaceOnUse" x="-40" y="-40" width="700" height="500"';
+  // The region must span the TALLEST viewBox that uses these filters (the
+  // backend-stack demo is 620x540) and the WIDEST (the hybrid router is 780
+  // wide), or a glow on content outside the region gets clipped.
+  var FILTER_REGION = 'filterUnits="userSpaceOnUse" x="-40" y="-40" width="880" height="640"';
 
   function routerGlowFilter() {
     return '<filter id="hpRouterGlow" ' + FILTER_REGION + '>' +
@@ -77,8 +86,18 @@
     return '<filter id="hpRouterBloom" ' + FILTER_REGION + '><feGaussianBlur stdDeviation="13"></feGaussianBlur></filter>';
   }
 
+  // Number of routes in the diagram currently being built. Routes begin at
+  // i*(subsectionDelay+subsectionGap); the cycle must be long enough that the
+  // last route finishes before the loop restarts. Set synchronously by
+  // routerDiagram before any timing is computed. Defaults to 2 (the historical
+  // value, so a 2-route diagram yields the exact same cycle as before).
+  var routeCount = 2;
+
   function routerCycleMs() {
-    return Math.max(cadence.minCycle, 2 * cadence.subsectionDelay + cadence.subsectionGap);
+    return Math.max(
+      cadence.minCycle,
+      routeCount * cadence.subsectionDelay + (routeCount - 1) * cadence.subsectionGap
+    );
   }
 
   // Pure-SVG pill (rect + text). No foreignObject / backdrop-filter, so it
@@ -94,9 +113,56 @@
     '</g>';
   }
 
-  function routerRoutePoints(target) {
-    var request = routerLayout.request;
-    var response = routerLayout.response;
+  // A richer "tier" card (hybrid demo): a taller frosted rect carrying a pure-SVG
+  // icon glyph, the tier name, a value sub-line, and an optional badge (e.g.
+  // DEFAULT). Left/right edges still sit at node.x +/- node.w/2 so the wire and
+  // dot land on the card by construction, exactly like the plain pill.
+  function routerTierNode(node) {
+    var x = (node.x - node.w / 2).toFixed(1), y = (node.y - node.h / 2).toFixed(1);
+    var left = node.x - node.w / 2;
+    var rx = 18;
+    var iconCx = left + 42;
+    var textX = left + 80;
+    var iconScale = node.iconScale || 1.5;
+    var badge = '';
+    if (node.badge) {
+      var bw = node.badge.length * 7.2 + 22;
+      var bx = node.x + node.w / 2 - bw - 16;
+      var by = node.y - node.h / 2 + 12;
+      badge = '<g class="hp-router-tier-badge">' +
+        '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="20" rx="10"></rect>' +
+        '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (by + 14).toFixed(1) + '" text-anchor="middle">' + escapeText(node.badge) + '</text>' +
+      '</g>';
+    }
+    return '<g class="hp-router-node-group hp-router-tier-group">' +
+      '<rect class="hp-router-node hp-router-tier" x="' + x + '" y="' + y + '" width="' + node.w + '" height="' + node.h + '" rx="' + rx + '"></rect>' +
+      '<g class="hp-cap-glyph hp-router-tier-icon" transform="translate(' + iconCx.toFixed(1) + ',' + node.y + ') scale(' + iconScale + ')">' + capGlyph(node.icon) + '</g>' +
+      '<text class="hp-router-tier-name" x="' + textX.toFixed(1) + '" y="' + (node.y - 9) + '" text-anchor="start">' + escapeText(node.label) + '</text>' +
+      (node.sub ? '<text class="hp-router-tier-sub" x="' + textX.toFixed(1) + '" y="' + (node.y + 17) + '" text-anchor="start">' + escapeText(node.sub) + '</text>' : '') +
+      badge +
+    '</g>';
+  }
+
+  // The smart-router node: a frosted square with a hub glyph and a label below
+  // it. The three target wires fan out from its centre.
+  function routerHubNode(hub) {
+    var x = (hub.x - hub.w / 2).toFixed(1), y = (hub.y - hub.h / 2).toFixed(1);
+    var glyphY = hub.y - 14;
+    var iconScale = hub.iconScale || 1.7;
+    return '<g class="hp-router-node-group hp-router-hub-group">' +
+      '<rect class="hp-router-node hp-router-hub" x="' + x + '" y="' + y + '" width="' + hub.w + '" height="' + hub.h + '" rx="16"></rect>' +
+      '<g class="hp-cap-glyph hp-router-hub-icon" transform="translate(' + hub.x + ',' + glyphY.toFixed(1) + ') scale(' + iconScale + ')">' + capGlyph('hub') + '</g>' +
+      '<text class="hp-router-hub-label" x="' + hub.x + '" y="' + (hub.y + 28) + '" text-anchor="middle">' + escapeText(hub.label || 'router') + '</text>' +
+    '</g>';
+  }
+
+  // request/response default to the shared layout; the hybrid demo overrides
+  // their x (4-column layout) and passes a `hub` waypoint the dot routes
+  // through between the request pill and the chosen target. Omni passes neither,
+  // so its two-point request->target path is byte-for-byte unchanged.
+  function routerRoutePoints(target, request, response, hub) {
+    request = request || routerLayout.request;
+    response = response || routerLayout.response;
     var targetLeft = target.x - target.w / 2;
     var targetRight = target.x + target.w / 2;
     var requestRight = request.x + request.w / 2;
@@ -104,6 +170,7 @@
     return {
       request: { x: request.x, y: request.y },
       requestExit: { x: requestRight, y: request.y },
+      hub: hub ? { x: hub.x, y: hub.y } : null,
       targetIn: { x: targetLeft, y: target.y },
       targetCenter: { x: target.x, y: target.y },
       targetOut: { x: targetRight, y: target.y },
@@ -129,13 +196,19 @@
   // absolute waypoint times (ms), path fractions for the dot's motion, and
   // the per-segment wire lengths the trail needs.
   function routerRouteTiming(points) {
+    var hasHub = !!points.hub;
     var dLaunch = routerDistance(points.request, points.requestExit);
-    var dIn = routerDistance(points.requestExit, points.targetIn);
+    // With a hub, the "in" journey is two legs: requestExit->hub (shared trunk)
+    // then hub->targetIn (fan-out branch). Without a hub it's one leg, so dHub=0
+    // and dIn collapses to the original requestExit->targetIn distance.
+    var dHub = hasHub ? routerDistance(points.requestExit, points.hub) : 0;
+    var dIn = hasHub ? routerDistance(points.hub, points.targetIn)
+                     : routerDistance(points.requestExit, points.targetIn);
     var dCenterIn = routerDistance(points.targetIn, points.targetCenter);
     var dCenterOut = routerDistance(points.targetCenter, points.targetOut);
     var dOut = routerDistance(points.targetOut, points.responseIn);
     var dLand = routerDistance(points.responseIn, points.response);
-    var firstHalf = (dLaunch + dIn + dCenterIn) || 1;
+    var firstHalf = (dLaunch + dHub + dIn + dCenterIn) || 1;
     var secondHalf = (dCenterOut + dOut + dLand) || 1;
     var total = firstHalf + secondHalf;
 
@@ -148,7 +221,8 @@
       emit: 0,
       launch: launch,
       requestExit: launch + (dLaunch / firstHalf) * routerFlow.travelHalf,
-      targetIn: launch + ((dLaunch + dIn) / firstHalf) * routerFlow.travelHalf,
+      hub: hasHub ? launch + ((dLaunch + dHub) / firstHalf) * routerFlow.travelHalf : null,
+      targetIn: launch + ((dLaunch + dHub + dIn) / firstHalf) * routerFlow.travelHalf,
       model: model,
       resume: resume,
       targetOut: resume + (dCenterOut / secondHalf) * routerFlow.travelHalf,
@@ -158,11 +232,14 @@
     };
     return {
       times: times,
-      lengths: { inWire: dIn, outWire: dOut },
+      // inWire spans the whole lit "in" path (trunk + branch) so the trail
+      // dash length matches the polyline the dot actually travels.
+      lengths: { inWire: dHub + dIn, outWire: dOut },
       keyPoints: {
         request: 0,
         requestExit: dLaunch / total,
-        targetIn: (dLaunch + dIn) / total,
+        hub: hasHub ? (dLaunch + dHub) / total : null,
+        targetIn: (dLaunch + dHub + dIn) / total,
         targetCenter: firstHalf / total,
         targetOut: (firstHalf + dCenterOut) / total,
         responseIn: (firstHalf + dCenterOut + dOut) / total,
@@ -179,16 +256,22 @@
     return value < 0 ? 0 : (value > 1 ? 1 : value);
   }
 
-  function routerWirePath(target) {
-    var points = routerRoutePoints(target);
-    return routerSegmentPath(points.requestExit, points.targetIn) + ' ' +
-      routerSegmentPath(points.targetOut, points.responseIn);
+  // Static dim wire. With a hub, the per-target "in" wire is just the fan-out
+  // branch (hub->targetIn); the shared requestExit->hub trunk is drawn once by
+  // routerDiagram so the three branches visibly emanate from the hub.
+  function routerWirePath(target, request, response, hub) {
+    var points = routerRoutePoints(target, request, response, hub);
+    var inPath = hub ? routerSegmentPath(points.hub, points.targetIn)
+                     : routerSegmentPath(points.requestExit, points.targetIn);
+    return inPath + ' ' + routerSegmentPath(points.targetOut, points.responseIn);
   }
 
-  function routerTravelPath(target) {
-    var points = routerRoutePoints(target);
-    return 'M ' + points.request.x + ' ' + points.request.y +
-      ' L ' + points.requestExit.x + ' ' + points.requestExit.y +
+  function routerTravelPath(target, request, response, hub) {
+    var points = routerRoutePoints(target, request, response, hub);
+    var d = 'M ' + points.request.x + ' ' + points.request.y +
+      ' L ' + points.requestExit.x + ' ' + points.requestExit.y;
+    if (hub) d += ' L ' + points.hub.x + ' ' + points.hub.y;
+    return d +
       ' L ' + points.targetIn.x + ' ' + points.targetIn.y +
       ' L ' + points.targetCenter.x + ' ' + points.targetCenter.y +
       ' L ' + points.targetOut.x + ' ' + points.targetOut.y +
@@ -196,8 +279,8 @@
       ' L ' + points.response.x + ' ' + points.response.y;
   }
 
-  function routerWire(target) {
-    return '<path class="hp-router-wire" d="' + routerWirePath(target) + '"></path>';
+  function routerWire(target, request, response, hub) {
+    return '<path class="hp-router-wire" d="' + routerWirePath(target, request, response, hub) + '"></path>';
   }
 
   function routerFlowBegin(sequenceIndex) {
@@ -263,8 +346,15 @@
       return routerTrailLayer(pathD, length, 'hp-router-flow-halo', enterMs, exitMs, begin, cycle, repeat) +
         routerTrailLayer(pathD, length, 'hp-router-flow-core', enterMs, exitMs, begin, cycle, repeat);
     }
+    // The lit "in" path follows the trunk through the hub then the branch out to
+    // the target, so the trail heats the same polyline the dot rides.
+    var inPath = points.hub
+      ? 'M ' + points.requestExit.x + ' ' + points.requestExit.y +
+        ' L ' + points.hub.x + ' ' + points.hub.y +
+        ' L ' + points.targetIn.x + ' ' + points.targetIn.y
+      : routerSegmentPath(points.requestExit, points.targetIn);
     return leg(
-        routerSegmentPath(points.requestExit, points.targetIn),
+        inPath,
         timing.lengths.inWire,
         timing.times.requestExit,
         timing.times.targetIn
@@ -306,6 +396,15 @@
       routerFlowBegin(sequenceIndex), routerFlowCycle(), routerFlowRepeat(mode));
   }
 
+  // The smart-router hub lights briefly as the dot passes through it -- this IS
+  // the routing decision. The peak window is a short dwell centred on t.hub.
+  function routerHubGlow(hub, timing, sequenceIndex, mode) {
+    var t = timing.times;
+    if (t.hub == null) return '';
+    return routerPillGlow(hub, Math.max(0, t.hub - 70), t.hub + 70, routerFlow.glowLead,
+      routerFlowBegin(sequenceIndex), routerFlowCycle(), routerFlowRepeat(mode));
+  }
+
   // The travelling dot. animateMotion follows the full request->response
   // path; holds at the request, model, and response are encoded as repeated
   // keyPoints. Opacity fades the dot in inside the request pill and out
@@ -316,23 +415,16 @@
     var repeat = routerFlowRepeat(mode);
     var k = timing.keyPoints;
     var t = timing.times;
-    var keyPoints = routerTimes([
-      k.request,
-      k.request,
-      k.requestExit,
-      k.targetIn,
-      k.targetCenter,
-      k.targetCenter,
-      k.targetOut,
-      k.responseIn,
-      k.response,
-      k.response,
-      k.response
-    ]);
-    var keyTimes = routerTimes([
-      0,
-      routerFrac(t.launch),
-      routerFrac(t.requestExit),
+    // Base waypoints: hold at request, launch, exit. A hub (when present) is a
+    // single pass-through waypoint inserted between requestExit and targetIn.
+    var kp = [k.request, k.request, k.requestExit];
+    var kt = [0, routerFrac(t.launch), routerFrac(t.requestExit)];
+    if (k.hub != null) {
+      kp.push(k.hub);
+      kt.push(routerFrac(t.hub));
+    }
+    kp.push(k.targetIn, k.targetCenter, k.targetCenter, k.targetOut, k.responseIn, k.response, k.response, k.response);
+    kt.push(
       routerFrac(t.targetIn),
       routerFrac(t.model),
       routerFrac(t.resume),
@@ -341,7 +433,9 @@
       routerFrac(t.arrive),
       routerFrac(t.end),
       1
-    ]);
+    );
+    var keyPoints = routerTimes(kp);
+    var keyTimes = routerTimes(kt);
     var fadeIn = routerFrac(Math.min(80, t.launch));
     var opacityTimes = routerTimes([0, fadeIn, routerFrac(t.end), routerFrac(t.end + routerFlow.dotFade), 1]);
     return '<circle class="hp-router-traveler-dot" cx="0" cy="0" r="7.4" opacity="0">' +
@@ -430,9 +524,8 @@
   // "artifact mode" -- it just grows). One animation, beginning at cycle start,
   // encodes every route's expand/hold/contract; the label cross-fades out while
   // expanded. Routes are non-overlapping, so we lay their stops end to end.
-  function routerIOPill(role, cx, label, routes) {
+  function routerIOPill(role, cx, cy, label, routes) {
     var cycle = routerFlowCycle();
-    var cy = routerLayout.request.y;
     var w = ARTIFACT.w, full = ARTIFACT.h, rest = ARTIFACT.rest;
     var x = (cx - w / 2).toFixed(1);
     var stops = [[0, rest]];
@@ -490,8 +583,7 @@
   }
 
   // Build the inner SVG content for one artifact spec, centered on (cx, cy).
-  function routerArtifactInner(role, spec, cx, win, begin, cycle, repeat, uid) {
-    var cy = routerLayout.request.y;
+  function routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid) {
     var top = cy - ARTIFACT.h / 2, bottom = cy + ARTIFACT.h / 2;
 
     // The tag/badge are only drawn when the spec asks for them, so responses
@@ -538,34 +630,67 @@
 
   // Per-route content that rides on top of the persistent IO pill (no panel of
   // its own -- the pill is the container). Gated to the route's artifact window.
-  function routerArtifact(role, spec, cx, timing, sequenceIndex, mode, uid) {
+  function routerArtifact(role, spec, cx, cy, timing, sequenceIndex, mode, uid) {
     var begin = routerFlowBegin(sequenceIndex);
     var cycle = routerFlowCycle();
     var repeat = routerFlowRepeat(mode);
     var win = routerArtifactWindow(role, timing.times);
     var keyTimes = routerArtifactKeyTimes(win);
-    return routerArtifactContent(routerArtifactInner(role, spec, cx, win, begin, cycle, repeat, uid), keyTimes, begin, cycle, repeat);
+    return routerArtifactContent(routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid), keyTimes, begin, cycle, repeat);
   }
 
   function routerDiagram(config) {
-    var request = Object.assign({}, routerLayout.request, { label: config.request });
-    var response = Object.assign({}, routerLayout.response, { label: 'Response' });
+    // Per-render timing: a diagram can slow its routes (`flow`) and widen their
+    // spacing (`cadence`) -- the hybrid demo does both so its three scenarios are
+    // readable. Set before any timing is computed. Omni passes neither and keeps
+    // the snappy defaults.
+    routerFlow = config.flow ? Object.assign({}, routerFlowBase, config.flow) : routerFlowBase;
+    if (config.cadence) cadence = Object.assign({}, cadence, config.cadence);
+    // Set before any timing is computed so the shared cycle fits every route.
+    routeCount = config.routes.length;
+
+    var viewW = config.viewW || 620, viewH = config.viewH || 420;
+    // Vertical centre of the request/hub/response spine. Defaults to the shared
+    // layout's y; the hybrid demo overrides it to the middle of its taller
+    // viewBox so the whole composition is balanced (no letterbox dead space).
+    var centerY = config.centerY || routerLayout.request.y;
+    var request = Object.assign({}, routerLayout.request, { label: config.request, y: centerY });
+    var response = Object.assign({}, routerLayout.response, { label: 'Response', y: centerY });
+    // The hybrid demo widens the stage and slides the request/response columns
+    // to make room for a 4th station (the hub); omni passes none of these.
+    if (config.requestX != null) request.x = config.requestX;
+    if (config.responseX != null) response.x = config.responseX;
     var targets = config.targets.map(function(target) {
       return Object.assign({}, routerLayout.target, target);
     });
-    var wires = targets.map(routerWire).join('');
-    var nodes = targets.map(function(target) {
-      return routerNode(target.label, 'hp-router-target', target);
+    // Smart-router hub (hybrid only): the dot routes through it and the target
+    // wires fan out from its centre.
+    var hub = config.hub
+      ? Object.assign({ y: centerY, w: 120, h: 108, label: 'router' }, config.hub)
+      : null;
+
+    var wires = targets.map(function(target) {
+      return routerWire(target, request, response, hub);
     }).join('');
+    // The shared request->hub trunk, drawn once so the branches read as fanning
+    // out of the hub rather than out of the request pill.
+    var trunk = hub
+      ? '<path class="hp-router-wire" d="' + routerSegmentPath({ x: request.x + request.w / 2, y: request.y }, { x: hub.x, y: hub.y }) + '"></path>'
+      : '';
+    var nodes = targets.map(function(target) {
+      return target.icon ? routerTierNode(target) : routerNode(target.label, 'hp-router-target', target);
+    }).join('');
+    var hubNode = hub ? routerHubNode(hub) : '';
+
     var mode = config.animationMode || 'repeat';
     var routes = config.routes.map(function(def, sequenceIndex) {
       var target = targets[def.target];
-      var points = routerRoutePoints(target);
+      var points = routerRoutePoints(target, request, response, hub);
       return {
         target: target,
         points: points,
         timing: routerRouteTiming(points),
-        path: routerTravelPath(target),
+        path: routerTravelPath(target, request, response, hub),
         sequenceIndex: sequenceIndex,
         request: def.request,
         response: def.response
@@ -575,29 +700,32 @@
       return routerTrails(route.points, route.timing, route.sequenceIndex, mode);
     }).join('');
     var glows = routes.map(function(route) {
-      return routerModelGlow(route.target, route.timing, route.sequenceIndex, mode);
+      return routerModelGlow(route.target, route.timing, route.sequenceIndex, mode) +
+        (hub ? routerHubGlow(hub, route.timing, route.sequenceIndex, mode) : '');
     }).join('');
     var dots = routes.map(function(route) {
       return routerTraveler(route.path, route.timing, route.sequenceIndex, mode);
     }).join('');
     // The request/response pills: one persistent morphing rect each, driven by
     // every route's expand/hold/contract.
-    var ioPills = routerIOPill('request', request.x, request.label, routes) +
-      routerIOPill('response', response.x, response.label, routes);
+    var ioPills = routerIOPill('request', request.x, request.y, request.label, routes) +
+      routerIOPill('response', response.x, response.y, response.label, routes);
     var artifacts = routes.map(function(route) {
       var out = '';
-      if (route.request) out += routerArtifact('request', route.request, request.x, route.timing, route.sequenceIndex, mode, config.id + '-rq' + route.sequenceIndex);
-      if (route.response) out += routerArtifact('response', route.response, response.x, route.timing, route.sequenceIndex, mode, config.id + '-rs' + route.sequenceIndex);
+      if (route.request) out += routerArtifact('request', route.request, request.x, request.y, route.timing, route.sequenceIndex, mode, config.id + '-rq' + route.sequenceIndex);
+      if (route.response) out += routerArtifact('response', route.response, response.x, response.y, route.timing, route.sequenceIndex, mode, config.id + '-rs' + route.sequenceIndex);
       return out;
     }).join('');
     return '<div class="hp-router-demo ' + escapeText(config.className) + '" data-animation-mode="' + escapeText(mode) + '">' +
-      '<svg class="hp-router-flowchart" viewBox="0 0 620 420" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet">' +
+      '<svg class="hp-router-flowchart" viewBox="0 0 ' + viewW + ' ' + viewH + '" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet">' +
         '<defs>' + routerGlowFilter() + routerBloomFilter() + '</defs>' +
         wires +
+        trunk +
         trails +
         glows +
         dots +
         nodes +
+        hubNode +
         ioPills +
         artifacts +
       '</svg>' +
@@ -649,6 +777,18 @@
                '<circle class="hp-cap-dot" cx="0" cy="9.5" r="2.2"></circle>' +
                '<circle class="hp-cap-dot" cx="-9.5" cy="0" r="2.2"></circle>' +
                '<circle class="hp-cap-dot" cx="9.5" cy="0" r="2.2"></circle>';
+      case 'device': // laptop: a screen over a keyboard base
+        return '<rect x="-9" y="-8.5" width="18" height="12" rx="1.5"></rect>' +
+               '<path d="M -9 3.5 L 9 3.5 L 11.5 7.5 L -11.5 7.5 Z"></path>';
+      case 'server': // two stacked rack units, each with a status light
+        return '<rect x="-10" y="-9" width="20" height="7.5" rx="2"></rect>' +
+               '<rect x="-10" y="1.5" width="20" height="7.5" rx="2"></rect>' +
+               '<circle class="hp-cap-dot" cx="-6" cy="-5.25" r="1.4"></circle>' +
+               '<circle class="hp-cap-dot" cx="-6" cy="5.25" r="1.4"></circle>' +
+               '<line x1="2" y1="-5.25" x2="6" y2="-5.25"></line>' +
+               '<line x1="2" y1="5.25" x2="6" y2="5.25"></line>';
+      case 'cloud':  // a rounded cloud outline
+        return '<path d="M -7 6 Q -12 6 -12 1.5 Q -12 -3 -7 -3 Q -6 -8 0 -8 Q 6 -8 7 -3 Q 12 -3 12 1.5 Q 12 6 7 6 Z"></path>';
       default:
         return '';
     }
@@ -751,13 +891,20 @@
     '</div>';
   }
 
-  // Developer "Deploy everywhere": a mini app window at top wired to 4 PCs
-  // (AMD laptop, NVIDIA desktop, Apple laptop, Vulkan desktop); a glowing dot
-  // travels to each in a repeating cascade and the PC lights up on arrival.
-  // Pure SVG + SMIL: device icons are geometry, labels are <text> with an
-  // explicit y (NOT dominant-baseline), text-anchor centres horizontally only.
+  // Developer "Deploy everywhere": on a dark stage (the same surface as the
+  // Smart Router / "The stack" demos -- NOT an app-window chrome). A curated
+  // GALLERY of supported device/OS combos (no empty matrix cells -- only real
+  // machines): a Windows laptop, a macOS laptop, and a Linux desktop whose screen
+  // carries a 2x2 grid of distro logos (Ubuntu, Arch, Debian, Fedora) to mean
+  // "every distro", not just one. A small line under each names the hardware it
+  // runs on (AMD / NVIDIA / Vulkan-as-the-Intel-&-other-GPU proxy; Apple silicon
+  // on the Mac). "Your App" fans wires down and a dot cascades to each machine,
+  // which POWERS ON as it arrives -- screen backlight + OS logos brighten, a gold
+  // frame lights, the labels brighten. Repeats; resets at the loop wrap. Pure SVG
+  // + SMIL (cross-browser; no foreignObject): device glyphs are geometry, labels
+  // are <text> with an explicit y (NOT dominant-baseline).
   function deployDemo() {
-    var C = 4800;
+    var C = 5200;
     var cycle = (C / 1000).toFixed(3) + 's';
     // Repeating <animate>; pads the final keyTime to 1 so SMIL stays valid.
     function ranim(attr, vals, times) {
@@ -766,58 +913,87 @@
       return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
     }
     function f(n) { return (+n).toFixed(4); }
-    var appX = 310, appY = 94, pcY = 250;
-    var pcs = [
-      { label: 'AMD', type: 'laptop', x: 110 },
-      { label: 'NVIDIA', type: 'desktop', x: 250 },
-      { label: 'Apple', type: 'laptop', x: 390 },
-      { label: 'Vulkan', type: 'desktop', x: 530 }
+
+    var appX = 310, appY = 72;        // wire origin (app bottom-centre)
+    var PLAT = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/';
+    var cy = 226, nameY = 296, vendY = 316;   // device-screen centre + label rows
+    var colX = [150, 310, 470];
+
+    // Supported device/OS combos. The Linux machine shows FOUR distro logos so it
+    // reads as cross-distro, not "Ubuntu = Linux".
+    var cards = [
+      { os: 'Windows', type: 'laptop',  logos: ['windows.png'], vendors: 'AMD · NVIDIA · Vulkan' },
+      { os: 'macOS',   type: 'laptop',  logos: ['apple.png'],   vendors: 'Apple silicon' },
+      { os: 'Linux',   type: 'monitor', logos: ['ubuntu.png', 'arch_linux.png', 'debian.png', 'fedora.png'], vendors: 'AMD · NVIDIA · Vulkan' }
     ];
 
-    function pcIcon(type, cx, cy) {
-      if (type === 'laptop') {
-        return '<rect x="' + (cx - 28) + '" y="' + (cy - 26) + '" width="56" height="34" rx="3"></rect>' +
-               '<path d="M ' + (cx - 34) + ' ' + (cy + 16) + ' L ' + (cx + 34) + ' ' + (cy + 16) + ' L ' + (cx + 28) + ' ' + (cy + 9) + ' L ' + (cx - 28) + ' ' + (cy + 9) + ' Z"></path>';
+    // Device glyph = a screen (which hosts the OS logo[s]) + a form-factor base.
+    function deviceParts(type, x) {
+      if (type === 'monitor') {
+        return { screen: { x: x - 52, y: cy - 33, w: 104, h: 66, rx: 7 }, top: cy - 33,
+          base: '<line x1="' + x + '" y1="' + (cy + 33) + '" x2="' + x + '" y2="' + (cy + 45) + '"></line>' +
+                '<line x1="' + (x - 18) + '" y1="' + (cy + 45) + '" x2="' + (x + 18) + '" y2="' + (cy + 45) + '"></line>' };
       }
-      return '<rect x="' + (cx - 30) + '" y="' + (cy - 26) + '" width="60" height="40" rx="4"></rect>' +
-             '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + cx + '" y2="' + (cy + 22) + '"></line>' +
-             '<line x1="' + (cx - 13) + '" y1="' + (cy + 22) + '" x2="' + (cx + 13) + '" y2="' + (cy + 22) + '"></line>';
+      return { screen: { x: x - 44, y: cy - 27, w: 88, h: 54, rx: 6 }, top: cy - 27,
+        base: '<path d="M ' + (x - 52) + ' ' + (cy + 38) + ' L ' + (x + 52) + ' ' + (cy + 38) + ' L ' + (x + 44) + ' ' + (cy + 27) + ' L ' + (x - 44) + ' ' + (cy + 27) + ' Z"></path>' };
     }
 
-    // mini app window glyph at top (the wire origin)
-    var app =
-      '<g class="hp-deploy-app">' +
-        '<rect x="250" y="34" width="120" height="58" rx="9"></rect>' +
-        '<line x1="250" y1="51" x2="370" y2="51"></line>' +
-        '<circle cx="262" cy="43" r="2.6"></circle><circle cx="271" cy="43" r="2.6"></circle><circle cx="280" cy="43" r="2.6"></circle>' +
-        '<text class="hp-deploy-applabel" x="310" y="78" text-anchor="middle">Your App</text>' +
-      '</g>';
-
     var wires = '', nodes = '', dots = '';
-    pcs.forEach(function (pc, i) {
-      var px = pc.x;
-      var wire = 'M ' + appX + ' ' + (appY + 4) + ' C ' + appX + ' ' + (appY + 86) + ', ' + px + ' ' + (pcY - 86) + ', ' + px + ' ' + (pcY - 34);
-      var s = i / 4;
+    cards.forEach(function (card, i) {
+      var cx = colX[i];
+      var p = deviceParts(card.type, cx);
+      var sc = p.screen;
+      var wire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 78) + ', ' + cx + ' ' + (p.top - 64) + ', ' + cx + ' ' + p.top;
+      var s = 0.08 + i * 0.17, arrive = s + 0.14;
+      var on = '0;' + f(arrive - 0.02) + ';' + f(arrive + 0.04) + ';0.95;1';
+
+      // OS logo(s) on the screen: one centred logo, or the 2x2 distro grid.
+      var logos = '';
+      if (card.logos.length === 1) {
+        var ls = Math.min(sc.w, sc.h) - 20;
+        logos = '<image href="' + PLAT + card.logos[0] + '" x="' + (cx - ls / 2) + '" y="' + (cy - ls / 2) + '" width="' + ls + '" height="' + ls + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
+      } else {
+        var gs = 26, gx = 24, gy = 15;
+        var pos = [[cx - gx, cy - gy], [cx + gx, cy - gy], [cx - gx, cy + gy], [cx + gx, cy + gy]];
+        card.logos.forEach(function (file, k) {
+          logos += '<image href="' + PLAT + file + '" x="' + (pos[k][0] - gs / 2) + '" y="' + (pos[k][1] - gs / 2) + '" width="' + gs + '" height="' + gs + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
+        });
+      }
+
       wires += '<path class="hp-deploy-wire" d="' + wire + '"></path>';
-      nodes += '<g class="hp-deploy-pc">' +
-          '<g class="hp-deploy-icon">' + pcIcon(pc.type, px, pcY) + '</g>' +
-          '<g class="hp-deploy-glow">' + pcIcon(pc.type, px, pcY) +
-            ranim('opacity', '0;0;1;0', '0;' + f(s + 0.11) + ';' + f(s + 0.15) + ';' + f(s + 0.24)) +
-          '</g>' +
-          '<text class="hp-deploy-label" x="' + px + '" y="' + (pcY + 42) + '" text-anchor="middle">' + escapeText(pc.label) + '</text>' +
+      nodes += '<g class="hp-deploy-machine">' +
+          // warm screen backlight (lights on arrival, behind the logos)
+          '<rect class="hp-deploy-screen-warm" x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '" opacity="0">' +
+            ranim('opacity', '0;0;0.5;0.5;0', on) + '</rect>' +
+          logos +
+          // resting device outline (the "off" machine): screen border + base
+          '<g class="hp-deploy-dev"><rect x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '"></rect>' + p.base + '</g>' +
+          // gold frame that lights the screen on arrival
+          '<rect class="hp-deploy-frame" x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '" opacity="0">' +
+            ranim('opacity', '0;0;1;1;0', on) + '</rect>' +
+          // OS name + the hardware it runs on
+          '<text class="hp-deploy-osname" x="' + cx + '" y="' + nameY + '" text-anchor="middle" opacity="0.5">' +
+            escapeText(card.os) + ranim('opacity', '0.5;0.5;1;1;0.5', on) + '</text>' +
+          '<text class="hp-deploy-vendors" x="' + cx + '" y="' + vendY + '" text-anchor="middle" opacity="0.4">' +
+            escapeText(card.vendors) + ranim('opacity', '0.4;0.4;1;1;0.4', on) + '</text>' +
         '</g>';
       dots += '<circle class="hp-deploy-dot" r="6" cx="0" cy="0" opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(s + 0.13) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(s + 0.13) + ';' + f(s + 0.15)) +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(arrive) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(arrive - 0.01) + ';' + f(arrive + 0.02)) +
         '</circle>';
     });
 
-    return '<div class="hp-app-window is-dark hp-deploy-term">' +
-      '<div class="hp-app-window-bar">' +
-        '<span class="hp-app-window-title">Your App</span>' +
-        '<span class="hp-app-window-dots"><i></i><i></i><i></i></span>' +
-      '</div>' +
-      '<svg class="hp-deploy-svg" viewBox="0 0 620 376" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+    // "Your App" glyph at the top -- the wire origin.
+    var app =
+      '<g class="hp-deploy-app">' +
+        '<rect x="250" y="24" width="120" height="44" rx="9"></rect>' +
+        '<line x1="250" y1="40" x2="370" y2="40"></line>' +
+        '<circle cx="261" cy="32" r="2.4"></circle><circle cx="269" cy="32" r="2.4"></circle><circle cx="277" cy="32" r="2.4"></circle>' +
+        '<text class="hp-deploy-applabel" x="310" y="58" text-anchor="middle">Your App</text>' +
+      '</g>';
+
+    return '<div class="hp-deploy-demo">' +
+      '<svg class="hp-deploy-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
         '<defs>' + routerGlowFilter() + '</defs>' +
         wires + app + nodes + dots +
       '</svg>' +
@@ -970,29 +1146,306 @@
     '</div>';
   }
 
+  // A compact "lemond" mark: a small lemon slice (rind ring + six segment
+  // membranes + hub). Pure geometry so it renders identically everywhere; sized
+  // by r so both the stack and models demos can drop it in at any scale.
+  function lemonMark(cx, cy, r) {
+    var s = '<g class="hp-stack-lemon">' +
+      '<circle class="hp-stack-lemon-rind" cx="' + cx + '" cy="' + cy + '" r="' + r + '"></circle>';
+    for (var m = 0; m < 6; m++) {
+      var a = m * 60 * Math.PI / 180;
+      s += '<line class="hp-stack-lemon-seg" x1="' + cx + '" y1="' + cy + '" x2="' +
+        (cx + r * Math.cos(a)).toFixed(1) + '" y2="' + (cy - r * Math.sin(a)).toFixed(1) + '"></line>';
+    }
+    return s + '<circle class="hp-stack-lemon-hub" cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.22).toFixed(1) + '"></circle></g>';
+  }
+
+  // Developer "The stack": a software-stack diagram proving lemond is the
+  // ABSTRACTION layer. Your App sits on top and makes ONE call across a single
+  // API line; below it the lemond slab holds an ENGINES sub-layer sitting on a
+  // DEVICES sub-layer (engines are literally a pathway to devices). Each request
+  // dips through the API line into the slab, an engine lights (load) then the
+  // device it runs on lights (engine -> device), and a clean response rises back
+  // out -- the app never reaches past the line, which IS the abstraction. The
+  // whole engine/device fleet stays visible at rest (breadth); the motion is the
+  // boundary crossing + a focused highlight that steps through representative
+  // engine->device pairs. Pure SVG + SMIL (cross-browser; no foreignObject).
+  function stackDemo() {
+    var C = 9600;
+    var cycle = (C / 1000).toFixed(3) + 's';
+    function ranim(attr, vals, times) {
+      var v = vals.split(';'), k = times.split(';');
+      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
+      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
+    }
+    function f(n) { return (+n).toFixed(4); }
+
+    var appCx = 310;
+
+    // Engines: 8 chips, alphabetical, laid out 2 columns x 4 rows (long names
+    // need the width). Devices: 6 chips, 3 columns x 2 rows (short names + a
+    // hardware sub-label). Both bands share ONE content box (x 53..567, centre
+    // 310): the engine columns and device columns line up on the same outer
+    // edges, and the engine gutter sits on the central axis (= the device middle
+    // column = the request spine), so the grid reads as one tidy block.
+    var engines = [
+      'FastFlowLM', 'Kokoro', 'llama.cpp', 'Moonshine',
+      'Ryzen AI SW', 'stable-diffusion.cpp', 'vLLM', 'whisper.cpp'
+    ];
+    var engCols = [177, 443], engRows = [158, 202, 246, 290];
+    var engPos = {};
+    engines.forEach(function (name, i) {
+      engPos[name] = { cx: engCols[i % 2], cy: engRows[Math.floor(i / 2)] };
+    });
+
+    var devices = [
+      { name: 'CPU', sub: 'x86 / ARM' },
+      { name: 'CUDA', sub: 'NVIDIA GPU' },
+      { name: 'Metal', sub: 'Apple GPU' },
+      { name: 'NPU', sub: 'Ryzen AI' },
+      { name: 'ROCm', sub: 'AMD GPU' },
+      { name: 'Vulkan', sub: 'any GPU' }
+    ];
+    var devCols = [133, 310, 487], devRows = [368, 430];
+    var devPos = {};
+    devices.forEach(function (d, i) {
+      devPos[d.name] = { cx: devCols[i % 3], cy: devRows[Math.floor(i / 3)] };
+    });
+
+    function engChip(name) {
+      var p = engPos[name];
+      return '<g class="hp-stack-chip"><rect x="' + (p.cx - 124) + '" y="' + (p.cy - 16) + '" width="248" height="32" rx="8"></rect>' +
+        '<text class="hp-stack-chip-name" x="' + p.cx + '" y="' + (p.cy + 4) + '" text-anchor="middle">' + escapeText(name) + '</text></g>';
+    }
+    function devChip(d) {
+      var p = devPos[d.name];
+      return '<g class="hp-stack-chip"><rect x="' + (p.cx - 80) + '" y="' + (p.cy - 23) + '" width="160" height="46" rx="9"></rect>' +
+        '<text class="hp-stack-chip-name" x="' + p.cx + '" y="' + (p.cy - 4) + '" text-anchor="middle">' + escapeText(d.name) + '</text>' +
+        '<text class="hp-stack-chip-sub" x="' + p.cx + '" y="' + (p.cy + 15) + '" text-anchor="middle">' + escapeText(d.sub) + '</text></g>';
+    }
+    var engChips = engines.map(engChip).join('');
+    var devChips = devices.map(devChip).join('');
+
+    // Three requests, one per beat. Each beat lemond gently lights the engine it
+    // chose, then the device it runs on -- soft stationary cross-fades, no line
+    // darting between them. The request dot stops right beside the chosen engine.
+    var beats = [
+      { eng: 'whisper.cpp', dev: 'NPU' },
+      { eng: 'llama.cpp', dev: 'ROCm' },
+      { eng: 'Kokoro', dev: 'CPU' }
+    ];
+    var slice = 1 / beats.length;
+    var codeY = 44;   // the request leaves "your code" here, just below the title bar
+
+    var glows = '', dots = '';
+    beats.forEach(function (b, i) {
+      var e = engPos[b.eng], d = devPos[b.dev];
+      var s = i * slice;
+      // Gentle ramps: engine eases in, the device follows, both hold, then fade.
+      glows += '<g class="hp-stack-glow"><rect x="' + (e.cx - 124) + '" y="' + (e.cy - 16) + '" width="248" height="32" rx="8" opacity="0">' +
+          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(s + 0.06) + ';' + f(s + 0.12) + ';' + f(s + 0.26) + ';' + f(s + 0.31)) +
+        '</rect></g>' +
+        '<g class="hp-stack-glow"><rect x="' + (d.cx - 80) + '" y="' + (d.cy - 23) + '" width="160" height="46" rx="9" opacity="0">' +
+          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(s + 0.13) + ';' + f(s + 0.18) + ';' + f(s + 0.27) + ';' + f(s + 0.315)) +
+        '</rect></g>';
+      // The request dot eases down the central spine and STOPS beside the chosen
+      // engine's row (x stays at 310, in the gap between the two engine columns,
+      // so nothing darts sideways), holds while it lights, then eases back up.
+      var path = 'M ' + appCx + ' ' + codeY + ' L ' + appCx + ' ' + e.cy;
+      dots += '<circle class="hp-stack-dot" r="5" cx="0" cy="0" opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="spline" path="' + path + '" ' +
+            'keyPoints="0;0;1;1;0;0" keyTimes="0;' + f(s) + ';' + f(s + 0.10) + ';' + f(s + 0.26) + ';' + f(s + 0.32) + ';1" ' +
+            'keySplines="0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1"></animateMotion>' +
+          ranim('opacity', '0;0;0.95;0.95;0;0', '0;' + f(s + 0.01) + ';' + f(s + 0.05) + ';' + f(s + 0.28) + ';' + f(s + 0.33) + ';1') +
+        '</circle>';
+    });
+
+    // lemond is EMBEDDED in the developer's app, so the whole slide IS the app:
+    // the standard dark app-window chrome (titled "Your App", like the spawn /
+    // private-stack demos) wraps the body, and the lemond module (engines over
+    // devices) sits inside it. The dev's own code calls into it across the
+    // OpenAI-compatible API. Nothing lives "outside" the app; lemond ships with it.
+    return '<div class="hp-app-window is-dark hp-stack-term">' +
+      '<div class="hp-app-window-bar">' +
+        '<span class="hp-app-window-title">Your App</span>' +
+        '<span class="hp-app-window-dots"><i></i><i></i><i></i></span>' +
+      '</div>' +
+      '<svg class="hp-stack-svg" viewBox="0 0 620 500" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+        '<defs>' + routerGlowFilter() + '</defs>' +
+        // the dev's own code, calling lemond across its API
+        '<g class="hp-stack-code"><rect x="244" y="14" width="132" height="30" rx="8"></rect>' +
+          '<text class="hp-stack-codelabel" x="310" y="33" text-anchor="middle">your code</text></g>' +
+        '<path class="hp-stack-wire" d="M 310 44 L 310 64"></path>' +
+        // lemond module, embedded INSIDE the app.
+        '<rect class="hp-stack-slab" x="22" y="64" width="576" height="414" rx="16"></rect>' +
+        lemonMark(64, 92, 11) +
+        '<text class="hp-stack-wordmark" x="84" y="88">lemond</text>' +
+        '<text class="hp-stack-apisub" x="84" y="103">OpenAI-compatible API</text>' +
+        '<text class="hp-stack-bandlabel" x="53" y="132">ENGINES &middot; managed for you</text>' +
+        '<text class="hp-stack-bandlabel" x="53" y="334">DEVICES &middot; auto-selected</text>' +
+        engChips + devChips +
+        glows + dots +
+      '</svg>' +
+    '</div>';
+  }
+
+  // Developer "Ever-expanding models": a left-to-right assembly line telling the
+  // three-step story behind why your app keeps getting better for free --
+  //   (1) new models ship upstream all the time,
+  //   (2) an engine adds support for them,
+  //   (3) lemonade brings that support into your app -- no work on your side.
+  // A hype model chip is released (NEW), glides to the engine that lights up and
+  // STAMPS it (check = support added), then docks into Your App. Real, currently
+  // trending models from the registry (HF-trending families: GLM, Qwen, Gemma,
+  // plus a new image model). Pure SVG + SMIL (cross-browser; no foreignObject).
+  function modelsDemo() {
+    var C = 8200;
+    var cycle = (C / 1000).toFixed(3) + 's';
+    function ranim(attr, vals, times) {
+      var v = vals.split(';'), k = times.split(';');
+      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
+      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
+    }
+    function f(n) { return (+n).toFixed(4); }
+
+    // Hype models that are really in the registry, each mapped to the engine that
+    // adds support for it. gpt-oss / Whisper are intentionally out (old news).
+    var lanes = [
+      { model: 'GLM-4.7-Flash', engine: 'llama.cpp' },
+      { model: 'Z-Image-Turbo', engine: 'stable-diffusion.cpp' },
+      { model: 'Qwen3-VL-8B', engine: 'llama.cpp' },
+      { model: 'Gemma-4-12B', engine: 'llama.cpp' }
+    ];
+
+    var railY = 228;
+    var st1 = 98, st2 = 300;                 // release point, engine point
+    var appX = 456, appW = 150, appCx = appX + appW / 2;
+    var slotYs = [190, 226, 262, 298];
+
+    // Three numbered zone headers across the top.
+    function zoneHead(cx, n, label) {
+      return '<g class="hp-flow-head">' +
+        '<circle class="hp-flow-num" cx="' + cx + '" cy="78" r="12"></circle>' +
+        '<text class="hp-flow-numtext" x="' + cx + '" y="82" text-anchor="middle">' + n + '</text>' +
+        '<text class="hp-flow-zonelabel" x="' + cx + '" y="112" text-anchor="middle">' + escapeText(label) + '</text>' +
+      '</g>';
+    }
+    var heads = zoneHead(st1, '1', 'New models ship') +
+      zoneHead(st2, '2', 'Engines add support') +
+      zoneHead(appCx, '3', 'Live in your app');
+
+    // The conveyor rail + a couple of chevrons + the upstream "release" source.
+    function chevron(x) {
+      return '<path class="hp-flow-chevron" d="M ' + x + ' ' + (railY - 5) + ' L ' + (x + 6) + ' ' + railY + ' L ' + x + ' ' + (railY + 5) + '"></path>';
+    }
+    var rail = '<line class="hp-flow-rail" x1="' + st1 + '" y1="' + railY + '" x2="' + appX + '" y2="' + railY + '"></line>' +
+      chevron(196) + chevron(404);
+    var source = '<g class="hp-flow-source"><circle cx="' + st1 + '" cy="' + railY + '" r="13"></circle>' +
+      '<path d="M ' + st1 + ' ' + (railY - 8) + ' L ' + st1 + ' ' + (railY + 8) + ' M ' + (st1 - 8) + ' ' + railY + ' L ' + (st1 + 8) + ' ' + railY +
+        ' M ' + (st1 - 5.5) + ' ' + (railY - 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY + 5.5) + ' M ' + (st1 - 5.5) + ' ' + (railY + 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY - 5.5) + '"></path></g>';
+
+    // Your App panel (the dock) + its empty slots.
+    var app = '<g class="hp-flow-app"><rect x="' + appX + '" y="150" width="' + appW + '" height="200" rx="14"></rect>' +
+      '<circle cx="' + (appX + 16) + '" cy="167" r="2.6"></circle><circle cx="' + (appX + 25) + '" cy="167" r="2.6"></circle><circle cx="' + (appX + 34) + '" cy="167" r="2.6"></circle>' +
+      '</g>';
+    var slots = slotYs.map(function (y) {
+      return '<rect class="hp-flow-slot" x="' + (appCx - 64) + '" y="' + (y - 15) + '" width="128" height="30" rx="8"></rect>';
+    }).join('');
+
+    var travelers = '', enginePops = '', slotGlows = '';
+    var stagger = 0.18;
+    lanes.forEach(function (lane, i) {
+      var s = i * stagger;
+      var slotY = slotYs[i];
+      // path: release -> engine -> dock slot. F2 = fraction at the engine waypoint.
+      var path = 'M ' + st1 + ' ' + railY + ' L ' + st2 + ' ' + railY + ' L ' + appCx + ' ' + slotY;
+      var dx = appCx - st2, dy = slotY - railY;
+      var F2 = (st2 - st1) / ((st2 - st1) + Math.sqrt(dx * dx + dy * dy));
+      var t = { leave1: s + 0.05, atEng: s + 0.13, leaveEng: s + 0.22, dock: s + 0.30 };
+
+      // the travelling model chip, carrying a NEW badge then a support check
+      travelers += '<g opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + path + '" ' +
+            'keyPoints="0;0;' + f(F2) + ';' + f(F2) + ';1;1" keyTimes="0;' + f(t.leave1) + ';' + f(t.atEng) + ';' + f(t.leaveEng) + ';' + f(t.dock) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';0.95;0.99') +
+          '<rect class="hp-flow-chip" x="-62" y="-15" width="124" height="30" rx="8"></rect>' +
+          '<text class="hp-flow-chip-label" x="6" y="4" text-anchor="middle">' + escapeText(lane.model) + '</text>' +
+          // NEW badge (top-right): visible from release until the engine stamps it
+          '<g class="hp-flow-new" transform="translate(48,-15)" opacity="0">' +
+            ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng) + ';' + f(t.atEng + 0.04)) +
+            '<rect x="-17" y="-9" width="34" height="17" rx="8.5"></rect><text x="0" y="4" text-anchor="middle">NEW</text>' +
+          '</g>' +
+          // support check (left): appears when the engine adds support, stays
+          '<g class="hp-flow-check" opacity="0">' +
+            ranim('opacity', '0;0;1;1', '0;' + f(t.atEng + 0.02) + ';' + f(t.atEng + 0.06) + ';1') +
+            '<circle cx="-46" cy="0" r="8.5"></circle><path d="M -49.6 0 L -47 3.2 L -42.4 -3.6"></path>' +
+          '</g>' +
+        '</g>';
+
+      // the engine that adds support pops up under the rail as the chip passes
+      enginePops += '<g class="hp-flow-engine" opacity="0">' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(t.atEng - 0.02) + ';' + f(t.atEng + 0.03) + ';' + f(t.leaveEng) + ';' + f(t.leaveEng + 0.04)) +
+          '<line class="hp-flow-connector" x1="' + st2 + '" y1="' + (railY + 16) + '" x2="' + st2 + '" y2="' + (railY + 42) + '"></line>' +
+          '<rect x="' + (st2 - 80) + '" y="' + (railY + 42) + '" width="160" height="30" rx="8"></rect>' +
+          '<text class="hp-flow-engine-label" x="' + st2 + '" y="' + (railY + 61) + '" text-anchor="middle">' + escapeText(lane.engine) + '</text>' +
+        '</g>';
+
+      // the dock slot lights up as the model lands
+      slotGlows += '<rect class="hp-flow-slot-glow" x="' + (appCx - 64) + '" y="' + (slotY - 15) + '" width="128" height="30" rx="8" opacity="0">' +
+          ranim('opacity', '0;0;1;1;0.6', '0;' + f(t.dock) + ';' + f(t.dock + 0.02) + ';' + f(t.dock + 0.1) + ';' + f(t.dock + 0.2)) +
+        '</rect>';
+    });
+
+    return '<div class="hp-models-demo">' +
+      '<svg class="hp-models-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+        '<defs>' + routerGlowFilter() + '</defs>' +
+        heads + rail + source + app + slots + slotGlows +
+        enginePops + travelers +
+      '</svg>' +
+    '</div>';
+  }
+
   function routerDemo(kind) {
     if (kind === 'router-hybrid') {
-      // Hybrid = right SIZE & LOCATION: an easy ask stays local (fast, private,
-      // free); only the hard ask is escalated to the frontier cloud model.
+      // Hybrid = right TIER: a smart router keeps each request local by default
+      // (free, private), escalating to your on-prem server (more power, still
+      // private) or the frontier cloud (max intelligence) only when the task
+      // demands it. The 4-column stage (prompt -> router -> tier -> response)
+      // needs a wider viewBox than the 3-column omni demo. Tiers are stacked by
+      // ascending intelligence (cloud on top); the local route fires first so
+      // the default reads before the escalations.
       return routerDiagram({
         id: 'hpHybridRoute',
         className: 'hp-router-hybrid-demo',
         request: 'Prompt',
+        // viewBox aspect matches the 600x420 slide stage (1.43) so it fills with
+        // no letterbox; the extra height lets the four columns and three tier
+        // cards breathe. Slow `flow`/`cadence` so each scenario is readable.
+        viewW: 780, viewH: 546, centerY: 273,
+        requestX: 80, responseX: 700,
+        hub: { x: 240, w: 104, h: 104, label: 'router' },
+        flow: { requestHold: 420, travelHalf: 430, modelHold: 520, responseHold: 1750 },
+        cadence: { subsectionDelay: 3900, subsectionGap: 380 },
         targets: [
-          { label: 'Large local LLM', y: 126 },
-          { label: 'Small local LLM', y: 210 },
-          { label: 'Frontier cloud LLM', y: 294 }
+          { label: 'Frontier cloud', y: 122, x: 486, w: 240, h: 96, icon: 'cloud', sub: 'Max intelligence' },
+          { label: 'On-prem server', y: 273, x: 486, w: 240, h: 96, icon: 'server', sub: 'More power · Private' },
+          { label: 'Local', y: 424, x: 486, w: 240, h: 96, icon: 'device', sub: 'Free · Private', badge: 'DEFAULT' }
         ],
         routes: [
           {
-            target: 1,
-            request: { type: 'prompt', text: 'Reply to my landlord' },
-            response: { type: 'text', text: '“Hi Sam — on it.”' }
+            target: 2,
+            request: { type: 'prompt', text: 'Summarize my meeting notes' },
+            response: { type: 'text', text: '5 action items' }
           },
           {
-            target: 2,
-            request: { type: 'prompt', text: 'Build a GPU dashboard' },
-            response: { type: 'glyph', glyph: '</>', label: 'Plan' }
+            target: 1,
+            request: { type: 'prompt', text: 'Analyze this contract for red flags' },
+            response: { type: 'text', text: '2 red flags found' }
+          },
+          {
+            target: 0,
+            request: { type: 'prompt', text: 'Plan a major refactor of this codebase' },
+            response: { type: 'glyph', glyph: '</>', label: 'Refactor plan' }
           }
         ]
       });
@@ -1036,6 +1489,8 @@
       if (kind === 'spawn-app') return spawnDemo();
       if (kind === 'deploy-everywhere') return deployDemo();
       if (kind === 'household-network') return householdDemo();
+      if (kind === 'backend-stack') return stackDemo();
+      if (kind === 'backend-models') return modelsDemo();
       return routerDemo(kind);
     }
   };

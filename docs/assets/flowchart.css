@@ -13,7 +13,7 @@
   background:
     radial-gradient(circle at 50% 50%, rgba(252, 216, 70, 0.16), transparent 42%),
     radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.06), transparent 24%),
-    linear-gradient(145deg, rgba(28, 27, 21, 0.92), rgba(11, 12, 9, 0.96));
+    linear-gradient(145deg, #26231a, #1b1810);
 }
 
 .hp-router-flowchart {
@@ -160,6 +160,69 @@
   opacity: 0.85;
 }
 
+/* ---- Hybrid "cloud and server routing" --------------------------------
+   Tier cards (icon + name + value sub-line + optional badge), the smart-router
+   hub the dot routes through, and the "intelligence increases upward" rail.
+   Appearance only; geometry/timing live in flowchart.js. Reuses .hp-router-node
+   for the frosted fill and .hp-cap-glyph for the pure-SVG icons. */
+.hp-router-tier {
+  fill: rgba(30, 28, 21, 0.62);
+}
+
+.hp-router-tier-name {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.hp-router-tier-sub {
+  fill: rgba(244, 239, 220, 0.62);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.hp-router-tier-badge rect {
+  fill: rgba(252, 216, 70, 0.16);
+  stroke: rgba(252, 216, 70, 0.34);
+  stroke-width: 0.75;
+}
+
+.hp-router-tier-badge text {
+  fill: #ffe9a8;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+/* The router hub: a touch warmer than the tier cards so it reads as the active
+   decision point the three branches fan out of. */
+.hp-router-hub {
+  fill: rgba(40, 36, 24, 0.7);
+  stroke: rgba(252, 216, 70, 0.3);
+}
+
+.hp-router-hub-label {
+  fill: rgba(252, 216, 70, 0.82);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The hybrid demo renders into a wider (780-unit) viewBox than omni, so it is
+   scaled down more to fit the same stage. Scale its artifact/label type up here
+   so the apparent on-screen size matches the rest of the router diagrams. */
+.hp-router-hybrid-demo .hp-router-art-prompt,
+.hp-router-hybrid-demo .hp-router-art-out { font-size: 20px; }
+.hp-router-hybrid-demo .hp-router-iopill-label { font-size: 20px; }
+.hp-router-hybrid-demo .hp-router-art-glyph { font-size: 46px; }
+.hp-router-hybrid-demo .hp-router-art-glyph-label { font-size: 18px; }
+.hp-router-hybrid-demo .hp-router-art-tag { font-size: 11px; }
+
 /* ---- Spawn diagram ("Start lemond subprocess") -------------------------
    Rendered inside the unified .hp-app-window chrome (dark theme) -- same window
    as every other demo. The SVG body ignites a lemon-slice (lemond) whose six
@@ -241,15 +304,24 @@
 }
 
 /* ---- Deploy-everywhere diagram (dev "Deploy everywhere") -----------------
-   A mini app window wired to 4 PC icons; a glowing dot cascades to each and the
-   target lights up. Device icons are stroked geometry; labels are SVG <text>. */
-.hp-deploy-svg {
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  display: block;
+   On a dark stage (same surface as the Smart Router / "The stack" demos, not an
+   app-window chrome). A gallery of supported device/OS combos: "Your App" fans
+   wires to a Windows laptop, a macOS laptop, and a Linux desktop (its screen
+   carries a 2x2 distro-logo grid). A dot cascades to each and the machine powers
+   on: screen backlight + OS logos brighten, a gold frame lights, labels brighten.
+   Pure SVG; appearance only here, timing in flowchart.js. */
+.hp-deploy-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(252, 216, 70, 0.14), transparent 46%),
+    linear-gradient(145deg, #26231a, #1b1810);
 }
+.hp-deploy-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
+/* "Your App" glyph -- the wire origin. */
 .hp-deploy-app rect {
   fill: rgba(255, 255, 255, 0.05);
   stroke: rgba(248, 243, 218, 0.5);
@@ -264,12 +336,8 @@
   font-weight: 800;
 }
 
-.hp-deploy-wire {
-  fill: none;
-  stroke: rgba(252, 216, 70, 0.18);
-  stroke-width: 1.5;
-}
-
+/* Wires fanning to each machine + the dot that cascades down them. */
+.hp-deploy-wire { fill: none; stroke: rgba(252, 216, 70, 0.18); stroke-width: 1.5; }
 .hp-deploy-dot {
   fill: #fff8c2;
   stroke: rgba(252, 216, 70, 0.92);
@@ -277,10 +345,10 @@
   filter: url(#hpRouterGlow);
 }
 
-/* resting device outline */
-.hp-deploy-icon rect,
-.hp-deploy-icon path,
-.hp-deploy-icon line {
+/* Resting device outline (the "off" machine): screen border + form-factor base. */
+.hp-deploy-dev rect,
+.hp-deploy-dev path,
+.hp-deploy-dev line {
   fill: none;
   stroke: rgba(248, 243, 218, 0.55);
   stroke-width: 2;
@@ -288,22 +356,224 @@
   stroke-linejoin: round;
 }
 
-/* bright overlay that pulses on when the dot arrives */
-.hp-deploy-glow rect,
-.hp-deploy-glow path,
-.hp-deploy-glow line {
+/* Screen lit overlays: warm backlight (behind the OS logos) + gold frame on boot. */
+.hp-deploy-screen-warm { fill: rgba(255, 220, 130, 0.9); }
+.hp-deploy-frame {
   fill: none;
   stroke: #ffe76a;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-width: 2.2;
   filter: url(#hpRouterGlow);
 }
 
-.hp-deploy-label {
-  fill: rgba(248, 243, 218, 0.72);
+/* OS name + the small line naming the hardware it runs on. */
+.hp-deploy-osname {
+  fill: rgba(248, 243, 218, 0.92);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+}
+.hp-deploy-vendors {
+  fill: rgba(248, 243, 218, 0.5);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---- Backends: "The stack" + "Ever-expanding models" (dev persona) --------
+   The stack proves lemond is the abstraction layer (Your App -> lemond module
+   over engines-on-devices); it uses the standard dark app-window chrome (titled
+   "Your App"), so its SVG body is a flex child of the window like the spawn /
+   private-stack demos. The models diagram is a dark stage with a Your App window
+   receiving models that rise from the engines below. Pure SVG + SMIL; appearance
+   only here, timing in flowchart.js. */
+.hp-stack-svg { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
+
+.hp-models-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(252, 216, 70, 0.14), transparent 46%),
+    linear-gradient(145deg, #26231a, #1b1810);
+}
+.hp-models-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.hp-stack-wire { fill: none; stroke: rgba(252, 216, 70, 0.3); stroke-width: 1.5; }
+
+/* The dev's own code, calling lemond across its API. */
+.hp-stack-code rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.32);
+  stroke-width: 1.2;
+}
+.hp-stack-codelabel {
+  fill: rgba(248, 243, 218, 0.78);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+}
+.hp-stack-apisub {
+  fill: rgba(255, 231, 138, 0.7);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* lemond module: the part of the app the dev embeds (engines over devices). */
+.hp-stack-slab {
+  fill: rgba(255, 255, 255, 0.025);
+  stroke: rgba(252, 216, 70, 0.18);
+  stroke-width: 1.2;
+}
+.hp-stack-wordmark {
+  fill: #ffe76a;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+}
+.hp-stack-bandlabel {
+  fill: rgba(248, 243, 218, 0.4);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* lemond mark: a small lemon slice (rind + segment membranes + hub). */
+.hp-stack-lemon-rind { fill: none; stroke: #fcd846; stroke-width: 2.2; filter: url(#hpRouterGlow); }
+.hp-stack-lemon-seg { stroke: rgba(255, 243, 200, 0.5); stroke-width: 1; }
+.hp-stack-lemon-hub { fill: rgba(252, 216, 70, 0.7); }
+
+/* Resting engine/device chips = the visible breadth. */
+.hp-stack-chip rect {
+  fill: rgba(26, 25, 20, 0.5);
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+}
+.hp-stack-chip-name {
+  fill: rgba(248, 243, 218, 0.82);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+}
+.hp-stack-chip-sub {
+  fill: rgba(248, 243, 218, 0.45);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* Lit overlay + pathway + travelling dot: lemond selecting an engine->device. */
+.hp-stack-glow rect {
+  fill: rgba(255, 228, 150, 0.12);
+  stroke: #ffe76a;
+  stroke-width: 1.8;
+  filter: url(#hpRouterGlow);
+}
+.hp-stack-dot {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+/* "Ever-expanding models": a left-to-right assembly line. A model chip is
+   released (NEW) -> an engine pops up and stamps it (check = support added) ->
+   it docks into Your App. Numbered zone headers label the three stages. */
+.hp-flow-num { fill: #ffd84a; }
+.hp-flow-numtext {
+  fill: #11110d;
   font-family: var(--font-display);
   font-size: 13px;
+  font-weight: 900;
+}
+.hp-flow-zonelabel {
+  fill: rgba(248, 243, 218, 0.82);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+/* The conveyor rail, flow chevrons, and the upstream "release" source. */
+.hp-flow-rail { stroke: rgba(252, 216, 70, 0.22); stroke-width: 1.5; }
+.hp-flow-chevron {
+  fill: none;
+  stroke: rgba(252, 216, 70, 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hp-flow-source circle {
+  fill: rgba(255, 228, 150, 0.12);
+  stroke: #ffe76a;
+  stroke-width: 1.6;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-source path { stroke: #ffe76a; stroke-width: 1.6; stroke-linecap: round; }
+
+/* Your App panel (the dock) + empty slots that light as models land. */
+.hp-flow-app rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.5);
+  stroke-width: 1.5;
+}
+.hp-flow-app circle { fill: rgba(248, 243, 218, 0.5); }
+.hp-flow-slot {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.hp-flow-slot-glow {
+  fill: rgba(255, 228, 150, 0.1);
+  stroke: #ffe76a;
+  stroke-width: 1.6;
+  filter: url(#hpRouterGlow);
+}
+
+/* The travelling model chip + its NEW badge + its support check. */
+.hp-flow-chip {
+  fill: rgba(40, 38, 24, 0.96);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-chip-label {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.hp-flow-new rect { fill: #ffd84a; }
+.hp-flow-new text {
+  fill: #11110d;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+.hp-flow-check circle { fill: #ffd84a; filter: url(#hpRouterGlow); }
+.hp-flow-check path {
+  fill: none;
+  stroke: #11110d;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The engine that adds support pops up under the rail and connects to the chip. */
+.hp-flow-connector { stroke: #ffe76a; stroke-width: 1.8; filter: url(#hpRouterGlow); }
+.hp-flow-engine rect {
+  fill: rgba(40, 38, 24, 0.96);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-engine-label {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 11px;
   font-weight: 700;
 }
 

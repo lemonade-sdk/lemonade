@@ -691,6 +691,26 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   filter: none;
 }
 
+/* Dark-mode elevation (dev persona). The default --shadow-heavy is a black shadow,
+   which is invisible against the near-black page — so the dark windows/stages had no
+   visible edge. Here every slide frame instead gets a 1px light rim + top inset
+   highlight (the dark-UI "raised = lighter + light edge" cue), so even receded slides
+   read as panels. The ACTIVE slide swaps the white rim for a crisp gold edge + soft
+   gold halo, making the live slide glow in the brand colour (spotlight). */
+html[data-md-color-scheme="zest-dark"] .hp-slide-demo {
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(252, 216, 70, 0.30),
+    0 0 34px rgba(252, 216, 70, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
 /* Inactive slides hold STILL: freeze their demo's CSS animations. A pre-rendered
    upcoming slide stays at frame 0 (its "before" look); a slide you've scrolled past
    freezes at its finished frame. The animation only runs while the slide is active
@@ -887,9 +907,13 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
    near-black with a soft gold bloom, no outline). Light and dark windows share
    all the chrome above; only the surface + text colours differ here. */
 .hp-app-window.is-dark {
+  /* Raised-panel surface: a step LIGHTER than the page (warm-dark, ~surface-container)
+     so the window reads as elevated above the near-black background. Dark UIs convey
+     elevation with lighter fills + a light rim (see .hp-slide-demo above), never with a
+     darker shadow — a black shadow on a black page is invisible. */
   background:
     radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
-    #11110d;
+    #211e16;
   border: none;
   color: #f8f3da;
   backdrop-filter: none;
@@ -2486,4 +2510,377 @@ html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-
   .hp-proof-card { min-height: 0; }
   .hp-cta-actions { flex-direction: column; align-items: stretch; }
   .hp-cta-btn { justify-content: center; }
+}
+
+
+/* ======================================================================
+   Developer · "Standard interfaces" section (developers/interfaces.js).
+   One subject — the lemond server — across four facets, all on a shared dark
+   "server board" with a green ● lemond · :13305 identity bar (NO desktop-app
+   chrome, so nothing reads as an app). Cards/pills/tiles cascade in with the
+   shared --row stagger; inactive slides are frozen at frame 0 by the
+   .hp-slide:not(.is-active) rule.
+   ====================================================================== */
+.hp-iface-board {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  color: #f8f3da;
+  background:
+    radial-gradient(circle at 74% 10%, rgba(252, 216, 70, 0.16), transparent 38%),
+    #11110d;
+}
+
+/* Server identity bar — the consistent "this is the lemond server" header. */
+.hp-iface-server {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+.hp-iface-server-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #50c878;
+  box-shadow: 0 0 8px rgba(80, 200, 120, 0.7);
+}
+.hp-iface-server-name { font-family: var(--font-display); font-weight: 800; font-size: 0.82rem; color: #f4efdc; }
+.hp-iface-server-url { color: rgba(248, 243, 218, 0.55); }
+.hp-iface-server-tag {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ffe680;
+  background: rgba(252, 216, 70, 0.14);
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-btn);
+}
+
+.hp-iface-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.95rem;
+  padding: 1.3rem 1.4rem;
+}
+
+/* Quiet uppercase sub-label (mirrors .hp-private-libhead). */
+.hp-iface-head {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.5);
+  text-align: center;
+}
+
+.hp-iface-foot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: rgba(248, 243, 218, 0.72);
+}
+.hp-iface-foot .material-symbols-outlined { font-size: 1rem; color: #fcd846; }
+
+/* ---- Slide 1: OpenAI endpoint wall -------------------------------------- */
+.hp-iface-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.hp-iface-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.46rem 0.58rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-iface-pill-in 0.55s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.06s + 0.1s);
+}
+
+.hp-iface-pill-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 0.45rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
+.hp-iface-pill-icon .material-symbols-outlined { font-size: 0.92rem; }
+
+.hp-iface-verb {
+  flex: 0 0 auto;
+  width: 2.3rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0;
+  border-radius: 0.4rem;
+  background: rgba(252, 216, 70, 0.16);
+  color: #ffe680;
+}
+.hp-iface-verb-get { background: rgba(80, 200, 120, 0.16); color: #7fe0a0; }
+
+.hp-iface-path {
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+  color: #f4efdc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes hp-iface-pill-in {
+  0% { opacity: 0; transform: translateY(8px); box-shadow: 0 0 0 rgba(252, 216, 70, 0); }
+  60% { opacity: 1; transform: translateY(0); box-shadow: 0 0 18px rgba(252, 216, 70, 0.35); }
+  100% { opacity: 1; transform: translateY(0); box-shadow: 0 0 0 rgba(252, 216, 70, 0); }
+}
+
+/* ---- Slide 2: any client / any language → the server -------------------- */
+.hp-iface-langs-stage {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hp-iface-langcol { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.hp-iface-lang { display: flex; align-items: center; gap: 0.5rem; }
+.hp-iface-lang-right { justify-content: flex-end; }
+
+.hp-iface-lang-id { display: inline-flex; align-items: center; gap: 0.5rem; }
+.hp-iface-lang-right .hp-iface-lang-id { flex-direction: row-reverse; }
+
+/* Monochrome cream logos sit directly on the dark board — always visible. */
+.hp-iface-lang-logo { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: inline-flex; }
+.hp-iface-lang-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.hp-iface-lang-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f4efdc;
+  white-space: nowrap;
+}
+
+/* Connector wire to the server, with a pulse running toward it (this slide
+   uses animationMode 'repeat', so the pulse loops continuously). */
+.hp-iface-wire {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(252, 216, 70, 0.05), rgba(252, 216, 70, 0.28));
+}
+.hp-iface-lang-right .hp-iface-wire {
+  background: linear-gradient(90deg, rgba(252, 216, 70, 0.28), rgba(252, 216, 70, 0.05));
+}
+
+.hp-iface-pulse {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #ffe680);
+  animation: hp-iface-pulse-l 1.8s linear infinite;
+  animation-delay: var(--pulse-delay, 0s);
+}
+.hp-iface-lang-right .hp-iface-pulse {
+  background: linear-gradient(90deg, #ffe680, transparent);
+  animation-name: hp-iface-pulse-r;
+}
+@keyframes hp-iface-pulse-l {
+  0% { left: -16px; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+@keyframes hp-iface-pulse-r {
+  0% { left: 100%; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { left: -16px; opacity: 0; }
+}
+
+/* The server, drawn as the destination node (not an app window). */
+.hp-iface-hubserver {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08rem;
+  width: 6rem;
+  padding: 0.85rem 0.6rem;
+  border-radius: 1.1rem;
+  background: radial-gradient(circle at 50% 30%, rgba(252, 216, 70, 0.95), rgba(252, 216, 70, 0.52));
+  color: #3a2f00;
+  box-shadow: 0 0 30px rgba(252, 216, 70, 0.4);
+}
+.hp-iface-hubserver-icon .material-symbols-outlined { font-size: 1.4rem; color: #3a2f00; }
+.hp-iface-hubserver-name { font-family: var(--font-display); font-weight: 800; font-size: 0.84rem; }
+.hp-iface-hubserver-url { font-family: var(--font-mono); font-weight: 700; font-size: 0.72rem; }
+.hp-iface-hubserver-tag {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+/* ---- Slide 3: server control plane ------------------------------------- */
+.hp-iface-dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.hp-iface-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(252, 216, 70, 0.12);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.09s + 0.12s);
+}
+.hp-iface-tile-wide { grid-column: 1 / -1; }
+
+.hp-iface-tile-head { display: flex; align-items: center; gap: 0.5rem; }
+.hp-iface-tile-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 0.5rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
+.hp-iface-tile-icon .material-symbols-outlined { font-size: 1.02rem; }
+.hp-iface-tile-title { font-family: var(--font-display); font-size: 0.84rem; font-weight: 800; color: #f4efdc; }
+
+.hp-iface-tile-eps { display: flex; flex-wrap: wrap; gap: 0.32rem; }
+/* Each endpoint chip is METHOD + path so it unmistakably reads as a callable
+   HTTP endpoint (mirrors the verb colours on slide 1). */
+.hp-iface-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: rgba(248, 243, 218, 0.85);
+  padding: 0.15rem 0.42rem 0.15rem 0.22rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.hp-iface-ep-verb {
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.07rem 0.3rem;
+  border-radius: 0.3rem;
+  background: rgba(252, 216, 70, 0.18);
+  color: #ffe680;
+}
+.hp-iface-ep-verb-get { background: rgba(80, 200, 120, 0.18); color: #7fe0a0; }
+
+/* ---- Slide 4: extra API dialects → more clients, no adapters ------------ */
+.hp-iface-dialect {
+  position: relative;
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.45s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.14s + 0.15s);
+}
+.hp-iface-dialect-logo { flex: 0 0 auto; width: 2rem; height: 2rem; display: inline-flex; margin-top: 0.1rem; }
+.hp-iface-dialect-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.hp-iface-dialect-text { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.hp-iface-dialect-name { font-family: var(--font-display); font-weight: 800; font-size: 0.96rem; color: #f4efdc; }
+/* Badge pinned to the card's top-right corner so the row body stays uncluttered. */
+.hp-iface-dialect-badge {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.66rem;
+  color: #7fe0a0;
+  background: rgba(80, 200, 120, 0.16);
+  padding: 0.18rem 0.45rem;
+  border-radius: var(--radius-btn);
+}
+.hp-iface-dialect-badge .material-symbols-outlined { font-size: 0.9rem; }
+.hp-iface-dialect-ep { font-family: var(--font-mono); font-size: 0.72rem; color: #fff8d8; }
+.hp-iface-dialect-benefit { font-family: var(--font-body); font-size: 0.8rem; color: rgba(248, 243, 218, 0.66); line-height: 1.4; }
+
+/* ---- Reduced motion: show every demo settled and still ----------------- */
+@media (prefers-reduced-motion: reduce) {
+  .hp-iface-pill,
+  .hp-iface-tile,
+  .hp-iface-dialect {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    box-shadow: none;
+  }
+  .hp-iface-pulse { animation: none; opacity: 0; }
+}
+
+/* ---- Interfaces on phones: trim padding so the grids still fit --------- */
+@media (max-width: 480px) {
+  .hp-iface-body { padding: 1.1rem 1rem; gap: 0.8rem; }
+  .hp-iface-path { font-size: 0.66rem; }
+  .hp-iface-hubserver { width: 5rem; padding: 0.7rem 0.5rem; }
 }
