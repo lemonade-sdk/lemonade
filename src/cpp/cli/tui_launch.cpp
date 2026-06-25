@@ -38,6 +38,7 @@ using ftxui::dim;
 using ftxui::flex;
 using ftxui::frame;
 using ftxui::hbox;
+using ftxui::paragraph;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
@@ -54,6 +55,15 @@ std::string to_lower(std::string value) {
 
 bool contains_case_insensitive(const std::string& value, const std::string& needle) {
     return to_lower(value).find(to_lower(needle)) != std::string::npos;
+}
+
+std::string shorten_middle(const std::string& value, size_t max_length) {
+    if (value.size() <= max_length || max_length < 8) {
+        return value;
+    }
+    const size_t head = (max_length - 3) / 2;
+    const size_t tail = max_length - 3 - head;
+    return value.substr(0, head) + "..." + value.substr(value.size() - tail);
 }
 
 bool has_label(const lemonade::ModelInfo& model, const std::string& label) {
@@ -130,8 +140,8 @@ std::vector<std::string> model_entries(const std::vector<lemonade::ModelInfo>& m
     std::vector<std::string> entries;
     for (int index : filtered) {
         const auto& model = models[static_cast<size_t>(index)];
-        entries.push_back(model.id + "  [" + (model.downloaded ? "downloaded" : "missing") +
-                          "]  " + (model.recipe.empty() ? "-" : model.recipe));
+        entries.push_back(shorten_middle(model.id, 42) + "  [" +
+                          (model.downloaded ? "local" : "pull") + "]");
     }
     if (entries.empty()) {
         entries.push_back("No launch-compatible models match the current filter");
@@ -155,7 +165,7 @@ std::vector<std::string> recipe_entries(const std::vector<std::string>& recipes,
                                         const std::string& error) {
     std::vector<std::string> entries;
     for (int index : filtered) {
-        entries.push_back(recipes[static_cast<size_t>(index)]);
+        entries.push_back(shorten_middle(recipes[static_cast<size_t>(index)], 42));
     }
     if (entries.empty()) {
         entries.push_back(error.empty() ? "No recipes match the current filter" : error);
@@ -170,6 +180,10 @@ Element section_box(const std::string& title, Element content, bool focused) {
         body = body | color(ftxui::Color::Cyan);
     }
     return body | border;
+}
+
+Element detail_row(const std::string& label, const std::string& value) {
+    return hbox({text(label) | bold, paragraph(value.empty() ? "-" : value) | flex});
 }
 
 }  // namespace
@@ -187,7 +201,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
         agent_selected = static_cast<int>(std::distance(agents.begin(), agent_it));
     }
 
-    std::vector<std::string> modes = {"Recipes", "Downloaded", "Recommended", "All"};
+    std::vector<std::string> modes = {"Recipes", "Local", "Rec", "All"};
     int mode = state.model.empty() ? 0 : 3;
     int focus = 0;
     bool accepted = false;
@@ -281,24 +295,28 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
         if (mode == 0) {
             if (!filtered_recipes.empty() && selected_model < static_cast<int>(filtered_recipes.size())) {
                 details = vbox({
-                    hbox({text("Recipe: ") | bold, text(recipes[static_cast<size_t>(
-                        filtered_recipes[static_cast<size_t>(selected_model)])])}),
-                    hbox({text("Directory: ") | bold, text("coding-agents")}),
-                    text("Importing registers the model, then launches the selected agent") | dim,
+                    detail_row("Recipe: ", recipes[static_cast<size_t>(
+                        filtered_recipes[static_cast<size_t>(selected_model)])]),
+                    detail_row("Directory: ", "coding-agents"),
+                    paragraph("Importing registers the model, then launches the selected agent") | dim,
                 });
             } else {
-                details = text(recipe_error.empty() ? "No recipe selected" : recipe_error) | dim;
+                details = paragraph(recipe_error.empty() ? "No recipe selected" : recipe_error) | dim;
             }
         } else if (model != nullptr) {
             details = vbox({
-                hbox({text("Model: ") | bold, text(model->id)}),
-                hbox({text("Recipe: ") | bold, text(model->recipe.empty() ? "-" : model->recipe)}),
-                hbox({text("Status: ") | bold, text(model->downloaded ? "downloaded" : "missing, will load/download in background")}),
-                hbox({text("Labels: ") | bold, text(labels_to_string(model->labels))}),
+                detail_row("Model: ", model->id),
+                detail_row("Recipe: ", model->recipe),
+                detail_row("Status: ", model->downloaded ? "downloaded" : "missing, will load/download in background"),
+                detail_row("Labels: ", labels_to_string(model->labels)),
             });
             if (agents[static_cast<size_t>(agent_selected)] == "codex" &&
                 contains_case_insensitive(model->id, "qwen3.5")) {
-                details = vbox({details, text("Warning: Qwen 3.5 models are currently avoided for Codex") | color(ftxui::Color::Yellow)});
+                details = vbox({
+                    details,
+                    paragraph("Warning: Qwen 3.5 models are currently avoided for Codex") |
+                        color(ftxui::Color::Yellow),
+                });
             }
         }
 
@@ -323,7 +341,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
                 section_box("Options", options, focus == 2) | flex,
                 section_box("Actions", hbox({launch_button->Render(), text(" "), quit_button->Render()}), focus == 3),
             }),
-            text("Tab next  Shift+Tab previous  / search  Enter launch  q quit") | dim,
+            text("Tab next  Shift+Tab prev  / search  Enter launch  q quit") | dim,
         });
     });
 
