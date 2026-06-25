@@ -7019,6 +7019,7 @@ input, textarea {
 .connect__section--directories { grid-area: dirs; }
 .connect__section--cloud { grid-area: cloud; }
 .connect__section--marketplace { grid-area: market; }
+.connect__section--mcp { grid-area: mcp; }
 
 .connect__section-head h2 {
   margin: 0;
@@ -7296,7 +7297,8 @@ input, textarea {
   grid-template-areas:
     "server help"
     "dirs cloud"
-    "market market";
+    "market market"
+    "mcp mcp";
   align-items: start;
 }
 
@@ -7441,7 +7443,8 @@ input, textarea {
   .connect__section--help,
   .connect__section--directories,
   .connect__section--cloud,
-  .connect__section--marketplace {
+  .connect__section--marketplace,
+  .connect__section--mcp {
     grid-area: auto;
     height: auto;
   }
@@ -7759,4 +7762,167 @@ input, textarea {
     border-radius: 16px;
   }
   .download-item__details { grid-template-columns: 1fr; }
+}
+
+/* ─────────────────────────────────────────────────────────
+   MCP Gateway panel (ConnectView)
+   ───────────────────────────────────────────────────────── */
+
+.mcp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.mcp-panel__url-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.mcp-panel__url-field {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mcp-panel__url-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.mcp-panel__url-copy-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mcp-panel__url-input {
+  flex: 1;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  cursor: text;
+  user-select: all;
+}
+
+.mcp-panel__copy-btn {
+  flex-shrink: 0;
+}
+
+.mcp-panel__status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.mcp-panel__status-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.mcp-panel__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+}
+
+.mcp-panel__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.mcp-panel__status--connected .mcp-panel__status-dot {
+  background: var(--color-success, #3fb950);
+}
+
+.mcp-panel__status--unavailable .mcp-panel__status-dot {
+  background: var(--color-error, #f85149);
+}
+
+.mcp-panel__status--checking .mcp-panel__status-dot {
+  background: var(--accent, #e8c66b);
+  animation: mcp-pulse var(--duration-slow, 1s) ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcp-panel__status--checking .mcp-panel__status-dot {
+    animation: none;
+  }
+}
+
+@keyframes mcp-pulse {
+  from { opacity: 1; }
+  to   { opacity: 0.35; }
+}
+
+.mcp-panel__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mcp-panel__tools-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mcp-panel__tools-header h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mcp-panel__tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mcp-panel__tool-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.mcp-panel__tool-name {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.mcp-panel__tool-desc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
 }

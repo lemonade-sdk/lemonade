@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
 import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
 import { Icon, IconName } from './Icon';
+import McpPanel from './McpPanel';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -495,6 +496,8 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
             })}
           </div>
         </section>
+
+        <McpPanel connectionStatus={status} />
 
         <section className="connect__section connect__section--marketplace">
           <div className="connect__section-head">
