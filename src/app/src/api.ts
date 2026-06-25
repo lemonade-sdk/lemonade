@@ -134,6 +134,12 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+/** Real disk usage for the model-storage drive (bytes). */
+export interface StorageInfo {
+  usedBytes: number;
+  totalBytes: number;
+}
+
 export interface CloudProviderRow {
   name: string;
   base_url: string;
@@ -969,6 +975,39 @@ class LemonadeAPI {
     const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
     this._systemInfoData = data;
     return data;
+  }
+
+  /**
+   * Real used/total bytes of the drive where models are stored.
+   *
+   * POC LIMITATION (fl0rianr #2424): lemond is OFF LIMITS and exposes no
+   * disk-usage field today (verified: /system-info and /system-stats lack it).
+   * This probes system-info for a future `storage` / `disk` shape so the meter
+   * lights up the moment the backend team adds it — no client changes needed.
+   * Returns null when no real source is reachable, letting the UI fall back to a
+   * derived estimate instead of a hardcoded mock.
+   */
+  async getStorageInfo(): Promise<StorageInfo | null> {
+    try {
+      const info = await this.systemInfo();
+      const candidates = [
+        (info as any).storage,
+        (info as any).disk,
+        (info as any).model_storage,
+        (info as any).Storage,
+      ];
+      for (const c of candidates) {
+        if (!isObject(c)) continue;
+        const total = Number((c as any).total_bytes ?? (c as any).totalBytes ?? (c as any).total);
+        const used = Number((c as any).used_bytes ?? (c as any).usedBytes ?? (c as any).used);
+        if (Number.isFinite(total) && total > 0 && Number.isFinite(used) && used >= 0) {
+          return { usedBytes: used, totalBytes: total };
+        }
+      }
+    } catch {
+      /* unreachable in the browser-served POC — fall through to null */
+    }
+    return null;
   }
 
 

@@ -316,6 +316,18 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // Client-local in-app deep-link: components dispatch
+  // `lemonade:navigate` with { view } to switch views without involving lemond.
+  useEffect(() => {
+    const onAppNavigate = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { view?: string } | undefined;
+      const target = detail?.view;
+      if (target && (VALID_VIEWS as string[]).includes(target)) setView(target as View);
+    };
+    window.addEventListener('lemonade:navigate', onAppNavigate as EventListener);
+    return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
+  }, [setView]);
+
   useEffect(() => {
     const unsubStatus = api.onStatusChange(setStatus);
     const refreshGlobalModels = () => {
