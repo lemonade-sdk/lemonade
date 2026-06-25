@@ -161,10 +161,11 @@
 }
 
 /* ---- Hybrid "cloud and server routing" --------------------------------
-   Tier cards (icon + name + value sub-line + optional badge), the smart-router
-   hub the dot routes through, and the "intelligence increases upward" rail.
-   Appearance only; geometry/timing live in flowchart.js. Reuses .hp-router-node
-   for the frosted fill and .hp-cap-glyph for the pure-SVG icons. */
+   Tier cards (icon + name + value sub-line + optional badge). The .hp-router-hub
+   styles below drive the optional smart-router node (gated on `config.hub` in
+   flowchart.js; the current hybrid demo fans straight from the prompt and does
+   not use it). Appearance only; geometry/timing live in flowchart.js. Reuses
+   .hp-router-node for the frosted fill and .hp-cap-glyph for the pure-SVG icons. */
 .hp-router-tier {
   fill: rgba(30, 28, 21, 0.62);
 }
@@ -172,7 +173,7 @@
 .hp-router-tier-name {
   fill: #f8f3da;
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 800;
 }
 
@@ -214,14 +215,34 @@
 }
 
 /* The hybrid demo renders into a wider (780-unit) viewBox than omni, so it is
-   scaled down more to fit the same stage. Scale its artifact/label type up here
-   so the apparent on-screen size matches the rest of the router diagrams. */
-.hp-router-hybrid-demo .hp-router-art-prompt,
-.hp-router-hybrid-demo .hp-router-art-out { font-size: 20px; }
+   scaled down more to fit the same stage. Scale its label type up here so the
+   apparent on-screen size matches the rest of the router diagrams. The prompt
+   text is sized/line-spaced inline from flowchart.js (so font and line-height
+   stay coherent), and is upright -- not italic -- for a clean, normalized look. */
+.hp-router-hybrid-demo .hp-router-art-prompt { font-style: normal; }
 .hp-router-hybrid-demo .hp-router-iopill-label { font-size: 20px; }
 .hp-router-hybrid-demo .hp-router-art-glyph { font-size: 46px; }
 .hp-router-hybrid-demo .hp-router-art-glyph-label { font-size: 18px; }
 .hp-router-hybrid-demo .hp-router-art-tag { font-size: 11px; }
+
+/* Response visualizations (drawn, not typed). Local = a ticked action-item
+   checklist (fresh-green checks read as "captured"); on-prem = a scanned
+   contract whose flagged clauses pop in red. Bars are abstract "text lines" so
+   the graphic is language-free and fits the small response area. */
+.hp-router-bar { fill: rgba(244, 239, 220, 0.18); }
+.hp-router-bar-flagged { fill: rgba(255, 122, 102, 0.26); }
+
+.hp-router-check-ring { fill: none; stroke: rgba(126, 224, 138, 0.45); stroke-width: 1.6; }
+.hp-router-check {
+  fill: none;
+  stroke: #7ee08a;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hp-router-flag { fill: #ff6a5a; }
+.hp-router-flag-pole { stroke: rgba(255, 150, 132, 0.85); stroke-width: 1.6; stroke-linecap: round; }
 
 /* ---- Spawn diagram ("Start lemond subprocess") -------------------------
    Rendered inside the unified .hp-app-window chrome (dark theme) -- same window
@@ -305,10 +326,11 @@
 
 /* ---- Deploy-everywhere diagram (dev "Deploy everywhere") -----------------
    On a dark stage (same surface as the Smart Router / "The stack" demos, not an
-   app-window chrome). A gallery of supported device/OS combos: "Your App" fans
-   wires to a Windows laptop, a macOS laptop, and a Linux desktop (its screen
-   carries a 2x2 distro-logo grid). A dot cascades to each and the machine powers
-   on: screen backlight + OS logos brighten, a gold frame lights, labels brighten.
+   app-window chrome). A gallery of supported device/OS combos in three different
+   form factors: "Your App" (a window with a lemon mark + tagline) fans wires to a
+   Windows laptop, a macOS all-in-one, and a Linux monitor (its screen carries an
+   even 2x2 distro-logo grid). A dot cascades to each and the machine powers on:
+   screen backlight + OS logos brighten, a gold frame lights, labels brighten.
    Pure SVG; appearance only here, timing in flowchart.js. */
 .hp-deploy-demo {
   position: relative;
@@ -321,7 +343,7 @@
 }
 .hp-deploy-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-/* "Your App" glyph -- the wire origin. */
+/* "Your App" window -- the wire origin: a lemon (lemond) mark + name + tagline. */
 .hp-deploy-app rect {
   fill: rgba(255, 255, 255, 0.05);
   stroke: rgba(248, 243, 218, 0.5);
@@ -332,9 +354,18 @@
 .hp-deploy-applabel {
   fill: #f4efdc;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 800;
 }
+.hp-deploy-appsub {
+  fill: rgba(248, 243, 218, 0.55);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* macOS logo art is black; force it white so it reads on the dark/lit screen. */
+.hp-deploy-logo-white { filter: brightness(0) invert(1); }
 
 /* Wires fanning to each machine + the dot that cascades down them. */
 .hp-deploy-wire { fill: none; stroke: rgba(252, 216, 70, 0.18); stroke-width: 1.5; }
@@ -562,8 +593,7 @@
   stroke-linejoin: round;
 }
 
-/* The engine that adds support pops up under the rail and connects to the chip. */
-.hp-flow-connector { stroke: #ffe76a; stroke-width: 1.8; filter: url(#hpRouterGlow); }
+/* The engine node on the rail that the model flies into, + the soft catch flash. */
 .hp-flow-engine rect {
   fill: rgba(40, 38, 24, 0.96);
   stroke: #ffe76a;
@@ -575,6 +605,27 @@
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;
+}
+.hp-flow-merge { fill: rgba(255, 228, 150, 0.22); filter: url(#hpRouterGlow); }
+
+/* The "engine + model" package that leaves the engine and docks in the app. */
+.hp-flow-pkg {
+  fill: rgba(40, 38, 24, 0.97);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-pkg-model {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+}
+.hp-flow-pkg-via {
+  fill: rgba(248, 243, 218, 0.6);
+  font-family: var(--font-display);
+  font-size: 8.5px;
+  font-weight: 600;
 }
 
 /* "Serve the whole household" -- a sleek Lemonade server on a LIGHT stage, wired

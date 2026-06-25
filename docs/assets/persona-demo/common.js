@@ -66,14 +66,14 @@
   // One shared cursor that glides smoothly between the download buttons of an
   // appWindowList (model manager + backend manager), pressing each in --swap-at
   // order. Reads as a single mouse moving down the list. Measures live button
-  // positions, so it works for either demo (all rows, or just a couple). One-shot;
-  // skipped under reduced motion.
+  // positions, so it works for either demo (all rows, or just a couple). One-shot.
+  // Deliberately ignores prefers-reduced-motion (see persona-demo.css policy note)
+  // so the showcase demo plays on every machine, matching the dev flowcharts.
   function playDownloadCursor(frameEl) {
     var list = frameEl.querySelector('.hp-applist');
     if (!list) return;
     var acts = list.querySelectorAll('.hp-applist-act.is-downloading');
     if (!acts.length) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     var holder = document.createElement('div');
     holder.innerHTML = CURSOR_SVG;

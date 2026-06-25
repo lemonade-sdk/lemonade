@@ -121,9 +121,9 @@
     var x = (node.x - node.w / 2).toFixed(1), y = (node.y - node.h / 2).toFixed(1);
     var left = node.x - node.w / 2;
     var rx = 18;
-    var iconCx = left + 42;
-    var textX = left + 80;
-    var iconScale = node.iconScale || 1.5;
+    var iconCx = left + 40;
+    var textX = left + 74;
+    var iconScale = node.iconScale || 1.4;
     var badge = '';
     if (node.badge) {
       var bw = node.badge.length * 7.2 + 22;
@@ -496,13 +496,20 @@
 
   // A centered, word-wrapped <text> block. Returns the markup plus the geometry
   // (lines / startY / lh) callers need to place a tag above or a print-reveal clip.
-  function routerWrappedText(text, cx, cy, className, vNudge) {
-    var lines = routerWrap(text, 16), lh = 18;
+  // opts (all optional): maxChars (wrap width), fontSize (viewBox units, driven
+  // inline so it can't drift from the line-height), lineHeight. Defaults match
+  // the original so callers that pass nothing are unchanged.
+  function routerWrappedText(text, cx, cy, className, vNudge, opts) {
+    opts = opts || {};
+    var maxChars = opts.maxChars || 16;
+    var lh = opts.lineHeight || 18;
+    var lines = routerWrap(text, maxChars);
     var startY = cy - (lines.length - 1) * lh / 2 + vNudge;
+    var styleAttr = opts.fontSize ? ' style="font-size:' + opts.fontSize + 'px"' : '';
     var tspans = lines.map(function (ln, i) {
       return '<tspan x="' + cx + '" y="' + (startY + i * lh).toFixed(1) + '">' + escapeText(ln) + '</tspan>';
     }).join('');
-    return { block: '<text class="' + className + '" text-anchor="middle">' + tspans + '</text>', lines: lines, startY: startY, lh: lh };
+    return { block: '<text class="' + className + '"' + styleAttr + ' text-anchor="middle">' + tspans + '</text>', lines: lines, startY: startY, lh: lh };
   }
 
   // When the artifact is active within its route (ms). The input lingers until
@@ -583,7 +590,8 @@
   }
 
   // Build the inner SVG content for one artifact spec, centered on (cx, cy).
-  function routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid) {
+  function routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid, art) {
+    art = art || {};
     var top = cy - ARTIFACT.h / 2, bottom = cy + ARTIFACT.h / 2;
 
     // The tag/badge are only drawn when the spec asks for them, so responses
@@ -606,7 +614,8 @@
     }
 
     if (spec.type === 'prompt') {
-      var p = routerWrappedText(spec.text, cx, cy, 'hp-router-art-prompt', 5);
+      var p = routerWrappedText(spec.text, cx, cy, 'hp-router-art-prompt', 5,
+        { maxChars: art.promptWrap, fontSize: art.promptFont, lineHeight: art.promptLh });
       return (spec.tag ? routerArtTag(cx, p.startY - p.lines.length * p.lh / 2 - 12, spec.tag) : '') + p.block;
     }
 
@@ -625,18 +634,71 @@
         (spec.badge ? routerArtBadge(cx, bottom - 26, spec.badge) : '');
     }
 
+    // A summarized checklist: a caption + rows of (check + text bar) that tick in
+    // one after another -- the "meeting notes -> action items" output, drawn not
+    // typed. Pure SVG; rows reveal via staggered opacity within the dwell window.
+    if (spec.type === 'summary') {
+      var srows = [92, 80, 66];
+      var sStartY = cy - 12, sStep = 27;
+      var sOut = routerArtTag(cx, cy - 42, spec.label || 'Action items');
+      srows.forEach(function (bw2, i) {
+        var ry = sStartY + i * sStep;
+        var ckx = cx - 54;
+        sOut += '<g opacity="0">' +
+          routerRevealAnim(begin, cycle, repeat, win.grown + i * 170, 150) +
+          '<circle class="hp-router-check-ring" cx="' + ckx + '" cy="' + ry + '" r="9"></circle>' +
+          '<path class="hp-router-check" d="M ' + (ckx - 4.2) + ' ' + ry + ' L ' + (ckx - 1) + ' ' + (ry + 3.6) + ' L ' + (ckx + 4.6) + ' ' + (ry - 3.8) + '"></path>' +
+          '<rect class="hp-router-bar" x="' + (cx - 38) + '" y="' + (ry - 5) + '" width="' + bw2 + '" height="10" rx="5"></rect>' +
+        '</g>';
+      });
+      return sOut;
+    }
+
+    // A scanned contract: rows of text bars, a couple flagged in red. The red
+    // flags pop in after the document lands -- "analyze contract -> red flags".
+    if (spec.type === 'flags') {
+      var flines = [
+        { flag: false, w: 88 }, { flag: true, w: 82 }, { flag: false, w: 88 },
+        { flag: true, w: 76 }, { flag: false, w: 84 }
+      ];
+      var fStartY = cy - 26, fStep = 17, flagN = 0;
+      var fOut = routerArtTag(cx, cy - 44, spec.label || 'Contract review');
+      flines.forEach(function (ln, i) {
+        var ly = fStartY + i * fStep;
+        fOut += '<rect class="hp-router-bar' + (ln.flag ? ' hp-router-bar-flagged' : '') + '" x="' + (cx - 26) + '" y="' + (ly - 3.5) + '" width="' + ln.w + '" height="7" rx="3.5"></rect>';
+        if (ln.flag) {
+          var fx = cx - 50;
+          fOut += '<g opacity="0">' +
+            routerRevealAnim(begin, cycle, repeat, win.grown + flagN * 240, 170) +
+            '<line class="hp-router-flag-pole" x1="' + fx + '" y1="' + (ly - 11) + '" x2="' + fx + '" y2="' + (ly + 8) + '"></line>' +
+            '<path class="hp-router-flag" d="M ' + fx + ' ' + (ly - 11) + ' L ' + (fx + 11) + ' ' + (ly - 7.5) + ' L ' + fx + ' ' + (ly - 4) + ' Z"></path>' +
+          '</g>';
+          flagN++;
+        }
+      });
+      return fOut;
+    }
+
     return '';
+  }
+
+  // Staggered fade-in for one element inside an artifact: invisible until
+  // appearMs (relative to the route's begin), then a quick fade to full. The
+  // parent artifact group handles the shared fade-OUT, so this only ramps in.
+  function routerRevealAnim(begin, cycle, repeat, appearMs, fade) {
+    var times = routerMonotonicTimes([0, appearMs, appearMs + fade, 0]);
+    return '<animate attributeName="opacity" dur="' + cycle + '" begin="' + begin + '" repeatCount="' + repeat + '" values="0;0;1;1" keyTimes="' + times + '"></animate>';
   }
 
   // Per-route content that rides on top of the persistent IO pill (no panel of
   // its own -- the pill is the container). Gated to the route's artifact window.
-  function routerArtifact(role, spec, cx, cy, timing, sequenceIndex, mode, uid) {
+  function routerArtifact(role, spec, cx, cy, timing, sequenceIndex, mode, uid, art) {
     var begin = routerFlowBegin(sequenceIndex);
     var cycle = routerFlowCycle();
     var repeat = routerFlowRepeat(mode);
     var win = routerArtifactWindow(role, timing.times);
     var keyTimes = routerArtifactKeyTimes(win);
-    return routerArtifactContent(routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid), keyTimes, begin, cycle, repeat);
+    return routerArtifactContent(routerArtifactInner(role, spec, cx, cy, win, begin, cycle, repeat, uid, art), keyTimes, begin, cycle, repeat);
   }
 
   function routerDiagram(config) {
@@ -710,10 +772,11 @@
     // every route's expand/hold/contract.
     var ioPills = routerIOPill('request', request.x, request.y, request.label, routes) +
       routerIOPill('response', response.x, response.y, response.label, routes);
+    var art = config.art || {};
     var artifacts = routes.map(function(route) {
       var out = '';
-      if (route.request) out += routerArtifact('request', route.request, request.x, request.y, route.timing, route.sequenceIndex, mode, config.id + '-rq' + route.sequenceIndex);
-      if (route.response) out += routerArtifact('response', route.response, response.x, response.y, route.timing, route.sequenceIndex, mode, config.id + '-rs' + route.sequenceIndex);
+      if (route.request) out += routerArtifact('request', route.request, request.x, request.y, route.timing, route.sequenceIndex, mode, config.id + '-rq' + route.sequenceIndex, art);
+      if (route.response) out += routerArtifact('response', route.response, response.x, response.y, route.timing, route.sequenceIndex, mode, config.id + '-rs' + route.sequenceIndex, art);
       return out;
     }).join('');
     return '<div class="hp-router-demo ' + escapeText(config.className) + '" data-animation-mode="' + escapeText(mode) + '">' +
@@ -894,15 +957,16 @@
   // Developer "Deploy everywhere": on a dark stage (the same surface as the
   // Smart Router / "The stack" demos -- NOT an app-window chrome). A curated
   // GALLERY of supported device/OS combos (no empty matrix cells -- only real
-  // machines): a Windows laptop, a macOS laptop, and a Linux desktop whose screen
-  // carries a 2x2 grid of distro logos (Ubuntu, Arch, Debian, Fedora) to mean
-  // "every distro", not just one. A small line under each names the hardware it
-  // runs on (AMD / NVIDIA / Vulkan-as-the-Intel-&-other-GPU proxy; Apple silicon
-  // on the Mac). "Your App" fans wires down and a dot cascades to each machine,
-  // which POWERS ON as it arrives -- screen backlight + OS logos brighten, a gold
-  // frame lights, the labels brighten. Repeats; resets at the loop wrap. Pure SVG
-  // + SMIL (cross-browser; no foreignObject): device glyphs are geometry, labels
-  // are <text> with an explicit y (NOT dominant-baseline).
+  // machines): a Windows laptop, a macOS all-in-one (iMac), and Linux shown as a
+  // bare, tight 2x2 grid of distro logos (Ubuntu, Arch, Debian, Fedora) -- no
+  // device chrome, the logos carry it and mean "every distro". A line under each
+  // names the hardware it runs on (AMD / NVIDIA / Vulkan as the Intel-&-other-GPU
+  // proxy; Apple silicon on the Mac). A roomy "Your App" window (a lemon mark --
+  // the SAME lemonMark used on the Engines & Hardware slide -- + tagline) fans
+  // wires down and a dot cascades to each machine, which POWERS ON as it arrives
+  // (logos brighten; devices also light a warm screen + gold frame). Repeats;
+  // resets at the loop wrap. Pure SVG + SMIL (cross-browser; no foreignObject):
+  // device glyphs are geometry, labels are <text> with an explicit y.
   function deployDemo() {
     var C = 5200;
     var cycle = (C / 1000).toFixed(3) + 's';
@@ -914,55 +978,82 @@
     }
     function f(n) { return (+n).toFixed(4); }
 
-    var appX = 310, appY = 72;        // wire origin (app bottom-centre)
+    var appX = 310, appY = 108;       // wire origin (app-window bottom-centre)
     var PLAT = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/';
-    var cy = 226, nameY = 296, vendY = 316;   // device-screen centre + label rows
-    var colX = [150, 310, 470];
+    var cy = 262, nameY = cy + 66, vendY = cy + 84;   // screen centre + label rows
+    var colX = [124, 310, 496];       // wide spread to fill the stage
 
-    // Supported device/OS combos. The Linux machine shows FOUR distro logos so it
-    // reads as cross-distro, not "Ubuntu = Linux".
+    // Supported device/OS combos. Windows + macOS are drawn as devices (laptop /
+    // all-in-one); Linux is a bare, tight 2x2 grid of distro logos (no device
+    // chrome) so the cross-distro logos carry it on their own.
     var cards = [
-      { os: 'Windows', type: 'laptop',  logos: ['windows.png'], vendors: 'AMD · NVIDIA · Vulkan' },
-      { os: 'macOS',   type: 'laptop',  logos: ['apple.png'],   vendors: 'Apple silicon' },
-      { os: 'Linux',   type: 'monitor', logos: ['ubuntu.png', 'arch_linux.png', 'debian.png', 'fedora.png'], vendors: 'AMD · NVIDIA · Vulkan' }
+      { os: 'Windows', type: 'laptop', logos: ['windows.png'], vendors: 'AMD · NVIDIA · Vulkan' },
+      { os: 'macOS',   type: 'aio',    logos: ['apple.png'], white: true, vendors: 'Apple silicon' },
+      { os: 'Linux',   type: 'grid',   logos: ['ubuntu.png', 'arch_linux.png', 'debian.png', 'fedora.png'], vendors: 'AMD · NVIDIA · Vulkan' }
     ];
 
-    // Device glyph = a screen (which hosts the OS logo[s]) + a form-factor base.
+    // Device glyph = a lit screen (which hosts the OS logo) + a form-factor base.
+    // `top` is where the wire connects. Pure geometry; renders identically across
+    // engines. (Linux uses no device -- see the 'grid' branch below.)
     function deviceParts(type, x) {
-      if (type === 'monitor') {
-        return { screen: { x: x - 52, y: cy - 33, w: 104, h: 66, rx: 7 }, top: cy - 33,
-          base: '<line x1="' + x + '" y1="' + (cy + 33) + '" x2="' + x + '" y2="' + (cy + 45) + '"></line>' +
-                '<line x1="' + (x - 18) + '" y1="' + (cy + 45) + '" x2="' + (x + 18) + '" y2="' + (cy + 45) + '"></line>' };
+      if (type === 'aio') {         // all-in-one (iMac): display in a bezel + chin, on a foot
+        return { screen: { x: x - 44, y: cy - 32, w: 88, h: 52, rx: 6 }, top: cy - 38,
+          base: '<rect x="' + (x - 50) + '" y="' + (cy - 38) + '" width="100" height="74" rx="11"></rect>' +
+                '<line x1="' + x + '" y1="' + (cy + 36) + '" x2="' + x + '" y2="' + (cy + 46) + '"></line>' +
+                '<line x1="' + (x - 20) + '" y1="' + (cy + 46) + '" x2="' + (x + 20) + '" y2="' + (cy + 46) + '"></line>' };
       }
-      return { screen: { x: x - 44, y: cy - 27, w: 88, h: 54, rx: 6 }, top: cy - 27,
-        base: '<path d="M ' + (x - 52) + ' ' + (cy + 38) + ' L ' + (x + 52) + ' ' + (cy + 38) + ' L ' + (x + 44) + ' ' + (cy + 27) + ' L ' + (x - 44) + ' ' + (cy + 27) + ' Z"></path>' };
+      // laptop: clamshell screen + keyboard base
+      return { screen: { x: x - 50, y: cy - 31, w: 100, h: 62, rx: 7 }, top: cy - 31,
+        base: '<path d="M ' + (x - 60) + ' ' + (cy + 44) + ' L ' + (x + 60) + ' ' + (cy + 44) + ' L ' + (x + 50) + ' ' + (cy + 31) + ' L ' + (x - 50) + ' ' + (cy + 31) + ' Z"></path>' };
+    }
+
+    // The dot that cascades down a wire and fades as it lands.
+    function dotFor(wire, s, arrive) {
+      return '<circle class="hp-deploy-dot" r="6" cx="0" cy="0" opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(arrive) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(arrive - 0.01) + ';' + f(arrive + 0.02)) +
+        '</circle>';
     }
 
     var wires = '', nodes = '', dots = '';
     cards.forEach(function (card, i) {
       var cx = colX[i];
-      var p = deviceParts(card.type, cx);
-      var sc = p.screen;
-      var wire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 78) + ', ' + cx + ' ' + (p.top - 64) + ', ' + cx + ' ' + p.top;
       var s = 0.08 + i * 0.17, arrive = s + 0.14;
       var on = '0;' + f(arrive - 0.02) + ';' + f(arrive + 0.04) + ';0.95;1';
 
-      // OS logo(s) on the screen: one centred logo, or the 2x2 distro grid.
-      var logos = '';
-      if (card.logos.length === 1) {
-        var ls = Math.min(sc.w, sc.h) - 20;
-        logos = '<image href="' + PLAT + card.logos[0] + '" x="' + (cx - ls / 2) + '" y="' + (cy - ls / 2) + '" width="' + ls + '" height="' + ls + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
-      } else {
-        var gs = 26, gx = 24, gy = 15;
-        var pos = [[cx - gx, cy - gy], [cx + gx, cy - gy], [cx - gx, cy + gy], [cx + gx, cy + gy]];
+      if (card.type === 'grid') {
+        // Bare, tight 2x2 distro-logo grid -- NO device chrome. The logos do the
+        // work; they brighten in place when the cascade dot lands.
+        var gs = 44, g = 23;            // logo box + offset -> snug grid, tiny gap
+        var pos = [[cx - g, cy - g], [cx + g, cy - g], [cx - g, cy + g], [cx + g, cy + g]];
+        var grid = '';
         card.logos.forEach(function (file, k) {
-          logos += '<image href="' + PLAT + file + '" x="' + (pos[k][0] - gs / 2) + '" y="' + (pos[k][1] - gs / 2) + '" width="' + gs + '" height="' + gs + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
+          grid += '<image href="' + PLAT + file + '" x="' + (pos[k][0] - gs / 2) + '" y="' + (pos[k][1] - gs / 2) + '" width="' + gs + '" height="' + gs + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
         });
+        var gTop = cy - g - gs / 2;
+        var gwire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 84) + ', ' + cx + ' ' + (gTop - 70) + ', ' + cx + ' ' + gTop;
+        wires += '<path class="hp-deploy-wire" d="' + gwire + '"></path>';
+        nodes += '<g class="hp-deploy-machine">' + grid +
+            '<text class="hp-deploy-osname" x="' + cx + '" y="' + nameY + '" text-anchor="middle" opacity="0.5">' +
+              escapeText(card.os) + ranim('opacity', '0.5;0.5;1;1;0.5', on) + '</text>' +
+            '<text class="hp-deploy-vendors" x="' + cx + '" y="' + vendY + '" text-anchor="middle" opacity="0.4">' +
+              escapeText(card.vendors) + ranim('opacity', '0.4;0.4;1;1;0.4', on) + '</text>' +
+          '</g>';
+        dots += dotFor(gwire, s, arrive);
+        return;
       }
+
+      var p = deviceParts(card.type, cx);
+      var sc = p.screen;
+      var scCy = sc.y + sc.h / 2;     // screen centre (AIO display sits above device cy)
+      var wire = 'M ' + appX + ' ' + appY + ' C ' + appX + ' ' + (appY + 84) + ', ' + cx + ' ' + (p.top - 70) + ', ' + cx + ' ' + p.top;
+      var wcls = card.white ? ' class="hp-deploy-logo-white"' : '';
+      var ls = Math.min(sc.w, sc.h) - 18;
+      var logos = '<image' + wcls + ' href="' + PLAT + card.logos[0] + '" x="' + (cx - ls / 2) + '" y="' + (scCy - ls / 2) + '" width="' + ls + '" height="' + ls + '" preserveAspectRatio="xMidYMid meet" opacity="0.3">' + ranim('opacity', '0.3;0.3;1;1;0.3', on) + '</image>';
 
       wires += '<path class="hp-deploy-wire" d="' + wire + '"></path>';
       nodes += '<g class="hp-deploy-machine">' +
-          // warm screen backlight (lights on arrival, behind the logos)
+          // warm screen backlight (lights on arrival, behind the logo)
           '<rect class="hp-deploy-screen-warm" x="' + sc.x + '" y="' + sc.y + '" width="' + sc.w + '" height="' + sc.h + '" rx="' + sc.rx + '" opacity="0">' +
             ranim('opacity', '0;0;0.5;0.5;0', on) + '</rect>' +
           logos +
@@ -977,19 +1068,18 @@
           '<text class="hp-deploy-vendors" x="' + cx + '" y="' + vendY + '" text-anchor="middle" opacity="0.4">' +
             escapeText(card.vendors) + ranim('opacity', '0.4;0.4;1;1;0.4', on) + '</text>' +
         '</g>';
-      dots += '<circle class="hp-deploy-dot" r="6" cx="0" cy="0" opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + escapeText(wire) + '" keyPoints="0;0;1;1" keyTimes="0;' + f(s) + ';' + f(arrive) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.01) + ';' + f(arrive - 0.01) + ';' + f(arrive + 0.02)) +
-        '</circle>';
+      dots += dotFor(wire, s, arrive);
     });
 
-    // "Your App" glyph at the top -- the wire origin.
+    // "Your App": a roomy window -- a glowing lemon (lemond) mark + name + tagline.
     var app =
       '<g class="hp-deploy-app">' +
-        '<rect x="250" y="24" width="120" height="44" rx="9"></rect>' +
-        '<line x1="250" y1="40" x2="370" y2="40"></line>' +
-        '<circle cx="261" cy="32" r="2.4"></circle><circle cx="269" cy="32" r="2.4"></circle><circle cx="277" cy="32" r="2.4"></circle>' +
-        '<text class="hp-deploy-applabel" x="310" y="58" text-anchor="middle">Your App</text>' +
+        '<rect x="195" y="14" width="230" height="94" rx="13"></rect>' +
+        '<line x1="195" y1="40" x2="425" y2="40"></line>' +
+        '<circle cx="210" cy="28" r="3"></circle><circle cx="221" cy="28" r="3"></circle><circle cx="232" cy="28" r="3"></circle>' +
+        lemonMark(236, 72, 12) +
+        '<text class="hp-deploy-applabel" x="262" y="67">Your App</text>' +
+        '<text class="hp-deploy-appsub" x="262" y="87">one build, every platform</text>' +
       '</g>';
 
     return '<div class="hp-deploy-demo">' +
@@ -1292,14 +1382,14 @@
   // Developer "Ever-expanding models": a left-to-right assembly line telling the
   // three-step story behind why your app keeps getting better for free --
   //   (1) new models ship upstream all the time,
-  //   (2) an engine adds support for them,
-  //   (3) lemonade brings that support into your app -- no work on your side.
-  // A hype model chip is released (NEW), glides to the engine that lights up and
-  // STAMPS it (check = support added), then docks into Your App. Real, currently
-  // trending models from the registry (HF-trending families: GLM, Qwen, Gemma,
-  // plus a new image model). Pure SVG + SMIL (cross-browser; no foreignObject).
+  //   (2) the model goes INTO the engine that adds support for it,
+  //   (3) engine + model travel into Your App together, no work on your side.
+  // A hype model chip is released (NEW), glides into the engine (which catches
+  // it), and the two leave as one "engine + model" package that docks into Your
+  // App. Models are the ACTUAL HuggingFace-trending picks (GLM-5.2, DeepSeek-V4,
+  // Qwen3.6, plus a trending image model). Pure SVG + SMIL (cross-browser).
   function modelsDemo() {
-    var C = 8200;
+    var C = 9000;
     var cycle = (C / 1000).toFixed(3) + 's';
     function ranim(attr, vals, times) {
       var v = vals.split(';'), k = times.split(';');
@@ -1308,19 +1398,20 @@
     }
     function f(n) { return (+n).toFixed(4); }
 
-    // Hype models that are really in the registry, each mapped to the engine that
-    // adds support for it. gpt-oss / Whisper are intentionally out (old news).
+    // Currently HuggingFace-trending models, each mapped to the engine that adds
+    // support for it (most new LLMs land via llama.cpp; new image models via
+    // stable-diffusion.cpp).
     var lanes = [
-      { model: 'GLM-4.7-Flash', engine: 'llama.cpp' },
-      { model: 'Z-Image-Turbo', engine: 'stable-diffusion.cpp' },
-      { model: 'Qwen3-VL-8B', engine: 'llama.cpp' },
-      { model: 'Gemma-4-12B', engine: 'llama.cpp' }
+      { model: 'GLM-5.2', engine: 'llama.cpp' },
+      { model: 'Krea-2-Turbo', engine: 'stable-diffusion.cpp' },
+      { model: 'DeepSeek-V4-Pro', engine: 'llama.cpp' },
+      { model: 'Qwen3.6-35B', engine: 'llama.cpp' }
     ];
 
-    var railY = 228;
-    var st1 = 98, st2 = 300;                 // release point, engine point
-    var appX = 456, appW = 150, appCx = appX + appW / 2;
-    var slotYs = [190, 226, 262, 298];
+    var railY = 222;
+    var st1 = 92, st2 = 300;                 // release point, engine point
+    var appX = 450, appW = 158, appCx = appX + appW / 2;
+    var slotYs = [182, 226, 270, 314];
 
     // Three numbered zone headers across the top.
     function zoneHead(cx, n, label) {
@@ -1331,67 +1422,75 @@
       '</g>';
     }
     var heads = zoneHead(st1, '1', 'New models ship') +
-      zoneHead(st2, '2', 'Engines add support') +
+      zoneHead(st2, '2', 'Into the engine') +
       zoneHead(appCx, '3', 'Live in your app');
 
-    // The conveyor rail + a couple of chevrons + the upstream "release" source.
+    // The conveyor rail + chevrons + the upstream "release" source glyph.
     function chevron(x) {
       return '<path class="hp-flow-chevron" d="M ' + x + ' ' + (railY - 5) + ' L ' + (x + 6) + ' ' + railY + ' L ' + x + ' ' + (railY + 5) + '"></path>';
     }
     var rail = '<line class="hp-flow-rail" x1="' + st1 + '" y1="' + railY + '" x2="' + appX + '" y2="' + railY + '"></line>' +
-      chevron(196) + chevron(404);
+      chevron(190) + chevron(398);
     var source = '<g class="hp-flow-source"><circle cx="' + st1 + '" cy="' + railY + '" r="13"></circle>' +
       '<path d="M ' + st1 + ' ' + (railY - 8) + ' L ' + st1 + ' ' + (railY + 8) + ' M ' + (st1 - 8) + ' ' + railY + ' L ' + (st1 + 8) + ' ' + railY +
         ' M ' + (st1 - 5.5) + ' ' + (railY - 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY + 5.5) + ' M ' + (st1 - 5.5) + ' ' + (railY + 5.5) + ' L ' + (st1 + 5.5) + ' ' + (railY - 5.5) + '"></path></g>';
 
     // Your App panel (the dock) + its empty slots.
-    var app = '<g class="hp-flow-app"><rect x="' + appX + '" y="150" width="' + appW + '" height="200" rx="14"></rect>' +
-      '<circle cx="' + (appX + 16) + '" cy="167" r="2.6"></circle><circle cx="' + (appX + 25) + '" cy="167" r="2.6"></circle><circle cx="' + (appX + 34) + '" cy="167" r="2.6"></circle>' +
+    var app = '<g class="hp-flow-app"><rect x="' + appX + '" y="144" width="' + appW + '" height="216" rx="14"></rect>' +
+      '<circle cx="' + (appX + 16) + '" cy="160" r="2.6"></circle><circle cx="' + (appX + 25) + '" cy="160" r="2.6"></circle><circle cx="' + (appX + 34) + '" cy="160" r="2.6"></circle>' +
       '</g>';
     var slots = slotYs.map(function (y) {
-      return '<rect class="hp-flow-slot" x="' + (appCx - 64) + '" y="' + (y - 15) + '" width="128" height="30" rx="8"></rect>';
+      return '<rect class="hp-flow-slot" x="' + (appCx - 72) + '" y="' + (y - 20) + '" width="144" height="40" rx="9"></rect>';
     }).join('');
 
-    var travelers = '', enginePops = '', slotGlows = '';
+    var models = '', engineNodes = '', merges = '', packages = '', slotGlows = '';
     var stagger = 0.18;
     lanes.forEach(function (lane, i) {
       var s = i * stagger;
       var slotY = slotYs[i];
-      // path: release -> engine -> dock slot. F2 = fraction at the engine waypoint.
-      var path = 'M ' + st1 + ' ' + railY + ' L ' + st2 + ' ' + railY + ' L ' + appCx + ' ' + slotY;
-      var dx = appCx - st2, dy = slotY - railY;
-      var F2 = (st2 - st1) / ((st2 - st1) + Math.sqrt(dx * dx + dy * dy));
-      var t = { leave1: s + 0.05, atEng: s + 0.13, leaveEng: s + 0.22, dock: s + 0.30 };
+      var t = { in1: s + 0.04, atEng: s + 0.13, merge: s + 0.16, leaveEng: s + 0.25, dock: s + 0.34 };
 
-      // the travelling model chip, carrying a NEW badge then a support check
-      travelers += '<g opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" path="' + path + '" ' +
-            'keyPoints="0;0;' + f(F2) + ';' + f(F2) + ';1;1" keyTimes="0;' + f(t.leave1) + ';' + f(t.atEng) + ';' + f(t.leaveEng) + ';' + f(t.dock) + ';1"></animateMotion>' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';0.95;0.99') +
-          '<rect class="hp-flow-chip" x="-62" y="-15" width="124" height="30" rx="8"></rect>' +
+      // 1) the new model chip flies from the source INTO the engine, fading out
+      //    on arrival (absorbed by the engine).
+      models += '<g opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" ' +
+            'path="M ' + st1 + ' ' + railY + ' L ' + st2 + ' ' + railY + '" keyPoints="0;0;1;1" keyTimes="0;' + f(t.in1) + ';' + f(t.atEng) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng - 0.005) + ';' + f(t.atEng + 0.02)) +
+          '<rect class="hp-flow-chip" x="-56" y="-15" width="112" height="30" rx="8"></rect>' +
           '<text class="hp-flow-chip-label" x="6" y="4" text-anchor="middle">' + escapeText(lane.model) + '</text>' +
-          // NEW badge (top-right): visible from release until the engine stamps it
-          '<g class="hp-flow-new" transform="translate(48,-15)" opacity="0">' +
-            ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng) + ';' + f(t.atEng + 0.04)) +
+          '<g class="hp-flow-new" transform="translate(44,-15)" opacity="0">' +
+            ranim('opacity', '0;0;1;1;0', '0;' + f(s) + ';' + f(s + 0.02) + ';' + f(t.atEng - 0.01) + ';' + f(t.atEng + 0.01)) +
             '<rect x="-17" y="-9" width="34" height="17" rx="8.5"></rect><text x="0" y="4" text-anchor="middle">NEW</text>' +
           '</g>' +
-          // support check (left): appears when the engine adds support, stays
-          '<g class="hp-flow-check" opacity="0">' +
-            ranim('opacity', '0;0;1;1', '0;' + f(t.atEng + 0.02) + ';' + f(t.atEng + 0.06) + ';1') +
-            '<circle cx="-46" cy="0" r="8.5"></circle><path d="M -49.6 0 L -47 3.2 L -42.4 -3.6"></path>' +
-          '</g>' +
         '</g>';
 
-      // the engine that adds support pops up under the rail as the chip passes
-      enginePops += '<g class="hp-flow-engine" opacity="0">' +
-          ranim('opacity', '0;0;1;1;0', '0;' + f(t.atEng - 0.02) + ';' + f(t.atEng + 0.03) + ';' + f(t.leaveEng) + ';' + f(t.leaveEng + 0.04)) +
-          '<line class="hp-flow-connector" x1="' + st2 + '" y1="' + (railY + 16) + '" x2="' + st2 + '" y2="' + (railY + 42) + '"></line>' +
-          '<rect x="' + (st2 - 80) + '" y="' + (railY + 42) + '" width="160" height="30" rx="8"></rect>' +
-          '<text class="hp-flow-engine-label" x="' + st2 + '" y="' + (railY + 61) + '" text-anchor="middle">' + escapeText(lane.engine) + '</text>' +
+      // 2) the engine node sits on the rail; it catches the model, then hands off
+      //    to the combined package (so it fades out as the package forms).
+      engineNodes += '<g class="hp-flow-engine" opacity="0">' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(s + 0.05) + ';' + f(s + 0.09) + ';' + f(t.merge) + ';' + f(t.merge + 0.03)) +
+          '<rect x="' + (st2 - 70) + '" y="' + (railY - 15) + '" width="140" height="30" rx="8"></rect>' +
+          '<text class="hp-flow-engine-label" x="' + st2 + '" y="' + (railY + 4) + '" text-anchor="middle">' + escapeText(lane.engine) + '</text>' +
         '</g>';
 
-      // the dock slot lights up as the model lands
-      slotGlows += '<rect class="hp-flow-slot-glow" x="' + (appCx - 64) + '" y="' + (slotY - 15) + '" width="128" height="30" rx="8" opacity="0">' +
+      // a soft flash when the model lands in the engine
+      merges += '<ellipse class="hp-flow-merge" cx="' + st2 + '" cy="' + railY + '" rx="46" ry="27" opacity="0">' +
+          ranim('opacity', '0;0;0.85;0', '0;' + f(t.atEng) + ';' + f(t.merge) + ';' + f(t.merge + 0.08)) +
+        '</ellipse>';
+
+      // 3) the "engine + model" package leaves the engine together and docks in
+      //    the app (model name on top, "via <engine>" + a support check below).
+      packages += '<g opacity="0">' +
+          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" ' +
+            'path="M ' + st2 + ' ' + railY + ' L ' + appCx + ' ' + slotY + '" keyPoints="0;0;1;1" keyTimes="0;' + f(t.leaveEng) + ';' + f(t.dock) + ';1"></animateMotion>' +
+          ranim('opacity', '0;0;1;1;0', '0;' + f(t.merge) + ';' + f(t.merge + 0.03) + ';0.95;0.99') +
+          '<rect class="hp-flow-pkg" x="-75" y="-20" width="150" height="40" rx="9"></rect>' +
+          '<text class="hp-flow-pkg-model" x="-6" y="-3" text-anchor="middle">' + escapeText(lane.model) + '</text>' +
+          '<text class="hp-flow-pkg-via" x="-6" y="12" text-anchor="middle">via ' + escapeText(lane.engine) + '</text>' +
+          '<g class="hp-flow-check" transform="translate(60,-20)"><circle cx="0" cy="0" r="9"></circle><path d="M -3.6 0 L -1 3.2 L 3.6 -3.6"></path></g>' +
+        '</g>';
+
+      // the dock slot lights up as the package lands
+      slotGlows += '<rect class="hp-flow-slot-glow" x="' + (appCx - 72) + '" y="' + (slotY - 20) + '" width="144" height="40" rx="9" opacity="0">' +
           ranim('opacity', '0;0;1;1;0.6', '0;' + f(t.dock) + ';' + f(t.dock + 0.02) + ';' + f(t.dock + 0.1) + ';' + f(t.dock + 0.2)) +
         '</rect>';
     });
@@ -1400,47 +1499,50 @@
       '<svg class="hp-models-svg" viewBox="0 0 620 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
         '<defs>' + routerGlowFilter() + '</defs>' +
         heads + rail + source + app + slots + slotGlows +
-        enginePops + travelers +
+        merges + engineNodes + models + packages +
       '</svg>' +
     '</div>';
   }
 
   function routerDemo(kind) {
     if (kind === 'router-hybrid') {
-      // Hybrid = right TIER: a smart router keeps each request local by default
-      // (free, private), escalating to your on-prem server (more power, still
-      // private) or the frontier cloud (max intelligence) only when the task
-      // demands it. The 4-column stage (prompt -> router -> tier -> response)
-      // needs a wider viewBox than the 3-column omni demo. Tiers are stacked by
-      // ascending intelligence (cloud on top); the local route fires first so
-      // the default reads before the escalations.
+      // Hybrid = right TIER: requests stay local by default (free, private), and
+      // escalate to your on-prem server (more power, still private) or the
+      // frontier cloud (max intelligence) only when the task demands it. The
+      // three-column stage (prompt -> tier -> response) fans straight from the
+      // prompt to the chosen tier. Tiers are stacked by ascending intelligence
+      // (cloud on top); the local route fires first so the default reads before
+      // the escalations.
       return routerDiagram({
         id: 'hpHybridRoute',
         className: 'hp-router-hybrid-demo',
         request: 'Prompt',
         // viewBox aspect matches the 600x420 slide stage (1.43) so it fills with
-        // no letterbox; the extra height lets the four columns and three tier
-        // cards breathe. Slow `flow`/`cadence` so each scenario is readable.
+        // no letterbox; the extra height lets the three tier cards breathe.
+        // Prompt/response are inset from the edges and the tiers sit well clear
+        // of the response. Slow `flow`/`cadence` so each scenario is readable.
         viewW: 780, viewH: 546, centerY: 273,
-        requestX: 80, responseX: 700,
-        hub: { x: 240, w: 104, h: 104, label: 'router' },
+        requestX: 116, responseX: 666,
         flow: { requestHold: 420, travelHalf: 430, modelHold: 520, responseHold: 1750 },
         cadence: { subsectionDelay: 3900, subsectionGap: 380 },
+        // Request typography: sized + line-spaced + wrapped to sit comfortably
+        // inside the 150-wide prompt pill (no italic, no cramped lines).
+        art: { promptFont: 17, promptWrap: 13, promptLh: 24 },
         targets: [
-          { label: 'Frontier cloud', y: 122, x: 486, w: 240, h: 96, icon: 'cloud', sub: 'Max intelligence' },
-          { label: 'On-prem server', y: 273, x: 486, w: 240, h: 96, icon: 'server', sub: 'More power · Private' },
-          { label: 'Local', y: 424, x: 486, w: 240, h: 96, icon: 'device', sub: 'Free · Private', badge: 'DEFAULT' }
+          { label: 'Frontier cloud', y: 122, x: 392, w: 256, h: 96, icon: 'cloud', sub: 'Max intelligence' },
+          { label: 'On-prem server', y: 273, x: 392, w: 256, h: 96, icon: 'server', sub: 'More power · Private' },
+          { label: 'Local', y: 424, x: 392, w: 256, h: 96, icon: 'device', sub: 'Free · Private', badge: 'DEFAULT' }
         ],
         routes: [
           {
             target: 2,
             request: { type: 'prompt', text: 'Summarize my meeting notes' },
-            response: { type: 'text', text: '5 action items' }
+            response: { type: 'summary', label: 'Action items' }
           },
           {
             target: 1,
             request: { type: 'prompt', text: 'Analyze this contract for red flags' },
-            response: { type: 'text', text: '2 red flags found' }
+            response: { type: 'flags', label: 'Contract review' }
           },
           {
             target: 0,

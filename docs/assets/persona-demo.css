@@ -789,19 +789,13 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   .hp-slide-stage { height: min(56vh, 440px); }
 }
 
-/* Reduced motion: drop the depth-of-field scale/desaturate and all transitions --
-   show every slide crisp and still, no spotlight animation. */
-@media (prefers-reduced-motion: reduce) {
-  .hp-slide-demo {
-    transform: none;
-    opacity: 1;
-    filter: none;
-    transition: none;
-  }
-  .hp-slide .hp-slide-caption { opacity: 1; transition: none; }
-  .hp-slide-stage::before { transition: none; }
-  .hp-toc-slides { transition: none; }
-}
+/* NOTE: prefers-reduced-motion is intentionally NOT honored for the persona
+   journey's showcase demos -- they are the page's core content and must play on
+   every machine, matching the dev flowcharts (flowchart.css/js), which also
+   ignore the setting. Reduce gating here previously left the people-persona
+   demos frozen/half-rendered on any machine with the OS "reduce motion" setting
+   on (e.g. default Windows VMs). Don't re-add reduced-motion gating to the demos
+   without revisiting that product decision. */
 
 /* Base caption styling (each slide's caption sits below its demo; the
    .hp-slide-caption rule recentres it). */
@@ -1093,18 +1087,6 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   animation: hp-chatbot-send-pulse 0.45s ease 0.62s;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hp-chatbot .hp-demo-chat > *,
-  .hp-chatbot .hp-demo-coding > *,
-  .hp-chatbot .hp-demo-image > *,
-  .hp-chatbot .hp-demo-audio > *,
-  .hp-chatbot-typed,
-  .hp-chatbot-caret,
-  .hp-chatbot-send {
-    animation: none;
-  }
-}
-
 /* ---- Omni: ONE conversation scrolling through every modality ------------
    A single chatbot window whose transcript plays out chat -> image -> code ->
    speech. playOmni() (persona-demo/people/explore.js) reveals each .hp-omni-turn and translates
@@ -1144,10 +1126,6 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-light);
-}
-@media (prefers-reduced-motion: reduce) {
-  .hp-omni-feed { transition: none; }
-  .hp-omni-turn { transition: none; }
 }
 
 /* ======================================================================
@@ -2349,52 +2327,6 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
 .hp-backend-name { font-family: var(--font-display); font-size: 0.84rem; font-weight: 800; color: #f4efdc; }
 .hp-backend-tag { font-family: var(--font-body); font-size: 0.7rem; color: rgba(248, 243, 218, 0.55); }
 
-@media (prefers-reduced-motion: reduce) {
-  .hp-applist-row,
-  .hp-applist-progress i,
-  .hp-applist-act.is-downloading > .hp-applist-dl,
-  .hp-applist-act.is-downloading > .hp-applist-progress,
-  .hp-applist-act.is-downloading > .hp-applist-progress i,
-  .hp-cursor,
-  .hp-cursor svg,
-  .hp-modelsearch-result,
-  .hp-modelsearch-caret,
-  .hp-modelsearch-dl,
-  .hp-modelsearch-quant-menu,
-  .hp-modelsearch-progress,
-  .hp-modelsearch-progress i,
-  .hp-appstore-card,
-  .hp-appboard-card,
-  .hp-mcp-tool,
-  .hp-mcp-dot,
-  .hp-private-row,
-  .hp-backend-card {
-    animation: none;
-  }
-  .hp-applist-row,
-  .hp-modelsearch-result,
-  .hp-appstore-card,
-  .hp-appboard-card,
-  .hp-mcp-tool,
-  .hp-private-row,
-  .hp-backend-card { opacity: 1; transform: none; }
-  /* settle into the finished state: progress filled, buttons gone, no cursor */
-  .hp-applist-act.is-downloading > .hp-applist-progress,
-  .hp-modelsearch-progress { opacity: 1; }
-  .hp-applist-act.is-downloading > .hp-applist-progress i,
-  .hp-modelsearch-progress i { width: var(--p, 100%); }
-  .hp-applist-act.is-downloading > .hp-applist-dl,
-  .hp-modelsearch-dl,
-  .hp-cursor { opacity: 0; }
-  .hp-modelsearch-quant-menu { opacity: 0; }
-  /* Connection demo: show the settled, connected state with no motion. */
-  .hp-conn-typed { width: 22ch; animation: none; }
-  .hp-conn-caret { animation: none; opacity: 0; }
-  .hp-conn-btn,
-  .hp-conn-dot { animation: none; }
-  .hp-conn-status { opacity: 1; transform: none; animation: none; }
-}
-
 /* Terminal = the unified .hp-app-window (dark theme) with a code body. No
    separate window chrome -- it shares the bar + right-side dots with every other
    window; only the monospace body below is terminal-specific. */
@@ -2864,19 +2796,6 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
 .hp-iface-dialect-badge .material-symbols-outlined { font-size: 0.9rem; }
 .hp-iface-dialect-ep { font-family: var(--font-mono); font-size: 0.72rem; color: #fff8d8; }
 .hp-iface-dialect-benefit { font-family: var(--font-body); font-size: 0.8rem; color: rgba(248, 243, 218, 0.66); line-height: 1.4; }
-
-/* ---- Reduced motion: show every demo settled and still ----------------- */
-@media (prefers-reduced-motion: reduce) {
-  .hp-iface-pill,
-  .hp-iface-tile,
-  .hp-iface-dialect {
-    animation: none;
-    opacity: 1;
-    transform: none;
-    box-shadow: none;
-  }
-  .hp-iface-pulse { animation: none; opacity: 0; }
-}
 
 /* ---- Interfaces on phones: trim padding so the grids still fit --------- */
 @media (max-width: 480px) {

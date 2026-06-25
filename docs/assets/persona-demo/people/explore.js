@@ -76,19 +76,16 @@
 
   // Drive the omni transcript: reveal each turn on a timer, then translate the feed
   // up just enough to keep the freshly revealed turn in view. Measures real layout
-  // (offsetTop/offsetHeight) so it stays correct regardless of bubble wrapping. Runs
-  // once per render; honours reduced-motion by showing every turn statically.
+  // (offsetTop/offsetHeight) so it stays correct regardless of bubble wrapping.
+  // Runs once per render. Deliberately ignores prefers-reduced-motion -- these
+  // journey demos are core showcase content and must play on every machine (see
+  // the policy note in persona-demo.css).
   function playOmni(frameEl) {
     var body = frameEl.querySelector('.hp-chatbot-body');
     var feed = frameEl.querySelector('.hp-omni-feed');
     if (!body || !feed) return;
     var turns = feed.querySelectorAll('.hp-omni-turn');
     if (!turns.length) return;
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) {
-      for (var r = 0; r < turns.length; r++) turns[r].classList.add('is-in');
-      return;
-    }
     // ms to dwell before the NEXT turn arrives (longer after image/code responses).
     var dwell = [700, 1150, 1300, 1550, 1300, 1650, 1300, 1500];
     var t = 450;
