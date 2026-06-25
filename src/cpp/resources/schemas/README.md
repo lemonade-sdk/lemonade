@@ -75,6 +75,7 @@ v1** (pinned in the schema field descriptions):
 | `regex` | **ECMAScript** dialect (`std::regex`) |
 | `min_score` / `max_score` | **inclusive** band (`>=` / `<=`); default `min_score: 0.5` when neither bound is given |
 | `min_chars` / `max_chars` | input length in **UTF-8 bytes** (not code points) |
+| `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` exact / `any` set-intersection / `exists` presence) |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
 | `routing.router` desugaring | expansion to one `llm` classifier + identity rules is deterministic and behavior-equivalent across versions |
 
@@ -92,6 +93,7 @@ redistribution. Fixtures live in `test/cpp/fixtures/routing/`:
 |---------|-------|-----------|
 | `l0a_llm_router.json` | L0(a) | `routing.router` LLM-as-router (desugars to one `llm` classifier + identity rules) |
 | `l1_keywords.json` | L1 | Deterministic `keywords_any` / `regex` / `min_chars` |
+| `l1_metadata.json` | L1 | Deterministic `metadata` match on caller-supplied routing inputs (`task_class` / `consent`) |
 | `l2_semantic.json` | L2 | `semantic_similarity` classifier (embeddings + cosine) |
 | `l3_classifier.json` | L3 | Model-backed `classifier` (PII / jailbreak) |
 | `decision_example.json` | — | A `Decision` + `trace` |

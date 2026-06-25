@@ -21,6 +21,7 @@ FIXTURE_DIR = os.path.join(REPO_ROOT, "test", "cpp", "fixtures", "routing")
 ROUTE_POLICY_FIXTURES = [
     "l0a_llm_router.json",
     "l1_keywords.json",
+    "l1_metadata.json",
     "l2_semantic.json",
     "l3_classifier.json",
 ]

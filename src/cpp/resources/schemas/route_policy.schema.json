@@ -168,8 +168,39 @@
           "minimum": 0
         },
         "has_tools": { "type": "boolean" },
-        "has_images": { "type": "boolean" }
+        "has_images": { "type": "boolean" },
+        "metadata": { "$ref": "#/$defs/metadata_match" }
       },
+      "additionalProperties": false
+    },
+    "metadata_match": {
+      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent), read verbatim from the request metadata map. Frozen v1 semantics: values are compared case-sensitively; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. Exactly one comparator (equals / any / exists) must be present. A future comparator (regex, all, ...) ships as a new key, never a redefinition of these.",
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "description": "The metadata key to read. A missing or empty value matches only `exists: false`.",
+          "type": "string"
+        },
+        "equals": {
+          "description": "True if the raw metadata value equals this string exactly (case-sensitive).",
+          "type": "string"
+        },
+        "any": {
+          "description": "True if the value's comma-decoded token set intersects this list (handles both scalar and comma-encoded list-valued metadata).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "exists": {
+          "description": "exists:true matches when the key is present and non-empty; exists:false matches when it is absent or empty.",
+          "type": "boolean"
+        }
+      },
+      "oneOf": [
+        { "required": ["equals"] },
+        { "required": ["any"] },
+        { "required": ["exists"] }
+      ],
       "additionalProperties": false
     }
   }
