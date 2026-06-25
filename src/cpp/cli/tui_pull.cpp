@@ -39,11 +39,13 @@ using ftxui::bold;
 using ftxui::color;
 using ftxui::dim;
 using ftxui::flex;
+using ftxui::frame;
 using ftxui::gauge;
 using ftxui::hbox;
 using ftxui::separator;
 using ftxui::text;
 using ftxui::vbox;
+using ftxui::vscroll_indicator;
 
 namespace Container = ftxui::Container;
 using json = nlohmann::json;
@@ -649,10 +651,12 @@ bool pull_tui(lemonade::LemonadeClient& client,
             source_mode == 0 ? model_input->Render() : hf_input->Render(),
             source_mode == 1 ? search_button->Render() : text("Built-ins come from /models") | dim,
         });
-        Element results_section = source_mode == 0 ? model_menu->Render() : hf_menu->Render();
+        Element results_section =
+            (source_mode == 0 ? model_menu->Render() : hf_menu->Render()) | vscroll_indicator | frame;
         Element variants_section = source_mode == 0
             ? text("Built-in pulls do not need variant selection") | dim
-            : vbox({variant_menu->Render(), inspect_button->Render()});
+            : vbox({variant_menu->Render() | vscroll_indicator | frame | flex,
+                    inspect_button->Render()});
         Element registration_section = source_mode == 0
             ? text("Registered model name is used as-is") | dim
             : name_input->Render();
