@@ -26,6 +26,7 @@ using ftxui::Component;
 using ftxui::Element;
 using ftxui::Event;
 using ftxui::Input;
+using ftxui::Maybe;
 using ftxui::Menu;
 using ftxui::MenuOption;
 using ftxui::Renderer;
@@ -260,6 +261,9 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
     auto agent_args_input = Input(&agent_args, "extra agent args");
     auto codex_provider_input = Input(&codex_provider, "lemonade");
     auto codex_config_checkbox = Checkbox("Use existing Codex provider config", &codex_use_user_config);
+    auto is_codex_agent = [&] {
+        return agents[static_cast<size_t>(agent_selected)] == "codex";
+    };
 
     ScreenInteractive* screen_ptr = nullptr;
     auto launch_button = Button("Launch", [&] {
@@ -278,7 +282,8 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
     auto agent_section = Container::Vertical({agent_menu});
     auto model_section = Container::Vertical({search_input, mode_toggle, model_menu});
     auto options_section = Container::Vertical({ctx_input, backend_input, agent_args_input,
-                                                codex_provider_input, codex_config_checkbox});
+                                                Maybe(codex_provider_input, is_codex_agent),
+                                                Maybe(codex_config_checkbox, is_codex_agent)});
     auto actions_section = Container::Horizontal({launch_button, quit_button});
     std::vector<Component> focusable = {
         agent_section,
@@ -310,8 +315,7 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
                 detail_row("Status: ", model->downloaded ? "downloaded" : "missing, will load/download in background"),
                 detail_row("Labels: ", labels_to_string(model->labels)),
             });
-            if (agents[static_cast<size_t>(agent_selected)] == "codex" &&
-                contains_case_insensitive(model->id, "qwen3.5")) {
+            if (is_codex_agent() && contains_case_insensitive(model->id, "qwen3.5")) {
                 details = vbox({
                     details,
                     paragraph("Warning: Qwen 3.5 models are currently avoided for Codex") |
@@ -320,13 +324,19 @@ bool launch_tui(lemonade::LemonadeClient& client, LaunchTuiState& state) {
             }
         }
 
-        Element options = vbox({
-            hbox({text("ctx_size      "), ctx_input->Render()}),
-            hbox({text("llamacpp      "), backend_input->Render()}),
-            hbox({text("agent args    "), agent_args_input->Render()}),
-            hbox({text("codex provider"), codex_provider_input->Render()}),
-            codex_config_checkbox->Render(),
-        });
+        Element options = is_codex_agent()
+            ? vbox({
+                  hbox({text("ctx_size      "), ctx_input->Render()}),
+                  hbox({text("llamacpp      "), backend_input->Render()}),
+                  hbox({text("agent args    "), agent_args_input->Render()}),
+                  hbox({text("codex provider"), codex_provider_input->Render()}),
+                  codex_config_checkbox->Render(),
+              })
+            : vbox({
+                  hbox({text("ctx_size      "), ctx_input->Render()}),
+                  hbox({text("llamacpp      "), backend_input->Render()}),
+                  hbox({text("agent args    "), agent_args_input->Render()}),
+              });
 
         Element model_list = model_menu->Render() | vscroll_indicator | frame | flex;
 
