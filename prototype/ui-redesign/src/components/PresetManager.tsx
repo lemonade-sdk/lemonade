@@ -586,6 +586,18 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const handleApplyBackend = useCallback((presetId: string, backendKey: string) => {
     const preset = allPresets.find(p => p.id === presetId);
     if (!preset || !presetCompatibleWithBackend(preset, backendKey)) return;
+    // #2432 review (GAP 2): Default = the "no backend preset" state. Never store
+    // it as a real binding; assigning Default detaches any existing binding so the
+    // Backend view (which hides Default) and the "Applied to backends" zone agree.
+    if (presetId === DEFAULT_PRESET.id) {
+      setBackendPresets(prev => {
+        if (!(backendKey in prev)) return prev;
+        const next = { ...prev };
+        delete next[backendKey];
+        return next;
+      });
+      return;
+    }
     setBackendPresets(prev => ({ ...prev, [backendKey]: presetId }));
     setApplyBackendSuccess(`"${preset.name}" now applies globally to all models using ${backendLabelFromKey(backendKey)}.`);
     setTimeout(() => setApplyBackendSuccess(null), 3000);
@@ -1000,7 +1012,13 @@ const ctxOptions = useMemo(() => contextSizeOptions(ctxSliderMax), [ctxSliderMax
 const ctxSliderIndex = useMemo(() => contextSizeIndex(ctxSize, ctxOptions), [ctxSize, ctxOptions]);
 const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
 const selectedBackendOption = backendOptions.find(b => b.key === applyBackendTarget) || null;
-const canApplyBackend = !!selectedBackendOption && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
+// #2432 review (GAP 2): the Default preset represents the "no backend preset"
+// state, which is exactly what the Backend view shows when a backend has no chip.
+// Assigning Default as a real backend binding would create an inconsistent
+// "Applied to backends" row with no matching chip, so backend assignment is
+// disabled for Default. Users pick/clone another preset to set a backend default.
+const isDefaultBackendPreset = currentPreset.id === DEFAULT_PRESET.id;
+const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
 
   useEffect(() => {
     const nextCtxSize = nearestContextSize(
@@ -1251,13 +1269,20 @@ const canApplyBackend = !!selectedBackendOption && presetCompatibleWithBackend(c
             This preset applies globally to all models using this backend. Backend presets are optional
             runtime defaults that merge with each model&rsquo;s own preset — they do not replace it.
           </p>
+          {isDefaultBackendPreset && (
+            <p className="preset-help" id="preset-backend-default-note" data-backend-apply-default-note>
+              The Default preset <em>is</em> the “no backend preset” state — every backend already falls back
+              to it. To set a global backend default, pick or clone a different preset first.
+            </p>
+          )}
           <div className="field__row">
             <select
               className="select"
               value={applyBackendTarget}
               onChange={e => onApplyBackendTargetChange(e.target.value)}
               aria-label="Backend to apply this preset to globally"
-              aria-describedby="preset-backend-global-note"
+              aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
+              disabled={isDefaultBackendPreset}
               data-backend-apply-target
             >
               <option value="">— pick a backend —</option>
@@ -1272,7 +1297,7 @@ const canApplyBackend = !!selectedBackendOption && presetCompatibleWithBackend(c
             <button
               className="btn btn--primary"
               disabled={!canApplyBackend}
-              aria-describedby="preset-backend-global-note"
+              aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
               onClick={() => selectedBackendOption && onApplyBackend(preset.id, selectedBackendOption.key)}
               data-backend-apply-btn
             >
@@ -1280,7 +1305,7 @@ const canApplyBackend = !!selectedBackendOption && presetCompatibleWithBackend(c
             </button>
           </div>
           {backendOptions.length === 0 && <p className="preset-help" data-backend-apply-empty>No backends reported by this server yet.</p>}
-          {selectedBackendOption && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
+          {!isDefaultBackendPreset && selectedBackendOption && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
           <p className="preset-backend-success" role="status" aria-live="polite" aria-atomic="true" data-backend-apply-success>
             {applyBackendSuccess ? `✓ ${applyBackendSuccess}` : ''}
           </p>

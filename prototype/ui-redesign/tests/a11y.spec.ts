@@ -1069,6 +1069,170 @@ test.describe('Accessibility — backend preset rail removal (#2432)', () => {
 });
 
 
+// ─── #2432 review — backend-preset merge on load + Default-preset handling ────
+//
+// fl0rianr's CHANGES_REQUESTED review found two gaps:
+//   GAP 1: backend-preset bindings were inert — the load path only used the
+//          model preset, so the assigned backend preset never affected the
+//          effective recipe_options. recipeOptionsForModel() now merges the
+//          backend preset's args UNDER the model preset (model wins on conflict).
+//   GAP 2: assigning the Default preset to a backend stored a real binding,
+//          producing an "Applied to backends" row with no matching Backend-view
+//          chip. Backend assignment is now disabled for Default with accessible
+//          copy explaining that "no backend preset" is the default state.
+// Range: A174–A176.
+
+test.describe('Accessibility — backend-preset merge + Default handling (#2432 review)', () => {
+  const MODEL = 'Llama-3.1-8B';
+
+  function preset(id: string, name: string, recipe_options: Record<string, unknown>) {
+    return {
+      id, name,
+      description: `${name} preset`,
+      applies_to: ['chat'],
+      recipe_options,
+      sampling: { temperature: 0.7, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 },
+      engine_hint: 'auto',
+      starter: false,
+      auto_opt_run_id: null,
+      auto_opt_enabled: true,
+      system_prompt_id: 'none',
+      system_prompts: [],
+      tools_enabled: false,
+    };
+  }
+
+  const MOCK_SYSTEM_INFO = {
+    lemonade_version: '1.0.0',
+    os_version: 'Test OS',
+    devices: { cpu: { name: 'Test CPU', available: true } },
+    recipes: {
+      llamacpp: {
+        default_backend: 'cpu',
+        backends: {
+          vulkan: { state: 'installable', version: 'b1', message: '', action: '' },
+          cpu: { state: 'installed', version: 'b1', message: '', action: '', can_uninstall: true },
+        },
+      },
+    },
+  };
+
+  test('A174 — a backend preset is merged into effective recipe_options on load (backend = base, model wins on conflict)', async ({ page }) => {
+    // Model preset = model-specific defaults; backend preset = global runtime
+    // defaults. ctx_size + llamacpp_args appear in BOTH (model must win);
+    // llamacpp_backend appears ONLY in the backend preset (must still merge in).
+    const modelPreset = preset('m-model', 'Model Wins', { ctx_size: 8192, llamacpp_args: '--model-wins' });
+    const backendPreset = preset('m-backend', 'Backend Base', { ctx_size: 2048, llamacpp_args: '--backend-base', llamacpp_backend: 'cpu' });
+
+    let loadBody: Record<string, unknown> | null = null;
+
+    await page.addInitScript(
+      ({ presets, applied, backend, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: applied }));
+        localStorage.setItem('lemonade:guest:shared:backend_presets', JSON.stringify(backend));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: [modelPreset, backendPreset], applied: 'm-model', backend: { 'llamacpp:cpu': 'm-backend' }, model: MODEL },
+    );
+
+    await page.route('**/api/v1/health', route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }) }),
+    );
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.route('**/api/v1/models**', route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }) }),
+    );
+    await page.route('**/api/v1/load', async route => {
+      try { loadBody = route.request().postDataJSON() as Record<string, unknown>; } catch { /* ignore */ }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.locator('.model-list-item').first().click();
+
+    const loadBtn = page.locator(`button[aria-label="Load ${MODEL}"]`);
+    await expect(loadBtn).toBeVisible();
+    await loadBtn.click();
+
+    await expect.poll(() => loadBody).not.toBeNull();
+    const body = loadBody!;
+    expect(body.model_name).toBe(MODEL);
+    // Backend-only arg proves the backend preset actually merged in.
+    expect(body.llamacpp_backend).toBe('cpu');
+    // Conflicting keys: the MODEL preset wins (model-specific defaults override
+    // the global backend defaults), matching main's "more specific wins" merge.
+    expect(body.ctx_size).toBe(8192);
+    expect(body.llamacpp_args).toBe('--model-wins');
+  });
+
+  test('A175 — backend assignment is disabled for the Default preset with accessible explanatory copy', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes('backend_presets') || k.includes('applied_presets') || k.includes('user_presets')) localStorage.removeItem(k);
+        }
+      } catch {}
+    });
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+
+    // The Default card is the first card; open it.
+    await page.locator('.recipe-card').first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+    await expect(page.locator('.slideover__title, [data-recipe-name]').first()).toContainText('Default');
+
+    // The backend select + Assign button are programmatically disabled.
+    const select = page.locator('[data-backend-apply-target]');
+    const assignBtn = page.locator('[data-backend-apply-btn]');
+    await expect(select).toBeDisabled();
+    await expect(assignBtn).toBeDisabled();
+
+    // Accessible explanatory copy is present, visible, and screen-reader friendly.
+    const defaultNote = page.locator('[data-backend-apply-default-note]');
+    await expect(defaultNote).toBeVisible();
+    await expect(defaultNote).toContainText('no backend preset');
+
+    // The note is programmatically associated with the disabled control.
+    const noteId = await defaultNote.getAttribute('id');
+    expect(noteId).toBeTruthy();
+    expect(await select.getAttribute('aria-describedby')).toContain(noteId!);
+    expect(await assignBtn.getAttribute('aria-describedby')).toContain(noteId!);
+  });
+
+  test('A176 — the Default-preset backend section passes an axe-core WCAG 2.1 AA scan in its disabled state', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes('backend_presets') || k.includes('applied_presets') || k.includes('user_presets')) localStorage.removeItem(k);
+        }
+      } catch {}
+    });
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+    await page.locator('.recipe-card').first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .include('[data-backend-apply-section]')
+      .analyze();
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toEqual([]);
+  });
+});
+
+
 // ─── 15. Model row action qualified accessible names (#2341) ─────────────────
 
 test.describe('Accessibility — model row action qualified names (#2341)', () => {

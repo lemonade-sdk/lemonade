@@ -497,6 +497,42 @@ export function activePresetForBackend(key: string): Preset {
   return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
 }
 
+/**
+ * #2432: resolve the GLOBAL backend preset that applies to a model, if any.
+ *
+ * Backend presets are keyed by `recipe:backend` (e.g. `llamacpp:vulkan`). A
+ * registry model carries its recipe(s) but not the concrete backend it will
+ * load with (the backend is chosen at load time / by recipe_options). So we
+ * match a backend binding whenever its recipe-part matches one of the model's
+ * recipes. Default is treated as "no backend preset" (returns null) so it never
+ * contributes args — consistent with the Backend view hiding Default.
+ */
+export function activePresetForModelBackend(model?: ModelInfo | null): Preset | null {
+  if (!model) return null;
+  const applied = loadBackendApplied();
+  const keys = Object.keys(applied);
+  if (keys.length === 0) return null;
+
+  const modelRecipes = new Set<string>();
+  const active = String((model as Record<string, unknown>).recipe || '').trim().toLowerCase();
+  if (active) modelRecipes.add(active);
+  for (const recipe of recipesForModel(model)) {
+    const name = recipeName(recipe);
+    if (name) modelRecipes.add(name);
+  }
+  if (modelRecipes.size === 0) return null;
+
+  for (const key of keys.sort()) {
+    const recipePart = (key.split(':')[0] || '').trim().toLowerCase();
+    if (!recipePart || !modelRecipes.has(recipePart)) continue;
+    const presetId = applied[key];
+    if (!presetId || presetId === DEFAULT_PRESET.id) continue;
+    const preset = allStoredPresets().find(p => p.id === presetId);
+    if (preset) return preset;
+  }
+  return null;
+}
+
 /* ── Running-preset store (#2356: update preset while loaded) ─────
  *
  * Tracks the preset a *loaded* model is currently running with. When a model
@@ -618,12 +654,26 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
 }
 
 export function recipeOptionsForModel(modelName: string, model?: ModelInfo | null): RecipeOptions | undefined {
-  const preset = activePresetForModel(modelName);
-  const options = preset.recipe_options || {};
-  const scopedOptions = model
-    ? recipeOptionsForCapability(options, capabilityFromModelInfo(model))
-    : options;
-  return Object.keys(scopedOptions || {}).length > 0 ? scopedOptions : undefined;
+  const capability = model ? capabilityFromModelInfo(model) : undefined;
+
+  // Model preset = model-specific defaults.
+  const modelPreset = activePresetForModel(modelName);
+  const modelOptions = model
+    ? recipeOptionsForCapability(modelPreset.recipe_options || {}, capability!)
+    : (modelPreset.recipe_options || {});
+
+  // Backend preset = GLOBAL backend/runtime defaults (#2432). Merge precedence:
+  // start from the backend preset's args as the base/global defaults, then layer
+  // the model preset's args on top so model-specific values WIN on conflict. This
+  // matches `main`'s "more specific source wins" argument-merge semantics. Default
+  // backend preset contributes nothing (activePresetForModelBackend returns null).
+  const backendPreset = activePresetForModelBackend(model);
+  const backendOptions = backendPreset && model
+    ? recipeOptionsForCapability(backendPreset.recipe_options || {}, capability!)
+    : (backendPreset ? (backendPreset.recipe_options || {}) : {});
+
+  const merged: RecipeOptions = { ...backendOptions, ...modelOptions };
+  return Object.keys(merged || {}).length > 0 ? merged : undefined;
 }
 
 export function samplingForModel(modelName: string): SamplingParams {
