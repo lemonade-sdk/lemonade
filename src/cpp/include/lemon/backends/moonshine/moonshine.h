@@ -32,6 +32,16 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Speech-to-text",
     /*experimental*/    false,
     /*web_display_name*/ "",
+    /*web_priority*/    0,
+    /*rocm_channels*/   {},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ false,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {"cpu"},
+    /*bin_variants*/    {"cpu"},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace moonshine

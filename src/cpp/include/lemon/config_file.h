@@ -84,8 +84,15 @@ static inline bool config_migrate(json& config,
 /// Manages reading and writing config.json in the lemonade cache dir.
 class ConfigFile {
 public:
-    /// Returns the full default config loaded from installed resource JSON.
-    /// On Linux, an optional distro override at /usr/share/lemonade/defaults.json
+    /// The canonical default config: resources/defaults.json (global keys) with
+    /// each backend's per-recipe section seeded from its descriptor. Host- and
+    /// deployment-independent, so it is reproducible — this is what
+    /// GET /internal/config/defaults emits and gen_backend_boilerplate.py writes
+    /// back into resources/defaults.json.
+    static json base_defaults();
+
+    /// base_defaults() plus deployment overrides. On Linux, an optional distro
+    /// override at /usr/share/lemonade/defaults.json (and LEMONADE_DEFAULTS_PATH)
     /// is merged on top when present.
     static json get_defaults();
 

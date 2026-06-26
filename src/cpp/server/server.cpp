@@ -677,6 +677,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
     });
+    web_server.Get("/internal/config/defaults", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_defaults_get(req, res);
+    });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
     });
@@ -4462,6 +4465,20 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
         res.set_content(snap.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_config_get: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_config_defaults_get(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        // The canonical default config (global keys + descriptor-derived per-recipe
+        // sections), independent of this host's config.json or deployment overrides.
+        // gen_backend_boilerplate.py reads this to regenerate resources/defaults.json.
+        res.set_content(ConfigFile::base_defaults().dump(2), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_defaults_get: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");

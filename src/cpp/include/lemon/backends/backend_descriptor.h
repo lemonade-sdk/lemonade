@@ -94,9 +94,34 @@ struct BackendDescriptor {
     // backends are skipped by the load-time auto-download path.
     bool self_manages_downloads = false;
 
+    // --- config.json per-recipe defaults schema ---
+    // The backend's section of config.json is derived from these fields, so a new
+    // backend's defaults live in its descriptor instead of a hand-maintained
+    // defaults.json block. (selectable_backend additionally emits `backend: "auto"`.)
+    bool takes_args = false;                       // emits `args: ""`
+    std::vector<std::string> arg_variants;         // each emits `<variant>_args: ""`
+    std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
+    nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;
+    }
+
+    // Build this backend's config.json default section from the schema above.
+    // Returns an empty object when the backend has no configurable section.
+    nlohmann::json config_defaults() const {
+        nlohmann::json block = nlohmann::json::object();
+        if (selectable_backend) block["backend"] = "auto";
+        if (takes_args) block["args"] = "";
+        for (const auto& v : arg_variants) block[v + "_args"] = "";
+        for (const auto& v : bin_variants) block[v + "_bin"] = "builtin";
+        if (config_extra.is_object()) {
+            for (auto it = config_extra.begin(); it != config_extra.end(); ++it) {
+                block[it.key()] = it.value();
+            }
+        }
+        return block;
     }
 };
 

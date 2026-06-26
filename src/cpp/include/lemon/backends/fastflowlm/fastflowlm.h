@@ -37,6 +37,10 @@ inline const BackendDescriptor descriptor = {
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/  VersionPolicy::AtLeast,  // system-managed package
     /*self_manages_downloads*/ true,  // flm pulls its own models via the flm CLI
+    /*takes_args*/      true,
+    /*arg_variants*/    {},
+    /*bin_variants*/    {},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace fastflowlm

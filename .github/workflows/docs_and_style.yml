@@ -39,7 +39,7 @@ jobs:
       - name: Build lemond
         run: cmake --build --preset default --target lemond
       - name: Check backend reference docs are up to date
-        run: python3 docs/tools/gen_backend_docs.py --check
+        run: python3 docs/tools/gen_backend_boilerplate.py --check
 
   markdown-link-check:
     runs-on: ubuntu-latest

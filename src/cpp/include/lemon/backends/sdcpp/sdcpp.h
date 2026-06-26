@@ -53,6 +53,12 @@ inline const BackendDescriptor descriptor = {
     /*rocm_channels*/   {"stable"},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ true,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {"cpu", "rocm", "vulkan"},
+    /*bin_variants*/    {"cpu", "rocm", "vulkan"},
+    /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"width", 512}, {"height", 512}},
 };
 
 }  // namespace sdcpp

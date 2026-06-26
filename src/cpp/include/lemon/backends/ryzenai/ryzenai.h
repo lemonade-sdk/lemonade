@@ -32,6 +32,15 @@ inline const BackendDescriptor descriptor = {
     /*experimental*/    false,
     /*web_display_name*/ "Ryzen AI SW NPU",
     /*web_priority*/    2,
+    /*rocm_channels*/   {},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ false,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      false,
+    /*arg_variants*/    {},
+    /*bin_variants*/    {"server"},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace ryzenai

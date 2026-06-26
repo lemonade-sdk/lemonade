@@ -42,6 +42,15 @@ inline const BackendDescriptor descriptor = {
     /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",
     /*web_priority*/    4,
+    /*rocm_channels*/   {},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ false,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {"cpu", "npu"},
+    /*bin_variants*/    {"cpu", "npu"},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace whispercpp

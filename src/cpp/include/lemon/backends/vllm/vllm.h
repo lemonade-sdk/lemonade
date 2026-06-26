@@ -36,6 +36,12 @@ inline const BackendDescriptor descriptor = {
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ true,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {},
+    /*bin_variants*/    {},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace vllm

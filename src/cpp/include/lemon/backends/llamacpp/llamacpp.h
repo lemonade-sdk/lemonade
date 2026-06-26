@@ -49,6 +49,12 @@ inline const BackendDescriptor descriptor = {
     /*rocm_channels*/   {"stable", "nightly"},
     /*exposes_prometheus_metrics*/ true,
     /*rocm_requires_cwsr_fix*/ true,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {"rocm", "vulkan", "cpu"},
+    /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
+    /*config_extra*/    {{"prefer_system", true}},
 };
 
 }  // namespace llamacpp

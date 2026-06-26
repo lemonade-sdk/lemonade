@@ -33,6 +33,15 @@ inline const BackendDescriptor descriptor = {
     /*experimental*/    false,
     /*web_display_name*/ "",
     /*web_priority*/    6,
+    /*rocm_channels*/   {},
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ false,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      false,
+    /*arg_variants*/    {},
+    /*bin_variants*/    {"cpu"},
+    /*config_extra*/    nlohmann::json::object(),
 };
 
 }  // namespace kokoro
