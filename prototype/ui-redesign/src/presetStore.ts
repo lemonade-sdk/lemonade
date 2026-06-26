@@ -65,6 +65,12 @@ export interface Preset {
 export const LS_USER_PRESETS = 'user_presets';
 export const LS_APPLIED_PRESETS = 'applied_presets';
 export const LS_BACKEND_PRESETS = 'backend_presets';
+// Client-local record of which preset each *currently-loaded* model is actually
+// running with. Distinct from `applied_presets` (the preset LINKED to a model):
+// the linked preset can be changed while a model is loaded, and the divergence
+// between linked vs running is what surfaces the "Update preset" affordance
+// (#2356). Cleared when the model unloads. Never sent to lemond.
+export const LS_RUNNING_PRESETS = 'running_presets';
 export const PRESET_STORE_EVENT = 'lemonade:preset-store-changed';
 export const DEFAULT_CONTEXT_SIZE = 4096;
 
@@ -489,6 +495,87 @@ export function activePresetForModel(modelName: string): Preset {
 export function activePresetForBackend(key: string): Preset {
   const presetId = loadBackendApplied()[key] || DEFAULT_PRESET.id;
   return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
+}
+
+/* ── Running-preset store (#2356: update preset while loaded) ─────
+ *
+ * Tracks the preset a *loaded* model is currently running with. When a model
+ * is loaded we snapshot its running preset = its linked preset at load time.
+ * If the user later re-links a different preset, `running` lags behind `linked`
+ * and an "Update preset" action becomes available in the detail panel.
+ *
+ * This is purely client-local bookkeeping for the POC. The real apply/reload
+ * is owned by lemond (off-limits to the UI POC) via `api.updatePreset`. */
+
+export function loadRunningPresets(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(scopedPresetKey(LS_RUNNING_PRESETS));
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+export function saveRunningPresets(running: Record<string, string>): void {
+  localStorage.setItem(scopedPresetKey(LS_RUNNING_PRESETS), JSON.stringify(running));
+  emitPresetStoreEvent();
+}
+
+export function runningPresetIdForModel(modelName: string): string | undefined {
+  return loadRunningPresets()[modelName];
+}
+
+/** Record (snapshot) the preset a model is now running with. */
+export function setRunningPreset(modelName: string, presetId: string): void {
+  if (!modelName) return;
+  const next = { ...loadRunningPresets() };
+  if (next[modelName] === presetId) return;
+  next[modelName] = presetId;
+  saveRunningPresets(next);
+}
+
+/** Forget a model's running preset (call when it unloads). */
+export function clearRunningPreset(modelName: string): void {
+  if (!modelName) return;
+  const next = { ...loadRunningPresets() };
+  if (!(modelName in next)) return;
+  delete next[modelName];
+  saveRunningPresets(next);
+}
+
+/**
+ * How an already-loaded model must absorb a preset change.
+ *  - 'none'   : presets are equivalent in every field that affects a load.
+ *  - 'live'   : only request-time fields differ (system prompt, sampling,
+ *               tools toggle) — apply live, NO reload.
+ *  - 'reload' : a field that the runtime binds at init differs (recipe_options
+ *               such as ctx_size / backend / device / args / steps, or the
+ *               engine hint) — the model must be reinitialized (reloaded).
+ */
+export type PresetChangeKind = 'none' | 'live' | 'reload';
+
+/** Fields that the backend/runtime binds at load time → require a reload. */
+const RELOAD_FIELDS: Array<keyof Preset> = ['recipe_options', 'engine_hint'];
+/** Fields applied per request at generation time → can be updated live. */
+const LIVE_FIELDS: Array<keyof Preset> = ['sampling', 'system_prompt_id', 'system_prompts', 'tools_enabled'];
+
+function stableEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+export function classifyPresetChange(
+  running: Preset | null | undefined,
+  next: Preset | null | undefined,
+): PresetChangeKind {
+  if (!running || !next) return 'none';
+  if (running.id === next.id) return 'none';
+  for (const field of RELOAD_FIELDS) {
+    if (!stableEqual(running[field], next[field])) return 'reload';
+  }
+  for (const field of LIVE_FIELDS) {
+    if (!stableEqual(running[field], next[field])) return 'live';
+  }
+  // Different preset id but identical load-affecting + request-time fields.
+  return 'none';
 }
 
 function pickRecipeOptions(options: RecipeOptions, keys: Array<keyof RecipeOptions>): RecipeOptions {

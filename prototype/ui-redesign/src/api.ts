@@ -962,6 +962,53 @@ class LemonadeAPI {
     return result;
   }
 
+  /**
+   * Update the preset of an already-LOADED model without a manual unload→reload
+   * (#2356). The UI decides, per the live-vs-reload field classification (see
+   * `classifyPresetChange` in presetStore), whether the change can be applied
+   * live or needs the runtime reinitialized, and passes that as `mode`.
+   *
+   * ── PROPOSED BACKEND CONTRACT (lemond — to be implemented; OFF-LIMITS to the
+   *    UI POC, see #2356) ──────────────────────────────────────────────────────
+   *   POST /api/v{0,1}/update-preset   (quad-prefix per project invariant #1)
+   *   Request body:
+   *     {
+   *       model_name: string,        // the loaded model to update
+   *       preset_id:  string,        // client-local preset identifier (opaque to lemond)
+   *       mode: 'live' | 'reload',   // UI's classification of the change
+   *       recipe_options?: object,   // load-time options (sent for mode='reload')
+   *       sampling?: object,         // request-time generation params (mode='live')
+   *       system_prompt?: string|null // resolved system prompt text (mode='live')
+   *     }
+   *   Behaviour:
+   *     - mode 'live'   → apply request-time fields to the running process; return
+   *                       200 WITHOUT reinitializing (no model downtime).
+   *     - mode 'reload' → reinitialize the model in place (lemond performs the
+   *                       unload+load itself; the client never issues a manual
+   *                       unload/load); return 200 once the model is ready again.
+   *   The SAME endpoint backs the Lemonade-tools "change the preset" flow so
+   *   tool-triggered and UI-triggered updates are identical.
+   *
+   * POC NOTE: until lemond ships the endpoint, this method posts to
+   * `/api/v1/update-preset`; the prototype's Playwright suite mocks it.
+   */
+  async updatePreset(
+    modelName: string,
+    presetId: string,
+    mode: 'live' | 'reload',
+    payload: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const body: Record<string, unknown> = {
+      model_name: modelName,
+      preset_id: presetId,
+      mode,
+      ...payload,
+    };
+    const result = await this._json('/api/v1/update-preset', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
+  }
+
   async deleteModel(modelName: string): Promise<unknown> {
     const result = await this._json('/api/v1/delete', {
       method: 'POST',

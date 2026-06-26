@@ -1295,6 +1295,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setLoadingModel(null);
   };
 
+  // #2356: apply a re-linked preset to an already-loaded model. The detail
+  // panel decides live-vs-reload and records the new running preset; here we
+  // just relay to the (POC: mocked) backend and refresh on reload so the
+  // loaded-model snapshot reflects any reinitialization.
+  const handleUpdatePreset = async (
+    model: LoadedModel,
+    presetId: string,
+    mode: 'live' | 'reload',
+    payload: Record<string, unknown>,
+  ) => {
+    await api.updatePreset(model.model_name, presetId, mode, payload);
+    if (mode === 'reload') await refresh();
+  };
+
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
     if ((model as any).custom) {
@@ -2729,6 +2743,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           loadError={loadError}
           onLoad={handleLoad}
           onUnload={handleUnload}
+          onUpdatePreset={handleUpdatePreset}
           onPull={handlePull}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}

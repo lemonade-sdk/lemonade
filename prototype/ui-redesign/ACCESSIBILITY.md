@@ -3,8 +3,38 @@
 **Date:** 2026-06-25  
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete  
-**Test status (2026-06-25):** All 168 automated tests passing, 7 skipped, 0 failed on `feat/gui3-model-detail-redesign` (A149–A153 added for the #2424 second-round merge items)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete, Group K (Update preset while loaded — #2356) ✅ complete  
+**Test status (2026-06-25):** All 178 automated tests passing, 7 skipped, 0 failed on `feat/gui3-update-preset-while-loaded` (A154–A163 added for #2356 update-preset-while-loaded)
+
+---
+
+## Group K — Update preset while a model is loaded (#2356, 2026-06-25)
+
+Lets a user change the preset of an already-loaded model without a manual unload→reload. When a model is loaded and a **different** preset is linked to it, an **"Update preset"** button appears next to **Unload** in the detail-panel header actions.
+
+1. **Live vs reload classification (client-local).** `classifyPresetChange(running, next)` in `presetStore.ts` returns `'none' | 'live' | 'reload'`. Reload-requiring fields = `recipe_options`, `engine_hint` (runtime binds them at init). Live-updateable fields = `sampling`, `system_prompt_id`, `system_prompts`, `tools_enabled` (request-time). Live changes apply with no reload; reload changes trigger an automatic reload flow (the user never manually unloads/loads).
+2. **Running-preset store.** A distinct `running_presets` localStorage map (`loadRunningPresets`/`setRunningPreset`/`clearRunningPreset`/`runningPresetIdForModel`) records the preset each loaded model is actually running. Snapshotted on load (= linked preset at load time), cleared on unload. The divergence between *linked* (`applied_presets`) and *running* is what surfaces the button.
+3. **api.updatePreset contract.** `api.updatePreset(modelName, presetId, mode, payload)` POSTs to the proposed `POST /api/v{0,1}/update-preset` endpoint (quad-prefix per invariant #1). DEFERRED to backend: the real reload mechanics + the Lemonade-tools "change the preset" wiring (both live in lemond, off-limits to the POC). Contract documented in `docs/UPDATE_PRESET_CONTRACT.md` and in code on `api.updatePreset`.
+
+**a11y specifics**
+- The button is a real `<button>`; its `aria-label` names the model and, for reload-requiring changes, states "(reloads the model)". `aria-busy` is set while updating.
+- An always-present `role="status" aria-live="polite" aria-atomic="true"` region announces the outcome ("applied live, no reload needed" / "model reloaded"). A sighted hint (`aria-hidden`) explains why the button appeared.
+- Focus is moved to the **Unload** button on success (button unmounts once running == linked) to avoid focus loss; stays on the Update button on error.
+- The reload spinner respects `prefers-reduced-motion`. Contrast for status colours ≥ 4.5:1.
+
+**Tests added:** A154–A163 (10 tests) in `tests/a11y.spec.ts`.
+- A154: no Update preset button when linked == running
+- A155: switching to a live-only preset reveals Update preset next to Unload (label has no "reload")
+- A156: clicking (live) calls the contract with `mode=live` and announces no reload; button disappears
+- A157: switching to a reload-requiring preset labels the button as reloading
+- A158: clicking (reload) calls the contract with `mode=reload` and announces a reload
+- A159: Update preset is keyboard operable (Enter)
+- A160: feedback is a polite live region (`role=status`, `aria-live=polite`)
+- A161: no Update preset button for a non-loaded model
+- A162: Update-preset visible state passes WCAG 2.1 AA axe-core scan
+- A163: focus moves to Unload after a live update (no focus loss)
+
+**Files changed:** `presetStore.ts`, `api.ts`, `components/ModelDetailPanel.tsx`, `components/ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `docs/UPDATE_PRESET_CONTRACT.md`, `ACCESSIBILITY.md`.
 
 ---
 
