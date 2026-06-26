@@ -504,8 +504,9 @@ export function activePresetForBackend(key: string): Preset {
  * If the user later re-links a different preset, `running` lags behind `linked`
  * and an "Update preset" action becomes available in the detail panel.
  *
- * This is purely client-local bookkeeping for the POC. The real apply/reload
- * is owned by lemond (off-limits to the UI POC) via `api.updatePreset`. */
+ * This is purely client-local bookkeeping for the POC. Live (request-time)
+ * changes are applied by request composition; load-time changes go through a
+ * real reload (`api.reloadModel` = unload + load). See UPDATE_PRESET_CONTRACT.md. */
 
 export function loadRunningPresets(): Record<string, string> {
   try {
@@ -567,14 +568,17 @@ export function classifyPresetChange(
   next: Preset | null | undefined,
 ): PresetChangeKind {
   if (!running || !next) return 'none';
-  if (running.id === next.id) return 'none';
+  // NOTE: do NOT early-return on running.id === next.id. Editing a preset in
+  // place (same id, but changed temperature / system_prompt / ctx_size) must
+  // still classify as 'live' or 'reload'. Only the actual field comparisons
+  // below decide; 'none' is returned solely when nothing relevant differs.
   for (const field of RELOAD_FIELDS) {
     if (!stableEqual(running[field], next[field])) return 'reload';
   }
   for (const field of LIVE_FIELDS) {
     if (!stableEqual(running[field], next[field])) return 'live';
   }
-  // Different preset id but identical load-affecting + request-time fields.
+  // No load-affecting or request-time field differs (regardless of id).
   return 'none';
 }
 

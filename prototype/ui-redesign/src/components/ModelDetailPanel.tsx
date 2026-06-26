@@ -14,7 +14,7 @@ import {
   allStoredPresets, isCompatible, loadApplied, saveApplied,
   effectivePresetParamPreviewLines, activePresetForModel,
   runningPresetIdForModel, setRunningPreset, clearRunningPreset,
-  classifyPresetChange, systemPromptTextForPreset,
+  classifyPresetChange,
 } from '../presetStore';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 
@@ -468,16 +468,15 @@ export interface ModelDetailPanelProps {
   onLoad: (model: ModelInfo) => void;
   onUnload: (model: LoadedModel) => void;
   /**
-   * Apply a newly-linked preset to an already-loaded model (#2356).
-   * `mode` is the UI's live-vs-reload classification; `payload` carries the
-   * relevant fields (sampling/system_prompt for live, recipe_options for reload).
-   * Resolves once lemond reports the update applied (or the reload completed).
+   * Reload an already-loaded model so a *load-time* preset change takes effect
+   * (#2356). This is the only server round-trip in the simplified design: it is
+   * literally an unload + load (see `api.reloadModel`). Live (request-time)
+   * changes do NOT call this — rebinding the active preset is the whole live op.
+   * Resolves once the reload completes.
    */
-  onUpdatePreset?: (
+  onReloadModel?: (
     model: LoadedModel,
-    presetId: string,
-    mode: 'live' | 'reload',
-    payload: Record<string, unknown>,
+    recipeOptions?: Record<string, unknown>,
   ) => Promise<void>;
   onPull: (model: ModelInfo) => void;
   onPullAndLoad: (model: ModelInfo) => void;
@@ -511,7 +510,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   loadError,
   onLoad,
   onUnload,
-  onUpdatePreset,
+  onReloadModel,
   onPull,
   onPullAndLoad,
   onDelete,
@@ -575,7 +574,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   }, [updateStatus]);
 
   const handleUpdatePreset = useCallback(async () => {
-    if (!model || !loadedModel || !onUpdatePreset) return;
+    if (!model || !loadedModel) return;
     const targetName = mdName(model);
     const linked = activePresetForModel(targetName);
     const runId = runningPresetIdForModel(targetName);
@@ -584,25 +583,22 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     if (kind === 'none') return;
 
     if (kind === 'live') {
-      setUpdateStatus({ phase: 'live', msg: `Applying preset “${linked.name}” to ${targetName}…` });
-      try {
-        await onUpdatePreset(loadedModel, linked.id, 'live', {
-          sampling: linked.sampling,
-          system_prompt: systemPromptTextForPreset(linked),
-        });
-        setRunningPreset(targetName, linked.id);
-        setUpdateStatus({ phase: 'done-live', msg: `Preset updated to “${linked.name}” — applied live, no reload needed.` });
-        requestAnimationFrame(() => unloadBtnRef.current?.focus());
-      } catch {
-        setUpdateStatus({ phase: 'error', msg: `Couldn’t update the preset for ${targetName}. Please try again.` });
-        requestAnimationFrame(() => updateBtnRef.current?.focus());
-      }
+      // Live (request-time) change: rebinding the active preset IS the whole
+      // operation. Nothing is POSTed — request composition (`samplingForModel`
+      // in api.ts, `systemPromptTextForPreset` in ChatView) carries the new
+      // sampling / system_prompt / tools on the next generation request. We
+      // record the new running preset so the affordance clears.
+      setRunningPreset(targetName, linked.id);
+      setUpdateStatus({ phase: 'done-live', msg: `Preset updated to “${linked.name}” — applied live, no reload needed.` });
+      requestAnimationFrame(() => unloadBtnRef.current?.focus());
     } else {
+      // Load-time change: a real reload (unload + load) is required. The
+      // active-preset binding PERSISTS across the reload — `linked` is already
+      // the active preset, so the reloaded model comes up running it; we then
+      // snapshot it as the running preset. (Assumption flagged to @fl0rianr.)
       setUpdateStatus({ phase: 'reload', msg: `Reloading ${targetName} with preset “${linked.name}”…` });
       try {
-        await onUpdatePreset(loadedModel, linked.id, 'reload', {
-          recipe_options: linked.recipe_options,
-        });
+        await onReloadModel?.(loadedModel, linked.recipe_options as Record<string, unknown> | undefined);
         setRunningPreset(targetName, linked.id);
         setUpdateStatus({ phase: 'done-reload', msg: `Preset updated to “${linked.name}” — model reloaded.` });
         requestAnimationFrame(() => unloadBtnRef.current?.focus());
@@ -611,7 +607,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         requestAnimationFrame(() => updateBtnRef.current?.focus());
       }
     }
-  }, [model, loadedModel, onUpdatePreset]);
+  }, [model, loadedModel, onReloadModel]);
 
   // Roving tabindex: keyboard navigation across tabs
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -677,7 +673,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     ? classifyPresetChange(runningPreset, linkedPreset)
     : 'none';
   const isUpdatingPreset = updateStatus.phase === 'live' || updateStatus.phase === 'reload';
-  const canUpdatePreset = isLoaded && !!onUpdatePreset && presetChangeKind !== 'none' && !isUpdatingPreset && !isLoadingThis;
+  const canUpdatePreset = isLoaded && presetChangeKind !== 'none' && !isUpdatingPreset && !isLoadingThis;
 
   return (
     <div className="model-detail-panel" role="region" aria-label={`Model details: ${name}`}>
@@ -776,16 +772,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                   aria-busy={isUpdatingPreset}
                   aria-label={
                     isUpdatingPreset
-                      ? (updateStatus.phase === 'reload' ? `Reloading ${name} with new preset…` : `Updating preset for ${name}…`)
+                      ? (updateStatus.phase === 'reload' ? `Reloading ${name} with new preset…` : `Applying preset for ${name}…`)
                       : (presetChangeKind === 'reload'
-                        ? `Update preset for ${name} (reloads the model)`
-                        : `Update preset for ${name}`)
+                        ? `Reload ${name} to apply preset`
+                        : `Apply preset for ${name}`)
                   }
                 >
                   <Icon name="rotate-ccw" size={13} aria-hidden="true" />{' '}
                   {isUpdatingPreset
-                    ? (updateStatus.phase === 'reload' ? 'Reloading…' : 'Updating…')
-                    : 'Update preset'}
+                    ? (updateStatus.phase === 'reload' ? 'Reloading…' : 'Applying…')
+                    : (presetChangeKind === 'reload' ? 'Reload to apply preset' : 'Apply preset')}
                 </button>
               )}
               <button

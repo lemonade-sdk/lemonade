@@ -963,50 +963,30 @@ class LemonadeAPI {
   }
 
   /**
-   * Update the preset of an already-LOADED model without a manual unload→reload
-   * (#2356). The UI decides, per the live-vs-reload field classification (see
-   * `classifyPresetChange` in presetStore), whether the change can be applied
-   * live or needs the runtime reinitialized, and passes that as `mode`.
+   * Apply a *load-time* preset change to an already-loaded model (#2356).
    *
-   * ── PROPOSED BACKEND CONTRACT (lemond — to be implemented; OFF-LIMITS to the
-   *    UI POC, see #2356) ──────────────────────────────────────────────────────
-   *   POST /api/v{0,1}/update-preset   (quad-prefix per project invariant #1)
-   *   Request body:
-   *     {
-   *       model_name: string,        // the loaded model to update
-   *       preset_id:  string,        // client-local preset identifier (opaque to lemond)
-   *       mode: 'live' | 'reload',   // UI's classification of the change
-   *       recipe_options?: object,   // load-time options (sent for mode='reload')
-   *       sampling?: object,         // request-time generation params (mode='live')
-   *       system_prompt?: string|null // resolved system prompt text (mode='live')
-   *     }
-   *   Behaviour:
-   *     - mode 'live'   → apply request-time fields to the running process; return
-   *                       200 WITHOUT reinitializing (no model downtime).
-   *     - mode 'reload' → reinitialize the model in place (lemond performs the
-   *                       unload+load itself; the client never issues a manual
-   *                       unload/load); return 200 once the model is ready again.
-   *   The SAME endpoint backs the Lemonade-tools "change the preset" flow so
-   *   tool-triggered and UI-triggered updates are identical.
+   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
+   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
+   * not the source of truth for runtime capability. Load-time fields (ctx_size,
+   * backend, device, model args via recipe_options) require a real reload, which
+   * today is literally an unload followed by a load, exactly as `main` does.
    *
-   * POC NOTE: until lemond ships the endpoint, this method posts to
-   * `/api/v1/update-preset`; the prototype's Playwright suite mocks it.
+   * This helper is named `reloadModel` (rather than inlining unload→load at every
+   * call site) so that if a real in-place backend reload ever lands, only this
+   * method's body changes; callers and tests stay identical.
+   *
+   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
+   * handled here — rebinding the active preset is the whole "live" operation and
+   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
+   * the new values on the next generation request; nothing is POSTed.
    */
-  async updatePreset(
+  async reloadModel(
     modelName: string,
-    presetId: string,
-    mode: 'live' | 'reload',
-    payload: Record<string, unknown> = {},
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
   ): Promise<unknown> {
-    const body: Record<string, unknown> = {
-      model_name: modelName,
-      preset_id: presetId,
-      mode,
-      ...payload,
-    };
-    const result = await this._json('/api/v1/update-preset', { method: 'POST', body });
-    this._notifyModelsChanged();
-    return result;
+    await this.unloadModel(modelName);
+    return this.loadModel(modelName, recipeOptions, modelInfo);
   }
 
   async deleteModel(modelName: string): Promise<unknown> {

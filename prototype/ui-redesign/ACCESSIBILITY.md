@@ -4,25 +4,27 @@
 **Branch:** `feat/gui3-model-detail-redesign`  
 **Scope:** `prototype/ui-redesign/` only  
 **Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete, Group K (Update preset while loaded — #2356) ✅ complete  
-**Test status (2026-06-25):** All 178 automated tests passing, 7 skipped, 0 failed on `feat/gui3-update-preset-while-loaded` (A154–A163 added for #2356 update-preset-while-loaded)
+**Test status (2026-06-26):** All 181 automated tests passing, 7 skipped, 0 failed on `feat/gui3-update-preset-while-loaded` (A154–A166 cover #2356 update-preset-while-loaded, simplified design)
 
 ---
 
-## Group K — Update preset while a model is loaded (#2356, 2026-06-25)
+## Group K — Update preset while a model is loaded (#2356, 2026-06-26, simplified)
 
-Lets a user change the preset of an already-loaded model without a manual unload→reload. When a model is loaded and a **different** preset is linked to it, an **"Update preset"** button appears next to **Unload** in the detail-panel header actions.
+Lets a user change the preset of an already-loaded model. When a model is loaded and a **different** preset is linked to it, an **"Apply preset"** (live) / **"Reload to apply preset"** (load-time) button appears next to **Unload** in the detail-panel header actions.
 
-1. **Live vs reload classification (client-local).** `classifyPresetChange(running, next)` in `presetStore.ts` returns `'none' | 'live' | 'reload'`. Reload-requiring fields = `recipe_options`, `engine_hint` (runtime binds them at init). Live-updateable fields = `sampling`, `system_prompt_id`, `system_prompts`, `tools_enabled` (request-time). Live changes apply with no reload; reload changes trigger an automatic reload flow (the user never manually unloads/loads).
-2. **Running-preset store.** A distinct `running_presets` localStorage map (`loadRunningPresets`/`setRunningPreset`/`clearRunningPreset`/`runningPresetIdForModel`) records the preset each loaded model is actually running. Snapshotted on load (= linked preset at load time), cleared on unload. The divergence between *linked* (`applied_presets`) and *running* is what surfaces the button.
-3. **api.updatePreset contract.** `api.updatePreset(modelName, presetId, mode, payload)` POSTs to the proposed `POST /api/v{0,1}/update-preset` endpoint (quad-prefix per invariant #1). DEFERRED to backend: the real reload mechanics + the Lemonade-tools "change the preset" wiring (both live in lemond, off-limits to the POC). Contract documented in `docs/UPDATE_PRESET_CONTRACT.md` and in code on `api.updatePreset`.
+Simplified per maintainer @fl0rianr review + Lovell: **no `update-preset` endpoint and no client `mode` parameter** — the UI is not the source of truth for runtime capability.
+
+1. **Live vs reload classification (client-local).** `classifyPresetChange(running, next)` in `presetStore.ts` returns `'none' | 'live' | 'reload'`. Reload-requiring fields = `recipe_options`, `engine_hint` (runtime binds them at init). Live-updateable fields = `sampling`, `system_prompt_id`, `system_prompts`, `tools_enabled` (request-time). **Correctness fix:** the function no longer early-returns `'none'` on identical preset ids — same-id in-place edits (changed temperature/system_prompt/ctx_size) now classify correctly.
+2. **Running-preset store.** A distinct `running_presets` localStorage map records the preset each loaded model is actually running. The divergence between *linked* (`applied_presets`) and *running* is what surfaces the button.
+3. **No endpoint, no mode param.** Live changes are a pure client-local **rebind** of the active preset — request composition (`samplingForModel` in `api.ts`, `systemPromptTextForPreset` in `ChatView.tsx`) carries the new values on the next generation request; nothing is POSTed. Load-time changes go through `api.reloadModel(modelName, recipeOptions, modelInfo)` = **unload + load** (named for a possible future in-place backend reload). The active-preset binding **persists across the reload** so the reloaded model runs the newly-bound preset. The same primitives back the `change_preset` Lemonade tool (`src/tools/lemonadeTools.ts`). Documented in `docs/UPDATE_PRESET_CONTRACT.md`.
 
 **a11y specifics**
-- The button is a real `<button>`; its `aria-label` names the model and, for reload-requiring changes, states "(reloads the model)". `aria-busy` is set while updating.
+- The button is a real `<button>`; its `aria-label` names the model: "Apply preset for {name}" (live) vs "Reload {name} to apply preset" (load-time). `aria-busy` is set while reloading.
 - An always-present `role="status" aria-live="polite" aria-atomic="true"` region announces the outcome ("applied live, no reload needed" / "model reloaded"). A sighted hint (`aria-hidden`) explains why the button appeared.
-- Focus is moved to the **Unload** button on success (button unmounts once running == linked) to avoid focus loss; stays on the Update button on error.
+- Focus is moved to the **Unload** button on success (button unmounts once running == linked) to avoid focus loss; stays on the Apply/Reload button on error.
 - The reload spinner respects `prefers-reduced-motion`. Contrast for status colours ≥ 4.5:1.
 
-**Tests added:** A154–A163 (10 tests) in `tests/a11y.spec.ts`.
+**Tests added:** A154–A166 (13 tests) in `tests/a11y.spec.ts`.
 - A154: no Update preset button when linked == running
 - A155: switching to a live-only preset reveals Update preset next to Unload (label has no "reload")
 - A156: clicking (live) calls the contract with `mode=live` and announces no reload; button disappears
