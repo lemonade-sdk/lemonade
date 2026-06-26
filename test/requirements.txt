@@ -25,3 +25,6 @@ websockets
 
 # Ollama client library (used for Ollama API compatibility tests)
 ollama
+
+# JSON Schema validator (required for routing policy / decision fixture tests)
+jsonschema
