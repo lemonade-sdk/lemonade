@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include <optional>
+#include "lemon/canonical_id.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
@@ -2153,6 +2154,22 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     for (const auto& component : info.components) {
         public_components.push_back(model_manager_->get_public_model_name(component));
     }
+    std::string source_str = "builtin";
+    if (info.recipe == "cloud") {
+        source_str = "cloud";
+    } else {
+        std::string canonical_name = model_manager_->resolve_model_name(model_id);
+        if (auto canon = parse_canonical_id(canonical_name)) {
+            if (canon->source == ModelSource::Registered) {
+                source_str = "user";
+            } else if (canon->source == ModelSource::Imported) {
+                source_str = "extra";
+            } else if (canon->source == ModelSource::Builtin) {
+                source_str = "builtin";
+            }
+        }
+    }
+
     nlohmann::json model_json = {
         {"id", model_id},
         {"object", "model"},
@@ -2169,6 +2186,9 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
+        {"type", model_type_to_string(info.type)},
+        {"device", device_type_to_string(info.device)},
+        {"source", source_str},
     };
 
     // Surface the cloud provider on cloud entries so the Model Manager can
