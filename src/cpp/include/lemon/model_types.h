@@ -156,6 +156,9 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;
+    } else if (recipe == "chatterbox") {
+        // Defaults to GPU; ChatterboxServer overrides to CPU when the cpu backend is selected.
+        return DEVICE_GPU;
     } else if (is_collection_recipe(recipe)) {
         return DEVICE_NONE;
     } else if (recipe == "cloud") {

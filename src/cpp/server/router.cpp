@@ -6,6 +6,7 @@
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/moonshine_server.h"
+#include "lemon/backends/chatterbox_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
@@ -317,6 +318,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "kokoro") {
         LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "chatterbox") {
+        LOG(DEBUG, "Router") << "Creating Chatterbox backend" << std::endl;
+        new_server = std::make_unique<backends::ChatterboxServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "sd-cpp") {
         LOG(DEBUG, "Router") << "Creating SDServer backend" << std::endl;
         new_server = std::make_unique<backends::SDServer>(log_level, model_manager_, backend_manager_);

@@ -23,6 +23,8 @@ static const json DEFAULTS = {
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     {"moonshine_args", ""},      // Custom arguments to pass to moonshine-server
+    {"chatterbox_backend", ""},  // "" means auto-detect (GPU if available, else CPU)
+    {"chatterbox_args", ""},     // Custom arguments to pass to chatterbox-server
     // Image generation defaults (for sd-cpp recipe)
     // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
     // there are too many image gen params for CLI flags, and no universal defaults.
@@ -64,6 +66,8 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
     {"moonshine_args", "--moonshine-args"},
+    {"chatterbox_backend", "--chatterbox"},
+    {"chatterbox_args", "--chatterbox-args"},
     {"vllm_backend", "--vllm"},
     {"vllm_args", "--vllm-args"}
 };
@@ -76,6 +80,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         keys = {"whispercpp_backend", "whispercpp_args", "merge_args"};
     } else if (recipe == "moonshine") {
         keys = {"moonshine_args", "merge_args"};
+    } else if (recipe == "chatterbox") {
+        keys = {"chatterbox_backend", "chatterbox_args", "merge_args"};
     } else if (recipe == "flm") {
         return {"ctx_size", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
@@ -259,6 +265,8 @@ static const json CLI_OPTIONS = {
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"help", "WhisperCpp backend to use"}, {"group", "Whisper.cpp Options"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to whisper-server"}, {"group", "Whisper.cpp Options"}}},
     {"--moonshine-args", {{"option_name", "moonshine_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to moonshine-server"}}},
+    {"--chatterbox", {{"option_name", "chatterbox_backend"}, {"type_name", "BACKEND"}, {"help", "Chatterbox backend to use (cuda, rocm, metal, cpu)"}, {"group", "Chatterbox Options"}}},
+    {"--chatterbox-args", {{"option_name", "chatterbox_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to chatterbox-server"}, {"group", "Chatterbox Options"}}},
     {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"help", "vLLM backend to use"}, {"group", "vLLM Options"}}},
     {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to vllm-server"}, {"group", "vLLM Options"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
