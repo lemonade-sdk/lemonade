@@ -1841,12 +1841,16 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     } else {
         std::string canonical_name = model_manager_->resolve_model_name(model_id);
         if (auto canon = parse_canonical_id(canonical_name)) {
-            if (canon->source == ModelSource::Registered) {
-                source_str = "user";
-            } else if (canon->source == ModelSource::Imported) {
-                source_str = "extra";
-            } else if (canon->source == ModelSource::Builtin) {
-                source_str = "builtin";
+            switch (canon->source) {
+                case ModelSource::Registered:
+                    source_str = "user";
+                    break;
+                case ModelSource::Imported:
+                    source_str = "extra";
+                    break;
+                case ModelSource::Builtin:
+                    source_str = "builtin";
+                    break;
             }
         }
     }

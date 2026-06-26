@@ -54,6 +54,10 @@ struct ModelInfo {
     std::string download_url;
     std::string description;
     std::vector<double> component_sizes;
+    std::string source;
+    std::string type;
+    std::string device;
+    nlohmann::json recipe_options;
 };
 
 // Recipe backend status structure
@@ -71,6 +75,18 @@ struct RecipeStatus {
     std::vector<BackendStatus> backends;
 };
 
+struct ListModelOptions {
+    bool show_all = false;
+    std::string name_filter;
+    bool json_output = false;
+    std::string type;
+    std::string source;
+    std::string device;
+    bool suggested_only = false;
+    std::vector<std::string> labels;
+    std::string backend;
+};
+
 // Main CLI client class
 class LemonadeClient {
 public:
@@ -78,7 +94,7 @@ public:
     ~LemonadeClient();
 
     // Model management commands
-    int list_models(bool show_all, const std::string& name_filter = "") const;
+    int list_models(const ListModelOptions& options) const;
     // Pulls/registers a model. By default the pull is cache-first
     // (do_not_upgrade=true): an already-downloaded model is reused without
     // contacting Hugging Face. Only the explicit `lemonade pull` update flow

@@ -173,6 +173,15 @@ struct CliConfig {
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
 
+    // List command filtering options
+    bool list_json = false;
+    std::string list_type;
+    std::string list_source;
+    std::string list_device;
+    bool list_suggested = false;
+    std::vector<std::string> list_labels;
+    std::string list_backend;
+
     // Cloud provider commands
     std::string cloud_provider;
     std::string cloud_base_url;
@@ -1193,6 +1202,13 @@ int main(int argc, char* argv[]) {
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
+    list_cmd->add_flag("--json", config.list_json, "Format output as JSON");
+    list_cmd->add_option("--type", config.list_type, "Filter by model type (llm, embedding, reranking, transcription, image, tts)");
+    list_cmd->add_option("--source", config.list_source, "Filter by model source (builtin, user, extra, cloud)");
+    list_cmd->add_option("--device", config.list_device, "Filter by model device (cpu, gpu, npu)");
+    list_cmd->add_flag("--suggested", config.list_suggested, "Show only suggested models");
+    list_cmd->add_option("--label", config.list_labels, "Filter by one or more labels");
+    list_cmd->add_option("--backend", config.list_backend, "Filter by backend/recipe");
     list_cmd->add_option("name_filter", config.list_filter,
         "Optional case-insensitive model-name filter; supports * wildcards")
         ->type_name("NAME_FILTER");
@@ -1428,7 +1444,17 @@ int main(int argc, char* argv[]) {
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
-        return client.list_models(!config.downloaded, config.list_filter);
+        lemonade::ListModelOptions opts;
+        opts.show_all = !config.downloaded;
+        opts.name_filter = config.list_filter;
+        opts.json_output = config.list_json;
+        opts.type = config.list_type;
+        opts.source = config.list_source;
+        opts.device = config.list_device;
+        opts.suggested_only = config.list_suggested;
+        opts.labels = config.list_labels;
+        opts.backend = config.list_backend;
+        return client.list_models(opts);
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;
