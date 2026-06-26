@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Router-Semantic",
+  "recipe": "collection.router",
+  "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b", "nomic-embed-text-v1.5-GGUF"],
+  "routing": {
+    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "default_model": "Qwen3-8B-GGUF",
+    "classifiers": [
+      { "id": "is_coding", "type": "semantic_similarity",
+        "model": "nomic-embed-text-v1.5-GGUF",
+        "reference_phrases": ["write a function", "fix this bug", "refactor this code", "time complexity"] }
+    ],
+    "rules": [
+      { "id": "coding-to-big",
+        "match": { "classifier": "is_coding", "min_score": 0.78 },
+        "route_to": "vllm.qwen3-32b" }
+    ]
+  }
+}
