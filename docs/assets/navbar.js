@@ -24,10 +24,10 @@ function createNavbar(basePath = '') {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.54 5.33A16.9 16.9 0 0 0 15.33 4l-.2.38c1.46.36 2.14.88 2.14.88a14.5 14.5 0 0 0-6.77-.26 12.3 12.3 0 0 0-3.77.26s.7-.55 2.25-.9L8.84 4a17 17 0 0 0-4.22 1.33C1.95 9.3 1.22 13.17 1.58 17c1.78 1.3 3.5 2.1 5.2 2.62l.63-.85a6.8 6.8 0 0 1-1.64-.78l.4-.3c3.16 1.48 6.6 1.48 9.72 0l.4.3c-.52.32-1.06.58-1.64.78l.63.85c1.7-.52 3.43-1.31 5.2-2.62.43-4.43-.72-8.26-2.94-11.67ZM8.52 14.64c-.95 0-1.73-.88-1.73-1.96s.76-1.96 1.73-1.96c.96 0 1.75.88 1.73 1.96 0 1.08-.77 1.96-1.73 1.96Zm6.96 0c-.95 0-1.73-.88-1.73-1.96s.76-1.96 1.73-1.96c.96 0 1.74.88 1.73 1.96 0 1.08-.77 1.96-1.73 1.96Z"></path></svg>
             <span data-community-stat="discord">Members</span>
           </a>
-          <a class="navbar-social-link" href="https://x.com/AMDDevCentral" target="_blank" rel="noopener" aria-label="Lemonade on X">
+          <a class="navbar-social-link" href="https://x.com/lemonade_server" target="_blank" rel="noopener" aria-label="Lemonade on X">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2.25h3.38l-7.38 8.43 8.68 11.07h-6.8l-5.32-6.72-6.1 6.72H1.98l7.9-8.7L1.55 2.25h6.97l4.82 6.17 5.56-6.17Zm-1.18 17.55h1.87L7.48 4.1H5.47l12.25 15.7Z"></path></svg>
           </a>
-          <a class="navbar-social-link" href="https://www.youtube.com/@AMDDeveloperCentral" target="_blank" rel="noopener" aria-label="Lemonade on YouTube">
+          <a class="navbar-social-link" href="https://www.youtube.com/@LemonadeAI" target="_blank" rel="noopener" aria-label="Lemonade on YouTube">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.13C19.56 3.58 12 3.58 12 3.58s-7.56 0-9.4.49A3 3 0 0 0 .5 6.2 31.4 31.4 0 0 0 0 12a31.4 31.4 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.13c1.84.49 9.4.49 9.4.49s7.56 0 9.4-.49a3 3 0 0 0 2.1-2.13A31.4 31.4 0 0 0 24 12a31.4 31.4 0 0 0-.5-5.8ZM9.55 15.45v-6.9L15.82 12l-6.27 3.45Z"></path></svg>
           </a>
         </div>
