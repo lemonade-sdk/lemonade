@@ -870,42 +870,9 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   });
 
-  // ── #2343 — matrix cells are keyboard-focusable with selected state ────────
-
-  test('A51 — each matrix cell contains a button with aria-pressed (selected state)', async ({ page }) => {
-    const cellBtn = page.locator('.cell__select-btn').first();
-    await expect(cellBtn).toBeVisible();
-    const pressed = await cellBtn.getAttribute('aria-pressed');
-    expect(['true', 'false']).toContain(pressed);
-  });
-
-  test('A52 — clicking the cell select button toggles aria-pressed between "true" and "false"', async ({ page }) => {
-    const cellBtn = page.locator('[data-cell="llamacpp:vulkan"] .cell__select-btn');
-    await expect(cellBtn).toHaveAttribute('aria-pressed', 'false');
-    await cellBtn.click();
-    await expect(cellBtn).toHaveAttribute('aria-pressed', 'true');
-    await cellBtn.click();
-    await expect(cellBtn).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  test('A53 — cell select button is keyboard-focusable (tabIndex >= 0, is a <button>)', async ({ page }) => {
-    const cellBtn = page.locator('.cell__select-btn').first();
-    // Verify it is a <button> element (native keyboard operability)
-    const tag = await cellBtn.evaluate(el => el.tagName.toLowerCase());
-    expect(tag).toBe('button');
-    // Verify it is in the tab order
-    const tabIndex = await cellBtn.evaluate(el => (el as HTMLElement).tabIndex);
-    expect(tabIndex).toBeGreaterThanOrEqual(0);
-  });
-
-  test('A54 — cell select button aria-label contains both recipe label and backend identifier', async ({ page }) => {
-    const btn = page.locator('[data-cell="llamacpp:vulkan"] .cell__select-btn');
-    const label = await btn.getAttribute('aria-label');
-    expect(label).toBeTruthy();
-    // Should mention the human-readable recipe label (llama.cpp) and backend (vulkan)
-    expect(label!.toLowerCase()).toContain('llama');
-    expect(label!.toLowerCase()).toContain('vulkan');
-  });
+  // ── #2432 — Backend view no longer behaves like a model (preset rail/picker removed) ──
+  // The cell-selection affordance and preset rail were removed; coverage lives in
+  // the #2432 describe block below (A167+).
 
   // ── #2344 — action buttons have qualified accessible names ─────────────────
 
@@ -929,7 +896,7 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     expect(label!.toLowerCase()).toContain('cpu');
   });
 
-  // ── #2351 — persistent polite live regions for toasts and preset notices ───
+  // ── #2351 — persistent polite live region for toasts ───
 
   test('A57 — backends view has a persistent role="status" live region for toast messages', async ({ page }) => {
     const liveRegion = page.locator('[data-backends-toast-live]');
@@ -938,14 +905,169 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
     expect(await liveRegion.getAttribute('aria-atomic')).toBe('true');
   });
+});
 
-  test('A58 — backend preset rail has a persistent role="status" live region for preset notices', async ({ page }) => {
-    const liveRegion = page.locator('[data-backends-preset-notice-live]');
-    await expect(liveRegion).toHaveCount(1);
-    expect(await liveRegion.getAttribute('role')).toBe('status');
-    expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
+// ─── #2432 — Backend preset rail removal + global Presets backend assignment ──
+
+test.describe('Accessibility — backend preset rail removal (#2432)', () => {
+  const MOCK_SYSTEM_INFO = {
+    lemonade_version: '1.0.0',
+    os_version: 'Test OS',
+    devices: { cpu: { name: 'Test CPU', available: true } },
+    recipes: {
+      llamacpp: {
+        default_backend: 'cpu',
+        backends: {
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
+          cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
+        },
+      },
+    },
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/system-info**', route =>
+      route.fulfill({ json: MOCK_SYSTEM_INFO }),
+    );
+    // Start each test from a clean preset/binding state so the backend view has
+    // no assigned preset by default.
+    await page.addInitScript(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes('backend_presets') || k.includes('applied_presets')) localStorage.removeItem(k);
+        }
+      } catch {}
+    });
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+  });
+
+  async function gotoBackends(page: Page): Promise<void> {
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+  }
+
+  test('A167 — Backend view no longer renders the preset rail', async ({ page }) => {
+    await gotoBackends(page);
+    await expect(page.locator('.context-rail--presets')).toHaveCount(0);
+    await expect(page.locator('[aria-label="Backend preset rail"]')).toHaveCount(0);
+    await expect(page.locator('[data-backends-preset-notice-live]')).toHaveCount(0);
+  });
+
+  test('A168 — Backend view no longer renders the visual preset picker / model-like selection', async ({ page }) => {
+    await gotoBackends(page);
+    // The rail's preset picker cards are gone.
+    await expect(page.locator('.preset-rail-card')).toHaveCount(0);
+    await expect(page.locator('.preset-rail-list')).toHaveCount(0);
+    // Matrix cells no longer expose a model-like "select this backend" overlay button.
+    await expect(page.locator('.cell__select-btn')).toHaveCount(0);
+  });
+
+  test('A169 — a backend with no assigned preset shows no preset chip by default', async ({ page }) => {
+    await gotoBackends(page);
+    // Cells exist…
+    await expect(page.locator('[data-cell="llamacpp:vulkan"]')).toBeVisible();
+    // …but none of them advertise a preset (no backend looks like it owns one).
+    await expect(page.locator('.cell__preset')).toHaveCount(0);
+  });
+
+  test('A170 — backends view passes axe-core WCAG 2.1 AA scan after rail removal', async ({ page }) => {
+    await gotoBackends(page);
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .include('[data-view="backends"]')
+      .analyze();
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toEqual([]);
+  });
+
+  test('A171 — Presets slideover exposes an accessible "Apply to a backend" control with global copy', async ({ page }) => {
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+    await page.locator('.recipe-card').first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    const section = page.locator('[data-backend-apply-section]');
+    await expect(section).toBeVisible();
+    // Heading communicates the affordance.
+    await expect(section.locator('h3')).toContainText('Apply to a backend');
+    // Global wording is present and not visually hidden.
+    const note = page.locator('[data-backend-global-note]');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('applies globally to all models using this backend');
+
+    // The select has a programmatic accessible name and is described by the global note.
+    const select = page.locator('[data-backend-apply-target]');
+    await expect(select).toHaveAttribute('aria-label', /backend/i);
+    const describedBy = await select.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const noteId = await note.getAttribute('id');
+    expect(describedBy).toContain(noteId!);
+  });
+
+  test('A172 — assigning a preset to a backend is keyboard-operable, announces via role="status", and records a global binding', async ({ page }) => {
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+    // Open a chat-capable starter (compatible with the llamacpp backend).
+    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    const select = page.locator('[data-backend-apply-target]');
+    await expect(select).toBeVisible();
+    await select.selectOption('llamacpp:cpu');
+
+    const applyBtn = page.locator('[data-backend-apply-btn]');
+    await expect(applyBtn).toBeEnabled();
+    // Button text reinforces the global semantics.
+    await expect(applyBtn).toContainText('Assign globally');
+
+    // Keyboard operability: focus and activate via the keyboard.
+    await applyBtn.focus();
+    await expect(applyBtn).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    // Success is announced through a polite status live region.
+    const status = page.locator('[data-backend-apply-success]');
+    await expect(status).toHaveAttribute('role', 'status');
+    await expect(status).toHaveAttribute('aria-live', 'polite');
+    await expect(status).toContainText('applies globally to all models');
+
+    // The binding now appears in the "Applied to backends" zone.
+    await page.locator('.slideover__close').click();
+    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
+    const row = page.locator('[data-applied-backend-row="llamacpp:cpu"]');
+    await expect(row).toBeVisible();
+    await expect(row.locator('.preset-status-chip')).toContainText('Global');
+    // The Detach control has a qualified accessible name.
+    await expect(row.locator('button[aria-label*="Detach preset from"]')).toBeVisible();
+  });
+
+  test('A173 — an assigned backend preset is shown read-only in the Backend view (display only, no picker)', async ({ page }) => {
+    // Assign via the global Presets view first.
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+    await page.locator('[data-backend-apply-target]').selectOption('llamacpp:cpu');
+    await page.locator('[data-backend-apply-btn]').click();
+    await expect(page.locator('[data-backend-apply-success]')).toContainText('applies globally');
+    await page.locator('.slideover__close').click();
+
+    // Now the Backend view should DISPLAY that preset read-only on the cpu cell only.
+    await gotoBackends(page);
+    const cpuPreset = page.locator('[data-cell="llamacpp:cpu"] [data-cell-preset]');
+    await expect(cpuPreset).toBeVisible();
+    await expect(cpuPreset).toContainText('Balanced');
+    // A different backend with no assignment still shows no preset chip.
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] [data-cell-preset]')).toHaveCount(0);
+    // Crucially, the read-only display is not an interactive picker.
+    await expect(page.locator('[data-cell="llamacpp:cpu"] .cell__select-btn')).toHaveCount(0);
   });
 });
+
 
 // ─── 15. Model row action qualified accessible names (#2341) ─────────────────
 

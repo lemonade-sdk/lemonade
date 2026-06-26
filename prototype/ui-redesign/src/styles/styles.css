@@ -3301,6 +3301,8 @@ input, textarea {
 }
 .preset-error { color: var(--danger); font-size: 12px; margin: var(--space-2) 0 0; }
 .preset-success { color: var(--success); font-size: 12px; margin: var(--space-2) 0 0; }
+.preset-backend-success { color: var(--success); font-size: 12px; margin: var(--space-2) 0 0; }
+.preset-backend-success:empty { margin: 0; }
 .preset-status-chip {
   padding: 3px 8px;
   border-radius: 999px;
