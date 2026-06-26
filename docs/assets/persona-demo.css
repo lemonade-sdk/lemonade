@@ -2493,8 +2493,12 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   margin-top: var(--page-space-xl);
 }
 
-/* ---- Responsive (reuse the page breakpoints: 920 / 720 / 480) ------------- */
-@media (max-width: 920px) {
+/* ---- Responsive --------------------------------------------------------------
+   Stack the dev-quickstart at 1000px (not 920): between ~920-1000px the side-by-side
+   panel column (min 520px) no longer fits the card, clipping the proof grid's right
+   column, AND each 2x2 cell is too narrow to read. Stacking earlier gives the proofs
+   the full card width through that band. */
+@media (max-width: 1000px) {
   .hp-dev-quickstart-layout {
     grid-template-columns: 1fr;
     gap: var(--page-space-md);
@@ -2542,6 +2546,36 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   .hp-proof-card { min-height: 0; }
   .hp-cta-actions { flex-direction: column; align-items: stretch; }
   .hp-cta-btn { justify-content: center; }
+}
+
+/* Dev-quickstart proofs: the desktop 2x2 cross (icon column beside a narrow text
+   column) stays readable only while each cell is wide. Once the panel narrows —
+   which starts well before phone widths, e.g. a minimum-width desktop Chrome window
+   (~500px) where the panel is full-width but each cell is barely ~110px of text —
+   the descriptions crush to 1-2 words per line. Below 640px, reflow to a single
+   column where [icon + title] share a row and the description spans the FULL panel
+   width beneath (≈2-3 lines): readable, and a genuinely tight use of the space.
+   (#dev-quickstart ID specificity beats the 2-col `.hp-proof-grid` rule above.) */
+@media (max-width: 640px) {
+  #dev-quickstart .hp-proof-grid { grid-template-columns: 1fr; }
+  #dev-quickstart .hp-proof-grid::before,
+  #dev-quickstart .hp-proof-grid::after { display: none; }
+  #dev-quickstart .hp-proof-card,
+  #dev-quickstart .hp-proof-card:nth-child(-n + 2),
+  #dev-quickstart .hp-proof-card:nth-child(n + 3) {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 0.6rem;
+    row-gap: 0.25rem;
+    padding: 0.85rem 0.4rem;
+  }
+  #dev-quickstart .hp-proof-icon { grid-column: 1; grid-row: 1; margin: 0; }
+  #dev-quickstart .hp-proof-card h3 { grid-column: 2; grid-row: 1; margin: 0; }
+  #dev-quickstart .hp-proof-card p { grid-column: 1 / -1; grid-row: 2; }
+  #dev-quickstart .hp-proof-card:not(:last-child) {
+    border-bottom: 1px solid rgba(252, 216, 70, 0.1);
+  }
 }
 
 
@@ -2902,4 +2936,42 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   .hp-iface-body { padding: 1.1rem 1rem; gap: 0.8rem; }
   .hp-iface-path { font-size: 0.66rem; }
   .hp-iface-hubserver { width: 5rem; padding: 0.7rem 0.5rem; }
+}
+
+/* The two dense interface slides — the OpenAI endpoint wall and the control-plane
+   tiles — are 2-column grids sized for the desktop sidebar layout. On a phone the
+   board is far narrower, so the right column was pushed past the board edge and
+   clipped (and the right-aligned facet tag in the header was cut off). Reflow them
+   so everything fits WITHOUT truncating any endpoint path. */
+@media (max-width: 560px) {
+  /* Header: shrink the identity bar, and let the URL ellipsize so the right-aligned
+     facet tag can never be pushed off the board edge. */
+  .hp-iface-server { gap: 0.4rem; padding: 0.6rem 0.75rem; font-size: 0.64rem; min-width: 0; }
+  .hp-iface-server-name { font-size: 0.74rem; flex: 0 0 auto; }
+  .hp-iface-server-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hp-iface-server-tag { flex: 0 0 auto; font-size: 0.56rem; padding: 0.15rem 0.4rem; }
+
+  /* OpenAI wall: keep two columns (all twelve endpoints must fit the fixed board
+     HEIGHT — the board can't grow, its frame clips at the stage height), but let
+     the columns shrink so the second one no longer spills past the board edge.
+     Only the few longest paths ellipsize, and only on the narrowest phones. */
+  .hp-iface-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.35rem; }
+  .hp-iface-pill { min-width: 0; padding: 0.32rem 0.4rem; gap: 0.28rem; }
+  .hp-iface-pill-icon { width: 1.15rem; height: 1.15rem; }
+  .hp-iface-pill-icon .material-symbols-outlined { font-size: 0.8rem; }
+  .hp-iface-verb { width: 1.85rem; font-size: 0.54rem; }
+  .hp-iface-path { min-width: 0; font-size: 0.66rem; }
+
+  /* Control plane: two shrinkable columns, with the METHOD+path chips wrapping
+     inside each tile rather than overflowing the board. */
+  .hp-iface-dash-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.4rem; }
+  .hp-iface-tile { min-width: 0; padding: 0.5rem 0.6rem; gap: 0.4rem; }
+  .hp-iface-ep { min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 440px) {
+  /* On phones, reclaim the decorative pill icon's width so the endpoint PATHS —
+     the meaningful content — read in full; only the longest two or three still
+     ellipsize. */
+  .hp-iface-pill-icon { display: none; }
 }

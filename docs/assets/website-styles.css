@@ -5156,6 +5156,50 @@ body.install-options {
   margin: 0.75rem 0 0.35rem;
 }
 
+/* Fedora ships two side-by-side editions (43 / 44). `min-width: 0` lets each
+   column shrink so the pair fits the card instead of overrunning it, and the long
+   `wget` URL scrolls/wraps within its own console rather than forcing the row wide. */
+.gs-fedora-cols {
+  display: flex;
+  gap: 12px;
+}
+.gs-fedora-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.gs-install-block {
+  margin-top: 16px;
+}
+
+/* Below the card width the two editions stack so neither is clipped. */
+@media (max-width: 720px) {
+  .gs-fedora-cols {
+    flex-direction: column;
+    gap: 0;
+  }
+  /* On phones a horizontally-scrolling command hides most of a long `wget` URL.
+     Wrap install commands instead so the whole command is visible (the copy
+     button still grabs the full text). Desktop keeps single-line `pre`. */
+  .gs-console pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  /* With wrapped multi-line content the centred copy button would sit on top of
+     the text — pin it to the top-right corner and reserve a clear gutter so the
+     wrapped lines never run under it. */
+  .gs-console {
+    padding-right: 2.75rem;
+  }
+  .gs-copy-btn {
+    top: 0.6rem;
+    transform: none;
+  }
+  .gs-copy-btn:hover,
+  .gs-copy-btn:focus {
+    transform: translateY(-1px);
+  }
+}
+
 /* Install download button */
 .gs-download-link {
   display: inline-flex;
@@ -5439,5 +5483,26 @@ body.install-options {
 
   .gs-console code {
     font-size: 0.8rem;
+  }
+
+  /* The download button is min-width:320px + 2rem side padding (~384px), which
+     overruns the quickstart card on phones. Let it shrink to the card width. */
+  .gs-download-link {
+    min-width: 0;
+    width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Community Discord + GitHub buttons are forced onto one line (.hp-cta-row
+     nowrap at 720); below the card width they clip. Let them wrap and each fill
+     a row. Two classes beat the single-class nowrap rules on specificity. */
+  .hp-community .hp-community-cta-row {
+    flex-wrap: wrap;
+  }
+  .hp-community .hp-community-cta-row .download-btn,
+  .hp-community .hp-community-cta-row .dev-btn {
+    flex: 1 1 12rem;
+    justify-content: center;
   }
 }

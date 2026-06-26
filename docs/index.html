@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
-  <link rel="stylesheet" href="assets/website-styles.css?v=hero-redesign">
-  <link rel="stylesheet" href="assets/persona-demo.css?v=persona-crossfade-2">
+  <link rel="stylesheet" href="assets/website-styles.css?v=responsive-polish">
+  <link rel="stylesheet" href="assets/persona-demo.css?v=responsive-polish">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -337,15 +337,15 @@
             if (v) {
               var rpm43 = 'lemonade-server-' + v + '-fc43.x86_64.rpm';
               var rpm44 = 'lemonade-server-' + v + '-fc44.x86_64.rpm';
-              html = '<div style="display:flex;gap:12px;">' +
-                '<div style="flex:1;">' +
+              html = '<div class="gs-fedora-cols">' +
+                '<div class="gs-fedora-col">' +
                   '<p class="gs-fedora-label">Fedora 43</p>' +
                   gsConsoleHtml([
                     'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm43,
                     'sudo dnf install ./' + rpm43
                   ]) +
                 '</div>' +
-                '<div style="flex:1;">' +
+                '<div class="gs-fedora-col">' +
                   '<p class="gs-fedora-label">Fedora 44</p>' +
                   gsConsoleHtml([
                     'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm44,
@@ -353,7 +353,7 @@
                   ]) +
                 '</div>' +
               '</div>' +
-              '<div style="margin-top:16px;">' +
+              '<div class="gs-install-block">' +
                 gsConsoleHtml([
                   'sudo systemctl enable --now lemond',
                   'sudo systemctl --no-pager status lemond'
@@ -371,7 +371,7 @@
                 'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + deb,
                 'sudo apt install ./' + deb
               ]) +
-              '<div style="margin-top:16px;">' +
+              '<div class="gs-install-block">' +
                 gsConsoleHtml([
                   'sudo systemctl enable --now lemond',
                   'sudo systemctl --no-pager status lemond'
