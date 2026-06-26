@@ -255,11 +255,12 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
 
     const auto& variants = variants_response["variants"];
     std::string recipe = variants_response.value("recipe", std::string("llamacpp"));
+    std::string repo_kind = variants_response.value("repo_kind", std::string("gguf"));
 
-    // Non-llamacpp recipes (currently: ONNX RyzenAI) ship as a single
-    // installable unit — no per-variant menu, no `:variant` checkpoint
-    // suffix, no `-VARIANT` model name tail.
-    if (recipe != "llamacpp") {
+    // Non-GGUF repos (currently: ONNX RyzenAI) ship as a single installable
+    // unit — no per-variant menu, no `:variant` checkpoint suffix, no
+    // `-VARIANT` model name tail. (Collections returned earlier above.)
+    if (repo_kind != "gguf") {
         if (!variant.empty()) {
             std::cerr << "warning: variant '" << variant << "' ignored for "
                       << recipe << " checkpoints" << std::endl;
