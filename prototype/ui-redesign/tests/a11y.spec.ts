@@ -1080,7 +1080,11 @@ test.describe('Accessibility — backend preset rail removal (#2432)', () => {
 //          producing an "Applied to backends" row with no matching Backend-view
 //          chip. Backend assignment is now disabled for Default with accessible
 //          copy explaining that "no backend preset" is the default state.
-// Range: A174–A176.
+//   GAP 3 (round-3): backend bindings now apply only when the CONCRETE backend
+//          that the load resolves to matches the exact `recipe:backend` key, and
+//          the Presets UI disables assignment to backends the server reports as
+//          `unsupported`.
+// Range: A174–A179.
 
 test.describe('Accessibility — backend-preset merge + Default handling (#2432 review)', () => {
   const MODEL = 'Llama-3.1-8B';
@@ -1112,15 +1116,19 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
         backends: {
           vulkan: { state: 'installable', version: 'b1', message: '', action: '' },
           cpu: { state: 'installed', version: 'b1', message: '', action: '', can_uninstall: true },
+          cuda: { state: 'unsupported', version: '', message: 'No NVIDIA GPU detected', action: '' },
         },
       },
     },
   };
 
-  test('A174 — a backend preset is merged into effective recipe_options on load (backend = base, model wins on conflict)', async ({ page }) => {
-    // Model preset = model-specific defaults; backend preset = global runtime
-    // defaults. ctx_size + llamacpp_args appear in BOTH (model must win);
-    // llamacpp_backend appears ONLY in the backend preset (must still merge in).
+  test('A174 — a backend preset merges only when the CONCRETE backend matches its exact recipe:backend key (resolved via recipe default_backend)', async ({ page }) => {
+    // EXACT backend matching: the model carries only recipe `llamacpp` with no
+    // concrete backend in its load/preset options, so the load resolves to the
+    // recipe's default_backend = `cpu` (from /system-info). ONLY the binding for
+    // the exact key `llamacpp:cpu` may merge. ctx_size + llamacpp_args appear in
+    // BOTH presets (model must win); llamacpp_backend appears ONLY in the backend
+    // preset (must still merge in, proving the backend preset actually applied).
     const modelPreset = preset('m-model', 'Model Wins', { ctx_size: 8192, llamacpp_args: '--model-wins' });
     const backendPreset = preset('m-backend', 'Backend Base', { ctx_size: 2048, llamacpp_args: '--backend-base', llamacpp_backend: 'cpu' });
 
@@ -1221,6 +1229,132 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
     await page.locator('.recipe-card').first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .include('[data-backend-apply-section]')
+      .analyze();
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toEqual([]);
+  });
+
+  test('A177 — a backend preset bound to llamacpp:cpu does NOT merge into a vulkan load (exact backend match only)', async ({ page }) => {
+    // The model preset pins the concrete backend to `vulkan`, so this load
+    // resolves to `llamacpp:vulkan`. A preset bound to the DIFFERENT key
+    // `llamacpp:cpu` must NOT contribute — proving backend-level (not
+    // recipe-level) matching. ctx_size lives ONLY in the cpu preset, so its
+    // absence in the load body proves the cpu binding stayed out.
+    const modelPreset = preset('m-model-vk', 'Vulkan Model', { llamacpp_backend: 'vulkan', llamacpp_args: '--model-vk' });
+    const backendPreset = preset('m-backend-cpu', 'CPU Backend', { ctx_size: 2048, llamacpp_args: '--cpu-base', llamacpp_backend: 'cpu' });
+
+    let loadBody: Record<string, unknown> | null = null;
+
+    await page.addInitScript(
+      ({ presets, applied, backend, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: applied }));
+        localStorage.setItem('lemonade:guest:shared:backend_presets', JSON.stringify(backend));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: [modelPreset, backendPreset], applied: 'm-model-vk', backend: { 'llamacpp:cpu': 'm-backend-cpu' }, model: MODEL },
+    );
+
+    await page.route('**/api/v1/health', route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }) }),
+    );
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.route('**/api/v1/models**', route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }) }),
+    );
+    await page.route('**/api/v1/load', async route => {
+      try { loadBody = route.request().postDataJSON() as Record<string, unknown>; } catch { /* ignore */ }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.locator('.model-list-item').first().click();
+
+    const loadBtn = page.locator(`button[aria-label="Load ${MODEL}"]`);
+    await expect(loadBtn).toBeVisible();
+    await loadBtn.click();
+
+    await expect.poll(() => loadBody).not.toBeNull();
+    const body = loadBody!;
+    expect(body.model_name).toBe(MODEL);
+    // The load uses the vulkan backend the model preset selected.
+    expect(body.llamacpp_backend).toBe('vulkan');
+    expect(body.llamacpp_args).toBe('--model-vk');
+    // The cpu-bound preset's signature arg must be ABSENT (it did not merge).
+    expect(body.ctx_size).toBeUndefined();
+  });
+
+  test('A178 — an unsupported backend cannot receive a global backend preset (option disabled + not assignable, accessibly)', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes('backend_presets') || k.includes('applied_presets') || k.includes('user_presets')) localStorage.removeItem(k);
+        }
+      } catch {}
+    });
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+
+    // Open a chat-capable starter (compatible with the llamacpp backend).
+    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    const select = page.locator('[data-backend-apply-target]');
+    await expect(select).toBeVisible();
+
+    // The unsupported backend (llamacpp:cuda) is surfaced but its option is
+    // programmatically disabled and labelled so screen readers convey the state.
+    const cudaOption = select.locator('option[value="llamacpp:cuda"]');
+    await expect(cudaOption).toHaveCount(1);
+    await expect(cudaOption).toBeDisabled();
+    await expect(cudaOption).toHaveText(/unsupported/i);
+    // The disabled option carries an explanatory title for hover/AT.
+    expect(await cudaOption.getAttribute('title')).toMatch(/unsupported/i);
+
+    // A disabled <option> cannot be chosen — assignment is impossible.
+    await expect(async () => {
+      await select.selectOption('llamacpp:cuda', { timeout: 1500 });
+    }).rejects.toThrow();
+
+    // A supported backend (cpu) remains assignable, proving the gate is targeted.
+    const cpuOption = select.locator('option[value="llamacpp:cpu"]');
+    await expect(cpuOption).toBeEnabled();
+    await select.selectOption('llamacpp:cpu');
+    await expect(page.locator('[data-backend-apply-btn]')).toBeEnabled();
+
+    // No binding to the unsupported backend was ever recorded.
+    const bindings = await page.evaluate(() => {
+      try { return JSON.parse(localStorage.getItem('lemonade:guest:shared:backend_presets') || '{}'); } catch { return {}; }
+    });
+    expect(Object.keys(bindings)).not.toContain('llamacpp:cuda');
+  });
+
+  test('A179 — the Presets backend section (with an unsupported option) passes an axe-core WCAG 2.1 AA scan', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes('backend_presets') || k.includes('applied_presets') || k.includes('user_presets')) localStorage.removeItem(k);
+        }
+      } catch {}
+    });
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipe-card', { timeout: 5000 });
+    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const results = await new AxeBuilder({ page })

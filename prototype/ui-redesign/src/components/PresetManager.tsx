@@ -84,6 +84,8 @@ interface BackendOption {
   key: string;
   label: string;
   caps: Capability[];
+  /** False when the server reports this backend as `unsupported` for this host. */
+  supported: boolean;
 }
 
 function backendCapabilitiesForRecipe(recipe: string): Capability[] {
@@ -108,14 +110,19 @@ function presetCompatibleWithBackend(preset: Preset, key: string): boolean {
 }
 
 function backendOptionsFromSystemInfo(info: Record<string, unknown> | null): BackendOption[] {
-  const recipes = (info?.recipes ?? null) as Record<string, { backends?: Record<string, unknown> }> | null;
+  const recipes = (info?.recipes ?? null) as Record<string, { backends?: Record<string, { state?: unknown }> }> | null;
   if (!recipes) return [];
   const out: BackendOption[] = [];
   for (const [recipe, recipeInfo] of Object.entries(recipes)) {
-    const backends = recipeInfo?.backends ? Object.keys(recipeInfo.backends) : [];
-    for (const backend of backends) {
+    const backends = recipeInfo?.backends ?? null;
+    if (!backends) continue;
+    for (const [backend, backendInfo] of Object.entries(backends)) {
       const key = `${recipe}:${backend}`;
-      out.push({ key, label: backendLabelFromKey(key), caps: backendCapabilitiesForRecipe(recipe) });
+      // A backend the server flags `unsupported` cannot run on this host, so a
+      // global preset bound to it is meaningless (#2432 round-3). Mark it
+      // unsupported so the Presets UI disables (but still surfaces) the option.
+      const supported = String((backendInfo as { state?: unknown })?.state || '').toLowerCase() !== 'unsupported';
+      out.push({ key, label: backendLabelFromKey(key), caps: backendCapabilitiesForRecipe(recipe), supported });
     }
   }
   return out.sort((a, b) => a.label.localeCompare(b.label));
@@ -586,6 +593,11 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const handleApplyBackend = useCallback((presetId: string, backendKey: string) => {
     const preset = allPresets.find(p => p.id === presetId);
     if (!preset || !presetCompatibleWithBackend(preset, backendKey)) return;
+    // #2432 round-3: never bind a preset to a backend the server reports as
+    // unsupported on this hardware. The UI disables those options; this is the
+    // defense-in-depth guard for any programmatic path.
+    const option = backendOptions.find(b => b.key === backendKey);
+    if (option && !option.supported) return;
     // #2432 review (GAP 2): Default = the "no backend preset" state. Never store
     // it as a real binding; assigning Default detaches any existing binding so the
     // Backend view (which hides Default) and the "Applied to backends" zone agree.
@@ -601,7 +613,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     setBackendPresets(prev => ({ ...prev, [backendKey]: presetId }));
     setApplyBackendSuccess(`"${preset.name}" now applies globally to all models using ${backendLabelFromKey(backendKey)}.`);
     setTimeout(() => setApplyBackendSuccess(null), 3000);
-  }, [allPresets]);
+  }, [allPresets, backendOptions]);
 
   const handleDetachBackend = useCallback((backendKey: string) => {
     setBackendPresets(prev => {
@@ -1018,7 +1030,7 @@ const selectedBackendOption = backendOptions.find(b => b.key === applyBackendTar
 // "Applied to backends" row with no matching chip, so backend assignment is
 // disabled for Default. Users pick/clone another preset to set a backend default.
 const isDefaultBackendPreset = currentPreset.id === DEFAULT_PRESET.id;
-const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
+const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && selectedBackendOption.supported && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
 
   useEffect(() => {
     const nextCtxSize = nearestContextSize(
@@ -1288,10 +1300,14 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && pr
               <option value="">— pick a backend —</option>
               {backendOptions.map(b => {
                 const compatible = presetCompatibleWithBackend(currentPreset, b.key);
-                const reason = compatible
-                  ? `${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}`
-                  : `Incompatible: this backend handles ${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}; preset needs ${currentPreset.applies_to.map(c => CAPABILITY_LABELS[c] || c).join(' or ')}`;
-                return <option key={b.key} value={b.key} disabled={!compatible} title={reason}>{b.label}</option>;
+                const assignable = b.supported && compatible;
+                const reason = !b.supported
+                  ? `Unsupported: this server reports ${b.label} as unavailable on this hardware, so a preset cannot be assigned to it.`
+                  : compatible
+                    ? `${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}`
+                    : `Incompatible: this backend handles ${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}; preset needs ${currentPreset.applies_to.map(c => CAPABILITY_LABELS[c] || c).join(' or ')}`;
+                const optionLabel = b.supported ? b.label : `${b.label} (unsupported)`;
+                return <option key={b.key} value={b.key} disabled={!assignable} title={reason} data-backend-option-unsupported={b.supported ? undefined : 'true'}>{optionLabel}</option>;
               })}
             </select>
             <button
@@ -1305,7 +1321,12 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && pr
             </button>
           </div>
           {backendOptions.length === 0 && <p className="preset-help" data-backend-apply-empty>No backends reported by this server yet.</p>}
-          {!isDefaultBackendPreset && selectedBackendOption && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
+          {!isDefaultBackendPreset && selectedBackendOption && !selectedBackendOption.supported && (
+            <p className="preset-error" role="status" aria-live="polite" id="preset-backend-unsupported-note" data-backend-apply-unsupported-note>
+              {selectedBackendOption.label} is unsupported on this server&rsquo;s hardware, so a preset cannot be assigned to it.
+            </p>
+          )}
+          {!isDefaultBackendPreset && selectedBackendOption && selectedBackendOption.supported && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
           <p className="preset-backend-success" role="status" aria-live="polite" aria-atomic="true" data-backend-apply-success>
             {applyBackendSuccess ? `✓ ${applyBackendSuccess}` : ''}
           </p>
