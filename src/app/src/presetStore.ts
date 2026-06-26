@@ -497,6 +497,102 @@ export function activePresetForBackend(key: string): Preset {
   return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
 }
 
+/**
+ * Per-recipe field in RecipeOptions that names the concrete backend the runtime
+ * will bind at load time (e.g. `llamacpp_backend: 'vulkan'`). Used to resolve the
+ * EXACT backend a load will use so we only merge the matching `recipe:backend`
+ * binding (#2432 round-3).
+ */
+const BACKEND_FIELD_BY_RECIPE: Record<string, keyof RecipeOptions> = {
+  llamacpp: 'llamacpp_backend',
+  vllm: 'vllm_backend',
+  whispercpp: 'whispercpp_backend',
+  moonshine: 'moonshine_backend',
+};
+
+function normalizeBackendValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? trimmed : undefined;
+}
+
+/** Read `recipes[recipe].default_backend` from a /system-info payload. */
+function recipeDefaultBackend(systemInfo: Record<string, unknown> | null | undefined, recipe: string): string | undefined {
+  const recipes = (systemInfo?.recipes ?? null) as Record<string, { default_backend?: unknown }> | null;
+  if (!recipes) return undefined;
+  return normalizeBackendValue(recipes[recipe]?.default_backend);
+}
+
+/**
+ * Resolve the CONCRETE backend that a load for `recipe` will actually use, in
+ * sensible precedence: explicit load options → model-preset recipe_options →
+ * recipe default backend (from /system-info). The backend preset's own value is
+ * deliberately NOT consulted here — that would be circular (we're deciding
+ * whether the backend preset even applies).
+ */
+function concreteBackendForRecipe(
+  recipe: string,
+  explicitOptions: RecipeOptions | null | undefined,
+  modelPresetOptions: RecipeOptions | null | undefined,
+  systemInfo: Record<string, unknown> | null | undefined,
+): string | undefined {
+  const field = BACKEND_FIELD_BY_RECIPE[recipe];
+  if (!field) return undefined;
+  return normalizeBackendValue(explicitOptions?.[field])
+    ?? normalizeBackendValue(modelPresetOptions?.[field])
+    ?? recipeDefaultBackend(systemInfo, recipe);
+}
+
+export interface BackendResolutionContext {
+  /** Options passed explicitly to the load call (highest precedence). */
+  explicitOptions?: RecipeOptions | null;
+  /** The model preset's recipe_options (model-specific defaults). */
+  modelPresetOptions?: RecipeOptions | null;
+  /** /system-info payload, used for the recipe's default_backend. */
+  systemInfo?: Record<string, unknown> | null;
+}
+
+/**
+ * #2432 (round-3): resolve the GLOBAL backend preset that applies to a model's
+ * load, if any.
+ *
+ * Backend presets are keyed by the EXACT `recipe:backend` pair (e.g.
+ * `llamacpp:vulkan`). A binding therefore only applies when the CONCRETE backend
+ * that this load will use equals the binding's backend part — NOT merely when the
+ * recipe matches. We resolve the concrete backend the same way the load does
+ * (explicit options → model preset → recipe default_backend) and only merge the
+ * preset bound to that exact key. This keeps the semantics "all models using this
+ * BACKEND" rather than the wrong "all models using this RECIPE".
+ *
+ * Default is treated as "no backend preset" (returns null) so it never
+ * contributes args — consistent with the Backend view hiding Default.
+ */
+export function activePresetForModelBackend(model?: ModelInfo | null, ctx?: BackendResolutionContext): Preset | null {
+  if (!model) return null;
+  const applied = loadBackendApplied();
+  if (Object.keys(applied).length === 0) return null;
+
+  // Ordered list of the model's recipes (active recipe first).
+  const recipes: string[] = [];
+  const active = String((model as Record<string, unknown>).recipe || '').trim().toLowerCase();
+  if (active) recipes.push(active);
+  for (const recipe of recipesForModel(model)) {
+    const name = recipeName(recipe);
+    if (name && !recipes.includes(name)) recipes.push(name);
+  }
+  if (recipes.length === 0) return null;
+
+  for (const recipe of recipes) {
+    const backend = concreteBackendForRecipe(recipe, ctx?.explicitOptions, ctx?.modelPresetOptions, ctx?.systemInfo);
+    if (!backend) continue;
+    const presetId = applied[`${recipe}:${backend}`];
+    if (!presetId || presetId === DEFAULT_PRESET.id) continue;
+    const preset = allStoredPresets().find(p => p.id === presetId);
+    if (preset) return preset;
+  }
+  return null;
+}
+
 /* ── Running-preset store (#2356: update preset while loaded) ─────
  *
  * Tracks the preset a *loaded* model is currently running with. When a model
@@ -617,13 +713,39 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
   }
 }
 
-export function recipeOptionsForModel(modelName: string, model?: ModelInfo | null): RecipeOptions | undefined {
-  const preset = activePresetForModel(modelName);
-  const options = preset.recipe_options || {};
-  const scopedOptions = model
-    ? recipeOptionsForCapability(options, capabilityFromModelInfo(model))
-    : options;
-  return Object.keys(scopedOptions || {}).length > 0 ? scopedOptions : undefined;
+export function recipeOptionsForModel(
+  modelName: string,
+  model?: ModelInfo | null,
+  explicitOptions?: RecipeOptions | null,
+  systemInfo?: Record<string, unknown> | null,
+): RecipeOptions | undefined {
+  const capability = model ? capabilityFromModelInfo(model) : undefined;
+
+  // Model preset = model-specific defaults.
+  const modelPreset = activePresetForModel(modelName);
+  const modelPresetOptions = modelPreset.recipe_options || {};
+  const modelOptions = model
+    ? recipeOptionsForCapability(modelPresetOptions, capability!)
+    : modelPresetOptions;
+
+  // Backend preset = GLOBAL backend/runtime defaults (#2432). It only applies
+  // when the CONCRETE backend this load resolves to (explicit options → model
+  // preset → recipe default_backend) matches its exact `recipe:backend` binding.
+  // Merge precedence: start from the backend preset's args as the base/global
+  // defaults, then layer the model preset's args on top so model-specific values
+  // WIN on conflict. This matches `main`'s "more specific source wins" merge.
+  // Default backend preset contributes nothing (resolver returns null).
+  const backendPreset = activePresetForModelBackend(model, {
+    explicitOptions,
+    modelPresetOptions,
+    systemInfo,
+  });
+  const backendOptions = backendPreset && model
+    ? recipeOptionsForCapability(backendPreset.recipe_options || {}, capability!)
+    : (backendPreset ? (backendPreset.recipe_options || {}) : {});
+
+  const merged: RecipeOptions = { ...backendOptions, ...modelOptions };
+  return Object.keys(merged || {}).length > 0 ? merged : undefined;
 }
 
 export function samplingForModel(modelName: string): SamplingParams {
