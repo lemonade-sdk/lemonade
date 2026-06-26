@@ -229,7 +229,6 @@
   <div class="footer-placeholder"></div>
 
   <script src="assets/navbar.js?v=hero-redesign"></script>
-  <script src="assets/install-selector.js"></script>
   <script src="assets/footer.js"></script>
   <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
@@ -542,7 +541,7 @@
       }
       if (highlights.length > 0) {
         releaseHighlights.innerHTML = '<ul class="highlight-list">' + highlights.map(function(item) {
-          return '<li>' + item + '</li>';
+          return '<li>' + wgEscapeHtml(item) + '</li>';
         }).join('') + '</ul>';
       } else {
         releaseHighlights.innerHTML = '<p class="highlight-empty">No headline notes published for this release.</p>';
@@ -574,50 +573,18 @@
         setLatestVersionFromTag(releaseCarouselState.items[0].tag_name);
         renderReleaseAt(0);
       } catch (error) {
-        document.getElementById('releaseName').textContent = 'Lemonade latest';
-        document.getElementById('releaseDate').textContent = 'Check for updates';
-        document.getElementById('releaseLink').href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
-        document.getElementById('releaseHighlights').innerHTML = '<p class="highlight-empty">Unable to load releases right now.</p>';
+        var nameEl = document.getElementById('releaseName');
+        var dateEl = document.getElementById('releaseDate');
+        var linkEl = document.getElementById('releaseLink');
+        var highlightsEl = document.getElementById('releaseHighlights');
+        if (nameEl) nameEl.textContent = 'Lemonade latest';
+        if (dateEl) dateEl.textContent = 'Check for updates';
+        if (linkEl) linkEl.href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
+        if (highlightsEl) highlightsEl.innerHTML = '<p class="highlight-empty">Unable to load releases right now.</p>';
         releaseCarouselState.items = [];
         releaseCarouselState.index = 0;
         updateReleaseNavState();
       }
-    }
-    function compactCount(value) {
-      if (typeof value !== 'number' || !isFinite(value)) return null;
-      if (value >= 1000000) return (value / 1000000).toFixed(1).replace('.0', '') + 'M';
-      if (value >= 1000) return (value / 1000).toFixed(1).replace('.0', '') + 'k';
-      return String(value);
-    }
-    async function fetchCommunityStats() {
-      var githubEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="github"]'));
-      var discordEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="discord"]'));
-      if (!githubEls.length && !discordEls.length) return;
-      function setAll(els, text) {
-        els.forEach(function(el) { el.textContent = text; });
-      }
-      try {
-        var repoResponse = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
-        if (repoResponse.ok) {
-          var repoData = await repoResponse.json();
-          var stars = compactCount(repoData.stargazers_count);
-          if (stars) setAll(githubEls, stars);
-        }
-      } catch (error) {}
-      try {
-        var inviteResponse = await fetch('https://discord.com/api/v10/invites/5xXzkMu8Zk?with_counts=true');
-        if (inviteResponse.ok) {
-          var inviteData = await inviteResponse.json();
-          var members = compactCount(inviteData.approximate_member_count);
-          if (members) setAll(discordEls, members);
-        }
-      } catch (error) {}
-      githubEls.forEach(function(el) {
-        if (el.textContent === 'Stars') el.textContent = 'Stars';
-      });
-      discordEls.forEach(function(el) {
-        if (el.textContent === 'Members') el.textContent = 'Members';
-      });
     }
     // ---- Working groups (live from GitHub, with hardcoded fallback) ----
     var WG_README_URL = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade/main/docs/dev/working-groups/README.md';
@@ -736,7 +703,6 @@
     document.addEventListener('DOMContentLoaded', function() {
       if (typeof initializeNavbar === 'function') initializeNavbar('./');
       fetchLatestRelease();
-      fetchCommunityStats();
       initWorkingGroups();
       if (typeof initializeFooter === 'function') initializeFooter('../');
       if (typeof fetchLatestVersion === 'function') fetchLatestVersion();

@@ -24,6 +24,27 @@
     });
   }
 
+  // SMIL keyTimes must end at 1. If the last keyframe lands earlier, hold its
+  // final value to the end of the cycle so the timeline stays valid. Every demo's
+  // <animate> builder shares this one padding rule.
+  function padToCycleEnd(vals, times) {
+    var v = vals.split(';'), k = times.split(';');
+    if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
+    return { v: v, k: k };
+  }
+  // Repeating <animate> (loops forever) -- shared by the developer-stage demos
+  // (deploy / household / stack).
+  function repeatAnim(cycle, attr, vals, times) {
+    var p = padToCycleEnd(vals, times);
+    return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + p.v.join(';') + '" keyTimes="' + p.k.join(';') + '"></animate>';
+  }
+  // One-shot <animate> that freezes its final state -- used by the spawn demo.
+  function freezeAnim(cycle, attr, vals, times) {
+    var p = padToCycleEnd(vals, times);
+    return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" fill="freeze" values="' + p.v.join(';') + '" keyTimes="' + p.k.join(';') + '"></animate>';
+  }
+  function fixed4(n) { return (+n).toFixed(4); }
+
   // Cadence handed in by the persona-demo host so the flowchart's SMIL cycle and
   // per-route begin offsets line up with the autoplay progress bar. Defaults
   // match the host's constants so the module also works standalone.
@@ -862,14 +883,9 @@
     var cycle = (C / 1000).toFixed(3) + 's';
     function sf(ms) { return Math.max(0, Math.min(1, ms / C)); }
     function kt() { return routerTimes(Array.prototype.slice.call(arguments)); }
-    // One-shot animation that freezes its final state. SMIL requires keyTimes to
-    // end at 1, so if the reveal finishes earlier we hold the last value to the
-    // end of the cycle (and fill="freeze" holds it after the cycle too).
-    function anim(attr, vals, times) {
-      var v = vals.split(';'), k = times.split(';');
-      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
-      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" fill="freeze" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
-    }
+    // One-shot animation that freezes its final state (fill="freeze" holds it
+    // after the cycle too).
+    function anim(attr, vals, times) { return freezeAnim(cycle, attr, vals, times); }
     function motion(pathD, times) {
       return '<animateMotion path="' + escapeText(pathD) + '" dur="' + cycle + '" begin="0s" fill="freeze" calcMode="linear" keyPoints="0;0;1;1" keyTimes="' + times + '"></animateMotion>';
     }
@@ -972,13 +988,8 @@
   function deployDemo() {
     var C = 5200;
     var cycle = (C / 1000).toFixed(3) + 's';
-    // Repeating <animate>; pads the final keyTime to 1 so SMIL stays valid.
-    function ranim(attr, vals, times) {
-      var v = vals.split(';'), k = times.split(';');
-      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
-      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
-    }
-    function f(n) { return (+n).toFixed(4); }
+    function ranim(attr, vals, times) { return repeatAnim(cycle, attr, vals, times); }
+    var f = fixed4;
 
     var appX = 310, appY = 108;       // app-window bottom-centre (flow origin)
     var PLAT = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/';
@@ -1144,12 +1155,8 @@
   function householdDemo() {
     var C = 5200;
     var cycle = (C / 1000).toFixed(3) + 's';
-    function ranim(attr, vals, times) {
-      var v = vals.split(';'), k = times.split(';');
-      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
-      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
-    }
-    function f(n) { return (+n).toFixed(4); }
+    function ranim(attr, vals, times) { return repeatAnim(cycle, attr, vals, times); }
+    var f = fixed4;
 
     var fanX = 310, fanY = 116;   // wires fan from a single point under the server
     var cy = 284;                 // device row centre
@@ -1305,12 +1312,8 @@
   function stackDemo() {
     var C = 9600;
     var cycle = (C / 1000).toFixed(3) + 's';
-    function ranim(attr, vals, times) {
-      var v = vals.split(';'), k = times.split(';');
-      if (Number(k[k.length - 1]) < 1) { v.push(v[v.length - 1]); k.push('1'); }
-      return '<animate attributeName="' + attr + '" dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="linear" values="' + v.join(';') + '" keyTimes="' + k.join(';') + '"></animate>';
-    }
-    function f(n) { return (+n).toFixed(4); }
+    function ranim(attr, vals, times) { return repeatAnim(cycle, attr, vals, times); }
+    var f = fixed4;
 
     var appCx = 310;
 
@@ -1510,6 +1513,9 @@
       if (kind === 'household-network') return householdDemo();
       if (kind === 'backend-stack') return stackDemo();
       return routerDemo(kind);
-    }
+    },
+    // Exposed so the persona-demo framework (loaded after this module) can reuse
+    // one HTML-escaper instead of maintaining a second copy.
+    escapeText: escapeText
   };
 })();

@@ -33,11 +33,9 @@
   var animationSubsectionDelay = 2450;   // per-subsection duration
   var animationSubsectionGap = 350;
 
-  function escapeText(text) {
-    return String(text).replace(/[&<>"']/g, function(ch) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
-    });
-  }
+  // One HTML-escaper, owned by flowchart.js (loaded first; see the require note
+  // above). Reused here so the two modules can't silently diverge.
+  var escapeText = window.LemonadeFlowchart.escapeText;
 
   // Hand the flowchart renderer our cadence. Section files that own a flowchart
   // slide call this from their registered demo fn, so timing stays here (it's a
@@ -208,6 +206,24 @@
       var fresh = svg.cloneNode(true);
       svg.parentNode.replaceChild(fresh, svg);
       try { if (fresh.setCurrentTime) fresh.setCurrentTime(0); } catch (e) {}
+    }
+  }
+
+  // Suspend / resume the live SMIL timeline WITHOUT rewinding -- used to halt the
+  // active slide while the tab is backgrounded (no point compositing animated blur
+  // glows no one can see) and pick it back up where it left off on return.
+  function pauseSvgAnimations(container) {
+    if (!container || !container.querySelectorAll) return;
+    var svgs = container.querySelectorAll('svg');
+    for (var i = 0; i < svgs.length; i++) {
+      try { if (svgs[i].pauseAnimations) svgs[i].pauseAnimations(); } catch (e) {}
+    }
+  }
+  function resumeSvgAnimations(container) {
+    if (!container || !container.querySelectorAll) return;
+    var svgs = container.querySelectorAll('svg');
+    for (var i = 0; i < svgs.length; i++) {
+      try { if (svgs[i].unpauseAnimations) svgs[i].unpauseAnimations(); } catch (e) {}
     }
   }
 
@@ -574,6 +590,17 @@
     }
     var switchBtn = event.target.closest('[data-cta-switch]');
     if (switchBtn) switchPersona(switchBtn.getAttribute('data-cta-switch'));
+  });
+
+  // Off-screen slides are already frozen, but the live slide's repeating SMIL keeps
+  // compositing blur-filter glows in a hidden tab. Pause it on hide and resume (not
+  // restart) on return so it continues where it left off.
+  document.addEventListener('visibilitychange', function() {
+    if (!demoEls || currentActive < 0) return;
+    var frame = demoEls[currentActive];
+    if (!frame) return;
+    if (document.hidden) pauseSvgAnimations(frame);
+    else resumeSvgAnimations(frame);
   });
 
   // Deep-link intents: #run forces the user persona, #embed the developer persona.

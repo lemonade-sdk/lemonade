@@ -49,6 +49,11 @@ function initializeNavbar(basePath = '') {
   }
   navbarContainer.innerHTML = createNavbar(basePath);
 
+  // The navbar renders on every static page, so its live GitHub/Discord counters
+  // must be populated here -- not by a homepage-only inline script (which would
+  // leave the placeholders 'Stars'/'Members' on every other page).
+  fetchCommunityStats();
+
   const toggle = document.getElementById('navbarToggle');
   const links = document.getElementById('navbarLinks');
   if (!toggle || !links) return;
@@ -65,6 +70,43 @@ function initializeNavbar(basePath = '') {
   links.addEventListener('click', function(e) {
     if (e.target.tagName === 'A') setOpen(false);
   });
+}
+
+// Compact a raw count (e.g. 12345) to a short label ('12.3k'). Returns null for
+// non-finite input so callers leave the existing placeholder in place.
+function compactCount(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return null;
+  if (value >= 1000000) return (value / 1000000).toFixed(1).replace('.0', '') + 'M';
+  if (value >= 1000) return (value / 1000).toFixed(1).replace('.0', '') + 'k';
+  return String(value);
+}
+
+// Fill the navbar's [data-community-stat] spans with live GitHub stars / Discord
+// members. Best-effort: each fetch is independent and any failure (offline, rate
+// limit) silently leaves that span's placeholder text.
+async function fetchCommunityStats() {
+  const githubEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="github"]'));
+  const discordEls = Array.prototype.slice.call(document.querySelectorAll('[data-community-stat="discord"]'));
+  if (!githubEls.length && !discordEls.length) return;
+  function setAll(els, text) {
+    els.forEach(function(el) { el.textContent = text; });
+  }
+  try {
+    const repoResponse = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
+    if (repoResponse.ok) {
+      const repoData = await repoResponse.json();
+      const stars = compactCount(repoData.stargazers_count);
+      if (stars) setAll(githubEls, stars);
+    }
+  } catch (error) {}
+  try {
+    const inviteResponse = await fetch('https://discord.com/api/v10/invites/5xXzkMu8Zk?with_counts=true');
+    if (inviteResponse.ok) {
+      const inviteData = await inviteResponse.json();
+      const members = compactCount(inviteData.approximate_member_count);
+      if (members) setAll(discordEls, members);
+    }
+  } catch (error) {}
 }
 
 if (typeof module !== 'undefined' && module.exports) {
