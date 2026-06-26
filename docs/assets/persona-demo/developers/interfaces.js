@@ -141,11 +141,11 @@
   // Each tile groups real management endpoints as METHOD + path, so it's
   // unmistakable the dev is looking at HTTP endpoints they can call.
   var CONTROL_TILES = [
-    { title: 'System', icon: 'monitor_heart', eps: [['GET', '/system-info'], ['GET', '/system-stats']] },
-    { title: 'Models', icon: 'inventory_2', eps: [['POST', '/pull'], ['POST', '/load'], ['POST', '/unload'], ['POST', '/delete']] },
-    { title: 'Backends', icon: 'memory', eps: [['POST', '/install'], ['POST', '/uninstall']] },
-    { title: 'Config & scale', icon: 'tune', eps: [['POST', '/params'], ['POST', '/cloud/auth'], ['POST', '/internal/set']] },
-    { title: 'Lifecycle', icon: 'restart_alt', eps: [['GET', '/health'], ['GET', '/logs/stream'], ['POST', '/internal/shutdown']], wide: true }
+    { title: 'System', icon: 'monitor_heart', eps: [['GET', '/v1/system-info'], ['GET', '/v1/system-stats']] },
+    { title: 'Models', icon: 'inventory_2', eps: [['POST', '/v1/pull'], ['POST', '/v1/load'], ['POST', '/v1/unload'], ['POST', '/v1/delete']] },
+    { title: 'Backends', icon: 'memory', eps: [['POST', '/v1/install'], ['POST', '/v1/uninstall']] },
+    { title: 'Config & scale', icon: 'tune', eps: [['POST', '/v1/params'], ['POST', '/v1/cloud/auth'], ['POST', '/internal/set']] },
+    { title: 'Lifecycle', icon: 'restart_alt', eps: [['GET', '/v1/health'], ['GET', '/v1/logs/stream'], ['POST', '/internal/shutdown']], wide: true }
   ];
 
   function controlDash() {
@@ -181,7 +181,7 @@
     {
       slug: 'claude',
       name: 'Anthropic API',
-      ep: '/api/messages · tool use · streaming',
+      ep: '/v1/messages · tool use · streaming',
       benefit: 'Anthropic-API clients and SDKs run on local models.'
     }
   ];

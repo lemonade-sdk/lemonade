@@ -135,11 +135,11 @@
 
   // Render one slide's demo into a given section frame + caption. When animate is
   // false the demo is built in its START state -- JS players are not run and CSS
-  // animations are frozen by the .hp-slide:not(.is-active) rule -- so an upcoming
-  // (not-yet-reached) slide shows its "before" look, never its finished frame.
-  // refreshActive replays with animate=true once the slide reaches the live zone.
-  // The actual HTML lives in the demo functions registered by the section files;
-  // this just looks up the kind, sets the caption + animation-mode, and runs it.
+  // animations are frozen by the .hp-slide:not(.is-active) rule -- so a slide that is
+  // not active shows its "before" look, never a finished frame. setActive renders
+  // with animate=true (play) when a slide activates and animate=false (reset) when it
+  // deactivates. The actual HTML lives in the demo functions registered by the
+  // section files; this just looks up the kind, sets the caption + mode, and runs it.
   function renderDemo(frameEl, captionEl, step, slideIndex, animate) {
     if (animate === undefined) animate = true;
     var slide = step.slides && step.slides[slideIndex];
@@ -223,8 +223,7 @@
   var demoEls = null;
   var captionEls = null;
   var rendered = [];
-  var currentActive = -1;   // the highlighted (focused) slide
-  var playedIndex = -1;     // the slide whose animation has played for this arrival
+  var currentActive = -1;   // the active (focused + playing) slide
   var renderIO = null;
 
   function buildJourney(persona) {
@@ -279,39 +278,53 @@
     captionEls = journeyEl.querySelectorAll('.hp-slide-caption');
     rendered = [];
     currentActive = -1;
-    playedIndex = -1;
     jumpIntent = -1;
   }
 
-  // Pre-render a slide's demo in its START state as it nears the viewport, so an
-  // upcoming neighbour shows its "before" look (not a finished animation) while it
-  // sits dimmed in the depth-of-field. The animation is played later, by refreshActive.
+  // Pre-render a slide's demo in its START state as it nears the viewport (once), so
+  // an upcoming neighbour shows its "before" look -- not a finished animation -- while
+  // it sits dimmed in the depth-of-field. It plays only once it becomes the active
+  // slide (setActive -> playSlide).
   function renderSlide(i) {
     if (i < 0 || i >= demoEls.length || rendered[i]) return;
+    resetSlide(i);
+  }
+
+  // Render a slide's demo at its starting frame, animation stopped. Used to (re)set a
+  // slide to its "before" look: as a pre-render, and to reset a slide when it
+  // deactivates so it never sits frozen on a finished frame.
+  function resetSlide(i) {
+    if (i < 0 || i >= demoEls.length) return;
     rendered[i] = true;
     var entry = globalSlides[i];
     renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex, false);
   }
 
-  // Re-render a slide's demo and PLAY it. Used when a slide reaches the live zone so
-  // its animation runs THERE (from the start), not when it first scrolled into view.
-  function replaySlide(i) {
+  // Render a slide's demo and PLAY its animation from the start. Used when a slide
+  // becomes the active slide (setActive).
+  function playSlide(i) {
     if (i < 0 || i >= demoEls.length) return;
     rendered[i] = true;
     var entry = globalSlides[i];
     renderDemo(demoEls[i], captionEls[i], entry.step, entry.slideIndex, true);
   }
 
-  // Depth-of-field + TOC highlight ONLY (no replay). Tracking focus while scrolling
-  // must not re-trigger animations -- replay is handled separately, gated to the
-  // live zone (see refreshActive).
-  function setHighlight(i) {
+  // The ONE rule for slide animation, applied on every change of focus:
+  //   * the slide that becomes active plays its animation from the start;
+  //   * the slide it replaces is reset to its starting frame (animation stopped).
+  // Guarded on currentActive, so re-asserting the same active slide (every scroll
+  // frame) is a no-op -- scrolling an active slide up and down never restarts it.
+  // Activation also drives the depth-of-field (.is-active) + TOC highlight.
+  function setActive(i) {
     if (i === currentActive) return;
+    var prev = currentActive;
     currentActive = i;
     for (var s = 0; s < slideEls.length; s++) {
       slideEls[s].classList.toggle('is-active', s === i);
     }
     updateToc(i);
+    if (prev >= 0) resetSlide(prev);   // stop + rewind the slide we just left
+    if (i >= 0) playSlide(i);          // play the newly active slide from the start
   }
 
   function updateToc(g) {
@@ -369,23 +382,25 @@
   }
 
   // Drop the spotlight when the journey isn't engaged, so no slide is left crisp
-  // while you're above (or below) the journey.
+  // while you're above (or below) the journey. The slide we leave is reset to its
+  // starting frame, same as any other deactivation.
   function clearActive() {
-    playedIndex = -1;
     if (currentActive === -1) return;
+    var prev = currentActive;
     currentActive = -1;
     for (var s = 0; s < slideEls.length; s++) slideEls[s].classList.remove('is-active');
+    resetSlide(prev);
   }
 
-  // React to the current scroll position: highlight the nearest slide, and once it
-  // has settled into the live zone (near centre) play its animation -- once per
-  // arrival. The replay is gated to the live zone (not the moment focus changes) so
-  // animations still run while the slide is centred, where the user can see them.
+  // React to the current scroll position: make the nearest slide the active one
+  // (setActive then plays it / resets the one it replaces). No magnet, no settle --
+  // the page never moves the scroll; the active slide is simply whichever demo is
+  // nearest the viewport centre.
   function refreshActive() {
     if (!demoEls || !demoEls.length) return;
     if (!journeyEngaged()) { clearActive(); return; }
     // While an explicit jump is in flight, the clicked slide owns the focus -- the
-    // highlight must not flicker onto slides we merely scroll past on the way there.
+    // active slide must not flicker onto slides we merely scroll past on the way there.
     var index, abs;
     if (jumpIntent !== -1) {
       index = jumpIntent;
@@ -397,20 +412,14 @@
       index = n.index;
       abs = n.abs;
     }
-    setHighlight(index);
-    var liveZone = Math.min(140, window.innerHeight * 0.14);
-    if (abs <= liveZone) {
-      if (playedIndex !== index) { playedIndex = index; replaySlide(index); }
-    } else {
-      playedIndex = -1;   // left the live zone -> arm replay for whatever centres next
-    }
+    setActive(index);
+    // A finished jump releases its lock once the target lands, so the nearest slide
+    // takes over focus again.
+    if (jumpIntent !== -1 && abs < 8) jumpIntent = -1;
   }
 
   var scrollTicking = false;
-  var snapTimer = null;
-  var isSnapping = false;
-  var snapTarget = -1;
-  var jumpIntent = -1;   // global slide the user explicitly asked for; the magnet must serve it
+  var jumpIntent = -1;   // global slide the user explicitly asked for via TOC/arrows
 
   function onJourneyScroll() {
     if (!scrollTicking) {
@@ -420,40 +429,6 @@
         refreshActive();
       });
     }
-    // Magnetic centring: once scrolling settles, glide the nearest slide to centre.
-    if (snapTimer) window.clearTimeout(snapTimer);
-    snapTimer = window.setTimeout(snapToCenter, 140);
-  }
-
-  // After scrolling stops, glide the SAME slide refreshActive focuses on -- the
-  // nearest -- so its demo sits dead-centre. Removes the need to land a slide on the
-  // centre line by hand. Scoped to the journey (only fires when a demo is genuinely
-  // near centre), skipped on mobile + under reduced motion, and self-limiting: it
-  // no-ops once centred and ignores the smooth scroll it triggers (by only
-  // re-snapping when the nearest slide actually changes).
-  function snapToCenter() {
-    if (!demoEls || !demoEls.length) return;
-    if (window.matchMedia &&
-        (window.matchMedia('(max-width: 920px)').matches ||
-         window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
-    if (!journeyEngaged()) { isSnapping = false; snapTarget = -1; return; }   // don't grab on entry/exit
-    // An explicit jump is authoritative: serve its target, never override it with
-    // the nearest slide. If the smooth scroll stalled short, finish it; only when
-    // the clicked slide is centred do we release the intent back to the magnet.
-    if (jumpIntent !== -1) {
-      var ri = demoEls[jumpIntent].getBoundingClientRect();
-      var d = (ri.top + ri.height / 2) - window.innerHeight / 2;
-      if (Math.abs(d) < 6) { jumpIntent = -1; isSnapping = false; snapTarget = -1; return; }
-      window.scrollTo({ top: window.pageYOffset + d, behavior: 'smooth' });
-      return;
-    }
-    var n = nearestSlide();
-    if (n.index === -1) { isSnapping = false; snapTarget = -1; return; }
-    if (n.abs < 6) { isSnapping = false; snapTarget = -1; return; }   // already centred
-    if (isSnapping && n.index === snapTarget) return;                  // already gliding there
-    isSnapping = true;
-    snapTarget = n.index;
-    window.scrollTo({ top: window.pageYOffset + n.delta, behavior: 'smooth' });
   }
 
   // Centre the sticky TOC by setting its sticky `top` to (viewport - tocHeight) / 2,
@@ -494,8 +469,9 @@
     window.addEventListener('scroll', onJourneyScroll, { passive: true });
     window.addEventListener('resize', onJourneyResize);
     // A real user gesture mid-jump is fresh intent and must win: cancel the pending
-    // jump so the magnet stops pulling back to the clicked slide. (Our own smooth
-    // scroll fires `scroll`, not wheel/touchstart, so this never cancels the jump.)
+    // jump so the highlight stops locking to the clicked slide and follows the
+    // nearest one again. (Our own smooth scroll fires `scroll`, not wheel/touchstart,
+    // so this never cancels the jump.)
     window.addEventListener('wheel', cancelJumpIntent, { passive: true });
     window.addEventListener('touchstart', cancelJumpIntent, { passive: true });
     positionToc();                       // centre the TOC for this build/viewport
@@ -505,16 +481,16 @@
 
   function cancelJumpIntent() { jumpIntent = -1; }
 
-  // Smooth-scroll a slide so its DEMO sits at the viewport centre -- the same target
-  // the magnet uses, so they agree (no double-motion). Used by TOC clicks + arrows.
-  // Records the slide as the authoritative jump intent: the magnet serves it (it
-  // cannot hijack the scroll to a slide we pass on the way), and the highlight
-  // locks to it at once so the TOC reflects the click before the scroll arrives.
+  // Smooth-scroll a slide so its DEMO sits at the viewport centre. Used by TOC clicks
+  // + arrows -- a user-initiated scroll (the only scroll we move on purpose). Records
+  // the slide as the authoritative jump intent and activates it at once, so it plays
+  // and the TOC reflects the click before the scroll arrives, and the active slide
+  // doesn't flicker onto slides we pass on the way there.
   function jumpToGlobal(g) {
     if (!demoEls || !demoEls.length) return;
     g = Math.max(0, Math.min(demoEls.length - 1, g));
     jumpIntent = g;
-    setHighlight(g);
+    setActive(g);
     var r = demoEls[g].getBoundingClientRect();
     var delta = (r.top + r.height / 2) - window.innerHeight / 2;
     window.scrollTo({ top: window.pageYOffset + delta, behavior: 'smooth' });
@@ -522,9 +498,6 @@
 
   function rebuild(persona) {
     if (renderIO) { renderIO.disconnect(); renderIO = null; }
-    if (snapTimer) { window.clearTimeout(snapTimer); snapTimer = null; }
-    isSnapping = false;
-    snapTarget = -1;
     jumpIntent = -1;
     window.removeEventListener('scroll', onJourneyScroll);
     window.removeEventListener('resize', onJourneyResize);
@@ -554,9 +527,9 @@
     jumpToGlobal(Number(btn.getAttribute('data-global')) || 0);
   });
 
-  // Up/Down arrows step between slides while the journey owns the screen (the magnet
-  // otherwise swallows their small native scroll). At a boundary they step out of the
-  // journey instead of fighting the magnet. Ignored when typing or with modifiers.
+  // Up/Down arrows step between slides while the journey owns the screen (a precise
+  // jump to the next demo beats nudging the native scroll by a line). At a boundary
+  // they step out of the journey. Ignored when typing or with modifiers.
   document.addEventListener('keydown', function(event) {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;

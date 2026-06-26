@@ -6,7 +6,7 @@
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css?v=hero-redesign">
-  <link rel="stylesheet" href="assets/persona-demo.css?v=interfaces-redesign-3">
+  <link rel="stylesheet" href="assets/persona-demo.css?v=journey-activate-play">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -84,7 +84,6 @@
         </div>
 
         <div class="gs-install" id="gsInstall"></div>
-        <div class="gs-quickstart" id="gsQuickstart"></div>
       </div>
     </section>
 
@@ -387,17 +386,6 @@
         el.innerHTML = html;
       }
 
-      function gsRenderQuickstart() {
-        var el = document.getElementById('gsQuickstart');
-        if (!el) return;
-        var guideLink = 'and read <a href="https://developer.amd.com/playbooks/lemonade-getting-started/" target="_blank" rel="noopener">getting started</a>.';
-        if (gsPlatform === 'windows' || gsPlatform === 'apple') {
-          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Explore the desktop app ' + guideLink + '</p>';
-        } else {
-          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Explore the web UI at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a> ' + guideLink + '</p>';
-        }
-      }
-
       function gsSetPlatform(name) {
         gsPlatform = name;
         var btns = document.querySelectorAll('.gs-platform');
@@ -405,7 +393,6 @@
           btn.classList.toggle('is-active', btn.getAttribute('data-platform') === name);
         });
         gsRenderInstall();
-        gsRenderQuickstart();
       }
 
       function gsInit() {
@@ -429,13 +416,11 @@
         // Re-render when version becomes available
         window.addEventListener('lmnLatestVersionReady', function() {
           gsRenderInstall();
-          gsRenderQuickstart();
         });
         var versionCheck = setInterval(function() {
           if (window.lmnLatestVersion) {
             clearInterval(versionCheck);
             gsRenderInstall();
-            gsRenderQuickstart();
           }
         }, 500);
         // Stop checking after 15s

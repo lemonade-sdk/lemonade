@@ -13,7 +13,7 @@
         label: 'Omni models',
         demo: 'router-omni',
         caption: 'Send and receive multimedia with virtual omni models.',
-        captionHref: 'https://lemonade-server.ai/docs/dev/omni-router/',
+        captionHref: 'https://lemonade-server.ai/docs/dev/lemonade-omni/',
         animationMode: 'repeat'
       },
       {

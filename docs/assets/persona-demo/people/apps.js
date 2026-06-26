@@ -64,8 +64,11 @@
       { label: 'Personal agents', kind: 'apps-personal' },
       { label: 'Productivity', kind: 'apps-productivity' }
     ];
+    // One continuous --card index across every element -- group labels included --
+    // so labels and their cards fade in together in a smooth top-to-bottom stagger.
     var idx = 0;
     var html = groups.map(function(g) {
+      var labelIdx = idx++;
       var cards = (appCategories[g.kind] || []).map(function(app) {
         var card = '<div class="hp-appboard-card" style="--card:' + idx + '">' +
             '<div class="hp-appboard-head">' +
@@ -77,7 +80,7 @@
         idx += 1;
         return card;
       }).join('');
-      return '<div class="hp-appboard-grouplabel">' + escapeText(g.label) + '</div>' +
+      return '<div class="hp-appboard-grouplabel" style="--card:' + labelIdx + '">' + escapeText(g.label) + '</div>' +
         '<div class="hp-appboard-grid">' + cards + '</div>';
     }).join('');
     return '<div class="hp-appboard">' + html + '</div>';

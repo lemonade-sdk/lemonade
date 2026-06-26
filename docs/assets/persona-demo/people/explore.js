@@ -175,7 +175,9 @@
     { text: '✓ configuration updated', kind: 'output', phase: 0, delay: 820 },
     { text: '', delay: 1120 },
     { text: '$ lemonade list | grep custom', kind: 'command', phase: 1, delay: 1420 },
-    { text: '✓ imported 3 GGUF models from /path/to/models', kind: 'output', phase: 1, delay: 1820 }
+    { text: '✓ imported Qwen3.6-35B-A3B-GGUF', kind: 'output', phase: 1, delay: 1820 },
+    { text: '✓ imported gpt-oss-120b-GGUF', kind: 'output', phase: 1, delay: 2080 },
+    { text: '✓ imported GLM-4.7-Flash-GGUF', kind: 'output', phase: 1, delay: 2340 }
   ];
 
   P.registerDemo('explore-omni', function(frame, o) {

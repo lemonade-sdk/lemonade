@@ -372,7 +372,7 @@ html:not([data-persona="developers"]) [data-cta-persona="developers"] {
 }
 
 .hp-quickstart-card .gs-install {
-  margin-bottom: calc(var(--page-space-base) * 0.55);
+  margin-bottom: 0;
 }
 
 .hp-persona-switch {
@@ -893,9 +893,24 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   border-radius: 50%;
 }
 
-.hp-app-window-dots i:nth-child(1) { background: #ff6b5f; }
-.hp-app-window-dots i:nth-child(2) { background: #fcd846; }
-.hp-app-window-dots i:nth-child(3) { background: #50c878; }
+/* Abstract window controls: two neutral dots followed by one lemonade-yellow dot.
+   Deliberately NOT the macOS red/amber/green so the window reads as Lemonade's
+   own chrome. The yellow is the brand accent (--primary-yellow), unchanged across
+   themes; the leading grays are tuned per surface -- a warm light gray on the
+   light ice-card windows, a warm translucent gray on the dark/bash windows. */
+.hp-app-window-dots i:nth-child(1),
+.hp-app-window-dots i:nth-child(2) { background: #c6c3ba; }
+.hp-app-window-dots i:nth-child(3) { background: var(--primary-yellow); }
+
+/* Dark windows: the dev "Your App" window (.is-dark, shown on the light page) and
+   every window once the page is in Midnight (zest-dark). Only the neutral dots
+   change; the yellow stays the brand accent. */
+.hp-app-window.is-dark .hp-app-window-dots i:nth-child(1),
+.hp-app-window.is-dark .hp-app-window-dots i:nth-child(2),
+[data-md-color-scheme="zest-dark"] .hp-app-window-dots i:nth-child(1),
+[data-md-color-scheme="zest-dark"] .hp-app-window-dots i:nth-child(2) {
+  background: rgba(248, 243, 218, 0.32);
+}
 
 /* Dark theme -- the SAME window, just a dark surface (the bash-terminal look:
    near-black with a soft gold bloom, no outline). Light and dark windows share
@@ -919,6 +934,41 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
 }
 
 .hp-app-window.is-dark .hp-app-window-title {
+  color: rgba(248, 243, 218, 0.92);
+}
+
+/* ---- Terminal window: follows the PAGE theme ----------------------------
+   The CLI terminals must read as part of the page, not as a stray dark panel.
+   Under the default (light) Crystalline Zest theme they are a light ice-card
+   shell -- the SAME light-terminal treatment as the install console cards
+   (.gs-console) elsewhere on the page: a frosted, slightly-more-solid glass
+   surface with a faint citrus bloom in the corner (mirroring the gold bloom
+   the dark bash window carries). The inherited .ice-card base already supplies
+   the frosted glass + ambient shadow; here we firm up the fill for code
+   legibility and add the bloom. Text colours live with .hp-terminal-body. */
+.hp-app-window.hp-terminal-window {
+  background:
+    radial-gradient(circle at 80% 12%, rgba(252, 216, 70, 0.12), transparent 42%),
+    var(--glass-bg-hover);   /* a step more solid than base glass so mono text stays crisp */
+}
+
+/* Under Midnight (zest-dark) the terminal returns to the warm bash-dark surface
+   -- the original near-black panel with a soft gold bloom and no outline. */
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window {
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    #211e16;
+  border: none;
+  color: #f8f3da;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window .hp-app-window-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window .hp-app-window-title {
   color: rgba(248, 243, 218, 0.92);
 }
 
@@ -1171,6 +1221,18 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0.1rem 0.2rem 0.05rem;
+  /* Shares the row entrance + --row stagger so labels fade in top-to-bottom
+     in lockstep with their rows. */
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.12s + 0.1s);
+}
+
+/* Subsequent category headings (e.g. the audio groups below the LLM engines) get
+   extra top margin so each labelled group reads as its own section. */
+.hp-applist-category.is-secondary {
+  margin-top: 0.5rem;
 }
 
 /* Same listing style as the app-store cards: no solid outline (DESIGN.md
@@ -1730,6 +1792,12 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   text-transform: uppercase;
   color: var(--text-muted);
   margin-top: 0.15rem;
+  /* Shares the card entrance + --card stagger so each group label fades in
+     just before its cards, keeping the board's top-to-bottom cascade. */
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.06s + 0.12s);
 }
 
 .hp-appboard-grid {
@@ -2343,7 +2411,7 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
 }
 
 .hp-terminal-body code {
-  color: #f8f3da;
+  color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: clamp(0.82rem, 1.25vw, 0.98rem);
   line-height: 1.72;
@@ -2363,18 +2431,39 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
   animation-delay: var(--terminal-delay, 0ms);
 }
 
+/* Light-theme line colours (default). Commands are the brightest/boldest line
+   (max contrast, like a real prompt), output recedes to secondary, comments to
+   muted -- the same three-step hierarchy the dark terminal uses, retuned to the
+   Crystalline Zest light text scale. */
 .hp-terminal-body .hp-terminal-comment {
-  color: rgba(248, 243, 218, 0.52);
+  color: var(--text-muted);
 }
 
 .hp-terminal-body .hp-terminal-command {
-  color: #fff8d8;
+  color: var(--text-on-light);
   font-weight: 780;
 }
 
 .hp-terminal-body .hp-terminal-output {
-  color: rgba(248, 243, 218, 0.62);
+  color: var(--text-secondary);
   padding-left: 1.15rem;
+}
+
+/* Midnight (zest-dark): the warm bash-terminal line colours. */
+[data-md-color-scheme="zest-dark"] .hp-terminal-body code {
+  color: #f8f3da;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-comment {
+  color: rgba(248, 243, 218, 0.52);
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-command {
+  color: #fff8d8;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-output {
+  color: rgba(248, 243, 218, 0.62);
 }
 
 @keyframes hpTerminalLineIn {

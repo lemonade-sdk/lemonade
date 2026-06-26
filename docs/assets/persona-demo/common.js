@@ -35,32 +35,43 @@
 
   // REUSABLE: a vertical list of items inside an app window, each with a download
   // button; the item flagged `downloading` shows a progress bar instead. Reused
-  // by the model manager + backends list. opts = { title, category, items:
-  // [{name, meta, downloading, progress, swapAt}] }.
+  // by the model manager + backends list. Pass either a single category +
+  // items, or several labelled groups:
+  //   opts = { title, category, items: [{name, meta, downloading, progress, swapAt}] }
+  //   opts = { title, groups: [{ category, items: [...] }, ...] }
+  // The --row index runs continuously across every element -- category headings
+  // included -- so the entrance stagger animates smoothly top-to-bottom, with each
+  // group label fading in just before its rows.
   function appWindowList(opts) {
-    var rows = opts.items.map(function(item, i) {
-      // Every row is identical (name, meta, fixed action slot with the download
-      // button) so the downloading row looks like the rest. On the downloading
-      // row the cursor clicks the button at --swap-at; it then swaps to the
-      // progress bar, which fills linearly to 100% (no deceleration).
-      var act = item.downloading
-        ? '<span class="hp-applist-act is-downloading" style="--swap-at:' + (item.swapAt || 1300) + 'ms">' +
-            '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
-            '<span class="hp-applist-progress" style="--p:100%"><i></i></span>' +
-          '</span>'
-        : '<span class="hp-applist-act">' +
-            '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
-          '</span>';
-      return '<div class="hp-applist-row" style="--row:' + i + '">' +
-          '<span class="hp-applist-name">' + escapeText(item.name) + '</span>' +
-          (item.meta ? '<span class="hp-applist-meta">' + escapeText(item.meta) + '</span>' : '') +
-          act +
-        '</div>';
+    var groups = opts.groups || [{ category: opts.category, items: opts.items }];
+    var seq = 0;
+    var body = groups.map(function(group, gi) {
+      var category = group.category
+        ? '<div class="hp-applist-category' + (gi > 0 ? ' is-secondary' : '') + '" style="--row:' + (seq++) + '">' + escapeText(group.category) + '</div>'
+        : '';
+      var rows = (group.items || []).map(function(item) {
+        var i = seq++;
+        // Every row is identical (name, meta, fixed action slot with the download
+        // button) so the downloading row looks like the rest. On the downloading
+        // row the cursor clicks the button at --swap-at; it then swaps to the
+        // progress bar, which fills linearly to 100% (no deceleration).
+        var act = item.downloading
+          ? '<span class="hp-applist-act is-downloading" style="--swap-at:' + (item.swapAt || 1300) + 'ms">' +
+              '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
+              '<span class="hp-applist-progress" style="--p:100%"><i></i></span>' +
+            '</span>'
+          : '<span class="hp-applist-act">' +
+              '<span class="hp-applist-dl"><span class="material-symbols-outlined">download</span></span>' +
+            '</span>';
+        return '<div class="hp-applist-row" style="--row:' + i + '">' +
+            '<span class="hp-applist-name">' + escapeText(item.name) + '</span>' +
+            (item.meta ? '<span class="hp-applist-meta">' + escapeText(item.meta) + '</span>' : '') +
+            act +
+          '</div>';
+      }).join('');
+      return category + rows;
     }).join('');
-    var category = opts.category
-      ? '<div class="hp-applist-category">' + escapeText(opts.category) + '</div>'
-      : '';
-    return appWindow(opts.title, '<div class="hp-applist">' + category + rows + '</div>', 'hp-applist-window');
+    return appWindow(opts.title, '<div class="hp-applist">' + body + '</div>', 'hp-applist-window');
   }
 
   // One shared cursor that glides smoothly between the download buttons of an
@@ -144,13 +155,16 @@
     }).join('');
   }
 
-  // The terminal is just the unified app window (dark theme) with a code body, so
-  // it shares the chrome -- title bar + window dots on the right. Section files
-  // supply their own title + lines.
+  // The terminal is the unified app window with a code body, so it shares the
+  // chrome -- title bar + window dots on the right. Section files supply their
+  // own title + lines. Unlike the generic dark windows it carries its own
+  // `hp-terminal-window` class so it can follow the PAGE theme: a light ice-card
+  // shell under the default (light) theme, and the warm bash-dark surface under
+  // Midnight (`zest-dark`). See the .hp-terminal-window rules in persona-demo.css.
   function renderTerminal(title, lines) {
     return appWindow(title || 'Bash',
       '<div class="hp-terminal-body"><pre><code>' + terminalCodeHtml(lines) + '</code></pre></div>',
-      'is-dark');
+      'hp-terminal-window');
   }
 
   P.helpers.CURSOR_SVG = CURSOR_SVG;
