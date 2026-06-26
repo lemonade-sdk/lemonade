@@ -4,7 +4,7 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel } from './presetStore';
+import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
 
 const DEFAULT_BASE_URL = 'http://localhost:13305';
 const LS_BASE_URL = 'lemonade_base_url';
@@ -948,7 +948,7 @@ class LemonadeAPI {
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo);
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
     const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
