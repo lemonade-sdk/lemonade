@@ -1813,6 +1813,31 @@ body.install-options {
   font-weight: 400;
 }
 
+/* Dark theme (developer persona sets data-md-color-scheme="zest-dark"): the footer
+   is otherwise a hardcoded white bar, which reads as a jarring bright strip at the
+   bottom of the dark page. Blend it into the dark page and lift the text to the
+   cream foreground tokens. */
+[data-md-color-scheme="zest-dark"] .site-footer {
+  background-color: transparent;
+  border-top: 1px solid var(--outline-variant);
+}
+[data-md-color-scheme="zest-dark"] .footer-rail-link,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product {
+  color: var(--text-secondary);
+}
+[data-md-color-scheme="zest-dark"] .footer-rail-link:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link:focus,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community:focus,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product:focus {
+  color: var(--text-primary);
+}
+[data-md-color-scheme="zest-dark"] .copyright {
+  color: var(--text-muted);
+}
+
 /* Footer responsive design */
 @media (min-width: 1024px) {
 }
@@ -5504,5 +5529,15 @@ body.install-options {
   .hp-community .hp-community-cta-row .dev-btn {
     flex: 1 1 12rem;
     justify-content: center;
+  }
+
+  /* Section CTAs (View Release, Explore the Marketplace) carry a fixed
+     min-width:320px for a consistent desktop size. Inside the release card — whose
+     heavy side padding leaves only ~265px of inner width on a phone — that 320px
+     overruns the right padding. Drop the floor and let the button fill the card. */
+  .hp-section-cta {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
   }
 }

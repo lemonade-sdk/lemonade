@@ -775,7 +775,17 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
     background: var(--glass-bg-dense);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    transition: background 0.25s ease, backdrop-filter 0.25s ease;
     z-index: 5;
+  }
+  /* Above the journey (and at load) no section is `.is-current`, so the bar has no
+     content — drop its frosting so it doesn't read as a weird empty translucent
+     strip. The frosting returns the moment a section becomes current. (Padding is
+     kept either way, so the height stays stable and nothing jumps.) */
+  .hp-journey-toc:not(:has(.hp-toc-section.is-current)) {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .hp-toc-list { flex-direction: row; justify-content: center; }
   .hp-toc-section { display: none; }
@@ -793,9 +803,18 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
     justify-content: center;
     gap: 0.35rem;
   }
-  .hp-toc-slide { width: auto; }
+  /* Condense each slide to a single pagination dot. The label stays hidden even
+     for the active slide, so the dots form ONE evenly-spaced, aligned row instead
+     of the active dot being shoved off-axis by its inline label. (The active
+     slide's name is already shown in the caption directly beneath its demo, and
+     the section title above gives the section context.) */
+  .hp-toc-slide {
+    width: auto;
+    gap: 0;
+    padding: 0.4rem;
+  }
   .hp-toc-slide .hp-toc-slide-label { display: none; }
-  .hp-toc-slide.is-active .hp-toc-slide-label { display: inline; }   /* label only for the active dot */
+  .hp-toc-dot { width: 0.55rem; height: 0.55rem; }
   .hp-slide { --slide-gap: 2.25rem; }
   .hp-slide-stage { height: min(56vh, 440px); }
 }
