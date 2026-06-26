@@ -478,6 +478,11 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
         }
+        if (arch == "gfx110X") {
+            env_vars.push_back({"HSA_OVERRIDE_GFX_VERSION", "11.0.0"});
+            env_vars.push_back({"HSA_ENABLE_DXG_DETECTION", "1"});
+            LOG(DEBUG, "LlamaCpp") << "Setting HSA_OVERRIDE_GFX_VERSION=11.0.0 for gfx110X (enables ROCm on RDNA3 iGPU/dGPU)" << std::endl;
+        }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
         // llama-server.exe. Prepend the executable directory to PATH so the loader
