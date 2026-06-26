@@ -1295,6 +1295,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setLoadingModel(null);
   };
 
+  // #2356 (simplified): a load-time preset change needs a real reload. The
+  // detail panel already classifies live-vs-reload and rebinds the active
+  // preset; here we just perform the reload (unload + load via api.reloadModel)
+  // and refresh so the loaded-model snapshot reflects the reinitialization.
+  // Live (request-time) changes never reach here — they are a pure client-local
+  // rebind handled entirely in the panel (no server round-trip).
+  const handleReloadModel = async (
+    model: LoadedModel,
+    recipeOptions?: Record<string, unknown>,
+  ) => {
+    const info = listModels.find(m => modelName(m) === model.model_name) ?? null;
+    await api.reloadModel(model.model_name, recipeOptions, info);
+    await refresh();
+  };
+
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
     if ((model as any).custom) {
@@ -2729,6 +2744,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           loadError={loadError}
           onLoad={handleLoad}
           onUnload={handleUnload}
+          onReloadModel={handleReloadModel}
           onPull={handlePull}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}
