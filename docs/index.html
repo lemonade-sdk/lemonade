@@ -6,7 +6,7 @@
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css?v=hero-redesign">
-  <link rel="stylesheet" href="assets/persona-demo.css?v=journey-activate-play">
+  <link rel="stylesheet" href="assets/persona-demo.css?v=persona-crossfade-2">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -469,7 +469,14 @@
 
       // lemonadePersonaChange is emitted ONLY on a real user persona switch
       // (persona-demo/framework.js), never on load — so every fire is a switch.
+      // When the switch is wrapped in a View Transition (supported browser + motion
+      // allowed), that crossfade already animates the new content into place from its
+      // settled state — replaying fadeInUp here would double-animate it (and get
+      // captured mid-fade at opacity:0). So skip the replay on the crossfade path and
+      // keep it only for the instant-swap fallback, matching framework.js's condition.
       window.addEventListener('lemonadePersonaChange', function() {
+        var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (document.startViewTransition && !reduce) return; // crossfade handles the change
         belowToggle.forEach(replay);
       });
     })();

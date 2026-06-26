@@ -47,10 +47,10 @@
     var waveBars = new Array(26).join('<span></span>'); // 25 bars, matching the hero waveform
     var turns = [
       '<div class="hp-chat-user">What can I do with 128 GB of unified RAM?</div>',
-      '<div class="hp-chat-ai">Load up models like gpt-oss-120b or Qwen-Coder-Next for advanced tool use.</div>',
-      '<div class="hp-chat-user">Now paint a pitcher of lemonade like a renaissance master</div>',
+      '<div class="hp-chat-ai">Load up models like Qwen-Coder-Next for advanced tool use.</div>',
+      '<div class="hp-chat-user">Now paint a pitcher of lemonade</div>',
       '<div class="hp-demo-image-placeholder"></div>',
-      '<div class="hp-chat-user">Build a real-time dashboard that streams GPU metrics over WebSockets</div>',
+      '<div class="hp-chat-user">Build a real-time dashboard that streams GPU metrics</div>',
       '<pre class="hp-code-block"><code>' +
         '<span class="hp-code-kw">async def</span> <span class="hp-code-fn">stream_gpu_metrics</span>(ws):\n' +
         '    <span class="hp-code-kw">while</span> <span class="hp-code-lit">True</span>:\n' +
@@ -93,7 +93,11 @@
       (function(turn) {
         window.setTimeout(function() {
           turn.classList.add('is-in');
-          var overflow = turn.offsetTop + turn.offsetHeight - body.clientHeight + 14;
+          // Rest gap below the freshly revealed turn -- larger than the bubble's own
+          // margin so each new turn settles a little higher than the viewport's
+          // bottom edge, giving it room to breathe instead of hugging the floor.
+          var restGap = 48;
+          var overflow = turn.offsetTop + turn.offsetHeight - body.clientHeight + restGap;
           feed.style.transform = 'translateY(' + (overflow > 0 ? -overflow : 0) + 'px)';
         }, t);
       })(turns[i]);

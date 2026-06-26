@@ -8,6 +8,17 @@
    flowchart.css. The --page-space-* tokens these rules use are defined on
    .hp-main in website-styles.css and inherit down.
    ============================================================================ */
+/* --- Persona switch crossfade ---
+   Switching persona flips the light<->dark theme (see framework.js, which wraps the
+   swap in document.startViewTransition). The default `root` view-transition is already
+   an opacity crossfade of the whole page; this just tunes its timing so the
+   light<->dark change dissolves smoothly instead of snapping. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 600ms;
+  animation-timing-function: ease-in-out;
+}
+
 /* --- Persona Hero Base --- */
 .hp-persona-title {
   margin: 0;

@@ -116,15 +116,29 @@
   function switchPersona(persona) {
     var next = persona === 'developers' ? 'developers' : 'people';
     if (next === currentPersona()) return; // already active: no rebuild, no replay
-    applyPersona(next, true);
-    rebuild(next);
-    // Reflect the choice in the address bar so the current view is shareable/bookmarkable.
-    // replaceState (not `location.hash =`) updates the URL without a history entry and
-    // without any hash-driven scroll; init() reads this same hash on the next load.
-    try {
-      window.history.replaceState(null, '', next === 'developers' ? '#embed' : '#run');
-    } catch (e) {}
-    window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: next } }));
+    // The actual switch: flip the persona/theme, rebuild the journey, sync the URL, and
+    // signal listeners. Bundled so it can run atomically inside a View Transition.
+    var commit = function () {
+      applyPersona(next, true);
+      rebuild(next);
+      // Reflect the choice in the address bar so the current view is shareable/bookmarkable.
+      // replaceState (not `location.hash =`) updates the URL without a history entry and
+      // without any hash-driven scroll; init() reads this same hash on the next load.
+      try {
+        window.history.replaceState(null, '', next === 'developers' ? '#embed' : '#run');
+      } catch (e) {}
+      window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: next } }));
+    };
+    // The light<->dark theme flips with the persona; an instant swap is jarring. When the
+    // browser supports the View Transitions API (and the user hasn't asked for reduced
+    // motion), run the swap through it so the whole page crossfades from old to new. Older
+    // browsers / reduced-motion fall through to the instant swap, exactly as before.
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (document.startViewTransition && !reduce) {
+      document.startViewTransition(commit);
+    } else {
+      commit();
+    }
   }
   window.lemonadeSetPersona = switchPersona; // preserve the public hook
 
