@@ -962,6 +962,33 @@ class LemonadeAPI {
     return result;
   }
 
+  /**
+   * Apply a *load-time* preset change to an already-loaded model (#2356).
+   *
+   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
+   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
+   * not the source of truth for runtime capability. Load-time fields (ctx_size,
+   * backend, device, model args via recipe_options) require a real reload, which
+   * today is literally an unload followed by a load, exactly as `main` does.
+   *
+   * This helper is named `reloadModel` (rather than inlining unload→load at every
+   * call site) so that if a real in-place backend reload ever lands, only this
+   * method's body changes; callers and tests stay identical.
+   *
+   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
+   * handled here — rebinding the active preset is the whole "live" operation and
+   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
+   * the new values on the next generation request; nothing is POSTed.
+   */
+  async reloadModel(
+    modelName: string,
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
+  ): Promise<unknown> {
+    await this.unloadModel(modelName);
+    return this.loadModel(modelName, recipeOptions, modelInfo);
+  }
+
   async deleteModel(modelName: string): Promise<unknown> {
     const result = await this._json('/api/v1/delete', {
       method: 'POST',

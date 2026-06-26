@@ -3,7 +3,7 @@
  * Exposes lemonade server management as OpenAI-compatible function calling tools.
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
-import { allStoredPresets, isCompatible, loadApplied, saveApplied, type Preset } from '../presetStore';
+import { allStoredPresets, isCompatible, loadApplied, saveApplied, classifyPresetChange, runningPresetIdForModel, setRunningPreset, activePresetForModel, type Preset } from '../presetStore';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
@@ -68,6 +68,23 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
           preset_name: { type: 'string', description: 'Optional exact preset name to assign before loading.' },
         },
         required: ['model_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'change_preset',
+      description: 'Change the active preset of an already-LOADED model (#2356). Use this when the user asks to switch/apply a different preset to a model that is currently loaded (e.g. "use the Creative preset", "make it more deterministic", "give it a bigger context window"). Request-time changes (system prompt, sampling/temperature, tools) apply live on the next message with NO reload. Load-time changes (ctx_size, backend, device, model args) require a reload, which this tool performs automatically (unload + load). Specify the preset via preset, preset_id, or preset_name. If model_name is omitted, the most recently loaded model is used.',
+      parameters: {
+        type: 'object',
+        properties: {
+          model_name: { type: 'string', description: 'The loaded model to re-preset. Optional — uses the most recently loaded model if omitted.' },
+          preset: { type: 'string', description: 'Preset id or name to bind. Examples: Default, Balanced, Quality, Fast, Creative, Long Context, Code.' },
+          preset_id: { type: 'string', description: 'Optional exact preset id to bind.' },
+          preset_name: { type: 'string', description: 'Optional exact preset name to bind.' },
+        },
+        required: [],
       },
     },
   },
@@ -757,6 +774,104 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         };
         const presetText = appliedPreset ? ` using preset ${appliedPreset.name}` : '';
         return toolPayload(call, result, `Loaded ${targetModelName}${presetText}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
+      }
+
+      case 'change_preset': {
+        // #2356 (simplified): re-preset an already-loaded model with the same
+        // primitives as the UI button. No update-preset endpoint, no `mode`
+        // parameter — request-time changes are a pure client-local rebind;
+        // load-time changes go through reloadModel (= unload + load).
+        const health = await api.health().catch(() => null);
+        const loaded = health?.all_models_loaded || [];
+        if (loaded.length === 0) {
+          return toolPayload(call, {
+            error: 'No model is loaded. Load a model first, then change its preset.',
+            answer_instruction: 'Tell the user no model is loaded, so there is nothing to re-preset. Suggest load_model.',
+          }, 'No model loaded', true);
+        }
+        const data = await api.models(true).catch(() => ({ data: [] as AnyModel[] }));
+        // Resolve the target; default to the most-recently-loaded model (last entry).
+        const resolved = args.model_name
+          ? resolveModel(data.data as AnyModel[], loaded, args.model_name)
+          : (data.data as AnyModel[]).find(m => modelName(m).toLowerCase() === asString(loaded[loaded.length - 1]?.model_name).toLowerCase()) || null;
+        const targetModelName = resolved
+          ? modelName(resolved)
+          : (asString(args.model_name) || asString(loaded[loaded.length - 1]?.model_name));
+        if (!targetModelName) {
+          return toolPayload(call, { error: 'Could not determine which loaded model to re-preset.' }, 'Error: missing model name', true);
+        }
+        const loadedTarget = loaded.find(m => asString(m.model_name).toLowerCase() === targetModelName.toLowerCase());
+        if (!loadedTarget) {
+          return toolPayload(call, {
+            error: `Model ${targetModelName} is not currently loaded.`,
+            answer_instruction: 'Tell the user that model is not loaded, so its preset cannot be changed live. Suggest load_model with the preset instead.',
+          }, `Model ${targetModelName} is not loaded`, true);
+        }
+
+        const requestedPreset = presetSpecifier(args);
+        if (!requestedPreset) {
+          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
+          return toolPayload(call, {
+            error: 'Missing preset. Specify a preset to bind.',
+            available_presets: choices,
+            answer_instruction: 'Ask the user which preset to apply, listing the available presets.',
+          }, 'Error: missing preset', true);
+        }
+        const nextPreset = resolvePreset(requestedPreset);
+        if (!nextPreset) {
+          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
+          return toolPayload(call, {
+            error: `Preset not found: ${requestedPreset}`,
+            available_presets: choices,
+            answer_instruction: 'Tell the user the requested preset was not found and ask them to choose one of the available presets.',
+          }, `Preset not found: ${requestedPreset}`, true);
+        }
+        if (resolved && !isCompatible(nextPreset, resolved as any)) {
+          return toolPayload(call, {
+            error: `Preset ${nextPreset.name} is not compatible with ${targetModelName}`,
+            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+            answer_instruction: 'Tell the user the preset is incompatible with the loaded model and ask for a compatible preset.',
+          }, `Preset ${nextPreset.name} is not compatible with ${targetModelName}`, true);
+        }
+
+        // Determine the running preset (what the model is actually running) BEFORE
+        // rebinding, so we can classify the change correctly.
+        const runId = runningPresetIdForModel(targetModelName);
+        const running = runId ? (allStoredPresets().find(p => p.id === runId) ?? null) : (activePresetForModel(targetModelName) ?? null);
+        const kind = classifyPresetChange(running, nextPreset);
+
+        // Rebind the active preset (client-local — invariant #11). For live
+        // changes this is the entire operation; request composition carries the
+        // new values on the next request. The binding PERSISTS across a reload.
+        applyPresetBinding(targetModelName, nextPreset);
+
+        if (kind === 'reload') {
+          await api.reloadModel(targetModelName, nextPreset.recipe_options as Record<string, unknown> | undefined, resolved as any || null);
+          setRunningPreset(targetModelName, nextPreset.id);
+          const result = {
+            status: 'reloaded',
+            model: targetModelName,
+            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+            change: 'reload',
+            answer_instruction: 'Tell the user the preset was applied and the model was reloaded (load-time settings such as context size/backend require a reload).',
+          };
+          return toolPayload(call, result, `Reloaded ${targetModelName} with preset ${nextPreset.name}`);
+        }
+
+        // 'live' or 'none' — no server round-trip.
+        setRunningPreset(targetModelName, nextPreset.id);
+        const result = {
+          status: kind === 'live' ? 'applied_live' : 'no_change',
+          model: targetModelName,
+          preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+          change: kind,
+          answer_instruction: kind === 'live'
+            ? 'Tell the user the preset was applied live — it takes effect on the next message, no reload needed.'
+            : 'Tell the user the preset was already effectively in use, so nothing changed.',
+        };
+        return toolPayload(call, result, kind === 'live'
+          ? `Applied preset ${nextPreset.name} to ${targetModelName} (live, no reload)`
+          : `Preset ${nextPreset.name} already active on ${targetModelName}`);
       }
 
       case 'unload_model': {

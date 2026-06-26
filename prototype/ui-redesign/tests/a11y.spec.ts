@@ -3027,3 +3027,261 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 });
+
+
+// ─── 31. Update preset while a model is loaded (#2356, simplified) ────────────
+//
+// When a model is loaded and a DIFFERENT preset is linked to it, an
+// "Apply preset" / "Reload to apply preset" button appears next to "Unload".
+// Simplified design (no update-preset endpoint, no client `mode` param):
+//   • Live changes (sampling / system prompt / tools) are a pure client-local
+//     rebind — NO network call, applied by request composition next request.
+//   • Load-time changes (recipe_options) perform a real reload = unload + load
+//     (api.reloadModel). The active-preset binding persists across the reload.
+// Range: A154–A166.
+
+test.describe('Accessibility — update preset while loaded (#2356)', () => {
+  const MODEL = 'Llama-3.1-8B';
+
+  function preset(id: string, name: string, extra: Record<string, unknown> = {}) {
+    return {
+      id, name,
+      description: `${name} preset`,
+      applies_to: ['chat'],
+      recipe_options: { ctx_size: 4096 },
+      sampling: { temperature: 0.7, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 },
+      engine_hint: 'auto',
+      starter: false,
+      auto_opt_run_id: null,
+      auto_opt_enabled: true,
+      system_prompt_id: 'none',
+      system_prompts: [],
+      tools_enabled: false,
+      ...extra,
+    };
+  }
+
+  // p-base: running baseline. p-live: only sampling differs (live).
+  // p-reload: recipe_options differ (reload).
+  const PRESETS = [
+    preset('p-base', 'Base'),
+    preset('p-live', 'Live Tweaks', { sampling: { temperature: 0.2, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 } }),
+    preset('p-reload', 'Big Context', { recipe_options: { ctx_size: 8192 } }),
+  ];
+
+  type ReloadCall = { kind: 'unload' | 'load'; model_name?: string };
+
+  /**
+   * Seed presets, mark the model loaded (health.all_models_loaded), capture
+   * unload/load calls (the only server round-trip — for load-time reloads),
+   * navigate to Models, and select the loaded model.
+   * Returns the captured-calls array (mutated as requests arrive).
+   */
+  async function setup(page: Page, appliedPresetId: string): Promise<ReloadCall[]> {
+    const calls: ReloadCall[] = [];
+    await page.addInitScript(
+      ({ presets, applied, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: applied }));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: PRESETS, applied: appliedPresetId, model: MODEL },
+    );
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok', version: 'test',
+          all_models_loaded: [
+            { model_name: MODEL, recipe: 'llamacpp', device: 'gpu', type: 'llm', backend_url: 'http://x', pid: 1 },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }),
+      }),
+    );
+    await page.route('**/api/v1/unload', async route => {
+      let model_name: string | undefined;
+      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
+      calls.push({ kind: 'unload', model_name });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+    await page.route('**/api/v1/load', async route => {
+      let model_name: string | undefined;
+      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
+      calls.push({ kind: 'load', model_name });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    return calls;
+  }
+
+  /** Switch the linked preset via the Presets-tab Change chooser. */
+  async function switchLinkedPreset(page: Page, presetName: string): Promise<void> {
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+    await page.locator('.detail-presets__change-btn').click();
+    await page.waitForTimeout(100);
+    await page.locator(`.detail-presets__chooser-option[aria-label*="${presetName}"]`).click();
+    await page.waitForTimeout(150);
+  }
+
+  const updateBtn = '.model-detail-panel__update-preset-btn';
+
+  test('A154 — no Apply preset button when the loaded model already runs its linked preset', async ({ page }) => {
+    await setup(page, 'p-base');
+    // Model is loaded (Unload button present); linked == running (p-base).
+    await expect(page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i })).toBeVisible();
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A155 — switching to a live-only preset reveals "Apply preset" next to Unload', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const btn = page.locator(updateBtn);
+    await expect(btn).toBeVisible();
+    // Sits in the same actions group as Unload.
+    await expect(page.locator('.model-detail-panel__actions').locator(updateBtn)).toBeVisible();
+    await expect(btn).toContainText(/apply preset/i);
+    const label = await btn.getAttribute('aria-label');
+    expect(label).toMatch(/apply preset/i);
+    expect(label).not.toMatch(/reload/i);
+  });
+
+  test('A156 — clicking Apply preset (live) is a pure rebind: no reload call, announces no reload', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(300);
+    // Live op makes NO server round-trip (no unload/load).
+    expect(calls.length).toBe(0);
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toContainText(/applied live|no reload/i);
+    // Button disappears once running == linked again.
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A157 — switching to a reload-requiring preset labels the button as reloading', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    const btn = page.locator(updateBtn);
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText(/reload to apply preset/i);
+    const label = await btn.getAttribute('aria-label');
+    expect(label).toMatch(/reload/i);
+  });
+
+  test('A158 — clicking Reload to apply preset performs a real reload (unload + load) and announces it', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(500);
+    // Reload = unload followed by load, both targeting the model.
+    expect(calls.map(c => c.kind)).toEqual(['unload', 'load']);
+    expect(calls.every(c => c.model_name === MODEL)).toBe(true);
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toContainText(/reload/i);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A159 — Apply preset button is keyboard operable (Enter triggers the rebind)', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const btn = page.locator(updateBtn);
+    await btn.focus();
+    await expect(btn).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    // Live rebind: no reload call; affordance clears.
+    expect(calls.length).toBe(0);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A160 — preset update feedback is a polite live region', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toHaveAttribute('role', 'status');
+    await expect(status).toHaveAttribute('aria-live', 'polite');
+  });
+
+  test('A161 — no Apply preset button for a non-loaded model even with a non-default preset linked', async ({ page }) => {
+    // Model NOT in all_models_loaded → not loaded.
+    await page.addInitScript(
+      ({ presets, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: 'p-live' }));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: PRESETS, model: MODEL },
+    );
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }) }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A162 — Apply/Reload preset visible state passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await expect(page.locator(updateBtn)).toBeVisible();
+    const results = await new AxeBuilder({ page }).withTags([...WCAG_TAGS]).analyze();
+    const critical = results.violations.filter(v => v.impact === 'critical' || v.impact === 'serious');
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+
+  test('A163 — after a live apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(300);
+    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
+    await expect(unload).toBeFocused();
+  });
+
+  test('A164 — live Apply preset button accessible name names the target model', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const label = await page.locator(updateBtn).getAttribute('aria-label');
+    expect(label).toMatch(new RegExp(`apply preset for ${MODEL}`, 'i'));
+  });
+
+  test('A165 — reload Apply preset button accessible name names the target model', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    const label = await page.locator(updateBtn).getAttribute('aria-label');
+    expect(label).toMatch(new RegExp(`reload ${MODEL} to apply preset`, 'i'));
+  });
+
+  test('A166 — after a reload apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(500);
+    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
+    await expect(unload).toBeFocused();
+  });
+});
