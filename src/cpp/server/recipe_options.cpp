@@ -20,6 +20,8 @@ static const json DEFAULTS = {
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
     {"sdcpp_args", ""},
+    {"parakeetcpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
+    {"parakeetcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     {"moonshine_args", ""},      // Custom arguments to pass to moonshine-server
@@ -61,6 +63,8 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"llamacpp_args", "--llamacpp-args"},
     {"sd-cpp_backend", "--sdcpp"},
     {"sdcpp_args", "--sdcpp-args"},
+    {"parakeetcpp_backend", "--parakeetcpp"},
+    {"parakeetcpp_args", "--parakeetcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
     {"moonshine_args", "--moonshine-args"},
@@ -72,6 +76,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     std::vector<std::string> keys;
     if (recipe == "llamacpp") {
         keys = {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
+    } else if (recipe == "parakeetcpp") {
+        keys = {"parakeetcpp_backend", "parakeetcpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
         keys = {"whispercpp_backend", "whispercpp_args", "merge_args"};
     } else if (recipe == "moonshine") {
@@ -256,6 +262,8 @@ static const json CLI_OPTIONS = {
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to llama-server"}, {"group", "Llama.cpp Backend Options"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"help", "SD.cpp backend to use"}, {"group", "Stable Diffusion Options"}}},
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}, {"group", "Stable Diffusion Options"}}},
+    {"--parakeetcpp", {{"option_name", "parakeetcpp_backend"}, {"type_name", "BACKEND"}, {"help", "ParakeetCpp backend to use"}, {"group", "Parakeet.cpp Options"}}},
+    {"--parakeetcpp-args", {{"option_name", "parakeetcpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to parakeet-server"}, {"group", "Parakeet.cpp Options"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"help", "WhisperCpp backend to use"}, {"group", "Whisper.cpp Options"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to whisper-server"}, {"group", "Whisper.cpp Options"}}},
     {"--moonshine-args", {{"option_name", "moonshine_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to moonshine-server"}}},

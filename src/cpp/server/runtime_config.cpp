@@ -30,7 +30,7 @@ RuntimeConfig* RuntimeConfig::global() {
 }
 
 static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
+    "llamacpp", "parakeetcpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
 };
 
 static bool is_backend_name(const std::string& key) {
@@ -39,7 +39,7 @@ static bool is_backend_name(const std::string& key) {
 
 // Backends that have a selectable "backend" key
 static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp", "vllm"
+    "llamacpp", "parakeetcpp", "whispercpp", "sdcpp", "vllm"
 };
 
 static bool has_backend_selection(const std::string& config_section) {
@@ -351,6 +351,16 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
             result["llamacpp_args"] = lc["args"];
         }
         if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
+    }
+
+    if (config_.contains("parakeetcpp")) {
+        const auto& pc = config_["parakeetcpp"];
+        if (pc.contains("backend")) result["parakeetcpp_backend"] = resolve_auto(pc["backend"]);
+        if (pc.contains(backend_args) && pc[backend_args] != "") {
+            result["parakeetcpp_args"] = pc[backend_args];
+        } else if (pc.contains("args")) {
+            result["parakeetcpp_args"] = pc["args"];
+        }
     }
 
     if (config_.contains("whispercpp")) {

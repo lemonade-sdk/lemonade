@@ -1365,6 +1365,106 @@
         ],
         "size": 1.62
     },
+    "Parakeet-TDT-CTC-110M": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:tdt_ctc-110m-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "hot"
+        ],
+        "size": 0.17
+    },
+    "Parakeet-CTC-0.6B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:ctc-0.6b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.24
+    },
+    "Parakeet-RNNT-0.6B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:rnnt-0.6b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.24
+    },
+    "Parakeet-TDT-0.6B-v2": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:tdt-0.6b-v2-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.86
+    },
+    "Parakeet-TDT-0.6B-v3": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:tdt-0.6b-v3-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.36
+    },
+    "Parakeet-CTC-1.1B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:ctc-1.1b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.4
+    },
+    "Parakeet-RNNT-1.1B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:rnnt-1.1b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.4
+    },
+    "Parakeet-TDT-1.1B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:tdt-1.1b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.4
+    },
+    "Parakeet-TDT-CTC-1.1B": {
+        "checkpoints": {
+            "main": "mudler/parakeet-cpp-gguf:tdt_ctc-1.1b-q8_0.gguf"
+        },
+        "recipe": "parakeetcpp",
+        "suggested": true,
+        "labels": [
+            "transcription"
+        ],
+        "size": 0.4
+    },
     "Moonshine-Tiny-Streaming": {
         "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
         "recipe": "moonshine",

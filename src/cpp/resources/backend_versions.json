@@ -95,5 +95,11 @@
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },
+  "parakeetcpp": {
+    "cpu": "v0.3.2",
+    "vulkan": "v0.3.2",
+    "cuda": "v0.3.2",
+    "metal": "v0.3.2"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

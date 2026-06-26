@@ -1235,8 +1235,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return all_bin_files[0];
     }
 
-    // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp" && type == "main") {
+    // For llamacpp and parakeetcpp, find the GGUF file
+    if ((info.recipe == "llamacpp" || info.recipe == "parakeetcpp") && type == "main") {
         if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -2670,6 +2670,9 @@ void ModelManager::register_user_model(const std::string& model_name,
 
     if (recipe == "sd-cpp") {
         labels.insert("image");
+    }
+    if (recipe == "parakeetcpp") {
+        labels.insert("transcription");
     }
     if (recipe == "whispercpp") {
         labels.insert("transcription");

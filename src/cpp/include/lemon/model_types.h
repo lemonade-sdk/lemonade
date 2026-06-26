@@ -148,6 +148,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_NPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
+    } else if (recipe == "parakeetcpp") {
+        return DEVICE_CPU;
     } else if (recipe == "whispercpp") {
         return DEVICE_CPU;
     } else if (recipe == "moonshine") {

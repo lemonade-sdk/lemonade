@@ -610,7 +610,7 @@ json McpServer::tool_transcribe_audio(const json& arguments) {
         }
     }
 
-    if (auto err = unsupported_model_error(model_manager_, model, "transcription", {"whispercpp"})) {
+    if (auto err = unsupported_model_error(model_manager_, model, "transcription", {"whispercpp", "parakeetcpp"})) {
         return *err;
     }
 

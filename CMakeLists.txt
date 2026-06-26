@@ -611,6 +611,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
+    src/cpp/server/backends/parakeet_server.cpp
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp

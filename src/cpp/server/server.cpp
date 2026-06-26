@@ -4161,8 +4161,8 @@ void Server::resolve_and_register_local_model(
             resolved_checkpoint = dest_path;
         }
     }
-    // For llamacpp models, find the GGUF file
-    else if (recipe == "llamacpp") {
+    // For llamacpp and parakeetcpp models, find the GGUF file
+    else if (recipe == "llamacpp" || recipe == "parakeetcpp") {
         std::string gguf_file_found;
 
         // If no variant or variant not found, search for any .gguf file (excluding mmproj)

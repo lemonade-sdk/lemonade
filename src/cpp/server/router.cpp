@@ -4,6 +4,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/parakeet_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/moonshine_server.h"
 #include "lemon/backends/kokoro_server.h"
@@ -308,6 +309,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         new_server = std::make_unique<backends::CloudServer>(model_info.cloud_provider, log_level,
                                                               model_manager_, backend_manager_,
                                                               cloud_registry_);
+    } else if (model_info.recipe == "parakeetcpp") {
+        LOG(DEBUG, "Router") << "Creating ParakeetServer backend" << std::endl;
+        new_server = std::make_unique<backends::ParakeetServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "whispercpp") {
         LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);

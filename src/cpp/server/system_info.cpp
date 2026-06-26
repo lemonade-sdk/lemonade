@@ -445,6 +445,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64", "arm64"}},
     }},
 
+    // parakeet.cpp - Vulkan, CUDA, CPU, Metal
+    {"parakeetcpp", "cpu",    {"windows", "linux"},    {{"cpu", {"x86_64"}}}},
+    {"parakeetcpp", "vulkan", {"windows", "linux"},    {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}},
+    {"parakeetcpp", "cuda",   {"windows", "linux"},    {{"nvidia_gpu", {}}}},
+    {"parakeetcpp", "metal",  {"macos"},               {{"metal", {}}}},
+
     // whisper.cpp - NPU, ROCm GPU, Vulkan, CPU, Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},

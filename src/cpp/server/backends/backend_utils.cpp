@@ -3,6 +3,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/parakeet_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
@@ -42,6 +43,7 @@ namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
         if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
+        if (recipe == "parakeetcpp") return &ParakeetServer::SPEC;
         if (recipe == "whispercpp") return &WhisperServer::SPEC;
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
