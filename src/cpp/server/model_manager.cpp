@@ -1794,13 +1794,26 @@ static bool are_required_checkpoints_complete(const ModelInfo& info) {
 }
 
 void ModelManager::build_cache() {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
     if (cache_valid_) {
         return;
     }
 
     LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
+
+    // Fetch all system-info data BEFORE acquiring the model-cache lock.
+    // This avoids a deadlock when another thread holds s_system_info_mutex
+    // (e.g., during recipe computation in get_system_info_with_cache()) and
+    // simultaneously needs to read from the models cache, which requires
+    // models_cache_mutex_.  See system_info.cpp:4013 for the other lock.
+    json cached_si = SystemInfoCache::get_system_info_with_cache();
+    auto flm_status = SystemInfoCache::get_flm_status();
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+    // Re-check after acquiring the lock (another thread may have built it).
+    if (cache_valid_) {
+        return;
+    }
 
     models_cache_.clear();
     std::map<std::string, ModelInfo> all_models;
@@ -1931,7 +1944,6 @@ void ModelManager::build_cache() {
     // Step 1.6: Discover FLM models from 'flm list --json'
     // Only discover FLM models if FLM is fully installed
     // Precedence: server_models.json > user_models.json > extra_models > flm_list
-    auto flm_status = SystemInfoCache::get_flm_status();
     if (flm_status.is_ready()) {
         auto flm_available = get_flm_available_models();
         for (const auto& info : flm_available) {
@@ -1991,9 +2003,10 @@ void ModelManager::build_cache() {
         info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
     }
 
-    // Step 2: Filter by backend availability
-    all_models = filter_models_by_backend(all_models);
+    // Step 2: Filter by backend availability (pass pre-loaded system_info).
+    all_models = filter_models_by_backend(all_models, cached_si);
 
+    // Step 3: Check download status ONCE for all models
     // Step 3: Check download status ONCE for all models
     auto flm_models = get_flm_installed_models();
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
@@ -2039,6 +2052,10 @@ void ModelManager::build_cache() {
 }
 
 void ModelManager::add_model_to_cache(const std::string& model_name) {
+    // Fetch system info BEFORE acquiring the lock to avoid deadlock with
+    // s_system_info_mutex (same pattern as build_cache()).
+    json cached_si = SystemInfoCache::get_system_info_with_cache();
+
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
     if (!cache_valid_) {
@@ -2096,9 +2113,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     resolve_all_model_paths(info);
 
-    // Check if it should be filtered out by backend availability
+    // Check if it should be filtered out by backend availability (pass pre-loaded system_info).
     std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
-    auto filtered = filter_models_by_backend(temp_map);
+    auto filtered = filter_models_by_backend(temp_map, cached_si);
 
     if (filtered.empty()) {
         LOG(INFO, "ModelManager") << "Model '" << model_name << "' filtered out by backend availability" << std::endl;
@@ -2328,6 +2345,13 @@ bool parse_TF_env_var(const char* env_var_name) {
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
 
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+    return filter_models_by_backend(models, system_info);
+}
+
+std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
+    const std::map<std::string, ModelInfo>& models, const json& si) {
+
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
     bool enable_dgpu_gtt = false;
@@ -2353,8 +2377,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     filtered_out_models_.clear();
 
-    json system_info = SystemInfoCache::get_system_info_with_cache();
-    json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
+    // Use the pre-loaded system info (si) instead of re-querying to avoid a
+    // re-entrant lock on s_system_info_mutex when this is called from build_cache()
+    // which holds models_cache_mutex_ and was entered after get_flm_status()
+    // already acquired s_system_info_mutex.
+    json hardware = si.contains("devices") ? si["devices"] : json::object();
 
     bool npu_available = hardware.contains("amd_npu") &&
                          hardware["amd_npu"].is_object() &&
@@ -2381,19 +2408,19 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     }
 
     double system_ram_gb = 0.0;
-    if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
-        system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
+    if (si.contains("Physical Memory") && si["Physical Memory"].is_string()) {
+        system_ram_gb = parse_physical_memory_gb(si["Physical Memory"].get<std::string>());
     }
 
     double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
 
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
-    if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
-        processor = system_info["Processor"].get<std::string>();
+    if (si.contains("Processor") && si["Processor"].is_string()) {
+        processor = si["Processor"].get<std::string>();
     }
-    if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
-        os_version = system_info["OS Version"].get<std::string>();
+    if (si.contains("OS Version") && si["OS Version"].is_string()) {
+        os_version = si["OS Version"].get<std::string>();
     }
 
     static bool debug_printed = false;
@@ -2407,8 +2434,8 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (largest_mem_pool_gb > 0.0) {
             LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
-        if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
-            const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
+        if (si.contains("devices") && si["devices"].contains("nvidia_gpu")) {
+            const auto& nvidia_gpus = si["devices"]["nvidia_gpu"];
             if (nvidia_gpus.is_array()) {
                 for (const auto& gpu : nvidia_gpus) {
                     if (gpu.value("available", false)) {
@@ -2424,9 +2451,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                         LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: " << gpu["error"].get<std::string>() << std::endl;
                     }
                 }
-                if (system_info["devices"].contains("nvidia_gpu_error")) {
+                if (si["devices"].contains("nvidia_gpu_error")) {
                     LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: "
-                        << system_info["devices"]["nvidia_gpu_error"].get<std::string>() << std::endl;
+                        << si["devices"]["nvidia_gpu_error"].get<std::string>() << std::endl;
                 }
             }
         }
@@ -2459,8 +2486,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                                            is_extra_model_name(name) ||
                                            info.source == "local_upload";
 
-        // Check recipe support using the centralized system_info recipes structure
-        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        // Check recipe support using pre-loaded system_info to avoid re-entrant
+        // lock on s_system_info_mutex (the caller already loaded it).
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe, si);
         if (!unsupported_reason.empty()) {
             filter_out = true;
             filter_reason = unsupported_reason + " "

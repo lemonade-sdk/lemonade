@@ -154,6 +154,14 @@ public:
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models);
 
+    // Internal version that accepts pre-loaded system_info to avoid re-entrant
+    // mutex lock. Used during cache building when the caller already holds
+    // internal locks (e.g., s_system_info_mutex via get_flm_status). The public
+    // version loads its own copy; this one assumes data is already loaded and
+    // passes it through to check_recipe_supported without re-querying the cache.
+    std::map<std::string, ModelInfo> filter_models_by_backend(
+        const std::map<std::string, ModelInfo>& models, const json& system_info);
+
     // Register a user model
     void register_user_model(const std::string& model_name,
                             const json& model_data,

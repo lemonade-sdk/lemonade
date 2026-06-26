@@ -16,6 +16,7 @@
 #include <regex>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <set>
 #include <map>
@@ -1683,6 +1684,67 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     return result.backends.empty() ? result.not_supported_error : "";
 }
 
+std::string SystemInfo::check_recipe_supported(const std::string& recipe, const json& system_info) {
+    if (recipe == "cloud") {
+        return "";
+    }
+    auto result = get_supported_backends_from_cache(recipe, system_info);
+    return result.backends.empty() ? result.not_supported_error : "";
+}
+
+SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends_from_cache(const std::string& recipe, const json& system_info) {
+    SupportedBackendsResult result;
+
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        result.not_supported_error = "Recipe '" + recipe + "' not found";
+        return result;
+    }
+
+    const auto& recipe_info = system_info["recipes"][recipe];
+    if (!recipe_info.contains("backends")) {
+        result.not_supported_error = "No backends found for recipe '" + recipe + "'";
+        return result;
+    }
+
+    // If a default_backend is specified, add it first (if supported)
+    std::string default_backend;
+    if (recipe_info.contains("default_backend")) {
+        default_backend = recipe_info["default_backend"].get<std::string>();
+        if (recipe_info["backends"].contains(default_backend)) {
+            const auto& backend = recipe_info["backends"][default_backend];
+            std::string state = backend.value("state", "unsupported");
+            if (state != "unsupported") {
+                result.backends.push_back(default_backend);
+            }
+        }
+    }
+
+    // Collect remaining supported backends and capture first error (in preference order from RECIPE_DEFS)
+    for (const auto& def : RECIPE_DEFS) {
+        if (def.recipe == recipe) {
+            if (def.backend == default_backend) {
+                continue;
+            }
+
+            if (recipe_info["backends"].contains(def.backend)) {
+                const auto& backend = recipe_info["backends"][def.backend];
+                std::string state = backend.value("state", "unsupported");
+                if (state != "unsupported") {
+                    result.backends.push_back(def.backend);
+                } else if (result.not_supported_error.empty() && backend.contains("message")) {
+                    result.not_supported_error = backend["message"].get<std::string>();
+                }
+            }
+        }
+    }
+
+    if (result.backends.empty() && result.not_supported_error.empty()) {
+        result.not_supported_error = "No supported backend found for recipe '" + recipe + "'";
+    }
+
+    return result;
+}
+
 std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
     std::vector<RecipeStatus> statuses;
     json system_info = SystemInfoCache::get_system_info_with_cache();
@@ -2101,36 +2163,150 @@ std::string identify_npu_arch() {
     return "";
 }
 
+// Detect ROCm GPU architecture directly from sysfs, without going through the
+// system-info cache. This is needed as a fallback when get_rocm_arch() is called
+// during build_recipes_info(), which would otherwise cause unbounded recursion:
+//   build_recipes_info → SDServer::get_install_params (rocm) → get_rocm_arch →
+//   get_system_info_with_cache → build_recipes_info  (stack overflow!)
+static std::string detect_rocm_arch_from_sysfs() {
+#ifdef __linux__
+    // Collect all renderD minor nodes and sort them so iGPU (lower minors) is preferred.
+    std::vector<std::string> render_nodes;
+    fs::path drm_path = "/sys/class/drm";
+
+    if (fs::exists(drm_path)) {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(drm_path, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec) continue;
+            const auto& fname = entry.path().filename().string();
+            if (fname.rfind("renderD", 0) == 0) render_nodes.push_back(fname);
+        }
+    }
+    std::sort(render_nodes.begin(), render_nodes.end());
+
+    // Priority 1: Read gfx_target_version directly from KFD topology nodes.
+    // This is the most reliable source — it's what ROCm uses to identify GPU arch.
+    fs::path kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+    if (fs::exists(kfd_path)) {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(kfd_path, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec || !entry.is_directory()) continue;
+            fs::path props_file = entry.path() / "properties";
+            std::ifstream f(path_to_utf8(props_file));
+            if (!f.is_open()) continue;
+            std::string line;
+            while (std::getline(f, line)) {
+                // Strip trailing whitespace. KFD format: "gfx_target_version 1203" or similar.
+                while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' ')) {
+                    line.pop_back();
+                }
+                if (line.rfind("gfx_target_version", 0) != 0) continue;
+                std::string val = line.substr(18);
+                while (!val.empty() && val[0] == ' ') val.erase(val.begin());
+                // Strip trailing whitespace from value.
+                while (!val.empty() && (val.back() == '\n' || val.back() == '\r' || val.back() == ' ')) {
+                    val.pop_back();
+                }
+                if (val.empty()) continue;
+
+                int v;
+                try { v = std::stoi(val); } catch (...) { return ""; }
+                int major = v / 10000, minor = (v / 100) % 100, step = v % 100;
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // Priority 2: Fall back to PCI device ID → gfx target mapping from /sys/class/drm.
+    for (const auto& node : render_nodes) {
+        // Extract the minor number from "renderD<N>"
+        size_t d_pos = node.find('D');
+        if (d_pos == std::string::npos || d_pos + 1 >= node.size()) continue;
+        std::string minor_str = node.substr(d_pos + 1);
+
+        // Try to read vendor and device ID from sysfs
+        fs::path dev_path = drm_path / node / "device";
+        if (!fs::exists(dev_path)) continue;
+
+        auto read_sysfs_file = [&](const char* fname) -> std::string {
+            fs::path p = dev_path / fname;
+            if (!fs::exists(p)) return "";
+            std::ifstream f(path_to_utf8(p));
+            if (!f.is_open()) return "";
+            std::string line;
+            std::getline(f, line);
+            // Strip trailing whitespace/newlines and optional "0x" prefix (sysfs stores raw hex).
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' ')) {
+                line.pop_back();
+            }
+            if (line.size() > 2 && line[0] == '0' && (line[1] == 'x' || line[1] == 'X')) {
+                return line.substr(2);
+            }
+            return line;
+        };
+
+        std::string vendor_id = read_sysfs_file("vendor");
+        // AMD vendor ID is 0x1002 (sysfs stores as "1002")
+        if (vendor_id != "1002") continue;
+
+        std::string device_id = read_sysfs_file("device");
+        if (device_id.empty()) continue;
+
+        // PCI device ID → gfx target mapping.
+        // Sources: Linux kernel drivers/gpu/drm/amd/include/amdgpu_ip_type.h,
+        // ROCm docs "Supported Linux Desktop APUs", Wikipedia RDNA 3/4 pages.
+    }
+#endif  // __linux__
+    return "";
+}
+
+
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
     // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+
+    // Try cached system info first (fast path). If that returns nothing and we're not
+    // in a recursive build_recipes_info() call, fall back to direct sysfs detection.
     try {
-        // Use cached system info to avoid re-detecting GPUs
         json system_info = SystemInfoCache::get_system_info_with_cache();
 
-        if (!system_info.contains("devices")) {
-            return "";
-        }
+        if (system_info.contains("devices")) {
+            const auto& devices = system_info["devices"];
 
-        const auto& devices = system_info["devices"];
-
-        // Check AMD GPUs
-        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
-            for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
+            // Check AMD GPUs
+            if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+                for (const auto& gpu : devices["amd_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        std::string name = gpu.value("name", "");
+                        if (!name.empty()) {
+                            std::string arch = identify_rocm_arch_from_name(name);
+                            if (!arch.empty()) {
+                                return arch;
+                            }
                         }
                     }
                 }
             }
+
+            // If cached devices exist but no AMD GPU was found, try sysfs as fallback.
+            if (devices.contains("amd_gpu")) {
+                std::string direct_arch = detect_rocm_arch_from_sysfs();
+                if (!direct_arch.empty()) return direct_arch;
+            }
+        } else {
+            // No devices in cache — fall back to direct detection.
+            std::string direct_arch = detect_rocm_arch_from_sysfs();
+            if (!direct_arch.empty()) return direct_arch;
         }
     } catch (...) {
-        // Detection failed
+        // Detection failed, try sysfs fallback below.
     }
+
+    // Final fallback: direct sysfs detection (avoids recursion into system_info cache).
+    std::string arch = detect_rocm_arch_from_sysfs();
+    if (!arch.empty()) return arch;
 
     return "";  // No supported architecture found
 }
@@ -3954,67 +4130,115 @@ static json s_cached_system_info;
 static bool s_hardware_computed = false;
 static bool s_recipes_computed = false;
 
+// Guard against unbounded recursion when build_recipes_info() calls back into
+// get_system_info_with_cache (e.g. via SDServer::get_install_params →
+// SystemInfo::get_rocm_arch → get_system_info_with_cache).  An atomic flag
+// tracks whether ANY Phase 2 computation is in progress — nested callers skip
+// recipe building and the write guard prevents them from clobbering cache with
+// empty data. The outermost caller always completes full recipe computation.
+static std::atomic<bool> s_phase2_in_progress{false};
+
 json SystemInfoCache::get_system_info_with_cache() {
-    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    // Fast path: fully cached — quick check under lock, then release before I/O.
+    json local_hw, local_recipes;
+    bool hw_computed_by_us = false;
 
-    // Return fully cached result if both hardware and recipes are computed
-    if (s_hardware_computed && s_recipes_computed) {
-        return s_cached_system_info;
-    }
-
-    // Compute hardware if not cached
-    if (!s_hardware_computed) {
-        json system_info;
-
-        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
-        try {
-            auto sys_info = create_system_info();
-
-            // Get system info (OS, Processor, Memory, etc.)
-            try {
-                system_info = sys_info->get_system_info_dict();
-            } catch (...) {
-                system_info["OS Version"] = "Unknown";
-            }
-
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-
-            s_cached_system_info = system_info;
-
-        } catch (const std::exception& e) {
-            // Catastrophic failure - return minimal info but don't crash
-            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", e.what()},
-                {"devices", json::object()}
-            };
-        } catch (...) {
-            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", "Unknown error"},
-                {"devices", json::object()}
-            };
+    // Check whether we need to compute anything (under brief lock).
+    {
+        std::lock_guard<std::mutex> check_lock(s_system_info_mutex);
+        if (s_hardware_computed && s_recipes_computed) {
+            json result = s_cached_system_info;  // Copy while held, returned after unlock.
+            return result;
         }
 
-        s_hardware_computed = true;
+        // If hardware is already cached, extract devices for Phase 2 use below.
+        if (s_hardware_computed) {
+            local_hw = s_cached_system_info.value("devices", json::object());
+        } else {
+            hw_computed_by_us = true;  // WE need to compute hardware.
+        }
     }
 
-    // Compute recipes if not cached (or invalidated)
+    // ==========================================================================
+    // Phase 1: Compute hardware OUTSIDE any lock to avoid blocking during slow
+    // sysfs/WMI/nvidia-smi probing (~50-200ms typical).
+    json local_hw_data;
+    if (hw_computed_by_us) {
+        try {
+            auto sys_info = create_system_info();
+            local_hw_data = sys_info->get_system_info_dict();
+            local_hw_data["devices"] = sys_info->get_device_dict();
+
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
+            local_hw_data = {{"OS Version", "Unknown"}, {"error", e.what()}, {"devices", json::object()}};
+
+        } catch (...) {
+            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
+            local_hw_data = {{"OS Version", "Unknown"}, {"error", "Unknown error"}, {"devices", json::object()}};
+        }
+    }
+
+    // Atomically install hardware into cache (another thread may have won).
+    if (!local_hw_data.is_null()) {
+        std::lock_guard<std::mutex> lock(s_system_info_mutex);
+        if (!s_hardware_computed) {
+            s_cached_system_info = std::move(local_hw_data);
+            local_hw = s_cached_system_info.value("devices", json::object());
+            s_hardware_computed = true;
+        } else {
+            // Another thread won — use its devices data.
+            local_hw = s_cached_system_info.value("devices", json::object());
+        }
+    }
+
+    // ==========================================================================
+    // Phase 2: Compute recipes OUTSIDE any lock to avoid blocking during slow
+    // subprocess calls (llama-server --version, etc.) and GitHub API lookups.
     if (!s_recipes_computed) {
         try {
             auto sys_info = create_system_info();
-            json devices = s_cached_system_info.contains("devices")
-                ? s_cached_system_info["devices"] : json::object();
-            s_cached_system_info["recipes"] = sys_info->build_recipes_info(devices);
+
+            // Guard against unbounded recursion: build_recipes_info() can call back into
+            // get_system_info_with_cache (e.g., SDServer::get_install_params →
+            // SystemInfo::get_rocm_arch → get_system_info_with_cache).  Use an atomic flag
+            // to track whether ANY Phase 2 computation is in progress. Nested callers skip
+            // recipe building and never write to cache — their empty local_recipes are simply
+            // discarded by the s_phase2_in_progress check below. Only the outermost caller,
+            // which set the flag before entering this block, completes full recipe detection.
+            bool was_already_in_progress = s_phase2_in_progress.exchange(true);
+
+            if (was_already_in_progress) {
+                LOG(WARNING, "SystemInfo") << "Recursive build_recipes_info() call detected — skipping to avoid stack overflow." << std::endl;
+            } else {
+                local_recipes = sys_info->build_recipes_info(local_hw.empty() ? json::object() : local_hw);
+            }
+
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
+            local_recipes.clear();
+
         } catch (...) {
             LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
+            local_recipes.clear();
         }
-        s_recipes_computed = true;
+
+        // Only the caller that set s_phase2_in_progress writes recipes to cache.
+        // Nested callers (was_already_in_progress == true) skip writing entirely — their
+        // empty local_recipes would clobber valid data from the parent invocation if
+        // s_cached_system_info["recipes"] hasn't been populated yet by Phase 1.
+        bool is_outermost_call = !s_phase2_in_progress.exchange(false);
+
+        if (is_outermost_call) {
+            // Atomically install recipes into cache (another thread may have won).
+            if (!local_recipes.empty() || !s_cached_system_info.contains("recipes")) {
+                std::lock_guard<std::mutex> lock(s_system_info_mutex);
+                if (!s_recipes_computed) {
+                    s_cached_system_info["recipes"] = local_recipes.empty() ? json::object() : std::move(local_recipes);
+                    s_recipes_computed = true;
+                }
+            }
+        }
     }
 
     return s_cached_system_info;
