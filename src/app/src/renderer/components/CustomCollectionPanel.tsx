@@ -75,10 +75,11 @@ const formToDraft = (form: CollectionForm): CustomCollectionDraft => {
   // Text identical to the shipped default is treated as "no override" so the
   // collection stays on the global fallback — a later toolDefinitions.json
   // update reaches existing collections instead of being shadowed by a frozen
-  // copy. A trimmed empty string maps to the same state (the textarea is
-  // pre-filled, but an author may clear it without using "Reset to default").
+  // copy. Compare on trimmed values so accidental leading/trailing whitespace
+  // around the default doesn't get persisted as a real override. A blank
+  // textarea (after trim) maps to the same "no override" state.
   const trimmed = form.systemPrompt.trim();
-  const isDefault = !trimmed || form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT;
+  const isDefault = !trimmed || trimmed === DEFAULT_OMNI_SYSTEM_PROMPT.trim();
   return {
     id: form.selectedCollectionId || undefined,
     name: form.name.trim(),
@@ -279,7 +280,21 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       setError('Select a planner LLM for the Omni Model.');
       return null;
     }
-    return formToDraft({ ...form, name: cleanName });
+    const draft = formToDraft({ ...form, name: cleanName });
+    // Custom prompt templates must keep both substitution placeholders so the
+    // planner still sees the tool list/guidance after runtime substitution. The
+    // editor's subtext flags this; without enforcement an override missing a
+    // placeholder would silently produce a tool-blind planner prompt.
+    if (typeof draft.systemPrompt === 'string') {
+      const missing: string[] = [];
+      if (!draft.systemPrompt.includes('{tool_list}')) missing.push('{tool_list}');
+      if (!draft.systemPrompt.includes('{tool_guidance}')) missing.push('{tool_guidance}');
+      if (missing.length > 0) {
+        setError(`Custom System Prompt is missing required placeholder${missing.length > 1 ? 's' : ''}: ${missing.join(' and ')}. Add them back or click Reset to default.`);
+        return null;
+      }
+    }
+    return draft;
   };
 
   const handleSave = async () => {
@@ -350,7 +365,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
               type="button"
               className="settings-reset-button"
               onClick={() => updateForm({ systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT })}
-              disabled={form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT}
+              disabled={form.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim()}
               title="Restore the shipped default OmniRouter system prompt."
             >
               Reset to default

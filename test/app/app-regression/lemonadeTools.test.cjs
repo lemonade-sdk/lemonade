@@ -209,13 +209,18 @@ const tests = [
       );
       assertIncludes(
         panel,
-        'form.systemPrompt === DEFAULT_OMNI_SYSTEM_PROMPT',
-        'formToDraft should treat text equal to the default as "no override" so the global fallback wins.',
+        'trimmed === DEFAULT_OMNI_SYSTEM_PROMPT.trim()',
+        'formToDraft should compare trimmed values so accidental whitespace around the default does not persist as a real override.',
       );
       assertIncludes(
         panel,
         'systemPrompt: isDefault ? undefined : trimmed',
         'Saving with the default text should omit the override; edited text should persist trimmed.',
+      );
+      assertIncludes(
+        panel,
+        'form.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim()',
+        'The Reset button disabled state should also use the trimmed comparison.',
       );
       assertIncludes(
         panel,
@@ -226,6 +231,32 @@ const tests = [
         panel,
         'form-subtext',
         'The override instruction should render as subtext under the label.',
+      );
+    },
+  },
+  {
+    name: 'custom collection editor blocks overrides missing the {tool_list} or {tool_guidance} placeholders',
+    run() {
+      const panel = readSource('src/app/src/renderer/components/CustomCollectionPanel.tsx');
+      assertIncludes(
+        panel,
+        "draft.systemPrompt.includes('{tool_list}')",
+        'Save/Export validation should check that overrides keep the {tool_list} placeholder.',
+      );
+      assertIncludes(
+        panel,
+        "draft.systemPrompt.includes('{tool_guidance}')",
+        'Save/Export validation should check that overrides keep the {tool_guidance} placeholder.',
+      );
+      assertIncludes(
+        panel,
+        'Custom System Prompt is missing required placeholder',
+        'The validation error should name the missing placeholder explicitly.',
+      );
+      assertMatches(
+        panel,
+        /typeof draft\.systemPrompt === 'string'[\s\S]*?missing\.length > 0[\s\S]*?return null;/,
+        'Validation must short-circuit save/export when a placeholder is missing.',
       );
     },
   },
