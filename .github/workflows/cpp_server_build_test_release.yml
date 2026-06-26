@@ -350,7 +350,7 @@ jobs:
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-x86_64
           path: ${{ steps.rename.outputs.deb-path }}
           retention-days: 7
 
@@ -366,7 +366,7 @@ jobs:
       - name: Download Lemonade .deb Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-x86_64
           path: .
 
       - name: Install and smoke test
@@ -605,7 +605,7 @@ jobs:
       - name: Upload .rpm package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-x86_64
           path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.x86_64.rpm
           retention-days: 7
 
@@ -672,7 +672,7 @@ jobs:
       - name: Upload .rpm package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-rpm-arm64-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-arm64
           path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.aarch64.rpm
           retention-days: 7
 
@@ -1047,7 +1047,7 @@ jobs:
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-embeddable-linux
+          name: lemonade-embeddable-linux-x86_64
           path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
           retention-days: 7
 
@@ -1721,7 +1721,7 @@ jobs:
       - name: Download Lemonade .rpm Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-x86_64
           path: .
 
       - name: Install and verify Lemonade (.rpm)
@@ -1774,7 +1774,7 @@ jobs:
       - name: Download Lemonade .rpm Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm-arm64-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-arm64
           path: .
 
       - name: Install and verify Lemonade (.rpm)
@@ -1823,7 +1823,7 @@ jobs:
           - label: Linux
             os: ubuntu-latest
             platform: ubuntu-x64
-            artifact: lemonade-embeddable-linux
+            artifact: lemonade-embeddable-linux-x86_64
           - label: Linux ARM64
             os: ubuntu-24.04-arm
             platform: ubuntu-arm64
@@ -2798,21 +2798,21 @@ jobs:
       - name: Download Lemonade .rpm Packages (x86_64)
         uses: actions/download-artifact@v7
         with:
-          pattern: lemonade-rpm-fedora-*
+          pattern: lemonade-rpm-fedora-*-x86_64
           path: .
           merge-multiple: true
 
       - name: Download Lemonade .rpm Packages (ARM64)
         uses: actions/download-artifact@v7
         with:
-          pattern: lemonade-rpm-arm64-fedora-*
+          pattern: lemonade-rpm-fedora-*-arm64
           path: .
           merge-multiple: true
 
-      - name: Download Lemonade .deb (Debian 13, amd64)
+      - name: Download Lemonade .deb (Debian 13, X86_64)
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-x86_64
           path: .
 
       - name: Download Lemonade .deb (Debian 13, ARM64)
@@ -2827,10 +2827,10 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
-      - name: Download Lemonade Embeddable (Linux, x86_64)
+      - name: Download Lemonade Embeddable (Linux, X86_64)
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-embeddable-linux
+          name: lemonade-embeddable-linux-x86_64
           path: .
 
       - name: Download Lemonade Embeddable (Linux, ARM64)
