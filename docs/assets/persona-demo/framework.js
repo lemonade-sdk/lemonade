@@ -118,6 +118,12 @@
     if (next === currentPersona()) return; // already active: no rebuild, no replay
     applyPersona(next, true);
     rebuild(next);
+    // Reflect the choice in the address bar so the current view is shareable/bookmarkable.
+    // replaceState (not `location.hash =`) updates the URL without a history entry and
+    // without any hash-driven scroll; init() reads this same hash on the next load.
+    try {
+      window.history.replaceState(null, '', next === 'developers' ? '#embed' : '#run');
+    } catch (e) {}
     window.dispatchEvent(new CustomEvent('lemonadePersonaChange', { detail: { persona: next } }));
   }
   window.lemonadeSetPersona = switchPersona; // preserve the public hook
@@ -583,12 +589,20 @@
     if (switchBtn) switchPersona(switchBtn.getAttribute('data-cta-switch'));
   });
 
+  // Deep-link intents: #run forces the user persona, #embed the developer persona.
+  // They set the persona ONLY (no auto-scroll), so the visitor lands at the top with
+  // the page already in their chosen mode. Scrolling is reserved for explicit
+  // section-level deep links, which target a specific place on purpose.
+  var INTENT_LINKS = { '#run': 'people', '#embed': 'developers' };
+
   // Apply the persona on load via the silent path (no signal, so no reveal replay),
   // then build the journey. The install Quick Start is user-persona content, so
   // landing directly on its anchor forces the user persona (else it is display:none
   // and the browser scrolls to nothing).
   function init() {
-    if (window.location.hash === '#getting-started') applyPersona('people', true);
+    var intent = INTENT_LINKS[window.location.hash];
+    if (intent) applyPersona(intent, true);
+    else if (window.location.hash === '#getting-started') applyPersona('people', true);
     else applyPersona(readStoredPersona(), false);
     rebuild(currentPersona());
   }
