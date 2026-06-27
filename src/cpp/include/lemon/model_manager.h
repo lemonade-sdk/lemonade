@@ -427,6 +427,7 @@ private:
     // Download from a JSON manifest
     void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
+
     // Download from the model's configured remote registry
     void download_from_registry(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);

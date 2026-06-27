@@ -3354,6 +3354,7 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
     return desc && desc->self_manages_downloads;
 }
 
+
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     // Serialize downloads per checkpoint repo. A second request for the same
     // repo (e.g. a client that timed out and retried /pull while the first
@@ -3543,6 +3544,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id,
         manifest_info.model_name = repo_id;
         manifest_info.checkpoints["main"] = repo_id;
         try {
+
             manifest_info.registry_source = source;
             download_from_registry(manifest_info, nullptr);
             manifest = read_cached_collection_manifest(cache_dir);
@@ -4786,6 +4788,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
+
 void ModelManager::download_from_registry(const ModelInfo& info,
                                           DownloadProgressCallback progress_callback) {
     const std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
