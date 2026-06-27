@@ -2455,14 +2455,22 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool uses_cpu = (device & DEVICE_CPU) != DEVICE_NONE;
         bool uses_gpu = (device & DEVICE_GPU) != DEVICE_NONE;
 
-        // GPU-targeted models fall back to CPU RAM filtering when no GPU memory
-        // pool is available (e.g., llamacpp on CPU-only systems).
-        if (uses_gpu && largest_gpu_mem_pool_gb <= 0.0) {
-            uses_cpu = true;
-        }
-
         bool filter_out = false;
         std::string filter_reason;
+
+        // GPU-only models cannot run on systems without a detected GPU memory pool.
+        if (!filter_out && uses_gpu && !uses_cpu && largest_gpu_mem_pool_gb <= 0.0) {
+            filter_out = true;
+            std::ostringstream oss;
+            oss << "This model requires a GPU, but no compatible GPU was detected on your system.";
+            filter_reason = oss.str();
+        }
+
+        // GPU-capable models that also support CPU fall back to CPU RAM
+        // filtering when no GPU memory pool is available.
+        if (uses_gpu && uses_cpu && largest_gpu_mem_pool_gb <= 0.0) {
+            uses_gpu = false;
+        }
 
         // Collections are UI-level entries that orchestrate components.
         // They should always be visible if present in the registry.
