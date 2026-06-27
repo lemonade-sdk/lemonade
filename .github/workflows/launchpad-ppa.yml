@@ -123,10 +123,6 @@ jobs:
 
   package-arm64:
     name: Build (ARM64)
-    # Uses official ubuntu:${{ matrix.release }} images from Docker Hub instead of
-    # the custom build-environment images, because the latter do not yet carry
-    # linux/arm64 manifests (they gain multi-arch support once build-container.yml
-    # runs after this PR merges). Official Ubuntu images are natively multi-arch.
     needs: prepare-matrix
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -135,7 +131,10 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
-      image: ubuntu:${{ matrix.release }}
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.distro }}${{ matrix.release }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -147,20 +146,9 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
-      - name: Install build dependencies
+      - name: Catch missing build-deps
         run: |
-          apt-get update
-          apt-get install -y \
-            build-essential \
-            curl \
-            debhelper \
-            devscripts \
-            dpkg-dev \
-            git \
-            python3-pip \
-            python3-venv \
-            unzip
-          apt-get build-dep . -y
+          apt-get update && apt-get build-dep . -y
 
       - name: Prepare Debian build
         id: get_version
