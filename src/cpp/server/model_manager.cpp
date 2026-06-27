@@ -4381,7 +4381,16 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             std::string size_key = repo_id + ':' + filename;
             file_entry["name"] = filename;
             std::string repo_commit = repo_commit_hashes.count(repo_id) ? repo_commit_hashes[repo_id] : "main";
-            file_entry["url"] = "https://huggingface.co/" + repo_id + "/resolve/" + repo_commit + "/" + filename;
+            std::string file_url = "https://huggingface.co/" + repo_id + "/resolve/" + repo_commit + "/" + filename;
+            // Honor HF_HUB_DISABLE_XET: when set, append ?download=1 to bypass
+            // the Xet content-addressable storage bridge, which can stall on
+            // certain HF repo backends. This mirrors the behavior of the Python
+            // huggingface_hub library.
+            static const char* xet_disable = std::getenv("HF_HUB_DISABLE_XET");
+            if (xet_disable && (std::string(xet_disable) == "1" || std::string(xet_disable) == "true")) {
+                file_url += "?download=1";
+            }
+            file_entry["url"] = file_url;
             file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
             file_entry["download_path"] = repo_download_paths[repo_id];
             if (file_hashes.count(size_key)) {
