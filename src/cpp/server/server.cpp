@@ -30,6 +30,7 @@
 #include <chrono>
 #include <mutex>
 #include <filesystem>
+#include <system_error>
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -218,6 +219,96 @@ void attach_warnings(json& response, const std::vector<std::string>& warnings) {
     response["warnings"] = warnings;
     // Backward-compatible single-string field for older clients.
     response["warning"] = join_warnings(warnings);
+}
+
+nlohmann::json get_model_storage_stats(const std::string& model_storage_path) {
+    auto make_error_result = [](const fs::path& path, const std::string& error) {
+        return nlohmann::json{
+            {"path", utils::path_to_utf8(path)},
+            {"used_bytes", nullptr},
+            {"total_bytes", nullptr},
+            {"free_bytes", nullptr},
+            {"error", error}
+        };
+    };
+
+    std::error_code ec;
+    fs::path configured_path;
+
+    if (!model_storage_path.empty()) {
+        configured_path = utils::path_from_utf8(model_storage_path);
+    }
+
+    if (configured_path.empty()) {
+        configured_path = fs::current_path(ec);
+        if (ec) {
+            LOG(WARNING, "Server") << "Unable to resolve current path for model storage stats: "
+                                   << ec.message() << std::endl;
+            return make_error_result(
+                fs::path{},
+                "Unable to resolve current path: " + ec.message()
+            );
+        }
+    } else if (configured_path.is_relative()) {
+        configured_path = fs::absolute(configured_path, ec);
+        if (ec) {
+            LOG(WARNING, "Server") << "Unable to resolve model storage path "
+                                   << model_storage_path << ": " << ec.message() << std::endl;
+            return make_error_result(
+                configured_path,
+                "Unable to resolve model storage path: " + ec.message()
+            );
+        }
+    }
+
+    configured_path = configured_path.lexically_normal();
+
+    fs::path probe_path = configured_path;
+    while (!probe_path.empty()) {
+        std::error_code exists_ec;
+        if (fs::exists(probe_path, exists_ec)) {
+            break;
+        }
+
+        if (exists_ec) {
+            LOG(WARNING, "Server") << "Unable to inspect model storage path "
+                                   << utils::path_to_utf8(probe_path) << ": "
+                                   << exists_ec.message() << std::endl;
+            return make_error_result(
+                configured_path,
+                "Unable to inspect model storage path: " + exists_ec.message()
+            );
+        }
+
+        fs::path parent_path = probe_path.parent_path();
+        if (parent_path == probe_path) {
+            break;
+        }
+
+        probe_path = parent_path;
+    }
+
+    auto space_info = fs::space(probe_path, ec);
+    if (ec) {
+        LOG(WARNING, "Server") << "Unable to read model storage stats for "
+                               << utils::path_to_utf8(probe_path) << ": "
+                               << ec.message() << std::endl;
+        return make_error_result(
+            configured_path,
+            "Unable to read model storage stats: " + ec.message()
+        );
+    }
+
+    const uintmax_t total_bytes = space_info.capacity;
+    const uintmax_t free_bytes = std::min(space_info.available, space_info.capacity);
+    const uintmax_t used_bytes = total_bytes - free_bytes;
+
+    return nlohmann::json{
+        {"path", utils::path_to_utf8(configured_path)},
+        {"used_bytes", static_cast<uint64_t>(used_bytes)},
+        {"total_bytes", static_cast<uint64_t>(total_bytes)},
+        {"free_bytes", static_cast<uint64_t>(free_bytes)}
+    };
 }
 
 } // namespace
@@ -4321,6 +4412,10 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
+    if (config_) {
+        system_info["model_storage"] = get_model_storage_stats(utils::get_hf_cache_dir());
+    }
+    
     // Cloud providers: per-provider {name, base_url, env_var_set,
     // runtime_key_set, models_discovered}. Never includes the key itself.
     // Clients use this to decide whether to prompt for an API key, show a
