@@ -10,6 +10,7 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <algorithm>
+#include <sstream>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -303,6 +304,47 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Get executable path
     std::string executable = BackendUtils::get_backend_binary_path(SPEC, llamacpp_backend);
+
+    // Pre-flight check: for ROCm backends, verify the llama-server binary can
+    // actually detect GPU devices. Some upstream builds (stable/preview) ship
+    // universal binaries that lack HIP support for newer architectures (e.g.
+    // gfx1201) and silently fall back to CPU. See #1787.
+    if (is_llamacpp_rocm_backend(llamacpp_backend) && use_gpu) {
+        std::string list_output;
+        std::string list_cmd = "\"" + executable + "\" --list-devices --no-webui";
+        int list_rc = utils::ProcessManager::run_command(list_cmd, list_output, 5);
+        if (list_rc == 0 && !list_output.empty()) {
+            // Check if any GPU devices appear after "Available devices:"
+            bool has_gpu_device = false;
+            bool in_available_section = false;
+            std::istringstream stream(list_output);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (line.find("Available devices:") != std::string::npos) {
+                    in_available_section = true;
+                    continue;
+                }
+                if (in_available_section) {
+                    // If the line after "Available devices:" is empty or
+                    // contains only whitespace, no GPU was detected.
+                    if (!line.empty() && line.find_first_not_of(" \t\r\n") != std::string::npos) {
+                        // Non-empty line with content = GPU device listed
+                        has_gpu_device = true;
+                        break;
+                    }
+                    // An empty line or another section header = done
+                    break;
+                }
+            }
+            if (!has_gpu_device) {
+                LOG(WARNING, "LlamaCpp") << "ROCm backend \"" << llamacpp_backend
+                    << "\" does not support the detected GPU architecture. "
+                    << "The server may fall back to CPU inference. "
+                    << "Try switching to the nightly channel for per-arch builds: "
+                    << "lemonade config set rocm_channel=nightly" << std::endl;
+            }
+        }
+    }
 
     // Check for embeddings and reranking support based on model type
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
