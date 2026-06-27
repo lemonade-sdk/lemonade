@@ -881,6 +881,12 @@ curl "http://localhost:13305/v1/system-info"
   "BIOS Version": "1.0.0",
   "CPU Max Clock": "5100 MHz",
   "Windows Power Setting": "Balanced",
+  "model_storage": {
+    "path": "/path/to/models",
+    "used_bytes": 123456789,
+    "total_bytes": 987654321,
+    "free_bytes": 864197532
+  },
   "devices": {
     "cpu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
@@ -994,6 +1000,12 @@ curl "http://localhost:13305/v1/system-info"
   - `BIOS Version` - BIOS information (Windows only)
   - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
   - `Windows Power Setting` - Current power plan (Windows only)
+
+- `model_storage` - Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.
+  - `path` - Active model storage path from server configuration
+  - `used_bytes` - Used bytes on the model-storage drive
+  - `total_bytes` - Total capacity of the model-storage drive
+  - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)

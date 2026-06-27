@@ -40,6 +40,12 @@ The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.j
 
 Endpoint request/response shapes are documented in the [Endpoints Spec](../api/README.md).
 
+### Per-collection system prompt override
+
+The default OmniRouter system prompt lives in `toolDefinitions.json` and is a *template* with `{tool_list}` and `{tool_guidance}` placeholders that the server (and app) expand at runtime based on which components are present.
+
+Each collection model can override that default by setting its own `system_prompt` template — either in its registry entry (`server_models.json` for built-ins), in its published Hugging Face collection JSON (for HF-backed collections like `LMX-Omni-*`), or via the desktop app's Omni Model editor for custom collections. When present, the per-collection value wins; otherwise the global default applies. Tool definitions stay global — only the prompt text is per-collection.
+
 ## How to Use Omni Models
 
 Any app can use an omni collection by simply requesting `/chat/completions` and receiving multi-media results in the response content. Apps that want a higher degree of customization can instead send their requests to the collection's planner LLM, with a custom system prompt and tool definitions, and receive tool calls in the response.
