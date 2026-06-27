@@ -296,8 +296,10 @@ private:
     // Download from a JSON manifest
     void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
-    // Download from Hugging Face
+    // Download from Hugging Face. When do_not_upgrade is true and a .completed
+    // sentinel exists in the snapshot directory, the HF API call is skipped.
     void download_from_huggingface(const ModelInfo& info,
+                                   bool do_not_upgrade = false,
                                    DownloadProgressCallback progress_callback = nullptr);
 
     // Download from FLM

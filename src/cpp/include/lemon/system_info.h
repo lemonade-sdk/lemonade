@@ -108,7 +108,14 @@ public:
     static std::string get_system_llamacpp_version();
 
     // Device support detection
+    // Return the first (primary) ROCm architecture — typically the iGPU.
+    // Used for rocm_channel selection and single-arch contexts.
     static std::string get_rocm_arch();
+
+    // Return ALL detected AMD GPU ROCm architectures, ordered iGPU first
+    // then dGPUs. Used by backend download paths to install ROCm binaries
+    // for every GPU on the system, not just the first one detected.
+    static std::vector<std::string> get_rocm_arches();
     static std::string get_cuda_arch();
 
     // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).

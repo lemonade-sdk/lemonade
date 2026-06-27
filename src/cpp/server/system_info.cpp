@@ -2140,6 +2140,39 @@ std::string SystemInfo::get_rocm_arch() {
     return "";  // No supported architecture found
 }
 
+std::vector<std::string> SystemInfo::get_rocm_arches() {
+    // Returns ALL detected AMD GPU ROCm architectures.
+    // Ordered: iGPU first, then dGPUs (same order as the amd_gpu array).
+    // Used to ensure ROCm backends are downloaded for every GPU on the system.
+    std::vector<std::string> arches;
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (!system_info.contains("devices")) {
+            return arches;
+        }
+        const auto& devices = system_info["devices"];
+        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+            for (const auto& gpu : devices["amd_gpu"]) {
+                if (gpu.value("available", false)) {
+                    std::string name = gpu.value("name", "");
+                    if (!name.empty()) {
+                        std::string arch = identify_rocm_arch_from_name(name);
+                        if (!arch.empty()) {
+                            // Avoid duplicates (e.g., identical iGPU/dGPU arch strings)
+                            if (std::find(arches.begin(), arches.end(), arch) == arches.end()) {
+                                arches.push_back(arch);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed — return empty list
+    }
+    return arches;
+}
+
 static int cuda_sm_value(const std::string& arch) {
     if (arch.size() <= 3 || arch.substr(0, 3) != "sm_") {
         return 0;
