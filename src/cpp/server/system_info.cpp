@@ -2106,11 +2106,23 @@ std::string identify_npu_arch() {
     return "";
 }
 
+// Score a ROCm architecture for ranking: higher = better for LLM inference.
+// Primary factor is VRAM (more VRAM = larger models fit). Tiebreaker is
+// discrete vs integrated (dGPU dedicated VRAM is faster than shared RAM).
+static int rocm_arch_score(const std::string& arch, double vram_gb) {
+    // Primary: VRAM capacity in GB × 1000 (so 16 GB → 16000, 0.5 GB → 500)
+    int score = static_cast<int>(vram_gb * 1000.0);
+    // Tiebreaker: dGPU bonus (GPUs with ≥ 4 GB VRAM are likely discrete)
+    if (vram_gb >= 4.0) score += 100000;
+    return score;
+}
+
 std::string SystemInfo::get_rocm_arch() {
-    // Returns the ROCm architecture for the best available AMD GPU on this system
-    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+    // Returns the ROCm architecture for the BEST available AMD GPU on this
+    // system. Iterates ALL AMD GPUs and returns the highest-scoring supported
+    // architecture, preferring dGPUs over iGPUs and newer archs over older.
+    // This mirrors get_cuda_arch() which also picks the best NVIDIA GPU.
     try {
-        // Use cached system info to avoid re-detecting GPUs
         json system_info = SystemInfoCache::get_system_info_with_cache();
 
         if (!system_info.contains("devices")) {
@@ -2119,19 +2131,31 @@ std::string SystemInfo::get_rocm_arch() {
 
         const auto& devices = system_info["devices"];
 
-        // Check AMD GPUs
+        std::string best_arch;
+        int best_score = -1;
+
         if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
             for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
-                        }
-                    }
+                if (!gpu.value("available", false)) continue;
+
+                std::string name = gpu.value("name", "");
+                if (name.empty()) continue;
+
+                std::string arch = identify_rocm_arch_from_name(name);
+                if (arch.empty()) continue;
+
+                double vram = gpu.value("vram_gb", 0.0);
+
+                int score = rocm_arch_score(arch, vram);
+                if (score > best_score) {
+                    best_score = score;
+                    best_arch = arch;
                 }
             }
+        }
+
+        if (!best_arch.empty()) {
+            return best_arch;
         }
     } catch (...) {
         // Detection failed
