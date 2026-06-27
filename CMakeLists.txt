@@ -1834,3 +1834,25 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
     include(CTest)
     add_test(NAME AutoTuneTest COMMAND test_auto_tune)
 endif()
+
+# Streaming proxy reasoning content normalization: ensures `content` field is
+# always present alongside `reasoning_content` in SSE delta chunks.
+set(_STREAMING_REASONING_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_reasoning_content.cpp"
+)
+if(EXISTS "${_STREAMING_REASONING_TEST_SRC}")
+    add_executable(test_streaming_proxy_reasoning_content
+        test/cpp/test_streaming_proxy_reasoning_content.cpp
+    )
+    target_include_directories(test_streaming_proxy_reasoning_content PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_streaming_proxy_reasoning_content PRIVATE
+        lemonade-server-core
+        nlohmann_json::nlohmann_json
+    )
+
+    include(CTest)
+    add_test(NAME StreamingProxyReasoningContentTest COMMAND test_streaming_proxy_reasoning_content)
+endif()
