@@ -21,6 +21,7 @@
 #include <set>
 #include <map>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 #include <cmath>
 
@@ -2210,7 +2211,7 @@ static std::string detect_rocm_arch_from_sysfs() {
                 if (val.empty()) continue;
 
                 int v;
-                try { v = std::stoi(val); } catch (...) { return ""; }
+                try { v = std::stoi(val); } catch (...) { continue; }
                 int major = v / 10000, minor = (v / 100) % 100, step = v % 100;
                 char buf[16];
                 std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
@@ -2221,11 +2222,6 @@ static std::string detect_rocm_arch_from_sysfs() {
 
     // Priority 2: Fall back to PCI device ID → gfx target mapping from /sys/class/drm.
     for (const auto& node : render_nodes) {
-        // Extract the minor number from "renderD<N>"
-        size_t d_pos = node.find('D');
-        if (d_pos == std::string::npos || d_pos + 1 >= node.size()) continue;
-        std::string minor_str = node.substr(d_pos + 1);
-
         // Try to read vendor and device ID from sysfs
         fs::path dev_path = drm_path / node / "device";
         if (!fs::exists(dev_path)) continue;
@@ -2255,8 +2251,47 @@ static std::string detect_rocm_arch_from_sysfs() {
         if (device_id.empty()) continue;
 
         // PCI device ID → gfx target mapping.
-        // Sources: Linux kernel drivers/gpu/drm/amd/include/amdgpu_ip_type.h,
-        // ROCm docs "Supported Linux Desktop APUs", Wikipedia RDNA 3/4 pages.
+        // Sources: Linux kernel drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c,
+        // ROCm docs "Supported Linux Desktop APUs", Wikipedia RDNA 2/3/4 pages.
+        // Keys are lowercase hex as written by sysfs (no "0x" prefix).
+        static const std::unordered_map<std::string, std::string> PCI_GFX_MAP = {
+            // RDNA2 — Navi 21 (gfx1030)
+            {"73a5", "gfx1030"}, {"73a8", "gfx1030"}, {"73a9", "gfx1030"},
+            {"73ab", "gfx1030"}, {"73ac", "gfx1030"}, {"73ad", "gfx1030"},
+            {"73ae", "gfx1030"}, {"73af", "gfx1030"}, {"73bf", "gfx1030"},
+            // RDNA2 — Navi 22 (gfx1031)
+            {"73df", "gfx1031"}, {"73e0", "gfx1031"}, {"73e1", "gfx1031"},
+            {"73e3", "gfx1031"}, {"73ef", "gfx1031"}, {"73ff", "gfx1031"},
+            // RDNA2 — Navi 23 (gfx1032)
+            {"7420", "gfx1032"}, {"7421", "gfx1032"}, {"7422", "gfx1032"},
+            {"7423", "gfx1032"}, {"7424", "gfx1032"}, {"7425", "gfx1032"},
+            // RDNA2 — Navi 24 (gfx1034)
+            {"7460", "gfx1034"}, {"7461", "gfx1034"}, {"7462", "gfx1034"},
+            {"7463", "gfx1034"}, {"7464", "gfx1034"}, {"7465", "gfx1034"},
+            // RDNA3 — Navi 31 (gfx1100)
+            {"744c", "gfx1100"}, {"7450", "gfx1100"}, {"7451", "gfx1100"},
+            {"7452", "gfx1100"}, {"7453", "gfx1100"}, {"7454", "gfx1100"},
+            {"7455", "gfx1100"}, {"7459", "gfx1100"}, {"745e", "gfx1100"},
+            // RDNA3 — Navi 32 (gfx1101)
+            {"7480", "gfx1101"}, {"7483", "gfx1101"}, {"7489", "gfx1101"},
+            {"748a", "gfx1101"}, {"748b", "gfx1101"}, {"748c", "gfx1101"},
+            {"748d", "gfx1101"},
+            // RDNA3 — Navi 33 (gfx1102)
+            {"7440", "gfx1102"}, {"7442", "gfx1102"}, {"7443", "gfx1102"},
+            {"7444", "gfx1102"}, {"7445", "gfx1102"}, {"7446", "gfx1102"},
+            {"744a", "gfx1102"},
+            // RDNA4 — Navi 48 (gfx1200)
+            {"7310", "gfx1200"}, {"7311", "gfx1200"}, {"7312", "gfx1200"},
+            {"7318", "gfx1200"}, {"731a", "gfx1200"}, {"731b", "gfx1200"},
+            {"731f", "gfx1200"},
+            // RDNA4 — Navi 44 (gfx1201)
+            {"7322", "gfx1201"}, {"7324", "gfx1201"}, {"7325", "gfx1201"},
+            {"7326", "gfx1201"}, {"7327", "gfx1201"}, {"7329", "gfx1201"},
+        };
+        auto it = PCI_GFX_MAP.find(device_id);
+        if (it != PCI_GFX_MAP.end()) {
+            return it->second;
+        }
     }
 #endif  // __linux__
     return "";
@@ -4138,6 +4173,10 @@ static bool s_recipes_computed = false;
 // empty data. The outermost caller always completes full recipe computation.
 static std::atomic<bool> s_phase2_in_progress{false};
 
+// Generation counter incremented by invalidate_recipes() so that an in-progress
+// Phase 2 computation detects the invalidation and discards its stale results.
+static std::atomic<uint64_t> s_recipe_generation{0};
+
 json SystemInfoCache::get_system_info_with_cache() {
     // Fast path: fully cached — quick check under lock, then release before I/O.
     json local_hw, local_recipes;
@@ -4196,58 +4235,52 @@ json SystemInfoCache::get_system_info_with_cache() {
     // Phase 2: Compute recipes OUTSIDE any lock to avoid blocking during slow
     // subprocess calls (llama-server --version, etc.) and GitHub API lookups.
     if (!s_recipes_computed) {
-        bool was_already_in_progress;
-        try {
-            auto sys_info = create_system_info();
+        // Snapshot the generation counter before starting computation so we can
+        // detect if invalidate_recipes() fires while we are still computing.
+        uint64_t gen_snapshot = s_recipe_generation.load();
 
-            // Guard against unbounded recursion: build_recipes_info() can call back into
-            // get_system_info_with_cache (e.g., SDServer::get_install_params →
-            // SystemInfo::get_rocm_arch → get_system_info_with_cache).  Use an atomic flag
-            // to track whether ANY Phase 2 computation is in progress. Nested callers skip
-            // recipe building and never write to cache — their empty local_recipes are simply
-            // discarded by the s_phase2_in_progress check below. Only the outermost caller,
-            // which set the flag before entering this block, completes full recipe detection.
-            was_already_in_progress = s_phase2_in_progress.exchange(true);
+        // Guard against unbounded recursion: set the in-progress flag BEFORE
+        // create_system_info() so we own the flag for the duration of this block
+        // and always reset it on exit.
+        bool was_already_in_progress = s_phase2_in_progress.exchange(true);
 
-            if (was_already_in_progress) {
-                LOG(WARNING, "SystemInfo") << "Recursive build_recipes_info() call detected — skipping to avoid stack overflow." << std::endl;
-            } else {
+        if (was_already_in_progress) {
+            LOG(WARNING, "SystemInfo") << "Recursive build_recipes_info() call detected — skipping to avoid stack overflow." << std::endl;
+        } else {
+            bool computation_ok = false;
+            try {
+                auto sys_info = create_system_info();
                 local_recipes = sys_info->build_recipes_info(local_hw.empty() ? json::object() : local_hw);
+                computation_ok = true;
+
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
+
+            } catch (...) {
+                LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
             }
 
-        } catch (const std::exception& e) {
-            LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
-            local_recipes.clear();
+            s_phase2_in_progress.store(false);
 
-        } catch (...) {
-            LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
-            local_recipes.clear();
-        }
-
-        // Only the caller that set s_phase2_in_progress writes recipes to cache.
-        // Nested callers (was_already_in_progress == true) skip writing entirely — their
-        // empty local_recipes would clobber valid data from the parent invocation if
-        // s_cached_system_info["recipes"] hasn't been populated yet by Phase 1.
-        bool is_outermost_call = !was_already_in_progress;
-        s_phase2_in_progress.store(false);
-
-        if (is_outermost_call) {
-            // Atomically install recipes into cache (another thread may have won).
-            if (!local_recipes.empty() || !s_cached_system_info.contains("recipes")) {
+            // Only cache if computation succeeded AND the cache wasn't invalidated
+            // while we were computing (generation counter still matches).
+            if (computation_ok) {
                 std::lock_guard<std::mutex> lock(s_system_info_mutex);
-                if (!s_recipes_computed) {
-                    s_cached_system_info["recipes"] = local_recipes.empty() ? json::object() : std::move(local_recipes);
+                if (!s_recipes_computed && s_recipe_generation.load() == gen_snapshot) {
+                    s_cached_system_info["recipes"] = std::move(local_recipes);
                     s_recipes_computed = true;
                 }
             }
         }
     }
 
+    std::lock_guard<std::mutex> final_lock(s_system_info_mutex);
     return s_cached_system_info;
 }
 
 void SystemInfoCache::invalidate_recipes() {
     std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    s_recipe_generation.fetch_add(1, std::memory_order_relaxed);
     s_recipes_computed = false;
 }
 
