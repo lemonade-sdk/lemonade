@@ -343,16 +343,35 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
+    // Enable --fit by default on GPU backends so llama-server auto-tunes
+    // model parameters to fit within available device memory. Users can
+    // opt out via --no-fit in llamacpp_args. See #1848.
+    if (use_gpu) {
+        push_overridable_arg(args, llamacpp_args, "--fit");
+    }
+
+    // Set -ngl (num_gpu_layers) based on backend type: 99 for GPU backends
+    // (offload all layers), 0 for CPU-only. Users can override via -ngl N
+    // in llamacpp_args, or by setting llamacpp_ngl in recipe options.
+    // See #2215.
+    {
+        int ngl = options.get_option("llamacpp_ngl");
+        if (ngl < 0) {
+            ngl = use_gpu ? 99 : 0;
+        }
+        push_overridable_arg(args, llamacpp_args, "-ngl", std::to_string(ngl));
+    }
+
     // Add mmproj file if present (for vision models). Skip when hf_load is set —
     // llama-server resolves the mmproj companion itself from the HF repo.
     if (!mmproj_path.empty() && !model_info.hf_load) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
             LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
-            push_arg(args, reserved_flags, "--no-mmproj-offload");
+            push_overridable_arg(args, llamacpp_args, "--no-mmproj-offload");
         }
     }
-    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
+    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"});
 
     // Add draft model if present
     if (!draft_path.empty()) {

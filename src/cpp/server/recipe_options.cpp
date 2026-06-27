@@ -18,6 +18,7 @@ static const json DEFAULTS = {
     {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
+    {"llamacpp_ngl", -1},     // -1 = auto (99 for GPU, 0 for CPU). See #2215.
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
     {"sdcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
