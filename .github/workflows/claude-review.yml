@@ -1,0 +1,42 @@
+name: Claude Code Review
+
+on:
+  pull_request_target:
+    types: [review_requested]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude-review:
+    # Only run for maintainers (OWNER, MEMBER, COLLABORATOR)
+    # Triggers on: @claude mention in comments, or assigning claude as reviewer
+    if: |
+      (github.event_name == 'pull_request_target' &&
+       github.event.action == 'review_requested' &&
+       github.event.requested_reviewer.login == 'claude[bot]') ||
+      ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+       contains(github.event.comment.body, '@claude') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
