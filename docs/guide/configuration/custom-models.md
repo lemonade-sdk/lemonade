@@ -345,11 +345,31 @@ For models that require multiple files (e.g., Whisper models with NPU cache, or 
 }
 ```
 
+**MTP / draft model example** — for models with a separate Multi-Token Prediction head (e.g., Gemma 4):
+
+```json
+{
+    "My-Gemma-4-MTP": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL",
+            "draft": "unsloth/gemma-4-26B-A4B-it-qat-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+            "mmproj": "unsloth/gemma-4-26B-A4B-it-qat-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "llamacpp",
+        "size": 14.4,
+        "labels": ["vision", "mtp", "tool-calling"]
+    }
+}
+```
+
+The `draft` checkpoint is optional — the model loads and runs without MTP spec decoding if the draft file isn't available. The `mtp` label enables `--spec-type draft-mtp` defaults (`--spec-draft-n-max 3`, `--spec-draft-p-min 0.75`); you can override these via `llamacpp_args` in `recipe_options.json`.
+
 Supported checkpoint keys:
 
 | Key | Used by | Description |
 |-----|---------|-------------|
 | `main` | All | Primary model file |
+| `draft` | llamacpp | Draft/MTP (Multi-Token Prediction) head for speculative decoding |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
