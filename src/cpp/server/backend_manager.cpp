@@ -215,6 +215,12 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
         return;
     }
 
+    // Already installed — skip to avoid redundant 3 GB download
+    if (is_therock_installed_for_current_arch(backend_versions)) {
+        LOG(DEBUG, "BackendManager") << "TheRock already installed, skipping" << std::endl;
+        return;
+    }
+
     std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
