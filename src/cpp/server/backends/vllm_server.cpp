@@ -229,6 +229,8 @@ void VLLMServer::load(const std::string& model_name,
         throw std::runtime_error(err);
     }
 
+    start_backend_watchdog("/health");
+
     LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 

@@ -587,6 +587,8 @@ void LlamaCppServer::load(const std::string& model_name,
         throw std::runtime_error("llama-server failed to start");
     }
 
+    start_backend_watchdog("/health");
+
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 

@@ -122,6 +122,8 @@ void RyzenAIServer::load(const std::string& model_name,
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
     }
 
+    start_backend_watchdog("/health");
+
     is_loaded_ = true;
     LOG(INFO, "RyzenAI") << "Model loaded on port " << get_backend_port() << std::endl;
 }

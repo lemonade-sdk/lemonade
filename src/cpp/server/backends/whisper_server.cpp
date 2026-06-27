@@ -348,6 +348,8 @@ void WhisperServer::load(const std::string& model_name,
         throw std::runtime_error("whisper-server failed to start or become ready");
     }
 
+    start_backend_watchdog("/health");
+
     LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
 }
 

@@ -146,6 +146,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         unload();
         throw std::runtime_error("koko failed to start or become ready");
     }
+
+    start_backend_watchdog("/");
 }
 
 void KokoroServer::unload() {

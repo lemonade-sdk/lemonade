@@ -184,6 +184,8 @@ void MoonshineServer::load(const std::string& model_name,
         throw std::runtime_error("moonshine-server failed to start or become ready");
     }
 
+    start_backend_watchdog("/health");
+
     LOG(INFO, "MoonshineServer") << "Server is ready!" << std::endl;
 }
 
