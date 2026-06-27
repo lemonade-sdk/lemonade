@@ -2972,7 +2972,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
-        download_from_huggingface(info, progress_callback);
+        download_from_huggingface(info, do_not_upgrade, progress_callback);
     }
 
     // Update cache after successful download
@@ -3133,7 +3133,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do
         manifest_info.model_name = repo_id;
         manifest_info.checkpoints["main"] = repo_id;
         try {
-            download_from_huggingface(manifest_info, nullptr);
+            download_from_huggingface(manifest_info, false, nullptr);
             manifest = read_cached_collection_manifest(cache_dir);
         } catch (const std::exception& e) {
             if (!have_cache) throw;
@@ -4122,8 +4122,28 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_huggingface(const ModelInfo& info,
+                                            bool do_not_upgrade,
                                             DownloadProgressCallback progress_callback) {
     std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+
+    // Fast-path: if do_not_upgrade is set and a .completed sentinel exists,
+    // skip the HF API call entirely. This avoids re-downloading files that
+    // are already fully verified on disk.
+    if (do_not_upgrade) {
+        fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo_id);
+        fs::path snapshots_dir = model_cache_path / "snapshots";
+        if (safe_exists(snapshots_dir)) {
+            std::error_code ec;
+            for (const auto& entry : fs::directory_iterator(snapshots_dir, ec)) {
+                if (ec) break;
+                if (entry.is_directory() && safe_exists(entry.path() / ".completed")) {
+                    LOG(INFO, "ModelManager") << "Model already downloaded (found .completed sentinel), skipping API call"
+                                              << std::endl;
+                    return;
+                }
+            }
+        }
+    }
     std::string main_variant = checkpoint_to_variant(info.checkpoint("main"));
 
     // Get Hugging Face cache directory
