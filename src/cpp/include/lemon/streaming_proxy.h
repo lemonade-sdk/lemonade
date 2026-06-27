@@ -51,6 +51,12 @@ public:
         std::function<void()> on_chunk = nullptr
     );
 
+    // Normalize streaming chat.completion.chunk SSE deltas for OpenAI API
+    // compatibility. Applies:
+    //   1. Injects `role: "assistant"` when null/missing on assistant deltas
+    //   2. Injects `content: ""` alongside `reasoning_content` when absent
+    static std::string normalize_chat_completion_chunk(const std::string& sse_chunk);
+
 private:
     static TelemetryData parse_telemetry(const std::string& buffer);
 };
