@@ -35,6 +35,7 @@ Each archive has the following contents:
 - `lemonade.exe` / `lemonade` CLI: useful for configuring and testing `lemond` before you ship. Feel free to exclude this from your shipped app.
 - `resources/`
     - `server_models.json`: customizable list of models that `lemond` will show on the `models` endpoint.
+    - `flm_models.json`: snapshot of the FastFlowLM model catalog used as a fallback when FLM is not installed locally, so FLM models still appear on the `models` endpoint on supported hardware. Live `flm list --json` data is preferred when FLM is installed. Regenerate via `python3 tools/generate_flm_models.py`.
     - `backend_versions.json`: customizable list that determines which versions of llama.cpp, FastFlowLM, etc. will be used as backends for `lemond`.
     - `defaults.json`: default values for `lemond`'s `config.json` file. Safe to delete after `config.json` has been initialized.
 
@@ -72,6 +73,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
 
     resources\
         |- server_models.json       # Customized lemond models list
+        |- flm_models.json          # FLM catalog fallback (used when FLM not installed)
         |- backend_versions.json    # Customized version numbers for llamacpp, etc.
 
     bin\                            # Pre-downloaded backends bundled into app
@@ -102,6 +104,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
 
     resources/
         |- server_models.json       # Customized lemond models list
+        |- flm_models.json          # FLM catalog fallback (used when FLM not installed)
         |- backend_versions.json    # Customized version numbers for llamacpp, etc.
 
     bin/                            # Pre-downloaded backends bundled into app

@@ -432,7 +432,15 @@ async function loadModelsData() {
 
   const tag = await fetchLatestVTag();
   const sourceUrl = `${RAW_BASE}/${tag}/src/cpp/resources/server_models.json`;
-  const response = await fetch(sourceUrl);
+  const flmUrl = `${RAW_BASE}/${tag}/src/cpp/resources/flm_models.json`;
+
+  // FLM models live in a separate JSON; fetch both in parallel. Older release
+  // tags will not have flm_models.json — treat any failure as a silent no-op.
+  const [response, flmResponse] = await Promise.all([
+    fetch(sourceUrl),
+    fetch(flmUrl).catch(() => null),
+  ]);
+
   if (!response.ok) {
     throw new Error(`Model JSON fetch failed: HTTP ${response.status}`);
   }
@@ -444,6 +452,23 @@ async function loadModelsData() {
   state.tag = tag;
   state.sourceUrl = sourceUrl;
   state.models = Object.entries(data).map(([name, details]) => ({ name, details }));
+
+  if (flmResponse && flmResponse.ok) {
+    try {
+      const flmData = await flmResponse.json();
+      const flmModels = flmData && flmData.models;
+      if (flmModels && typeof flmModels === 'object' && !Array.isArray(flmModels)) {
+        const existingNames = new Set(state.models.map((m) => m.name));
+        for (const [name, details] of Object.entries(flmModels)) {
+          if (!existingNames.has(name)) {
+            state.models.push({ name, details });
+          }
+        }
+      }
+    } catch (e) {
+      // Snapshot is optional — fail open.
+    }
+  }
 
   const releaseTagLink = document.getElementById('release-tag-link');
   const releaseTagText = document.getElementById('release-tag-text');

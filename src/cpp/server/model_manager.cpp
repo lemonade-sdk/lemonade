@@ -1930,15 +1930,22 @@ void ModelManager::build_cache() {
         all_models[name] = info;
     }
 
-    // Step 1.6: Discover FLM models from 'flm list --json'
-    // Only discover FLM models if FLM is fully installed
-    // Precedence: server_models.json > user_models.json > extra_models > flm_list
+    // Step 1.6: Discover FLM models. Live `flm list --json` is preferred since it
+    // reflects the user's actual installation; the bundled snapshot at
+    // resources/flm_models.json is a fallback so /models?show_all=true still
+    // surfaces FLM on supported hardware before FLM is installed.
+    // Precedence: server_models.json > user_models.json > extra_models > flm.
     auto flm_status = SystemInfoCache::get_flm_status();
     if (flm_status.is_ready()) {
         auto flm_available = get_flm_available_models();
-        for (const auto& info : flm_available) {
+        for (auto& info : flm_available) {
             // Use emplace to only add if key doesn't exist (respect precedence)
-            all_models.emplace(info.model_name, info);
+            all_models.emplace(info.model_name, std::move(info));
+        }
+    } else {
+        auto flm_snapshot = load_flm_snapshot_models();
+        for (auto& info : flm_snapshot) {
+            all_models.emplace(info.model_name, std::move(info));
         }
     }
 
@@ -2919,6 +2926,50 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
         LOG(WARNING, "ModelManager") << "FLM model discovery failed: " << e.what() << std::endl;
     } catch (...) {
         LOG(WARNING, "ModelManager") << "FLM model discovery failed with unknown error" << std::endl;
+    }
+
+    return flm_models;
+}
+
+std::vector<ModelInfo> ModelManager::load_flm_snapshot_models() {
+    std::vector<ModelInfo> flm_models;
+
+    std::string snapshot_path = get_resource_path("resources/flm_models.json");
+    json snapshot = load_optional_json(snapshot_path);
+    if (!snapshot.contains("models") || !snapshot["models"].is_object()) {
+        return flm_models;
+    }
+
+    LOG(INFO, "ModelManager") << "Loading FLM snapshot from " << snapshot_path << std::endl;
+
+    for (auto& [name, entry] : snapshot["models"].items()) {
+        if (!entry.is_object()) continue;
+
+        std::string checkpoint = JsonUtils::get_or_default<std::string>(entry, "checkpoint", "");
+        if (checkpoint.empty()) continue;
+
+        ModelInfo info;
+        info.model_name = name;
+        info.checkpoints["main"] = checkpoint;
+        info.recipe = "flm";
+        info.suggested = JsonUtils::get_or_default<bool>(entry, "suggested", true);
+
+        if (entry.contains("size") && entry["size"].is_number()) {
+            info.size = entry["size"].get<double>();
+        }
+
+        if (entry.contains("labels") && entry["labels"].is_array()) {
+            for (const auto& l : entry["labels"]) {
+                if (l.is_string()) {
+                    info.labels.push_back(l.get<std::string>());
+                }
+            }
+        }
+
+        info.type = get_model_type_from_labels(info.labels);
+        info.device = get_device_type_from_recipe(info.recipe);
+
+        flm_models.push_back(std::move(info));
     }
 
     return flm_models;
