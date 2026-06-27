@@ -638,14 +638,14 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     }
 
     const int no_progress_timeout = effective_no_progress_timeout(url, options);
-    ProgressData* prog_data = nullptr;
+    std::unique_ptr<ProgressData> prog_data;
     if (callback || no_progress_timeout > 0) {
-        prog_data = new ProgressData();
+        prog_data = std::make_unique<ProgressData>();
         prog_data->callback = callback;
         prog_data->no_progress_timeout = no_progress_timeout;
         prog_data->last_progress_time = std::chrono::steady_clock::now();
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -680,10 +680,6 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     result.curl_error = curl_easy_strerror(res);
 
     curl_easy_cleanup(curl);
-
-    if (prog_data) {
-        delete prog_data;
-    }
 
     if (was_stalled) {
         size_t current_file_size = 0;

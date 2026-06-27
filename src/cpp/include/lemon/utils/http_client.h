@@ -62,7 +62,7 @@ struct DownloadOptions {
     int connect_timeout = 30;         // Connection timeout in seconds
     int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
     bool huggingface_range_retry = true;
-    bool force_initial_range_request = false;
+    bool force_initial_range_request = false;  // Reserved: force Range: 0- on first attempt
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
