@@ -3706,6 +3706,12 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             model_manager_->download_model(model_name, request_json, do_not_upgrade);
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
+            // Inform the user when offline mode prevented an actual download
+            if (auto* cfg = RuntimeConfig::global()) {
+                if (cfg->offline()) {
+                    response["warning"] = "offline mode is enabled; model was not downloaded";
+                }
+            }
             res.set_content(response.dump(), "application/json");
         }
 
@@ -5112,9 +5118,15 @@ void Server::stream_download_operation(
                 operation(progress_cb);
 
                 // If operation completed without sending a "complete" event
-                // (e.g. backend was already installed), send one now
+                // (e.g. backend was already installed, or offline mode skipped
+                // the download), send one now with an appropriate warning.
                 if (!complete_sent) {
                     nlohmann::json done_data = {{"status", "ok"}};
+                    if (auto* cfg = RuntimeConfig::global()) {
+                        if (cfg->offline()) {
+                            done_data["warning"] = "offline mode is enabled; model was not downloaded";
+                        }
+                    }
                     std::string event = "event: complete\ndata: " + done_data.dump() + "\n\n";
                     sink.write(event.c_str(), event.size());
                 }

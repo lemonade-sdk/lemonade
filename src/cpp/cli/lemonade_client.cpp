@@ -696,6 +696,15 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
             if (event_type == "complete") {
                 std::cout << std::endl;
                 state.success = true;
+                // Check for warnings (e.g. offline mode skipped the download)
+                try {
+                    auto complete_json = json::parse(event_data);
+                    if (complete_json.contains("warning") && complete_json["warning"].is_string()) {
+                        state.warning_message = complete_json["warning"].get<std::string>();
+                    }
+                } catch (...) {
+                    // Ignore parse errors on the completion event
+                }
             } else if (event_type == "error") {
                 try {
                     auto error_json = json::parse(event_data);
@@ -730,7 +739,12 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
             throw std::runtime_error("Model pull failed");
         }
 
-        std::cout << "Model pulled successfully: " << output_name << std::endl;
+        if (!state.warning_message.empty()) {
+            std::cout << "Model pulled with warning: " << output_name << std::endl;
+            std::cout << "  Warning: " << state.warning_message << std::endl;
+        } else {
+            std::cout << "Model pulled successfully: " << output_name << std::endl;
+        }
         return 0;
     } catch (const HttpError& e) {
         std::cerr << "Error pulling model: " << extract_server_error_message(e) << std::endl;
