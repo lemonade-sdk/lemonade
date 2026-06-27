@@ -4244,9 +4244,7 @@ json SystemInfoCache::get_system_info_with_cache() {
         // and always reset it on exit.
         bool was_already_in_progress = s_phase2_in_progress.exchange(true);
 
-        if (was_already_in_progress) {
-            LOG(WARNING, "SystemInfo") << "Recursive build_recipes_info() call detected — skipping to avoid stack overflow." << std::endl;
-        } else {
+        if (!was_already_in_progress) {
             bool computation_ok = false;
             try {
                 auto sys_info = create_system_info();
