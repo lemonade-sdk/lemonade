@@ -6,6 +6,7 @@
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/rocm_arch_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -1854,33 +1855,20 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 // Helper to identify ROCm architecture from GPU name.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
+    std::string gfx;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
-    std::smatch gfx_match;
-    // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
-    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
-        return gfx_match[1].str();
+    gfx = ROCmArchUtils::get_gfx_from_device_name(device_lower);
+    if (!gfx.empty()) {
+        return gfx;
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
-    if (!device_lower.empty() &&
-        std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
-        int v;
-        try {
-            v = std::stoi(device_lower);
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Failed to parse gfx_target_version '" + device_lower + "': " + e.what());
-        }
-        int major = v / 10000;
-        int minor = (v / 100) % 100;
-        int step  = v % 100;
-
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
-        return std::string(buf);
+    gfx = ROCmArchUtils::transform_isakfd_to_gfx(device_lower);
+    if (!gfx.empty()) {
+        return gfx;
     }
-
+ 
     if (device_lower.find("radeon") == std::string::npos &&
         device_lower.find("amd") == std::string::npos) {
         return "";
@@ -2108,6 +2096,13 @@ std::string identify_npu_arch() {
 
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
+    // Check if user has defined rocm_arch config var.
+    if (auto* cfg = RuntimeConfig::global()) {
+        std::string rocm_arch = cfg->rocm_arch(); 
+        if (!rocm_arch.empty() && rocm_arch != "auto") {
+            return cfg->rocm_arch();
+        }
+    }
     // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     try {
         // Use cached system info to avoid re-detecting GPUs
@@ -2138,6 +2133,7 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+
 }
 
 static int cuda_sm_value(const std::string& arch) {

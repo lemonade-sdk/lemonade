@@ -100,6 +100,10 @@ public:
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
+    // Rocm-arch selector commands
+    int list_rocm_archs() const;
+    int set_rocm_arch(const std::string& rocm_arch) const;
+
     // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
     // uninstall} request. api_key is optional on install — when omitted the
     // server relies on env var or a later /v1/cloud/auth POST.

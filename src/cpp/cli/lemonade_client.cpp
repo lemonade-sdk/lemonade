@@ -8,6 +8,9 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/rocm_arch_utils.h"
+
 namespace lemonade {
 
 using json = nlohmann::json;
@@ -550,6 +553,138 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
         std::cerr << "Error listing models: " << e.what() << std::endl;
         return 1;
     }
+}
+
+int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
+    std::vector<lemon::ROCmDeviceInfo> rocm_devs;
+
+    if (rocm_arch.empty()) {
+        std::cerr << "Error Rocm arch value is empty" << std::endl;
+        return 1;
+    }
+
+    // Check if the rocm_arch var exists at server config.json
+    try {
+        std::string config_response = make_request("/internal/config");
+        auto json_config_response = json::parse(config_response);
+        if (!json_config_response.contains("rocm_arch")) {
+            std::cout << "You do NOT have the rocm_arch config var in your config.json" << std::endl;
+            return 0;
+        }
+    } catch (const HttpError& e) {
+        std::cerr << "Error checking rocm_arch config var: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error checking rocm_arch config var: " << e.what() << std::endl;
+        return 1;
+    }
+
+    // Check if an active  gpu with Rocm arch exists at server. We only check if it is NOT auto.
+    if (!rocm_arch.empty() && rocm_arch != "auto") {
+        bool rocm_arch_found = false;
+        try {
+            std::string response = make_request("/api/v1/system-info");
+            auto json_response = json::parse(response);
+
+            if (json_response.contains("devices")) {
+                rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(json_response["devices"]); 
+                for (const auto& rocm_dev : rocm_devs) {
+                    if (rocm_arch == rocm_dev.name) {
+                        rocm_arch_found = true;
+                        break;
+                    }
+                }
+            }
+            if (!rocm_arch_found) {
+                std::cerr << "Error there is not any active gpu with that ROCm arch " << std::endl;
+                return 1;
+            }
+        } catch (const HttpError& e) {
+            std::cerr << "Error setting ROCm arch: " << extract_server_error_message(e) << std::endl;
+            return 1;
+        } catch (const json::exception& e) {
+            std::cerr << "Error parsing system-info JSON: " << e.what() << std::endl;
+            return 1;
+        } catch (const std::exception& e) {
+            std::cerr << "Error setting ROCm arch: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+
+    //Set the config var.
+    try {
+        json request_body = {{"rocm_arch", rocm_arch}};
+        std::string response = make_request("/internal/set", "POST", request_body.dump(), "application/json");
+
+        auto response_json = json::parse(response);
+        if (response_json.contains("status") && response_json["status"] == "success") {
+            std::cout << "ROCm arch setted successfully: " << rocm_arch << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Failed to set rocm_arch config var" << std::endl;
+            return 1;
+        }
+    } catch (const HttpError& e) {
+        std::cerr << "Error setting ROCm architecture: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const json::exception& e) {
+        std::cerr << "Error parsing rocm_arch set response JSON: " << e.what() << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error setting ROCm architecture: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::list_rocm_archs() const {
+
+    std::vector<lemon::ROCmDeviceInfo> rocm_devs;
+
+    // Check if rocm_archs config var exists at server.
+    try {
+        std::string config_response = make_request("/internal/config");
+        auto json_config_response = json::parse(config_response);
+        if (!json_config_response.contains("rocm_arch")) {
+            std::cout << "You do NOT have the rocm_arch config var in your config.json" << std::endl;
+            return 0;
+        }
+        
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing ROCm architectures: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing ROCm architectures: " << e.what() << std::endl;
+        return 1;
+    }
+
+    try {
+        std::cout << "List of avaible ROCm architectures." << std::endl;
+        std::cout << "----------------------------------------------" << std::endl;
+        std::string response = make_request("/api/v1/system-info");
+        auto json_response = json::parse(response);
+        if (json_response.contains("devices")) {
+            rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(json_response["devices"]); 
+        }        
+        std::cout << "architecture\t| vram (GB)\t|" << std::endl;
+        for (const auto& rocm_dev : rocm_devs) {
+
+            std::cout << " " << rocm_dev.name << "\t" << "  " << rocm_dev.vram_gb << std::endl;
+        }
+        std::cout << "----------------------------------------------" << std::endl << std::endl;
+        return 0;
+
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing gpus: " << extract_server_error_message(e) << std::endl;
+        //return {};
+        return 1;
+    } catch (const json::exception& e) {
+        std::cerr << "Error parsing gpus JSON: " << e.what() << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing gpus: " << e.what() << std::endl;
+        return 1;
+    }
+
 }
 
 // Helper function to parse SSE progress events

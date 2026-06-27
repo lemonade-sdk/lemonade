@@ -2,6 +2,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/rocm_arch_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -166,6 +167,32 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     // error if the tag does not exist on GitHub.
 }
 
+void RuntimeConfig::validate_rocm_arch(const std::string& rocm_arch) {
+    std::vector<ROCmDeviceInfo> rocm_devs;
+    bool rocm_arch_found = false;
+
+    // We check if rocm_arch has the correct format and if we have an active gpu with that architecture.
+    if (rocm_arch.empty() || rocm_arch == "auto" ) {
+        return ;
+    }
+    if (!lemon::ROCmArchUtils::rocm_arch_is_valid_gfx(rocm_arch)) {
+        throw std::invalid_argument("'rocm_arch' has NOT valid format");
+    }
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+    if (system_info.contains("devices")) {
+            rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(system_info["devices"]); 
+            for (const auto& rocm_dev : rocm_devs) {
+                if (rocm_arch == rocm_dev.name) {
+                    rocm_arch_found = true;
+                    break;
+                }
+            }
+    }
+    if (!rocm_arch_found) {
+        throw std::invalid_argument("There is NOT active GPU with selected 'rocm_arch'");
+    }
+}
+
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
     // Config is expected to already have defaults merged in (by ConfigFile::load).
@@ -283,6 +310,14 @@ std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) co
         return "stable";
     }
     return channel;
+}
+
+std::string RuntimeConfig::rocm_arch() const{ 
+    std::shared_lock lock(mutex_);
+    if (config_.contains("rocm_arch")){
+        return config_["rocm_arch"].get<std::string>();
+    }
+    return "";
 }
 
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
@@ -495,6 +530,11 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
         }
+    } else if (key == "rocm_arch") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_arch' must be a string");
+        }
+        validate_rocm_arch(value);
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");

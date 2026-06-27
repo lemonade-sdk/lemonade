@@ -606,6 +606,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
+    src/cpp/server/utils/rocm_arch_utils.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/cloud_server.cpp
     src/cpp/server/backends/llamacpp_server.cpp
