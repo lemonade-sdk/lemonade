@@ -204,6 +204,10 @@ void VLLMServer::load(const std::string& model_name,
     env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
+    // vLLM platform detection sees both CUDA and ROCm on hybrid AMD+NVIDIA
+    // laptops and refuses to start. Tell the vLLM ROCm launcher to activate
+    // only the ROCm platform plugin, skipping the CUDA/NVML probe entirely.
+    env_vars.push_back({"VLLM_TARGET_DEVICE", "rocm"});
 
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
