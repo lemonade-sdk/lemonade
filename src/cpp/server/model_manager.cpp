@@ -1025,9 +1025,16 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
-    // Recursively find all .gguf files
+    // Recursively find all .gguf files. Use error_code to skip inaccessible
+    // entries (permission denied, broken symlinks, dangling temp files from
+    // interrupted downloads) instead of throwing.
     try {
-        for (const auto& entry : fs::recursive_directory_iterator(search_dir)) {
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(search_dir, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
             if (!entry.is_regular_file()) continue;
 
             std::string filename = entry.path().filename().string();
@@ -1761,7 +1768,15 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // Check for .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Without it, a crash during download
+    // (between fs::rename and manifest removal) leaves a corrupt file that is
+    // indistinguishable from a complete download by other checks alone.
+    // The sentinel is written after all files are verified in
+    // download_from_huggingface().
+    return safe_exists(marker_dir / ".completed");
 }
 
 /**
@@ -4438,6 +4453,18 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     if (fs::exists(manifest_path)) {
         fs::remove(manifest_path);
         LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
+    }
+
+    // Write .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Unlike manifest removal (which leaves a
+    // window where a crash produces a corrupt file indistinguishable from a
+    // complete one), the sentinel is only created after all files are verified.
+    // is_checkpoint_path_complete() checks for this file.
+    const fs::path completed_path = snapshot_path / ".completed";
+    if (!safe_exists(completed_path)) {
+        std::ofstream completed_file(path_to_utf8(completed_path));
+        completed_file << "completed\n";
+        completed_file.close();
     }
 
     // Advance refs/main only after a successful pull that actually uses the
