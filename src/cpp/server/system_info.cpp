@@ -1851,6 +1851,22 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     return "";
 }
 
+// Map a specific gfx arch token to its family wildcard where ROCm backend assets
+// are published under the family name instead of per-arch. Specific archs that
+// have their own published assets (gfx1150, gfx1151, gfx942, gfx90a, etc.)
+// remain unchanged.
+static std::string gfx_to_family_wildcard(const std::string& gfx_arch) {
+    // RDNA4 — assets published as gfx120X
+    if (gfx_arch == "gfx1200" || gfx_arch == "gfx1201") return "gfx120X";
+    // RDNA3 — assets published as gfx110X
+    if (gfx_arch == "gfx1100" || gfx_arch == "gfx1101" ||
+        gfx_arch == "gfx1102" || gfx_arch == "gfx1103") return "gfx110X";
+    // RDNA2 — assets published as gfx103X
+    if (gfx_arch == "gfx1030" || gfx_arch == "gfx1031") return "gfx103X";
+    // Not mappable to a family wildcard — return as-is
+    return gfx_arch;
+}
+
 // Helper to identify ROCm architecture from GPU name.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
@@ -1858,8 +1874,10 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
     std::smatch gfx_match;
     // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
+    // Map to family wildcard where applicable (e.g. gfx1201 → gfx120X for RDNA4)
+    // so that ROCm backend asset URLs match what's actually published.
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
-        return gfx_match[1].str();
+        return gfx_to_family_wildcard(gfx_match[1].str());
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
@@ -1878,7 +1896,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
         char buf[16];
         std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
-        return std::string(buf);
+        return gfx_to_family_wildcard(std::string(buf));
     }
 
     if (device_lower.find("radeon") == std::string::npos &&
