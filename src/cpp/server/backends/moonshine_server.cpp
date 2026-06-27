@@ -179,7 +179,7 @@ void MoonshineServer::load(const std::string& model_name,
     LOG(INFO, "MoonshineServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
+    if (!wait_for_ready("/health", 0)) {
         unload();
         throw std::runtime_error("moonshine-server failed to start or become ready");
     }

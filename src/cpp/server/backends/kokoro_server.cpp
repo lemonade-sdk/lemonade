@@ -142,7 +142,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/")) {
+    if (!wait_for_ready("/", 0)) {
         unload();
         throw std::runtime_error("koko failed to start or become ready");
     }

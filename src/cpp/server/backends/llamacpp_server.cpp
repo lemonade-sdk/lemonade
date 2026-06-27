@@ -604,7 +604,7 @@ void LlamaCppServer::load(const std::string& model_name,
         process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
     // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
+    if (!wait_for_ready("/health", 0)) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
         if (has_process_handle(handle)) {
             ProcessManager::stop_process(handle);
