@@ -21,6 +21,10 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace utils {
 
+// Global flag set by signal handler to cancel in-progress downloads.
+// Checked by the progress callback during libcurl transfers.
+std::atomic<bool> g_download_cancelled{false};
+
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
 
 namespace {
@@ -273,10 +277,15 @@ static fs::path get_disk_space_probe_path(const fs::path& output_path) {
 // CURL progress callback - returns non-zero to abort transfer
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                              curl_off_t ultotal, curl_off_t ulnow) {
+    // Check global cancellation flag (set by SIGINT handler)
+    if (g_download_cancelled.load()) {
+        return 1;  // Abort transfer
+    }
+
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
 
-    // Check if already cancelled
+    // Check if already cancelled via callback
     if (data->cancelled) {
         return 1;  // Abort transfer
     }
