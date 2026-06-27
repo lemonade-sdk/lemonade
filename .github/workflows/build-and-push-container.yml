@@ -2,6 +2,8 @@ name: Build and Push Container Image
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -37,6 +39,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           else
             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
             git checkout "refs/tags/${{ inputs.tag }}"
@@ -60,5 +63,7 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-            ${{ github.event_name == 'push' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'push' && github.ref_name == 'main' && format('{0}/{1}:edge', env.REGISTRY, env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'push' && github.ref_name == 'main' && format('{0}/{1}:sha-{2}', env.REGISTRY, env.IMAGE_NAME, steps.tag.outputs.sha) || '' }}
+            ${{ github.event_name == 'push' && startsWith(github.ref_name, 'v') && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'workflow_dispatch' && inputs.add_latest && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}

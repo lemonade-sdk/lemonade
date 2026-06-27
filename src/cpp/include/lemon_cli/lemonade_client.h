@@ -37,6 +37,7 @@ struct StreamingRequestState {
     bool success = false;
     std::string error_message;
     std::string error_code;
+    std::string warning_message;
     bool total_size_printed = false;
     uint64_t last_file_size = 0;
     std::chrono::steady_clock::time_point file_start_time;
