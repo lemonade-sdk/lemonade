@@ -2897,6 +2897,12 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     std::set<std::string> size_filtered_recipes;
     std::set<std::string> visible_recipes;
 
+#ifdef __APPLE__
+    bool is_macos = true;
+#else
+    bool is_macos = false;
+#endif
+
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
@@ -2985,6 +2991,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         DeviceType device = info.device != DEVICE_NONE ? info.device : get_device_type_from_recipe(recipe);
         bool uses_cpu = (device & DEVICE_CPU) != DEVICE_NONE;
         bool uses_gpu = (device & DEVICE_GPU) != DEVICE_NONE;
+
+        // GPU-targeted models fall back to CPU RAM filtering when no GPU memory
+        // pool is available (e.g., llamacpp on CPU-only systems).
+        if (uses_gpu && largest_gpu_mem_pool_gb <= 0.0) {
+            uses_cpu = true;
+        }
+
         bool filter_out = false;
         std::string filter_reason;
 
@@ -3047,7 +3060,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 << "but your system has " << system_ram_gb << " GB of RAM. "
                 << "CPU models larger than " << max_cpu_model_size_gb << " GB (80% of system RAM) are filtered out.";
             filter_reason = oss.str();
->>>>>>> ea59776d (fix: resolve merge conflicts for model size filtering)
         }
 
         // Special rule: filter out gpt-oss-20b-FLM on Windows systems with less than 48 GB RAM
