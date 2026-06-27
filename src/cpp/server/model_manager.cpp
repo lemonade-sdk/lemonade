@@ -1224,7 +1224,9 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
-    // Recursively find all .gguf files
+    // Recursively find all .gguf files. Use error_code to skip inaccessible
+    // entries (permission denied, broken symlinks, dangling temp files from
+    // interrupted downloads) instead of throwing.
     try {
         for (const auto& entry : fs::recursive_directory_iterator(
                  search_path, fs::directory_options::skip_permission_denied)) {
@@ -2199,7 +2201,15 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // Check for .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Without it, a crash during download
+    // (between fs::rename and manifest removal) leaves a corrupt file that is
+    // indistinguishable from a complete download by other checks alone.
+    // The sentinel is written after all files are verified in
+    // download_from_huggingface().
+    return safe_exists(marker_dir / ".completed");
 }
 
 /**
@@ -5007,6 +5017,19 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     download_from_manifest(manifest, headers, progress_callback);
     std::error_code manifest_ec;
     fs::remove(manifest_path, manifest_ec);
+
+    // Write .completed sentinel — the authoritative marker that a download
+    // finished successfully. Unlike manifest removal (which leaves a window
+    // where a crash produces a corrupt file indistinguishable from a complete
+    // one), the sentinel is only created after all files are verified.
+    // is_checkpoint_path_complete() checks for this file.
+    const fs::path completed_path =
+        path_from_utf8(repo_snapshot_paths.at(main_repo_id)) / ".completed";
+    if (!safe_exists(completed_path)) {
+        std::ofstream completed_file(path_to_utf8(completed_path));
+        completed_file << "completed\n";
+        completed_file.close();
+    }
 
     for (const auto& [repo_id, snapshot_id] : repo_snapshot_ids) {
         const fs::path& cache_path = repo_cache_paths.at(repo_id);

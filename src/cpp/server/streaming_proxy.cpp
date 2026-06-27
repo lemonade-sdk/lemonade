@@ -3,6 +3,9 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <stdexcept>
 #include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
@@ -196,6 +199,7 @@ void StreamingProxy::forward_sse_stream(
     long timeout_seconds,
     std::function<void()> on_chunk) {
 
+
     TelemetryData telemetry;
     try {
         auto req_json = json::parse(request_body);
@@ -210,6 +214,7 @@ void StreamingProxy::forward_sse_stream(
     // on both sides — SSE parsers ignore comment lines.
     constexpr auto KEEPALIVE_INTERVAL = std::chrono::seconds(10);
 
+
     TelemetryData telemetry;
     try {
         auto req_json = json::parse(request_body);
@@ -223,6 +228,7 @@ void StreamingProxy::forward_sse_stream(
     std::atomic<bool> has_first_token{false};
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
+
 
     int backend_status = 200;
     std::string error_body;
@@ -267,6 +273,7 @@ void StreamingProxy::forward_sse_stream(
         }
     });
 
+
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
@@ -285,6 +292,7 @@ void StreamingProxy::forward_sse_stream(
             }
 
             std::string chunk(data, length);
+
 
             // First-token timing — also signals the heartbeat to stop
             if (!has_first_token.load() && chunk.find("data: ") != std::string::npos) {
@@ -344,6 +352,7 @@ void StreamingProxy::forward_sse_stream(
     if (heartbeat_thread.joinable()) {
         heartbeat_thread.join();
     }
+
 
     const bool client_disconnected =
         result.curl_code == CURLE_WRITE_ERROR ||
