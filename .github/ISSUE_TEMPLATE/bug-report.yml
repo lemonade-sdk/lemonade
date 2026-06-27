@@ -53,6 +53,8 @@ body:
         - FastFlowLM / NPU
         - RyzenAI
         - Desktop App / UI
+        - lemonade (cli)
+        - lemond (server)
         - Other / Not sure
     validations:
       required: true
