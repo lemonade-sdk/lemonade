@@ -2109,7 +2109,7 @@ std::string identify_npu_arch() {
 // Score a ROCm architecture for ranking: higher = better for LLM inference.
 // Primary factor is VRAM (more VRAM = larger models fit). Tiebreaker is
 // discrete vs integrated (dGPU dedicated VRAM is faster than shared RAM).
-static int rocm_arch_score(const std::string& arch, double vram_gb) {
+static int rocm_arch_score(double vram_gb) {
     // Primary: VRAM capacity in GB × 1000 (so 16 GB → 16000, 0.5 GB → 500)
     int score = static_cast<int>(vram_gb * 1000.0);
     // Tiebreaker: dGPU bonus (GPUs with ≥ 4 GB VRAM are likely discrete)
@@ -2120,7 +2120,7 @@ static int rocm_arch_score(const std::string& arch, double vram_gb) {
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the BEST available AMD GPU on this
     // system. Iterates ALL AMD GPUs and returns the highest-scoring supported
-    // architecture, preferring dGPUs over iGPUs and newer archs over older.
+    // architecture, preferring dGPUs over iGPUs (by VRAM).
     // This mirrors get_cuda_arch() which also picks the best NVIDIA GPU.
     try {
         json system_info = SystemInfoCache::get_system_info_with_cache();
@@ -2146,7 +2146,7 @@ std::string SystemInfo::get_rocm_arch() {
 
                 double vram = gpu.value("vram_gb", 0.0);
 
-                int score = rocm_arch_score(arch, vram);
+                int score = rocm_arch_score(vram);
                 if (score > best_score) {
                     best_score = score;
                     best_arch = arch;
@@ -2155,6 +2155,8 @@ std::string SystemInfo::get_rocm_arch() {
         }
 
         if (!best_arch.empty()) {
+            LOG(INFO, "SystemInfo") << "Selected ROCm arch " << best_arch
+                                    << " (score=" << best_score << ")" << std::endl;
             return best_arch;
         }
     } catch (...) {
