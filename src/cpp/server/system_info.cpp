@@ -3993,7 +3993,7 @@ static bool s_hardware_computed = false;
 static bool s_recipes_computed = false;
 
 json SystemInfoCache::get_system_info_with_cache() {
-    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    std::unique_lock<std::mutex> lock(s_system_info_mutex);
 
     // Return fully cached result if both hardware and recipes are computed
     if (s_hardware_computed && s_recipes_computed) {
@@ -4041,18 +4041,30 @@ json SystemInfoCache::get_system_info_with_cache() {
     }
 
     // Compute recipes if not cached (or invalidated)
+    // Mark s_recipes_computed early and unlock during recipe computation to
+    // prevent deadlock when build_recipes_info re-enters this function
+    // (e.g. via get_rocm_arch() → get_system_info_with_cache()).
     if (!s_recipes_computed) {
+        s_recipes_computed = true;
+        lock.unlock();
+
         try {
             auto sys_info = create_system_info();
             json devices = s_cached_system_info.contains("devices")
                 ? s_cached_system_info["devices"] : json::object();
-            s_cached_system_info["recipes"] = sys_info->build_recipes_info(devices);
+            json recipes = sys_info->build_recipes_info(devices);
+
+            lock.lock();
+            s_cached_system_info["recipes"] = recipes;
         } catch (const std::exception& e) {
+            lock.lock();
+            s_recipes_computed = false;  // Allow retry on failure
             LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
         } catch (...) {
+            lock.lock();
+            s_recipes_computed = false;  // Allow retry on failure
             LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
         }
-        s_recipes_computed = true;
     }
 
     return s_cached_system_info;
