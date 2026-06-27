@@ -143,19 +143,21 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 // Default device from recipe — individual backends override based on their config
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return DEVICE_GPU;
+        return static_cast<DeviceType>(DEVICE_CPU | DEVICE_GPU);
     } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;
+        return static_cast<DeviceType>(DEVICE_CPU | DEVICE_GPU | DEVICE_NPU);
     } else if (recipe == "moonshine") {
         return DEVICE_CPU;
     } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;
+        return static_cast<DeviceType>(DEVICE_CPU | DEVICE_GPU);
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;
+    } else if (recipe == "vllm") {
+        return DEVICE_GPU;
     } else if (is_collection_recipe(recipe)) {
         return DEVICE_NONE;
     } else if (recipe == "cloud") {
