@@ -1,3 +1,10 @@
+# ---------------------------------------------------------------------------
+# PR-Agent review powered by DeepSeek.
+#
+# Required repo secret: DEEPSEEK_API_KEY
+#   - Setup: bash .github/scripts/setup-repo-secrets.sh
+#   - Or set manually at: https://github.com/<owner>/<repo>/settings/secrets/actions
+# ---------------------------------------------------------------------------
 name: pr-agent-review
 on:
   pull_request:

@@ -1,3 +1,10 @@
+# ---------------------------------------------------------------------------
+# Qodo Merge — automated PR reviews powered by Qodo.
+#
+# Required repo secret: QODO_API_KEY
+#   - Setup: bash .github/scripts/setup-repo-secrets.sh
+#   - Or set manually at: https://github.com/<owner>/<repo>/settings/secrets/actions
+# ---------------------------------------------------------------------------
 name: qodo-merge
 on:
   pull_request:
