@@ -1782,12 +1782,13 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
 /**
  * Returns true if all files required by the model recipe are present and complete.
  * Note: npu_cache is skipped as it is managed lazily by the flm-npu backend.
+ * Note: draft is skipped as it is an optional MTP checkpoint.
  */
 static bool are_required_checkpoints_complete(const ModelInfo& info) {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
 
-        if (type == "npu_cache") continue;
+        if (type == "npu_cache" || type == "draft") continue;
 
         const std::string resolved_path = info.resolved_path(type);
         if (!is_checkpoint_path_complete(resolved_path)) {
