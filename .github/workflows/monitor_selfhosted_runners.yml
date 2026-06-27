@@ -26,6 +26,7 @@ env:
 
 jobs:
   check:
+    if: ${{ false }}  # Disabled on forks — monitors self-hosted runners via secrets not available here
     runs-on: ubuntu-latest
     env:
       # Defined at job scope so the step-level `if:` below can read it via

@@ -486,6 +486,36 @@ void Router::load_model(const std::string& model_name,
             }
         }
 
+        // Pre-load OOM check: estimate if the model fits in available memory.
+        // Done AFTER eviction so freed VRAM/RAM is visible. Uses ModelInfo::size
+        // (file size in GB) as a rough proxy for load-time memory demand.
+        // When the model far exceeds available memory (more than 2x headroom),
+        // reject the load with a clear error rather than letting the OS OOM killer
+        // kill the entire process. Smaller overruns may still succeed due to
+        // page-mapped quantization, so those are logged as warnings only.
+        if (model_info.size > 0.0) {
+            constexpr double SAFETY_MARGIN = 0.9;
+            double available = get_available_memory_gb(
+                model_info.device & DEVICE_GPU ? DEVICE_GPU :
+                model_info.device & DEVICE_NPU ? DEVICE_NPU :
+                DEVICE_CPU);
+            double headroom = available * SAFETY_MARGIN;
+            if (model_info.size > headroom * 2.0) {
+                is_loading_ = false;
+                load_cv_.notify_all();
+                throw std::runtime_error(
+                    "Model '" + canonical_model_name + "' requires ~" +
+                    std::to_string(model_info.size) + " GB but only " +
+                    std::to_string(headroom) + " GB available. "
+                    "Free memory by unloading other models or reducing ctx_size.");
+            } else if (model_info.size > headroom) {
+                LOG(WARNING, "Router") << "Model " << canonical_model_name
+                    << " requires ~" << model_info.size << " GB but only "
+                    << headroom << " GB available (safety margin " << SAFETY_MARGIN
+                    << "). Consider freeing memory or reducing ctx_size." << std::endl;
+            }
+        }
+
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
