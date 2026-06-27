@@ -1025,9 +1025,16 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
-    // Recursively find all .gguf files
+    // Recursively find all .gguf files. Use error_code to skip inaccessible
+    // entries (permission denied, broken symlinks, dangling temp files from
+    // interrupted downloads) instead of throwing.
     try {
-        for (const auto& entry : fs::recursive_directory_iterator(search_dir)) {
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(search_dir, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
             if (!entry.is_regular_file()) continue;
 
             std::string filename = entry.path().filename().string();
@@ -1761,18 +1768,27 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // Check for .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Without it, a crash during download
+    // (between fs::rename and manifest removal) leaves a corrupt file that is
+    // indistinguishable from a complete download by other checks alone.
+    // The sentinel is written after all files are verified in
+    // download_from_huggingface().
+    return safe_exists(marker_dir / ".completed");
 }
 
 /**
  * Returns true if all files required by the model recipe are present and complete.
  * Note: npu_cache is skipped as it is managed lazily by the flm-npu backend.
+ * Note: draft is skipped as it is an optional MTP checkpoint.
  */
 static bool are_required_checkpoints_complete(const ModelInfo& info) {
     for (const auto& [type, checkpoint] : info.checkpoints) {
         (void)checkpoint;
 
-        if (type == "npu_cache") continue;
+        if (type == "npu_cache" || type == "draft") continue;
 
         const std::string resolved_path = info.resolved_path(type);
         if (!is_checkpoint_path_complete(resolved_path)) {
@@ -2957,7 +2973,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
-        download_from_huggingface(info, progress_callback);
+        download_from_huggingface(info, do_not_upgrade, progress_callback);
     }
 
     // Update cache after successful download
@@ -3118,7 +3134,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do
         manifest_info.model_name = repo_id;
         manifest_info.checkpoints["main"] = repo_id;
         try {
-            download_from_huggingface(manifest_info, nullptr);
+            download_from_huggingface(manifest_info, false, nullptr);
             manifest = read_cached_collection_manifest(cache_dir);
         } catch (const std::exception& e) {
             if (!have_cache) throw;
@@ -4107,8 +4123,62 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_huggingface(const ModelInfo& info,
+                                            bool do_not_upgrade,
                                             DownloadProgressCallback progress_callback) {
     std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+
+    // Fast-path: if do_not_upgrade is set and a .completed sentinel exists,
+    // skip the HF API call entirely. This avoids re-downloading files that
+    // are already fully verified on disk.
+    if (do_not_upgrade) {
+        fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo_id);
+        fs::path snapshots_dir = model_cache_path / "snapshots";
+        if (safe_exists(snapshots_dir)) {
+            std::error_code ec;
+            for (const auto& entry : fs::directory_iterator(snapshots_dir, ec)) {
+                if (ec) break;
+                if (entry.is_directory() && safe_exists(entry.path() / ".completed")) {
+                    LOG(INFO, "ModelManager") << "Model already downloaded (found .completed sentinel), skipping API call"
+                                              << std::endl;
+                    return;
+                }
+            }
+        }
+    }
+    // Resume fast-path: if a download manifest exists, resume downloading
+    // incomplete files instead of re-fetching the HF API and rebuilding the
+    // file list. This handles the common case of a network interruption.
+    {
+        fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo_id);
+        fs::path manifest_path = model_cache_path / "snapshots" / ".download_manifest.json";
+        if (!safe_exists(manifest_path)) {
+            manifest_path = model_cache_path / ".download_manifest.json";
+        }
+        if (safe_exists(manifest_path)) {
+            try {
+                json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
+                if (manifest.contains("files") && manifest["files"].is_array() && !manifest["files"].empty()) {
+                    LOG(INFO, "ModelManager") << "Resuming interrupted download from existing manifest"
+                                              << std::endl;
+                    std::map<std::string, std::string> headers;
+                    const char* hf_token = std::getenv("HF_TOKEN");
+                    if (hf_token && hf_token[0]) {
+                        headers["Authorization"] = "Bearer " + std::string(hf_token);
+                    }
+                    download_from_manifest(manifest, headers, progress_callback);
+                    if (fs::exists(manifest_path)) {
+                        fs::remove(manifest_path);
+                    }
+                    return;
+                }
+            } catch (...) {
+                // Stale manifest — fall through to fresh download
+                LOG(WARNING, "ModelManager") << "Failed to resume from manifest, starting fresh download"
+                                             << std::endl;
+            }
+        }
+    }
+
     std::string main_variant = checkpoint_to_variant(info.checkpoint("main"));
 
     // Get Hugging Face cache directory
@@ -4404,6 +4474,18 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     if (fs::exists(manifest_path)) {
         fs::remove(manifest_path);
         LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
+    }
+
+    // Write .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Unlike manifest removal (which leaves a
+    // window where a crash produces a corrupt file indistinguishable from a
+    // complete one), the sentinel is only created after all files are verified.
+    // is_checkpoint_path_complete() checks for this file.
+    const fs::path completed_path = snapshot_path / ".completed";
+    if (!safe_exists(completed_path)) {
+        std::ofstream completed_file(path_to_utf8(completed_path));
+        completed_file << "completed\n";
+        completed_file.close();
     }
 
     // Advance refs/main only after a successful pull that actually uses the
