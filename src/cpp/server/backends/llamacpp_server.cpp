@@ -364,10 +364,20 @@ void LlamaCppServer::load(const std::string& model_name,
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
     if (std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end()) {
-        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
-        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+        // MTP speculative decoding requires multimodal support in the current
+        // llama.cpp implementation (glm4-moe.cpp accesses vision tensors during
+        // draft generation). Only enable when an mmproj is available, as models
+        // with MTP heads but no multimodal projector (e.g. quantized GLM-4.5-Air)
+        // will crash at first prompt otherwise. See #2451.
+        if (mmproj_path.empty() && !model_info.hf_load) {
+            LOG(WARNING, "LlamaCpp") << "Model has MTP capability but no mmproj found; "
+                                     << "skipping speculative decoding to avoid crash" << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
+            push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+            push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
+            push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+        }
     }
 
     // Disable llamacpp webui by default
