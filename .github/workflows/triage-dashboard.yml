@@ -26,6 +26,7 @@ on:
 
 jobs:
   build:
+    if: ${{ false }}  # Disabled on forks — needs TRIAGE_DASHBOARD_TOKEN + push to lemonade-sdk/lemonade-triage
     runs-on: ubuntu-latest
     permissions:
       contents: read

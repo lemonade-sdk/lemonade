@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   repo-manager:
+    if: ${{ false }}  # Disabled on forks — needs self-hosted repo-manager runner
     runs-on: [self-hosted, linux, repo-manager]
     timeout-minutes: 30
     env:

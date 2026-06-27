@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   setup:
+    if: ${{ false }}  # Disabled on forks — targets self-hosted runners not present here
     runs-on: ubuntu-latest
     outputs:
       runners: ${{ steps.load.outputs.runners }}
