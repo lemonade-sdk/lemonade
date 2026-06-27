@@ -20,8 +20,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
-| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
-| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
+| `POST` | [`/v1/log-level`](#post-v1log-level) | Change the server log verbosity at runtime |
+| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
+| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
 | `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
 | `DELETE` | [`/v1/cloud/auth/{provider}`](#delete-v1cloudauthprovider) | Clear the in-memory API key for a cloud provider |
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
@@ -448,10 +449,13 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
 | `whispercpp_args` | No | whispercpp | Custom arguments to pass to whisper-server. The following are NOT allowed: `-m`, `--model`, `--port`. Example: `--convert`. |
+| `sdcpp_args` | No | sd-cpp | Custom arguments to pass to `sd-server`. The following are NOT allowed: `-m`, `--port`, `--steps`, `--cfg-scale`, `--width`, `--height`. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
+| `flm_args` | No | flm | Custom arguments to pass to `flm serve` (e.g., `"--socket 20 --q-len 15"`). |
+| `vllm_args` | No | vllm | Custom arguments to pass to `vllm-server` (e.g., `"--max-num-seqs 128 --enable-prefix-caching"`). |
 | `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
 
 **Setting Priority:**
@@ -1383,3 +1387,30 @@ curl http://localhost:13305/live
 ```json
 {"status":"ok"}
 ```
+
+## `POST /v1/log-level`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Change the server's log verbosity at runtime without restarting. The new level applies immediately to all subsequent log output.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `level` | Yes | Log level string: `trace`, `debug`, `info`, `warning`, `error`, `fatal`, or `none`. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/log-level \
+  -H "Content-Type: application/json" \
+  -d '{"level": "debug"}'
+```
+
+### Response format
+
+```json
+{"status": "success", "level": "debug"}
+```
+
+> **Note:** This endpoint requires `LEMONADE_ADMIN_API_KEY` when an admin key is configured. See [API Key and Security](../guide/configuration/README.md#api-key-and-security).

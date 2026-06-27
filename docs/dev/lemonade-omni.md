@@ -89,3 +89,59 @@ python examples/lemonade_tools.py "Say hello world out loud"
 You can build your own omni model from registered models — see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app) in the custom models guide. The planner LLM must carry the `tool-calling` label, and each modality must have a downloaded model whose `labels` include the matching entry from the [tools table](#available-tools).
 
 To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
+
+## Component loading behavior
+
+When you load a collection (`POST /v1/load` or the first inference request), Lemonade loads all components eagerly — the LLM, image model, ASR model, and TTS model are all started before the first request returns. This ensures tool calls can be dispatched immediately once the collection is ready, at the cost of higher startup VRAM.
+
+**LRU eviction and collections:** Each component occupies its own LRU slot within its model type (one LLM slot, one image slot, one ASR slot, one TTS slot). If another model of the same type is loaded while a component is in its slot, that component will be evicted. After eviction, the next tool call targeting that component will re-load it automatically before the request continues — adding latency. To avoid this, set `max_loaded_models` high enough to hold all components you intend to use concurrently.
+
+**Collections do not hold model-type slots** — only their individual components do. Deleting the collection entry does not evict its components from memory.
+
+## Chat-transcription models
+
+`chat-transcription` models (e.g. Qwen2.5-Omni) are a different integration path from OmniRouter. These are LLMs that accept audio directly in the `/v1/chat/completions` message payload — you do not need tool calls or a collection. The model processes audio and text in a single forward pass.
+
+### When to use each approach
+
+| | OmniRouter (collection) | Chat-transcription model |
+|---|---|---|
+| **Mechanism** | Tool calls dispatched to separate specialized models | Single model accepts mixed audio+text |
+| **Models needed** | LLM + ASR + image + TTS (separate) | One multimodal model |
+| **VRAM** | Higher (multiple models loaded) | Lower (one model) |
+| **Flexibility** | Mix and match any compatible models | Depends on what the single model supports |
+| **Use when** | You want best-in-class per modality or hardware that fits separate models | You want the simplest integration and have a suitable multimodal model |
+
+### Sending audio in chat completions
+
+For models labeled `chat-transcription`, include an audio attachment in the `content` array of a user message using the `input_audio` content type:
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-Omni-7B",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is being said in this audio?"},
+              {
+                "type": "input_audio",
+                "input_audio": {
+                  "data": "<base64-encoded audio bytes>",
+                  "format": "wav"
+                }
+              }
+            ]
+          }
+        ]
+      }'
+```
+
+To identify `chat-transcription` models in your app:
+
+```python
+models = requests.get("http://localhost:13305/v1/models").json()["data"]
+chat_asr_models = [m for m in models if "chat-transcription" in m.get("labels", [])]
+```

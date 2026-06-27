@@ -39,6 +39,8 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `tools`       | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `enable_thinking` | No | Lemonade extension. Boolean. Set to `false` to suppress chain-of-thought reasoning on models that default to thinking mode (e.g. Qwen3). When `false`, Lemonade prepends `/no_think` to the last user message before forwarding the request. Takes precedence over `thinking` when both are present. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `thinking` | No | Lemonade extension. Boolean or object `{"type": "enabled" \| "disabled"}`. Equivalent to `enable_thinking` for clients that use the object form (e.g. OpenCode). Set to `false` or `{"type": "disabled"}` to suppress thinking. Ignored if `enable_thinking` is also present. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -112,6 +114,18 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       }]
     }
     ```
+
+### Streaming
+
+When `stream: true`, the server returns a sequence of `text/event-stream` chunks. Each chunk is a `data:` line containing a JSON object with `object: "chat.completion.chunk"`. The stream ends with a `data: [DONE]` sentinel.
+
+**Client-side guidance:**
+
+- Use the [OpenAI Python or JavaScript SDK](https://platform.openai.com/docs/libraries) — they handle SSE parsing, reconnection, and the `[DONE]` sentinel automatically.
+- If you are parsing SSE manually, buffer lines until you see a blank line, then extract the `data:` value. Skip lines that begin with `:` (comments). Stop when you receive `data: [DONE]`.
+- If the connection drops mid-stream, you can restart the request from the beginning. Lemonade does not support resuming a partial stream.
+- A model that is not yet loaded will be loaded automatically before the first token is emitted. Expect a delay of several seconds on first use; subsequent requests to the same loaded model respond immediately. Use [`POST /v1/load`](./lemonade.md#post-v1load) to pre-load before streaming if latency matters.
+- Error conditions (model not found, context exceeded, backend crash) are returned as a standard HTTP error response before the stream begins — not as an in-stream error chunk.
 
 ### Image understanding input format (OpenAI-compatible)
 

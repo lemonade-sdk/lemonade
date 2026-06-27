@@ -12,6 +12,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for load](#options-for-load)
 - [Options for run](#options-for-run)
 - [Options for export](#options-for-export)
+- [Options for config](#options-for-config)
 - [Options for backends](#options-for-backends)
 - [Options for launch](#options-for-launch)
 - [Options for bench](#options-for-bench)
@@ -35,6 +36,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
+| `config`            | View or update server configuration. Use `config set key=value` to change settings. See command options [below](#options-for-config). |
 | `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
@@ -457,6 +459,38 @@ lemonade export Qwen3-0.6B-GGUF --output my-model.json
 # Export and view the JSON output
 lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 ```
+
+## Options for config
+
+The `config` command reads and writes server configuration. Changes take effect immediately and are persisted to `config.json` without restarting the server.
+
+```bash
+lemonade config                        # print current configuration
+lemonade config set key=value [...]    # update one or more values
+```
+
+Top-level settings use their JSON key name directly. Nested backend settings use dot notation:
+
+```bash
+# View all current settings
+lemonade config
+
+# Change log level and port
+lemonade config set log_level=debug port=9000
+
+# Change a backend setting
+lemonade config set llamacpp.backend=rocm
+
+# Pin a specific llama.cpp build
+lemonade config set llamacpp.vulkan_bin=b8664
+
+# Set multiple values at once
+lemonade config set ctx_size=8192 max_loaded_models=3 sdcpp.steps=30
+```
+
+For the full list of supported keys and their effects, see [Server Configuration](./configuration/README.md#settings-reference).
+
+> **Note:** `lemonade config` uses the [`POST /v1/params`](../api/lemonade.md#post-v1params) endpoint internally. Changes made via `lemonade config set` are equivalent to calling that endpoint directly.
 
 ## Options for backends
 
