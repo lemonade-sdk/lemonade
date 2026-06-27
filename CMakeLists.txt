@@ -1834,3 +1834,29 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
     include(CTest)
     add_test(NAME AutoTuneTest COMMAND test_auto_tune)
 endif()
+
+# ProcessManager non-mutating is_running() contract test.
+set(_PM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_manager.cpp"
+)
+set(_PM_TEST_LIBS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/process_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/utils/platform/process_unix.cpp"
+)
+list(GET _PM_TEST_LIBS 0 _pm_lib0)
+list(GET _PM_TEST_LIBS 1 _pm_lib1)
+if(EXISTS "${_PM_TEST_SRC}" AND EXISTS "${_pm_lib0}" AND EXISTS "${_pm_lib1}")
+    add_executable(test_process_manager
+        test/cpp/test_process_manager.cpp
+        src/cpp/server/utils/process_manager.cpp
+        src/cpp/server/utils/platform/process_unix.cpp
+    )
+    target_include_directories(test_process_manager PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_process_manager PRIVATE pthread)
+    target_link_options(test_process_manager PRIVATE -pthread)
+    include(CTest)
+    add_test(NAME ProcessManagerTest COMMAND test_process_manager)
+endif()
