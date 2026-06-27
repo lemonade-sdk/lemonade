@@ -4196,6 +4196,7 @@ json SystemInfoCache::get_system_info_with_cache() {
     // Phase 2: Compute recipes OUTSIDE any lock to avoid blocking during slow
     // subprocess calls (llama-server --version, etc.) and GitHub API lookups.
     if (!s_recipes_computed) {
+        bool was_already_in_progress;
         try {
             auto sys_info = create_system_info();
 
@@ -4206,7 +4207,7 @@ json SystemInfoCache::get_system_info_with_cache() {
             // recipe building and never write to cache — their empty local_recipes are simply
             // discarded by the s_phase2_in_progress check below. Only the outermost caller,
             // which set the flag before entering this block, completes full recipe detection.
-            bool was_already_in_progress = s_phase2_in_progress.exchange(true);
+            was_already_in_progress = s_phase2_in_progress.exchange(true);
 
             if (was_already_in_progress) {
                 LOG(WARNING, "SystemInfo") << "Recursive build_recipes_info() call detected — skipping to avoid stack overflow." << std::endl;
