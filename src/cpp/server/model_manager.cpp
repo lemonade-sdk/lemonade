@@ -4135,6 +4135,40 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     std::map<std::string, std::vector<std::string>> files_to_download;
 
+    // Resume fast-path: if a download manifest exists, resume downloading
+    // incomplete files instead of re-fetching the HF API and rebuilding the
+    // file list. This handles the common case of a network interruption.
+    {
+        fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo_id);
+        fs::path manifest_path = model_cache_path / "snapshots" / ".download_manifest.json";
+        if (!safe_exists(manifest_path)) {
+            manifest_path = model_cache_path / ".download_manifest.json";
+        }
+        if (safe_exists(manifest_path)) {
+            try {
+                json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
+                if (manifest.contains("files") && manifest["files"].is_array() && !manifest["files"].empty()) {
+                    LOG(INFO, "ModelManager") << "Resuming interrupted download from existing manifest"
+                                              << std::endl;
+                    std::map<std::string, std::string> headers;
+                    const char* hf_token = std::getenv("HF_TOKEN");
+                    if (hf_token && hf_token[0]) {
+                        headers["Authorization"] = "Bearer " + std::string(hf_token);
+                    }
+                    download_from_manifest(manifest, headers, progress_callback);
+                    if (fs::exists(manifest_path)) {
+                        fs::remove(manifest_path);
+                    }
+                    return;
+                }
+            } catch (...) {
+                // Stale manifest — fall through to fresh download
+                LOG(WARNING, "ModelManager") << "Failed to resume from manifest, starting fresh download"
+                                             << std::endl;
+            }
+        }
+    }
+
     // Query HuggingFace API to get list of all files in the repository
     // NOTE: This API call happens EVERY time this function is called, regardless of
     // whether files are cached. The do_not_upgrade check should happen in the caller
