@@ -1,10 +1,11 @@
 {
-  "config_version": 2,
+  "config_version": 3,
   "port": 13305,
   "host": "localhost",
   "websocket_port": "auto",
   "log_level": "info",
   "global_timeout": 600,
+  "tui": true,
   "max_loaded_models": 1,
   "no_broadcast": false,
   "extra_models_dir": "",

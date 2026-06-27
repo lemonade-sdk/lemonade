@@ -86,6 +86,7 @@ set(COMMON_SOURCES
     model_selection.cpp
     recipe_import.cpp
     hf_pull.cpp
+    tui_launch.cpp
     bench.cpp
     chat_repl.cpp
     ../server/recipe_options.cpp
@@ -127,6 +128,9 @@ add_executable(lemonade
 target_link_libraries(lemonade PRIVATE
     nlohmann_json::nlohmann_json
     lemonade-digest-crypto
+    ftxui::component
+    ftxui::dom
+    ftxui::screen
 )
 
 # Link httplib based on what's available (set by parent CMakeLists.txt)
