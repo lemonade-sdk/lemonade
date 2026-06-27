@@ -4227,7 +4227,8 @@ json SystemInfoCache::get_system_info_with_cache() {
         // Nested callers (was_already_in_progress == true) skip writing entirely — their
         // empty local_recipes would clobber valid data from the parent invocation if
         // s_cached_system_info["recipes"] hasn't been populated yet by Phase 1.
-        bool is_outermost_call = !s_phase2_in_progress.exchange(false);
+        bool is_outermost_call = !was_already_in_progress;
+        s_phase2_in_progress.store(false);
 
         if (is_outermost_call) {
             // Atomically install recipes into cache (another thread may have won).
