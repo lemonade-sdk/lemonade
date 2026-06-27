@@ -2328,6 +2328,10 @@ bool parse_TF_env_var(const char* env_var_name) {
                    std::string(env) == "yes");
 }
 
+static bool is_gpu_device_key(const std::string& dev_type) {
+    return dev_type.find("gpu") != std::string::npos;
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
 
@@ -2363,10 +2367,14 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                          hardware["amd_npu"].is_object() &&
                          hardware["amd_npu"].value("available", false);
 
-    double largest_mem_pool_gb = 0.0;
+    double largest_gpu_mem_pool_gb = 0.0;
     double curr_mem_pool_gb = 0.0;
 
     for (const auto& [dev_type, devices] : hardware.items()) {
+        if (!is_gpu_device_key(dev_type)) {
+            continue;
+        }
+
         // Because we have mixed types this just makes every device_type an array.
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
@@ -2379,7 +2387,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         for (const auto& dev : dev_list) {
             curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
-            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
+            largest_gpu_mem_pool_gb = largest_gpu_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_gpu_mem_pool_gb;
         }
     }
 
@@ -2387,8 +2395,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
-
-    double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
+    double max_cpu_model_size_gb = system_ram_gb > 0.0 ? (system_ram_gb * 0.8) : 0.0;
 
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
@@ -2404,11 +2411,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         LOG(INFO, "ModelManager") << "Backend availability:" << std::endl;
         LOG(INFO, "ModelManager") << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         if (system_ram_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
-                      << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb << std::endl;
+            LOG(INFO, "ModelManager") << "  - CPU model memory limit: " << std::fixed << std::setprecision(1) << max_cpu_model_size_gb << std::endl;
         }
-        if (largest_mem_pool_gb > 0.0) {
-            LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
+        if (largest_gpu_mem_pool_gb > 0.0) {
+            LOG(INFO, "ModelManager") << "  - Largest GPU memory pool: " << std::fixed << std::setprecision(1) << largest_gpu_mem_pool_gb << std::endl;
         }
         if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
             const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
@@ -2438,6 +2445,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
+        DeviceType device = info.device != DEVICE_NONE ? info.device : get_device_type_from_recipe(recipe);
+        bool uses_cpu = (device & DEVICE_CPU) != DEVICE_NONE;
+        bool uses_gpu = (device & DEVICE_GPU) != DEVICE_NONE;
         bool filter_out = false;
         std::string filter_reason;
 
@@ -2471,18 +2481,35 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // Filter out models that are too large for system RAM
-        // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
-            if (info.size > max_model_size_gb) {
-                filter_out = true;
-                std::ostringstream oss;
-                oss << std::fixed << std::setprecision(1);
-                oss << "This model requires approximately " << info.size << " GB of memory, "
-                    << "but your system only has " << system_ram_gb << " GB of RAM. "
-                    << "Models larger than " << max_model_size_gb << " GB (80% of system RAM) are filtered out.";
-                filter_reason = oss.str();
-            }
+        // On macOS, only show llamacpp models
+        if (is_macos && recipe != "llamacpp") {
+            filter_out = true;
+            filter_reason = "This model uses the '" + recipe + "' recipe which is not supported on macOS. "
+                           "Only llamacpp models are supported on macOS.";
+        }
+
+        // Filter out GPU-targeted models that are too large for the detected GPU memory pool.
+        // User-controlled models (user.*, extra., local_upload) bypass size filtering.
+        if (!filter_out && !user_controlled_model && uses_gpu && largest_gpu_mem_pool_gb > 0.0 && info.size > largest_gpu_mem_pool_gb) {
+            filter_out = true;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "This GPU-targeted model requires approximately " << info.size << " GB of memory, "
+                << "but the largest detected GPU memory pool is " << largest_gpu_mem_pool_gb << " GB. "
+                << "GPU models larger than the available GPU memory pool are filtered out.";
+            filter_reason = oss.str();
+        }
+
+        // Filter out CPU-targeted models that are too large for system RAM.
+        // User-controlled models (user.*, extra., local_upload) bypass size filtering.
+        if (!filter_out && !user_controlled_model && uses_cpu && max_cpu_model_size_gb > 0.0 && info.size > max_cpu_model_size_gb) {
+            filter_out = true;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "This CPU-targeted model requires approximately " << info.size << " GB of memory, "
+                << "but your system has " << system_ram_gb << " GB of RAM. "
+                << "CPU models larger than " << max_cpu_model_size_gb << " GB (80% of system RAM) are filtered out.";
+            filter_reason = oss.str();
         }
 
         // Special rule: filter out gpt-oss-20b-FLM on Windows systems with less than 48 GB RAM
