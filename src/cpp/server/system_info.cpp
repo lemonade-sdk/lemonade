@@ -452,7 +452,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"whispercpp", "rocm", {"windows", "linux"}, {
         // gfx103X omitted: lemonade-sdk/whisper.cpp-rocm publishes no gfx103X
         // ROCm whisper build, so advertising it would yield a 404 on install.
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx110X", "gfx120X"}},
     }},
     {"whispercpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -515,7 +515,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx110X", "gfx120X"}},
     }},
 
     // Moonshine - CPU-only streaming STT. Platforms match the published
