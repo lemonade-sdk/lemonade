@@ -434,6 +434,24 @@ void LlamaCppServer::load(const std::string& model_name,
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+
+        // On hybrid AMD+NVIDIA systems, llama.cpp's ggml memory budgeting
+        // counts all GPU memory pools including the NVIDIA dGPU, then tries
+        // to allocate the full model on the ROCm device. Hiding CUDA devices
+        // keeps the NVIDIA GPU out of ggml's memory calculation while the
+        // ROCm backend discovers AMD GPUs through ROCr directly.
+        const char* existing_cuda_visible = std::getenv("CUDA_VISIBLE_DEVICES");
+        if (!existing_cuda_visible || existing_cuda_visible[0] == '\0') {
+            env_vars.push_back({"CUDA_VISIBLE_DEVICES", ""});
+            LOG(INFO, "LlamaCpp")
+                << "Hiding CUDA devices from llama.cpp ROCm backend"
+                << " to prevent hybrid-GPU memory budgeting skew"
+                << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing CUDA_VISIBLE_DEVICES="
+                << existing_cuda_visible << std::endl;
+        }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
         // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
