@@ -2140,6 +2140,39 @@ std::string SystemInfo::get_rocm_arch() {
     return "";  // No supported architecture found
 }
 
+std::vector<std::string> SystemInfo::get_rocm_arches() {
+    // Returns ALL detected AMD GPU ROCm architectures.
+    // Ordered: iGPU first, then dGPUs (same order as the amd_gpu array).
+    // Used to ensure ROCm backends are downloaded for every GPU on the system.
+    std::vector<std::string> arches;
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (!system_info.contains("devices")) {
+            return arches;
+        }
+        const auto& devices = system_info["devices"];
+        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+            for (const auto& gpu : devices["amd_gpu"]) {
+                if (gpu.value("available", false)) {
+                    std::string name = gpu.value("name", "");
+                    if (!name.empty()) {
+                        std::string arch = identify_rocm_arch_from_name(name);
+                        if (!arch.empty()) {
+                            // Avoid duplicates (e.g., identical iGPU/dGPU arch strings)
+                            if (std::find(arches.begin(), arches.end(), arch) == arches.end()) {
+                                arches.push_back(arch);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed — return empty list
+    }
+    return arches;
+}
+
 static int cuda_sm_value(const std::string& arch) {
     if (arch.size() <= 3 || arch.substr(0, 3) != "sm_") {
         return 0;
@@ -3960,7 +3993,7 @@ static bool s_hardware_computed = false;
 static bool s_recipes_computed = false;
 
 json SystemInfoCache::get_system_info_with_cache() {
-    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    std::unique_lock<std::mutex> lock(s_system_info_mutex);
 
     // Return fully cached result if both hardware and recipes are computed
     if (s_hardware_computed && s_recipes_computed) {
@@ -4008,18 +4041,30 @@ json SystemInfoCache::get_system_info_with_cache() {
     }
 
     // Compute recipes if not cached (or invalidated)
+    // Mark s_recipes_computed early and unlock during recipe computation to
+    // prevent deadlock when build_recipes_info re-enters this function
+    // (e.g. via get_rocm_arch() → get_system_info_with_cache()).
     if (!s_recipes_computed) {
+        s_recipes_computed = true;
+        lock.unlock();
+
         try {
             auto sys_info = create_system_info();
             json devices = s_cached_system_info.contains("devices")
                 ? s_cached_system_info["devices"] : json::object();
-            s_cached_system_info["recipes"] = sys_info->build_recipes_info(devices);
+            json recipes = sys_info->build_recipes_info(devices);
+
+            lock.lock();
+            s_cached_system_info["recipes"] = recipes;
         } catch (const std::exception& e) {
+            lock.lock();
+            s_recipes_computed = false;  // Allow retry on failure
             LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
         } catch (...) {
+            lock.lock();
+            s_recipes_computed = false;  // Allow retry on failure
             LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
         }
-        s_recipes_computed = true;
     }
 
     return s_cached_system_info;
