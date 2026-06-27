@@ -358,6 +358,12 @@ public:
             TerminateProcess(handle.handle, 0);
             WaitForSingleObject(handle.handle, 5000);  // Wait up to 5 seconds
             CloseHandle(handle.handle);
+            // Give the GPU driver time to release resources before another
+            // process attempts to initialize the same device. Without this,
+            // orphaned Vulkan command buffers can leave the GPU pegged at
+            // 90-100% utilization after process termination (#2000).
+            // Matching the 2-second cooldown in the Linux path.
+            Sleep(2000);
         }
     }
 

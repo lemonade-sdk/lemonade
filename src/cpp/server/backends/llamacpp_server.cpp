@@ -378,6 +378,31 @@ void LlamaCppServer::load(const std::string& model_name,
         push_overridable_arg(args, llamacpp_args, "--no-mmap");
     }
 
+    // Flash attention hangs on Windows Vulkan with AMD/Intel GPUs (ggml#17297).
+    // Default it off so the user doesn't get a hung backend on first run.
+    // Users can opt back in with --flash-attn in llamacpp_args.
+#ifdef _WIN32
+    if (llamacpp_backend == "vulkan") {
+        push_overridable_arg(args, llamacpp_args, "--no-flash-attn");
+        LOG(INFO, "LlamaCpp")
+            << "Disabling flash attention by default on Windows Vulkan"
+            << " (override with --flash-attn in llamacpp_args)" << std::endl;
+        // Windows TDR (Timeout Detection & Recovery) defaults to 2 seconds,
+        // which is too short for LLM compute workloads on integrated GPUs.
+        // A hung dispatch exceeding 2s causes the driver to reset the GPU,
+        // producing VK_ERROR_DEVICE_LOST and a 90-100% utilization stall.
+        // Users can increase this via registry: TdrDelay=30 (DWORD) under
+        // HKLM\System\CurrentControlSet\Control\GraphicsDrivers
+        if (SystemInfo::get_has_igpu()) {
+            LOG(INFO, "LlamaCpp")
+                << "On Windows with an integrated GPU, consider increasing"
+                << " GPU timeout: set TdrDelay=30 (DWORD) in registry at"
+                << " HKLM\\System\\CurrentControlSet\\Control\\GraphicsDrivers"
+                << std::endl;
+        }
+    }
+#endif
+
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
