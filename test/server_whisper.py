@@ -372,7 +372,7 @@ class WhisperTests(ServerTestBase):
             f"{len(pcm_data) // 2 / 16000:.1f}s)"
         )
 
-        chunk_size = 8192
+        chunk_size = 2048
         chunks = [
             pcm_data[i : i + chunk_size] for i in range(0, len(pcm_data), chunk_size)
         ]
