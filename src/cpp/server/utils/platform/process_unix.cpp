@@ -86,10 +86,6 @@ static void preserve_capabilities_for_exec() {
 #endif
 
 #ifdef __linux__
-// Check whether a process is a zombie by reading /proc/<pid>/stat.
-// Returns true if the process exists and is in zombie ('Z') state,
-// false otherwise (including if the proc entry doesn't exist).
-// This is non-mutating — it does not reap the child.
 static bool is_zombie_by_proc(pid_t pid) {
     char path[64];
     std::snprintf(path, sizeof(path), "/proc/%d/stat", pid);
