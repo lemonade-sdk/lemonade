@@ -108,7 +108,14 @@ public:
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
     // Device support detection
+    // Return the first (primary) ROCm architecture — typically the iGPU.
+    // Used for rocm_channel selection and single-arch contexts.
     static std::string get_rocm_arch();
+
+    // Return ALL detected AMD GPU ROCm architectures, ordered iGPU first
+    // then dGPUs. Used by backend download paths to install ROCm binaries
+    // for every GPU on the system, not just the first one detected.
+    static std::vector<std::string> get_rocm_arches();
     static std::string get_cuda_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
