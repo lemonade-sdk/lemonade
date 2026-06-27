@@ -93,10 +93,33 @@ bool should_disable_thinking(const json& request_json) {
     return false;
 }
 
-bool strip_handled_thinking_fields(json& request_json) {
+bool normalize_thinking_fields(json& request_json) {
     bool modified = false;
-    modified = request_json.erase("enable_thinking") > 0 || modified;
-    modified = request_json.erase("thinking") > 0 || modified;
+
+    // Rename OpenAI's `thinking` (boolean or object) to lemonade's canonical
+    // `enable_thinking` (boolean) so backends (FLM, llama.cpp, cloud, etc.)
+    // that understand the flag can act on it instead of having it stripped.
+    if (request_json.contains("thinking")) {
+        const auto& thinking = request_json["thinking"];
+        bool enable = true;
+        if (thinking.is_boolean()) {
+            enable = thinking.get<bool>();
+            request_json["enable_thinking"] = enable;
+        } else if (thinking.is_object()) {
+            std::string type = thinking.value("type", "");
+            if (type == "disabled") {
+                request_json["enable_thinking"] = false;
+            } else if (type == "enabled") {
+                request_json["enable_thinking"] = true;
+            }
+        }
+        request_json.erase("thinking");
+        modified = true;
+    }
+
+    // Don't strip enable_thinking — forward to backends that support it.
+    // The /no_think prefix (injected earlier for llama.cpp) is an additional
+    // signal; backends like FLM/vLLM use the enable_thinking field directly.
     return modified;
 }
 
@@ -2164,7 +2187,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         if (should_disable_thinking(request_json)) {
             request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
         }
-        request_modified = strip_handled_thinking_fields(request_json) || request_modified;
+        request_modified = normalize_thinking_fields(request_json) || request_modified;
 
         // If we modified the request (or normalized the model name earlier), serialize to string
         // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
@@ -2226,6 +2249,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         if (message.contains("content")) {
                             LOG(DEBUG, "Server") << "Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
                         }
+                    }
+
+                    // Ensure content field is present alongside reasoning_content
+                    // Standard OpenAI-compatible clients expect content to always be present
+                    const bool has_reasoning = message.contains("reasoning_content") &&
+                                               message["reasoning_content"].is_string();
+                    const bool has_content = message.contains("content") && !message["content"].is_null();
+                    if (has_reasoning && !has_content) {
+                        message["content"] = "";
                     }
                 }
             }

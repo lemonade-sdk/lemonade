@@ -215,11 +215,22 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
         return;
     }
 
-    std::string rocm_arch = SystemInfo::get_rocm_arch();
+    std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
-    // Install TheRock for this architecture
-    backends::BackendUtils::install_therock(rocm_arch, version, progress_cb);
+    if (rocm_arches.empty()) {
+        // Fall back to single-arch detection for backward compatibility
+        std::string single_arch = SystemInfo::get_rocm_arch();
+        if (!single_arch.empty()) {
+            backends::BackendUtils::install_therock(single_arch, version, progress_cb);
+        }
+        return;
+    }
+
+    // Install TheRock for each detected GPU architecture
+    for (const auto& rocm_arch : rocm_arches) {
+        backends::BackendUtils::install_therock(rocm_arch, version, progress_cb);
+    }
 }
 
 } // namespace
