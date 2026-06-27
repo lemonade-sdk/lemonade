@@ -204,8 +204,7 @@ inline bool add_label_once(std::vector<std::string>& labels, const std::string& 
 // Fallback device type for recipes with no registered backend descriptor
 // (collections and unknown recipes); the descriptor registry is authoritative.
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
-    (void)recipe;
-    return DEVICE_NONE;
+    (void)recipe;    return DEVICE_NONE;
 }
 
 } // namespace lemon
