@@ -3458,7 +3458,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     if (!parse_required_json_body(req, res, request_json)) return;
 
     try {
-        // First we check if lemonade is offline.
         if (config_->offline()) {
             res.status = 400;
             nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
