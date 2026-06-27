@@ -124,11 +124,46 @@ static void test_make_classifier_rejections() {
               lemon::make_classifier(json{{"id", "x"}, {"type", "mystery"},
                                           {"model", "m"}});
           }));
-    check("make_classifier clearly rejects semantic_similarity for now",
+    check("make_classifier accepts semantic_similarity", [] {
+        try {
+            auto c = lemon::make_classifier(
+                json{{"id", "sim"}, {"type", "semantic_similarity"},
+                     {"model", "m"},
+                     {"reference_phrases", json::array({"return", "function"})}});
+            return c && c->id() == "sim" && c->type() == "semantic_similarity" &&
+                   c->labels().empty() && !c->default_label().has_value();
+        } catch (...) {
+            return false;
+        }
+    }());
+    check("make_classifier rejects semantic_similarity without reference_phrases",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
+                                          {"model", "m"}});
+          }));
+    check("make_classifier rejects semantic_similarity with empty reference_phrases",
           throws_invalid_arg([] {
               lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
                                           {"model", "m"},
+                                          {"reference_phrases", json::array()}});
+          }));
+    check("make_classifier rejects semantic_similarity with empty phrase string",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", json::array({""})}});
+          }));
+    check("make_classifier rejects semantic_similarity without model",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
                                           {"reference_phrases", json::array({"return"})}});
+          }));
+    check("make_classifier rejects semantic_similarity with labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", json::array({"return"})},
+                                          {"labels", json::array({"X"})}});
           }));
     check("make_classifier clearly rejects llm for now",
           throws_invalid_arg([] {

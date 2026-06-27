@@ -1859,6 +1859,28 @@ if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
     add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
 endif()
 
+# Routing semantic_similarity classifier (issue #2381): max-cosine scoring over
+# reference phrases, reference-phrase embedding caching, inclusive band
+# boundaries, and on_error handling, all against a fake embedder.
+set(_ROUTING_SEMANTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_semantic.cpp"
+)
+if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
+    add_executable(test_routing_policy_semantic
+        test/cpp/test_routing_policy_semantic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_semantic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_semantic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.

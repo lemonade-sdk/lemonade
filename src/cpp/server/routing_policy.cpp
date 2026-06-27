@@ -1,8 +1,11 @@
 #include "lemon/routing_policy.h"
 
 #include <algorithm>
+#include <cmath>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -12,6 +15,30 @@ Score failed_score() {
     Score score;
     score.ok = false;
     return score;
+}
+
+// Cosine similarity of two equal-length, non-zero vectors. Returns nullopt when
+// the vectors are empty, mismatched in length, or either has zero magnitude —
+// all of which the caller treats as a classifier failure (Score::ok=false).
+std::optional<double> cosine_similarity(const std::vector<float>& a,
+                                        const std::vector<float>& b) {
+    if (a.empty() || a.size() != b.size()) {
+        return std::nullopt;
+    }
+    double dot = 0.0;
+    double norm_a = 0.0;
+    double norm_b = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        const double ai = static_cast<double>(a[i]);
+        const double bi = static_cast<double>(b[i]);
+        dot += ai * bi;
+        norm_a += ai * ai;
+        norm_b += bi * bi;
+    }
+    if (norm_a <= 0.0 || norm_b <= 0.0) {
+        return std::nullopt;
+    }
+    return dot / (std::sqrt(norm_a) * std::sqrt(norm_b));
 }
 
 void validate_children(const std::vector<ConditionPtr>& children,
@@ -205,6 +232,92 @@ private:
     std::string model_;
 };
 
+class SemanticSimilarityClassifier final : public Classifier {
+public:
+    SemanticSimilarityClassifier(std::string id, std::string type, std::string model,
+                                 std::vector<std::string> reference_phrases, OnError on_error)
+        : Classifier(std::move(id), std::move(type), on_error),
+          model_(std::move(model)),
+          reference_phrases_(std::move(reference_phrases)) {
+        if (model_.empty()) {
+            throw std::invalid_argument("semantic_similarity classifier requires model");
+        }
+        if (reference_phrases_.empty()) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier requires reference_phrases");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.embed) {
+            return failed_score();
+        }
+
+        const std::vector<std::vector<float>>* references = nullptr;
+        try {
+            references = &reference_embeddings(ctx.services);
+        } catch (...) {
+            return failed_score();
+        }
+
+        std::vector<float> input_embedding;
+        try {
+            input_embedding = ctx.services.embed(model_, ctx.request.input);
+        } catch (...) {
+            return failed_score();
+        }
+
+        // Note: this clamps the max cosine into [0,1] to satisfy the band contract. The
+        // cosine similarity itself can be [-1,1], at least in principle (most embeddings
+        // are non-negative, so the practical range usually is [0,1] anyways).
+        double max_cosine = 0.0;
+        for (const auto& reference : *references) {
+            std::optional<double> cosine = cosine_similarity(input_embedding, reference);
+            if (!cosine.has_value()) {
+                return failed_score();
+            }
+            max_cosine = (std::max)(max_cosine, *cosine);
+        }
+
+        Score score;
+        // The cosine score is reported under the empty-string key and read back
+        // via Score::primary(). Clamp into the [0,1] band contract.
+        score.labels[""] = std::clamp(max_cosine, 0.0, 1.0);
+        score.ok = true;
+        return score;
+    }
+
+private:
+    // Embeds every reference phrase exactly once and caches the vectors on the
+    // instance. Classifiers are shared across concurrent router requests, so the
+    // cache is guarded by mutex.
+    // TODO: consider whether this should be done at construction time instead of lazily on the first evaluate() call. The
+    // constructor already has the model and reference phrases, so it could embed them immediately. The
+    // downside is that it would require the ClassifierServices to be available at construction time,
+    // which may not be the case in all contexts.
+    const std::vector<std::vector<float>>& reference_embeddings(
+        const ClassifierServices& services) const {
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+        if (!cached_) {
+            std::vector<std::vector<float>> embeddings;
+            embeddings.reserve(reference_phrases_.size());
+            for (const auto& phrase : reference_phrases_) {
+                embeddings.push_back(services.embed(model_, phrase));
+            }
+            reference_embeddings_ = std::move(embeddings);
+            cached_ = true;
+        }
+        return reference_embeddings_;
+    }
+
+    std::string model_;
+    std::vector<std::string> reference_phrases_;
+
+    mutable std::mutex cache_mutex_;
+    mutable bool cached_ = false;
+    mutable std::vector<std::vector<float>> reference_embeddings_;
+};
+
 std::vector<ConditionPtr> compile_children(const std::vector<MatchExpr>& children,
                                            const LeafFactory& leaf_factory,
                                            std::size_t depth);
@@ -330,7 +443,34 @@ ClassifierPtr make_classifier(const json& config) {
             id, type, config.value("model", ""), on_error, std::move(labels), std::move(default_label));
     }
 
-    if (type == "semantic_similarity" || type == "llm" ||
+    if (type == "semantic_similarity") {
+        if (!labels.empty() || default_label.has_value()) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier '" + id + "' does not support labels");
+        }
+        if (!config.contains("reference_phrases")) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier '" + id + "' requires reference_phrases");
+        }
+        if (!config["reference_phrases"].is_array() || config["reference_phrases"].empty()) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier '" + id +
+                "' reference_phrases must be a non-empty array");
+        }
+        std::vector<std::string> reference_phrases;
+        for (const auto& item : config["reference_phrases"]) {
+            if (!item.is_string() || item.get<std::string>().empty()) {
+                throw std::invalid_argument(
+                    "semantic_similarity classifier '" + id +
+                    "' reference_phrases must be non-empty strings");
+            }
+            reference_phrases.push_back(item.get<std::string>());
+        }
+        return std::make_shared<SemanticSimilarityClassifier>(
+            id, type, config.value("model", ""), std::move(reference_phrases), on_error);
+    }
+
+    if (type == "llm" ||
         type == "pii_detection" || type == "prompt_safety" ||
         type == "language_detection" || type == "domain_classification" ||
         type == "complexity" || type == "sentiment") {
