@@ -439,7 +439,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx908", "gfx90a", "gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // CDNA1/2 + STX iGPUs + Krackan + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -476,6 +476,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
+            "gfx908", "gfx90a",
             "gfx1150", "gfx1151", "gfx1152",
             "gfx103X", "gfx110X", "gfx120X"
         }},
@@ -544,6 +545,8 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"arm64", "ARM64 processors"},
 
     // AMD GPU architectures (ROCm)
+    {"gfx908", "AMD Instinct MI100 (CDNA1)"},
+    {"gfx90a", "AMD Instinct MI200/MI210/MI250 (CDNA2)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
@@ -1879,6 +1882,20 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         char buf[16];
         std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
         return std::string(buf);
+    }
+
+    // CDNA1 GPUs (gfx908 architecture) - AMD Instinct MI100
+    if (device_lower.find("mi100") != std::string::npos ||
+        device_lower.find("arcturus") != std::string::npos) {
+        return "gfx908";
+    }
+
+    // CDNA2 GPUs (gfx90a architecture) - AMD Instinct MI200/MI210/MI250
+    if (device_lower.find("mi200") != std::string::npos ||
+        device_lower.find("mi210") != std::string::npos ||
+        device_lower.find("mi250") != std::string::npos ||
+        device_lower.find("aldebaran") != std::string::npos) {
+        return "gfx90a";
     }
 
     if (device_lower.find("radeon") == std::string::npos &&
