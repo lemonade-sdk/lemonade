@@ -263,6 +263,9 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
     if _is_server_running(PORT):
         _stop_server()
 
+    env = os.environ.copy()
+    env["LEMONADE_MOCK_GGML_HIP"] = "1"
+
     # Redirect output to a log file rather than a PIPE: lemond runs with
     # debug logging here, and an undrained PIPE can fill its buffer and block
     # the process before it opens the port. The log is printed on failure.

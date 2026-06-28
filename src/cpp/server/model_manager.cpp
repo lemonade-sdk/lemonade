@@ -2161,10 +2161,64 @@ void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    // Copy resolved paths under lock so filesystem size calculation
+    // (which can be slow) can run outside the mutex.
+    std::map<std::string, std::string> paths_copy;
 
-    if (!cache_valid_) {
-        return; // Will rebuild on next access
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+        if (!cache_valid_) {
+            return; // Will rebuild on next access
+        }
+
+        auto it = models_cache_.find(model_name);
+        if (it != models_cache_.end()) {
+            it->second.downloaded = downloaded;
+
+            // Recompute resolved_path after download
+            // The path changes now that files exist on disk
+            if (downloaded) {
+                resolve_all_model_paths(it->second);
+                if (it->second.recipe == "flm") {
+                    cache_valid_ = false;
+                    LOG(INFO, "ModelManager") << "Invalidated model cache after FLM download for '"
+                              << model_name << "'" << std::endl;
+                    return;
+                }
+                populate_static_max_context_window(it->second);
+                LOG(INFO, "ModelManager") << "Updated '" << model_name
+                          << "' downloaded=" << downloaded
+                          << ", resolved_path=" << it->second.resolved_path() << std::endl;
+            } else {
+                it->second.max_context_window = 0;
+                LOG(INFO, "ModelManager") << "Updated '" << model_name
+                          << "' downloaded=" << downloaded << std::endl;
+            }
+
+            // Copy resolved paths for filesystem size calculation outside the lock
+            paths_copy = it->second.resolved_paths;
+
+            // Recompute downloaded status for any collections that
+            // depend on this model, so the collection reflects component changes
+            // without requiring a full cache rebuild.
+            for (auto& [name, entry] : models_cache_) {
+                if (!is_collection_recipe(entry.recipe)) continue;
+                if (std::find(entry.components.begin(), entry.components.end(),
+                              model_name) == entry.components.end()) {
+                    continue;
+                }
+                bool new_state = check_component_downloaded(entry, models_cache_);
+                if (entry.downloaded != new_state) {
+                    entry.downloaded = new_state;
+                    LOG(INFO, "ModelManager") << "Collection '" << name
+                              << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+                }
+            }
+        } else {
+            LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
+            return;
+        }
     }
 
     auto it = models_cache_.find(model_name);
@@ -2226,6 +2280,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
+        return;
     }
 }
 
