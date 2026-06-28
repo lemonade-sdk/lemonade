@@ -403,6 +403,28 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 #endif
 
+    // Linux GPU scheduler (RADV/amdgpu) also has a ~2s timeout per compute
+    // submission. Long prompt processing with large contexts produces compute
+    // submissions that exceed this timeout, causing VK_ERROR_DEVICE_LOST
+    // ("The CS has been cancelled because the context is lost").
+    // Cap context size for Vulkan on Linux and advise users to use ROCm instead.
+#ifdef __linux__
+    if (llamacpp_backend == "vulkan") {
+        const int64_t vulkan_max_ctx = 65536;
+        if (ctx_size > vulkan_max_ctx) {
+            LOG(WARNING, "LlamaCpp")
+                << "Capping context size at " << vulkan_max_ctx
+                << " for Vulkan backend on Linux (requested " << ctx_size
+                << "). Large contexts trigger GPU scheduler timeout"
+                << " (VK_ERROR_DEVICE_LOST). "
+                << "Use the ROCm backend for larger contexts — it does not"
+                << " have this limitation."
+                << std::endl;
+            ctx_size = vulkan_max_ctx;
+        }
+    }
+#endif
+
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;

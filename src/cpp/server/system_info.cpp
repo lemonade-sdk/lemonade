@@ -434,12 +434,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "cuda", {"windows", "linux"}, {
         {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
+    {"llamacpp", "rocm", {"windows", "linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+    }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
         {"amd_gpu", {}},      // all AMD GPU families
-    }},
-    {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
