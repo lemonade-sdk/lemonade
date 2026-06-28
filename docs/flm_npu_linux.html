@@ -167,6 +167,7 @@
               <option value="" selected disabled>Select your distro...</option>
               <option value="arch">Arch Linux</option>
               <option value="debian-13">Debian 13</option>
+              <option value="fedora-43">Fedora 43</option>
               <option value="other">Other</option>
               <option value="ubuntu-24">Ubuntu 24.04</option>
               <option value="ubuntu-25">Ubuntu 25.10</option>
@@ -249,6 +250,33 @@
                 <li>Download FLM from <a href="https://github.com/FastFlowLM/FastFlowLM/releases" target="_blank" rel="noopener">GitHub releases</a>.</li>
                 <li>Install FLM:
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="flm-distro-instructions" id="distro-fedora-43" style="display:none;">
+            <div class="flm-instruction-box">
+              <div class="flm-instruction-header">
+                <span class="flm-instruction-label">For Fedora 43</span>
+              </div>
+              <ol>
+                <li>Enable the AMD NPU COPR repository:
+                  <div class="flm-code-block"><code>sudo dnf copr enable abn/amd-npu</code></div>
+                  <span class="flm-inline-note">This COPR provides pre-built XRT and FLM packages. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
+                </li>
+                <li>Install the NPU stack:
+                  <div class="flm-code-block"><code>sudo dnf install xrt fastflowlm</code></div>
+                </li>
+                <li>Install Lemonade Server:
+                  <div class="flm-code-block"><code>sudo dnf copr enable abn/lemonade<br>sudo dnf install lemonade-server</code></div>
+                </li>
+                <li>If running Lemonade as a systemd service, add a drop-in with the Linux beta flag:
+                  <div class="flm-code-block"><code>sudo mkdir -p /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
+                </li>
+                <li>Verify the NPU stack:
+                  <div class="flm-code-block"><code>flm validate</code></div>
+                  A successful validation will show your kernel version, NPU device, firmware version, and unlimited memlock.
                 </li>
               </ol>
             </div>
@@ -403,7 +431,7 @@
       }
 
       const select = document.getElementById('distro-select');
-      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'debian-13', 'arch', 'other'];
+      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'debian-13', 'fedora-43', 'arch', 'other'];
       const faq = document.getElementById('flm-faq-section');
 
       ids.forEach(function(id) {
