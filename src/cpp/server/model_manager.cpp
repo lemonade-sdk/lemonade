@@ -236,6 +236,25 @@ static void populate_model_metadata(ModelInfo& info) {
                 // type and break /embeddings or /rerank.
                 if (info.type == ModelType::LLM) {
                     apply_gguf_capability_labels(info.labels, info.gguf.caps);
+
+                    // GLM-4 MoE GGUF files embed MTP layers, but llama.cpp's
+                    // glm4-moe graph builder asserts when constructing the
+                    // draft model context (the GGUF was not converted with
+                    // multimodal support that the graph builder expects).
+                    // Disable MTP for these architectures until upstream
+                    // llama.cpp fixes the conversion or the graph builder.
+                    if (info.gguf.architecture.find("glm4") != std::string::npos) {
+                        auto it = std::find(info.labels.begin(), info.labels.end(), "mtp");
+                        if (it != info.labels.end()) {
+                            info.labels.erase(it);
+                            LOG(INFO, "ModelManager")
+                                << "Disabling MTP speculative decoding for "
+                                << info.model_name
+                                << " (GLM-4 MoE architecture — "
+                                << "llama.cpp draft context crashes, glm4-moe.cpp:149)"
+                                << std::endl;
+                        }
+                    }
                 }
             }
         }
