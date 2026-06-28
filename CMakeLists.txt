@@ -1401,6 +1401,10 @@ if(APPLE)
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
+    # Declare the package arm64-only so the macOS Installer does not assume our
+    # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
+    set(CPACK_APPLE_PKG_INSTALLER_CONTENT "<hostArchitectures><hostArchitecture>arm64</hostArchitecture></hostArchitectures>")
+
     set(CPACK_PRODUCTBUILD_DOMAIN "system")
 
     if(INSTALLER_IDENTITY)
@@ -1862,6 +1866,30 @@ if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
     # Enable testing and register the test with CTest
     include(CTest)
     add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
+endif()
+
+# Routing engine contract surface (issue #2407). Header-only foundation: the
+# shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
+# The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
+set(_ROUTING_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
+)
+if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+    add_executable(test_routing_policy_contract
+        test/cpp/test_routing_policy_contract.cpp
+    )
+    target_include_directories(test_routing_policy_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_contract PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_contract PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.

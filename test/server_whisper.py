@@ -361,7 +361,7 @@ class WhisperTests(ServerTestBase):
         )
 
     def _get_pcm16_chunks(self):
-        """Load test audio and split it into ~256ms PCM16 chunks."""
+        """Load test audio and split it into ~64ms PCM16 chunks."""
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
         pcm_data = self._load_pcm16_from_wav()
@@ -372,7 +372,9 @@ class WhisperTests(ServerTestBase):
             f"{len(pcm_data) // 2 / 16000:.1f}s)"
         )
 
-        chunk_size = 8192
+        # 2048 bytes @ 16kHz/16-bit = 64ms, which is less than VAD's
+        # 100ms analysis window — prevents flaky CI runs.
+        chunk_size = 2048
         chunks = [
             pcm_data[i : i + chunk_size] for i in range(0, len(pcm_data), chunk_size)
         ]

@@ -6,6 +6,7 @@ import {
   CustomCollection,
   CustomCollectionDraft,
   CustomCollectionRole,
+  DEFAULT_OMNI_SYSTEM_PROMPT,
   getCollectionRoleOptions,
   getCustomCollectionRoleLabel,
   getCustomCollectionComponentList,
@@ -45,6 +46,10 @@ const emptyDraft = () => ({
   edit: '',
   transcription: '',
   speech: '',
+  // Pre-fill with the current default so authors can see the prompt they
+  // would otherwise inherit. formToDraft compares the textbox to this default
+  // and stores no override when they match — see DEFAULT_OMNI_SYSTEM_PROMPT.
+  systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT,
   createdAt: undefined as string | undefined,
 });
 
@@ -61,23 +66,35 @@ const draftFromCollection = (collection: CustomCollection, sourceId: string, isC
     edit: collection.components.edit ?? '',
     transcription: collection.components.transcription ?? '',
     speech: collection.components.speech ?? '',
+    systemPrompt: collection.systemPrompt ?? DEFAULT_OMNI_SYSTEM_PROMPT,
     createdAt: collection.createdAt,
   };
 };
 
-const formToDraft = (form: CollectionForm): CustomCollectionDraft => ({
-  id: form.selectedCollectionId || undefined,
-  name: form.name.trim(),
-  createdAt: form.createdAt,
-  components: {
-    llm: form.llm,
-    vision: form.vision || undefined,
-    image: form.image || undefined,
-    edit: form.edit || undefined,
-    transcription: form.transcription || undefined,
-    speech: form.speech || undefined,
-  },
-});
+const formToDraft = (form: CollectionForm): CustomCollectionDraft => {
+  // Text identical to the shipped default is treated as "no override" so the
+  // collection stays on the global fallback — a later toolDefinitions.json
+  // update reaches existing collections instead of being shadowed by a frozen
+  // copy. Compare on trimmed values so accidental leading/trailing whitespace
+  // around the default doesn't get persisted as a real override. A blank
+  // textarea (after trim) maps to the same "no override" state.
+  const trimmed = form.systemPrompt.trim();
+  const isDefault = !trimmed || trimmed === DEFAULT_OMNI_SYSTEM_PROMPT.trim();
+  return {
+    id: form.selectedCollectionId || undefined,
+    name: form.name.trim(),
+    createdAt: form.createdAt,
+    components: {
+      llm: form.llm,
+      vision: form.vision || undefined,
+      image: form.image || undefined,
+      edit: form.edit || undefined,
+      transcription: form.transcription || undefined,
+      speech: form.speech || undefined,
+    },
+    systemPrompt: isDefault ? undefined : trimmed,
+  };
+};
 
 const componentListForForm = (form: CollectionForm): string[] => getCustomCollectionComponentList(formToDraft(form));
 
@@ -263,7 +280,21 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       setError('Select a planner LLM for the Omni Model.');
       return null;
     }
-    return formToDraft({ ...form, name: cleanName });
+    const draft = formToDraft({ ...form, name: cleanName });
+    // Custom prompt templates must keep both substitution placeholders so the
+    // planner still sees the tool list/guidance after runtime substitution. The
+    // editor's subtext flags this; without enforcement an override missing a
+    // placeholder would silently produce a tool-blind planner prompt.
+    if (typeof draft.systemPrompt === 'string') {
+      const missing: string[] = [];
+      if (!draft.systemPrompt.includes('{tool_list}')) missing.push('{tool_list}');
+      if (!draft.systemPrompt.includes('{tool_guidance}')) missing.push('{tool_guidance}');
+      if (missing.length > 0) {
+        setError(`Custom System Prompt is missing required placeholder${missing.length > 1 ? 's' : ''}: ${missing.join(' and ')}. Add them back or click Reset to default.`);
+        return null;
+      }
+    }
+    return draft;
   };
 
   const handleSave = async () => {
@@ -315,6 +346,31 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
             <div className="collection-warning">This planner LLM may not support tool calling. The Omni Model can still be saved, but OmniRouter tools may be unreliable with this model.</div>
           )}
           {OPTIONAL_ROLES.map((role) => renderRoleSelect(role))}
+        </div>
+
+        <div className="form-section">
+          <label className="form-label">System Prompt</label>
+          <div className="form-subtext">
+            Edit to override the default for this Omni Model. Keep the {'{tool_list}'} and {'{tool_guidance}'} placeholders so the planner sees the available tools.
+          </div>
+          <textarea
+            className="form-input"
+            rows={8}
+            value={form.systemPrompt}
+            onChange={(e) => updateForm({ systemPrompt: e.target.value })}
+            spellCheck={false}
+          />
+          <div className="form-actions-inline">
+            <button
+              type="button"
+              className="settings-reset-button"
+              onClick={() => updateForm({ systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT })}
+              disabled={form.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim()}
+              title="Restore the shipped default OmniRouter system prompt."
+            >
+              Reset to default
+            </button>
+          </div>
         </div>
 
         {error && <div className="form-error">{error}</div>}

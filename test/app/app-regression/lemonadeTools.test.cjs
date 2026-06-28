@@ -120,6 +120,147 @@ const tests = [
     },
   },
   {
+    name: 'collection-level system_prompt overrides the global default in buildLemonadeTools',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assertIncludes(
+        source,
+        "typeof info?.system_prompt === 'string' && info.system_prompt",
+        'buildLemonadeTools should prefer the collection model\'s own system_prompt when set.',
+      );
+      assertIncludes(
+        source,
+        '? info.system_prompt',
+        'The override branch must read system_prompt off the collection\'s ModelInfo.',
+      );
+      assertIncludes(
+        source,
+        ': toolDefinitions.system_prompt',
+        'The fallback branch must keep the global default in toolDefinitions.json.',
+      );
+    },
+  },
+  {
+    name: 'system_prompt rides through the export/import allowlist',
+    run() {
+      const modelData = readSource('src/app/src/renderer/utils/modelData.ts');
+      assertIncludes(
+        modelData,
+        "'system_prompt',",
+        'EXPORT_KNOWN_KEYS must include system_prompt so round-trips do not drop it.',
+      );
+      assertIncludes(
+        modelData,
+        'system_prompt?: string',
+        'ModelInfo should expose system_prompt as an optional field.',
+      );
+      const recipeImport = readSource('src/cpp/cli/recipe_import.cpp');
+      assertIncludes(
+        recipeImport,
+        '"system_prompt"',
+        'kKnownKeys (CLI side) must mirror the desktop allowlist.',
+      );
+    },
+  },
+  {
+    name: 'custom collection draft carries an optional systemPrompt through to the pull request',
+    run() {
+      const customCollections = readSource('src/app/src/renderer/utils/customCollections.ts');
+      assertIncludes(
+        customCollections,
+        'systemPrompt?: string',
+        'CustomCollection / CustomCollectionDraft should carry an optional systemPrompt.',
+      );
+      assertIncludes(
+        customCollections,
+        "system_prompt?: string",
+        'CustomCollectionPullRequest should serialize system_prompt to the wire format.',
+      );
+      assertIncludes(
+        customCollections,
+        'request.system_prompt = systemPrompt',
+        'buildCustomCollectionPullRequest should attach the trimmed prompt when non-empty.',
+      );
+      assertIncludes(
+        customCollections,
+        'DEFAULT_OMNI_SYSTEM_PROMPT',
+        'The shipped default prompt should be exported so the editor can pre-fill it.',
+      );
+    },
+  },
+  {
+    name: 'custom collection editor pre-fills the default and only saves real overrides',
+    run() {
+      const panel = readSource('src/app/src/renderer/components/CustomCollectionPanel.tsx');
+      assertIncludes(
+        panel,
+        'DEFAULT_OMNI_SYSTEM_PROMPT',
+        'The editor should import the shipped default to populate the textarea.',
+      );
+      assertIncludes(
+        panel,
+        'systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT',
+        'Empty-draft initial state should pre-fill the textarea with the current default.',
+      );
+      assertIncludes(
+        panel,
+        'collection.systemPrompt ?? DEFAULT_OMNI_SYSTEM_PROMPT',
+        'Editing an existing collection should fall back to the default when no override exists.',
+      );
+      assertIncludes(
+        panel,
+        'trimmed === DEFAULT_OMNI_SYSTEM_PROMPT.trim()',
+        'formToDraft should compare trimmed values so accidental whitespace around the default does not persist as a real override.',
+      );
+      assertIncludes(
+        panel,
+        'systemPrompt: isDefault ? undefined : trimmed',
+        'Saving with the default text should omit the override; edited text should persist trimmed.',
+      );
+      assertIncludes(
+        panel,
+        'form.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim()',
+        'The Reset button disabled state should also use the trimmed comparison.',
+      );
+      assertIncludes(
+        panel,
+        'Reset to default',
+        'A reset button should restore the shipped default.',
+      );
+      assertIncludes(
+        panel,
+        'form-subtext',
+        'The override instruction should render as subtext under the label.',
+      );
+    },
+  },
+  {
+    name: 'custom collection editor blocks overrides missing the {tool_list} or {tool_guidance} placeholders',
+    run() {
+      const panel = readSource('src/app/src/renderer/components/CustomCollectionPanel.tsx');
+      assertIncludes(
+        panel,
+        "draft.systemPrompt.includes('{tool_list}')",
+        'Save/Export validation should check that overrides keep the {tool_list} placeholder.',
+      );
+      assertIncludes(
+        panel,
+        "draft.systemPrompt.includes('{tool_guidance}')",
+        'Save/Export validation should check that overrides keep the {tool_guidance} placeholder.',
+      );
+      assertIncludes(
+        panel,
+        'Custom System Prompt is missing required placeholder',
+        'The validation error should name the missing placeholder explicitly.',
+      );
+      assertMatches(
+        panel,
+        /typeof draft\.systemPrompt === 'string'[\s\S]*?missing\.length > 0[\s\S]*?return null;/,
+        'Validation must short-circuit save/export when a placeholder is missing.',
+      );
+    },
+  },
+  {
     name: 'unavailable tool guidance is omitted from the planner prompt',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));

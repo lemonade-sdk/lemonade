@@ -129,16 +129,14 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
     return false;
 }
 
-static void hide_option(CLI::Option* option) {
-    if (option != nullptr) {
-        option->group("");
-    }
-}
-
-static void hide_new_options(CLI::App& app, size_t start_index) {
-    std::vector<CLI::Option*> options = app.get_options();
-    for (size_t i = start_index; i < options.size(); ++i) {
-        hide_option(options[i]);
+static void hide_all_options_except_help(CLI::App& app) {
+    for (auto* opt : app.get_options()) {
+        if (opt != nullptr) {
+            const std::string name = opt->get_name();
+            if (name != "--help" && name != "--help-all" && name != "-h") {
+                opt->group("");
+            }
+        }
     }
 }
 
@@ -1324,12 +1322,9 @@ int main(int argc, char* argv[]) {
             ->default_val(config.agent_args);
     };
 
-    size_t launch_option_count = launch_cmd->get_options().size();
     add_common_launch_options(*launch_cmd);
-    hide_new_options(*launch_cmd, launch_option_count);
-    launch_option_count = launch_cmd->get_options().size();
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
-    hide_new_options(*launch_cmd, launch_option_count);
+    hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
     for (const std::string& agent_name : SUPPORTED_AGENTS) {

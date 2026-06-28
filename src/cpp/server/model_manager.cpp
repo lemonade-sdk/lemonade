@@ -108,7 +108,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "system_prompt"};
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
@@ -1348,6 +1348,7 @@ void ModelManager::build_cache() {
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
 
         // HF-backed collections store their components on Hugging Face — the
         // cached manifest is the single source of truth. Rebuild the component
@@ -1401,6 +1402,7 @@ void ModelManager::build_cache() {
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
 
         // HF-backed user collections (created by `lemonade pull <org>/<repo>`)
         // keep only a repo pointer in user_models.json; their components live in
@@ -1574,6 +1576,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
@@ -2569,6 +2572,14 @@ void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& i
     // omits it.
     if (info.size == 0.0 && manifest.contains("size") && manifest["size"].is_number()) {
         info.size = manifest["size"].get<double>();
+    }
+
+    // Same lift-from-manifest pattern for the optional per-collection system
+    // prompt: the registry entry wins when it sets one, otherwise the published
+    // HF JSON acts as the source of truth.
+    if (info.system_prompt.empty() && manifest.contains("system_prompt") &&
+        manifest["system_prompt"].is_string()) {
+        info.system_prompt = manifest["system_prompt"].get<std::string>();
     }
 }
 
@@ -4237,6 +4248,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.system_prompt = JsonUtils::get_or_default<std::string>(*model_json, "system_prompt", "");
 
     // Parse labels array
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {

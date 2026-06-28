@@ -114,6 +114,8 @@ The Omni Model editor only offers already-registered compatible models for each 
 
 If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
 
+The editor also exposes a **System Prompt** field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a *template* — both the `{tool_list}` and `{tool_guidance}` placeholders are **required** in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via **Reset to default** — stores no override and keeps tracking whatever the global default is at runtime.
+
 ### Share a collection: export, import, and Hugging Face
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
