@@ -30,7 +30,7 @@ std::string to_lower(std::string s) {
 std::string resolve_gguf_path(const std::string& model_cache_path, const std::string& variant) {
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
     if (!hf_cache::exists(model_cache_path_fs)) {
-        return model_cache_path;  // Return directory path even if not found
+        return model_cache_path;
     }
 
     // Collect the (sorted, mmproj-excluded) GGUF files under a search root.
@@ -64,11 +64,8 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
 
     const std::string variant_lower = to_lower(variant);
 
-    // Resolve the requested GGUF variant within a candidate list of files.
-    // Returns the matched absolute path, or "" if this candidate set does not
-    // contain the variant. Factored into a lambda so the search can be retried
-    // against a broader set of snapshots (see #2300 below) without duplicating
-    // the matching logic.
+    // Factored into a lambda so the search can be retried against a broader set
+    // of snapshots (see #2300 below) without duplicating the matching logic.
     auto resolve_gguf_variant = [&](const std::vector<std::string>& gguf_files) -> std::string {
         if (gguf_files.empty()) {
             return "";
@@ -115,26 +112,14 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
             }
         }
 
-        // Case 5: Local quant-token fallback.
+        // Case 5: Local quant-token fallback. Some repos put the quant token in
+        // the middle of the filename (e.g. ...-IQ4_XS-Q8nextn.gguf for variant
+        // IQ4_XS), so the suffix cases above miss it; mirror the downloader's
+        // variant enumeration over the local cache instead.
         //
-        // Keep the existing resolver cases above as the primary logic: exact
-        // filenames, suffix matches, and folder-based sharding are more
-        // specific and preserve the CHECKPOINT:VARIANT contract.
-        //
-        // Some GGUF repositories name files with the quant token in the middle,
-        // for example:
-        //   Qwen3.6-27B-MTP-IMAT-IQ4_XS-Q8nextn.gguf
-        // for variant:
-        //   IQ4_XS
-        // That file does not end with IQ4_XS.gguf, so mirror the downloader's
-        // GGUF variant enumeration over the files that are already present in
-        // the local HF cache before declaring the model missing.
-        //
-        // HF cache paths have an extra snapshots/<revision>/ prefix that is not
-        // part of the repository-relative filename. Strip it before calling
-        // enumerate_gguf_variants(); otherwise the enumerator treats
-        // "snapshots" as a top-level sharded-folder variant and never extracts
-        // the quant token from the actual GGUF filename.
+        // Strip the HF cache snapshots/<revision>/ prefix before calling
+        // enumerate_gguf_variants(), otherwise it treats "snapshots" as a
+        // sharded-folder variant and never extracts the quant token.
         std::vector<std::string> relative_gguf_files;
         std::map<std::string, std::string> absolute_by_relative;
         auto repo_relative_from_cache_relative = [](std::string rel) {
@@ -191,9 +176,8 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
             return "";
         }
 
-        // No match in this candidate set. Do not fall back to another
-        // quantization in the same Hugging Face repo; otherwise a custom
-        // download with a different quant can make a built-in model appear
+        // Don't fall back to another quantization in the same HF repo; a custom
+        // download with a different quant could make a built-in model appear
         // downloaded and allow deleting the wrong file.
         return "";
     };
@@ -215,25 +199,19 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
     };
 
     if (active_gguf_files.empty() && whole_cache_gguf_files().empty()) {
-        return model_cache_path;  // Return directory if no GGUF found anywhere
+        return model_cache_path;
     }
 
     std::string resolved_path = resolve_gguf_variant(active_gguf_files);
 
-    // #2300: a sibling variant that shares this HF repo can live in a snapshot
-    // other than the one refs/main points at. refs/main advances to the
-    // snapshot of whichever variant was pulled or updated last, leaving the
-    // other variants' symlinks behind in earlier snapshots; after a restart the
-    // refs/main-only search above then reports them as missing. If the active
-    // snapshot did not contain the requested variant, broaden the search to
-    // every snapshot in this repo's cache before declaring it missing. Blobs are
-    // content-addressed and shared, so reading an older snapshot is safe, and
-    // resolving against the active snapshot first preserves the CHECKPOINT:VARIANT
-    // contract (a different quant is never substituted while the exact one exists).
-    //
-    // The whole-cache set is a superset of the active set, so the two are equal
-    // only when refs/main's snapshot is the sole snapshot holding GGUFs — in
-    // which case the broader search is identical and skipped.
+    // #2300: a requested variant can live in a snapshot other than the one
+    // refs/main points at (refs/main advances to whichever variant was pulled
+    // last, stranding the others in earlier snapshots), so the active-only
+    // search above can report it missing. Broaden to every snapshot before
+    // giving up; blobs are content-addressed so reading an older snapshot is
+    // safe, and searching the active snapshot first preserves CHECKPOINT:VARIANT.
+    // The whole-cache set is a superset of the active set, so when they're equal
+    // the broader search is identical and skipped.
     if (resolved_path.empty()) {
         const std::vector<std::string>& all_files = whole_cache_gguf_files();
         if (all_files != active_gguf_files) {
@@ -247,4 +225,3 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
 } // namespace llamacpp
 } // namespace backends
 } // namespace lemon
-

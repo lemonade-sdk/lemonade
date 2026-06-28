@@ -22,8 +22,7 @@ std::vector<std::string> flm_installed_checkpoints();
 std::vector<ModelInfo> flm_discover_models();
 
 // FLM-specific model-file helpers. FLM stores models under FLM_MODEL_PATH /
-// platform-default roots and describes them with a config.json; this knowledge
-// lives in the fastflowlm backend folder rather than in the shared model manager.
+// platform-default roots and describes them with a config.json.
 
 // Derive the on-disk repo directory name from an FLM model URL.
 std::string repo_dir_from_url(const std::string& url);

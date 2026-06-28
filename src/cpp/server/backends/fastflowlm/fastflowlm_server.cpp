@@ -32,7 +32,6 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace backends {
 
-// URL to direct users to for driver updates
 static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
 
@@ -78,7 +77,6 @@ FastFlowLMServer::~FastFlowLMServer() {
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
-    // Use flm pull command to download the model
     std::string flm_path = get_flm_path();
     if (flm_path.empty()) {
         throw std::runtime_error("FLM not found");
@@ -95,7 +93,6 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    // Run flm pull command (with debug output if enabled)
     auto handle = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
 
     // Wait for process to complete (handles both fast exits and long downloads).
@@ -157,7 +154,6 @@ void FastFlowLMServer::load(const std::string& model_name,
                            bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Loading model: " << model_name << std::endl;
 
-    // Get FLM-specific options from RecipeOptions
     int ctx_size = options.get_option("ctx_size");
 
     std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
@@ -165,11 +161,9 @@ void FastFlowLMServer::load(const std::string& model_name,
     // We use checkpoint_ (base class field) for FLM API calls
 
 #ifdef _WIN32
-    // On Windows, auto-install FLM binary if needed (downloads zip and extracts)
     backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
 #endif
 
-    // Validate NPU hardware/drivers
     std::string flm_path = get_flm_path();
     std::string validate_error;
     if (!fastflowlm::run_flm_validate(flm_path, validate_error)) {
@@ -177,17 +171,13 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    // Download model if needed
     download_model(model_info.checkpoint(), do_not_upgrade);
 
-    // Choose a port
     port_ = choose_port();
 
-    // Construct flm serve command based on model type
     // Bind to localhost only for security
     std::vector<std::string> args;
     if (model_type_ == ModelType::TRANSCRIPTION) {
-        // ASR mode: flm serve --asr 1
         args = {
             "serve",
             "--asr", "1",
@@ -196,7 +186,6 @@ void FastFlowLMServer::load(const std::string& model_name,
             "--quiet"
         };
     } else if (model_type_ == ModelType::EMBEDDING) {
-        // Embedding mode: flm serve --embed 1
         args = {
             "serve",
             "--embed", "1",
@@ -205,7 +194,6 @@ void FastFlowLMServer::load(const std::string& model_name,
             "--quiet"
         };
     } else {
-        // LLM mode (default): flm serve <checkpoint> --ctx-len N
         args = {
             "serve",
             model_info.checkpoint(),
@@ -226,7 +214,6 @@ void FastFlowLMServer::load(const std::string& model_name,
     set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
     LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
 
-    // Wait for flm-server to be ready
     bool ready = wait_for_ready();
     if (!ready) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
@@ -277,14 +264,12 @@ bool FastFlowLMServer::wait_for_ready() {
             return false;
         }
 
-        // Try to reach the /api/tags endpoint
         if (utils::HttpClient::is_reachable(tags_url, 1)) {
             LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
             start_backend_watchdog("/api/tags");
             return true;
         }
 
-        // Sleep 1 second between attempts
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
@@ -303,7 +288,7 @@ json FastFlowLMServer::chat_completion(const json& request) {
     // FLM requires the checkpoint name in the request (e.g., "gemma3:4b")
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
-    modified_request["model"] = checkpoint_;  // Use base class checkpoint field
+    modified_request["model"] = checkpoint_;
 
     return forward_request("/v1/chat/completions", modified_request);
 }
@@ -318,7 +303,7 @@ json FastFlowLMServer::completion(const json& request) {
     // FLM requires the checkpoint name in the request (e.g., "lfm2:1.2b")
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
-    modified_request["model"] = checkpoint_;  // Use base class checkpoint field
+    modified_request["model"] = checkpoint_;
 
     return forward_request("/v1/completions", modified_request);
 }
@@ -349,7 +334,6 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
     }
 
     try {
-        // Extract audio data from request (same format as WhisperServer)
         if (!request.contains("file_data")) {
             throw std::runtime_error("Missing 'file_data' in request");
         }
@@ -357,7 +341,6 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         std::string audio_data = request["file_data"].get<std::string>();
         std::string filename = request.value("filename", "audio.wav");
 
-        // Determine content type from filename extension
         std::filesystem::path filepath(filename);
         std::string ext = filepath.extension().string();
         std::string content_type = "audio/wav";
@@ -367,10 +350,8 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         else if (ext == ".flac") content_type = "audio/flac";
         else if (ext == ".webm") content_type = "audio/webm";
 
-        // Build multipart fields for FLM's /v1/audio/transcriptions endpoint
         std::vector<utils::MultipartField> fields;
 
-        // Audio file field
         fields.push_back({
             "file",
             audio_data,
@@ -381,7 +362,6 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         // Model field (required by OpenAI API format)
         fields.push_back({"model", checkpoint_, "", ""});
 
-        // Optional parameters
         if (request.contains("language")) {
             fields.push_back({"language", request["language"].get<std::string>(), "", ""});
         }
@@ -408,7 +388,6 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
 }
 
 json FastFlowLMServer::responses(const json& request) {
-    // Responses API is not supported for FLM backend
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "flm")
     );
@@ -420,7 +399,6 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   bool sse,
                                                   long timeout_seconds,
                                                   TelemetryCallback telemetry_callback) {
-    // Streaming is only supported for LLM models
     if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
@@ -433,10 +411,9 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
     // not the Lemonade model name (e.g., "Gemma3-4b-it-FLM")
     try {
         json request = json::parse(request_body);
-        request["model"] = checkpoint_;  // Use base class checkpoint field
+        request["model"] = checkpoint_;
         std::string modified_body = request.dump();
 
-        // Call base class with modified request
         WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse,
                                                  timeout_seconds, telemetry_callback);
     } catch (const json::exception& e) {

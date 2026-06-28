@@ -419,15 +419,13 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
 //
 // Empty family set {} means "all families of that device type"
 // The recipe/backend support matrix is assembled from every backend descriptor's
-// `support` rows (see lemon/backends/*_descriptor.cpp). Concatenated in registry
-// order; within a recipe, row order is the backend preference order. This is the
-// single source of truth — there is no separate hand-maintained table.
+// `support` rows. Concatenated in registry order; within a recipe, row order is
+// the backend preference order.
 static const std::vector<RecipeBackendDef>& recipe_defs() {
     static const std::vector<RecipeBackendDef> defs = [] {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
-                // Fill in the recipe (the owning descriptor's) per support row.
                 v.push_back({desc->recipe, row.backend, row.supported_os, row.devices, row.device_summary});
             }
         }
@@ -579,7 +577,7 @@ static bool device_matches_constraint(const std::string& device_family,
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
-    // CWSR fix is missing — which backends' rocm build needs it is a descriptor flag.
+    // CWSR fix is missing (a per-descriptor flag).
     const auto* cwsr_desc = backends::descriptor_for(recipe);
     if (backend == "rocm" && cwsr_desc && cwsr_desc->rocm_requires_cwsr_fix &&
         needs_gfx1151_cwsr_fix()) {
@@ -607,7 +605,7 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
     // Read the on-disk version.txt generically, then let the backend's ops
     // override (llamacpp "system" runs llama-server --version; flm queries the
-    // CLI when no file is present). No per-recipe branches here.
+    // CLI when no file is present).
     auto* spec = try_get_spec_for_recipe(recipe);
     std::string file_version;
     if (spec) {
@@ -1471,8 +1469,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Enrich each recipe entry with descriptor metadata so clients (the desktop
     // app, the docs generator) can render display names and per-recipe option
-    // schemas without hardcoding them. This is the single source the frontend
-    // reads instead of its own per-recipe TypeScript tables.
+    // schemas without hardcoding them.
     int recipe_order = 0;
     for (const auto* desc : lemon::backends::all_descriptors()) {
         auto it = recipes.find(desc->recipe);
@@ -1488,11 +1485,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["modality"] = desc->modality;
         entry["experimental"] = desc->experimental;
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
-        entry["web_priority"] = desc->web_priority;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
         // Machine-independent support matrix (OS + device families + friendly
-        // device summary per backend), straight from the descriptor — used by the
-        // docs generator to render the README support matrix etc.
+        // device summary per backend), straight from the descriptor.
         json support = json::array();
         for (const auto& row : desc->support) {
             json devices = json::array();
@@ -1586,8 +1581,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     // A backend whose descriptor declares no support rows has no local
     // hardware/OS gating (e.g. cloud offload): availability is determined at
-    // runtime (provider creds via the CloudProviderRegistry / API key), checked
-    // elsewhere in filter_models_by_backend / CloudServer::load.
+    // runtime (provider creds via the CloudProviderRegistry / API key).
     const auto* desc = lemon::backends::descriptor_for(recipe);
     if (desc && desc->support.empty()) {
         return "";

@@ -145,7 +145,6 @@ std::vector<std::string> flm_installed_checkpoints() {
     std::string flm_path = find_flm_binary();
     if (flm_path.empty()) return installed_models;
 
-    // Run 'flm list --filter installed --quiet --json' to get only installed models
     std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
@@ -180,7 +179,7 @@ std::vector<std::string> flm_installed_checkpoints() {
         // Fallback to legacy parsing if JSON parsing fails
     }
 
-    // Legacy parsing - cleaner format without emojis
+    // Legacy parsing
     // Expected format:
     //   Models:
     //     - modelname:tag
@@ -188,11 +187,9 @@ std::vector<std::string> flm_installed_checkpoints() {
     std::istringstream stream(output);
     std::string line;
     while (std::getline(stream, line)) {
-        // Trim whitespace
         line.erase(0, line.find_first_not_of(" \t\r\n"));
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
 
-        // Skip the "Models:" header line or empty lines
         if (line == "Models:" || line.empty()) {
             continue;
         }
@@ -200,7 +197,6 @@ std::vector<std::string> flm_installed_checkpoints() {
         // Parse model checkpoint (format: "  - modelname:tag")
         if (line.find("- ") == 0) {
             std::string checkpoint = line.substr(2);
-            // Trim any remaining whitespace
             checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
             checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
             if (!checkpoint.empty()) {
@@ -223,7 +219,6 @@ std::vector<ModelInfo> flm_discover_models() {
 
     LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
 
-    // Run 'flm list --json' to get all available models
     std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --json";
@@ -260,7 +255,6 @@ std::vector<ModelInfo> flm_discover_models() {
                     // Format display name: replace : with -, append -FLM
                     // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
                     std::string display_name = checkpoint;
-                    // Replace : with -
                     std::replace(display_name.begin(), display_name.end(), ':', '-');
 
                     std::string model_name = display_name + "-FLM";
@@ -285,7 +279,6 @@ std::vector<ModelInfo> flm_discover_models() {
                         info.size = m["footprint"].get<double>();
                     }
 
-                    // Labels from FLM metadata
                     if (m.contains("label") && m["label"].is_array()) {
                         for (const auto& l : m["label"]) {
                             if (l.is_string()) {
@@ -294,7 +287,6 @@ std::vector<ModelInfo> flm_discover_models() {
                         }
                     }
 
-                    // Populate type and device fields (multi-model support)
                     info.type = get_model_type_from_labels(info.labels);
                     const BackendDescriptor* flm_desc = descriptor_for("flm");
                     info.device = flm_desc ? flm_desc->default_device : DEVICE_NPU;
@@ -317,7 +309,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                   DownloadProgressCallback progress_callback) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
-    // Ensure FLM is ready (single source of truth)
     auto status = SystemInfoCache::get_flm_status();
     if (!status.is_ready()) {
         throw std::runtime_error(status.error_string());
@@ -328,7 +319,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
         throw std::runtime_error("FLM executable not found");
     }
 
-    // Prepare arguments
     std::vector<std::string> args = {"pull", checkpoint};
     if (!do_not_upgrade) {
         args.push_back("--force");
@@ -346,14 +336,11 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
     std::string current_filename;
     bool cancelled = false;
 
-    // Run flm pull command and parse output
     int exit_code = lemon::utils::ProcessManager::run_process_with_output(
         flm_path, args,
         [&](const std::string& line) -> bool {
-            // Always print the line to console
             LOG(INFO, "FLM") << line << std::endl;
 
-            // Parse FLM output to extract progress information
             // Pattern: "[FLM]  Downloading X/Y: filename"
             if (line.find("[FLM]  Downloading ") != std::string::npos &&
                 line.find("/") != std::string::npos &&
@@ -370,7 +357,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                         total_files = std::stoi(line.substr(slash + 1, colon - slash - 1));
                         current_filename = line.substr(colon + 2);  // Skip ": "
 
-                        // Send progress update
                         if (progress_callback) {
                             DownloadProgress progress;
                             progress.file = current_filename;
@@ -395,7 +381,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
             else if (line.find("[FLM]  Downloading: ") != std::string::npos &&
                      line.find("%") != std::string::npos) {
 
-                // Extract percentage and bytes
                 size_t start = line.find("Downloading: ") + 13;
                 size_t pct_end = line.find("%", start);
 
@@ -440,7 +425,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
                             bytes_total = parse_size(total_str);
                         }
 
-                        // Send progress update with byte-level info
                         if (progress_callback) {
                             DownloadProgress progress;
                             progress.file = current_filename;
@@ -518,7 +502,6 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
         throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
     }
 
-    // Send completion event
     if (progress_callback) {
         DownloadProgress progress;
         progress.complete = true;
@@ -541,7 +524,6 @@ std::string flm_version() {
         return cached_version;
     }
 
-    // Find the flm executable using shared utility
     std::string flm_path = find_flm_executable();
     if (flm_path.empty() || !lemon::utils::is_safe_executable_path(flm_path)) {
         return "unknown";
@@ -588,7 +570,6 @@ std::string flm_version() {
         size_t pos = output.find("FLM v");
         // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
         std::string version = output.substr(pos + 4);
-        // Trim whitespace and newlines
         size_t end = version.find_first_of(" \t\n\r");
         if (end != std::string::npos) {
             version = version.substr(0, end);
@@ -664,7 +645,6 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
         if (!output.empty()) {
             json j = lemon::utils::JsonUtils::parse(output);
             if (j.is_object()) {
-                // Check for overall status
                 bool validation_ok = false;
                 if (j.contains("ready")) {
                     validation_ok = j["ready"].get<bool>();

@@ -123,11 +123,9 @@ void VLLMServer::load(const std::string& model_name,
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
-    // Install vllm-server if needed
     backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
 
-    // vLLM uses HuggingFace model names, not local file paths.
-    // The checkpoint field in server_models.json is the HF model ID.
+    // vLLM uses HuggingFace model IDs, not local file paths.
     std::string model_id = model_info.checkpoint();
     if (model_id.empty()) {
         throw std::runtime_error("Model checkpoint (HuggingFace ID) not found for: " + model_name);
@@ -135,13 +133,10 @@ void VLLMServer::load(const std::string& model_name,
 
     LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
 
-    // Choose port
     port_ = choose_port();
 
-    // Get executable path
     std::string executable = BackendUtils::get_backend_binary_path(*vllm::spec(), vllm_backend);
 
-    // Build command line arguments
     std::vector<std::string> args;
     args.push_back("--model");
     args.push_back(model_id);
@@ -175,7 +170,6 @@ void VLLMServer::load(const std::string& model_name,
                            << "'; letting vLLM auto-select kernel" << std::endl;
     }
 
-    // enable prompt caching
     args.push_back("--enable-prefix-caching");
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
@@ -186,7 +180,6 @@ void VLLMServer::load(const std::string& model_name,
         args.push_back("4G");
     }
 
-    // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
         LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;
         std::istringstream iss(vllm_args);
@@ -198,16 +191,13 @@ void VLLMServer::load(const std::string& model_name,
 
     LOG(INFO, "vLLM") << "Starting vllm-server on port " << get_backend_port() << "..." << std::endl;
 
-    // Set environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
 
-    // The vllm-server launcher script handles LD_LIBRARY_PATH for ROCm libs.
-    // Set FLASH_ATTENTION_TRITON_AMD_ENABLE for ROCm flash attention.
+    // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
     env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 

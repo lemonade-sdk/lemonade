@@ -45,9 +45,7 @@ namespace lemon::backends {
 
     // Build a backend's install/download spec from its descriptor's recipe/binary
     // and the server class T's get_install_params. The construct-on-first-use
-    // static gives the registry a stable pointer. Backends whose install key
-    // differs from the recipe (ryzenai) or that have no installable artifact
-    // (cloud) build their BackendSpec by hand instead of using this.
+    // static gives the registry a stable pointer.
     template <typename T>
     const BackendSpec* make_spec(const BackendDescriptor& d, bool split = false) {
         static const BackendSpec kSpec(d.recipe, d.binary, T::get_install_params, split);

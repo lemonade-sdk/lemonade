@@ -34,8 +34,7 @@ using json = nlohmann::json;
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        // Each backend exposes its install/download spec through the registry
-        // (see <stem>::spec()); no per-recipe branches or server includes here.
+        // Each backend exposes its install/download spec through the registry.
         return spec_for(recipe);
     }
 
@@ -545,8 +544,6 @@ namespace lemon::backends {
             // Remove the downloaded archive on ANY exit from here on — success
             // OR exception, including a throw from commit_staged_install() below
             // (a swap/rename failure) — so the cache archive is never leaked.
-            // Mirrors StagingGuard above; replaces the per-throw fs::remove(zip_path)
-            // calls that did not cover the commit_staged_install throw path.
             struct ZipGuard {
                 const std::string& path;
                 ~ZipGuard() {
@@ -754,9 +751,7 @@ namespace lemon::backends {
                 LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
                 throw std::runtime_error("Extraction failed: executable not found");
             }
-            // Swap succeeded: staging was consumed by the rename, so disarm the
-            // guard (its cleanup would now be a no-op, but disarm to make intent
-            // explicit and skip a pointless filesystem call).
+            // Swap succeeded: staging was consumed by the rename, so disarm the guard.
             staging_guard.active = false;
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;

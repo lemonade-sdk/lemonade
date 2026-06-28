@@ -45,7 +45,6 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text generation",
     /*experimental*/    false,
     /*web_display_name*/ "llama.cpp GPU",
-    /*web_priority*/    1,
     /*rocm_channels*/   {"stable", "nightly"},
     /*exposes_prometheus_metrics*/ true,
     /*rocm_requires_cwsr_fix*/ true,

@@ -31,7 +31,6 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text generation",
     /*experimental*/    false,
     /*web_display_name*/ "Ryzen AI SW NPU",
-    /*web_priority*/    2,
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ false,

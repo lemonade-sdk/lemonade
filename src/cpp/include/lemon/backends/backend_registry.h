@@ -18,8 +18,7 @@ namespace backends {
 
 struct BackendSpec;  // install/download spec, defined in backend_utils.h
 
-// Everything a backend's create() needs to build an instance. Mirrors the
-// arguments the old router factory passed to each backend constructor.
+// Everything a backend's create() needs to build an instance.
 struct BackendContext {
     std::string log_level;
     ModelManager* model_manager = nullptr;
@@ -31,8 +30,7 @@ struct BackendContext {
 using BackendCreateFn = std::unique_ptr<WrappedServer> (*)(const BackendContext&);
 
 // Convenience for the common create(): construct a server class from the
-// standard (log_level, model_manager, backend_manager) context fields. Backends
-// needing extra constructor arguments (cloud, ryzenai) build theirs by hand.
+// standard (log_level, model_manager, backend_manager) context fields.
 template <typename T>
 std::unique_ptr<WrappedServer> make_server(const BackendContext& ctx) {
     return std::make_unique<T>(ctx.log_level, ctx.model_manager, ctx.backend_manager);

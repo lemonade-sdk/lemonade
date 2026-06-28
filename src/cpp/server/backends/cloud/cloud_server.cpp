@@ -23,19 +23,8 @@ bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
 }
 
-// Pattern-based fallback for /v1/models entries that don't publish any
-// capability metadata (notably OpenAI, whose response is just
-// {id, object, owned_by, created}). The patterns cover the model
-// families we currently know about:
-//   - Image/video: flux, stable-diffusion, sdxl, sd-, dall-e, gpt-image,
-//                  chatgpt-image, sora
-//   - Audio:       whisper, tts, *-transcribe, gpt-realtime, gpt-audio
-//   - Reranking:   rerank
-//   - Embeddings:  embed, bge-, nomic-
-//   - Classifiers: moderation
-// Anything else falls through to LLM. New providers that publish
-// capability metadata (see is_chat_model below) bypass this entirely
-// and don't need new patterns.
+// Id-pattern fallback for /v1/models entries that don't publish capability
+// metadata (notably OpenAI). Anything unmatched falls through to LLM.
 ModelType infer_type(const std::string& id) {
     if (id_contains(id, "flux") || id_contains(id, "stable-diffusion") ||
         id_contains(id, "sdxl") || id_contains(id, "sd-") ||
@@ -61,21 +50,12 @@ ModelType infer_type(const std::string& id) {
 }
 
 // Decide whether a /v1/models entry should be surfaced as a chat model.
-//
-// Strategy: trust provider-supplied capability metadata when it exists,
-// fall back to id pattern matching only when there is none. This keeps
-// the substring list bounded — adding a new provider that publishes
-// capabilities does not require adding new patterns.
-//
-// Signals checked, in priority order:
+// Trust provider capability metadata first, in priority order, falling back
+// to infer_type(id) for bare responses:
 //   1. supports_chat: bool       — Fireworks
-//   2. capabilities: [string]    — generic ("chat", "chat.completions",
-//                                  "embeddings", "image_generation", ...)
-//   3. architecture.modality     — OpenRouter ("text->text",
-//                                  "text+image->text", "text->image", ...)
-//                                  Anything that produces text via chat is
-//                                  considered chat-capable.
-//   4. infer_type(id) == LLM     — fallback for bare responses (OpenAI).
+//   2. capabilities: [string]    — generic
+//   3. architecture.modality     — OpenRouter
+//   4. type: string              — Together AI
 bool is_chat_model(const json& m) {
     if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
         return false;
@@ -142,24 +122,11 @@ std::vector<std::string> chat_labels() {
 }
 
 // Detect capability labels (vision / tool-calling / reasoning) from a
-// /v1/models entry and normalise the divergent fields providers use into
-// lemonade's shared label vocabulary, so cloud models gate inputs exactly
-// like local ones (the UI offers image upload iff "vision" is present, etc.).
-//
-// Strategy mirrors is_chat_model: trust structured provider metadata first,
-// fall back to id patterns only for providers that publish none (OpenAI).
-// When a signal is absent the capability defaults OFF — under-offering an
-// input is safer than letting the client attach an image the provider rejects
-// (the per-model override exists for the cases auto-detection can't cover).
-//
-// Recognised signals:
-//   vision — supports_image_input (Fireworks); supports_vision/vision bools;
-//            architecture.input_modalities ⊇ "image" (OpenRouter);
-//            modalities/input_modalities ⊇ "image".
-//   tools  — supports_tools (Fireworks); supported_parameters ⊇ "tools"
-//            (OpenRouter); capabilities ⊇ "tools"/"function_calling";
-//            function_calling/supports_function_calling bools.
-//   reason — supported_parameters ⊇ "reasoning"; reasoning/supports_reasoning.
+// /v1/models entry, normalising the divergent fields providers use into
+// lemonade's shared label vocabulary so cloud models gate inputs like local
+// ones. When a signal is absent the capability defaults OFF — under-offering
+// an input is safer than letting the client attach an image the provider
+// rejects (the per-model override covers cases auto-detection can't).
 std::vector<std::string> capability_labels(const json& m) {
     std::vector<std::string> labels;
     if (!m.is_object()) return labels;
@@ -175,7 +142,6 @@ std::vector<std::string> capability_labels(const json& m) {
         return false;
     };
 
-    // ---- vision ----
     bool vision = flag("supports_image_input") || flag("supports_vision") ||
                   flag("vision") ||
                   array_has(m.value("modalities", json::array()), "image") ||
@@ -185,7 +151,6 @@ std::vector<std::string> capability_labels(const json& m) {
                            "image");
     }
 
-    // ---- tool-calling ----
     const json params = m.value("supported_parameters", json::array());
     const json caps = m.value("capabilities", json::array());
     bool tools = flag("supports_tools") || flag("function_calling") ||
@@ -194,14 +159,12 @@ std::vector<std::string> capability_labels(const json& m) {
                  array_has(caps, "tools") || array_has(caps, "function_calling") ||
                  array_has(caps, "tool_calling");
 
-    // ---- reasoning ----
     bool reasoning = flag("reasoning") || flag("supports_reasoning") ||
                      array_has(params, "reasoning") ||
                      array_has(params, "include_reasoning");
 
-    // ---- id-pattern fallback for metadata-barren providers (OpenAI) ----
-    // Only consulted when the entry carries no structured capability hints at
-    // all, so an authoritative "false" from a provider is never overridden.
+    // Id-pattern fallback, consulted only when the entry carries no structured
+    // capability hints, so an authoritative "false" from a provider stands.
     const bool has_meta = m.contains("supports_image_input") ||
                           m.contains("supports_vision") || m.contains("vision") ||
                           m.contains("supports_tools") ||
@@ -274,34 +237,10 @@ std::pair<double, double> parse_cloud_cost(const json& m) {
     return cost;
 }
 
-// Build the user-facing model name from a provider's upstream id, applying
-// two universal cleanup rules (no provider-specific code):
-//
-//   1. Collapse "accounts/<x>/models/<y>" -> "<x>/<y>". This is a
-//      content-pattern match (the GCP-style resource-path convention used
-//      by Fireworks). Any provider that adopts the same shape benefits
-//      automatically; providers using flat ids ("gpt-4o") or other
-//      namespaces ("meta-llama/Llama-3.3-70B-Instruct-Turbo") pass through
-//      untouched.
-//
-//   2. If the cleaned id leads with "<provider>/", strip it before adding
-//      the wrapping "<provider>/" prefix — otherwise Fireworks's first-
-//      party models ("fireworks/...") would render as
-//      "fireworks/fireworks/...".
-//
-// The provider namespace is joined with a "." separator (matching the
-// "user."/"extra." namespacing used elsewhere); the cleaned upstream id keeps
-// its own native "/" separators.
-//
-// Examples:
-//   provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
-//     -> "fireworks.deepseek-v4-pro"
-//   provider="fireworks", id="accounts/trilogy/models/cogsci-..."
-//     -> "fireworks.trilogy/cogsci-..."
-//   provider="openai",    id="gpt-4o"
-//     -> "openai.gpt-4o"
-//   provider="together",  id="meta-llama/Llama-3.3-70B-Instruct-Turbo"
-//     -> "together.meta-llama/Llama-3.3-70B-Instruct-Turbo"
+// Build the user-facing model name "<provider>.<cleaned_upstream_id>" by
+// applying two content-pattern cleanup rules (no provider-specific code).
+// Example: provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
+// -> "fireworks.deepseek-v4-pro".
 std::string build_public_name(const std::string& provider, const std::string& upstream_id) {
     std::string cleaned = upstream_id;
 
@@ -500,11 +439,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     try {
         auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
         if (response.status_code == 200) {
-            // Telemetry: the chat/completions handler in server.cpp parses
-            // the `usage` field off the returned JSON and calls
-            // Router::update_telemetry / update_prompt_tokens. CloudServer
-            // returns the body unchanged so that path picks up the same
-            // prompt/completion counts every other backend reports.
+            // Return the body unchanged so the server.cpp handler picks up the
+            // `usage` telemetry like every other backend.
             return json::parse(response.body);
         }
 
@@ -549,12 +485,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             bool sse,
                                             long timeout_seconds,
                                             TelemetryCallback telemetry_callback) {
-    // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
-    // usage block in the final pre-[DONE] chunk. We don't parse it here —
-    // the Router-level streaming path delivers cleaner numbers than we can
-    // reconstruct from chunked output, and matching local backends here
-    // would only diverge subtly. Passing the callback through preserves the
-    // contract for callers that pass one in.
+    // Streaming telemetry is left to the Router-level path, which produces
+    // cleaner numbers than reconstructing them from chunked SSE output.
     (void) telemetry_callback;
     auto sse_error = [](const std::string& message, const std::string& type,
                         const json& extra = json::object()) {
@@ -638,7 +570,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                     if (length == 0) return true;
                     if (first_chunk) {
                         first_chunk = false;
-                        // Skip leading whitespace before classifying.
                         size_t i = 0;
                         while (i < length && std::isspace(static_cast<unsigned char>(data[i]))) ++i;
                         if (i < length && (data[i] == 'd' || data[i] == ':')) {
@@ -777,32 +708,20 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
     }
 
     for (const auto& m : *model_array) {
-        // Chat-only by design. CloudServer implements chat_completion /
-        // completion against OpenAI v1; embeddings, audio, reranking, and
-        // image use diverging wire formats across providers and belong in
-        // sibling backends. is_chat_model() trusts provider-supplied
-        // capability metadata first (supports_chat, capabilities,
-        // architecture.modality) and falls back to id pattern matching for
-        // bare responses, so the router never sees a cloud model it cannot
-        // dispatch.
+        // Chat-only by design; embeddings/audio/reranking/image belong in
+        // sibling backends with diverging wire formats.
         if (!is_chat_model(m)) {
             continue;
         }
         std::string upstream_id = m["id"].get<std::string>();
 
         ModelInfo info;
-        // Public name = "<provider>.<cleaned_upstream_id>". The cleanup
-        // rules in build_public_name() are content-pattern based and apply
-        // universally to any provider — see the function comment for the
-        // examples and rationale.
         info.model_name = build_public_name(provider, upstream_id);
         info.checkpoints["main"] = upstream_id;
         info.recipe = "cloud";
         info.cloud_provider = provider;
-        // Discovered models are "suggested" because the user explicitly
-        // configured this provider — they wouldn't have a working API key
-        // otherwise. Without this, the Model Manager UI's default
-        // suggested-only filter hides every cloud model.
+        // Mark suggested so the Model Manager's default suggested-only filter
+        // doesn't hide every cloud model the user explicitly configured.
         info.suggested = true;
         info.downloaded = true;  // Cloud models have no local artifacts.
         info.size = 0.0;
@@ -812,9 +731,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         for (auto& cap : capability_labels(m)) {
             info.labels.push_back(std::move(cap));
         }
-        // Static metadata the providers publish (all three give context_length;
-        // OpenRouter/Together also give pricing). Surfaced in /models, /health
-        // and the discover response — display only, never affects routing.
+        // Display-only metadata; never affects routing.
         if (m.contains("context_length") && m["context_length"].is_number_integer()) {
             info.max_context_window = m["context_length"].get<int64_t>();
         }
@@ -849,24 +766,21 @@ class CloudOps : public BackendOps {
 public:
     std::string resolve_checkpoint_path(const ModelInfo&,
                                         const CheckpointResolveContext&) const override {
-        // Cloud-offloaded models have no local artifacts; the checkpoint is the
-        // upstream provider's model id, used directly when forwarding requests.
+        // Cloud models have no local artifacts; the checkpoint is the upstream
+        // provider's model id, used directly when forwarding requests.
         return "";
     }
 
-    // Cloud models have no local artifacts — always "downloaded".
     bool is_downloaded(const ModelInfo&, const BackendOpsContext&) const override {
         return true;
     }
 
-    // "Downloading" a cloud model is a no-op.
     void download_model(const ModelInfo&, bool, DownloadProgressCallback,
                         const BackendOpsContext&) const override {}
 
     // Discover models from each installed cloud provider with a resolvable
-    // credential. Per AGENTS.md invariant #11 the registry persists only
-    // {provider, base_url}; keys come from env vars / process memory. Failures
-    // are logged, never propagated, so one offline provider can't block discovery.
+    // credential. Failures are logged, never propagated, so one offline
+    // provider can't block discovery.
     std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const override {
         std::vector<ModelInfo> out;
         if (ctx.cloud_registry == nullptr) {

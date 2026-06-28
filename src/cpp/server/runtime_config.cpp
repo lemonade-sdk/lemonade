@@ -32,7 +32,7 @@ RuntimeConfig* RuntimeConfig::global() {
 
 // A valid config.json backend section is the config_section of any descriptor
 // that runs a local subprocess (binary != ""). Cloud has no binary, so it is not
-// a backend section. Derived from descriptors — no hand-maintained list.
+// a backend section.
 static bool is_backend_name(const std::string& key) {
     for (const auto* desc : lemon::backends::all_descriptors()) {
         if (!desc->binary.empty() && desc->effective_config_section() == key) {
@@ -291,8 +291,7 @@ std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) co
     std::string channel = rocm_channel();
     // Clamp to a channel the backend actually publishes. A backend that lists
     // only {"stable"} (e.g. sd-cpp, which has no nightly artifacts) falls back to
-    // its first channel when "nightly" is requested. Driven by the descriptor's
-    // rocm_channels, so no per-recipe special case lives here.
+    // its first channel when "nightly" is requested.
     const auto* desc = lemon::backends::descriptor_for(recipe);
     if (desc && !desc->rocm_channels.empty()) {
         const auto& channels = desc->rocm_channels;
@@ -365,9 +364,9 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
     const std::string backend_args = backend + "_args";
 
     // Translate each backend's nested config.json section into the flat
-    // recipe_options format, driven by the descriptor's option list — no
-    // per-recipe block. The flat key is the descriptor option name; the
-    // config.json key is derived from the option's role (its name suffix):
+    // recipe_options format, driven by the descriptor's option list. The flat
+    // key is the descriptor option name; the config.json key is derived from the
+    // option's role (its name suffix):
     //   *_backend -> "backend"   *_args -> variant "<backend>_args" then "args"
     //   *_device  -> "device"    everything else -> the option name verbatim
     //                            (sd-cpp's steps/cfg_scale/width/height/…)

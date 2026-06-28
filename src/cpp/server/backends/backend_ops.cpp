@@ -15,8 +15,7 @@ using lemon::utils::path_to_utf8;
 
 // Default checkpoint resolution: the shared Hugging Face behavior. Locate the
 // requested variant (or auxiliary file like mmproj) within the active snapshot,
-// falling back to the main repo and finally the model cache directory. Backends
-// with bespoke layouts override resolve_checkpoint_path().
+// falling back to the main repo and finally the model cache directory.
 std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const {
     (void)info;

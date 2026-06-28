@@ -211,10 +211,8 @@ void SDServer::load(const std::string& model_name,
         device_type_ = DEVICE_CPU;
     }
 
-    // Install sd-server if needed
     backend_manager_->install_backend(sdcpp::spec()->recipe, backend);
 
-    // Get model path
     std::string model_path = model_info.resolved_path("main");
     std::string llm_path = model_info.resolved_path("text_encoder");
     std::string vae_path = model_info.resolved_path("vae");
@@ -233,10 +231,8 @@ void SDServer::load(const std::string& model_name,
 
     LOG(DEBUG, "SDServer") << "Using model: " << model_path << std::endl;
 
-    // Get sd-server executable path
     std::string exe_path = BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend);
 
-    // Choose a port
     port_ = choose_port();
     if (port_ == 0) {
         throw std::runtime_error("Failed to find an available port");
@@ -244,7 +240,6 @@ void SDServer::load(const std::string& model_name,
 
     LOG(INFO, "SDServer") << "Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
 
-    // Build command line arguments
     std::vector<std::string> args = {
         "--listen-port", std::to_string(port_)
     };
@@ -295,7 +290,6 @@ void SDServer::load(const std::string& model_name,
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    // Set up environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
 #ifdef _WIN32
@@ -304,7 +298,6 @@ void SDServer::load(const std::string& model_name,
 #endif
 
 #ifndef _WIN32
-    // For Linux, always set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
     if (resolved_backend == "rocm-stable") {
@@ -328,8 +321,6 @@ void SDServer::load(const std::string& model_name,
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
     if (is_rocm_backend(resolved_backend)) {
-        // Add executable directory to PATH for ROCm runtime DLLs
-        // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
         std::string new_path = path_to_utf8(exe_dir);
 
         if (resolved_backend == "rocm-stable") {
@@ -368,7 +359,6 @@ void SDServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
     }
 
-    // Launch the server process
     std::string process_exe_path = exe_path;
     std::string working_dir;
 #ifdef _WIN32
@@ -392,7 +382,6 @@ void SDServer::load(const std::string& model_name,
 
     LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
-    // Wait for server to be ready
     if (!wait_for_ready("/")) {
         unload();
         throw std::runtime_error("sd-server failed to start or become ready");
@@ -546,7 +535,7 @@ json SDServer::responses(const json& /* request */) {
 }
 
 json SDServer::image_generations(const json& request) {
-    // Build request - sd-server uses OpenAI-compatible format.
+    // sd-server uses OpenAI-compatible format.
     //
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
     // for the <sd_cpp_extra_args> convention.
@@ -596,7 +585,6 @@ json SDServer::image_edits(const json& request) {
         fields.push_back({"size", size, "", ""});
     }
 
-    // Decode base64 image data back to binary for multipart upload
     if (request.contains("image_data")) {
         std::string image_binary = JsonUtils::base64_decode(
             request["image_data"].get<std::string>());
@@ -634,7 +622,6 @@ json SDServer::image_variations(const json& request) {
         fields.push_back({"size", size, "", ""});
     }
 
-    // Decode base64 image data back to binary for multipart upload
     if (request.contains("image_data")) {
         std::string image_binary = JsonUtils::base64_decode(
             request["image_data"].get<std::string>());

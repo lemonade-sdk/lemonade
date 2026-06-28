@@ -279,12 +279,16 @@ def _js_key(recipe: str) -> str:
     return recipe if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", recipe) else f"'{recipe}'"
 
 
+def _web_display_name(info: dict, recipe: str) -> str:
+    return info.get("web_display_name") or info.get("display_name", recipe)
+
+
 def render_models_js(recipes: dict) -> str:
-    # RECIPE_PRIORITY: recipes with web_priority > 0, in that order (legacy oga-*
-    # recipes have no descriptor and are intentionally dropped).
+    # RECIPE_PRIORITY: every descriptor-backed recipe, ordered alphabetically by
+    # display name. Listing all of them (rather than an opt-in subset) means a new
+    # backend can never be silently dropped from the website.
     prioritized = sorted(
-        (r for r, i in recipes.items() if i.get("web_priority", 0) > 0),
-        key=lambda r: recipes[r]["web_priority"],
+        recipes, key=lambda r: _web_display_name(recipes[r], r).lower()
     )
     pri_lines = ",\n".join(f"  '{r}'" for r in prioritized)
 
@@ -292,7 +296,7 @@ def render_models_js(recipes: dict) -> str:
     # fallback (matching the curated map, which omits redundant entries).
     name_lines = []
     for r, info in _ordered(recipes):
-        name = info.get("web_display_name") or info.get("display_name", r)
+        name = _web_display_name(info, r)
         if name and name != _js_to_title(r):
             name_lines.append(f"  {_js_key(r)}: '{name}'")
     names = ",\n".join(name_lines)

@@ -32,11 +32,9 @@ json ConfigFile::base_defaults() {
     json defaults = load_json_file(utils::path_from_utf8(
         utils::get_resource_path("resources/defaults.json")));
 
-    // Seed each backend's config.json section from its descriptor. The per-recipe
-    // defaults are authored in the backend's descriptor; resources/defaults.json
-    // is the generated, committed mirror (see GET /internal/config/defaults and
-    // docs/tools/gen_backend_boilerplate.py). Re-seeding here keeps the descriptor
-    // authoritative even if the committed file lags. Empty result = no section.
+    // Seed each backend's config.json section from its descriptor.
+    // resources/defaults.json is the generated, committed mirror; re-seeding here
+    // keeps the descriptor authoritative even if that file lags.
     for (const auto* d : backends::all_descriptors()) {
         json block = d->config_defaults();
         if (!block.empty()) {

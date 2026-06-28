@@ -86,9 +86,7 @@ class ConfigFile {
 public:
     /// The canonical default config: resources/defaults.json (global keys) with
     /// each backend's per-recipe section seeded from its descriptor. Host- and
-    /// deployment-independent, so it is reproducible — this is what
-    /// GET /internal/config/defaults emits and gen_backend_boilerplate.py writes
-    /// back into resources/defaults.json.
+    /// deployment-independent.
     static json base_defaults();
 
     /// base_defaults() plus deployment overrides. On Linux, an optional distro

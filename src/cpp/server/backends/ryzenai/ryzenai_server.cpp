@@ -57,10 +57,8 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Loading model: " << model_name << std::endl;
     int ctx_size = options.get_option("ctx_size");
 
-    // Install/check RyzenAI-Server (will download if not found)
     backend_manager_->install_backend("ryzenai-llm", "npu");
 
-    // Get the path to ryzenai-server
     std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
@@ -68,7 +66,6 @@ void RyzenAIServer::load(const std::string& model_name,
 
     LOG(DEBUG, "RyzenAI") << "Found ryzenai-server at: " << ryzenai_server_path << std::endl;
 
-    // Model path should have been set via set_model_path() before calling load()
     if (model_path_.empty()) {
         throw std::runtime_error("Model path is required for RyzenAI-Server. Call set_model_path() before load()");
     }
@@ -81,10 +78,8 @@ void RyzenAIServer::load(const std::string& model_name,
 
     LOG(DEBUG, "RyzenAI") << "Model path: " << model_path_ << std::endl;
 
-    // Find available port
     port_ = choose_port();
 
-    // Build command line arguments
     std::vector<std::string> args = {
         "-m", model_path_,
         "--port", std::to_string(port_),
@@ -95,7 +90,6 @@ void RyzenAIServer::load(const std::string& model_name,
         args.push_back("--verbose");
     }
 
-    // Log the full command line
     LOG(DEBUG, "RyzenAI") << "Starting: \"" << ryzenai_server_path << "\"";
     for (const auto& arg : args) {
         LOG(DEBUG, "RyzenAI") << " \"" << arg << "\"";
@@ -119,7 +113,6 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "ProcessManager") << "Process started successfully, PID: "
                 << started_handle.pid << std::endl;
 
-    // Wait for server to be ready
     if (!wait_for_ready("/health")) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
         if (has_process_handle(handle)) {
@@ -150,7 +143,6 @@ json RyzenAIServer::chat_completion(const json& request) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
 
-    // Forward to /v1/chat/completions endpoint
     return forward_request("/v1/chat/completions", request);
 }
 
@@ -159,7 +151,6 @@ json RyzenAIServer::completion(const json& request) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
 
-    // Forward to /v1/completions endpoint
     return forward_request("/v1/completions", request);
 }
 
@@ -168,7 +159,6 @@ json RyzenAIServer::responses(const json& request) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
 
-    // Forward to /v1/responses endpoint
     return forward_request("/v1/responses", request);
 }
 
@@ -179,8 +169,7 @@ namespace backends {
 namespace ryzenai {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    // RyzenAI resolves its model path before load (set_model_path), matching the
-    // original router factory's special-casing.
+    // RyzenAI requires its model path resolved before load() via set_model_path().
     auto server = std::make_unique<::lemon::RyzenAIServer>(
         ctx.model_info->model_name, ctx.log_level == "debug",
         ctx.model_manager, ctx.backend_manager);

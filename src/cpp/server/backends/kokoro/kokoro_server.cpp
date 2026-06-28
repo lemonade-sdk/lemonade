@@ -73,11 +73,9 @@ KokoroServer::~KokoroServer() {
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     LOG(INFO, "KokoroServer") << "Loading model: " << model_name << std::endl;
 
-    // Install kokoros if needed
     const std::string backend = default_kokoro_backend();
     backend_manager_->install_backend(kokoro::spec()->recipe, backend);
 
-    // Use pre-resolved model path
     fs::path model_path = fs::path(model_info.resolved_path());
     if (model_path.empty() || !fs::exists(model_path)) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
@@ -94,10 +92,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     LOG(INFO, "KokoroServer") << "Using model: " << model_index["model"] << std::endl;
 
-    // Get koko executable path
     std::string exe_path = BackendUtils::get_backend_binary_path(*kokoro::spec(), backend);
 
-    // Choose a port
     port_ = choose_port();
     if (port_ == 0) {
         throw std::runtime_error("Failed to find an available port");
@@ -110,7 +106,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     env_vars.push_back({"ESPEAK_DATA_PATH", (exe_dir / "espeak-ng-data").string()});
 #ifndef _WIN32
     std::string lib_path = exe_dir.string();
-    // Preserve existing LD_LIBRARY_PATH if it exists
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {
         lib_path = lib_path + ":" + std::string(existing_ld_path);
@@ -120,7 +115,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #endif
 
-    // Build command line arguments
     // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     fs::path model_dir = model_path.parent_path();
     std::vector<std::string> args = {
@@ -131,7 +125,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         "--port", std::to_string(port_)
     };
 
-    // Launch the subprocess
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
@@ -148,7 +141,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     LOG(INFO, "KokoroServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
-    // Wait for server to be ready
     if (!wait_for_ready("/")) {
         unload();
         throw std::runtime_error("koko failed to start or become ready");

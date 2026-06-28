@@ -4,12 +4,14 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
-  'llamacpp',
-  'ryzenai-llm',
   'flm',
-  'whispercpp',
+  'kokoro',
+  'llamacpp',
+  'moonshine',
+  'ryzenai-llm',
   'sd-cpp',
-  'kokoro'
+  'vllm',
+  'whispercpp'
 ];
 
 const RECIPE_DISPLAY_NAMES = {

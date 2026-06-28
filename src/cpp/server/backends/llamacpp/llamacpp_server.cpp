@@ -48,7 +48,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-// Embedding model batch configuration set to 8192 as default
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
 
@@ -272,7 +271,6 @@ void LlamaCppServer::load(const std::string& model_name,
                          bool do_not_upgrade) {
     LOG(INFO, "LlamaCpp") << "Loading model: " << model_name << std::endl;
 
-    // Llamacpp Backend logging
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
@@ -309,13 +307,10 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string mmproj_path = model_info.resolved_path("mmproj");
     std::string draft_path = model_info.resolved_path("draft");
 
-    // Choose port
     port_ = choose_port();
 
-    // Get executable path
     std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
-    // Check for embeddings and reranking support based on model type
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
 
@@ -365,7 +360,6 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Add draft model if present
     if (!draft_path.empty()) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
@@ -571,7 +565,6 @@ void LlamaCppServer::load(const std::string& model_name,
     set_process_handle(ProcessManager::start_process(
         process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
-    // Wait for server to be ready
     if (!wait_for_ready("/health")) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
         if (has_process_handle(handle)) {
@@ -744,7 +737,6 @@ bool is_ggml_hip_plugin_available() {
         "/usr/lib64/ggml/backends0/libggml-hip.so"
     };
 
-    // Check all possible paths
     for (const auto& path : possible_paths) {
         if (fs::exists(path)) {
             return true;

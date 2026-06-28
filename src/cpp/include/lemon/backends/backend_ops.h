@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback (server-side only)
+#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
 
 namespace lemon {
 
@@ -11,16 +11,14 @@ class CloudProviderRegistry;
 
 namespace backends {
 
-// Context handed to BackendOps methods — the bits of server state model
-// management needs without a running subprocess. Grows as migrations require.
+// Context handed to BackendOps methods: the server state model management needs
+// without a running subprocess.
 struct BackendOpsContext {
     ModelManager* model_manager = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
 };
 
-// Inputs for resolving a checkpoint's on-disk path. The model manager computes
-// the HF-cache locations generically; each backend's ops decide how to find its
-// artifact within (a .gguf file, a genai_config.json directory, a .bin, …).
+// Inputs for resolving a checkpoint's on-disk path.
 struct CheckpointResolveContext {
     std::string hf_cache;          // HF cache root dir
     std::string model_cache_path;  // hf_cache/<checkpoint repo cache dir>
@@ -35,13 +33,10 @@ struct CheckpointResolveContext {
 // running subprocess: checkpoint-path resolution, download, dynamic discovery,
 // per-model metadata, version detection, availability. One singleton per
 // backend, exposed via lemon::backends::<stem>::ops() and bound in the registry
-// (see BackendRegistration::ops).
-//
-// The base class is the shared default behavior (the common HF-backed case);
-// each backend folder overrides ONLY the policy points it needs, so shared
-// logic is inherited rather than copied. Methods are added here incrementally as
-// switchboards in model_manager / system_info are migrated; every method has a
-// default so adding one never forces edits to backends that don't override it.
+// (see BackendRegistration::ops). The base class provides shared default
+// behavior; backends override only the policy points they need. Every method
+// has a default, so adding one never forces edits to backends that don't
+// override it.
 class BackendOps {
 public:
     virtual ~BackendOps() = default;
@@ -55,8 +50,7 @@ public:
 
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
     // Default: the shared HF behavior — locate the variant/aux file in the active
-    // snapshot, else fall back to the model cache directory. Backends with a
-    // bespoke artifact layout (GGUF file, genai_config.json dir, .bin, …) override.
+    // snapshot, else fall back to the model cache directory.
     virtual std::string resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const;
 
@@ -71,7 +65,6 @@ public:
 
     // Validate a user-supplied checkpoint string when registering a new model.
     // Return an error message if invalid, "" if acceptable. Default: accept.
-    // llamacpp requires a :variant on GGUF checkpoints.
     virtual std::string validate_registration_checkpoint(const std::string& checkpoint) const {
         (void)checkpoint;
         return "";
@@ -81,7 +74,6 @@ public:
     // `main_variant`, for backends whose artifact layout isn't a GGUF file.
     // Return nullopt to use the default GGUF selection. (Direct single-file
     // variants — .safetensors/.pth/.ckpt — are handled generically upstream.)
-    // moonshine overrides: its variant names a directory of files to fetch.
     virtual std::optional<std::vector<std::string>> select_checkpoint_files(
         const std::string& main_variant, const std::vector<std::string>& repo_files) const {
         (void)main_variant;
@@ -90,40 +82,35 @@ public:
     }
 
     // Models supplied at runtime rather than from server_models.json (descriptor
-    // dynamic_models = true). Default: none. cloud/flm override.
+    // dynamic_models = true). Default: none.
     virtual std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const {
         (void)ctx;
         return {};
     }
 
     // Whether a model's local artifacts are present. Default: the shared HF
-    // checkpoint-completeness check (ModelManager::checkpoints_complete). cloud
-    // (always true) and flm (installed-set membership) override.
+    // checkpoint-completeness check (ModelManager::checkpoints_complete).
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
-    // a reason it should be treated as not-downloaded. Default: always valid;
-    // llamacpp checks GGUF magic.
+    // a reason it should be treated as not-downloaded. Default: always valid.
     virtual std::string validate_checkpoint_file(const std::string& resolved_path) const {
         (void)resolved_path;
         return "";
     }
 
     // Download a model's artifacts. Default: the shared Hugging Face download.
-    // cloud (no-op) and flm (flm pull) override.
     virtual void download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress,
                                 const BackendOpsContext& ctx) const;
 
     // Whether the model cache must be rebuilt after this backend downloads a
-    // model (e.g. flm, whose model list changes). Default: false.
+    // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
 
     // Resolve a backend's installed version for a given backend variant. The
     // caller passes the version read from the on-disk version.txt (or "" if
-    // absent); the default returns it unchanged. Backends that detect their
-    // version another way override: llamacpp's "system" build runs
-    // `llama-server --version`; flm queries `flm version` when no file is present.
+    // absent); the default returns it unchanged.
     virtual std::string resolve_version(const std::string& backend,
                                         const std::string& file_version) const {
         (void)backend;
@@ -139,8 +126,6 @@ public:
 
     // Decide whether a backend variant is installed, given whether its managed
     // binary was found on disk. Default: installed iff the binary was found.
-    // llamacpp's "system" build also requires the ggml HIP plugin when an AMD GPU
-    // is present; flm can be a system PATH package even without a managed binary.
     virtual InstallCheck check_install(const std::string& backend, bool binary_found) const {
         (void)backend;
         return {binary_found, ""};
@@ -158,8 +143,7 @@ public:
     // Classify a "supported but not available" backend variant for /system-info,
     // given the install probe's error text and the generic install command the
     // caller would otherwise use. Return nullopt to use the generic
-    // installable/no-fetch default. flm overrides: it is a system .deb + drivers
-    // needing manual setup, so its states and remediation links differ.
+    // installable/no-fetch default.
     virtual std::optional<UnavailableState> classify_unavailable(
         const std::string& backend, const std::string& install_error,
         const std::string& default_install_command) const {

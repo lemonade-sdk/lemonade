@@ -110,8 +110,6 @@ namespace lemon {
 // Properties which are defined by the user for model registration.
 static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options"};
 
-// Helper functions for string operations — use shared implementations from gguf_reader_detail
-
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
@@ -1084,7 +1082,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // Compute the HF cache location for this checkpoint's repo, then let the
     // backend's ops find its artifact within (a .gguf file, a genai_config.json
-    // directory, a .bin, …) — no per-recipe switchboard here.
+    // directory, a .bin, …).
     backends::CheckpointResolveContext ctx;
     ctx.hf_cache = hf_cache;
     ctx.repo_id = checkpoint_to_repo_id(checkpoint);
@@ -2160,7 +2158,7 @@ void ModelManager::register_user_model(const std::string& model_name,
     std::string recipe = model_data.value("recipe", "");
 
     // Inject the backend's default labels for models that omit them (e.g. sd-cpp
-    // -> image, whispercpp/moonshine -> transcription). Sourced from the descriptor.
+    // -> image, whispercpp/moonshine -> transcription).
     if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
         for (const auto& label : desc->default_labels) {
             labels.insert(label);

@@ -140,11 +140,7 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 }
 
 // Fallback device type for recipes with no registered backend descriptor
-// (collections and unknown recipes). The authoritative per-backend default lives
-// in BackendDescriptor::default_device; ModelManager::device_type_for_recipe
-// consults the descriptor registry first and only falls back here. Kept in this
-// low-level header (which must not depend on the backend registry) for that
-// fallback alone — it intentionally carries no per-backend knowledge.
+// (collections and unknown recipes); the descriptor registry is authoritative.
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     (void)recipe;
     return DEVICE_NONE;

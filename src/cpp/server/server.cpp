@@ -4475,7 +4475,6 @@ void Server::handle_config_defaults_get(const httplib::Request& /*req*/, httplib
     try {
         // The canonical default config (global keys + descriptor-derived per-recipe
         // sections), independent of this host's config.json or deployment overrides.
-        // gen_backend_boilerplate.py reads this to regenerate resources/defaults.json.
         res.set_content(ConfigFile::base_defaults().dump(2), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_config_defaults_get: " << e.what() << std::endl;

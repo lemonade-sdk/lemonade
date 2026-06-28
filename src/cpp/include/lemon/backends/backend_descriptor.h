@@ -20,8 +20,7 @@ struct BackendOption {
     std::string group;                // CLI help group, e.g. "General Options"
 };
 
-// How a backend shares the accelerator. Replaces the router's recipe-string
-// checks for NPU exclusivity and LRU slot accounting.
+// How a backend shares the accelerator.
 enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
     ExclusiveNpu,  // evict ALL npu servers before loading (ryzenai-llm, whispercpp-npu)
@@ -69,7 +68,6 @@ struct BackendDescriptor {
     std::string modality;           // "Text generation" | "Speech-to-text" | "Text-to-speech" | "Image generation"
     bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
-    int         web_priority = 0;    // model-grouping order on the docs website (lower = higher; 0 = unlisted)
 
     // ROCm release channels this backend publishes (e.g. {"stable","nightly"}).
     // Empty = the backend has no ROCm channels (its "rocm" build is a single

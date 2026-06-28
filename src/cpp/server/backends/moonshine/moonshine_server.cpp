@@ -74,10 +74,8 @@ void MoonshineServer::load(const std::string& model_name,
 
     device_type_ = DEVICE_CPU;
 
-    // Install moonshine-server if needed
     backend_manager_->install_backend(moonshine::spec()->recipe, "cpu");
 
-    // Resolve model path from ModelManager (standard HF cache)
     std::string model_path = model_info.resolved_path();
     if (model_path.empty() || !fs::exists(model_path)) {
         throw std::runtime_error("Model directory not found for checkpoint: " + model_info.checkpoint());
@@ -100,7 +98,6 @@ void MoonshineServer::load(const std::string& model_name,
         }
     }
 
-    // Get executable path
     std::string executable = BackendUtils::get_backend_binary_path(*moonshine::spec(), "cpu");
     LOG(INFO, "MoonshineServer") << "Using executable: " << executable << std::endl;
 
@@ -159,12 +156,10 @@ void MoonshineServer::load(const std::string& model_name,
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    // Set environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
     // Prevent system/user Python packages from leaking into the bundled environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    // Launch the subprocess
     bool inherit_output = (log_level_ == "info") || is_debug();
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         executable,
@@ -182,7 +177,6 @@ void MoonshineServer::load(const std::string& model_name,
 
     LOG(INFO, "MoonshineServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
-    // Wait for server to be ready
     if (!wait_for_ready("/health")) {
         unload();
         throw std::runtime_error("moonshine-server failed to start or become ready");

@@ -240,9 +240,9 @@ void RecipeOptions::set_option(const std::string& opt, const json& value) {
 #ifdef LEMONADE_CLI
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options.
 // ctx_size/merge_args are the common flags; everything else is derived from
-// descriptor options that declare a CLI flag, so the CLI never needs editing
-// when a backend is added. Image-gen params (steps/cfg_scale/width/height) have
-// no cli_flag in their descriptor, so they stay recipe-level only as before.
+// descriptor options that declare a CLI flag. Image-gen params
+// (steps/cfg_scale/width/height) have no cli_flag in their descriptor, so they
+// stay recipe-level only.
 static const json& get_cli_options() {
     static const json cli_options = [] {
         json o = json::object();

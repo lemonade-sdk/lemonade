@@ -145,8 +145,7 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
 }
 
 // Slot/eviction policy for a recipe, from its descriptor (default Standard).
-// This is the recipe-static policy used for pre-load slot decisions, mirroring
-// the historical use of get_device_type_from_recipe at load time.
+// This is the recipe-static policy used for pre-load slot decisions.
 static SlotPolicy slot_policy_for_recipe(const std::string& recipe) {
     if (const auto* desc = backends::descriptor_for(recipe)) {
         return desc->slot_policy;
@@ -324,8 +323,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     ctx.cloud_registry = cloud_registry_;
     ctx.model_info = &model_info;
 
-    // The backend registry binds each recipe's descriptor to its create(). It is
-    // the single source of truth for backend construction (see LEMON_BACKENDS).
+    // The backend registry binds each recipe to its create() (see LEMON_BACKENDS).
     std::unique_ptr<WrappedServer> new_server = backends::create_server(model_info.recipe, ctx);
     if (new_server) {
         LOG(DEBUG, "Router") << "Created backend for recipe '" << model_info.recipe

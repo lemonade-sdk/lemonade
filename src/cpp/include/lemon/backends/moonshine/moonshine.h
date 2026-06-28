@@ -32,7 +32,6 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Speech-to-text",
     /*experimental*/    false,
     /*web_display_name*/ "",
-    /*web_priority*/    0,
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ false,

@@ -308,7 +308,6 @@ public:
         // No-op by default
     }
 
-    // ICompletionServer implementation - forward requests to the wrapped server.
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
     virtual json chat_completion(const json& request) override {
