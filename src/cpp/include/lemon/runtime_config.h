@@ -30,6 +30,9 @@ public:
     bool no_broadcast() const;
     long global_timeout() const;
     int max_loaded_models() const;
+    int max_loaded_models_for_device(int device_bitmask) const;
+    int max_loaded_models_total() const;
+    bool max_loaded_models_is_object() const;
     std::string models_dir() const;
     int ctx_size() const;
     bool auto_evict() const;

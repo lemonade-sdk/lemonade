@@ -158,6 +158,19 @@ int Router::count_servers_by_type(ModelType type) const {
     return count;
 }
 
+int Router::count_servers_by_device(int device_bitmask) const {
+    int count = 0;
+    for (const auto& server : loaded_servers_) {
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
+        if (server->is_backend_alive() && (server->get_device_type() & device_bitmask)) {
+            count++;
+        }
+    }
+    return count;
+}
+
 WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     WrappedServer* lru = nullptr;
 
@@ -169,6 +182,26 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type) {
+            if (server->is_pinned()) {
+                continue;
+            }
+            if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
+                lru = server.get();
+            }
+        }
+    }
+
+    return lru;
+}
+
+WrappedServer* Router::find_lru_server_by_device(int device_bitmask) const {
+    WrappedServer* lru = nullptr;
+
+    for (const auto& server : loaded_servers_) {
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
+        if (server->is_backend_alive() && (server->get_device_type() & device_bitmask)) {
             if (server->is_pinned()) {
                 continue;
             }
@@ -466,11 +499,37 @@ void Router::load_model(const std::string& model_name,
             }
         }
 
+        bool is_cloud_load = (model_info.recipe == "cloud");
+
+        // PER-DEVICE SLOT CHECK (only when max_loaded_models is an object)
+        // This enforces per-hardware caps (e.g. max 1 GPU model, max 1 NPU model)
+        // before the per-type LRU check, so users can express heterogeneous limits.
+        if (!is_cloud_load && config_->max_loaded_models_is_object()) {
+            int device_bitmask = static_cast<int>(model_info.device);
+            int device_limit = config_->max_loaded_models_for_device(device_bitmask);
+            if (device_limit != -1) {
+                int device_count = count_servers_by_device(device_bitmask);
+                if (device_count >= device_limit) {
+                    WrappedServer* lru_dev = find_lru_server_by_device(device_bitmask);
+                    if (lru_dev) {
+                        LOG(INFO, "Router") << "Device slot limit reached for "
+                                  << device_type_to_string(model_info.device)
+                                  << " (" << device_count << "/" << device_limit
+                                  << "), evicting LRU: " << lru_dev->get_model_name() << std::endl;
+                        evict_server(lru_dev);
+                    } else {
+                        is_loading_ = false;
+                        load_cv_.notify_all();
+                        throw SlotsPinnedException(model_type_to_string(model_type));
+                    }
+                }
+            }
+        }
+
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
         // Skip eviction if unlimited (-1). Cloud-recipe loads also skip the
         // check entirely: they consume no local resources, so they have no
         // business kicking a warm local model out of memory.
-        bool is_cloud_load = (model_info.recipe == "cloud");
         int current_count = count_servers_by_type(model_type);
         if (!is_cloud_load && max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
@@ -746,7 +805,7 @@ json Router::get_all_loaded_models() const {
 
 json Router::get_max_model_limits() const {
     int max = config_->max_loaded_models();
-    return {
+    json result = {
         {"llm", max},
         {"embedding", max},
         {"reranking", max},
@@ -754,6 +813,13 @@ json Router::get_max_model_limits() const {
         {"image", max},
         {"tts", max}
     };
+    if (config_->max_loaded_models_is_object()) {
+        result["cpu"] = config_->max_loaded_models_for_device(1);   // DEVICE_CPU
+        result["gpu"] = config_->max_loaded_models_for_device(2);   // DEVICE_GPU
+        result["npu"] = config_->max_loaded_models_for_device(4);   // DEVICE_NPU
+        result["total"] = config_->max_loaded_models_total();
+    }
+    return result;
 }
 
 bool Router::is_model_loaded() const {
