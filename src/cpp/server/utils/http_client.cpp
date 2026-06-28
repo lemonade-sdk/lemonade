@@ -494,7 +494,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT,
-                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+                     timeout_seconds > 0 ? timeout_seconds : 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
