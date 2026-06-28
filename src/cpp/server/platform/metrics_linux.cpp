@@ -10,10 +10,51 @@
 #include <sys/ioctl.h>
 #include <libdrm/drm.h>
 #include <lemon/amdxdna_accel.h>
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 
 namespace lemon {
+
+namespace {
+
+// Parse kernel version from /proc/version and compare against a minimum.
+// Returns true if the running kernel is >= min_major.min_minor.min_patch.
+// The amdxdna driver has known deadlock bugs (CVE-2026-23295, CVE-2026-43446)
+// that cause complete system freezes when NPU sensor IOCTLs race with suspend/
+// resume. These were fixed in 6.19.7+. On older kernels, skip NPU monitoring
+// to avoid triggering the deadlock.
+bool kernel_at_least(int min_major, int min_minor, int min_patch) {
+    std::ifstream proc_version("/proc/version");
+    if (!proc_version.is_open()) return false;
+
+    std::string line;
+    std::getline(proc_version, line);
+
+    const std::string tag = "version ";
+    size_t pos = line.find(tag);
+    if (pos == std::string::npos) return false;
+    pos += tag.size();
+    size_t end = line.find(' ', pos);
+    if (end == std::string::npos) end = line.size();
+    std::string kernel_str = line.substr(pos, end - pos);
+
+    int major = 0, minor = 0, patch = 0;
+    if (sscanf(kernel_str.c_str(), "%d.%d.%d", &major, &minor, &patch) < 2) return false;
+
+    if (major > min_major) return true;
+    if (major < min_major) return false;
+    if (minor > min_minor) return true;
+    if (minor < min_minor) return false;
+    return patch >= min_patch;
+}
+
+bool is_npu_kernel_safe() {
+    // The amdxdna deadlock fixes landed in 6.19.7
+    return kernel_at_least(6, 19, 7);
+}
+
+} // anonymous namespace
 
 class LinuxMetricsPlatform : public SystemMetricsPlatform {
 public:
@@ -190,6 +231,23 @@ public:
 
     double get_npu_utilization() override {
         try {
+            // The amdxdna driver has known deadlock bugs (CVE-2026-23295) on
+            // kernels < 6.19.7.  The sensor IOCTL below can race with PM runtime
+            // suspend and cause a complete system freeze.  Skip NPU monitoring
+            // entirely on unsafe kernels rather than risk triggering the deadlock.
+            if (!is_npu_kernel_safe()) {
+                static bool warned = false;
+                if (!warned) {
+                    warned = true;
+                    LOG(WARNING, "metrics") << "NPU utilization monitoring disabled: "
+                        << "running kernel is older than 6.19.7, which has known "
+                        << "amdxdna driver deadlocks that can freeze the system. "
+                        << "Upgrade to kernel 6.19.7+ or 7.0+ to enable NPU monitoring."
+                        << std::endl;
+                }
+                return -1.0;
+            }
+
             std::string accel_path = "/dev/accel/accel0";
             if (!fs::exists(accel_path)) {
                 return -1.0;

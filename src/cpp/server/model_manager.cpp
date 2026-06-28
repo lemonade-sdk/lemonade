@@ -3869,6 +3869,41 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         }
     }
 
+    // Check if this download could cause memory pressure.
+    // On UMA architectures (Strix Halo, etc.), download page-cache competes
+    // with NPU/GPU DMA buffers for the same system RAM pool.  Capping
+    // bandwidth when available memory is tight prevents page-cache floods
+    // from triggering OOM kills or system freezes.
+    size_t download_speed_limit = 0;
+    {
+        std::ifstream meminfo("/proc/meminfo");
+        if (meminfo.is_open()) {
+            std::string line;
+            long long mem_available_kb = 0;
+            while (std::getline(meminfo, line)) {
+                if (line.find("MemAvailable:") == 0) {
+                    sscanf(line.c_str(), "MemAvailable: %lld kB", &mem_available_kb);
+                    break;
+                }
+            }
+            if (mem_available_kb > 0 && total_download_size > 0) {
+                size_t mem_available_bytes = static_cast<size_t>(mem_available_kb) * 1024;
+                if (total_download_size > mem_available_bytes / 2) {
+                    // Cap download at ~50 MB/s to avoid saturating page cache
+                    download_speed_limit = 50 * 1024 * 1024;
+                    LOG(WARNING, "ModelManager")
+                        << "Download size (" << (total_download_size / (1024.0 * 1024.0 * 1024.0))
+                        << " GB) exceeds 50% of available memory ("
+                        << (mem_available_bytes / (1024.0 * 1024.0 * 1024.0))
+                        << " GB). Throttling download to ~50 MB/s to prevent "
+                        << "memory pressure. Consider pausing active NPU models "
+                        << "before downloading large models."
+                        << std::endl;
+                }
+            }
+        }
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
@@ -3937,6 +3972,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.low_speed_limit = 1000;
         download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
+        if (download_speed_limit > 0) {
+            download_opts.max_recv_speed_bytes = download_speed_limit;
+        }
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
             if (hash.contains("algorithm") && hash["algorithm"].is_string() &&
