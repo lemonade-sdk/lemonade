@@ -205,6 +205,19 @@ void VLLMServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
+    // On dual-GPU systems (AMD iGPU + NVIDIA dGPU), vLLM loads both the CUDA and
+    // ROCm platform plugins and crashes with:
+    //   "Only one platform plugin can be activated, but got: ['cuda', 'rocm']"
+    // Setting CUDA_VISIBLE_DEVICES="" hides NVIDIA GPUs so only the ROCm plugin loads.
+    {
+        const char* existing = std::getenv("CUDA_VISIBLE_DEVICES");
+        if (existing && existing[0] != '\0') {
+            LOG(INFO, "vLLM") << "Respecting existing CUDA_VISIBLE_DEVICES=" << existing << std::endl;
+        } else {
+            env_vars.push_back({"CUDA_VISIBLE_DEVICES", ""});
+        }
+    }
+
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
