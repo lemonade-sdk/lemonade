@@ -64,10 +64,12 @@
   line-height: 1.55;
 }
 
-/* One sentence per line. The break BETWEEN sentences is structural; breaks
-   WITHIN a sentence stay automatic, so the copy can change without re-tuning.
-   `text-wrap: balance` only matters once a sentence is long enough to wrap
-   (small screens), where it evens out that sentence's lines. */
+/* The promise is one sentence — a lead-in, a colon, then a triplet of benefits —
+   split into two blocks so the colon always ends a line (lead-in above, benefits
+   below) at every width. That single break is the structural one; wrapping WITHIN
+   each block stays automatic, so the copy can change without re-tuning.
+   `text-wrap: balance` only matters once a block is long enough to wrap (small
+   screens), where it evens out that block's lines. */
 .hp-persona-subtitle-line {
   display: block;
   text-wrap: balance;
