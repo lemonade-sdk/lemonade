@@ -51,6 +51,8 @@ Multi-Arch: foreign
 Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1
 Recommends: ffmpeg,
             libxrt-npu2,
+Conflicts: lemonade-server-minimal
+Replaces: lemonade-server-minimal
 Description: Local LLM serving with GPU and NPU acceleration server
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.
