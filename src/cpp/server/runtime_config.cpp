@@ -415,7 +415,6 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         } else if (ms.contains("args")) {
             result["moonshine_args"] = ms["args"];
         }
-    }
 
     if (config_.contains("lemon-mlx")) {
         const auto& mlx = config_["lemon-mlx"];

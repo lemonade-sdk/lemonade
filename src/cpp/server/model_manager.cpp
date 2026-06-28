@@ -2186,7 +2186,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                               << model_name << "'" << std::endl;
                     return;
                 }
-                populate_static_max_context_window(it->second);
+                populate_model_metadata(it->second);
                 LOG(INFO, "ModelManager") << "Updated '" << model_name
                           << "' downloaded=" << downloaded
                           << ", resolved_path=" << it->second.resolved_path() << std::endl;

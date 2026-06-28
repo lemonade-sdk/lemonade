@@ -287,7 +287,8 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
                                           const std::string& request_body,
                                           httplib::DataSink& sink,
                                           bool sse,
-                                          long timeout_seconds) {
+                                          long timeout_seconds,
+                                          TelemetryCallback telemetry_callback) {
     // lemon-mlx does not implement streaming for /v1/completions (only chat/completions).
     // completions_streaming is marked False in capabilities.py; this guard defends
     // against direct calls that bypass the router capability check.
@@ -300,9 +301,9 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
     try {
         json request = json::parse(request_body);
         std::string modified_body = prepare_request(request).dump();
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds, telemetry_callback);
     } catch (const json::exception&) {
-        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds);
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds, telemetry_callback);
     }
 }
 
