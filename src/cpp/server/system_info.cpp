@@ -3942,7 +3942,24 @@ static json s_cached_system_info;
 static bool s_hardware_computed = false;
 static bool s_recipes_computed = false;
 
+// True while THIS thread is inside build_recipes_info(). That computation can
+// call back into get_system_info_with_cache() on the same thread (e.g.
+// SystemInfo::get_rocm_arch() while resolving a backend's install params).
+// Because the outer call holds s_system_info_mutex, the nested call must not
+// try to re-lock it. thread_local (not a shared atomic) is deliberate: only the
+// recursing thread short-circuits — genuinely concurrent threads still block on
+// the mutex and receive fully-populated data, never a recipe-less snapshot.
+static thread_local bool s_building_recipes = false;
+
 json SystemInfoCache::get_system_info_with_cache() {
+    // Re-entrant call from within our own build_recipes_info(): hardware is
+    // already computed and cached, and we still hold the mutex from the outer
+    // frame, so return the hardware snapshot the nested caller needs instead of
+    // self-deadlocking on a re-lock.
+    if (s_building_recipes) {
+        return s_cached_system_info;
+    }
+
     std::lock_guard<std::mutex> lock(s_system_info_mutex);
 
     // Return fully cached result if both hardware and recipes are computed
@@ -3992,6 +4009,14 @@ json SystemInfoCache::get_system_info_with_cache() {
 
     // Compute recipes if not cached (or invalidated)
     if (!s_recipes_computed) {
+        // Mark this thread as building recipes so any re-entrant call (via
+        // get_rocm_arch() etc.) short-circuits instead of re-locking. The guard
+        // clears on every exit path, including exceptions.
+        struct RecipeBuildGuard {
+            ~RecipeBuildGuard() { s_building_recipes = false; }
+        } recipe_build_guard;
+        s_building_recipes = true;
+
         try {
             auto sys_info = create_system_info();
             json devices = s_cached_system_info.contains("devices")
