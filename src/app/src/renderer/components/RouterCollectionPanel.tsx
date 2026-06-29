@@ -363,7 +363,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                 <strong>NL Router</strong>
                 <span className="settings-description" style={{ display: 'block' }}>
                   A small LLM reads your prompt and picks the best candidate.
-                  Easy to set up; routing varies with model output.
                 </span>
               </span>
             </label>
@@ -374,7 +373,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <span>
                 <strong>Rules</strong>
                 <span className="settings-description" style={{ display: 'block' }}>
-                  Keyword, length, and classifier conditions. Consistent, predictable routing.
+                  Keyword, length, and classifier conditions.
                 </span>
               </span>
             </label>
@@ -388,7 +387,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <label className="form-label">
                 Router LLM *
                 <span className="settings-description" style={{ marginLeft: 6 }}>
-                  — small model that reads your prompt (not a routing candidate)
+                  — small model that reads your prompt
                 </span>
               </label>
               <select className="form-input form-select"
@@ -481,9 +480,9 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                             type: e.target.value as RouterClassifier['type'],
                             labels: [], defaultLabel: '', referencePhrases: [], prompt: undefined,
                           })}>
-                          <option value="classifier">classifier</option>
-                          <option value="semantic_similarity">semantic_similarity</option>
-                          <option value="llm">llm — LLM as classifier</option>
+                          <option value="classifier">Classifier</option>
+                          <option value="semantic_similarity">Semantic Similarity</option>
+                          <option value="llm">LLM</option>
                         </select>
                       </div>
 
@@ -503,9 +502,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                         <div className="router-classifier-field">
                           <label className="form-label" style={{ fontSize: '11px' }}>
                             Prompt *
-                            <span className="settings-description" style={{ marginLeft: 4 }}>
-                              (tell the LLM to reply with ONLY a label name)
-                            </span>
                           </label>
                           <textarea className="form-input" rows={4}
                             style={{ fontSize: '12px', resize: 'vertical', fontFamily: 'monospace' }}
@@ -631,7 +627,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                       <label className="form-label" style={{ fontSize: '11px' }}>
                         Outputs
                         <span className="settings-description" style={{ marginLeft: 4 }}>
-                          — optional JSON passed to the decision (e.g. {'{'}&#x22;verdict&#x22;:&#x22;warn&#x22;{'}'})
+                          — optional JSON passed to the decision
                         </span>
                       </label>
                       <input
@@ -651,9 +647,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                     <div className="router-rule-conditions-label">
                       <span className="form-label" style={{ fontSize: '11px' }}>
                         Conditions
-                        <span className="settings-description" style={{ marginLeft: 4 }}>
-                          — any one matching fires the rule
-                        </span>
                       </span>
                     </div>
 
@@ -714,7 +707,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                     <div className="router-rule-field">
                       <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>Keywords — all</span>
-                        <span className="settings-description" style={{ flex: 1 }}>(all must appear)</span>
                         <label className="router-not-toggle">
                           <input type="checkbox" checked={rule.matchKeywordsAllNot === true}
                             onChange={(e) => patchRule(rule.id, { matchKeywordsAllNot: e.target.checked || undefined })} />
@@ -733,7 +725,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                     <div className="router-rule-field">
                       <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>Regex</span>
-                        <span className="settings-description" style={{ flex: 1 }}>(ECMAScript)</span>
                         <label className="router-not-toggle">
                           <input type="checkbox" checked={rule.matchRegexNot === true}
                             onChange={(e) => patchRule(rule.id, { matchRegexNot: e.target.checked || undefined })} />
