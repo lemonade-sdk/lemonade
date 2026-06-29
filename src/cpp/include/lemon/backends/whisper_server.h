@@ -70,8 +70,13 @@ private:
                                       const json& params,
                                       bool translate);
 
+    // Convert any non-WAV audio to 16kHz mono WAV via ffmpeg
+    std::string convert_to_wav(const std::string& audio_data,
+                               const std::string& filename);
+
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
+    std::string ffmpeg_path_;         // Cached result of find_executable_in_path("ffmpeg")
 };
 
 } // namespace backends

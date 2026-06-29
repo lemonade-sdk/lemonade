@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -497,33 +498,32 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
         throw std::runtime_error("Could not open audio file: " + file_path);
     }
 
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string file_content = oss.str();
-    file.close();
+    std::string file_content(std::istreambuf_iterator<char>(file), {});
 
     LOG(DEBUG, "WhisperServer") << "Audio file size: " << file_content.size() << " bytes" << std::endl;
 
-    // Determine content type based on file extension
-    fs::path filepath(file_path);
-    std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";  // Default
+    // Convert non-WAV audio to 16kHz mono WAV before forwarding to whisper-server
+    std::string ext = fs::path(file_path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-    // Map common audio extensions to MIME types
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
+    std::string converted;
+    const std::string* final_data = &file_content;
+    std::string final_filename = fs::path(file_path).filename().string();
+
+    if (ext != ".wav") {
+        LOG(DEBUG, "WhisperServer") << "Non-WAV input (" << ext << "), converting via ffmpeg" << std::endl;
+        converted = convert_to_wav(file_content, final_filename);
+        final_data = &converted;
+        final_filename = fs::path(file_path).stem().string() + ".wav";
+    }
 
     std::vector<utils::MultipartField> fields;
 
     utils::MultipartField audio_file;
     audio_file.name = "file";
-    audio_file.data = file_content;
-    audio_file.filename = filepath.filename().string();
-    audio_file.content_type = content_type;
+    audio_file.data = *final_data;
+    audio_file.filename = final_filename;
+    audio_file.content_type = "audio/wav";
     fields.push_back(audio_file);
 
     // Add optional parameters as form fields
@@ -589,6 +589,49 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     }
 }
 
+std::string WhisperServer::convert_to_wav(const std::string& audio_data,
+                                           const std::string& filename) {
+    if (ffmpeg_path_.empty()) {
+        ffmpeg_path_ = find_executable_in_path("ffmpeg");
+        if (ffmpeg_path_.empty()) {
+            throw std::runtime_error(
+                "Audio format conversion requires ffmpeg. "
+                "Install ffmpeg and ensure it is on your PATH.");
+        }
+    }
+
+    std::string input_path = save_audio_to_temp(audio_data, filename);
+    std::string stem = fs::path(input_path).stem().string();
+    fs::path output_path = temp_dir_ / (stem + ".wav");
+
+    std::string ffmpeg_output;
+    int exit_code = utils::ProcessManager::run_process_with_output(
+        ffmpeg_path_,
+        {"-y", "-i", input_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", output_path.string()},
+        [&ffmpeg_output](const std::string& line) { ffmpeg_output += line + "\n"; return true; },
+        "", 30);
+
+    cleanup_temp_file(input_path);
+
+    if (exit_code != 0) {
+        cleanup_temp_file(output_path.string());
+        throw std::runtime_error("ffmpeg conversion failed: " + ffmpeg_output);
+    }
+
+    std::ifstream out_file(output_path, std::ios::binary);
+    if (!out_file) {
+        cleanup_temp_file(output_path.string());
+        throw std::runtime_error("Failed to read ffmpeg output: " + output_path.string());
+    }
+
+    std::string wav_data(std::istreambuf_iterator<char>(out_file), {});
+    cleanup_temp_file(output_path.string());
+
+    LOG(DEBUG, "WhisperServer") << "ffmpeg converted " << audio_data.size()
+                                << " bytes -> " << wav_data.size() << " bytes WAV" << std::endl;
+    return wav_data;
+}
+
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                                   const std::string& filename,
                                                   const json& params,
@@ -599,25 +642,28 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
 
     LOG(DEBUG, "WhisperServer") << "Audio data size: " << audio_data.size() << " bytes (no file I/O)" << std::endl;
 
-    // Determine content type based on filename extension
-    fs::path filepath(filename);
-    std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";  // Default
+    // Convert non-WAV audio to 16kHz mono WAV before forwarding to whisper-server
+    std::string ext = fs::path(filename).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
+    std::string converted;
+    const std::string* final_data = &audio_data;
+    std::string final_filename = filename;
+
+    if (ext != ".wav") {
+        LOG(DEBUG, "WhisperServer") << "Non-WAV input (" << ext << "), converting via ffmpeg" << std::endl;
+        converted = convert_to_wav(audio_data, filename);
+        final_data = &converted;
+        final_filename = fs::path(filename).stem().string() + ".wav";
+    }
 
     std::vector<utils::MultipartField> fields;
 
     utils::MultipartField audio_file;
     audio_file.name = "file";
-    audio_file.data = audio_data;
-    audio_file.filename = filepath.filename().string();
-    audio_file.content_type = content_type;
+    audio_file.data = *final_data;
+    audio_file.filename = final_filename;
+    audio_file.content_type = "audio/wav";
     fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
@@ -662,6 +708,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     auto res = utils::HttpClient::post_multipart(url, fields, 0);
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
+    LOG(DEBUG, "WhisperServer") << "Response body: " << res.body << std::endl;
 
     if (res.status_code != 200) {
         throw std::runtime_error("whisper-server returned status " +
