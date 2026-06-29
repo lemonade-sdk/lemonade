@@ -11,7 +11,7 @@ Build-Depends:
  jq,
  libdrm-dev,
  libcli11-dev,
- libcpp-httplib-dev,
+ libcpp-httplib-dev (>> 0.26),
  libcurl4-openssl-dev,
  libmbedtls-dev,
  libssl-dev,
