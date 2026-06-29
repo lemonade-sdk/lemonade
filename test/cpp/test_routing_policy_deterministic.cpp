@@ -185,6 +185,13 @@ void test_metadata_exists() {
     empty.metadata["consent"] = "";  // empty value counts as absent
     check("metadata empty value => exists:false matches",
           eval_leaf("metadata", json{{"key", "consent"}, {"exists", false}}, empty));
+
+    RouteContext blank = make_request("x");
+    blank.metadata["consent"] = "   \t";  // whitespace-only counts as absent
+    check("metadata whitespace-only value => exists:false matches",
+          eval_leaf("metadata", json{{"key", "consent"}, {"exists", false}}, blank));
+    check("metadata whitespace-only value => exists:true no match",
+          !eval_leaf("metadata", json{{"key", "consent"}, {"exists", true}}, blank));
 }
 
 void test_rejections() {

@@ -290,6 +290,17 @@ bool is_ascii_ws(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+// Frozen v1: a metadata value is "present" only if it carries at least one
+// non-whitespace character. A missing, empty, or whitespace-only value is
+// treated as absent (matches only exists:false), keeping exists consistent with
+// the comma-split token model used by equals/any.
+bool is_blank(const std::string& s) {
+    for (char c : s) {
+        if (!is_ascii_ws(c)) return false;
+    }
+    return true;
+}
+
 // Frozen v1 metadata decode: split on comma, trim ASCII whitespace from each
 // token, drop empties. Scalar and comma-encoded list values decode uniformly.
 std::set<std::string> decode_metadata_tokens(const std::string& value) {
@@ -423,7 +434,7 @@ public:
 
     bool evaluate(EvalContext& ctx) const override {
         auto it = ctx.request.metadata.find(key_);
-        const bool present = it != ctx.request.metadata.end() && !it->second.empty();
+        const bool present = it != ctx.request.metadata.end() && !is_blank(it->second);
         bool result = false;
         switch (cmp_) {
             case Comparator::Exists:
