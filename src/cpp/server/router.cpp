@@ -9,6 +9,7 @@
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
+#include "lemon/backends/mlx_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
@@ -345,6 +346,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "vllm") {
         LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
         new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "mlx") {
+        LOG(DEBUG, "Router") << "Creating MLX backend" << std::endl;
+        new_server = std::make_unique<backends::MLXServer>(log_level, model_manager_, backend_manager_);
     } else {
         LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
         new_server = std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
