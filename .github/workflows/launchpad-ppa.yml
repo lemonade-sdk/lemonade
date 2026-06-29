@@ -165,7 +165,6 @@ jobs:
             python3-pip \
             python3-venv \
             unzip
-          apt-get build-dep . -y
 
       - name: Prepare Debian build
         id: get_version
@@ -173,6 +172,9 @@ jobs:
         with:
           release: ${{ matrix.release }}
           codename: ${{ matrix.codename }}
+
+      - name: Catch missing build-deps
+        run: apt-get build-dep . -y
 
       - name: Build binary package
         id: build_binary
