@@ -174,7 +174,8 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
-        std::string target_arch = SystemInfo::get_rocm_arch();
+        std::string target_arch =
+            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly")
