@@ -77,8 +77,8 @@ struct RouteContext {
 // and `semantic_similarity` return label -> score in [0,1]: a `classifier` uses
 // the model's labels (HF text-classification convention), while
 // `semantic_similarity` reports the max cosine per concept under that concept's
-// label. A label-less classifier may instead report a single score under the
-// empty-string key (read via primary()).
+// label. A label-less classifier may instead report a single score under an
+// arbitrary key (read via primary()).
 //
 // Scores are engine-opaque: a condition applies a min_score/max_score band to
 // the score of a chosen label to produce a bool.
@@ -188,9 +188,9 @@ public:
     // declaration, so the registry resolves condition `label` refs against
     // labels() and falls back to default_label() when a condition omits `label`
     // — no sidecar metadata table. For `classifier` these are the model's
-    // labels; for `semantic_similarity` they are the concept names (the
-    // reference_phrases keys). A label-less classifier leaves labels() empty and
-    // is read via Score::primary().
+    // labels; for `semantic_similarity` they are the concept names (the keys of
+    // reference_phrases map).
+    // A label-less classifier leaves labels() empty and is read via Score::primary().
     const std::vector<std::string>& labels() const { return labels_; }
     const std::optional<std::string>& default_label() const { return default_label_; }
 
