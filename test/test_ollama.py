@@ -11,6 +11,7 @@ Usage:
 
 import base64
 import json
+import os
 import platform
 import sys
 import uuid
@@ -70,6 +71,24 @@ class OllamaTests(ServerTestBase):
                 )
             except requests.RequestException as exc:
                 print(f"[DIAG] GET {url} failed: {exc}")
+
+    def _skip_slow_hosted_ci_tool_calling(self):
+        """Skip the heaviest native tool-calling path on slow hosted OSes.
+
+        The full native tool-calling model is still covered on Linux CI. On
+        hosted Windows/macOS runners this 4B model can leave the server busy
+        until the HTTP timeout, which then cascades into later suites.
+        """
+        if os.environ.get("LEMONADE_RUN_HEAVY_OLLAMA_TOOL_TESTS") == "1":
+            return
+        if os.environ.get("GITHUB_ACTIONS") == "true" and sys.platform in (
+            "darwin",
+            "win32",
+        ):
+            self.skipTest(
+                "Skipping heavy native Anthropic tool-calling test on hosted "
+                f"{platform.system()} CI; Linux CI keeps this coverage."
+            )
 
     def get_ollama_client(self):
         """Get an Ollama client pointed at the test server."""
@@ -756,6 +775,8 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
+        self._skip_slow_hosted_ci_tool_calling()
+
         # This is the heaviest Ollama compatibility test in the suite. Start it
         # from an empty loaded-model state so previous endpoint/CLI tests cannot
         # leave another backend resident and turn the final inference into a CI
@@ -795,7 +816,10 @@ class OllamaTests(ServerTestBase):
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Run the calculator_calculate tool with expression set to 1+1",
+                                "text": (
+                                    "Run the calculator_calculate tool with "
+                                    "expression set to 1+1"
+                                ),
                             }
                         ],
                     }
