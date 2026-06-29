@@ -13,14 +13,17 @@ import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import { downloadTracker } from './utils/downloadTracker';
 import CustomCollectionPanel from './components/CustomCollectionPanel';
+import RouterCollectionPanel from './components/RouterCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
 import { pullModel, type ModelRegistrationData } from './utils/backendInstaller';
 import {
   CustomCollectionDraft,
+  RouterCollectionDraft,
   buildCustomCollectionPullRequest,
+  buildRouterCollectionPullRequest,
   getCollectionDisplayName,
 } from './utils/customCollections';
-import { isCollectionRecipe } from './utils/recipeNames';
+import { isCollectionRecipe, COLLECTION_ROUTER_MODEL_RECIPE } from './utils/recipeNames';
 import { downloadModelExportFile } from './utils/modelData';
 import { isModelEffectivelyDownloaded } from './utils/collectionModels';
 import '../../styles/index.css';
@@ -65,6 +68,8 @@ const AppContent: React.FC = () => {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [customCollectionModal, setCustomCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
   const importCollectionFileRef = useRef<HTMLInputElement>(null);
+  const [routerCollectionModal, setRouterCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
+  const importRouterFileRef = useRef<HTMLInputElement>(null);
   const { modelsData, selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
   const { toasts, removeToast, showError, showSuccess } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
@@ -364,6 +369,31 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleOpenRouterCollection = () => setRouterCollectionModal({ mode: 'create' });
+    const handleImportRouterCollection = () => importRouterFileRef.current?.click();
+    const handleEditRouterCollection = (event: Event) => {
+      const collectionId = (event as CustomEvent<{ collectionId?: string }>).detail?.collectionId;
+      if (collectionId) setRouterCollectionModal({ mode: 'edit', collectionId });
+    };
+
+    window.addEventListener('openRouterCollection', handleOpenRouterCollection);
+    window.addEventListener('openRouterCollectionFromJSON', handleImportRouterCollection);
+    window.addEventListener('editRouterCollection', handleEditRouterCollection);
+    document.addEventListener('openRouterCollection', handleOpenRouterCollection);
+    document.addEventListener('openRouterCollectionFromJSON', handleImportRouterCollection);
+    document.addEventListener('editRouterCollection', handleEditRouterCollection);
+
+    return () => {
+      window.removeEventListener('openRouterCollection', handleOpenRouterCollection);
+      window.removeEventListener('openRouterCollectionFromJSON', handleImportRouterCollection);
+      window.removeEventListener('editRouterCollection', handleEditRouterCollection);
+      document.removeEventListener('openRouterCollection', handleOpenRouterCollection);
+      document.removeEventListener('openRouterCollectionFromJSON', handleImportRouterCollection);
+      document.removeEventListener('editRouterCollection', handleEditRouterCollection);
+    };
+  }, []);
+
   const pullRegistration = async (requestBody: PullRegistrationPayload) => {
     const collectionComponents = Array.isArray(requestBody.components)
       ? requestBody.components
@@ -373,7 +403,7 @@ const AppContent: React.FC = () => {
     // Manager/progress flow for that case. Require at least one component:
     // every() is vacuously true for an empty array, which would otherwise let a
     // malformed collection (missing/empty components) take the no-download path.
-    const collectionFullyDownloaded = requestBody.recipe === 'collection.omni' &&
+    const collectionFullyDownloaded = (requestBody.recipe === 'collection.omni' || requestBody.recipe === COLLECTION_ROUTER_MODEL_RECIPE) &&
       collectionComponents !== undefined &&
       collectionComponents.length > 0 &&
       collectionComponents.every((component) =>
@@ -388,19 +418,16 @@ const AppContent: React.FC = () => {
     });
   };
 
-  const registerCustomCollection = async (collection: CustomCollectionDraft) => {
-    const requestBody = buildCustomCollectionPullRequest(collection);
-    await pullRegistration(requestBody);
-    window.dispatchEvent(new CustomEvent('modelsUpdated'));
-    return requestBody.model_name;
-  };
+  // ── Omni collection handlers ────────────────────────────────────────────
 
   const handleSaveCustomCollection = async (collection: CustomCollectionDraft) => {
     setCustomCollectionModal(null);
     try {
-      const modelName = await registerCustomCollection(collection);
+      const requestBody = buildCustomCollectionPullRequest(collection);
+      await pullRegistration(requestBody);
+      window.dispatchEvent(new CustomEvent('modelsUpdated'));
       await refreshModels();
-      setSelectedModel(modelName);
+      setSelectedModel(requestBody.model_name);
       setUserHasSelectedModel(true);
     } catch (error) {
       showError('Failed to save Omni Model: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -409,14 +436,66 @@ const AppContent: React.FC = () => {
 
   const handleExportCustomCollection = async (collection: CustomCollectionDraft) => {
     try {
-      // Collections export exactly like regular models: fetch the live
-      // /models/{id} object and save the normalized, import-ready file.
-      // The collection must be saved (registered) so the server knows it.
       const request = buildCustomCollectionPullRequest(collection);
       await downloadModelExportFile(request.model_name);
     } catch (exportError) {
       showError(exportError instanceof Error ? exportError.message : 'Failed to export Omni Model.');
     }
+  };
+
+  // ── Router collection handlers ───────────────────────────────────────────
+
+  const handleSaveRouterCollection = async (collection: RouterCollectionDraft) => {
+    setRouterCollectionModal(null);
+    try {
+      const requestBody = buildRouterCollectionPullRequest(collection);
+      await pullRegistration(requestBody);
+      window.dispatchEvent(new CustomEvent('modelsUpdated'));
+      await refreshModels();
+      setSelectedModel(requestBody.model_name);
+      setUserHasSelectedModel(true);
+    } catch (error) {
+      showError('Failed to save Hybrid Router: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const handleExportRouterCollection = async (collection: RouterCollectionDraft) => {
+    try {
+      const request = buildRouterCollectionPullRequest(collection);
+      await downloadModelExportFile(request.model_name);
+    } catch (exportError) {
+      showError(exportError instanceof Error ? exportError.message : 'Failed to export Hybrid Router.');
+    }
+  };
+
+  const handleImportRouterCollectionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      try {
+        const parsed: unknown = JSON.parse(String(loadEvent.target?.result ?? ''));
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('The selected file is not a valid Router JSON.');
+        }
+        const record = parsed as PullRegistrationPayload;
+        if (typeof record.model_name !== 'string' || record.model_name.length === 0) {
+          throw new Error("The selected file is missing a 'model_name' field.");
+        }
+        if (record.recipe !== COLLECTION_ROUTER_MODEL_RECIPE) {
+          throw new Error(`Expected recipe 'collection.router', got '${record.recipe}'.`);
+        }
+        await pullRegistration(record);
+        await refreshModels();
+        showSuccess(`Imported Hybrid Router ${getCollectionDisplayName(record.model_name)}.`);
+      } catch (importError) {
+        showError(importError instanceof Error ? importError.message : 'Failed to import Hybrid Router.');
+      }
+    };
+    reader.onerror = () => showError('Failed to read the selected file.');
+    reader.readAsText(file);
   };
 
   const handleImportCustomCollectionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -446,7 +525,7 @@ const AppContent: React.FC = () => {
         const kind = isCollectionRecipe(record.recipe) ? 'Omni Model' : 'model';
         showSuccess(`Imported ${kind} ${getCollectionDisplayName(record.model_name)}.`);
       } catch (importError) {
-        showError(importError instanceof Error ? importError.message : 'Failed to import Omni Models.');
+        showError(importError instanceof Error ? importError.message : 'Failed to import model.');
       }
     };
     reader.onerror = () => showError('Failed to read the selected file.');
@@ -563,6 +642,13 @@ const AppContent: React.FC = () => {
         className="collection-import-input"
         onChange={handleImportCustomCollectionFile}
       />
+      <input
+        ref={importRouterFileRef}
+        type="file"
+        accept=".json,application/json"
+        className="collection-import-input"
+        onChange={handleImportRouterCollectionFile}
+      />
       {customCollectionModal && createPortal(
         <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setCustomCollectionModal(null); } }}>
           <div className="settings-modal custom-collection-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
@@ -572,6 +658,20 @@ const AppContent: React.FC = () => {
               onClose={() => setCustomCollectionModal(null)}
               onSave={handleSaveCustomCollection}
               onExport={handleExportCustomCollection}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+      {routerCollectionModal && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setRouterCollectionModal(null); } }}>
+          <div className="settings-modal router-collection-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <RouterCollectionPanel
+              mode={routerCollectionModal.mode}
+              collectionId={routerCollectionModal.collectionId}
+              onClose={() => setRouterCollectionModal(null)}
+              onSave={handleSaveRouterCollection}
+              onExport={handleExportRouterCollection}
             />
           </div>
         </div>,

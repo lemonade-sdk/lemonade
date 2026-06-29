@@ -111,3 +111,302 @@
 .collection-auto-provided-option {
     color: var(--text-tertiary);
 }
+
+/* -------------------------------------------------------------------------
+   Hybrid Router panel — modal + shared candidate/rule/classifier styles
+   ---------------------------------------------------------------------- */
+
+.router-collection-modal {
+    width: min(760px, calc(100vw - 40px));
+    max-width: 760px;
+    height: calc(100vh - 64px);
+    max-height: 820px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.router-collection-modal .settings-header {
+    flex-shrink: 0;
+}
+
+.router-collection-modal .settings-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.router-collection-modal .settings-footer {
+    flex-shrink: 0;
+}
+
+.router-collection-modal .settings-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.router-candidate-list {
+    display: grid;
+    gap: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+}
+
+.router-candidate-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 2px 0;
+}
+
+.router-candidate-row input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+.router-candidate-name {
+    flex: 1;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.router-candidate-badge {
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
+.router-candidate-badge.downloaded {
+    border-color: #ffb74d;
+    color: #ffb74d;
+}
+
+.router-mode-options {
+    display: grid;
+    gap: 8px;
+}
+
+.router-mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+}
+
+.router-mode-option input[type="radio"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.router-rule-card {
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+    background: var(--bg-secondary);
+}
+
+.router-rule-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.router-rule-id {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    font-family: monospace;
+}
+
+.router-rule-field {
+    display: grid;
+    gap: 4px;
+}
+
+.router-rule-id-input {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    padding: 2px 6px;
+    height: 22px;
+    width: 120px;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.router-rule-conditions-label {
+    padding-top: 4px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.router-rule-operator {
+    display: flex;
+    gap: 16px;
+}
+
+/* ── Classifier editor ───────────────────────────────────────────────────── */
+
+.router-classifier-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.router-classifier-list {
+    display: grid;
+    gap: 8px;
+}
+
+/* Scrollable inner containers for classifiers and rules */
+.router-section-scroll {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scrollbar-width: thin;
+}
+
+.router-section-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.router-section-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.router-section-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-5);
+    border-radius: 3px;
+}
+
+.router-classifier-card {
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+    background: var(--bg-secondary);
+}
+
+.router-classifier-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.router-classifier-id {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    font-family: monospace;
+}
+
+.router-classifier-field {
+    display: grid;
+    gap: 4px;
+}
+
+.router-not-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.router-not-toggle:has(input:checked) {
+    color: var(--text-secondary);
+}
+
+.router-panel-error {
+    padding: 6px 24px;
+    font-size: 0.72rem;
+    color: #e57373;
+    flex-shrink: 0;
+}
+
+/* ── JSON preview block ───────────────────────────────────────────────────── */
+
+.router-json-preview {
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    /* Height is bounded by the outer scrollable settings-content */
+    max-height: 320px;
+}
+
+.router-json-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.router-json-preview-title {
+    flex: 1;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
+.router-json-preview-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.router-json-preview-btn:hover {
+    background: var(--bg-alpha-1);
+    color: var(--text-primary);
+}
+
+.router-json-preview-body {
+    margin: 0;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    overflow-x: auto;
+    overflow-y: auto;
+    white-space: pre;
+    flex: 1;
+    min-height: 0;
+}
