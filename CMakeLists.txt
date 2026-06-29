@@ -595,6 +595,7 @@ set(SOURCES_CORE
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_policy.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
@@ -1815,6 +1816,47 @@ if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
+endif()
+
+# Routing match evaluator (issue #2378): composite Condition nodes,
+# classifier-band leaf evaluation, MatchExpr compilation, trace and memoization.
+set(_ROUTING_EVALUATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_evaluator.cpp"
+)
+if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
+    add_executable(test_routing_policy_evaluator
+        test/cpp/test_routing_policy_evaluator.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_evaluator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_evaluator PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEvaluatorTest COMMAND test_routing_policy_evaluator)
+endif()
+
+# Routing classifier/condition registry (issue #2379): classifier JSON
+# instantiation, classifier leaf resolution, deterministic leaf dispatch seams.
+set(_ROUTING_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_registry.cpp"
+)
+if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
+    add_executable(test_routing_policy_registry
+        test/cpp/test_routing_policy_registry.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_registry PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_registry PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
