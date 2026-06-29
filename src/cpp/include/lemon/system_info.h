@@ -120,6 +120,14 @@ public:
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
 
+    // True if (recipe, backend) is published for the given ROCm family/ISA, per
+    // the backend support matrix. Lets callers tell "this arch should have an
+    // asset" from "this arch is intentionally not built" without duplicating the
+    // matrix.
+    static bool backend_supports_arch(const std::string& recipe,
+                                      const std::string& backend,
+                                      const std::string& arch);
+
     // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).
     // Return the physical CUDA device indices whose compute capability matches
     // the selected release architecture, so callers can hide incompatible GPUs

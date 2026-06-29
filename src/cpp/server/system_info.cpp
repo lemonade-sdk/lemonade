@@ -574,6 +574,31 @@ static bool device_matches_constraint(const std::string& device_family,
     return false;
 }
 
+// True if (recipe, backend) is published for the given ROCm family/ISA, per the
+// support matrix assembled from backend descriptors. The matrix keys ROCm rows
+// under "rocm", so a channel-qualified backend (rocm-stable/rocm-nightly) is
+// normalized before lookup. `arch` may be a concrete ISA or a family token; the
+// trailing-X wildcard in the matrix handles ISA-to-family matching.
+bool SystemInfo::backend_supports_arch(const std::string& recipe,
+                                       const std::string& backend,
+                                       const std::string& arch) {
+    std::string matrix_backend = backend;
+    if (matrix_backend.rfind("rocm-", 0) == 0) {
+        matrix_backend = "rocm";
+    }
+    for (const auto& def : recipe_defs()) {
+        if (def.recipe != recipe || def.backend != matrix_backend) {
+            continue;
+        }
+        auto it = def.devices.find("amd_gpu");
+        if (it == def.devices.end()) {
+            return false;
+        }
+        return device_matches_constraint(arch, it->second);
+    }
+    return false;
+}
+
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel

@@ -732,6 +732,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_install(req, res);
     });
 
+    register_post("install/dry-run", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_install_dry_run(req, res);
+    });
+
     register_post("uninstall", [this](const httplib::Request& req, httplib::Response& res) {
         handle_uninstall(req, res);
     });
@@ -5548,6 +5552,72 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_install_dry_run(const httplib::Request& req, httplib::Response& res) {
+    // Resolve the backend asset URL that install_backend() would download for a
+    // given recipe/backend, optionally for a mocked GPU arch, without fetching
+    // any bytes — so a 404 from a stale target-name or version pin can be caught
+    // for any arch without that GPU present.
+    std::string requested_arch;
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        const std::string recipe = request_json.value("recipe", "");
+        const std::string backend = request_json.value("backend", "");
+        requested_arch = request_json.value("arch", "");
+
+        if (recipe.empty() || backend.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Both 'recipe' and 'backend' are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!requested_arch.empty()) {
+            SystemInfo::set_rocm_arch_override(requested_arch);
+        }
+
+        auto params = backend_manager_->get_install_params(recipe, backend);
+
+        // Clear the override as soon as resolution is done so it cannot leak to
+        // any later work on this thread.
+        SystemInfo::set_rocm_arch_override("");
+
+        const std::string url = "https://github.com/" + params.repo +
+                                "/releases/download/" + params.version + "/" +
+                                params.filename;
+
+        bool supports_split_archive = false;
+        if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {
+            supports_split_archive = spec->supports_split_archive;
+        }
+
+        bool supported = requested_arch.empty()
+            ? true
+            : SystemInfo::backend_supports_arch(recipe, backend, requested_arch);
+
+        nlohmann::json response = {
+            {"recipe", recipe},
+            {"backend", backend},
+            {"arch", requested_arch},
+            {"repo", params.repo},
+            {"version", params.version},
+            {"filename", params.filename},
+            {"url", url},
+            {"supports_split_archive", supports_split_archive},
+            {"supported", supported}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        SystemInfo::set_rocm_arch_override("");
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        if (!requested_arch.empty()) {
+            error["arch"] = requested_arch;
+        }
         res.set_content(error.dump(), "application/json");
     }
 }
