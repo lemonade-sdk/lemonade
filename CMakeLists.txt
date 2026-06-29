@@ -1859,6 +1859,27 @@ if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
     add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
 endif()
 
+# Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
+# max_chars/has_*/metadata conditions and their leaf-factory map.
+set(_ROUTING_DETERMINISTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_deterministic.cpp"
+)
+if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
+    add_executable(test_routing_policy_deterministic
+        test/cpp/test_routing_policy_deterministic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_deterministic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_deterministic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyDeterministicTest COMMAND test_routing_policy_deterministic)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.

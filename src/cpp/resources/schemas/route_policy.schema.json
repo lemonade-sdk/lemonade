@@ -156,14 +156,16 @@
           "maximum": 1
         },
         "keywords_any": {
-          "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",
+          "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring (ASCII case fold) over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "keywords_all": {
-          "description": "True if ALL keywords are present. Frozen v1 match: case-insensitive substring over the input text.",
+          "description": "True if ALL keywords are present. Frozen v1 match: case-insensitive substring (ASCII case fold) over the input text.",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "regex": {
           "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex). A different regex engine ships as a separately named op, never a redefinition of this one.",

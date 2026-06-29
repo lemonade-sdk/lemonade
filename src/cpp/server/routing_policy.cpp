@@ -1,6 +1,9 @@
 #include "lemon/routing_policy.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <regex>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <lemon/utils/aixlog.hpp>
@@ -257,6 +260,289 @@ std::vector<ConditionPtr> compile_children(const std::vector<MatchExpr>& childre
     return compiled;
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic leaf conditions (#2380)
+//
+// Pure CPU, no model, no tokenizer. Each implements one frozen v1 op exactly as
+// pinned in route_policy.schema.json. Config is validated when the condition is
+// built (the factory throws std::invalid_argument on malformed leaves); evaluate()
+// never throws, so the engine's fail-open contract holds.
+// ---------------------------------------------------------------------------
+
+void trace_leaf(EvalContext& ctx, const char* name, bool result) {
+    if (ctx.want_trace) {
+        ctx.trace.push_back(TraceEntry{name, std::nullopt, result});
+    }
+}
+
+// Frozen v1: case-insensitivity is an ASCII-only fold (locale-independent, no
+// Unicode/ICU dependency). Bytes outside A-Z are left untouched.
+std::string ascii_lower(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    return s;
+}
+
+bool is_ascii_ws(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+// Frozen v1 metadata decode: split on comma, trim ASCII whitespace from each
+// token, drop empties. Scalar and comma-encoded list values decode uniformly.
+std::set<std::string> decode_metadata_tokens(const std::string& value) {
+    std::set<std::string> tokens;
+    std::size_t start = 0;
+    while (true) {
+        std::size_t comma = value.find(',', start);
+        std::size_t end = (comma == std::string::npos) ? value.size() : comma;
+        std::size_t a = start;
+        std::size_t b = end;
+        while (a < b && is_ascii_ws(value[a])) ++a;
+        while (b > a && is_ascii_ws(value[b - 1])) --b;
+        if (b > a) {
+            tokens.insert(value.substr(a, b - a));
+        }
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return tokens;
+}
+
+// keywords_any / keywords_all — case-insensitive substring over the input text.
+class KeywordsCondition final : public Condition {
+public:
+    KeywordsCondition(std::vector<std::string> keywords, bool require_all)
+        : require_all_(require_all) {
+        keywords_lower_.reserve(keywords.size());
+        for (auto& k : keywords) {
+            keywords_lower_.push_back(ascii_lower(std::move(k)));
+        }
+    }
+
+    bool evaluate(EvalContext& ctx) const override {
+        const std::string haystack = ascii_lower(ctx.request.input);
+        bool result = require_all_;
+        for (const auto& needle : keywords_lower_) {
+            const bool present = haystack.find(needle) != std::string::npos;
+            if (require_all_ && !present) {
+                result = false;
+                break;
+            }
+            if (!require_all_ && present) {
+                result = true;
+                break;
+            }
+        }
+        trace_leaf(ctx, require_all_ ? "keywords_all" : "keywords_any", result);
+        return result;
+    }
+
+private:
+    std::vector<std::string> keywords_lower_;
+    bool require_all_;
+};
+
+// regex — ECMAScript dialect (std::regex), matched against the input text.
+class RegexCondition final : public Condition {
+public:
+    explicit RegexCondition(const std::string& pattern)
+        : regex_(pattern, std::regex::ECMAScript) {}
+
+    bool evaluate(EvalContext& ctx) const override {
+        bool result = false;
+        try {
+            result = std::regex_search(ctx.request.input, regex_);
+        } catch (const std::regex_error&) {
+            // Catastrophic backtracking / stack overflow: fail the leaf rather
+            // than let an exception escape evaluate().
+            result = false;
+        }
+        trace_leaf(ctx, "regex", result);
+        return result;
+    }
+
+private:
+    std::regex regex_;
+};
+
+// min_chars / max_chars — inclusive bound on input length in UTF-8 bytes.
+class CharsCondition final : public Condition {
+public:
+    enum class Bound { Min, Max };
+
+    CharsCondition(std::size_t threshold, Bound bound)
+        : threshold_(threshold), bound_(bound) {}
+
+    bool evaluate(EvalContext& ctx) const override {
+        const std::size_t n = ctx.request.params.chars;
+        const bool result =
+            bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
+        trace_leaf(ctx, bound_ == Bound::Min ? "min_chars" : "max_chars", result);
+        return result;
+    }
+
+private:
+    std::size_t threshold_;
+    Bound bound_;
+};
+
+// has_tools / has_images — boolean request feature equals the authored value.
+class BoolFeatureCondition final : public Condition {
+public:
+    enum class Feature { Tools, Images };
+
+    BoolFeatureCondition(Feature feature, bool expected)
+        : feature_(feature), expected_(expected) {}
+
+    bool evaluate(EvalContext& ctx) const override {
+        const bool actual = feature_ == Feature::Tools ? ctx.request.params.has_tools
+                                                       : ctx.request.params.has_images;
+        const bool result = actual == expected_;
+        trace_leaf(ctx, feature_ == Feature::Tools ? "has_tools" : "has_images", result);
+        return result;
+    }
+
+private:
+    Feature feature_;
+    bool expected_;
+};
+
+// metadata — match a caller-supplied metadata key via exactly one comparator.
+// Frozen v1: case-sensitive; a missing/empty value matches only exists:false.
+class MetadataCondition final : public Condition {
+public:
+    enum class Comparator { Equals, Any, Exists };
+
+    MetadataCondition(std::string key, Comparator cmp, std::string equals_value,
+                      std::set<std::string> any_tokens, bool exists_expected)
+        : key_(std::move(key)), cmp_(cmp), equals_value_(std::move(equals_value)),
+          any_tokens_(std::move(any_tokens)), exists_expected_(exists_expected) {}
+
+    bool evaluate(EvalContext& ctx) const override {
+        auto it = ctx.request.metadata.find(key_);
+        const bool present = it != ctx.request.metadata.end() && !it->second.empty();
+        bool result = false;
+        switch (cmp_) {
+            case Comparator::Exists:
+                result = (present == exists_expected_);
+                break;
+            case Comparator::Equals:
+                result = present && it->second == equals_value_;
+                break;
+            case Comparator::Any:
+                if (present) {
+                    for (const auto& token : decode_metadata_tokens(it->second)) {
+                        if (any_tokens_.count(token) != 0) {
+                            result = true;
+                            break;
+                        }
+                    }
+                }
+                break;
+        }
+        trace_leaf(ctx, "metadata", result);
+        return result;
+    }
+
+private:
+    std::string key_;
+    Comparator cmp_;
+    std::string equals_value_;
+    std::set<std::string> any_tokens_;
+    bool exists_expected_;
+};
+
+// -- factory-side validation helpers ----------------------------------------
+
+ConditionPtr build_keywords(const json& arr, bool require_all, const char* op) {
+    if (!arr.is_array() || arr.empty()) {
+        throw std::invalid_argument(std::string(op) +
+                                    " requires a non-empty array of strings");
+    }
+    std::vector<std::string> keywords;
+    keywords.reserve(arr.size());
+    for (const auto& item : arr) {
+        if (!item.is_string() || item.get<std::string>().empty()) {
+            throw std::invalid_argument(std::string(op) +
+                                        " items must be non-empty strings");
+        }
+        keywords.push_back(item.get<std::string>());
+    }
+    return std::make_shared<KeywordsCondition>(std::move(keywords), require_all);
+}
+
+ConditionPtr build_chars(const json& value, CharsCondition::Bound bound, const char* op) {
+    if (!value.is_number_integer() || value.get<long long>() < 0) {
+        throw std::invalid_argument(std::string(op) +
+                                    " requires a non-negative integer");
+    }
+    return std::make_shared<CharsCondition>(
+        static_cast<std::size_t>(value.get<long long>()), bound);
+}
+
+ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,
+                                const char* op) {
+    if (!value.is_boolean()) {
+        throw std::invalid_argument(std::string(op) + " requires a boolean");
+    }
+    return std::make_shared<BoolFeatureCondition>(feature, value.get<bool>());
+}
+
+ConditionPtr build_metadata(const json& spec) {
+    if (!spec.is_object()) {
+        throw std::invalid_argument("metadata requires an object");
+    }
+    if (!spec.contains("key") || !spec["key"].is_string() ||
+        spec["key"].get<std::string>().empty()) {
+        throw std::invalid_argument("metadata requires a non-empty string 'key'");
+    }
+    const std::string key = spec["key"].get<std::string>();
+
+    const int comparators = static_cast<int>(spec.contains("equals")) +
+                            static_cast<int>(spec.contains("any")) +
+                            static_cast<int>(spec.contains("exists"));
+    if (comparators != 1) {
+        throw std::invalid_argument(
+            "metadata requires exactly one comparator (equals/any/exists)");
+    }
+
+    if (spec.contains("equals")) {
+        if (!spec["equals"].is_string()) {
+            throw std::invalid_argument("metadata 'equals' must be a string");
+        }
+        return std::make_shared<MetadataCondition>(
+            key, MetadataCondition::Comparator::Equals, spec["equals"].get<std::string>(),
+            std::set<std::string>{}, false);
+    }
+    if (spec.contains("any")) {
+        const json& arr = spec["any"];
+        if (!arr.is_array() || arr.empty()) {
+            throw std::invalid_argument(
+                "metadata 'any' must be a non-empty array of strings");
+        }
+        std::set<std::string> tokens;
+        for (const auto& item : arr) {
+            if (!item.is_string() || item.get<std::string>().empty()) {
+                throw std::invalid_argument(
+                    "metadata 'any' items must be non-empty strings");
+            }
+            tokens.insert(item.get<std::string>());
+        }
+        return std::make_shared<MetadataCondition>(
+            key, MetadataCondition::Comparator::Any, std::string{}, std::move(tokens),
+            false);
+    }
+    if (!spec["exists"].is_boolean()) {
+        throw std::invalid_argument("metadata 'exists' must be a boolean");
+    }
+    return std::make_shared<MetadataCondition>(
+        key, MetadataCondition::Comparator::Exists, std::string{},
+        std::set<std::string>{}, spec["exists"].get<bool>());
+}
+
 } // namespace
 
 ConditionPtr make_all_condition(std::vector<ConditionPtr> children) {
@@ -441,6 +727,48 @@ LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classi
         }
         return make_all_condition(std::move(conditions));
     };
+}
+
+NamedLeafFactories make_deterministic_leaf_factories() {
+    NamedLeafFactories factories;
+
+    factories["keywords_any"] = [](const json& leaf) -> ConditionPtr {
+        return build_keywords(leaf.at("keywords_any"), /*require_all=*/false, "keywords_any");
+    };
+    factories["keywords_all"] = [](const json& leaf) -> ConditionPtr {
+        return build_keywords(leaf.at("keywords_all"), /*require_all=*/true, "keywords_all");
+    };
+    factories["regex"] = [](const json& leaf) -> ConditionPtr {
+        const json& value = leaf.at("regex");
+        if (!value.is_string()) {
+            throw std::invalid_argument("regex requires a string pattern");
+        }
+        try {
+            return std::make_shared<RegexCondition>(value.get<std::string>());
+        } catch (const std::regex_error& e) {
+            throw std::invalid_argument(
+                std::string("regex pattern is not valid ECMAScript: ") + e.what());
+        }
+    };
+    factories["min_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min, "min_chars");
+    };
+    factories["max_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max, "max_chars");
+    };
+    factories["has_tools"] = [](const json& leaf) -> ConditionPtr {
+        return build_bool_feature(leaf.at("has_tools"), BoolFeatureCondition::Feature::Tools,
+                                  "has_tools");
+    };
+    factories["has_images"] = [](const json& leaf) -> ConditionPtr {
+        return build_bool_feature(leaf.at("has_images"), BoolFeatureCondition::Feature::Images,
+                                  "has_images");
+    };
+    factories["metadata"] = [](const json& leaf) -> ConditionPtr {
+        return build_metadata(leaf.at("metadata"));
+    };
+
+    return factories;
 }
 
 } // namespace lemon

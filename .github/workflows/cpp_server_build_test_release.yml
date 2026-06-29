@@ -280,7 +280,7 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry)Test"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Deterministic)Test"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -543,7 +543,7 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry)Test"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Deterministic)Test"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
