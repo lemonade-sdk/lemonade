@@ -625,6 +625,7 @@ std::string WhisperServer::convert_to_wav(const std::string& audio_data,
     }
 
     std::string wav_data(std::istreambuf_iterator<char>(out_file), {});
+    out_file.close();
     cleanup_temp_file(output_path.string());
 
     LOG(DEBUG, "WhisperServer") << "ffmpeg converted " << audio_data.size()
