@@ -445,9 +445,20 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
         openai_req["response_format"] = {{"type", "json_object"}};
     }
 
-    // Map think parameter → enable_thinking (controls reasoning output)
+    // Map think parameter -> enable_thinking (controls reasoning output).
+    //
+    // Tool-calling requests should default to no reasoning unless the caller
+    // explicitly asks for it. Some Qwen3 llama.cpp templates enable thinking by
+    // default; on small CI runners this can spend the whole request budget before
+    // producing a tool call, making the Ollama streaming-tool compatibility test
+    // flaky. Preserve explicit Ollama behavior: callers can still pass
+    // {"think": true}.
     if (ollama_request.contains("think")) {
         openai_req["enable_thinking"] = ollama_request["think"];
+    } else if (ollama_request.contains("tools") &&
+               ollama_request["tools"].is_array() &&
+               !ollama_request["tools"].empty()) {
+        openai_req["enable_thinking"] = false;
     }
 
     // Stream flag is handled by the caller

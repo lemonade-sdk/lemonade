@@ -371,14 +371,23 @@ class OllamaTests(ServerTestBase):
                             {
                                 "role": "user",
                                 "content": (
-                                    "Run the calculator_calculate tool with "
-                                    "expression set to 1+1"
+                                    "Call the calculator_calculate tool exactly once "
+                                    "with expression set to 1+1. Do not answer in text."
                                 ),
                             }
                         ],
                         "tools": [SAMPLE_TOOL],
                         "stream": True,
-                        "options": {"num_predict": 64},
+                        # Keep this CI test deterministic and avoid Qwen3 reasoning
+                        # paths that can burn the whole read-timeout budget before
+                        # producing a tool call on macOS runners.
+                        "think": False,
+                        "options": {
+                            "num_predict": 64,
+                            "temperature": 0,
+                            "top_p": 1,
+                            "seed": 42,
+                        },
                     },
                     timeout=TIMEOUT_MODEL_OPERATION,
                     stream=True,
@@ -804,6 +813,11 @@ class OllamaTests(ServerTestBase):
                 "tool_choice": {"type": "any"},
                 "max_tokens": 64,
                 "stream": False,
+                # Keep the later Anthropic compatibility tool-call test on the
+                # same deterministic path as the Ollama tool-call test.
+                "thinking": {"type": "disabled"},
+                "temperature": 0,
+                "top_p": 1,
             }
 
             try:
