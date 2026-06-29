@@ -228,6 +228,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
 
+        # telemetry should have enabled, and captures iff enabled is True
+        self.assertIn("telemetry", data)
+        telemetry = data["telemetry"]
+        self.assertIn("enabled", telemetry)
+        self.assertIsInstance(telemetry["enabled"], bool)
+        if telemetry["enabled"]:
+            self.assertIn("captures", telemetry)
+            self.assertIsInstance(telemetry["captures"], list)
+            for capture in telemetry["captures"]:
+                self.assertIn(capture, ["inputs", "outputs", "thinking"])
+        else:
+            self.assertNotIn("captures", telemetry)
+
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
@@ -2196,6 +2209,71 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] Registered omni collection: {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021j_register_user_collection_with_system_prompt(self):
+        """A registered user collection round-trips an optional system_prompt.
+
+        Verifies the per-collection override path documented in
+        docs/dev/lemonade-omni.md: a custom omni model can ship its own
+        system_prompt template; the global default in toolDefinitions.json is
+        the fallback. The wire surface must echo the field on GET /models/{id}
+        and on /models?show_all=true so the desktop app can read it back when
+        re-opening the Omni Model editor.
+        """
+        canonical_name = f"user.PromptColl-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+        prompt_template = (
+            "You are a focused tester. Tools available:\n\n"
+            "{tool_list}\n\n"
+            "Use them sparingly.{tool_guidance}"
+        )
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "system_prompt": prompt_template,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            single = requests.get(
+                f"{self.base_url}/models/{public_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(single.status_code, 200)
+            self.assertEqual(
+                single.json().get("system_prompt"),
+                prompt_template,
+                "GET /models/{id} must echo the registered system_prompt verbatim.",
+            )
+
+            listing = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(listing.status_code, 200)
+            entry = next(
+                (m for m in listing.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.get("system_prompt"), prompt_template)
+
+            print(f"[OK] system_prompt round-tripped for {public_name}")
         finally:
             try:
                 requests.post(

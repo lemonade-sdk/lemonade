@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -34,6 +35,11 @@
 namespace lemon {
 
 using json = nlohmann::json;
+
+// Maximum nesting for routing match expressions. The parser should enforce this
+// at policy load time; compile_match_expr also uses it defensively for manually
+// constructed ASTs.
+constexpr std::size_t kMaxMatchExprDepth = 64;
 
 // ---------------------------------------------------------------------------
 // Request-side context
@@ -86,7 +92,8 @@ struct Score {
     // — surfaced in the trace, never used for matching.
     std::string rationale;
 
-    // Score for an explicit label, or 0.0 if absent.
+    // Score for an explicit label, or 0.0 if absent. Extra labels returned by
+    // a classifier are ignored unless a condition references them.
     double score_of(const std::string& label) const {
         auto it = labels.find(label);
         return it == labels.end() ? 0.0 : it->second;
@@ -295,6 +302,36 @@ using ConditionPtr = std::shared_ptr<Condition>;
 // ops + classifier-band) registered downstream — neither side depends on the
 // other's implementation, only on this typedef.
 using LeafFactory = std::function<ConditionPtr(const json& leaf)>;
+using NamedLeafFactories = std::map<std::string, LeafFactory>;
+
+// Composite evaluator nodes and compiler (#2378). These are pure structural
+// conditions; concrete leaf behavior is supplied through LeafFactory.
+ConditionPtr make_all_condition(std::vector<ConditionPtr> children);
+ConditionPtr make_any_condition(std::vector<ConditionPtr> children);
+ConditionPtr make_not_condition(ConditionPtr child);
+
+// Classifier-band leaf (#2378). Applies an inclusive score band to a resolved
+// Classifier's Score, memoizing classifier execution in EvalContext.
+ConditionPtr make_classifier_band_condition(ClassifierPtr classifier,
+                                            std::optional<std::string> label,
+                                            std::optional<double> min_score,
+                                            std::optional<double> max_score);
+
+// Compile a parsed MatchExpr into an executable Condition tree. Composite nodes
+// are built here; leaf nodes delegate to the injected factory so deterministic
+// ops and classifier-band leaves can be registered independently.
+ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_factory);
+
+// Classifier / condition registry helpers (#2379). These instantiate the
+// behavior-free contract objects from policy JSON while keeping live backend
+// access behind ClassifierServices.
+ClassifierPtr make_classifier(const json& config);
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json);
+
+// Builds the leaf factory used by compile_match_expr. Classifier leaves are
+// resolved here; deterministic leaf types are supplied by later issues.
+LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,
+                              NamedLeafFactories deterministic_factories = {});
 
 // ---------------------------------------------------------------------------
 // Policy + engine (constructor signature only here)

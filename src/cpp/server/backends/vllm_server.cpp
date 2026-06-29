@@ -275,18 +275,21 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     Telemetry telemetry;
     bool has_telemetry = false;
+    std::string telemetry_error = "";
 
     WrappedServer::forward_streaming_request(
         endpoint, body, sink, sse, timeout_seconds,
-        [&telemetry, &has_telemetry](int input_tokens,
+        [&telemetry, &has_telemetry, &telemetry_error](int input_tokens,
                                      int output_tokens,
                                      double time_to_first_token,
-                                     double tokens_per_second) {
+                                     double tokens_per_second,
+                                     const std::string& error_message) {
             has_telemetry = true;
             telemetry.input_tokens = input_tokens;
             telemetry.output_tokens = output_tokens;
             telemetry.time_to_first_token = time_to_first_token;
             telemetry.tokens_per_second = tokens_per_second;
+            telemetry_error = error_message;
         });
 
     if (has_telemetry) {
@@ -304,9 +307,70 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
             telemetry_callback(telemetry.input_tokens,
                                telemetry.output_tokens,
                                telemetry.time_to_first_token,
-                               telemetry.tokens_per_second);
+                               telemetry.tokens_per_second,
+                               telemetry_error);
         }
     }
+}
+
+std::map<std::string, nlohmann::json> parse_vllm_metrics_text(const std::string& body) {
+    std::map<std::string, nlohmann::json> telemetry_attrs;
+    std::istringstream stream(body);
+    std::string line;
+    std::vector<std::pair<std::string, std::string>> keys = {
+        {"vllm:gpu_cache_usage_factor", "llm.vllm.gpu_cache_usage_factor"},
+        {"vllm:cpu_cache_usage_factor", "llm.vllm.cpu_cache_usage_factor"},
+        {"vllm:num_requests_waiting", "llm.vllm.num_requests_waiting"},
+        {"vllm:num_requests_running", "llm.vllm.num_requests_running"},
+        {"vllm:num_requests_swapped", "llm.vllm.num_requests_swapped"}
+    };
+    while (std::getline(stream, line)) {
+        for (const auto& [prom_key, span_key] : keys) {
+            if (line.rfind(prom_key, 0) == 0) {
+                size_t last_space = line.find_last_of(" \t");
+                if (last_space != std::string::npos) {
+                    try {
+                        double val = std::stod(line.substr(last_space + 1));
+                        telemetry_attrs[span_key] = val;
+                    } catch (...) {}
+                }
+                break;
+            }
+        }
+    }
+    return telemetry_attrs;
+}
+
+std::map<std::string, nlohmann::json> VLLMServer::get_additional_telemetry() {
+    if (get_backend_port() <= 0) {
+        return {};
+    }
+
+    std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/metrics";
+    try {
+        auto response = utils::HttpClient::get(url, {}, 1);
+        if (response.status_code == 200) {
+            return parse_vllm_metrics_text(response.body);
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "vLLM") << "Failed to fetch metrics from vllm-server: " << e.what() << std::endl;
+    } catch (...) {
+        LOG(DEBUG, "vLLM") << "Failed to fetch metrics from vllm-server: unknown error" << std::endl;
+    }
+    return {};
+}
+
+std::string VLLMServer::get_additional_telemetry_url() const {
+    if (get_backend_port() <= 0) {
+        return "";
+    }
+    return "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/metrics";
+}
+
+std::function<std::map<std::string, nlohmann::json>(const std::string&)> VLLMServer::get_additional_telemetry_parser() const {
+    return [](const std::string& body) {
+        return parse_vllm_metrics_text(body);
+    };
 }
 
 } // namespace backends

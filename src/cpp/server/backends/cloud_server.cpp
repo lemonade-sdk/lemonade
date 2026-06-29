@@ -553,7 +553,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     // reconstruct from chunked output, and matching local backends here
     // would only diverge subtly. Passing the callback through preserves the
     // contract for callers that pass one in.
-    (void) telemetry_callback;
     auto sse_error = [](const std::string& message, const std::string& type,
                         const json& extra = json::object()) {
         json err = {{"error", {{"message", message}, {"type", type}}}};
@@ -567,6 +566,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         std::string error_msg = sse_error("Cloud model not loaded", "model_not_loaded");
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(0, 0, 0.0, 0.0, "Cloud model not loaded");
+        }
         return;
     }
 
@@ -605,6 +607,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         std::string error_msg = missing_creds_sse();
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(0, 0, 0.0, 0.0, "Missing API credentials");
+        }
         return;
     }
 
@@ -629,6 +634,36 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             bool has_done_marker = false;
             bool streaming_mode = false;
             bool first_chunk = true;
+
+            int input_tokens = 0;
+            int output_tokens = 0;
+            double time_to_first_token = 0.0;
+            double tokens_per_second = 0.0;
+            bool has_first_token = false;
+            const auto start_time = std::chrono::steady_clock::now();
+            std::string sse_line_buffer;
+
+            auto process_cloud_line = [&](const std::string& line) {
+                std::string json_str;
+                if (line.find("data: ") == 0) {
+                    json_str = line.substr(6);
+                }
+                if (!json_str.empty() && json_str != "[DONE]") {
+                    try {
+                        auto chunk = json::parse(json_str);
+                        if (chunk.contains("usage") && !chunk["usage"].is_null()) {
+                            auto usage = chunk["usage"];
+                            if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number()) {
+                                input_tokens = usage["prompt_tokens"].get<int>();
+                            }
+                            if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number()) {
+                                output_tokens = usage["completion_tokens"].get<int>();
+                            }
+                        }
+                    } catch (...) {}
+                }
+            };
+
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
@@ -647,6 +682,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                         if (std::string_view(data, length).find("[DONE]") != std::string_view::npos) {
                             has_done_marker = true;
                         }
+
+                        // Parse SSE lines
+                        sse_line_buffer.append(data, length);
+                        StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
+
+                        if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
+                            has_first_token = true;
+                            time_to_first_token = std::chrono::duration<double>(
+                                std::chrono::steady_clock::now() - start_time).count();
+                        }
+
                         return sink.write(data, length);
                     }
                     body_buffer.append(data, length);
@@ -664,6 +710,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                     "cloud (" + provider_ + ") request failed", "backend_error", extra);
                 sink.write(error_msg.c_str(), error_msg.size());
                 sink.done();
+                if (telemetry_callback) {
+                    telemetry_callback(0, 0, 0.0, 0.0, "cloud (" + provider_ + ") request failed with status " + std::to_string(result.status_code));
+                }
                 return;
             }
 
@@ -678,6 +727,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 sink.write(done_marker, std::strlen(done_marker));
             }
             sink.done();
+
+            if (telemetry_callback) {
+                if (output_tokens > 0 && time_to_first_token > 0.0) {
+                    double duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+                    double generation_duration = duration - time_to_first_token;
+                    if (generation_duration > 0.0) {
+                        tokens_per_second = output_tokens / generation_duration;
+                    }
+                }
+                telemetry_callback(input_tokens, output_tokens, time_to_first_token, tokens_per_second, "");
+            }
         } else {
             auto result = utils::HttpClient::post_stream(
                 url,
@@ -690,11 +750,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             );
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
+                if (telemetry_callback) {
+                    telemetry_callback(0, 0, 0.0, 0.0, "status_code " + std::to_string(result.status_code));
+                }
+            } else {
+                if (telemetry_callback) {
+                    telemetry_callback(0, 0, 0.0, 0.0, "");
+                }
             }
             sink.done();
         }
     } catch (const std::exception& e) {
         LOG(ERROR, "Cloud") << "Streaming request failed: " << e.what() << std::endl;
+        if (telemetry_callback) {
+            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+        }
         try {
             std::string error_msg = sse_error(e.what(), "streaming_error");
             sink.write(error_msg.c_str(), error_msg.size());
