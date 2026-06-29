@@ -1725,7 +1725,7 @@ void ModelManager::check_for_model_updates() {
         try {
             LOG(DEBUG, "ModelManager") << "Checking for updates: " << repo_id << std::endl;
             std::string api_url = "https://huggingface.co/api/models/" + repo_id;
-            auto response = HttpClient::get(api_url, headers);
+            auto response = HttpClient::get(api_url, headers, 10);
 
             if (response.status_code != 200) {
                 LOG(DEBUG, "ModelManager") << "HF API returned " << response.status_code
@@ -2331,6 +2331,7 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
+            it->second.update_available = false;
             LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
         }
     }
