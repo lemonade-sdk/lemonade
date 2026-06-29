@@ -173,15 +173,13 @@ jobs:
           release: ${{ matrix.release }}
           codename: ${{ matrix.codename }}
 
-      - name: Catch missing build-deps
-        run: apt-get build-dep . -y
-
       - name: Build binary package
         id: build_binary
         uses: ./.github/actions/build-debian-package
         with:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
+          arch-only: 'true'
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v7
