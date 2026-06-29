@@ -514,7 +514,12 @@ def run_server_tests(
 
     # Create and run test suite
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(test_class)
+    if isinstance(test_class, (list, tuple)):
+        suite = unittest.TestSuite()
+        for tc in test_class:
+            suite.addTests(loader.loadTestsFromTestCase(tc))
+    else:
+        suite = loader.loadTestsFromTestCase(test_class)
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)
