@@ -492,101 +492,15 @@ json WhisperServer::build_transcription_request(const json& request, bool transl
 json WhisperServer::forward_multipart_audio_request(const std::string& file_path,
                                                     const json& params,
                                                     bool translate) {
-    // Read the audio file content
     std::ifstream file(file_path, std::ios::binary);
     if (!file) {
         throw std::runtime_error("Could not open audio file: " + file_path);
     }
 
     std::string file_content(std::istreambuf_iterator<char>(file), {});
-
     LOG(DEBUG, "WhisperServer") << "Audio file size: " << file_content.size() << " bytes" << std::endl;
 
-    // Convert non-WAV audio to 16kHz mono WAV before forwarding to whisper-server
-    std::string ext = fs::path(file_path).extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-    std::string converted;
-    const std::string* final_data = &file_content;
-    std::string final_filename = fs::path(file_path).filename().string();
-
-    if (ext != ".wav") {
-        LOG(DEBUG, "WhisperServer") << "Non-WAV input (" << ext << "), converting via ffmpeg" << std::endl;
-        converted = convert_to_wav(file_content, final_filename);
-        final_data = &converted;
-        final_filename = fs::path(file_path).stem().string() + ".wav";
-    }
-
-    std::vector<utils::MultipartField> fields;
-
-    utils::MultipartField audio_file;
-    audio_file.name = "file";
-    audio_file.data = *final_data;
-    audio_file.filename = final_filename;
-    audio_file.content_type = "audio/wav";
-    fields.push_back(audio_file);
-
-    // Add optional parameters as form fields
-    std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    if (params.contains("temperature")) {
-        temp_field.data = std::to_string(params["temperature"].get<double>());
-    } else {
-        temp_field.data = "0.0";
-    }
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
-
-    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
-    LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
-
-    // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
-    // caused long-form audio (~35+ min on slower backends) to fail regardless of
-    // the user's configuration.
-    auto res = utils::HttpClient::post_multipart(url, fields, 0);
-
-    LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
-    LOG(DEBUG, "WhisperServer") << "Response body: " << res.body << std::endl;
-
-    if (res.status_code != 200) {
-        throw std::runtime_error("whisper-server returned status " +
-                                std::to_string(res.status_code) + ": " + res.body);
-    }
-
-    // Try to parse as JSON
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        // If response_format is not json, return it wrapped
-        return json{{"text", res.body}};
-    }
+    return send_audio_to_whisper(file_content, fs::path(file_path).filename().string(), params, translate);
 }
 
 std::string WhisperServer::convert_to_wav(const std::string& audio_data,
@@ -633,16 +547,10 @@ std::string WhisperServer::convert_to_wav(const std::string& audio_data,
     return wav_data;
 }
 
-json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
-                                                  const std::string& filename,
-                                                  const json& params,
-                                                  bool translate) {
-    if (audio_data.empty()) {
-        throw std::runtime_error("Empty audio data");
-    }
-
-    LOG(DEBUG, "WhisperServer") << "Audio data size: " << audio_data.size() << " bytes (no file I/O)" << std::endl;
-
+json WhisperServer::send_audio_to_whisper(const std::string& audio_data,
+                                           const std::string& filename,
+                                           const json& params,
+                                           bool translate) {
     // Convert non-WAV audio to 16kHz mono WAV before forwarding to whisper-server
     std::string ext = fs::path(filename).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -660,17 +568,16 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
 
     std::vector<utils::MultipartField> fields;
 
-    utils::MultipartField audio_file;
-    audio_file.name = "file";
-    audio_file.data = *final_data;
-    audio_file.filename = final_filename;
-    audio_file.content_type = "audio/wav";
-    fields.push_back(audio_file);
+    utils::MultipartField audio_field;
+    audio_field.name = "file";
+    audio_field.data = *final_data;
+    audio_field.filename = final_filename;
+    audio_field.content_type = "audio/wav";
+    fields.push_back(audio_field);
 
-    std::string response_format = params.value("response_format", "json");
     utils::MultipartField fmt_field;
     fmt_field.name = "response_format";
-    fmt_field.data = response_format;
+    fmt_field.data = params.value("response_format", "json");
     fields.push_back(fmt_field);
 
     utils::MultipartField temp_field;
@@ -702,10 +609,12 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     }
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
-    LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
+    LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
-    // See the note on the file-path variant above: 0 inherits the configured
-    // global timeout so long transcriptions aren't artificially capped at 300s.
+    // Pass 0 so HttpClient falls back to its default timeout, which is kept in
+    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
+    // caused long-form audio (~35+ min on slower backends) to fail regardless of
+    // the user's configuration.
     auto res = utils::HttpClient::post_multipart(url, fields, 0);
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
@@ -721,6 +630,19 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     } catch (const json::parse_error&) {
         return json{{"text", res.body}};
     }
+}
+
+json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
+                                                  const std::string& filename,
+                                                  const json& params,
+                                                  bool translate) {
+    if (audio_data.empty()) {
+        throw std::runtime_error("Empty audio data");
+    }
+
+    LOG(DEBUG, "WhisperServer") << "Audio data size: " << audio_data.size() << " bytes" << std::endl;
+
+    return send_audio_to_whisper(audio_data, filename, params, translate);
 }
 
 // ITranscriptionServer implementation

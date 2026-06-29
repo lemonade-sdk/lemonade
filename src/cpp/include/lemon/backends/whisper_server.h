@@ -74,6 +74,12 @@ private:
     std::string convert_to_wav(const std::string& audio_data,
                                const std::string& filename);
 
+    // Convert if needed, build multipart fields, POST to /inference, parse response
+    json send_audio_to_whisper(const std::string& audio_data,
+                               const std::string& filename,
+                               const json& params,
+                               bool translate);
+
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
     std::string ffmpeg_path_;         // Cached result of find_executable_in_path("ffmpeg")
