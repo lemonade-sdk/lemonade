@@ -505,13 +505,11 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
 
 std::string WhisperServer::convert_to_wav(const std::string& audio_data,
                                            const std::string& filename) {
-    if (ffmpeg_path_.empty()) {
-        ffmpeg_path_ = find_executable_in_path("ffmpeg");
-        if (ffmpeg_path_.empty()) {
-            throw std::runtime_error(
-                "Audio format conversion requires ffmpeg. "
-                "Install ffmpeg and ensure it is on your PATH.");
-        }
+    std::string ffmpeg_path = find_executable_in_path("ffmpeg");
+    if (ffmpeg_path.empty()) {
+        throw std::runtime_error(
+            "Audio format conversion requires ffmpeg. "
+            "Install ffmpeg and ensure it is on your PATH.");
     }
 
     std::string input_path = save_audio_to_temp(audio_data, filename);
@@ -520,7 +518,7 @@ std::string WhisperServer::convert_to_wav(const std::string& audio_data,
 
     std::string ffmpeg_output;
     int exit_code = utils::ProcessManager::run_process_with_output(
-        ffmpeg_path_,
+        ffmpeg_path,
         {"-y", "-i", input_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", output_path.string()},
         [&ffmpeg_output](const std::string& line) { ffmpeg_output += line + "\n"; return true; },
         "", 30);

@@ -82,7 +82,6 @@ private:
 
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
-    std::string ffmpeg_path_;         // Cached result of find_executable_in_path("ffmpeg")
 };
 
 } // namespace backends
