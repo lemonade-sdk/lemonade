@@ -534,9 +534,26 @@
   stroke-width: 1.8;
   filter: url(#hpRouterGlow);
 }
+/* fill/stroke are driven per-frame by SMIL (request-yellow -> response-green),
+   so they are set as presentation attributes on the circle, not here. */
 .hp-stack-dot {
-  fill: #fff8c2;
-  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+/* Glowing trace the dot leaves behind (code -> engine -> device), drawn as the
+   request travels out and faded once the response is on its way home. */
+.hp-stack-trace {
+  fill: none;
+  stroke: #ffe27a;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#hpRouterGlow);
+}
+/* "Execute" ripple emanating from the device chip during inference. */
+.hp-stack-exec-ring {
+  fill: none;
+  stroke: #ffe76a;
   stroke-width: 2;
   filter: url(#hpRouterGlow);
 }

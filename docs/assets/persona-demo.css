@@ -177,6 +177,23 @@ html:not([data-persona="developers"]) [data-cta-persona="developers"] {
   padding-bottom: 0;
 }
 
+/* Lead-in prompt that introduces the persona toggle. It is intentionally the
+   quietest text in the hero — smaller and lighter (--text-muted) than the promise
+   subtitle (--text-secondary), with no internal emphasis — so nothing in the copy
+   competes with the toggle for the eye. Grouped with the switch: the #hero-cta
+   padding-top above separates it from the promise, while its short margin-bottom
+   ties it to the buttons it sets up. */
+.hp-cta-lead {
+  max-width: 42rem;
+  margin: 0 auto 1.7rem;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: clamp(0.97rem, 1.3vw, 1.075rem);
+  font-weight: 500;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
 #getting-started,
 #dev-quickstart {
   padding-top: var(--page-space-xl);

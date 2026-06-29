@@ -47,7 +47,7 @@
         animationMode: 'repeat'
       },
       {
-        label: 'Full server control',
+        label: 'Full server configuration',
         demo: 'iface-control',
         caption: 'Automate the whole server — models, backends, config, lifecycle — over HTTP.',
         captionHref: 'https://lemonade-server.ai/docs/api/lemonade/',
@@ -167,7 +167,7 @@
     var body =
       '<div class="hp-iface-head">Manage the whole server with HTTP endpoints</div>' +
       '<div class="hp-iface-dash-grid">' + tiles + '</div>';
-    return board('hp-iface-control-board', 'Control plane', body);
+    return board('hp-iface-control-board', 'Configuration', body);
   }
 
   // ---- Slide 4: extra API dialects = more clients work, no adapters --------

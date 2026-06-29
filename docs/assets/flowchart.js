@@ -1310,7 +1310,7 @@
   // boundary crossing + a focused highlight that steps through representative
   // engine->device pairs. Pure SVG + SMIL (cross-browser; no foreignObject).
   function stackDemo() {
-    var C = 9600;
+    var C = 14770;   // legible cadence: each of the 3 beats gets ~4.9s
     var cycle = (C / 1000).toFixed(3) + 's';
     function ranim(attr, vals, times) { return repeatAnim(cycle, attr, vals, times); }
     var f = fixed4;
@@ -1361,37 +1361,111 @@
     var engChips = engines.map(engChip).join('');
     var devChips = devices.map(devChip).join('');
 
-    // Three requests, one per beat. Each beat lemond gently lights the engine it
-    // chose, then the device it runs on -- soft stationary cross-fades, no line
-    // darting between them. The request dot stops right beside the chosen engine.
+    // Three requests, one per beat. Each beat is a full round-trip from "your
+    // code", routed in straight vertical/horizontal legs (never diagonally, so
+    // it's easy to track): the request dot drops down the centre spine beside the
+    // chosen engine (lighting it), continues down into the device row, slides
+    // horizontally into the device, which "executes" (an expanding ripple); then
+    // the dot turns from request-yellow to response-green, slides back to centre
+    // and rises straight up into the code. One engine + one device per beat.
     var beats = [
       { eng: 'whisper.cpp', dev: 'NPU' },
       { eng: 'llama.cpp', dev: 'ROCm' },
-      { eng: 'Kokoro', dev: 'CPU' }
+      { eng: 'stable-diffusion.cpp', dev: 'Vulkan' }
     ];
     var slice = 1 / beats.length;
     var codeY = 44;   // the request leaves "your code" here, just below the title bar
 
-    var glows = '', dots = '';
+    // Request (warm lemon) vs response (fresh green) palette for the dot.
+    var REQ_FILL = '#fff8c2', REQ_STROKE = 'rgba(252,216,70,0.92)';
+    var RES_FILL = '#bfffd8', RES_STROKE = 'rgba(72,212,140,0.95)';
+
+    var glows = '', wires = '', execs = '', dots = '';
     beats.forEach(function (b, i) {
       var e = engPos[b.eng], d = devPos[b.dev];
       var s = i * slice;
-      // Gentle ramps: engine eases in, the device follows, both hold, then fade.
+      // True only when the device sits off the centre spine, so the trip needs a
+      // horizontal leg (and a device-row corner). When it's on the spine the dot
+      // just drops straight in and out with no corner.
+      var bend = d.cx !== appCx;
+      // Beat timeline (fractions of the full cycle): launch -> reach the engine
+      // (tTouch = tendril hits its edge) -> pause beside it (tEng..tEngHold) ->
+      // [corner] -> into the device, execute, then [corner] -> straight up home.
+      var tLaunch = s + 0.015, tEng = s + 0.055, tTouch = s + 0.07, tEngHold = s + 0.085,
+          tCorner = s + 0.115, tDev = s + 0.15, tExec = s + 0.225, tRetCorner = s + 0.265,
+          tBack = s + 0.305, tEnd = s + 0.32;
+
+      // Engine lights the instant the wire tendril touches its edge (tTouch) and
+      // stays lit until the response is home. (keyTimes stay <= 1 for every beat,
+      // so the last beat lights too.)
       glows += '<g class="hp-stack-glow"><rect x="' + (e.cx - 124) + '" y="' + (e.cy - 16) + '" width="248" height="32" rx="8" opacity="0">' +
-          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(s + 0.06) + ';' + f(s + 0.12) + ';' + f(s + 0.26) + ';' + f(s + 0.31)) +
-        '</rect></g>' +
-        '<g class="hp-stack-glow"><rect x="' + (d.cx - 80) + '" y="' + (d.cy - 23) + '" width="160" height="46" rx="9" opacity="0">' +
-          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(s + 0.13) + ';' + f(s + 0.18) + ';' + f(s + 0.27) + ';' + f(s + 0.315)) +
+          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(tTouch - 0.006) + ';' + f(tTouch) + ';' + f(tBack) + ';' + f(tEnd)) +
         '</rect></g>';
-      // The request dot eases down the central spine and STOPS beside the chosen
-      // engine's row (x stays at 310, in the gap between the two engine columns,
-      // so nothing darts sideways), holds while it lights, then eases back up.
-      var path = 'M ' + appCx + ' ' + codeY + ' L ' + appCx + ' ' + e.cy;
-      dots += '<circle class="hp-stack-dot" r="5" cx="0" cy="0" opacity="0">' +
-          '<animateMotion dur="' + cycle + '" begin="0s" repeatCount="indefinite" calcMode="spline" path="' + path + '" ' +
-            'keyPoints="0;0;1;1;0;0" keyTimes="0;' + f(s) + ';' + f(s + 0.10) + ';' + f(s + 0.26) + ';' + f(s + 0.32) + ';1" ' +
-            'keySplines="0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1"></animateMotion>' +
-          ranim('opacity', '0;0;0.95;0.95;0;0', '0;' + f(s + 0.01) + ';' + f(s + 0.05) + ';' + f(s + 0.28) + ';' + f(s + 0.33) + ';1') +
+      // Device lights only while it executes.
+      glows += '<g class="hp-stack-glow"><rect x="' + (d.cx - 80) + '" y="' + (d.cy - 23) + '" width="160" height="46" rx="9" opacity="0">' +
+          ranim('opacity', '0;0;0.9;0.9;0', '0;' + f(tDev - 0.02) + ';' + f(tDev) + ';' + f(tExec) + ';' + f(tExec + 0.03)) +
+        '</rect></g>';
+
+      // Glowing trace the dot leaves behind: code -> engine -> device. pathLength
+      // is normalised to 1 so the dash "draws" in lockstep with the dot (offset 1
+      // = hidden, 0 = fully drawn), then the whole trace fades as the dot returns.
+      var L1 = Math.abs(e.cy - codeY), L2 = Math.abs(d.cy - e.cy), L3 = Math.abs(d.cx - appCx);
+      var tot = L1 + L2 + L3 || 1, f1 = L1 / tot, f2 = (L1 + L2) / tot;
+      var wirePath = 'M ' + appCx + ' ' + codeY + ' L ' + appCx + ' ' + e.cy +
+        ' L ' + appCx + ' ' + d.cy + (bend ? ' L ' + d.cx + ' ' + d.cy : '');
+      var doVals = ['1', '1', f(1 - f1), f(1 - f1)];   // hold at the engine row during the pause
+      var doTimes = ['0', f(tLaunch), f(tEng), f(tEngHold)];
+      if (bend) { doVals.push(f(1 - f2)); doTimes.push(f(tCorner)); }
+      doVals.push('0'); doTimes.push(f(tDev));
+      wires += '<path class="hp-stack-trace" d="' + wirePath + '" pathLength="1" ' +
+          'stroke-dasharray="1 1" stroke-dashoffset="1" opacity="0">' +
+          ranim('stroke-dashoffset', doVals.join(';'), doTimes.join(';')) +
+          ranim('opacity', '0;0;0.8;0.8;0', '0;' + f(tLaunch) + ';' + f(tEng) + ';' + f(tExec) + ';' + f(tBack)) +
+        '</path>';
+
+      // A short tendril reaches off the spine to the NEAR edge of the chosen
+      // engine; it draws (tEng -> tTouch) just as the dot passes that row, and the
+      // engine lights the moment the tendril lands on its edge (tTouch).
+      var engEdgeX = e.cx + (e.cx > appCx ? -124 : 124);
+      wires += '<path class="hp-stack-trace" d="M ' + appCx + ' ' + e.cy + ' L ' + engEdgeX + ' ' + e.cy + '" ' +
+          'pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="1" opacity="0">' +
+          ranim('stroke-dashoffset', '1;1;0', '0;' + f(tEng) + ';' + f(tTouch)) +
+          ranim('opacity', '0;0;0.8;0.8;0', '0;' + f(tEng) + ';' + f(tTouch) + ';' + f(tExec) + ';' + f(tBack)) +
+        '</path>';
+
+      // "Execute" = two staggered rings rippling out of the device chip.
+      [0, 0.035].forEach(function (delay) {
+        var rs = tDev + delay, re = tExec + delay, rm = (rs + re) / 2;
+        execs += '<circle class="hp-stack-exec-ring" cx="' + d.cx + '" cy="' + d.cy + '" r="8" opacity="0">' +
+            ranim('r', '8;8;52', '0;' + f(rs) + ';' + f(re)) +
+            ranim('opacity', '0;0;0.6;0', '0;' + f(rs) + ';' + f(rm) + ';' + f(re)) +
+          '</circle>';
+      });
+
+      // The request/response dot. cx/cy are driven directly with LINEAR motion, so
+      // every leg is purely vertical or horizontal and the dot turns each corner
+      // at speed (no easing pause). Waypoints: code -> down past the engine ->
+      // [corner] -> into the device (dwell = execute) -> [corner] -> straight up
+      // home. fill/stroke flip to the response palette as the device finishes.
+      var T = ['0'], X = [appCx], Y = [codeY], O = ['0'];
+      function wp(t, x, y, o) { T.push(f(t)); X.push(x); Y.push(y); O.push(o); }
+      wp(tLaunch, appCx, codeY, '0.95');
+      wp(tEng, appCx, e.cy, '0.95');
+      wp(tEngHold, appCx, e.cy, '0.95');     // momentary pause beside the engine
+      if (bend) wp(tCorner, appCx, d.cy, '0.95');
+      wp(tDev, d.cx, d.cy, '0.95');
+      wp(tExec, d.cx, d.cy, '0.95');        // dwell at the device = execute
+      if (bend) wp(tRetCorner, appCx, d.cy, '0.95');
+      wp(tBack, appCx, codeY, '0.95');
+      wp(tEnd, appCx, codeY, '0');
+      wp(1, appCx, codeY, '0');
+      dots += '<circle class="hp-stack-dot" r="5" cx="' + appCx + '" cy="' + codeY + '" ' +
+          'fill="' + REQ_FILL + '" stroke="' + REQ_STROKE + '" opacity="0">' +
+          ranim('cx', X.join(';'), T.join(';')) +
+          ranim('cy', Y.join(';'), T.join(';')) +
+          ranim('opacity', O.join(';'), T.join(';')) +
+          ranim('fill', REQ_FILL + ';' + REQ_FILL + ';' + RES_FILL + ';' + RES_FILL, '0;' + f(tDev) + ';' + f(tExec) + ';1') +
+          ranim('stroke', REQ_STROKE + ';' + REQ_STROKE + ';' + RES_STROKE + ';' + RES_STROKE, '0;' + f(tDev) + ';' + f(tExec) + ';1') +
         '</circle>';
     });
 
@@ -1419,7 +1493,7 @@
         '<text class="hp-stack-bandlabel" x="53" y="132">ENGINES &middot; managed for you</text>' +
         '<text class="hp-stack-bandlabel" x="53" y="334">DEVICES &middot; auto-selected</text>' +
         engChips + devChips +
-        glows + dots +
+        glows + wires + execs + dots +
       '</svg>' +
     '</div>';
   }
