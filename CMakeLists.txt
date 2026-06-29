@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.7.0)
+project(lemon_cpp VERSION 10.8.1)
 
 include(CTest)
 
@@ -410,8 +410,8 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
-    # Set Windows target version to Windows 10 for httplib v0.26.0
-    add_compile_definitions(_WIN32_WINNT=0x0A00)
+    # Set Windows target version to Windows 10 for httplib v0.26.0, and prevent Windows.h min/max macro definitions
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX)
     if(MSVC)
         # Add security-hardening compiler flags for MSVC
         # Control Flow Guard - prevents control flow hijacking
@@ -597,7 +597,9 @@ set(SOURCES_CORE
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_policy.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/prometheus_metrics.cpp
@@ -623,6 +625,7 @@ set(SOURCES_CORE
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
+    src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
@@ -1337,6 +1340,10 @@ if(APPLE)
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
+    # Declare the package arm64-only so the macOS Installer does not assume our
+    # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
+    set(CPACK_APPLE_PKG_INSTALLER_CONTENT "<hostArchitectures><hostArchitecture>arm64</hostArchitecture></hostArchitectures>")
+
     set(CPACK_PRODUCTBUILD_DOMAIN "system")
 
     if(INSTALLER_IDENTITY)
@@ -1418,6 +1425,34 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
+    # Helper: create a systemd unit symlink with fatal-error-on-failure semantics
+    function(lemonade_install_systemd_symlink link_path target_path)
+        get_filename_component(_link_dir "${link_path}" DIRECTORY)
+
+        install(CODE "
+            set(_link \"\$ENV{DESTDIR}${link_path}\")
+            set(_target \"${target_path}\")
+
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_link_dir}\")
+
+            if(IS_SYMLINK \"\${_link}\")
+                file(REMOVE \"\${_link}\")
+            elseif(EXISTS \"\${_link}\")
+                message(FATAL_ERROR \"Refusing to replace existing non-symlink: \${_link}\")
+            endif()
+
+            execute_process(
+                COMMAND \"${CMAKE_COMMAND}\" -E create_symlink \"\${_target}\" \"\${_link}\"
+                RESULT_VARIABLE _result
+                ERROR_VARIABLE _error
+            )
+
+            if(NOT _result EQUAL 0)
+                message(FATAL_ERROR \"Failed to create systemd symlink \${_link} -> \${_target}: \${_error}\")
+            endif()
+        ")
+    endfunction()
+
     # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond.service.in
@@ -1429,17 +1464,17 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemond.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
-    # Create symlink in standard systemd search path only if not installing to /usr
+    # Create symlinks in standard systemd search paths only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemond.service\"
-            )
-        ")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/system/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
+        )
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
+        )
     endif()
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
@@ -1715,4 +1750,167 @@ if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
     # Enable testing and register the test with CTest
     include(CTest)
     add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
+endif()
+
+# GGUF capability detection (MTP / vision / tool-calling label logic).
+# Header-only unit under test, so no extra source files are required.
+set(_GGUF_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_capabilities.cpp"
+)
+if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
+    add_executable(test_gguf_capabilities
+        test/cpp/test_gguf_capabilities.cpp
+    )
+    target_include_directories(test_gguf_capabilities PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
+endif()
+
+# Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
+# logic, so the test links nothing beyond the standard library — regression
+# coverage for #2265 (fall back to the installed binary when the GitHub
+# "latest" lookup fails).
+set(_LATEST_FALLBACK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_latest_version_fallback.cpp"
+)
+if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
+    add_executable(test_latest_version_fallback
+        test/cpp/test_latest_version_fallback.cpp
+    )
+    target_include_directories(test_latest_version_fallback PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
+endif()
+
+# Backend install atomicity (staging + verified atomic swap).
+# Header-only unit under test, so no extra source files are required.
+set(_INSTALL_ATOMICITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_install_atomicity.cpp"
+)
+if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
+    add_executable(test_install_atomicity
+        test/cpp/test_install_atomicity.cpp
+    )
+    target_include_directories(test_install_atomicity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
+endif()
+
+# Routing engine contract surface (issue #2407). Header-only foundation: the
+# shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
+# The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
+set(_ROUTING_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
+)
+if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+    add_executable(test_routing_policy_contract
+        test/cpp/test_routing_policy_contract.cpp
+    )
+    target_include_directories(test_routing_policy_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_contract PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_contract PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
+endif()
+
+# Routing match evaluator (issue #2378): composite Condition nodes,
+# classifier-band leaf evaluation, MatchExpr compilation, trace and memoization.
+set(_ROUTING_EVALUATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_evaluator.cpp"
+)
+if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
+    add_executable(test_routing_policy_evaluator
+        test/cpp/test_routing_policy_evaluator.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_evaluator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_evaluator PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEvaluatorTest COMMAND test_routing_policy_evaluator)
+endif()
+
+# Routing classifier/condition registry (issue #2379): classifier JSON
+# instantiation, classifier leaf resolution, deterministic leaf dispatch seams.
+set(_ROUTING_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_registry.cpp"
+)
+if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
+    add_executable(test_routing_policy_registry
+        test/cpp/test_routing_policy_registry.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_registry PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_registry PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
+endif()
+
+# Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
+# Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
+# full_attention_interval exact count, and scalar fallback paths.
+set(_AUTO_TUNE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_tune.cpp"
+)
+if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
+    add_executable(test_auto_tune
+        test/cpp/test_auto_tune.cpp
+    )
+    target_include_directories(test_auto_tune PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME AutoTuneTest COMMAND test_auto_tune)
+endif()
+
+set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
+if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
+    add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
+    target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
+    add_test(NAME TelemetryHelpersTest COMMAND test_telemetry_helpers)
+endif()
+
+set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
+if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
+    add_executable(test_config_migration test/cpp/test_config_migration.cpp)
+    target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
+    add_test(NAME ConfigMigrationTest COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
+if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
+    add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
+    target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
+    add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
 endif()

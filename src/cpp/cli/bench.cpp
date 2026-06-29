@@ -509,7 +509,8 @@ static void extract_timings_into_result(const json& timings, BenchRunResult& res
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
-                                bool memory_tracking) {
+                                bool memory_tracking,
+                                bool capture_response) {
     BenchRunResult result;
     result.success = false;  // assume failure until proven otherwise
 
@@ -532,6 +533,28 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
         std::string response = client.make_request("/api/v1/chat/completions", "POST", body, "application/json",
                                                    300000, 300000);
         auto resp_json = json::parse(response);
+
+        if (capture_response) {
+            if (resp_json.contains("output")) {
+                // Preserve structured Responses API payloads for downstream analysis.
+                result.response_text = resp_json["output"].dump();
+            } else if (resp_json.contains("choices") && resp_json["choices"].is_array() &&
+                       !resp_json["choices"].empty()) {
+                const auto& choice = resp_json["choices"][0];
+                if (choice.contains("message") && choice["message"].contains("content")) {
+                    const auto& content = choice["message"]["content"];
+                    if (content.is_string()) {
+                        result.response_text = content.get<std::string>();
+                    } else {
+                        result.response_text = content.dump();
+                    }
+                } else {
+                    result.response_text = choice.dump();
+                }
+            } else {
+                result.response_text = "null";
+            }
+        }
 
         if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
             extract_timings_into_result(resp_json["timings"], result);
@@ -583,7 +606,9 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& recipe,
                                  const std::string& backend,
                                  int ctx_size,
-                                 const std::string& backend_args) {
+                                 const std::string& backend_args,
+                                 const std::string& response_log_path,
+                                 const std::string& response_timestamp) {
     BenchScenarioResult result;
     result.scenario_name = scenario.name;
     result.category = scenario.category;
@@ -609,7 +634,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             }
         }
         std::cout << "    Warmup " << (i + 1) << "/" << warmup << "..." << std::flush;
-        run_single_bench(client, model, scenario, false);
+        run_single_bench(client, model, scenario, false, false);
         std::cout << " done" << std::endl;
     }
 
@@ -625,12 +650,41 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
         }
 
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
-        auto run_result = run_single_bench(client, model, scenario, memory_tracking);
+        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty());
         if (!run_result.success) {
             result.failed_runs++;
             std::cout << " FAILED (excluded from stats)" << std::endl;
             continue;
         }
+
+        if (!response_log_path.empty()) {
+            std::ofstream response_log(response_log_path, std::ios::app);
+            if (!response_log.is_open()) {
+                std::cerr << "\nWarning: Could not open response log: " << response_log_path << std::endl;
+            } else {
+                json entry;
+                entry["timestamp"] = response_timestamp;
+                entry["model"] = model;
+                entry["recipe"] = recipe;
+                entry["backend"] = backend;
+                entry["ctx_size"] = ctx_size;
+                entry["backend_args"] = backend_args;
+                entry["scenario"] = scenario.name;
+                entry["category"] = scenario.category;
+                entry["run_number"] = i + 1;
+                entry["input_tokens"] = run_result.input_tokens;
+                entry["output_tokens"] = run_result.output_tokens;
+                entry["ttft_ms"] = run_result.ttft_ms;
+                entry["tps"] = run_result.tps;
+                entry["response"] = run_result.response_text;
+                response_log << entry.dump() << "\n";
+            }
+
+            // Avoid retaining large response bodies in memory after logging.
+            run_result.response_text.clear();
+            run_result.response_text.shrink_to_fit();
+        }
+
         std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms"
                   << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
         result.runs.push_back(run_result);
@@ -1123,6 +1177,18 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     const std::string command_timestamp = get_timestamp_iso();
 
+    if (!config.response_log.empty()) {
+        try {
+            std::filesystem::path response_log_path(config.response_log);
+            std::filesystem::path parent = response_log_path.parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Could not prepare response log path: " << e.what() << std::endl;
+        }
+    }
+
     // Preflight: ensure all requested models are available before any benchmark starts.
     // If --auto-pull is enabled, pull missing/not-downloaded models during this phase.
     std::map<std::string, json> model_info_by_name;
@@ -1285,7 +1351,9 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                         if (config.measurement_runs > 0) runs = config.measurement_runs;
 
                         auto scenario_result = run_scenario(client, model, scenario, warmup, runs,
-                                                            config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args);
+                                                            config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args,
+                                                            config.response_log,
+                                                            command_timestamp);
                         backend_result.scenarios.push_back(scenario_result);
                     }
 
@@ -1497,6 +1565,7 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
     cmd->add_flag("--no-reload", opts.no_reload, "Skip model reload between scenarios (faster but prompt cache may skew results)");
+    cmd->add_option("--response-log", opts.response_log, "Write captured responses to a JSONL logfile")->type_name("FILE");
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1529,6 +1598,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     config.reload = !cli.no_reload;
     config.compare_file = cli.compare_file;
     config.scenario_names = cli.scenario_names;
+    config.response_log = cli.response_log;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;

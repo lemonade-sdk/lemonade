@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lemonade-sdk.github.io/schemas/route_policy.schema.json",
+  "title": "Lemonade route policy (collection.router)",
+  "description": "The routing block embedded in a collection.router collection JSON. Distributed and invoked exactly like collection.omni: point the OpenAI `model` field at the collection name and recipe:collection.router flips the server into engine mode. Generic engine; trust is a consumer. Vocabulary mirrors vLLM Semantic Router for migration.",
+  "type": "object",
+  "required": ["version", "recipe", "routing"],
+  "properties": {
+    "version": {
+      "description": "Schema major version this document targets. This file defines version \"1\"; a server validates a policy against the schema matching its major version and rejects unknown majors with a clear message rather than a per-key error. Required so parsers never have to guess.",
+      "const": "1"
+    },
+    "model_name": { "type": "string" },
+    "recipe": { "const": "collection.router" },
+    "components": {
+      "description": "Lean local form: names of already-registered models (candidates AND classifier models). The full models[] manifest is only needed for Hugging Face redistribution.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "models": {
+      "description": "Embedded component definitions for HF redistribution only; omitted when authoring locally.",
+      "type": "array"
+    },
+    "routing": { "$ref": "#/$defs/routing" }
+  },
+  "$defs": {
+    "routing": {
+      "type": "object",
+      "required": ["candidates", "default_model"],
+      "properties": {
+        "candidates": {
+          "description": "Explicit routing-target set (analog of vLLM SR providers.models). default_model and every rule.route_to must be a member.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "default_model": {
+          "description": "Fail-open target; must be a member of candidates.",
+          "type": "string"
+        },
+        "router": { "$ref": "#/$defs/router_sugar" },
+        "classifiers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/classifier" }
+        },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rule" }
+        }
+      },
+      "anyOf": [
+        { "required": ["router"] },
+        { "required": ["rules"] }
+      ],
+      "additionalProperties": false
+    },
+    "router_sugar": {
+      "description": "Zero-config L0(a) LLM-as-router. Desugars at load into one `llm` classifier (labels = candidates) + identity rules (label X -> route_to X). This desugaring is pure, deterministic engine logic and is frozen for v1: its expansion must stay behavior-equivalent so existing L0(a) policies keep routing identically across server versions.",
+      "type": "object",
+      "required": ["type", "model", "prompt"],
+      "properties": {
+        "type": { "const": "llm" },
+        "model": { "type": "string" },
+        "prompt": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "classifier": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "description": "v1: semantic_similarity, classifier, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
+          "enum": [
+            "semantic_similarity",
+            "classifier",
+            "llm",
+            "pii_detection",
+            "prompt_safety",
+            "language_detection",
+            "domain_classification",
+            "complexity",
+            "sentiment"
+          ]
+        },
+        "model": { "type": "string" },
+        "prompt": { "type": "string" },
+        "labels": {
+          "description": "classifier output labels; dangling condition `label` refs are rejected.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "default_label": {
+          "description": "Used when a condition omits `label`.",
+          "type": "string"
+        },
+        "reference_phrases": {
+          "description": "semantic_similarity only: exemplar phrases embedded once and compared to the input by cosine. Named distinctly from routing.candidates (the routing targets) to avoid overloading that core term.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "on_error": {
+          "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
+          "enum": ["match_true", "match_false"],
+          "default": "match_false"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "semantic_similarity" } } },
+          "then": { "required": ["model", "reference_phrases"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
+          "then": { "required": ["model"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
+          "then": { "required": ["model", "prompt"] } }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "match", "route_to"],
+      "properties": {
+        "id": { "type": "string" },
+        "match": { "$ref": "#/$defs/match_expr" },
+        "route_to": {
+          "description": "Must name a candidate. The local/private/cloud route category is derived from the chosen component's recipe.",
+          "type": "string"
+        },
+        "outputs": {
+          "description": "Engine-opaque pass-through bag, copied verbatim into the Decision (trust puts verdict here).",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "match_expr": {
+      "description": "Nested any/all/not over leaf conditions; first-match-wins across rules. vLLM SR's flat single-operator form is the subset.",
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "any": { "type": "array", "items": { "$ref": "#/$defs/match_expr" } },
+        "all": { "type": "array", "items": { "$ref": "#/$defs/match_expr" } },
+        "not": { "$ref": "#/$defs/match_expr" },
+        "classifier": { "type": "string" },
+        "label": { "type": "string" },
+        "min_score": {
+          "description": "Frozen v1 semantics: inclusive lower bound (score >= min_score). When neither min_score nor max_score is given, the band defaults to min_score: 0.5.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_score": {
+          "description": "Frozen v1 semantics: inclusive upper bound (score <= max_score).",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "keywords_any": {
+          "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "keywords_all": {
+          "description": "True if ALL keywords are present. Frozen v1 match: case-insensitive substring over the input text.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "regex": {
+          "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex). A different regex engine ships as a separately named op, never a redefinition of this one.",
+          "type": "string"
+        },
+        "min_chars": {
+          "description": "Inclusive lower bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points). Token-based length is a future min_tokens, never a redefinition of this one.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_chars": {
+          "description": "Inclusive upper bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "has_tools": { "type": "boolean" },
+        "has_images": { "type": "boolean" },
+        "metadata": { "$ref": "#/$defs/metadata_match" }
+      },
+      "additionalProperties": false
+    },
+    "metadata_match": {
+      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent), read verbatim from the request metadata map. Frozen v1 semantics: values are compared case-sensitively; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. Exactly one comparator (equals / any / exists) must be present. A future comparator (regex, all, ...) ships as a new key, never a redefinition of these.",
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "description": "The metadata key to read. A missing or empty value matches only `exists: false`.",
+          "type": "string"
+        },
+        "equals": {
+          "description": "True if the raw metadata value equals this string exactly (case-sensitive).",
+          "type": "string"
+        },
+        "any": {
+          "description": "True if the value's comma-decoded token set intersects this list (handles both scalar and comma-encoded list-valued metadata).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "exists": {
+          "description": "exists:true matches when the key is present and non-empty; exists:false matches when it is absent or empty.",
+          "type": "boolean"
+        }
+      },
+      "oneOf": [
+        { "required": ["equals"] },
+        { "required": ["any"] },
+        { "required": ["exists"] }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

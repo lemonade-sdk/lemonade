@@ -66,6 +66,10 @@ public:
     virtual std::vector<GPUInfo> get_nvidia_gpu_devices() = 0;
     virtual NPUInfo get_npu_device() = 0;
 
+    // Apple Silicon unified-memory GPU. Only meaningful on macOS; the base
+    // implementation reports "unavailable" so non-Apple platforms need no stub.
+    virtual GPUInfo get_apple_silicon_device() { return GPUInfo{}; }
+
     // Common methods (can be overridden for detailed platform info)
     virtual std::string get_os_version();
 
@@ -207,6 +211,7 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
+    GPUInfo get_apple_silicon_device() override;
 
     // Override to add macOS-specific fields
     json get_system_info_dict() override;

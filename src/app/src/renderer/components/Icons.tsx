@@ -264,3 +264,10 @@ export const MicrophoneIcon: React.FC<{ active?: boolean }> = ({ active = false 
     />
   </svg>
 );
+
+export const PinIcon: React.FC<{ size?: number; fill?: string }> = ({ size = 14, fill = 'none' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="17" x2="12" y2="22" />
+    <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.48A2 2 0 0 1 15 9.28V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.28a2 2 0 0 1-.78 1.24l-2.78 3.48a2 2 0 0 0-.44 1.24Z" />
+  </svg>
+);

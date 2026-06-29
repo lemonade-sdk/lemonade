@@ -117,6 +117,10 @@ public:
         return load_duration_ms_;
     }
 
+    // Pinned status for eviction prevention
+    bool is_pinned() const { return pinned_; }
+    void set_pinned(bool pinned) { pinned_ = pinned; }
+
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
     //
@@ -311,9 +315,10 @@ public:
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
     using TelemetryCallback = std::function<void(int input_tokens,
-                                                int output_tokens,
-                                                double time_to_first_token,
-                                                double tokens_per_second)>;
+                                                 int output_tokens,
+                                                 double time_to_first_token,
+                                                 double tokens_per_second,
+                                                 const std::string& error_message)>;
 
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
@@ -328,6 +333,18 @@ public:
     }
 
     Telemetry get_telemetry() const { return telemetry_; }
+
+    virtual std::map<std::string, nlohmann::json> get_additional_telemetry() {
+        return {};
+    }
+
+    virtual std::string get_additional_telemetry_url() const {
+        return "";
+    }
+
+    virtual std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const {
+        return nullptr;
+    }
 
     // Mark observable backend progress. Streaming proxies call this for every
     // delivered chunk; non-streaming requests call it on start/finish and when
@@ -437,6 +454,7 @@ protected:
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
     long load_duration_ms_;
+    bool pinned_ = false;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

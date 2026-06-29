@@ -34,6 +34,8 @@ require.extensions['.ts'] = function loadTypeScript(module, filename) {
 
 const collectionUtilsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'customCollections.ts');
 const collectionUtils = require(collectionUtilsPath);
+const modelDataPath = path.join(appRoot, 'src', 'renderer', 'utils', 'modelData.ts');
+const modelDataUtils = require(modelDataPath);
 
 if (originalTsLoader) {
   require.extensions['.ts'] = originalTsLoader;
@@ -100,60 +102,170 @@ defineTest('modelEntryToCustomCollection reads server-side user collections and 
   assert.equal(template.name, 'LMX-Omni-5.5B-Lite');
 });
 
-defineTest('export includes endpoint collection entries plus component checkpoint metadata', () => {
-  const modelsData = {
-    'planner': model(['tool-calling'], true, 'llamacpp', { checkpoint: 'org/planner:Q4_K_M' }),
-    'image-model': model(['image'], true, 'sd-cpp', {
-      checkpoint: 'org/image:image.gguf',
-      image_defaults: { width: 512, height: 512 },
-    }),
-    'multi-file': model(['edit'], true, 'sd-cpp', {
-      checkpoint: '',
-      checkpoints: { main: 'org/edit:model.safetensors', vae: 'org/edit:vae.safetensors' },
-    }),
+defineTest('collection export normalizes the /models/{id} object into the import-ready file shape', () => {
+  // A live /models/{id} collection object: id-keyed, runtime fields present,
+  // components as names, models[] embedding each component verbatim.
+  const raw = {
+    id: 'CreatorStudio',
+    object: 'model',
+    created: 1234567890,
+    owned_by: 'lemonade',
+    recipe: 'collection.omni',
+    checkpoint: '',
+    checkpoints: { main: '' },
+    components: ['planner', 'multi-file'],
+    labels: [],
+    recipe_options: {},
+    suggested: true,
+    downloaded: true,
+    models: [
+      {
+        id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',
+        recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M',
+        checkpoints: { main: 'org/planner:Q4_K_M' },
+        components: [], labels: ['tool-calling'], recipe_options: {},
+        suggested: true, downloaded: true, size: 2.5,
+      },
+      {
+        id: 'multi-file', object: 'model', created: 1234567890, owned_by: 'lemonade',
+        recipe: 'sd-cpp', checkpoint: 'org/edit:model.safetensors',
+        checkpoints: { main: 'org/edit:model.safetensors', vae: 'org/edit:vae.safetensors' },
+        components: [], labels: ['edit'], recipe_options: {},
+        suggested: false, downloaded: false, size: 6.9,
+      },
+    ],
   };
 
-  const payload = collectionUtils.buildCustomCollectionsExportPayload([{
-    id: 'user.CreatorStudio',
-    name: 'CreatorStudio',
-    components: { llm: 'planner', image: 'image-model', edit: 'multi-file' },
-  }], modelsData);
+  const { filename, payload } = modelDataUtils.normalizeModelExportPayload(raw);
 
-  assert.equal(payload.version, 3);
-  assert.deepEqual(payload.collections, [{
-    model_name: 'user.CreatorStudio',
-    recipe: 'collection.omni',
-    components: ['planner', 'image-model', 'multi-file'],
-  }]);
-  assert.deepEqual(payload.models.map((entry) => entry.model_name), ['planner', 'image-model', 'multi-file']);
-  assert.equal(payload.models.find((entry) => entry.model_name === 'planner').checkpoint, 'org/planner:Q4_K_M');
-  assert.deepEqual(payload.models.find((entry) => entry.model_name === 'multi-file').checkpoints, {
+  // Filename has no user. prefix; the model_name inside is import-ready.
+  assert.equal(filename, 'CreatorStudio.json');
+  assert.equal(payload.model_name, 'user.CreatorStudio');
+  assert.ok(!('id' in payload));
+
+  // User-specific runtime fields and wire decorations never reach the file.
+  for (const key of ['suggested', 'created', 'downloaded', 'object', 'owned_by']) {
+    assert.ok(!(key in payload), `top-level ${key} should be stripped`);
+    for (const entry of payload.models) {
+      assert.ok(!(key in entry), `models[] ${key} should be stripped`);
+    }
+  }
+
+  // Components stay as ordered names; models[] elements are normalized like
+  // regular-model export files (model_name-keyed, checkpoints deduped).
+  assert.deepEqual(payload.components, ['planner', 'multi-file']);
+  assert.deepEqual(payload.models.map((entry) => entry.model_name), ['planner', 'multi-file']);
+  assert.ok(!('checkpoint' in payload.models[0]), 'singular checkpoint deduped when checkpoints present');
+  assert.deepEqual(payload.models[1].checkpoints, {
     main: 'org/edit:model.safetensors',
     vae: 'org/edit:vae.safetensors',
   });
 });
 
-defineTest('import uses exported component model metadata to validate collections before registration', () => {
-  const payload = {
-    version: 3,
-    collections: [{
-      model_name: 'user.ImportedKit',
-      recipe: 'collection.omni',
-      components: ['planner', 'image-model'],
-    }],
+defineTest('regular-model export carries no collection fields', () => {
+  const raw = {
+    id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',
+    recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M',
+    checkpoints: { main: 'org/planner:Q4_K_M' },
+    components: [], labels: ['tool-calling'], recipe_options: {},
+    suggested: true, downloaded: true, size: 2.5,
+  };
+
+  const { filename, payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.equal(filename, 'planner.json');
+  assert.equal(payload.model_name, 'user.planner');
+  assert.ok(!('components' in payload));
+  assert.ok(!('models' in payload));
+  assert.ok(!('downloaded' in payload));
+  assert.ok(!('suggested' in payload));
+  assert.ok(!('created' in payload));
+});
+
+defineTest('DEFAULT_OMNI_SYSTEM_PROMPT is the canonical default from toolDefinitions.json', () => {
+  const toolDefinitionsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'toolDefinitions.json');
+  const toolDefs = JSON.parse(fs.readFileSync(toolDefinitionsPath, 'utf8'));
+  assert.equal(
+    typeof collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    'string',
+    'The default prompt constant should be exported as a string.',
+  );
+  assert.equal(
+    collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    toolDefs.system_prompt,
+    'The editor default must match toolDefinitions.json verbatim so diff-on-save is exact.',
+  );
+});
+
+defineTest('buildCustomCollectionPullRequest attaches an optional system_prompt and omits it when blank', () => {
+  const baseDraft = {
+    name: 'WithPrompt',
+    components: { llm: 'planner' },
+  };
+
+  const withoutPrompt = collectionUtils.buildCustomCollectionPullRequest(baseDraft);
+  assert.equal(
+    'system_prompt' in withoutPrompt,
+    false,
+    'A draft without systemPrompt should not include the wire field.',
+  );
+
+  const blankPrompt = collectionUtils.buildCustomCollectionPullRequest({ ...baseDraft, systemPrompt: '   \n   ' });
+  assert.equal(
+    'system_prompt' in blankPrompt,
+    false,
+    'A whitespace-only systemPrompt should be treated as absent.',
+  );
+
+  const customPrompt = '   You are a helpful tester. Tools: {tool_list}{tool_guidance}\n   ';
+  const withPrompt = collectionUtils.buildCustomCollectionPullRequest({ ...baseDraft, systemPrompt: customPrompt });
+  assert.equal(withPrompt.system_prompt, customPrompt.trim());
+});
+
+defineTest('modelEntryToCustomCollection surfaces system_prompt back into the editable draft', () => {
+  const modelsData = {
+    'planner': model(['tool-calling']),
+    'user.MyKit': model(['collection'], true, 'collection.omni', {
+      components: ['planner'],
+      system_prompt: 'Greetings. {tool_list}{tool_guidance}',
+    }),
+  };
+
+  const custom = collectionUtils.modelEntryToCustomCollection('user.MyKit', modelsData['user.MyKit'], modelsData);
+  assert.equal(custom.systemPrompt, 'Greetings. {tool_list}{tool_guidance}');
+});
+
+defineTest('collection export round-trip preserves system_prompt on the import-ready payload', () => {
+  const raw = {
+    id: 'CreatorStudio',
+    object: 'model',
+    created: 1234567890,
+    owned_by: 'lemonade',
+    recipe: 'collection.omni',
+    checkpoint: '',
+    checkpoints: { main: '' },
+    components: ['planner'],
+    labels: [],
+    recipe_options: {},
+    suggested: true,
+    downloaded: true,
+    system_prompt: 'Custom override. {tool_list}{tool_guidance}',
     models: [
-      { model_name: 'planner', recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M', labels: ['tool-calling'] },
-      { model_name: 'image-model', recipe: 'sd-cpp', checkpoint: 'org/image:image.gguf', labels: ['image'] },
+      {
+        id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',
+        recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M',
+        checkpoints: { main: 'org/planner:Q4_K_M' },
+        components: [], labels: ['tool-calling'], recipe_options: {},
+        suggested: true, downloaded: true, size: 2.5,
+      },
     ],
   };
 
-  const result = collectionUtils.importCustomCollections(payload, {});
-  assert.equal(result.imported, 1);
-  assert.equal(result.skipped, 0);
-  assert.equal(result.models.length, 2);
-  assert.equal(result.collections[0].id, 'user.ImportedKit');
-  assert.equal(result.collections[0].components.llm, 'planner');
-  assert.equal(result.collections[0].components.image, 'image-model');
+  const { payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.equal(
+    payload.system_prompt,
+    'Custom override. {tool_list}{tool_guidance}',
+    'system_prompt should survive the export normalization step.',
+  );
 });
 
 defineTest('role options include registered concrete compatible models', () => {

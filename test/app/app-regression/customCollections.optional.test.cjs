@@ -24,13 +24,12 @@ function skipIfMissing() {
 
 const tests = [
   {
-    name: 'custom collection constants use server-side user namespace and export versioning',
+    name: 'custom collection constants use server-side user namespace',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = readSource(CUSTOM_COLLECTIONS);
       assertIncludes(source, 'CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX', 'Custom collections should use the server user.* namespace.');
-      assertIncludes(source, 'CUSTOM_COLLECTIONS_EXPORT_VERSION = 3', 'Export format should be versioned.');
       assertIncludes(source, 'COLLECTION_OMNI_MODEL_RECIPE', 'Custom collections should use the collection.omni recipe constant.');
     },
   },
@@ -46,25 +45,27 @@ const tests = [
     },
   },
   {
-    name: 'custom collection export includes endpoint collections and component model checkpoints',
+    name: 'custom collection export saves the normalized /models/{id} object like regular models',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
-      const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(source, /collections: collections\.map\(buildCustomCollectionPullRequest\)/, 'Collection export should keep endpoint-compatible collection entries.');
-      assertMatches(source, /modelInfoToExportEntry[\s\S]*?checkpoint[\s\S]*?checkpoints[\s\S]*?return entry/, 'Component exports should include checkpoint and checkpoints metadata.');
-      assertIncludes(source, 'models: Array.from(modelEntries.values())', 'Export payload should include component model records.');
+      const app = normalizeWhitespace(readSource(APP));
+      assertIncludes(app, 'downloadModelExportFile(request.model_name)', 'Collection export should fetch /models/{id} and save it via the shared export helper.');
+      const modelData = normalizeWhitespace(readSource(MODEL_DATA));
+      assertIncludes(modelData, 'EXPORT_KNOWN_KEYS', 'The shared export transform should allow-list keys (mirroring the CLI kKnownKeys).');
+      assertMatches(modelData, /normalizeModelExportPayload/, 'The export transform should be a pure, testable function.');
+      assertMatches(modelData, /filename: `\$\{bareName\}\.json`/, 'Export filenames should not carry the user. prefix.');
     },
   },
   {
-    name: 'custom collection import registers exported component models before collections',
+    name: 'custom collection import hands the exported file to /pull as a single registration',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const app = normalizeWhitespace(readSource(APP));
       assertIncludes(app, 'pullModel(requestBody.model_name', 'Omni model registration should use the UI download path so server-owned pulls appear in Download Manager.');
       assertIncludes(app, 'collectionComponents', 'Omni model pulls should pass component names to the Download Manager row.');
-      assertMatches(app, /for \(const model of result\.models\)[\s\S]*?pullRegistration\(buildCustomModelPullRequest\(model\)[\s\S]*?for \(const collection of result\.collections\)/, 'Import should register missing component model definitions before collection definitions.');
+      assertMatches(app, /const record = parsed as PullRegistrationPayload[\s\S]*?await pullRegistration\(record\)/, 'Import should POST the whole exported file to /pull; the server registers embedded component definitions.');
     },
   },
   {

@@ -353,15 +353,28 @@ HttpResponse HttpClient::post(const std::string& url,
     std::string response_body;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
      // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -489,7 +502,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     callback_data.buffer = nullptr;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);

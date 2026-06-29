@@ -27,6 +27,7 @@
 #include <functional>
 #include <map>
 #include <vector>
+#include <optional>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -128,16 +129,14 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
     return false;
 }
 
-static void hide_option(CLI::Option* option) {
-    if (option != nullptr) {
-        option->group("");
-    }
-}
-
-static void hide_new_options(CLI::App& app, size_t start_index) {
-    std::vector<CLI::Option*> options = app.get_options();
-    for (size_t i = start_index; i < options.size(); ++i) {
-        hide_option(options[i]);
+static void hide_all_options_except_help(CLI::App& app) {
+    for (auto* opt : app.get_options()) {
+        if (opt != nullptr) {
+            const std::string name = opt->get_name();
+            if (name != "--help" && name != "--help-all" && name != "-h") {
+                opt->group("");
+            }
+        }
     }
 }
 
@@ -154,7 +153,9 @@ struct CliConfig {
     std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
+    std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
+    bool backends_showall = false;
     bool force = false;
     std::string output_file;
     bool downloaded = false;
@@ -174,6 +175,10 @@ struct CliConfig {
     std::string cloud_provider;
     std::string cloud_base_url;
     std::string cloud_api_key;
+    bool cloud_allow_insecure_http = false;
+
+    // Telemetry toggle options
+    std::string telemetry_status;
 
     // Chat REPL options
     bool chat_cli = false;
@@ -434,13 +439,37 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
         return 1;
     }
 
-    // Check if model is downloaded
-    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
-        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
-        return 1;
+    // Pre-emptive capacity check
+    std::vector<std::string> labels;
+    if (model_info.contains("labels") && model_info["labels"].is_array()) {
+        for (const auto& label : model_info["labels"]) {
+            labels.push_back(label.get<std::string>());
+        }
+    }
+    lemon::ModelType model_type = lemon::get_model_type_from_labels(labels);
+    std::string type_str = lemon::model_type_to_string(model_type);
+
+    try {
+        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        auto health_json = nlohmann::json::parse(health_str);
+        if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
+            auto max_models = health_json["max_models"];
+            auto pinned_models = health_json["pinned_models"];
+            int max = max_models.value(type_str, -1);
+            int pinned_count = pinned_models.value(type_str, 0);
+            if (max != -1 && pinned_count >= max) {
+                std::cerr << "Warning: All slots (" << max << ") for model type '" << type_str
+                          << "' are occupied by pinned models. Loading will fail." << std::endl;
+            }
+        }
+    } catch (...) {
+        // Ignore errors checking health status pre-emptively
     }
 
-    bool is_downloaded = model_info["downloaded"].get<bool>();
+    bool is_downloaded = false;
+    if (model_info.contains("downloaded") && model_info["downloaded"].is_boolean()) {
+        is_downloaded = model_info["downloaded"].get<bool>();
+    }
 
     if (!is_downloaded) {
         std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
@@ -455,7 +484,7 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
 }
 
 static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -508,7 +537,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         return result;
     }
 
-    return client.list_recipes();
+    return client.list_recipes(config.backends_showall);
 }
 
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
@@ -965,17 +994,40 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::string key = arg.substr(0, eq_pos);
         std::string value = arg.substr(eq_pos + 1);
 
-        size_t dot_pos = key.find('.');
-        if (dot_pos != std::string::npos) {
-            std::string section = key.substr(0, dot_pos);
-            std::string field = normalize_key(key.substr(dot_pos + 1));
-
-            if (!updates.contains(section)) {
-                updates[section] = nlohmann::json::object();
+        std::vector<std::string> path;
+        size_t last_pos = 0;
+        while (true) {
+            size_t next_dot = key.find('.', last_pos);
+            if (next_dot == std::string::npos) {
+                std::string part = key.substr(last_pos);
+                if (!part.empty()) {
+                    path.push_back(normalize_key(part));
+                }
+                break;
             }
-            updates[section][field] = parse_typed_value(value);
-        } else {
-            updates[normalize_key(key)] = parse_typed_value(value);
+            std::string part = key.substr(last_pos, next_dot - last_pos);
+            if (!part.empty()) {
+                path.push_back(normalize_key(part));
+            }
+            last_pos = next_dot + 1;
+        }
+
+        if (path.empty()) {
+            std::cerr << "Error: empty key in '" << arg << "'" << std::endl;
+            return 1;
+        }
+
+        nlohmann::json* current = &updates;
+        for (size_t i = 0; i < path.size(); ++i) {
+            const std::string& k = path[i];
+            if (i == path.size() - 1) {
+                (*current)[k] = parse_typed_value(value);
+            } else {
+                if (!current->contains(k) || !(*current)[k].is_object()) {
+                    (*current)[k] = nlohmann::json::object();
+                }
+                current = &((*current)[k]);
+            }
         }
     }
 
@@ -1134,14 +1186,20 @@ int main(int argc, char* argv[]) {
     CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
-    CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
     backends_cmd->alias("recipes");
+    backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+
+    CLI::App* telemetry_cmd = app.add_subcommand("telemetry", "Toggle server telemetry on or off")->group("Server");
+    telemetry_cmd->add_option("status", config.telemetry_status, "Telemetry status: 'on' or 'off'")
+        ->required()
+        ->check(CLI::IsMember({"on", "off"}));
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
@@ -1156,6 +1214,8 @@ int main(int argc, char* argv[]) {
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* pin_cmd = app.add_subcommand("pin", "Pin a loaded model to prevent eviction")->group("Model management");
+    CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
@@ -1181,6 +1241,8 @@ int main(int argc, char* argv[]) {
     cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
         "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
         ->type_name("KEY");
+    cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1190,6 +1252,8 @@ int main(int argc, char* argv[]) {
     cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
         "API key. If omitted you'll be prompted (TTY only).")
         ->type_name("KEY");
+    cloud_auth_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
 
     CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
     cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1241,14 +1305,18 @@ int main(int argc, char* argv[]) {
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
+    static bool load_pinned_flag = false;
     load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
+    static bool run_pinned_flag = false;
     run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
     run_cmd->add_flag("--chat-cli", config.chat_cli,
         "After loading, open an interactive chat REPL in the terminal instead of the browser");
 
@@ -1262,6 +1330,10 @@ int main(int argc, char* argv[]) {
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
+
+    // Pin/unpin options
+    pin_cmd->add_option("model", config.model, "Model name to pin")->required()->type_name("MODEL");
+    unpin_cmd->add_option("model", config.model, "Model name to unpin")->required()->type_name("MODEL");
 
     // Export options
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
@@ -1281,12 +1353,9 @@ int main(int argc, char* argv[]) {
             ->default_val(config.agent_args);
     };
 
-    size_t launch_option_count = launch_cmd->get_options().size();
     add_common_launch_options(*launch_cmd);
-    hide_new_options(*launch_cmd, launch_option_count);
-    launch_option_count = launch_cmd->get_options().size();
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
-    hide_new_options(*launch_cmd, launch_option_count);
+    hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
     for (const std::string& agent_name : SUPPORTED_AGENTS) {
@@ -1323,6 +1392,20 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         return app.exit(e);
+    }
+
+    if (load_cmd->count() > 0) {
+        if (load_cmd->count("--pinned") > 0) {
+            config.pinned = load_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    } else if (run_cmd->count() > 0) {
+        if (run_cmd->count("--pinned") > 0) {
+            config.pinned = run_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
     }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
@@ -1391,6 +1474,10 @@ int main(int argc, char* argv[]) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (pin_cmd->count() > 0) {
+        return client.pin_model(config.model, true);
+    } else if (unpin_cmd->count() > 0) {
+        return client.pin_model(config.model, false);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
     } else if (backends_cmd->count() > 0) {
@@ -1401,7 +1488,8 @@ int main(int argc, char* argv[]) {
         if (cloud_install_cmd->count() > 0) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
-                                                  config.cloud_api_key);
+                                                  config.cloud_api_key,
+                                                  config.cloud_allow_insecure_http);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
@@ -1431,7 +1519,8 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
             }
-            return client.cloud_auth(config.cloud_provider, key);
+            return client.cloud_auth(config.cloud_provider, key,
+                                     config.cloud_allow_insecure_http);
         }
         if (cloud_clear_cmd->count() > 0) {
             return client.cloud_auth_clear(config.cloud_provider);
@@ -1449,6 +1538,23 @@ int main(int argc, char* argv[]) {
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
+    } else if (telemetry_cmd->count() > 0) {
+        bool enable = (config.telemetry_status == "on");
+        nlohmann::json body = {{"telemetry", {{"enabled", enable}}}};
+        try {
+            std::string res_str = client.make_request("/internal/set", "POST", body.dump(), "application/json");
+            auto json_res = nlohmann::json::parse(res_str);
+            if (json_res.contains("status") && json_res["status"] == "success") {
+                std::cout << "Telemetry successfully turned " << (enable ? "on" : "off") << "." << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Failed to toggle telemetry: " << res_str << std::endl;
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error toggling telemetry: " << e.what() << std::endl;
+            return 1;
+        }
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
             return handle_config_set(client, config_set_cmd->remaining());

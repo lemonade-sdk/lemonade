@@ -45,6 +45,8 @@ Reviewers are expected to use tools like Claude Code's `/review` to save time by
 
 __Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
 
+AI tools may be used to draft documentation, but the author is responsible for verifying accuracy before submitting. See the [documentation guide](./documentation.md) for a pre-submission checklist and style guidance.
+
 ## Maintainers
 
 While each maintainer is welcome to work on any part of the Lemonade codebase, each maintainer does have specific knowledge of certain areas. You should use their knowledge as a starting point for designing your contribution, and they will be the ones to review your contribution when it is ready.

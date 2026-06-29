@@ -8,8 +8,8 @@ An **omni model** is a virtual model made up of components, registered with `rec
 
 | Omni model | LLM | Image | ASR | TTS |
 |-----------|-----|-------|-----|-----|
-| **LMX-Omni-52B-Halo** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
-| **LMX-Omni-5.5B-Lite** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
+| [**LMX-Omni-52B-Halo**](https://huggingface.co/lemonade-sdk/LMX-Omni-52B-Halo) | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
+| [**LMX-Omni-5.5B-Lite**](https://huggingface.co/lemonade-sdk/LMX-Omni-5.5B-Lite) | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
 Once all of an omni model's components are downloaded, it appears in the default `/v1/models` listing (and Ollama `/api/tags`) — because the server orchestrates `/chat/completions` for it, it behaves as a genuine OpenAI-compatible chat model. Not-yet-downloaded omni models surface with `?show_all=true`, and all of them appear in the Lemonade desktop app's Model Manager under the **Lemonade** category.
 
@@ -39,6 +39,12 @@ The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.j
 | `analyze_image` | `POST /v1/chat/completions` | LLM with `vision` |
 
 Endpoint request/response shapes are documented in the [Endpoints Spec](../api/README.md).
+
+### Per-collection system prompt override
+
+The default OmniRouter system prompt lives in `toolDefinitions.json` and is a *template* with `{tool_list}` and `{tool_guidance}` placeholders that the server (and app) expand at runtime based on which components are present.
+
+Each collection model can override that default by setting its own `system_prompt` template — either in its registry entry (`server_models.json` for built-ins), in its published Hugging Face collection JSON (for HF-backed collections like `LMX-Omni-*`), or via the desktop app's Omni Model editor for custom collections. When present, the per-collection value wins; otherwise the global default applies. Tool definitions stay global — only the prompt text is per-collection.
 
 ## How to Use Omni Models
 
@@ -81,3 +87,5 @@ python examples/lemonade_tools.py "Say hello world out loud"
 ## Custom Omni Models
 
 You can build your own omni model from registered models — see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app) in the custom models guide. The planner LLM must carry the `tool-calling` label, and each modality must have a downloaded model whose `labels` include the matching entry from the [tools table](#available-tools).
+
+To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).

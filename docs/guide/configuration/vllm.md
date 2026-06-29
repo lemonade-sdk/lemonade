@@ -95,12 +95,14 @@ Lemonade-managed process arguments cannot be set in this file or in `vllm_args`:
 
 ## Tuning
 
-Free-form CLI args can be appended to `vllm-server` via `vllm_args`:
+Free-form CLI args can be appended to `vllm-server` via `vllm.args`:
 
 ```bash
 # Allow more concurrent sequences and turn on prefix caching
-lemonade config set vllm_args="--max-num-seqs 128 --enable-prefix-caching"
+lemonade config set vllm.args="--max-num-seqs 128 --enable-prefix-caching"
 ```
+
+The flat form (`vllm_args=...`) is also accepted and maps to the same setting.
 
 ## Known gotchas
 

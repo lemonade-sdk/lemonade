@@ -81,6 +81,7 @@ nav:
     - Philosophy: dev/philosophy.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
+    - Documentation Guide: dev/documentation.md
     - C++: dev/getting-started.md
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md
