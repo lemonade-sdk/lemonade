@@ -32,6 +32,10 @@ export interface ModelInfo {
   downloaded?: boolean;
   update_available?: boolean;
   image_defaults?: ImageDefaults;
+  // Per-collection system prompt template (collection.omni only). Overrides the
+  // global default in toolDefinitions.json when set. Keeps {tool_list} and
+  // {tool_guidance} placeholders so runtime substitution still works.
+  system_prompt?: string;
   [key: string]: unknown;
 }
 
@@ -133,6 +137,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.reasoning = reasoning;
   }
 
+  const systemPrompt = info['system_prompt'];
+  if (typeof systemPrompt === 'string' && systemPrompt) {
+    normalized.system_prompt = systemPrompt;
+  }
+
   const vision = info['vision'];
   if (typeof vision === 'boolean') {
     normalized.vision = vision;
@@ -221,6 +230,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.vision = model.vision;
       }
 
+      if (typeof model.system_prompt === 'string' && model.system_prompt) {
+        modelInfo.system_prompt = model.system_prompt;
+      }
+
       // cloud_provider distinguishes per-provider buckets in the Model
       // Manager grouping (recipe="cloud" alone collapses all providers
       // into a single sub-heading).
@@ -277,6 +290,7 @@ const EXPORT_KNOWN_KEYS = new Set([
   'recipe',
   'recipe_options',
   'size',
+  'system_prompt',
 ]);
 
 const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {

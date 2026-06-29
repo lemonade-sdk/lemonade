@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.8.0)
+project(lemon_cpp VERSION 10.8.1)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -408,8 +408,8 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
-    # Set Windows target version to Windows 10 for httplib v0.26.0
-    add_compile_definitions(_WIN32_WINNT=0x0A00)
+    # Set Windows target version to Windows 10 for httplib v0.26.0, and prevent Windows.h min/max macro definitions
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX)
     if(MSVC)
         # Add security-hardening compiler flags for MSVC
         # Control Flow Guard - prevents control flow hijacking
@@ -596,6 +596,7 @@ set(SOURCES_CORE
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/prometheus_metrics.cpp
@@ -1325,6 +1326,10 @@ if(APPLE)
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
+    # Declare the package arm64-only so the macOS Installer does not assume our
+    # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
+    set(CPACK_APPLE_PKG_INSTALLER_CONTENT "<hostArchitectures><hostArchitecture>arm64</hostArchitecture></hostArchitectures>")
+
     set(CPACK_PRODUCTBUILD_DOMAIN "system")
 
     if(INSTALLER_IDENTITY)
@@ -1786,4 +1791,68 @@ if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
     # Enable testing and register the test with CTest
     include(CTest)
     add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
+endif()
+
+# Routing engine contract surface (issue #2407). Header-only foundation: the
+# shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
+# The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
+set(_ROUTING_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
+)
+if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+    add_executable(test_routing_policy_contract
+        test/cpp/test_routing_policy_contract.cpp
+    )
+    target_include_directories(test_routing_policy_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_contract PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_contract PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
+endif()
+
+# Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
+# Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
+# full_attention_interval exact count, and scalar fallback paths.
+set(_AUTO_TUNE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_tune.cpp"
+)
+if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
+    add_executable(test_auto_tune
+        test/cpp/test_auto_tune.cpp
+    )
+    target_include_directories(test_auto_tune PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME AutoTuneTest COMMAND test_auto_tune)
+endif()
+
+set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
+if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
+    add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
+    target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
+    add_test(NAME TelemetryHelpersTest COMMAND test_telemetry_helpers)
+endif()
+
+set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
+if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
+    add_executable(test_config_migration test/cpp/test_config_migration.cpp)
+    target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
+    add_test(NAME ConfigMigrationTest COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
+if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
+    add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
+    target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
+    add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
 endif()

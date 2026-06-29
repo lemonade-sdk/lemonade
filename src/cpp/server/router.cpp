@@ -10,16 +10,25 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
 #include "lemon/server_capabilities.h"
+#include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
-#include <iostream>
+#include "telemetry.h"
 #include <algorithm>
+#include <condition_variable>
+#include <iostream>
+#include <mutex>
+#include <queue>
+#include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
 #include "lemon/eviction_engine.h"
+#include "lemon/utils/http_client.h"
 
 namespace lemon {
+
+
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
     : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
@@ -887,7 +896,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
 // Template method for streaming execution
 template<typename Func>
-void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func) {
+void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
     WrappedServer* server = nullptr;
     std::string requested_model;
 
@@ -994,6 +1003,10 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 continue;
             }
 
+            if (span) {
+                span->end_with_error(e.what());
+            }
+
             json error = ErrorResponse::create(
                 std::string("Backend for model '") + requested_model +
                     "' crashed before streaming started and could not be reloaded: " + e.what(),
@@ -1012,39 +1025,253 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 }
 
 json Router::chat_completion(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        return server->chat_completion(request);
-    });
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+
+    try {
+        WrappedServer* active_server = nullptr;
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            active_server = server;
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
+                if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
+                if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
+                if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
+            }
+            return server->chat_completion(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                std::string text_output = "";
+                if (response.contains("usage")) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                }
+                if (response.contains("timings")) {
+                    auto timings = response["timings"];
+                    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
+                    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
+
+                    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
+                        double prompt_ms = timings["prompt_ms"].get<double>();
+                        if (prompt_ms > 0) {
+                            span->set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
+                        }
+                    }
+                    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
+                        double predicted_ms = timings["predicted_ms"].get<double>();
+                        int predicted_n = timings["predicted_n"].get<int>();
+                        if (predicted_ms > 0 && predicted_n > 0) {
+                            span->set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
+                        }
+                    }
+                }
+
+                if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+                    auto choice = response["choices"][0];
+                    std::string reasoning_output = "";
+                    if (choice.contains("message")) {
+                        auto msg = choice["message"];
+                        if (msg.contains("reasoning_content") && msg["reasoning_content"].is_string()) {
+                            reasoning_output = msg["reasoning_content"].get<std::string>();
+                        } else if (msg.contains("thinking") && msg["thinking"].is_string()) {
+                            reasoning_output = msg["thinking"].get<std::string>();
+                        }
+                        if (msg.contains("content") && msg["content"].is_string()) {
+                            text_output = msg["content"].get<std::string>();
+                        }
+                    }
+                    if (!reasoning_output.empty()) {
+                        text_output = "<think>\n" + reasoning_output + "\n</think>\n" + text_output;
+                    }
+                }
+
+                std::string url;
+                std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                if (active_server) {
+                    url = active_server->get_additional_telemetry_url();
+                    parser = active_server->get_additional_telemetry_parser();
+                }
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::completion(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        return server->completion(request);
-    });
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+
+    try {
+        WrappedServer* active_server = nullptr;
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            active_server = server;
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
+                if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
+                if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
+            }
+            return server->completion(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                std::string text_output = "";
+                if (response.contains("usage")) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                }
+
+                if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+                    auto choice = response["choices"][0];
+                    if (choice.contains("text") && choice["text"].is_string()) {
+                        text_output = choice["text"].get<std::string>();
+                    }
+                }
+
+                std::string url;
+                std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                if (active_server) {
+                    url = active_server->get_additional_telemetry_url();
+                    parser = active_server->get_additional_telemetry_parser();
+                }
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::embeddings(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(server);
-        if (!embeddings_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Embeddings", device_type_to_string(server->get_device_type()))
-            );
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("EMBEDDING", "embeddings", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("embedding.backend", identity.recipe);
+                span->set_attribute("embedding.device_type", identity.device);
+                span->set_attribute("embedding.checkpoint", identity.checkpoint);
+                span->set_attribute("embedding.recipe", identity.recipe);
+            }
+            auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(server);
+            if (!embeddings_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Embeddings", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return embeddings_server->embeddings(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage")) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
+                }
+                std::string output_dump = "";
+                if (response.contains("data") && response["data"].is_array()) {
+                    output_dump = "Embeddings data with " + std::to_string(response["data"].size()) + " vectors.";
+                } else {
+                    output_dump = response.dump();
+                }
+                span->end_with_success(usage_payload, output_dump);
+            }
         }
-        return embeddings_server->embeddings(request);
-    });
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::reranking(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        auto reranking_server = dynamic_cast<IRerankingServer*>(server);
-        if (!reranking_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Reranking", device_type_to_string(server->get_device_type()))
-            );
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("RERANKER", "reranking", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("reranker.backend", identity.recipe);
+                span->set_attribute("reranker.device_type", identity.device);
+                span->set_attribute("reranker.checkpoint", identity.checkpoint);
+                span->set_attribute("reranker.recipe", identity.recipe);
+            }
+            auto reranking_server = dynamic_cast<IRerankingServer*>(server);
+            if (!reranking_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Reranking", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return reranking_server->reranking(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage")) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, response.dump());
+            }
         }
-        return reranking_server->reranking(request);
-    });
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::get_slots() {
@@ -1399,48 +1626,381 @@ void Router::update_prompt_tokens(const std::string& model_name, int prompt_toke
 }
 
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/chat/completions", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+
+    bool hide_outputs = false;
+    bool hide_thinking = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+        hide_thinking = config->telemetry_hide_thinking();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto accumulated_reasoning = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, hide_outputs, hide_thinking](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+                            auto delta = parsed["choices"][0]["delta"];
+                            if (!hide_thinking) {
+                                if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+                                    *accumulated_reasoning += delta["reasoning_content"].get<std::string>();
+                                } else if (delta.contains("thinking") && delta["thinking"].is_string()) {
+                                    *accumulated_reasoning += delta["thinking"].get<std::string>();
+                                }
+                            }
+                            if (!hide_outputs) {
+                                if (delta.contains("content") && delta["content"].is_string()) {
+                                    *accumulated_text += delta["content"].get<std::string>();
+                                }
+                            }
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+                if (request_json.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request_json["max_completion_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, accumulated_reasoning, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+                        std::string final_output = *accumulated_text;
+                        if (!accumulated_reasoning->empty()) {
+                            final_output = "<think>\n" + *accumulated_reasoning + "\n</think>\n" + final_output;
+                        }
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
 }
 
 void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/completions", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+
+    bool hide_outputs = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+                            auto choice = parsed["choices"][0];
+                            if (!hide_outputs) {
+                                if (choice.contains("text") && choice["text"].is_string()) {
+                                    *accumulated_text += choice["text"].get<std::string>();
+                                }
+                            }
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/completions", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
 }
 
 void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/responses", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+
+    bool hide_outputs = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (!hide_outputs) {
+                            if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+                                auto delta = parsed["choices"][0]["delta"];
+                                if (delta.contains("content") && delta["content"].is_string()) {
+                                    *accumulated_text += delta["content"].get<std::string>();
+                                }
+                            }
+                            if (parsed.contains("response") && parsed["response"].is_string()) {
+                                *accumulated_text += parsed["response"].get<std::string>();
+                            }
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/responses", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
 }
 
 int Router::count_pinned_servers_by_type(ModelType type) const {

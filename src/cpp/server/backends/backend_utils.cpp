@@ -151,6 +151,97 @@ namespace lemon::backends {
         return ends_with(filename, ".7z");
     }
 
+    // Greedy glob match where '*' matches any (possibly empty) run of
+    // characters. No '?' support — release asset names only need '*'.
+    static bool wildcard_match(const std::string& pattern, const std::string& text) {
+        size_t p = 0, t = 0, star = std::string::npos, mark = 0;
+        while (t < text.size()) {
+            if (p < pattern.size() && pattern[p] == '*') {
+                star = p++;
+                mark = t;
+            } else if (p < pattern.size() && pattern[p] == text[t]) {
+                ++p;
+                ++t;
+            } else if (star != std::string::npos) {
+                p = star + 1;
+                t = ++mark;
+            } else {
+                return false;
+            }
+        }
+        while (p < pattern.size() && pattern[p] == '*') {
+            ++p;
+        }
+        return p == pattern.size();
+    }
+
+    // Resolve a '*' wildcard in a release asset filename to the concrete asset
+    // name published for `tag`. Some upstreams embed a component that changes
+    // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
+    // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip). Rather than hardcode and chase
+    // that value on every bump, the backend spec carries a '*' placeholder and
+    // we look up the real asset name here via the GitHub Releases API. Returns
+    // the pattern unchanged when it contains no wildcard.
+    static std::string resolve_asset_wildcard(const std::string& repo,
+                                              const std::string& tag,
+                                              const std::string& pattern,
+                                              const BackendSpec& spec) {
+        if (pattern.find('*') == std::string::npos) {
+            return pattern;
+        }
+
+        const std::string url = "https://api.github.com/repos/" + repo +
+                                "/releases/tags/" + tag;
+        const std::map<std::string, std::string> headers = {
+            {"User-Agent", "lemonade"},
+            {"Accept", "application/vnd.github+json"},
+        };
+
+        LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
+            << "' for " << repo << "@" << tag << " via " << url << std::endl;
+
+        utils::HttpResponse resp;
+        try {
+            resp = utils::HttpClient::get(url, headers);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to query GitHub for release '" + tag + "' of " + repo +
+                " to resolve asset '" + pattern + "': " + e.what());
+        }
+        if (resp.status_code < 200 || resp.status_code >= 300) {
+            throw std::runtime_error(
+                "GitHub returned HTTP " + std::to_string(resp.status_code) +
+                " when resolving asset '" + pattern + "' for " + repo + "@" + tag);
+        }
+
+        json body;
+        try {
+            body = json::parse(resp.body);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse GitHub release response for " + repo + "@" +
+                tag + ": " + e.what());
+        }
+
+        if (body.contains("assets") && body["assets"].is_array()) {
+            for (const auto& asset : body["assets"]) {
+                if (!asset.contains("name") || !asset["name"].is_string()) {
+                    continue;
+                }
+                const std::string name = asset["name"].get<std::string>();
+                if (wildcard_match(pattern, name)) {
+                    LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
+                        << pattern << "' to '" << name << "'" << std::endl;
+                    return name;
+                }
+            }
+        }
+
+        throw std::runtime_error(
+            "No release asset matching '" + pattern + "' found for " + repo +
+            "@" + tag);
+    }
+
     bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // CUDA Windows release assets are .7z and use the existing native tar.exe path.
         // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
@@ -363,7 +454,7 @@ namespace lemon::backends {
     void BackendUtils::install_from_github(const BackendSpec& spec,
                                            const std::string& expected_version,
                                            const std::string& repo,
-                                           const std::string& filename,
+                                           const std::string& asset_pattern,
                                            const std::string& backend,
                                            DownloadProgressCallback progress_cb) {
         std::string install_dir;
@@ -410,6 +501,12 @@ namespace lemon::backends {
         if (needs_install) {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
+
+            // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
+            // version in sd-cpp's Darwin asset) to the concrete published name
+            // before building any download URL. No-op when there is no wildcard.
+            const std::string filename =
+                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -722,7 +819,7 @@ namespace lemon::backends {
             // Even if already installed, send a completion event so callers know it's done
             if (progress_cb) {
                 DownloadProgress p;
-                p.file = filename;
+                p.file = asset_pattern;
                 p.file_index = 1;
                 p.total_files = 1;
                 p.bytes_downloaded = 0;

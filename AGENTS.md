@@ -139,6 +139,14 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 
 ## Code Style
 
+### Comments & Documentation
+
+**Default to writing no comments.** Only add a comment when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, or behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.
+
+**Never write comments that explain WHAT the code does** — well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123") — those belong in the PR description and rot as the codebase evolves.
+
+**PR descriptions should be concise.** 1-3 sentences for the summary. No essays. The diff shows what changed; the description explains why and any non-obvious context. Bullet points over paragraphs.
+
 ### C++
 - C++17, `lemon::` namespace
 - `snake_case` for functions/variables, `CamelCase` for classes/types

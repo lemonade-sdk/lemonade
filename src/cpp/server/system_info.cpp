@@ -1915,8 +1915,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    if (device_lower.find("6800") != std::string::npos ||
+	// AMD RDNA2 dGPUs (RX 6000 series) → gfx103X
+    if (device_lower.find("6950") != std::string::npos ||
+        device_lower.find("6900") != std::string::npos ||
+        device_lower.find("6800") != std::string::npos ||
+        device_lower.find("6750") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
+        device_lower.find("6650") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||
         device_lower.find("6500") != std::string::npos) {
         return "gfx103X";
@@ -4087,30 +4092,31 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     // NVIDIA: one query returns used + total for the first GPU.
     {
-        std::string output;
-        int rc = lemon::utils::ProcessManager::run_command(
-            "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
-            output, 5);
-        if (rc == 0 && !output.empty()) {
-            std::istringstream iss(output);
-            std::string line;
-            if (std::getline(iss, line)) {
-                size_t comma = line.find(',');
-                if (comma != std::string::npos) {
-                    try {
-                        double used = std::stod(line.substr(0, comma));
-                        double total = std::stod(line.substr(comma + 1));
-                        if (total > 0.0) {
-                            return used / total;
+        if (!find_executable_in_path("nvidia-smi").empty()) {
+            std::string output;
+            int rc = lemon::utils::ProcessManager::run_command(
+                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
+                output, 5);
+            if (rc == 0 && !output.empty()) {
+                std::istringstream iss(output);
+                std::string line;
+                if (std::getline(iss, line)) {
+                    size_t comma = line.find(',');
+                    if (comma != std::string::npos) {
+                        try {
+                            double used = std::stod(line.substr(0, comma));
+                            double total = std::stod(line.substr(comma + 1));
+                            if (total > 0.0) {
+                                return used / total;
+                            }
+                        } catch (...) {
+                            // fall through to other sources
                         }
-                    } catch (...) {
-                        // fall through to other sources
                     }
                 }
             }
         }
     }
-
 #ifdef __linux__
     // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
     try {

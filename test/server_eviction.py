@@ -6,6 +6,7 @@ import time
 from utils.server_base import ServerTestBase, pull_model_with_retry
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
@@ -19,7 +20,7 @@ class EvictionTests(ServerTestBase):
 
     _model_pulled = False
     _model2_pulled = False
-    MODEL2 = "phi-3-mini-4k-instruct-q4"
+    MODEL2 = SECOND_TEST_MODEL_EVICTION
 
     @classmethod
     def setUpClass(cls):
@@ -83,7 +84,7 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
+            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90,"max_loaded_models": 2},
             headers=headers,
         )
 
@@ -187,7 +188,7 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
+            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90, "max_loaded_models" : 2},
             headers=headers,
         )
 
@@ -203,6 +204,7 @@ class EvictionTests(ServerTestBase):
             json={"model_name": self.MODEL2},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        time.sleep(2)
 
         self._simulate_vram_pressure(0.95)
 

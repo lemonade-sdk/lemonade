@@ -67,5 +67,22 @@
     "cpu_args": "",
     "cpu_bin": "builtin"
   },
-  "cloud_providers": []
+  "cloud_providers": [],
+  "telemetry": {
+    "enabled": false,
+    "hide_inputs": false,
+    "hide_outputs": false,
+    "hide_thinking": false,
+    "max_queue_capacity": 1000,
+    "otlp": {
+      "endpoint": "http://localhost:4318/v1/traces",
+      "protocol": "http/protobuf",
+      "semantics": ["openinference", "otel_genai"],
+      "headers": {},
+      "max_retries": 0,
+      "retry_backoff_base_s": 5.0,
+      "send_batch_size": 100,
+      "batch_timeout_s": 1.0
+    }
+  }
 }

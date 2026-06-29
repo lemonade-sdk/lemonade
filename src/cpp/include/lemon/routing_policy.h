@@ -1,0 +1,332 @@
+#pragma once
+
+#include <functional>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+#include <nlohmann/json.hpp>
+
+// Contract surface for the generic routing engine (the "Lemonade Router").
+//
+// This header is the foundation: the shared types, interfaces, and the engine
+// constructor signature that the rest of the engine codes against. It is
+// intentionally behavior-free — the match-expression evaluator, the classifier /
+// condition registry, the deterministic conditions, the semantic_similarity and
+// llm classifiers, the engine assembly, the parser, and the live Router wiring
+// all implement against the declarations here.
+//
+// Design north star: the engine does PURE model selection — boolean rules over
+// classifiers, first-match-wins, fail-open to default_model. It emits a Decision
+// plus an optional per-condition trace. Everything trust-specific (verdicts,
+// block, audit persistence, consent) is layered ON TOP via three seams that the
+// engine never interprets:
+//   1. RouteContext::metadata   — caller-supplied routing inputs.
+//   2. Rule::outputs            — a pass-through bag copied verbatim into Decision.
+//   3. Decision::trace          — what the client/audit sink logs.
+//
+// INVARIANT: this header includes ONLY the standard library and nlohmann/json.
+// It must never include a backend or Router header. Backends are reached only
+// through ClassifierServices (a struct of std::function injection points), the
+// same subprocess-friendly seam pattern used by CollectionOrchestrator.
+
+namespace lemon {
+
+using json = nlohmann::json;
+
+// ---------------------------------------------------------------------------
+// Request-side context
+// ---------------------------------------------------------------------------
+
+// Generic, backend-agnostic view of one routing request. Built by the dispatch
+// layer from the inbound OpenAI chat body; consumed by conditions and
+// classifiers. No trust vocabulary lives here — `metadata` is an opaque string
+// map whose keys are the policy author's business.
+struct RouteContext {
+    // The text the classifiers/conditions see (typically the latest user turn).
+    std::string input;
+
+    // Cheap, deterministic request features. `chars` is a UTF-8 byte count (the
+    // frozen v1 unit for min_chars/max_chars; token-based length is deferred to
+    // a future min_tokens/max_tokens, never a redefinition of chars).
+    struct Params {
+        std::string model;          // the collection.router model name addressed
+        bool has_tools = false;     // request carried a non-empty tools[] array
+        bool has_images = false;    // request carried image content parts
+        std::size_t chars = 0;      // UTF-8 byte count of `input`
+    } params;
+
+    // Routing inputs carried on the OpenAI `metadata` body field. List values
+    // are comma-encoded by the caller; the engine exposes them verbatim. Trust
+    // puts keys like "task_class"/"consent" here.
+    std::map<std::string, std::string> metadata;
+};
+
+// ---------------------------------------------------------------------------
+// Classifier output + error policy
+// ---------------------------------------------------------------------------
+
+// What a Classifier produces for one (classifier, input) pair. A `classifier`
+// returns label -> score in [0,1] (HF text-classification convention);
+// `semantic_similarity` is the fixed-shape exception and reports a single cosine
+// score under the empty-string key.
+//
+// Scores are engine-opaque: a condition applies a min_score/max_score band to
+// the score of a chosen label to produce a bool.
+struct Score {
+    // label -> score. For semantic_similarity: {"": max_cosine}.
+    std::map<std::string, double> labels;
+
+    // false => the classifier failed to evaluate (model error / timeout); the
+    // owning condition then applies its `on_error` policy instead of the band.
+    bool ok = true;
+
+    // Optional human-readable rationale (the `llm` router records its pick here)
+    // — surfaced in the trace, never used for matching.
+    std::string rationale;
+
+    // Score for an explicit label, or 0.0 if absent.
+    double score_of(const std::string& label) const {
+        auto it = labels.find(label);
+        return it == labels.end() ? 0.0 : it->second;
+    }
+
+    // The single/primary score — the lone entry, or the empty-key entry for
+    // semantic_similarity. Returns 0.0 if empty.
+    double primary() const {
+        if (labels.empty()) return 0.0;
+        auto it = labels.find("");
+        return it != labels.end() ? it->second : labels.begin()->second;
+    }
+};
+
+// Behavior when a classifier fails to evaluate. match_true is "fail-closed
+// authoring" — a failed PII/jailbreak check still trips its rule and keeps the
+// request local.
+enum class OnError {
+    MatchTrue,   // "match_true"
+    MatchFalse,  // "match_false"
+};
+
+// Single source of truth for the on_error string<->enum mapping so the parser
+// and any tooling agree. Defaults to MatchFalse (fail-open) when unset or
+// unrecognized; the parser is responsible for rejecting bad values loudly.
+inline OnError parse_on_error(const std::string& s) {
+    return s == "match_true" ? OnError::MatchTrue : OnError::MatchFalse;
+}
+
+inline const char* on_error_to_string(OnError e) {
+    return e == OnError::MatchTrue ? "match_true" : "match_false";
+}
+
+// ---------------------------------------------------------------------------
+// Backend injection seam
+// ---------------------------------------------------------------------------
+
+// The ONLY way the pure engine touches live backends. Real implementations bind
+// these to the Router (embeddings / classifier-model invocation / chat); tests
+// bind them to fakes (fixed vectors / fixed scores / fixed text). Keeping them
+// std::function keeps routing_policy.h free of any Router include.
+struct ClassifierServices {
+    // Embed `text` with `model`; powers semantic_similarity. Maps to
+    // Router::embeddings.
+    std::function<std::vector<float>(const std::string& model,
+                                     const std::string& text)> embed;
+
+    // Run a text-classification `model` over `text`; returns label -> score.
+    // Powers the generic `classifier` type.
+    std::function<std::map<std::string, double>(const std::string& model,
+                                                const std::string& text)> run_classifier;
+
+    // Run a chat `model` with a system `prompt` over `input`; returns the raw
+    // assistant text. Powers the `llm` router / L0a on-ramp. Maps to
+    // Router::chat_completion.
+    std::function<std::string(const std::string& model,
+                              const std::string& prompt,
+                              const std::string& input)> chat;
+};
+
+// ---------------------------------------------------------------------------
+// Classifiers
+// ---------------------------------------------------------------------------
+
+// What a classifier sees when evaluated. Holds the request plus the injected
+// services it may call. The const& outlive the call.
+struct ClassifierContext {
+    const RouteContext& request;
+    const ClassifierServices& services;
+};
+
+// Abstract base for every classifier type (semantic_similarity, classifier,
+// llm, and the reserved vLLM-SR presets). Concrete subclasses and the registry
+// that instantiates them from JSON live alongside their implementations.
+class Classifier {
+public:
+    virtual ~Classifier() = default;
+
+    // Evaluate once for the given request. Implementations must set Score::ok
+    // false (rather than throw) on backend failure so the owning condition can
+    // apply on_error.
+    virtual Score evaluate(const ClassifierContext& ctx) const = 0;
+
+    const std::string& id() const { return id_; }
+    const std::string& type() const { return type_; }
+    OnError on_error() const { return on_error_; }
+
+    // Declared output labels and the optional default. Intrinsic to the
+    // declaration, so the registry resolves condition `label` refs against
+    // labels() and falls back to default_label() when a condition omits `label`
+    // — no sidecar metadata table. semantic_similarity declares no labels
+    // (it scores under the empty-string key, read via Score::primary), so its
+    // labels() is empty and default_label() is nullopt — which correctly makes
+    // any `label` ref on a similarity condition invalid.
+    const std::vector<std::string>& labels() const { return labels_; }
+    const std::optional<std::string>& default_label() const { return default_label_; }
+
+protected:
+    Classifier(std::string id, std::string type, OnError on_error,
+               std::vector<std::string> labels = {},
+               std::optional<std::string> default_label = std::nullopt)
+        : id_(std::move(id)), type_(std::move(type)), on_error_(on_error),
+          labels_(std::move(labels)), default_label_(std::move(default_label)) {}
+
+    std::string id_;
+    std::string type_;
+    OnError on_error_ = OnError::MatchFalse;
+    std::vector<std::string> labels_;
+    std::optional<std::string> default_label_;
+};
+
+using ClassifierPtr = std::shared_ptr<Classifier>;
+
+// ---------------------------------------------------------------------------
+// Match AST
+// ---------------------------------------------------------------------------
+
+// A node in a rule's `match` expression. Nested any/all/not over leaf
+// conditions; vLLM-SR's flat single-operator form is the degenerate subset.
+// Leaf condition parsing (deterministic ops, classifier-band refs) is handled
+// where those conditions are implemented — the foundation carries the raw leaf
+// JSON so the AST shape is fixed without committing to leaf semantics.
+struct MatchExpr {
+    enum class Op { Leaf, All, Any, Not };
+
+    Op op = Op::Leaf;
+
+    // For All/Any/Not. Not has exactly one child.
+    std::vector<MatchExpr> children;
+
+    // For Leaf: the raw condition object, e.g. {"keywords_any":[...]} or
+    // {"classifier":"pii","min_score":0.5}.
+    json leaf;
+};
+
+// ---------------------------------------------------------------------------
+// Rules + Decision
+// ---------------------------------------------------------------------------
+
+// One ordered, first-match-wins rule. `route_to` must name a candidate.
+// `outputs` is engine-opaque and copied verbatim into Decision::outputs.
+struct Rule {
+    std::string id;
+    MatchExpr match;
+    std::string route_to;
+    json outputs = json::object();
+};
+
+// One per-condition trace entry. Emitted only when route_trace=true.
+struct TraceEntry {
+    std::string condition;          // e.g. "classifier:pii", "keywords_any"
+    std::optional<double> score;    // present for classifier conditions
+    bool result = false;            // the leaf's boolean outcome
+};
+
+// The engine's output for one request. Pure selection — no verdict /
+// route-category / action in core; those are read by trust off `outputs`.
+struct Decision {
+    std::string route_to;                  // selected candidate (also the `model`)
+    std::string matched_rule;              // matched rule id, empty if defaulted
+    bool default_used = false;             // true => fell through to default_model
+    json outputs = json::object();         // verbatim from the matched rule
+    std::vector<TraceEntry> trace;         // populated only when trace requested
+};
+
+// ---------------------------------------------------------------------------
+// Match evaluation (runtime tree)
+// ---------------------------------------------------------------------------
+
+// Per-request state threaded through a Condition tree during evaluation.
+// Mutable: classifiers memoize their Score here (each runs at most once per
+// request) and leaves append to `trace` when `want_trace` is set.
+struct EvalContext {
+    const RouteContext& request;
+    const ClassifierServices& services;
+    bool want_trace = false;
+
+    // classifier id -> its Score for this request. Input text is constant within
+    // a request, so the classifier id is a sufficient memo key.
+    std::map<std::string, Score> memo;
+
+    // Per-condition trace; appended only when want_trace, surfaced verbatim as
+    // Decision::trace.
+    std::vector<TraceEntry> trace;
+};
+
+// A node in a rule's compiled match tree. Both composites (all/any/not) and
+// leaves (deterministic ops, classifier-band) are Conditions. The registry
+// compiles a MatchExpr — whose leaves are raw JSON — into a Condition tree via a
+// LeafFactory; the evaluator supplies the composites and the classifier-band
+// leaf; the engine evaluates the root Condition per rule.
+//
+// Implementations MUST NOT throw: a classifier failure surfaces via Score::ok
+// and the band's on_error policy, never an exception (the engine fails open to
+// default_model on anything unexpected).
+class Condition {
+public:
+    virtual ~Condition() = default;
+    virtual bool evaluate(EvalContext& ctx) const = 0;
+};
+using ConditionPtr = std::shared_ptr<Condition>;
+
+// Builds a leaf Condition from a single leaf object (e.g. {"keywords_any":[...]}
+// or {"classifier":"pii","min_score":0.5}). This is the seam between the
+// structural evaluator (composites) and the concrete leaf builders (deterministic
+// ops + classifier-band) registered downstream — neither side depends on the
+// other's implementation, only on this typedef.
+using LeafFactory = std::function<ConditionPtr(const json& leaf)>;
+
+// ---------------------------------------------------------------------------
+// Policy + engine (constructor signature only here)
+// ---------------------------------------------------------------------------
+
+// The parsed, resolved routing policy (produced by the parser). Classifier
+// condition refs in the rules resolve against `classifiers` by id.
+struct RoutePolicy {
+    std::vector<std::string> candidates;                 // routing targets
+    std::string default_model;                           // fail-open target ∈ candidates
+    std::vector<Rule> rules;                             // ordered, first-match-wins
+    std::map<std::string, ClassifierPtr> classifiers;    // id -> classifier
+};
+
+// The routing engine. The CONSTRUCTOR SIGNATURE is frozen here; the routing
+// logic (first-match evaluation, fail-open, trace assembly) is implemented with
+// the engine assembly. `route()` is declared but intentionally NOT defined in
+// the foundation — the contract test constructs the engine but never calls it.
+class RoutingPolicyEngine {
+public:
+    RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
+        : policy_(std::move(policy)), services_(std::move(services)) {}
+
+    // Select a candidate for `ctx`. When `want_trace` is set, the returned
+    // Decision carries a per-condition trace.
+    Decision route(const RouteContext& ctx, bool want_trace) const;
+
+    const RoutePolicy& policy() const { return policy_; }
+
+private:
+    RoutePolicy policy_;
+    ClassifierServices services_;
+};
+
+} // namespace lemon

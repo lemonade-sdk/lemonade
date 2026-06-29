@@ -2096,6 +2096,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 searchQuery={searchQuery}
                 showError={showError}
                 showSuccess={showSuccess}
+                showWarning={showWarning}
               />
             )}
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
