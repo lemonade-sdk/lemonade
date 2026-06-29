@@ -236,6 +236,25 @@ static void populate_model_metadata(ModelInfo& info) {
                 // type and break /embeddings or /rerank.
                 if (info.type == ModelType::LLM) {
                     apply_gguf_capability_labels(info.labels, info.gguf.caps);
+
+                    // GLM-4 MoE GGUF files embed MTP layers, but llama.cpp's
+                    // glm4-moe graph builder asserts when constructing the
+                    // draft model context (the GGUF was not converted with
+                    // multimodal support that the graph builder expects).
+                    // Disable MTP for these architectures until upstream
+                    // llama.cpp fixes the conversion or the graph builder.
+                    if (info.gguf.architecture.find("glm4") != std::string::npos) {
+                        auto it = std::find(info.labels.begin(), info.labels.end(), "mtp");
+                        if (it != info.labels.end()) {
+                            info.labels.erase(it);
+                            LOG(INFO, "ModelManager")
+                                << "Disabling MTP speculative decoding for "
+                                << info.model_name
+                                << " (GLM-4 MoE architecture — "
+                                << "llama.cpp draft context crashes, glm4-moe.cpp:149)"
+                                << std::endl;
+                        }
+                    }
                 }
             }
         }
@@ -2142,10 +2161,64 @@ void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    // Copy resolved paths under lock so filesystem size calculation
+    // (which can be slow) can run outside the mutex.
+    std::map<std::string, std::string> paths_copy;
 
-    if (!cache_valid_) {
-        return; // Will rebuild on next access
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+        if (!cache_valid_) {
+            return; // Will rebuild on next access
+        }
+
+        auto it = models_cache_.find(model_name);
+        if (it != models_cache_.end()) {
+            it->second.downloaded = downloaded;
+
+            // Recompute resolved_path after download
+            // The path changes now that files exist on disk
+            if (downloaded) {
+                resolve_all_model_paths(it->second);
+                if (it->second.recipe == "flm") {
+                    cache_valid_ = false;
+                    LOG(INFO, "ModelManager") << "Invalidated model cache after FLM download for '"
+                              << model_name << "'" << std::endl;
+                    return;
+                }
+                populate_model_metadata(it->second);
+                LOG(INFO, "ModelManager") << "Updated '" << model_name
+                          << "' downloaded=" << downloaded
+                          << ", resolved_path=" << it->second.resolved_path() << std::endl;
+            } else {
+                it->second.max_context_window = 0;
+                LOG(INFO, "ModelManager") << "Updated '" << model_name
+                          << "' downloaded=" << downloaded << std::endl;
+            }
+
+            // Copy resolved paths for filesystem size calculation outside the lock
+            paths_copy = it->second.resolved_paths;
+
+            // Recompute downloaded status for any collections that
+            // depend on this model, so the collection reflects component changes
+            // without requiring a full cache rebuild.
+            for (auto& [name, entry] : models_cache_) {
+                if (!is_collection_recipe(entry.recipe)) continue;
+                if (std::find(entry.components.begin(), entry.components.end(),
+                              model_name) == entry.components.end()) {
+                    continue;
+                }
+                bool new_state = check_component_downloaded(entry, models_cache_);
+                if (entry.downloaded != new_state) {
+                    entry.downloaded = new_state;
+                    LOG(INFO, "ModelManager") << "Collection '" << name
+                              << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+                }
+            }
+        } else {
+            LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
+            return;
+        }
     }
 
     auto it = models_cache_.find(model_name);
@@ -2207,6 +2280,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
+        return;
     }
 }
 
@@ -3869,6 +3943,41 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         }
     }
 
+    // Check if this download could cause memory pressure.
+    // On UMA architectures (Strix Halo, etc.), download page-cache competes
+    // with NPU/GPU DMA buffers for the same system RAM pool.  Capping
+    // bandwidth when available memory is tight prevents page-cache floods
+    // from triggering OOM kills or system freezes.
+    size_t download_speed_limit = 0;
+    {
+        std::ifstream meminfo("/proc/meminfo");
+        if (meminfo.is_open()) {
+            std::string line;
+            long long mem_available_kb = 0;
+            while (std::getline(meminfo, line)) {
+                if (line.find("MemAvailable:") == 0) {
+                    sscanf(line.c_str(), "MemAvailable: %lld kB", &mem_available_kb);
+                    break;
+                }
+            }
+            if (mem_available_kb > 0 && total_download_size > 0) {
+                size_t mem_available_bytes = static_cast<size_t>(mem_available_kb) * 1024;
+                if (total_download_size > mem_available_bytes / 2) {
+                    // Cap download at ~50 MB/s to avoid saturating page cache
+                    download_speed_limit = 50 * 1024 * 1024;
+                    LOG(WARNING, "ModelManager")
+                        << "Download size (" << (total_download_size / (1024.0 * 1024.0 * 1024.0))
+                        << " GB) exceeds 50% of available memory ("
+                        << (mem_available_bytes / (1024.0 * 1024.0 * 1024.0))
+                        << " GB). Throttling download to ~50 MB/s to prevent "
+                        << "memory pressure. Consider pausing active NPU models "
+                        << "before downloading large models."
+                        << std::endl;
+                }
+            }
+        }
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
@@ -3937,6 +4046,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.low_speed_limit = 1000;
         download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
+        if (download_speed_limit > 0) {
+            download_opts.max_recv_speed_bytes = download_speed_limit;
+        }
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
             if (hash.contains("algorithm") && hash["algorithm"].is_string() &&

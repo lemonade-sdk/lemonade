@@ -58,6 +58,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     name: 'Gemma-3-4B-FLM',
     checkpoint: 'gemma3:4b',
   },
+  'lemon-mlx': {
+    name: 'Qwen3-0.6B-MLX',
+    checkpoint: 'mlx-community/Qwen3-0.6B-4bit-DWQ-053125',
+  },
   'whispercpp': {
     name: 'Whisper-Tiny',
     checkpoint: 'ggerganov/whisper.cpp:ggml-tiny.bin',

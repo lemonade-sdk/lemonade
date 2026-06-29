@@ -434,12 +434,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "cuda", {"windows", "linux"}, {
         {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
+    {"llamacpp", "rocm", {"windows", "linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+    }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
         {"amd_gpu", {}},      // all AMD GPU families
-    }},
-    {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -511,6 +511,21 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // RyzenAI LLM - Windows NPU (XDNA2)
     {"ryzenai-llm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
+    }},
+
+    // lemon-mlx - Apple Silicon Metal, AMD GPU via ROCm (Linux), CPU fallback.
+    // Order = preference: native Metal on macOS, ROCm on Linux AMD, CPU last.
+    {"lemon-mlx", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
+    {"lemon-mlx", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+    }},
+    {"lemon-mlx", "cpu", {"linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+    {"lemon-mlx", "cpu", {"macos"}, {
+        {"cpu", {"arm64"}},
     }},
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
@@ -696,7 +711,10 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
                 // Check if AMD GPU driver is loaded (KFD indicates amdgpu driver)
                 if (fs::exists("/sys/class/kfd")) {
                     // System has AMD GPU(s), so we need the HIP plugin
-                    if (!is_ggml_hip_plugin_available()) {
+                    const char* mock_ggml = std::getenv("LEMONADE_MOCK_GGML_HIP");
+                    bool mocked = mock_ggml && (std::string(mock_ggml) == "1" || std::string(mock_ggml) == "true");
+
+                    if (!mocked && !utils::is_ggml_hip_plugin_available()) {
                         error_message = "HIP plugin libggml-hip.so not installed";
                         return false;
                     }
@@ -708,7 +726,16 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         } catch (...) {
 #ifndef _WIN32
             // On Linux, FLM is installed as a system package (in PATH, not install dir)
-            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
+            if (recipe == "flm") {
+                std::string flm_path = utils::find_flm_executable();
+                if (flm_path.empty()) {
+                    error_message = "flm not installed (not found in PATH)";
+                    return false;
+                }
+                // Run validation to catch NPU driver/firmware issues early
+                if (!utils::run_flm_validate(flm_path, error_message)) {
+                    return false;
+                }
                 return true;
             }
 #endif
@@ -1427,10 +1454,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     }
                 } else if (!required_families.empty()) {
                     // Show specific family requirement for other devices (e.g., "Requires XDNA2 NPU")
-                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                    message = "Device not supported. Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
                     // No specific family required (e.g., "Requires CPU")
-                    message = "Requires " + get_device_type_name(device_type);
+                    message = "Device not supported. Requires " + get_device_type_name(device_type);
                 }
             } else {
                 message = "No compatible device";
@@ -1442,10 +1469,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // FLM on Linux needs richer state to guide users through manual setup
             // (installing .deb, xrt drivers, etc.)
             if (def.recipe == "flm") {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
                 bool is_not_installed = install_error.empty()
                                      || install_error.find("not installed") != std::string::npos
                                      || install_error.find("not found") != std::string::npos;
-                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
+                bool is_version_mismatch = install_error.find("requires") != std::string::npos
+                                        || installed_version == "unknown";
 
                 if (is_not_installed) {
                     backend["state"] = "installable";
@@ -1454,10 +1483,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 } else {
                     backend["state"] = "action_required";
                 }
-                backend["message"] = install_error;
+                if (installed_version == "unknown") {
+                    backend["message"] = "Backend version is unknown. " + install_error;
+                } else {
+                    backend["message"] = install_error;
+                }
 
                 if (!is_not_installed) {
-                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
                         backend["version"] = installed_version;
                     }
@@ -1563,8 +1595,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             if (needs_update) {
                 backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
+                if (installed_version == "unknown" || installed_version.empty()) {
+                    backend["message"] = "Backend version is unknown; update is required.";
+                } else {
+                    backend["message"] = "Backend update is required before use. Version " + installed_version + " is installed, but " + expected_version + " is required (requires update).";
+                }
+
+#ifdef __linux__
+                if (def.recipe == "flm") {
+                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
+#else
                 backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
             } else {
                 // Soft "update_available" signal for *_bin = "latest" backends
                 // when GitHub has a newer release than what's installed. The
@@ -2106,11 +2151,23 @@ std::string identify_npu_arch() {
     return "";
 }
 
+// Score a ROCm architecture for ranking: higher = better for LLM inference.
+// Primary factor is VRAM (more VRAM = larger models fit). Tiebreaker is
+// discrete vs integrated (dGPU dedicated VRAM is faster than shared RAM).
+static int rocm_arch_score(double vram_gb) {
+    // Primary: VRAM capacity in GB × 1000 (so 16 GB → 16000, 0.5 GB → 500)
+    int score = static_cast<int>(vram_gb * 1000.0);
+    // Tiebreaker: dGPU bonus (GPUs with ≥ 4 GB VRAM are likely discrete)
+    if (vram_gb >= 4.0) score += 100000;
+    return score;
+}
+
 std::string SystemInfo::get_rocm_arch() {
-    // Returns the ROCm architecture for the best available AMD GPU on this system
-    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+    // Returns the ROCm architecture for the BEST available AMD GPU on this
+    // system. Iterates ALL AMD GPUs and returns the highest-scoring supported
+    // architecture, preferring dGPUs over iGPUs (by VRAM).
+    // This mirrors get_cuda_arch() which also picks the best NVIDIA GPU.
     try {
-        // Use cached system info to avoid re-detecting GPUs
         json system_info = SystemInfoCache::get_system_info_with_cache();
 
         if (!system_info.contains("devices")) {
@@ -2119,19 +2176,33 @@ std::string SystemInfo::get_rocm_arch() {
 
         const auto& devices = system_info["devices"];
 
-        // Check AMD GPUs
+        std::string best_arch;
+        int best_score = -1;
+
         if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
             for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
-                        }
-                    }
+                if (!gpu.value("available", false)) continue;
+
+                std::string name = gpu.value("name", "");
+                if (name.empty()) continue;
+
+                std::string arch = identify_rocm_arch_from_name(name);
+                if (arch.empty()) continue;
+
+                double vram = gpu.value("vram_gb", 0.0);
+
+                int score = rocm_arch_score(vram);
+                if (score > best_score) {
+                    best_score = score;
+                    best_arch = arch;
                 }
             }
+        }
+
+        if (!best_arch.empty()) {
+            LOG(INFO, "SystemInfo") << "Selected ROCm arch " << best_arch
+                                    << " (score=" << best_score << ")" << std::endl;
+            return best_arch;
         }
     } catch (...) {
         // Detection failed
@@ -3971,39 +4042,63 @@ json SystemInfoCache::get_system_info_with_cache() {
     if (!s_hardware_computed) {
         json system_info;
 
-        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
-        try {
-            auto sys_info = create_system_info();
-
-            // Get system info (OS, Processor, Memory, etc.)
+        // Try to load mock hardware info if present in cache dir (used for testing).
+        // The LEMONADE_MOCK_HARDWARE env var must be set to "1" or "true" for
+        // the mock to take effect; without it the file is ignored even if present.
+        bool hardware_mocked = false;
+        const char* mock_hw_env = std::getenv("LEMONADE_MOCK_HARDWARE");
+        bool mock_hardware_enabled = mock_hw_env && (std::string(mock_hw_env) == "1" || std::string(mock_hw_env) == "true");
+        if (mock_hardware_enabled) {
             try {
-                system_info = sys_info->get_system_info_dict();
+                fs::path cache_dir = utils::get_cache_dir();
+                fs::path mock_file = cache_dir / "hardware_info.json";
+                if (fs::exists(mock_file)) {
+                    json mock_data = utils::JsonUtils::load_from_file(mock_file.string());
+                    if (mock_data.contains("hardware") && mock_data["hardware"].is_object()) {
+                        system_info = mock_data["hardware"];
+                        hardware_mocked = true;
+                        LOG(INFO, "Server") << "Using mock hardware info from " << mock_file << std::endl;
+                    }
+                }
             } catch (...) {
-                system_info["OS Version"] = "Unknown";
+                // Ignore mock load failures and fall back to real detection
             }
-
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-
-            s_cached_system_info = system_info;
-
-        } catch (const std::exception& e) {
-            // Catastrophic failure - return minimal info but don't crash
-            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", e.what()},
-                {"devices", json::object()}
-            };
-        } catch (...) {
-            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", "Unknown error"},
-                {"devices", json::object()}
-            };
         }
 
+        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        if (!hardware_mocked) {
+            try {
+                auto sys_info = create_system_info();
+
+                // Get system info (OS, Processor, Memory, etc.)
+                try {
+                    system_info = sys_info->get_system_info_dict();
+                } catch (...) {
+                    system_info["OS Version"] = "Unknown";
+                }
+
+                // Get device information - handles its own exceptions internally
+                system_info["devices"] = sys_info->get_device_dict();
+
+            } catch (const std::exception& e) {
+                // Catastrophic failure - return minimal info but don't crash
+                LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
+                system_info = {
+                    {"OS Version", "Unknown"},
+                    {"error", e.what()},
+                    {"devices", json::object()}
+                };
+            } catch (...) {
+                LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
+                system_info = {
+                    {"OS Version", "Unknown"},
+                    {"error", "Unknown error"},
+                    {"devices", json::object()}
+                };
+            }
+        }
+
+        s_cached_system_info = system_info;
         s_hardware_computed = true;
     }
 

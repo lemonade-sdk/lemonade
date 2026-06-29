@@ -617,6 +617,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
+    src/cpp/server/backends/mlx_server.cpp
     src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
@@ -1622,6 +1623,14 @@ if(UNIX AND NOT APPLE)
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
+
+    # Ensure smooth upgrades from legacy/alternate package names that ship
+    # the same files. Without these dpkg refuses to overwrite files owned by
+    # the other package (e.g. upgrading lemonade-server to
+    # lemonade-server-minimal or vice versa).
+    set(CPACK_DEBIAN_PACKAGE_CONFLICTS "lemonade-server-minimal")
+    set(CPACK_DEBIAN_PACKAGE_REPLACES "lemonade-server-minimal")
+
     include(CPack)
 endif()
 

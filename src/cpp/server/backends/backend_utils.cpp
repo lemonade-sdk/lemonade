@@ -9,6 +9,7 @@
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/vllm_server.h"
 #include "lemon/backends/fastflowlm_server.h"
+#include "lemon/backends/mlx_server.h"
 #include "lemon/backends/moonshine_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
@@ -48,6 +49,7 @@ namespace lemon::backends {
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
+        if (recipe == "lemon-mlx") return &MlxServer::spec;
         if (recipe == "moonshine") return &MoonshineServer::SPEC;
         return nullptr;
     }

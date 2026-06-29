@@ -357,7 +357,8 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
      // Add custom headers
@@ -506,7 +507,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -590,6 +592,11 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.low_speed_limit));
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
+
+    if (options.max_recv_speed_bytes > 0) {
+        curl_easy_setopt(curl, CURLOPT_MAX_RECV_SPEED_LARGE,
+                         static_cast<curl_off_t>(options.max_recv_speed_bytes));
+    }
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));

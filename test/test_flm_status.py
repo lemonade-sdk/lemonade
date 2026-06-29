@@ -323,6 +323,7 @@ class FlmStatusTests(unittest.TestCase):
                 json.dump(cache_data, f, indent=2)
 
             env = os.environ.copy()
+            env["LEMONADE_MOCK_HARDWARE"] = "1"
             env.pop("LEMONADE_CI_MODE", None)
 
             # Write config.json with debug log level to the temp dir

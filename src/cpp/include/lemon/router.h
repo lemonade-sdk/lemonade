@@ -166,8 +166,10 @@ private:
     bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
     bool is_watchdog_reset_response(const json& response) const;
     int count_servers_by_type(ModelType type) const;
+    int count_servers_by_device(int device_bitmask) const;
     int count_pinned_servers_by_type(ModelType type) const;
     WrappedServer* find_lru_server_by_type(ModelType type) const;
+    WrappedServer* find_lru_server_by_device(int device_bitmask) const;
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;

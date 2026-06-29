@@ -114,13 +114,15 @@ void RyzenAIServer::load(const std::string& model_name,
                 << started_handle.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
+    if (!wait_for_ready("/health", 0)) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
         if (has_process_handle(handle)) {
             utils::ProcessManager::stop_process(handle);
         }
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
     }
+
+    start_backend_watchdog("/health");
 
     is_loaded_ = true;
     LOG(INFO, "RyzenAI") << "Model loaded on port " << get_backend_port() << std::endl;
