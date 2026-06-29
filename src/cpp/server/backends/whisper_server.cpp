@@ -521,7 +521,7 @@ std::string WhisperServer::convert_to_wav(const std::string& audio_data,
         ffmpeg_path,
         {"-y", "-i", input_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", output_path.string()},
         [&ffmpeg_output](const std::string& line) { ffmpeg_output += line + "\n"; return true; },
-        "", 30);
+        "", -1);
 
     cleanup_temp_file(input_path);
 
