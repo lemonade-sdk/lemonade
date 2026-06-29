@@ -145,6 +145,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   };
 
   const addRule = () => {
+    if (draft.candidates.length === 0) {
+      setError('Select at least one candidate model before adding rules.');
+      return;
+    }
     setDraft((prev) => ({
       ...prev,
       rules: [
@@ -582,7 +586,15 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
             {/* Rules */}
             <div className="form-section">
-              <label className="form-label">Rules *</label>
+              <div className="router-classifier-section-header">
+                <label className="form-label" style={{ margin: 0 }}>Rules *</label>
+                <button type="button" className="settings-reset-button"
+                  style={{ fontSize: '11px', padding: '2px 10px' }}
+                  onClick={addRule}
+                  title="Add a rule">
+                  + Add Rule
+                </button>
+              </div>
               <div className="router-section-scroll">
                 {rules.length === 0 && (
                   <div className="collection-role-empty" style={{ marginBottom: 8 }}>
@@ -707,6 +719,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                     <div className="router-rule-field">
                       <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>Keywords — all</span>
+                        <span style={{ flex: 1 }} />
                         <label className="router-not-toggle">
                           <input type="checkbox" checked={rule.matchKeywordsAllNot === true}
                             onChange={(e) => patchRule(rule.id, { matchKeywordsAllNot: e.target.checked || undefined })} />
@@ -725,6 +738,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                     <div className="router-rule-field">
                       <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>Regex</span>
+                        <span style={{ flex: 1 }} />
                         <label className="router-not-toggle">
                           <input type="checkbox" checked={rule.matchRegexNot === true}
                             onChange={(e) => patchRule(rule.id, { matchRegexNot: e.target.checked || undefined })} />
@@ -881,17 +895,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                   </div>
                 ))}
               </div>
-              <button type="button" className="settings-reset-button"
-                style={{ marginTop: 8 }}
-                onClick={addRule}
-                title={draft.candidates.length === 0 ? 'Select candidate models above first' : 'Add a rule'}>
-                + Add Rule
-              </button>
-              {draft.candidates.length === 0 && (
-                <span className="settings-description" style={{ display: 'block', fontSize: '0.68rem', marginTop: 4 }}>
-                  Select candidates above before adding rules.
-                </span>
-              )}
             </div>
           </>
         )}
