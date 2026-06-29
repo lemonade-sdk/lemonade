@@ -327,44 +327,56 @@ The following options apply to all model loads:
 
 The following options are available depending on the recipe being used:
 
-#### Llama.cpp (`llamacpp` recipe)
+<!-- BEGIN GENERATED: cli-recipe-options -->
+#### Llama.cpp GPU (`llamacpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
+| `--ctx-size SIZE` | Context size for the model | auto |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
-| `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
-
-#### FLM (`flm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### RyzenAI LLM (`ryzenai-llm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### SD.cpp (`sd-cpp` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
-| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
-| `--steps N` | Number of inference steps for image generation | `20` |
-| `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
-| `--width PX` | Image width in pixels | `512` |
-| `--height PX` | Image height in pixels | `512` |
+| `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
 
+#### Moonshine (`moonshine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
+
+#### StableDiffusion.cpp (`sd-cpp` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+
+#### FastFlowLM NPU (`flm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Ryzen AI LLM (`ryzenai-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### vLLM ROCm (experimental) (`vllm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--vllm BACKEND` | vLLM backend to use | Auto-detected |
+| `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
+<!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities

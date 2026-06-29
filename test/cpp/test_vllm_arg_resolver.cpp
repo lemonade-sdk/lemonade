@@ -2,7 +2,7 @@
 // Build with: cmake --build --preset default --target test_vllm_arg_resolver
 // Run with: ctest --test-dir build -R vllm_arg_resolver --output-on-failure
 
-#include "lemon/backends/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/vllm_arg_resolver.h"
 
 #include <cstdio>
 #include <exception>
