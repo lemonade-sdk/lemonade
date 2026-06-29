@@ -11,7 +11,6 @@ Usage:
 
 import base64
 import json
-import os
 import platform
 import sys
 import uuid
@@ -40,6 +39,7 @@ from utils.test_models import (
 )
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
+TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 
 
 class OllamaTests(ServerTestBase):
@@ -71,24 +71,6 @@ class OllamaTests(ServerTestBase):
                 )
             except requests.RequestException as exc:
                 print(f"[DIAG] GET {url} failed: {exc}")
-
-    def _skip_slow_hosted_ci_tool_calling(self):
-        """Skip the heaviest native tool-calling path on slow hosted OSes.
-
-        The full native tool-calling model is still covered on Linux CI. On
-        hosted Windows/macOS runners this 4B model can leave the server busy
-        until the HTTP timeout, which then cascades into later suites.
-        """
-        if os.environ.get("LEMONADE_RUN_HEAVY_OLLAMA_TOOL_TESTS") == "1":
-            return
-        if os.environ.get("GITHUB_ACTIONS") == "true" and sys.platform in (
-            "darwin",
-            "win32",
-        ):
-            self.skipTest(
-                "Skipping heavy native Anthropic tool-calling test on hosted "
-                f"{platform.system()} CI; Linux CI keeps this coverage."
-            )
 
     def get_ollama_client(self):
         """Get an Ollama client pointed at the test server."""
@@ -376,7 +358,13 @@ class OllamaTests(ServerTestBase):
 
             response = requests.post(
                 f"{self.base_url}/load",
-                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Keep this CI test deterministic without adding Ollama API
+                    # behavior: disable reasoning at llama-server load time.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(response.status_code, 200)
@@ -397,10 +385,6 @@ class OllamaTests(ServerTestBase):
                         ],
                         "tools": [SAMPLE_TOOL],
                         "stream": True,
-                        # Keep this CI test deterministic and avoid Qwen3 reasoning
-                        # paths that can burn the whole read-timeout budget before
-                        # producing a tool call on macOS runners.
-                        "think": False,
                         "options": {
                             "num_predict": 64,
                             "temperature": 0,
@@ -784,8 +768,6 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
-        self._skip_slow_hosted_ci_tool_calling()
-
         # This is the heaviest Ollama compatibility test in the suite. Start it
         # from an empty loaded-model state so previous endpoint/CLI tests cannot
         # leave another backend resident and turn the final inference into a CI
@@ -806,7 +788,14 @@ class OllamaTests(ServerTestBase):
 
             response = requests.post(
                 f"{self.base_url}/load",
-                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Use the same load-time llama-server configuration as the
+                    # Ollama tool-call test so both heavy CI paths avoid
+                    # reasoning before tool selection.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(response.status_code, 200)
@@ -825,10 +814,7 @@ class OllamaTests(ServerTestBase):
                         "content": [
                             {
                                 "type": "text",
-                                "text": (
-                                    "Run the calculator_calculate tool with "
-                                    "expression set to 1+1"
-                                ),
+                                "text": "Run the calculator_calculate tool with expression set to 1+1",
                             }
                         ],
                     }
@@ -837,9 +823,6 @@ class OllamaTests(ServerTestBase):
                 "tool_choice": {"type": "any"},
                 "max_tokens": 64,
                 "stream": False,
-                # Keep the later Anthropic compatibility tool-call test on the
-                # same deterministic path as the Ollama tool-call test.
-                "thinking": {"type": "disabled"},
                 "temperature": 0,
                 "top_p": 1,
             }
