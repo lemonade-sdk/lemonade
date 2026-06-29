@@ -249,9 +249,13 @@ bool FastFlowLMServer::wait_for_ready() {
     // FLM doesn't have a health endpoint, so we use /api/tags to check if it's up
     std::string tags_url = get_base_url() + "/api/tags";
 
-    LOG(INFO, "FastFlowLM") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
+    // Use the configurable global_timeout (default 600s) so users can
+    // increase it for large models like GPT-OSS 120B that take >5 min.
+    long timeout_seconds = utils::HttpClient::get_default_timeout();
+    LOG(INFO, "FastFlowLM") << "Waiting for " + server_name_ + " to be ready"
+                            << " (timeout: " << timeout_seconds << "s)..." << std::endl;
 
-    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
+    const int max_attempts = static_cast<int>(timeout_seconds);  // 1 attempt per second
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
         // Check if process is still running. If it already exited, consume and
         // reap the owned handle here so failed-start cleanup cannot later signal

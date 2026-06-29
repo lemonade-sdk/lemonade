@@ -391,10 +391,12 @@ void SDServer::load(const std::string& model_name,
     LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/")) {
+    if (!wait_for_ready("/", 0)) {
         unload();
         throw std::runtime_error("sd-server failed to start or become ready");
     }
+
+    start_backend_watchdog("/");
 
     LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
 }

@@ -378,6 +378,53 @@ void LlamaCppServer::load(const std::string& model_name,
         push_overridable_arg(args, llamacpp_args, "--no-mmap");
     }
 
+    // Flash attention hangs on Windows Vulkan with AMD/Intel GPUs (ggml#17297).
+    // Default it off so the user doesn't get a hung backend on first run.
+    // Users can opt back in with --flash-attn in llamacpp_args.
+#ifdef _WIN32
+    if (llamacpp_backend == "vulkan") {
+        push_overridable_arg(args, llamacpp_args, "--no-flash-attn");
+        LOG(INFO, "LlamaCpp")
+            << "Disabling flash attention by default on Windows Vulkan"
+            << " (override with --flash-attn in llamacpp_args)" << std::endl;
+        // Windows TDR (Timeout Detection & Recovery) defaults to 2 seconds,
+        // which is too short for LLM compute workloads on integrated GPUs.
+        // A hung dispatch exceeding 2s causes the driver to reset the GPU,
+        // producing VK_ERROR_DEVICE_LOST and a 90-100% utilization stall.
+        // Users can increase this via registry: TdrDelay=30 (DWORD) under
+        // HKLM\System\CurrentControlSet\Control\GraphicsDrivers
+        if (SystemInfo::get_has_igpu()) {
+            LOG(INFO, "LlamaCpp")
+                << "On Windows with an integrated GPU, consider increasing"
+                << " GPU timeout: set TdrDelay=30 (DWORD) in registry at"
+                << " HKLM\\System\\CurrentControlSet\\Control\\GraphicsDrivers"
+                << std::endl;
+        }
+    }
+#endif
+
+    // Linux GPU scheduler (RADV/amdgpu) also has a ~2s timeout per compute
+    // submission. Long prompt processing with large contexts produces compute
+    // submissions that exceed this timeout, causing VK_ERROR_DEVICE_LOST
+    // ("The CS has been cancelled because the context is lost").
+    // Cap context size for Vulkan on Linux and advise users to use ROCm instead.
+#ifdef __linux__
+    if (llamacpp_backend == "vulkan") {
+        const int64_t vulkan_max_ctx = 65536;
+        if (ctx_size > vulkan_max_ctx) {
+            LOG(WARNING, "LlamaCpp")
+                << "Capping context size at " << vulkan_max_ctx
+                << " for Vulkan backend on Linux (requested " << ctx_size
+                << "). Large contexts trigger GPU scheduler timeout"
+                << " (VK_ERROR_DEVICE_LOST). "
+                << "Use the ROCm backend for larger contexts — it does not"
+                << " have this limitation."
+                << std::endl;
+            ctx_size = vulkan_max_ctx;
+        }
+    }
+#endif
+
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
@@ -434,6 +481,24 @@ void LlamaCppServer::load(const std::string& model_name,
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+
+        // On hybrid AMD+NVIDIA systems, llama.cpp's ggml memory budgeting
+        // counts all GPU memory pools including the NVIDIA dGPU, then tries
+        // to allocate the full model on the ROCm device. Hiding CUDA devices
+        // keeps the NVIDIA GPU out of ggml's memory calculation while the
+        // ROCm backend discovers AMD GPUs through ROCr directly.
+        const char* existing_cuda_visible = std::getenv("CUDA_VISIBLE_DEVICES");
+        if (!existing_cuda_visible || existing_cuda_visible[0] == '\0') {
+            env_vars.push_back({"CUDA_VISIBLE_DEVICES", ""});
+            LOG(INFO, "LlamaCpp")
+                << "Hiding CUDA devices from llama.cpp ROCm backend"
+                << " to prevent hybrid-GPU memory budgeting skew"
+                << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing CUDA_VISIBLE_DEVICES="
+                << existing_cuda_visible << std::endl;
+        }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
         // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
@@ -561,13 +626,15 @@ void LlamaCppServer::load(const std::string& model_name,
         process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
     // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
+    if (!wait_for_ready("/health", 0)) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();
         if (has_process_handle(handle)) {
             ProcessManager::stop_process(handle);
         }
         throw std::runtime_error("llama-server failed to start");
     }
+
+    start_backend_watchdog("/health");
 
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }

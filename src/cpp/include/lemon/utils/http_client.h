@@ -61,6 +61,12 @@ struct DownloadOptions {
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
 
+    // Maximum download speed in bytes/sec (0 = unlimited).
+    // On systems with limited memory (e.g. UMA architectures where downloads
+    // compete with NPU/GPU DMA buffers for the same system RAM), capping
+    // download bandwidth prevents page-cache floods from triggering OOM.
+    size_t max_recv_speed_bytes = 0;
+
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
     // "git-sha1:<hex>". git-sha1 verifies the Git blob object id, i.e.

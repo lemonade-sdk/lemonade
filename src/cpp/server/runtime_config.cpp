@@ -220,7 +220,52 @@ long RuntimeConfig::global_timeout() const {
 
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
-    return config_["max_loaded_models"].get<int>();
+    const auto& val = config_["max_loaded_models"];
+    if (val.is_object()) {
+        if (val.contains("total") && val["total"].is_number_integer()) {
+            return val["total"].get<int>();
+        }
+        return -1;  // no total key → unlimited
+    }
+    return val.get<int>();
+}
+
+int RuntimeConfig::max_loaded_models_for_device(int device_bitmask) const {
+    std::shared_lock lock(mutex_);
+    const auto& val = config_["max_loaded_models"];
+    if (!val.is_object()) {
+        // Integer format: all devices share the same limit.
+        return val.get<int>();
+    }
+    // Map bitmask to JSON key.
+    const char* key = nullptr;
+    if (device_bitmask == 1)       key = "cpu";      // DEVICE_CPU
+    else if (device_bitmask == 2)  key = "gpu";      // DEVICE_GPU
+    else if (device_bitmask == 4)  key = "npu";      // DEVICE_NPU
+    else if (device_bitmask == 3)  key = "cpu";      // CPU|GPU → use cpu (most restrictive common case not used)
+    else return -1;  // multi-device or unknown: unlimited
+
+    if (val.contains(key) && val[key].is_number_integer()) {
+        return val[key].get<int>();
+    }
+    return -1;  // not specified → unlimited
+}
+
+int RuntimeConfig::max_loaded_models_total() const {
+    std::shared_lock lock(mutex_);
+    const auto& val = config_["max_loaded_models"];
+    if (val.is_object()) {
+        if (val.contains("total") && val["total"].is_number_integer()) {
+            return val["total"].get<int>();
+        }
+        return -1;
+    }
+    return val.get<int>();
+}
+
+bool RuntimeConfig::max_loaded_models_is_object() const {
+    std::shared_lock lock(mutex_);
+    return config_["max_loaded_models"].is_object();
 }
 
 std::string RuntimeConfig::models_dir() const {
@@ -534,13 +579,30 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'global_timeout' must be positive");
         }
     } else if (key == "max_loaded_models") {
-        if (!value.is_number_integer()) {
-            throw std::invalid_argument("'max_loaded_models' must be an integer");
-        }
-        int m = value.get<int>();
-        if (m < -1 || m == 0) {
+        if (value.is_object()) {
+            static const std::vector<std::string> device_keys = {"cpu", "gpu", "npu", "total"};
+            for (const auto& dk : device_keys) {
+                if (!value.contains(dk)) continue;
+                const auto& dv = value[dk];
+                if (!dv.is_number_integer()) {
+                    throw std::invalid_argument(
+                        "'max_loaded_models." + dk + "' must be an integer");
+                }
+                int dm = dv.get<int>();
+                if (dm < -1 || dm == 0) {
+                    throw std::invalid_argument(
+                        "'max_loaded_models." + dk + "' must be -1 (unlimited) or a positive integer");
+                }
+            }
+        } else if (value.is_number_integer()) {
+            int m = value.get<int>();
+            if (m < -1 || m == 0) {
+                throw std::invalid_argument(
+                    "'max_loaded_models' must be -1 (unlimited) or a positive integer");
+            }
+        } else {
             throw std::invalid_argument(
-                "'max_loaded_models' must be -1 (unlimited) or a positive integer");
+                "'max_loaded_models' must be an integer or an object with per-device limits");
         }
     } else if (key == "ctx_size") {
         if (!value.is_number_integer()) {

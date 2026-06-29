@@ -343,10 +343,12 @@ void WhisperServer::load(const std::string& model_name,
     LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
+    if (!wait_for_ready("/health", 0)) {
         unload();
         throw std::runtime_error("whisper-server failed to start or become ready");
     }
+
+    start_backend_watchdog("/health");
 
     LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
 }
