@@ -17,7 +17,7 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { COLLECTION_ROUTER_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
@@ -1464,26 +1464,32 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
-  const renderCustomCollectionOptionsButton = (modelName: string) => (
-    <button
-      className="model-action-btn load-btn"
-      onClick={(e) => {
-        e.stopPropagation();
-        window.dispatchEvent(new CustomEvent('editCustomCollection', { detail: { collectionId: modelName } }));
-      }}
-      title="Omni Model options"
-    >
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-           xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
-          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
-          strokeLinejoin="round"/>
-        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
-                strokeWidth="1.2"/>
-      </svg>
-    </button>
+  const gearIcon = (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
   );
+
+  const renderCustomCollectionOptionsButton = (modelName: string) => {
+    const recipe = modelsData[modelName]?.recipe;
+    const isRouter = recipe === COLLECTION_ROUTER_MODEL_RECIPE;
+    return (
+      <button
+        className="model-action-btn load-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          const event = isRouter ? 'editRouterCollection' : 'editCustomCollection';
+          window.dispatchEvent(new CustomEvent(event, { detail: { collectionId: modelName } }));
+        }}
+        title={isRouter ? 'Hybrid Router options' : 'Omni Model options'}
+      >
+        {gearIcon}
+      </button>
+    );
+  };
 
   const renderDeleteButton = (modelName: string, title = 'Delete model') => {
     const blockedByDownload = hasActiveDownloadForModel(modelName);

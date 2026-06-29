@@ -1,11 +1,13 @@
 export const COLLECTION_OMNI_MODEL_RECIPE = 'collection.omni';
+export const COLLECTION_ROUTER_MODEL_RECIPE = 'collection.router';
 
 export const isCollectionRecipe = (recipe?: string): boolean => {
-  return recipe === COLLECTION_OMNI_MODEL_RECIPE;
+  return recipe === COLLECTION_OMNI_MODEL_RECIPE || recipe === COLLECTION_ROUTER_MODEL_RECIPE;
 };
 
 export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   [COLLECTION_OMNI_MODEL_RECIPE]: 'Lemonade',
+  [COLLECTION_ROUTER_MODEL_RECIPE]: 'Lemonade Router',
   'flm': 'FastFlowLM NPU',
   'llamacpp': 'Llama.cpp GPU',
   'ryzenai-llm': 'Ryzen AI LLM',
