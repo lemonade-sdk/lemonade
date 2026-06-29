@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include <filesystem>
 #include <string>
 
 namespace lemon {
@@ -44,6 +45,9 @@ public:
     std::map<std::string, nlohmann::json> get_additional_telemetry() override;
     std::string get_additional_telemetry_url() const override;
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const override;
+
+private:
+    std::filesystem::path rocm_shim_dir_;
 
 };
 
