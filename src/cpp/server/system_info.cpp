@@ -3952,10 +3952,11 @@ static bool s_recipes_computed = false;
 static thread_local bool s_building_recipes = false;
 
 json SystemInfoCache::get_system_info_with_cache() {
-    // Re-entrant call from within our own build_recipes_info(): hardware is
-    // already computed and cached, and we still hold the mutex from the outer
-    // frame, so return the hardware snapshot the nested caller needs instead of
-    // self-deadlocking on a re-lock.
+    // Re-entrant call from within our own build_recipes_info(). The flag is set
+    // only after hardware detection, so s_cached_system_info already holds
+    // "devices" here, and the outer frame still owns the mutex — return that
+    // snapshot (all the nested caller needs) instead of self-deadlocking on a
+    // re-lock.
     if (s_building_recipes) {
         return s_cached_system_info;
     }
