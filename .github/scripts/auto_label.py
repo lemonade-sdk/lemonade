@@ -264,7 +264,7 @@ def is_bot_user(user):
         return False
     login = user.get("login") or ""
     user_type = user.get("type") or ""
-    return user_type == "Bot" or login.endswith("[bot]")
+    return user_type == "Bot" or login.lower().endswith("[bot]")
 
 def _add_community_user(users, user, author_association, repo):
     if not user:
