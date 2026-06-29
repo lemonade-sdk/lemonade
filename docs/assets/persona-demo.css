@@ -1,0 +1,3015 @@
+/* ============================================================================
+   Persona-demo hero — appearance
+   ----------------------------------------------------------------------------
+   Styles for the interactive homepage hero driven by the persona-demo/ scripts: the
+   promise, the persona-aware CTA, the zone heading, and the journey (a sticky
+   TOC sidebar + slides scrolling past in a fixed-size demo box: terminals, app
+   mockups, etc.). The router-flowchart styles the demos embed live in
+   flowchart.css. The --page-space-* tokens these rules use are defined on
+   .hp-main in website-styles.css and inherit down.
+   ============================================================================ */
+/* --- Persona switch crossfade ---
+   Switching persona flips the light<->dark theme (see framework.js, which wraps the
+   swap in document.startViewTransition). The default `root` view-transition is already
+   an opacity crossfade of the whole page; this just tunes its timing so the
+   light<->dark change dissolves smoothly instead of snapping. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 600ms;
+  animation-timing-function: ease-in-out;
+}
+
+/* --- Persona Hero Base --- */
+.hp-persona-title {
+  margin: 0;
+  font-family: var(--font-display);
+  max-width: 1100px;
+  /* Fluid from a phone-safe floor up to the desktop cap. The lower bound is set
+     so the longest single word ("Refreshingly"/"intelligence") still fits the
+     narrowest phones — the title is allowed to wrap (see the ≤480 rule), but a
+     single word can't break, so the floor, not the wrap, is what prevents the
+     page from overflowing sideways. */
+  font-size: clamp(2.5rem, 8.1vw, 6.125rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+/* The title is intentionally broken into two phrases ("Refreshingly open" /
+   "intelligence."), so each line is an explicit block — these are deliberate
+   breaks, not auto-wrap. `nowrap` keeps each phrase whole on desktop; the ≤480
+   rule relaxes it so a phrase can wrap when it no longer fits a phone. */
+.hp-persona-title-line {
+  display: block;
+  white-space: nowrap;
+}
+
+.hp-persona-period {
+  color: #F2B705;
+}
+
+/* The subtitle is two sentences, each on its own line. The promise is a centered
+   flex column, so with no width cap each line shrink-wraps to its own text —
+   which makes the block track the title's width instead of collapsing into a
+   narrow reading column under the oversized hero. Sentences are NOT capped here;
+   the ≤720 rule adds a reading-width cap for small screens. */
+.hp-persona-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: clamp(1.15rem, 2.05vw, 1.4375rem);
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+/* The promise is one sentence — a lead-in, a colon, then a triplet of benefits —
+   split into two blocks so the colon always ends a line (lead-in above, benefits
+   below) at every width. That single break is the structural one; wrapping WITHIN
+   each block stays automatic, so the copy can change without re-tuning.
+   `text-wrap: balance` only matters once a block is long enough to wrap (small
+   screens), where it evens out that block's lines. */
+.hp-persona-subtitle-line {
+  display: block;
+  text-wrap: balance;
+}
+
+/* The promise (headline + subtitle) at the top of the page. */
+.hp-persona-promise {
+  position: relative;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: clamp(5rem, 10vw, 8.75rem) 3rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  text-align: center;
+}
+
+.hp-persona-promise::before {
+  content: '';
+  display: none;
+  position: absolute;
+  top: -8.75rem;
+  left: 50%;
+  width: min(820px, 90vw);
+  height: min(600px, 70vw);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 205, 41, 0.2), rgba(255, 205, 41, 0) 64%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+html[data-md-color-scheme="zest-dark"] .hp-persona-promise::before {
+  display: block;
+}
+
+/* Compact proof band: specific enough to explain Lemonade, quiet enough to keep
+   the persona journey as the main product tour. */
+.hp-proof-band {
+  width: min(1160px, 100%);
+  margin: var(--page-space-md) auto 0;
+  padding: 0 1.5rem;
+}
+
+.hp-section .hp-proof-band {
+  width: 100%;
+  margin: var(--page-space-md) auto var(--page-space-md);
+  padding: 0;
+}
+
+.hp-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.hp-proof-card {
+  min-width: 0;
+  min-height: 10.25rem;
+  padding: 1rem;
+}
+
+.hp-proof-icon {
+  display: inline-flex;
+  margin-bottom: 0.8rem;
+  color: var(--primary-yellow);
+  font-size: 1.55rem;
+}
+
+.hp-proof-card h3 {
+  margin: 0 0 0.45rem;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.18;
+}
+
+.hp-proof-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 560;
+  line-height: 1.45;
+}
+
+/* ---- Persona-aware CTA: show one block per persona (toggled by data-persona) -- */
+html[data-persona="developers"] [data-cta-persona="people"],
+html:not([data-persona="developers"]) [data-cta-persona="developers"] {
+  display: none;
+}
+
+/* The persona swap-in animation is the page-wide .hp-reveal lift (website-styles.css),
+   re-triggered on every .hp-reveal section below the toggle by the reveal code in
+   index.html — there's no separate persona animation here, on purpose (one system, no
+   whack-a-mole). */
+
+/* Top-of-page vertical rhythm: the promise sits md below the navbar and the hero
+   persona switch follows without taking on .hp-section's default xxl gap. */
+#hero-cta {
+  padding-top: 3.25rem;
+  padding-bottom: 0;
+}
+
+/* Lead-in prompt that introduces the persona toggle. It is intentionally the
+   quietest text in the hero — smaller and lighter (--text-muted) than the promise
+   subtitle (--text-secondary), with no internal emphasis — so nothing in the copy
+   competes with the toggle for the eye. Grouped with the switch: the #hero-cta
+   padding-top above separates it from the promise, while its short margin-bottom
+   ties it to the buttons it sets up. */
+.hp-cta-lead {
+  max-width: 42rem;
+  margin: 0 auto 1.7rem;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: clamp(0.97rem, 1.3vw, 1.075rem);
+  font-weight: 500;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+#getting-started,
+#dev-quickstart {
+  padding-top: var(--page-space-xl);
+}
+
+#dev-quickstart {
+  max-width: 1180px;
+  text-align: left;
+}
+
+.hp-dev-quickstart-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.78fr) minmax(520px, 1.22fr);
+  gap: calc(var(--page-space-lg) * 1.08);
+  align-items: stretch;
+}
+
+.hp-dev-quickstart-card {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: var(--page-space-lg);
+  border-color: color-mix(in srgb, var(--primary-yellow) 20%, transparent);
+  box-shadow:
+    0 1.8rem 4.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.hp-dev-quickstart-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--page-space-base) * 0.7);
+}
+
+#dev-quickstart .hp-section-heading {
+  margin: 0;
+}
+
+#dev-quickstart .hp-section-desc {
+  max-width: 36ch;
+  margin: 0;
+  text-align: left;
+}
+
+#dev-quickstart .hp-cta-actions {
+  width: min(100%, 22rem);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  padding-top: calc(var(--page-space-base) * 0.15);
+}
+
+#dev-quickstart .hp-cta-btn {
+  justify-content: flex-start;
+  gap: 0.55rem;
+  padding: 0.55rem 0;
+  border: 0;
+  border-bottom: 1px solid rgba(252, 216, 70, 0.2);
+  border-radius: 0;
+  background: transparent;
+  color: rgba(248, 243, 218, 0.88);
+  box-shadow: none;
+  font-size: 0.98rem;
+  text-decoration: none;
+}
+
+#dev-quickstart .hp-cta-btn::after {
+  content: 'arrow_forward';
+  margin-left: auto;
+  color: var(--primary-yellow);
+  font-family: 'Material Symbols Outlined';
+  font-size: 1.05rem;
+  font-weight: 400;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+#dev-quickstart .hp-cta-btn:hover,
+#dev-quickstart .hp-cta-btn:focus {
+  color: #fff8d8;
+}
+
+#dev-quickstart .hp-cta-btn:hover::after,
+#dev-quickstart .hp-cta-btn:focus::after {
+  transform: translateX(0.18rem);
+}
+
+#dev-quickstart .hp-cta-btn.is-primary {
+  color: rgba(248, 243, 218, 0.88);
+  border-bottom-color: rgba(252, 216, 70, 0.42);
+}
+
+#dev-quickstart .hp-cta-btn .material-symbols-outlined {
+  color: var(--primary-yellow);
+  font-size: 1.1rem;
+}
+
+#dev-quickstart .hp-dev-proof-panel {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+#dev-quickstart .hp-proof-grid {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: var(--radius-lg);
+}
+
+#dev-quickstart .hp-proof-grid::before,
+#dev-quickstart .hp-proof-grid::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+#dev-quickstart .hp-proof-grid::before {
+  top: 0.9rem;
+  bottom: 0.9rem;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(252, 216, 70, 0.14), transparent);
+}
+
+#dev-quickstart .hp-proof-grid::after {
+  left: 0.9rem;
+  right: 0.9rem;
+  top: calc(50% - 0.6rem);
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(252, 216, 70, 0.14), transparent);
+}
+
+#dev-quickstart .hp-proof-card {
+  min-height: 0;
+  padding: 1.25rem 1.45rem;
+  display: grid;
+  grid-template-columns: 1.65rem minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  column-gap: 0.85rem;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+#dev-quickstart .hp-proof-card:nth-child(-n + 2) {
+  padding-bottom: 1.65rem;
+}
+
+#dev-quickstart .hp-proof-card:nth-child(n + 3) {
+  padding-top: 2.65rem;
+}
+
+#dev-quickstart .hp-proof-icon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  margin: 0.12rem 0 0;
+  font-size: 1.42rem;
+}
+
+#dev-quickstart .hp-proof-card h3 {
+  grid-column: 2;
+  margin-bottom: 0.34rem;
+  font-size: 1.04rem;
+  line-height: 1.16;
+}
+
+#dev-quickstart .hp-proof-card p {
+  grid-column: 2;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  font-weight: 520;
+}
+
+.hp-quickstart-card {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: var(--page-space-lg) var(--page-space-lg) var(--page-space-md);
+  text-align: center;
+}
+
+.hp-quickstart-card .hp-section-heading {
+  margin-bottom: calc(var(--page-space-base) * 0.28);
+}
+
+.hp-quickstart-subtitle {
+  margin-bottom: calc(var(--page-space-base) * 0.8);
+  max-width: 620px;
+}
+
+.hp-quickstart-card .gs-platforms {
+  margin-bottom: calc(var(--page-space-base) * 0.85);
+}
+
+.hp-quickstart-card .gs-install {
+  margin-bottom: 0;
+}
+
+.hp-persona-switch {
+  width: auto;
+  margin: 0 auto;
+  padding: 0.34rem;
+  display: inline-flex;
+  justify-content: center;
+  gap: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 249, 243, 0.84));
+  border-color: rgba(45, 47, 47, 0.09);
+  box-shadow:
+    inset 0 1px 5px rgba(45, 47, 47, 0.08),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.hp-persona-switch-btn {
+  min-width: 0;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 14px 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6f6a60;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.hp-persona-switch-btn .material-symbols-outlined {
+  font-size: 19px;
+}
+
+html:not([data-persona="developers"]) [data-persona-choice="people"] {
+  background: #FFCD29;
+  color: var(--on-primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.56),
+    0 2px 4px rgba(45, 47, 47, 0.12);
+}
+
+html[data-persona="developers"] [data-persona-choice="developers"] {
+  background: #1b1a16;
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.38);
+}
+
+html[data-md-color-scheme="zest-dark"] .hp-persona-switch {
+  background: rgba(13, 13, 10, 0.76);
+  border-color: rgba(252, 216, 70, 0.18);
+  box-shadow:
+    inset 0 2px 12px rgba(0, 0, 0, 0.62),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-md-color-scheme="zest-dark"] .hp-persona-switch-btn {
+  color: var(--text-muted);
+}
+
+html[data-md-color-scheme="zest-dark"] [data-persona-choice="people"] {
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+html[data-md-color-scheme="zest-dark"][data-persona="developers"] [data-persona-choice="developers"] {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 1px 1px rgba(0, 0, 0, 0.32);
+}
+
+.hp-cta-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+.hp-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.7rem 1.3rem;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--outline-variant);
+  background: var(--glass-bg);
+  color: var(--text-primary);
+}
+.hp-cta-btn .material-symbols-outlined { font-size: 1.2rem; }
+.hp-cta-btn.is-primary {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-yellow);
+}
+
+/* ---- Zone heading -- announces entering the journey, above the slides. */
+.hp-zone-head {
+  width: min(1180px, 100%);
+  margin: var(--page-space-xxl) auto 0;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+.hp-zone-heading {
+  /* Bottom margin owns the heading -> subtitle gap, matching .hp-section-heading;
+     the subtitle itself reuses the shared .hp-section-desc style. */
+  margin: 0 0 calc(var(--page-space-base) * 0.4);
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 3.1vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+/* ======================================================================
+   Journey: a sticky TOC sidebar + slides in normal document flow
+   ----------------------------------------------------------------------
+   The slides stack and scroll like any page. The TOC is a sticky sidebar
+   pinned to a fixed x (its grid column) and y (top). Every demo lives in a
+   fixed-size box, so the slides are uniform and the TOC column never shifts.
+   ====================================================================== */
+.hp-journey {
+  width: min(1280px, 100%);
+  /* Major-fourth gap below the zone heading so the TOC and the opening demo both
+     sit a deliberate step beneath it (was 0 — the TOC butted against the heading). */
+  margin: var(--page-space-md) auto 0;
+  padding: 0 1.5rem;
+  display: grid;
+  grid-template-columns: clamp(240px, 24vw, 320px) minmax(0, 1fr);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  align-items: start;        /* let the sticky TOC stick within the tall slides column */
+}
+
+/* The TOC sidebar: the complete outline (every section + every slide title),
+   vertically centred and pinned while you're in the journey. It's centred by JS
+   setting the sticky `top` to (viewport - tocHeight)/2 -- NOT by a transform --
+   because centring via `top` keeps sticky's clamp intact: the element can never be
+   drawn above its containing block (the grid, which begins below the zone heading),
+   so the TOC never overlaps the heading on the way in. It sits just below the
+   heading during approach and pins centred once scrolled in. (`top` below is just a
+   no-JS fallback; positionToc() overrides it.) If the outline is taller than the
+   viewport it scrolls. */
+.hp-journey-toc {
+  position: sticky;
+  top: 2rem;
+  align-self: start;
+  min-width: 0;
+  max-height: 100vh;
+  padding: 1.5rem 0;
+  overflow: auto;
+}
+
+.hp-journey-slides { min-width: 0; }
+
+/* ---- Table of contents --------------------------------------------------- */
+.hp-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.hp-toc-section-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(0.92rem, 1.2vw, 1.02rem);
+  line-height: 1.2;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.hp-toc-section-btn:hover { background: var(--glass-bg); color: var(--text-primary); }
+
+.hp-toc-sec-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--glass-bg-dense);
+  border: 1px solid var(--outline-variant);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.hp-toc-sec-badge .material-symbols-outlined { font-size: 1.05rem; }
+
+.hp-toc-section.is-current > .hp-toc-section-btn { color: var(--text-primary); }
+.hp-toc-section.is-current .hp-toc-sec-badge {
+  background: var(--primary-yellow);
+  border-color: transparent;
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+/* Slide list: the FULL outline is always shown (every section's slide titles), so
+   the product's breadth is visible at a glance. Non-current sections are quietly
+   de-emphasised; the current one brightens. */
+.hp-toc-slides {
+  list-style: none;
+  margin: 0.1rem 0 0.55rem 1.7rem;        /* indent to align under the title */
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--outline-variant);
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+.hp-toc-section.is-current .hp-toc-slides { opacity: 1; }
+.hp-toc-section.is-current .hp-toc-slides { border-left-color: var(--primary-yellow); }
+
+.hp-toc-slide {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.25;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.hp-toc-slide:hover { color: var(--text-primary); background: var(--glass-bg); }
+.hp-toc-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--outline-variant);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.hp-toc-slide.is-active { color: var(--text-primary); font-weight: 800; }
+.hp-toc-slide.is-active .hp-toc-dot { background: var(--primary-yellow); transform: scale(1.35); }
+
+/* ---- Slides: stacked in normal flow, scrolling past the sticky TOC ----------
+   Each slide gets roughly one screen of height so they scroll past one at a time;
+   the demo + caption are centred in it. The demo box is a FIXED size and every
+   demo root fills it, so all slides are identical in size (no reflow, no TOC
+   shift). */
+.hp-journey-slides {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Spotlight rhythm: slides are a FIXED distance apart regardless of viewport
+   height (the bug was min-height: 90vh, which grew the gaps on tall screens). The
+   constant vertical padding sets the demo-to-demo pitch; the demo stays a fixed
+   size so the cadence never changes with the window. */
+.hp-slide {
+  --slide-gap: 3.25rem;
+  padding: var(--slide-gap) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+/* The opening slide hugs the zone heading instead of carrying a full top gap. */
+.hp-slide:first-child { padding-top: 0.5rem; }
+
+.hp-slide-stage {
+  position: relative;
+  width: min(600px, 100%);
+  height: min(540px, 62vh);
+}
+
+.hp-slide-demo {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  border-radius: 26px;
+  box-shadow: var(--shadow-heavy);
+  /* Depth-of-field: inactive slides recede (smaller, dimmer, desaturated) so only
+     the one seated in the live-zone slot reads as active. */
+  transform: scale(0.9);
+  opacity: 0.5;
+  filter: saturate(0.55);
+  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.45s ease, filter 0.45s ease;
+}
+.hp-slide.is-active .hp-slide-demo {
+  transform: scale(1);
+  opacity: 1;
+  filter: none;
+}
+
+/* Dark-mode elevation (dev persona). The default --shadow-heavy is a black shadow,
+   which is invisible against the near-black page — so the dark windows/stages had no
+   visible edge. Here every slide frame instead gets a 1px light rim + top inset
+   highlight (the dark-UI "raised = lighter + light edge" cue), so even receded slides
+   read as panels. The ACTIVE slide swaps the white rim for a crisp gold edge + soft
+   gold halo, making the live slide glow in the brand colour (spotlight). */
+html[data-md-color-scheme="zest-dark"] .hp-slide-demo {
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(252, 216, 70, 0.30),
+    0 0 34px rgba(252, 216, 70, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+/* Inactive slides hold STILL: freeze their demo's CSS animations. A pre-rendered
+   upcoming slide stays at frame 0 (its "before" look); a slide you've scrolled past
+   freezes at its finished frame. The animation only runs while the slide is active
+   (in the live zone), where setActive re-renders it to play from the start. */
+.hp-slide:not(.is-active) .hp-slide-demo *,
+.hp-slide:not(.is-active) .hp-slide-demo *::before,
+.hp-slide:not(.is-active) .hp-slide-demo *::after {
+  animation-play-state: paused !important;
+}
+/* Force every demo root to fill the box exactly (two-class selector so it beats
+   the demos' own single-class width/height rules) -> uniform size by construction. */
+.hp-slide .hp-slide-demo > * {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Caption centred under the demo (descendant selector so it wins over the later,
+   left-aligned base .hp-demo-caption rule). It dims with its slide in the
+   depth-of-field so only the live slide's caption reads at full strength. */
+.hp-slide .hp-slide-caption {
+  width: min(600px, 100%);
+  min-height: 2.7rem;        /* reserve ~2 lines so 1- vs 2-line captions don't
+                                change the slide height (keeps the pitch uniform) */
+  margin: 0;
+  text-align: center;
+  opacity: 0.45;
+  transition: opacity 0.45s ease;
+}
+.hp-slide.is-active .hp-slide-caption { opacity: 1; }
+
+/* ---- Journey on tablet/phone --------------------------------------------
+   No room for a side-by-side sidebar. The TOC becomes a slim sticky top bar
+   condensed to the CURRENT section (title + a centred row of slide dots); the
+   slides scroll full-width beneath it. */
+@media (max-width: 920px) {
+  .hp-journey {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 1rem;
+  }
+  .hp-journey-toc {
+    position: sticky;
+    top: 0;
+    transform: none;         /* reset the desktop midline pin */
+    height: auto;            /* reset the desktop full-height column */
+    max-height: none;
+    overflow: visible;
+    padding: 0.6rem 0;
+    background: var(--glass-bg-dense);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background 0.25s ease, backdrop-filter 0.25s ease;
+    z-index: 5;
+  }
+  /* Above the journey (and at load) no section is `.is-current`, so the bar has no
+     content — drop its frosting so it doesn't read as a weird empty translucent
+     strip. The frosting returns the moment a section becomes current. (Padding is
+     kept either way, so the height stays stable and nothing jumps.) */
+  .hp-journey-toc:not(:has(.hp-toc-section.is-current)) {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .hp-toc-list { flex-direction: row; justify-content: center; }
+  .hp-toc-section { display: none; }
+  .hp-toc-section.is-current { display: flex; flex-direction: column; align-items: center; }
+  .hp-toc-section.is-current .hp-toc-section-btn { justify-content: center; pointer-events: none; }
+  .hp-toc-slides {
+    max-height: none;
+    opacity: 1;
+    overflow: visible;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    border-left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+  /* Condense each slide to a single pagination dot. The label stays hidden even
+     for the active slide, so the dots form ONE evenly-spaced, aligned row instead
+     of the active dot being shoved off-axis by its inline label. (The active
+     slide's name is already shown in the caption directly beneath its demo, and
+     the section title above gives the section context.) */
+  .hp-toc-slide {
+    width: auto;
+    gap: 0;
+    padding: 0.4rem;
+  }
+  .hp-toc-slide .hp-toc-slide-label { display: none; }
+  .hp-toc-dot { width: 0.55rem; height: 0.55rem; }
+  .hp-slide { --slide-gap: 2.25rem; }
+  .hp-slide-stage { height: min(56vh, 440px); }
+}
+
+/* NOTE: prefers-reduced-motion is intentionally NOT honored for the persona
+   journey's showcase demos -- they are the page's core content and must play on
+   every machine, matching the dev flowcharts (flowchart.css/js), which also
+   ignore the setting. Reduce gating here previously left the people-persona
+   demos frozen/half-rendered on any machine with the OS "reduce motion" setting
+   on (e.g. default Windows VMs). Don't re-add reduced-motion gating to the demos
+   without revisiting that product decision. */
+
+/* Base caption styling (each slide's caption sits below its demo; the
+   .hp-slide-caption rule recentres it). */
+.hp-demo-caption {
+  position: relative;
+  z-index: 1;
+  margin: 0.9rem 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: clamp(0.94rem, 1.25vw, 1.04rem);
+  font-weight: 620;
+  line-height: 1.42;
+  text-align: left;
+  text-wrap: balance;
+}
+
+/* Caption that links to the relevant docs. */
+.hp-demo-caption-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(252, 216, 70, 0.45);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.hp-demo-caption-link:hover,
+.hp-demo-caption-link:focus-visible {
+  color: var(--text-primary);
+  border-bottom-color: var(--primary-yellow);
+}
+
+.hp-demo-caption-arrow {
+  display: inline-block;
+  color: var(--primary-yellow-darker, #f0cc00);
+  transition: transform 0.2s ease;
+}
+
+.hp-demo-caption-link:hover .hp-demo-caption-arrow {
+  transform: translateX(3px);
+}
+
+.hp-demo-caption[hidden] {
+  display: none;
+}
+
+/* ---- Unified "app window" -----------------------------------------------
+   One window chrome shared by the User persona's chatbot (light frosted
+   ice-card) and the Developer persona's spawn-app demo (dark ice-card). A
+   title bar carries the app title centered, with three window-control dots at
+   the right; the body holds whatever the slide renders. The frame chrome is
+   dropped below (:has) so the window stands alone, matching DESIGN.md's
+   glassmorphism. */
+.hp-app-window {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: var(--radius-xl);   /* window-appropriate, overrides ice-card's 3rem */
+  box-shadow: var(--shadow-heavy);
+  /* One window size across both personas (matches the demo frame / dev windows). */
+  width: min(620px, 100%);
+  min-height: 420px;
+}
+
+.hp-app-window-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  padding: 0.66rem 0.9rem;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+/* Title centered on the window regardless of the dots; dots sit at the right. */
+.hp-app-window-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.hp-app-window-dots {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;            /* dots stay at the right edge */
+}
+
+.hp-app-window-dots i {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+}
+
+/* Abstract window controls: two neutral dots followed by one lemonade-yellow dot.
+   Deliberately NOT the macOS red/amber/green so the window reads as Lemonade's
+   own chrome. The yellow is the brand accent (--primary-yellow), unchanged across
+   themes; the leading grays are tuned per surface -- a warm light gray on the
+   light ice-card windows, a warm translucent gray on the dark/bash windows. */
+.hp-app-window-dots i:nth-child(1),
+.hp-app-window-dots i:nth-child(2) { background: #c6c3ba; }
+.hp-app-window-dots i:nth-child(3) { background: var(--primary-yellow); }
+
+/* Dark windows: the dev "Your App" window (.is-dark, shown on the light page) and
+   every window once the page is in Midnight (zest-dark). Only the neutral dots
+   change; the yellow stays the brand accent. */
+.hp-app-window.is-dark .hp-app-window-dots i:nth-child(1),
+.hp-app-window.is-dark .hp-app-window-dots i:nth-child(2),
+[data-md-color-scheme="zest-dark"] .hp-app-window-dots i:nth-child(1),
+[data-md-color-scheme="zest-dark"] .hp-app-window-dots i:nth-child(2) {
+  background: rgba(248, 243, 218, 0.32);
+}
+
+/* Dark theme -- the SAME window, just a dark surface (the bash-terminal look:
+   near-black with a soft gold bloom, no outline). Light and dark windows share
+   all the chrome above; only the surface + text colours differ here. */
+.hp-app-window.is-dark {
+  /* Raised-panel surface: a step LIGHTER than the page (warm-dark, ~surface-container)
+     so the window reads as elevated above the near-black background. Dark UIs convey
+     elevation with lighter fills + a light rim (see .hp-slide-demo above), never with a
+     darker shadow — a black shadow on a black page is invisible. */
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    #211e16;
+  border: none;
+  color: #f8f3da;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.hp-app-window.is-dark .hp-app-window-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.hp-app-window.is-dark .hp-app-window-title {
+  color: rgba(248, 243, 218, 0.92);
+}
+
+/* ---- Terminal window: follows the PAGE theme ----------------------------
+   The CLI terminals must read as part of the page, not as a stray dark panel.
+   Under the default (light) Crystalline Zest theme they are a light ice-card
+   shell -- the SAME light-terminal treatment as the install console cards
+   (.gs-console) elsewhere on the page: a frosted, slightly-more-solid glass
+   surface with a faint citrus bloom in the corner (mirroring the gold bloom
+   the dark bash window carries). The inherited .ice-card base already supplies
+   the frosted glass + ambient shadow; here we firm up the fill for code
+   legibility and add the bloom. Text colours live with .hp-terminal-body. */
+.hp-app-window.hp-terminal-window {
+  background:
+    radial-gradient(circle at 80% 12%, rgba(252, 216, 70, 0.12), transparent 42%),
+    var(--glass-bg-hover);   /* a step more solid than base glass so mono text stays crisp */
+}
+
+/* Under Midnight (zest-dark) the terminal returns to the warm bash-dark surface
+   -- the original near-black panel with a soft gold bloom and no outline. */
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window {
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    #211e16;
+  border: none;
+  color: #f8f3da;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window .hp-app-window-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-md-color-scheme="zest-dark"] .hp-app-window.hp-terminal-window .hp-app-window-title {
+  color: rgba(248, 243, 218, 0.92);
+}
+
+/* ---- User chatbot window ------------------------------------------------- */
+.hp-chatbot {
+  --demo-base: 0.6rem;                                              /* major-fourth base */
+  --demo-step1: calc(var(--demo-base) * 1.333);                     /* ≈ 0.8rem */
+  --demo-step2: calc(var(--demo-base) * 1.333 * 1.333);             /* ≈ 1.07rem */
+  --demo-step3: calc(var(--demo-base) * 1.333 * 1.333 * 1.333);     /* ≈ 1.42rem */
+  --demo-gap: var(--demo-base);
+  --demo-font: 0.82rem;
+  --demo-padding: var(--demo-base) var(--demo-step1);
+  --demo-radius: var(--radius-lg);
+  --demo-user-max: 80%;
+  --demo-response-max: clamp(220px, 70%, 300px);
+}
+
+/* Conversation area: message history sits at the TOP of the window, below the
+   title bar (the input bar stays pinned at the bottom). */
+.hp-chatbot-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+/* The shared content classes use height:100% + space-between; here let them size
+   to their content (stacked from the top) with a tight major-fourth gap. */
+.hp-chatbot .hp-demo-chat,
+.hp-chatbot .hp-demo-coding,
+.hp-chatbot .hp-demo-image,
+.hp-chatbot .hp-demo-audio {
+  height: auto;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: var(--demo-step1);
+}
+
+/* Text entry box at the bottom. */
+.hp-chatbot-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: var(--demo-step1) var(--demo-step2);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* Text-entry field. A ghost --outline-variant border is the DESIGN.md-sanctioned
+   affordance for inputs; the surface matches the listing/search-bar family so the
+   chat window reads as part of the same set. */
+.hp-chatbot-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-btn);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+.hp-chatbot-typed {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hp-chatbot-caret {
+  flex: 0 0 auto;
+  width: 1.5px;
+  height: 0.95rem;
+  margin-left: 1px;
+  background: var(--primary-yellow);
+}
+
+.hp-chatbot-send {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+.hp-chatbot-send .material-symbols-outlined {
+  font-size: 1.2rem;
+}
+
+/* ---- Send + arrival animation -------------------------------------------
+   At ~0.7s the typed prompt "sends": the input text clears, the send button
+   pulses, and the first message rises up out of the input into the chat. The
+   remaining messages then arrive in sequence. Boxes keep their space (opacity/
+   transform only) so the bottom-anchored layout stays stable. Replays on every
+   slide render. */
+@keyframes hp-chatbot-arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hp-chatbot-from-input {
+  0%   { opacity: 0; transform: translateY(34px) scale(0.96); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.hp-chatbot .hp-demo-chat > *,
+.hp-chatbot .hp-demo-coding > *,
+.hp-chatbot .hp-demo-image > *,
+.hp-chatbot .hp-demo-audio > * {
+  animation: hp-chatbot-arrive 0.42s ease both;
+}
+
+.hp-chatbot .hp-demo-chat > *:nth-child(1),
+.hp-chatbot .hp-demo-coding > *:nth-child(1),
+.hp-chatbot .hp-demo-image > *:nth-child(1),
+.hp-chatbot .hp-demo-audio > *:nth-child(1) {
+  animation: hp-chatbot-from-input 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 0.7s;
+}
+
+.hp-chatbot .hp-demo-chat > *:nth-child(2),
+.hp-chatbot .hp-demo-coding > *:nth-child(2),
+.hp-chatbot .hp-demo-image > *:nth-child(2),
+.hp-chatbot .hp-demo-audio > *:nth-child(2) { animation-delay: 1.25s; }
+
+.hp-chatbot .hp-demo-chat > *:nth-child(3) { animation-delay: 1.7s; }
+.hp-chatbot .hp-demo-chat > *:nth-child(4) { animation-delay: 2.15s; }
+
+@keyframes hp-chatbot-sent {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-4px); }
+}
+
+.hp-chatbot-typed {
+  animation: hp-chatbot-sent 0.3s ease 0.7s both;
+}
+
+@keyframes hp-chatbot-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes hp-chatbot-caret-off { to { opacity: 0; visibility: hidden; } }
+
+.hp-chatbot-caret {
+  animation:
+    hp-chatbot-blink 1s steps(1, end) infinite,
+    hp-chatbot-caret-off 0.01s linear 0.7s forwards;
+}
+
+@keyframes hp-chatbot-send-pulse {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(0.86); }
+  70% { transform: scale(1.12); }
+}
+
+.hp-chatbot-send {
+  animation: hp-chatbot-send-pulse 0.45s ease 0.62s;
+}
+
+/* ---- Omni: ONE conversation scrolling through every modality ------------
+   A single chatbot window whose transcript plays out chat -> image -> code ->
+   speech. playOmni() (persona-demo/people/explore.js) reveals each .hp-omni-turn and translates
+   the feed up so the newest turn stays in view; CSS here only styles the per-turn
+   reveal and the smooth scroll. The body is the clip viewport (its overflow hides
+   turns that scroll above it, so nothing bleeds over the title bar). */
+.hp-omni .hp-chatbot-body {
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.hp-omni-feed {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-step1);
+  will-change: transform;
+  transition: transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* Each turn is a full-width flex column so the bubble/response inside keeps its own
+   left (user) / right (response) alignment via align-self. */
+.hp-omni-turn {
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.42s ease, transform 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.hp-omni-turn.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* The waveform's default top margin is for the standalone speech demo; inside the
+   omni feed the gap already spaces it. */
+.hp-omni-turn .hp-waveform { margin-top: 0; }
+.hp-omni-placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-light);
+}
+
+/* ======================================================================
+   Model manager: list with download + progress (REUSABLE for backends)
+   Shares the .hp-app-window chrome; the body is a vertical list whose rows
+   arrive staggered. One row can show a filling progress bar in place of its
+   download button. Spacing on the perfect-fourth (1.333) scale.
+   ====================================================================== */
+.hp-applist-window,
+.hp-modelsearch-window {
+  --demo-base: 0.6rem;
+  --demo-step1: calc(var(--demo-base) * 1.333);
+  --demo-step2: calc(var(--demo-base) * 1.333 * 1.333);
+  --demo-step3: calc(var(--demo-base) * 1.333 * 1.333 * 1.333);
+}
+
+.hp-applist {
+  position: relative;   /* positioning context for the single moving cursor */
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-base);
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+/* One cursor that glides between download buttons (positioned via JS transform).
+   The smooth transform transition is what makes the mouse travel between rows. */
+.hp-applist-cursor {
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.55s cubic-bezier(0.4, 0.5, 0.3, 1);
+}
+
+.hp-applist-cursor.is-in { opacity: 1; }
+
+/* Optional category heading above a group of rows (e.g. the backend manager's
+   "Large Language Models"). Quiet, uppercase, sits flush above the list. */
+.hp-applist-category {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.1rem 0.2rem 0.05rem;
+  /* Shares the row entrance + --row stagger so labels fade in top-to-bottom
+     in lockstep with their rows. */
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.12s + 0.1s);
+}
+
+/* Subsequent category headings (e.g. the audio groups below the LLM engines) get
+   extra top margin so each labelled group reads as its own section. */
+.hp-applist-category.is-secondary {
+  margin-top: 0.5rem;
+}
+
+/* Same listing style as the app-store cards: no solid outline (DESIGN.md
+   "No-Line"), a brighter translucent surface + soft ambient shadow. */
+.hp-applist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--demo-step1);
+  padding: var(--demo-step1) var(--demo-step2);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.12s + 0.1s);
+}
+
+@keyframes hp-applist-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hp-applist-name {
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.hp-applist-meta {
+  margin-left: auto;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hp-applist-dl {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+.hp-applist-dl .material-symbols-outlined { font-size: 1.05rem; }
+
+/* Progress bar track. The fill (width 0 -> --p, linear, no deceleration) is
+   driven by the action-slot context below, timed to the cursor's download click. */
+.hp-applist-progress {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.12);
+  overflow: hidden;
+}
+
+.hp-applist-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary-yellow);
+}
+
+@keyframes hp-applist-fill {
+  to { width: var(--p, 100%); }
+}
+
+/* Action slot -- identical fixed slot on EVERY row so the downloading row looks
+   like the rest. Holds the download button (right-aligned); on the downloading
+   row it also holds the progress bar + cursor, and at --swap-at the button fades
+   out and the bar fills linearly to 100%. */
+.hp-applist-act {
+  flex: 0 0 auto;
+  position: relative;
+  width: 4.4rem;
+  height: 1.9rem;
+}
+
+.hp-applist-act > .hp-applist-dl {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.hp-applist-act > .hp-applist-progress {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-dl {
+  animation: hp-dl-out 0.28s ease var(--swap-at, 1300ms) both;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-progress {
+  animation: hp-prog-in 0.01s linear var(--swap-at, 1300ms) forwards;
+}
+
+.hp-applist-act.is-downloading > .hp-applist-progress i {
+  animation: hp-applist-fill 2200ms linear calc(var(--swap-at, 1300ms) + 120ms) forwards;
+}
+
+@keyframes hp-dl-out {
+  to { opacity: 0; transform: translateY(-50%) scale(0.7); }
+}
+
+@keyframes hp-prog-in {
+  to { opacity: 1; }
+}
+
+/* ---- Stylized mouse cursor (registry + search) --------------------------- */
+.hp-cursor {
+  position: absolute;
+  z-index: 8;   /* above the quant dropdown menu (z 7) so it never hides the cursor */
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(45, 47, 47, 0.35));
+}
+
+.hp-cursor svg { display: block; width: 100%; height: 100%; }
+
+.hp-cursor path {
+  fill: #fffdf7;
+  stroke: #2d2f2f;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+/* The press scales the inner <svg> (movement uses the .hp-cursor transform /
+   right-top, so the two animations never fight over `transform`). */
+@keyframes hp-cursor-press {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.78); }
+}
+
+/* Registry: the cursor flies in from the lower-left, clicks the download button
+   at --swap-at, then fades out -- so with two downloading rows only one cursor is
+   visible at a time (reads as a single mouse moving down the list). */
+.hp-applist-act.is-downloading > .hp-cursor {
+  right: 0.3rem;
+  top: 50%;
+  animation:
+    hp-reg-cursor 0.8s cubic-bezier(0.4, 0.5, 0.3, 1) calc(var(--swap-at, 1300ms) - 800ms) both,
+    hp-cursor-fade 0.3s ease calc(var(--swap-at, 1300ms) + 300ms) forwards;
+}
+
+.hp-applist-act.is-downloading > .hp-cursor svg {
+  animation: hp-cursor-press 0.22s ease var(--swap-at, 1300ms);
+}
+
+@keyframes hp-reg-cursor {
+  from { transform: translate(-64px, 46px); opacity: 0; }
+  55%  { opacity: 1; }
+  to   { transform: translate(0, -3px); opacity: 1; }
+}
+
+@keyframes hp-cursor-fade {
+  to { opacity: 0; }
+}
+
+/* ---- Hugging Face search ------------------------------------------------- */
+.hp-modelsearch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-step1);
+  padding: var(--demo-step2) var(--demo-step3);
+}
+
+.hp-modelsearch-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-btn);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+}
+
+.hp-modelsearch-icon { font-size: 1.1rem; color: var(--text-muted); }
+
+.hp-modelsearch-typed {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hp-modelsearch-caret {
+  width: 1.5px;
+  height: 0.95rem;
+  background: var(--primary-yellow);
+  animation:
+    hp-chatbot-blink 1s steps(1, end) infinite,
+    hp-chatbot-caret-off 0.01s linear 1s forwards;
+}
+
+.hp-modelsearch-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--demo-base);
+}
+
+.hp-modelsearch-result {
+  display: flex;
+  align-items: center;
+  gap: var(--demo-step1);
+  padding: var(--demo-step1) var(--demo-step2);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-applist-in 0.4s ease forwards;
+  animation-delay: calc(var(--res, 0) * 0.1s + 1.1s);
+}
+
+/* The interacted-with result looks like every other row (no highlight -- the
+   cursor shows which one is acted on), but it carries the cursor + dropdown menu.
+   z-index lifts the whole row (and its menu) above the later sibling rows so the
+   opaque dropdown isn't veiled by their translucent backgrounds painting over it. */
+.hp-modelsearch-result.is-selected {
+  position: relative;
+  z-index: 5;
+}
+
+.hp-modelsearch-repo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.hp-modelsearch-name {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-modelsearch-dls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.hp-modelsearch-dls .material-symbols-outlined { font-size: 0.8rem; }
+
+.hp-modelsearch-controls {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Quantization dropdown. The menu opens at the cursor's first click (~1.95s)
+   and closes at the download click (~3.0s) -- timed over the 5s cursor cycle. */
+.hp-modelsearch-quant { position: relative; flex: 0 0 auto; }
+
+.hp-modelsearch-quant-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.22rem 0.4rem 0.22rem 0.55rem;
+  border-radius: var(--radius);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Chevron sits directly after the value text, inside the pill (not pushed to a
+   far edge -- WebKit rendered space-between with a visible gap). */
+.hp-modelsearch-quant-value .material-symbols-outlined {
+  font-size: 0.95rem;
+  margin-right: -0.1rem;
+}
+
+.hp-modelsearch-quant-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 0.2rem;
+  border-radius: var(--radius);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-medium);
+  opacity: 0;
+  transform: translateY(-4px) scaleY(0.86);
+  transform-origin: top;
+  pointer-events: none;
+  animation: hp-quant-toggle 5s linear both;
+}
+
+.hp-quant-opt {
+  padding: 0.26rem 0.6rem;
+  border-radius: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.hp-quant-opt.is-active {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  font-weight: 800;
+}
+
+@keyframes hp-quant-toggle {
+  0%, 38%   { opacity: 0; transform: translateY(-4px) scaleY(0.86); }
+  41%, 58%  { opacity: 1; transform: translateY(0) scaleY(1); }
+  61%, 100% { opacity: 0; transform: translateY(-4px) scaleY(0.86); }
+}
+
+/* Non-selected results carry the same yellow-circle button at the row's right. */
+.hp-modelsearch-result > .hp-applist-dl {
+  margin-left: auto;
+}
+
+/* The search download button reuses the shared .hp-applist-dl yellow-circle base
+   (so every model row -- registry and search -- has the same button); this only
+   adds the fade-out at the download click. */
+.hp-modelsearch-dl {
+  animation: hp-modelsearch-dl-out 0.28s ease 3050ms both;
+}
+
+@keyframes hp-modelsearch-dl-out {
+  to { opacity: 0; transform: scale(0.7); }
+}
+
+.hp-modelsearch-progress {
+  position: absolute;
+  left: var(--demo-step2);
+  right: var(--demo-step2);
+  bottom: 0.45rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.12);
+  overflow: hidden;
+  opacity: 0;
+  animation: hp-prog-in 0.01s linear 3050ms forwards;
+}
+
+.hp-modelsearch-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary-yellow);
+  /* linear to 100%, finishing near the end of the 5.8s slide (no deceleration) */
+  animation: hp-applist-fill 2450ms linear 3150ms forwards;
+}
+
+
+/* Search cursor: flies to the quant dropdown (~1.9s), clicks, then to the
+   download button (~3.0s) and clicks. `right` offsets (rem from the result's
+   padding edge) match the fixed control geometry: button center ~2rem,
+   dropdown center ~5.5rem. */
+.hp-modelsearch-result.is-selected > .hp-cursor {
+  top: 50%;
+  right: 0;
+  animation: hp-search-cursor 5s linear both;
+}
+
+.hp-modelsearch-result.is-selected > .hp-cursor svg {
+  animation:
+    hp-cursor-press 0.22s ease 1.95s,
+    hp-cursor-press 0.22s ease 3s;
+}
+
+@keyframes hp-search-cursor {
+  0%, 22%  { right: 1.2rem; top: 150%; opacity: 0; }
+  27%      { opacity: 1; }
+  38%      { right: 5.2rem; top: 42%; opacity: 1; }   /* dropdown @1.9s */
+  56%      { right: 5.2rem; top: 42%; opacity: 1; }   /* hold open @2.8s */
+  60%      { right: 2rem;   top: 42%; opacity: 1; }   /* download @3.0s */
+  100%     { right: 2rem;   top: 42%; opacity: 1; }
+}
+
+/* ======================================================================
+   App store (REUSABLE across app categories), hosted inside a stylized
+   Lemonade app window. Marketplace-style cards (header + description + CTA row)
+   fill the window; a faint full-height scrollbar implies a longer, scrollable
+   list. The body grows to fill the window so the cards + scrollbar span it.
+   ====================================================================== */
+.hp-appstore {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;   /* distribute the cards across the full body */
+  gap: 0.6rem;
+  padding: 0.9rem 1.25rem 0.9rem 0.9rem;
+  overflow: hidden;
+}
+
+/* Per DESIGN.md "No-Line" rule: no solid outlines for sectioning -- separate the
+   card from the window with a brighter translucent surface (a higher tonal layer)
+   and a soft ambient shadow ("physics, not lines"). */
+.hp-appstore-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.45s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.14s + 0.1s);
+}
+
+@keyframes hp-appstore-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hp-appstore-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.hp-appstore-logo {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--radius);
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.28rem;
+}
+
+.hp-appstore-name {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.hp-appstore-desc {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* CTA row under the description (stylized, no real action) -- mirrors the
+   website marketplace card's Visit / Guide links. */
+.hp-appstore-cta {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.1rem;
+}
+
+.hp-appstore-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.hp-appstore-btn .material-symbols-outlined { font-size: 0.9rem; }
+
+.hp-appstore-btn.is-primary {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
+}
+
+/* Faint full-height scrollbar track + thumb implying the list scrolls. */
+.hp-appstore-scrollhint {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  right: 0.4rem;
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(45, 47, 47, 0.08);
+  pointer-events: none;
+}
+
+.hp-appstore-scrollhint::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 38%;
+  border-radius: inherit;
+  background: rgba(45, 47, 47, 0.22);
+}
+
+/* ======================================================================
+   "Connect to apps" board: all nine featured apps on a LIGHT stage (no window
+   chrome -- the board IS the light surface, mirroring the dev backend board).
+   Three category groups, each a row of three logo+name+description cards. No CTAs.
+   ====================================================================== */
+.hp-appboard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.4rem 1.5rem;
+  background:
+    radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+    linear-gradient(160deg, #fffdf4, #f5f3e8);
+}
+
+.hp-appboard-grouplabel {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+  /* Shares the card entrance + --card stagger so each group label fades in
+     just before its cards, keeping the board's top-to-bottom cascade. */
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.06s + 0.12s);
+}
+
+.hp-appboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.hp-appboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.06s + 0.12s);
+}
+
+.hp-appboard-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hp-appboard-logo {
+  flex: 0 0 auto;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.2rem;
+}
+
+.hp-appboard-name {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-appboard-desc {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ======================================================================
+   "Add as an MCP server": a client's MCP-server settings panel. Shows the
+   lemonade entry added to mcp.json (highlighted), a connected status, and the
+   five tools the gateway exposes (staggered in, as if discovered on connect).
+   ====================================================================== */
+/* The content sits in a 16:9 panel floating over the (scrimmed) app window, in two
+   columns: the mcp.json config on the left, the connected status + tools on the
+   right. This fills the horizontal space and kills the tall, sparse single column. */
+.hp-mcp-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, rgba(45, 47, 47, 0.05) 0 2.4rem, transparent 2.4rem),
+    repeating-linear-gradient(180deg, transparent 0 3.2rem, rgba(45, 47, 47, 0.035) 3.2rem 3.25rem),
+    var(--surface);
+}
+
+.hp-mcp-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 20, 14, 0.22);
+}
+
+.hp-mcp-panel {
+  position: relative;
+  z-index: 1;
+  width: min(94%, 540px);
+  aspect-ratio: 16 / 9;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  padding: 0.95rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-heavy);
+}
+
+.hp-mcp-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.hp-mcp-col-form { gap: 0.5rem; justify-content: center; }
+.hp-mcp-col-tools { gap: 0.5rem; }
+
+/* Left column: a compact "Add MCP server" form -- labelled fields instead of raw
+   JSON, so it's denser and reads like a real client's add-server dialog. */
+.hp-mcp-field-group { display: flex; flex-direction: column; gap: 0.24rem; }
+
+.hp-mcp-label {
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hp-mcp-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.95rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+  overflow: hidden;
+}
+
+.hp-mcp-val {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-mcp-val-mono { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-secondary); }
+
+.hp-mcp-field-caret { margin-left: auto; flex: 0 0 auto; font-size: 1rem; color: var(--text-light); }
+
+.hp-mcp-add-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-btn);
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-yellow);
+}
+
+.hp-mcp-add-btn .material-symbols-outlined { font-size: 1rem; }
+
+.hp-mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hp-mcp-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5);
+  animation: hp-mcp-glow-dot 1.7s ease-out infinite 1.4s;
+}
+
+@keyframes hp-mcp-glow-dot {
+  0%        { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5); }
+  70%, 100% { box-shadow: 0 0 0 5px rgba(52, 199, 89, 0); }
+}
+
+.hp-mcp-tools {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.34rem;
+}
+
+.hp-mcp-tool {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.36rem 0.55rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-light);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-appstore-in 0.4s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.09s + 0.45s);
+}
+
+.hp-mcp-tool-icon { flex: 0 0 auto; display: inline-flex; color: var(--primary-yellow-darker); }
+.hp-mcp-tool-icon .material-symbols-outlined { font-size: 1.02rem; }
+.hp-mcp-tool-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.hp-mcp-tool-name {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hp-mcp-tool-tag {
+  font-family: var(--font-body);
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ======================================================================
+   "Connect any OpenAI-compatible app": the connection settings sit in a 16:9
+   modal floating over the (scrimmed) app window. Timeline (one-shot on render):
+   the Base URL types itself in (typewriter via a stepped width), a cursor flies
+   to the Connect button and presses it, then a glowing-green "100+ models found!"
+   status fades in to the RIGHT of the button.
+   ====================================================================== */
+.hp-conn-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  /* Faint app content behind the modal, so the window reads as a real app. */
+  background:
+    linear-gradient(180deg, rgba(45, 47, 47, 0.05) 0 2.4rem, transparent 2.4rem),
+    repeating-linear-gradient(180deg, transparent 0 3.2rem, rgba(45, 47, 47, 0.035) 3.2rem 3.25rem),
+    var(--surface);
+}
+
+/* Dim scrim that lifts the modal off the app content. */
+.hp-conn-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 20, 14, 0.22);
+}
+
+/* The 16:9 dialog. overflow:visible so the click cursor isn't clipped at a corner. */
+.hp-conn-modal {
+  position: relative;
+  z-index: 1;
+  width: min(90%, 480px);
+  aspect-ratio: 16 / 9;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-heavy);
+}
+
+.hp-conn-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.hp-conn-modal-close { font-size: 1.05rem; color: var(--text-light); }
+
+.hp-conn-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.hp-conn-head-icon { font-size: 1.05rem; color: var(--primary-yellow-darker); }
+.hp-conn-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.hp-conn-field-group { display: flex; flex-direction: column; gap: 0.28rem; }
+
+.hp-conn-label {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hp-conn-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--outline-variant);
+  overflow: hidden;
+}
+
+/* Typewriter: a stepped width reveal over the (monospace) URL, so 22ch lands
+   exactly on the 22-character string. The caret blinks until typing finishes. */
+.hp-conn-typed {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  width: 0;
+  animation: hp-conn-type 1.1s steps(22, end) 0.45s forwards;
+}
+
+@keyframes hp-conn-type { to { width: 22ch; } }
+
+.hp-conn-caret {
+  flex: 0 0 auto;
+  width: 1.5px;
+  height: 1rem;
+  background: var(--primary-yellow);
+  animation:
+    hp-chatbot-blink 1s steps(1, end) infinite,
+    hp-chatbot-caret-off 0.01s linear 1.65s forwards;
+}
+
+.hp-conn-placeholder {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+/* Button + status share a row: the status fades in to the RIGHT of the button. */
+.hp-conn-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.15rem;
+}
+
+.hp-conn-btn {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.05rem;
+  border-radius: var(--radius-btn);
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-yellow);
+  animation: hp-conn-btn-press 0.3s ease 2.5s;
+}
+
+.hp-conn-btn .material-symbols-outlined { font-size: 1.05rem; }
+
+@keyframes hp-conn-btn-press {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.95); }
+}
+
+/* The cursor lives inside the button so it lands on it regardless of layout: it
+   flies in from the lower-right after typing, then presses at the click moment. */
+.hp-conn-btn .hp-cursor {
+  left: 58%;
+  top: 32%;
+  animation: hp-conn-cursor 0.95s cubic-bezier(0.4, 0.5, 0.3, 1) 1.55s both;
+}
+
+.hp-conn-btn .hp-cursor svg { animation: hp-cursor-press 0.22s ease 2.5s; }
+
+@keyframes hp-conn-cursor {
+  from { transform: translate(54px, 60px); opacity: 0; }
+  55%  { opacity: 1; }
+  to   { transform: translate(0, 0); opacity: 1; }
+}
+
+.hp-conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  opacity: 0;
+  transform: translateX(-6px);
+  animation: hp-conn-status-in 0.45s ease 2.8s forwards;
+}
+
+@keyframes hp-conn-status-in {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.hp-conn-status-text {
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--text-success);
+}
+
+.hp-conn-dot {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5);
+  animation: hp-conn-glow 1.7s ease-out infinite 2.95s;
+}
+
+@keyframes hp-conn-glow {
+  0%        { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.5); }
+  70%, 100% { box-shadow: 0 0 0 6px rgba(52, 199, 89, 0); }
+}
+
+/* ======================================================================
+   Developer: "Own the whole stack" window (dark variant). The app is
+   branded as Your App; inside it a control chip (gated by the dev's API
+   key) + private libraries of locked models AND backends + a footer
+   keeping the spotlight on the dev's brand.
+   ====================================================================== */
+/* The whole group is centered in the fixed-height window's vertical middle so all
+   content reads as one balanced block instead of being pushed to the top/bottom. */
+.hp-private {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;           /* center the chip + brand line over the columns */
+  justify-content: center;       /* group everything in the vertical middle */
+  gap: 1.3rem;
+  padding: 1.4rem 1.6rem;
+}
+
+.hp-private-keychip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.75rem;
+  border-radius: var(--radius-btn);
+  background: rgba(252, 216, 70, 0.12);
+  border: 1px solid rgba(252, 216, 70, 0.3);
+  color: #ffe76a;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.hp-private-keychip .material-symbols-outlined { font-size: 0.95rem; }
+
+.hp-private-libhead {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.5);
+  margin-bottom: 0.7rem;
+}
+
+/* Two columns (models | backends), each a stack of compact cards. Collapses to one
+   column only when very narrow. */
+.hp-private-cols {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0 1.5rem;
+}
+
+.hp-private-col { display: flex; flex-direction: column; }
+.hp-private-items { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.hp-private-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.1s + 0.15s);
+}
+
+.hp-private-card-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.55rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
+
+.hp-private-card-icon .material-symbols-outlined { font-size: 1.05rem; }
+
+.hp-private-card-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+
+.hp-private-name { font-family: var(--font-mono); font-size: 0.8rem; color: #f4efdc; }
+.hp-private-sub { font-family: var(--font-body); font-size: 0.68rem; color: rgba(248, 243, 218, 0.5); }
+
+/* Brand line: bottom bracket of the centered group, mirroring the key chip on top. */
+.hp-private-foot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: rgba(248, 243, 218, 0.7);
+}
+
+.hp-private-foot .material-symbols-outlined { font-size: 0.95rem; color: #fcd846; }
+
+/* ======================================================================
+   Developer: "Backends and devices" board (dark variant). A grid of glass
+   icon-cards (Material icons, no external logos) grouped core/specialized.
+   Grid uses auto-fit so it reflows to 1 col on narrow screens.
+   ====================================================================== */
+/* Inference engines / devices render directly on the stage (no window chrome) --
+   the board IS the dark surface, like the router diagrams. */
+.hp-backend-board {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 1.6rem;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(252, 216, 70, 0.16), transparent 34%),
+    #11110d;
+}
+
+.hp-backend-grouplabel {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.5);
+  margin-top: 0.2rem;
+}
+
+.hp-backend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+}
+
+.hp-backend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(252, 216, 70, 0.12);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--card, 0) * 0.08s + 0.12s);
+}
+
+.hp-backend-icon { display: inline-flex; color: #ffe76a; }
+.hp-backend-icon .material-symbols-outlined { font-size: 1.3rem; }
+.hp-backend-name { font-family: var(--font-display); font-size: 0.84rem; font-weight: 800; color: #f4efdc; }
+.hp-backend-tag { font-family: var(--font-body); font-size: 0.7rem; color: rgba(248, 243, 218, 0.55); }
+
+/* Terminal = the unified .hp-app-window (dark theme) with a code body. No
+   separate window chrome -- it shares the bar + right-side dots with every other
+   window; only the monospace body below is terminal-specific. */
+.hp-terminal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hp-terminal-body pre {
+  margin: 0;
+  padding: 1.35rem;
+  white-space: pre-wrap;
+}
+
+.hp-terminal-body code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: clamp(0.82rem, 1.25vw, 0.98rem);
+  line-height: 1.72;
+}
+
+.hp-terminal-body code .hp-terminal-line {
+  display: block;
+  opacity: 1;
+  transform: none;
+}
+
+[data-animation-mode="once"] .hp-terminal-body code .hp-terminal-line,
+[data-animation-mode="repeat"] .hp-terminal-body code .hp-terminal-line {
+  opacity: 0;
+  transform: translateY(0.22rem);
+  animation: hpTerminalLineIn 0.28s ease forwards;
+  animation-delay: var(--terminal-delay, 0ms);
+}
+
+/* Light-theme line colours (default). Commands are the brightest/boldest line
+   (max contrast, like a real prompt), output recedes to secondary, comments to
+   muted -- the same three-step hierarchy the dark terminal uses, retuned to the
+   Crystalline Zest light text scale. */
+.hp-terminal-body .hp-terminal-comment {
+  color: var(--text-muted);
+}
+
+.hp-terminal-body .hp-terminal-command {
+  color: var(--text-on-light);
+  font-weight: 780;
+}
+
+.hp-terminal-body .hp-terminal-output {
+  color: var(--text-secondary);
+  padding-left: 1.15rem;
+}
+
+/* Midnight (zest-dark): the warm bash-terminal line colours. */
+[data-md-color-scheme="zest-dark"] .hp-terminal-body code {
+  color: #f8f3da;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-comment {
+  color: rgba(248, 243, 218, 0.52);
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-command {
+  color: #fff8d8;
+}
+
+[data-md-color-scheme="zest-dark"] .hp-terminal-body .hp-terminal-output {
+  color: rgba(248, 243, 218, 0.62);
+}
+
+@keyframes hpTerminalLineIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+[data-persona="developers"] .hp-demo-caption {
+  color: var(--text-secondary);
+}
+
+.hp-legacy-hero {
+  margin-top: var(--page-space-xl);
+}
+
+/* ---- Responsive --------------------------------------------------------------
+   Stack the dev-quickstart at 1000px (not 920): between ~920-1000px the side-by-side
+   panel column (min 520px) no longer fits the card, clipping the proof grid's right
+   column, AND each 2x2 cell is too narrow to read. Stacking earlier gives the proofs
+   the full card width through that band. */
+@media (max-width: 1000px) {
+  .hp-dev-quickstart-layout {
+    grid-template-columns: 1fr;
+    gap: var(--page-space-md);
+  }
+  .hp-dev-quickstart-copy {
+    align-items: center;
+    text-align: center;
+  }
+  #dev-quickstart .hp-section-desc {
+    max-width: 42rem;
+    text-align: center;
+  }
+  #dev-quickstart .hp-cta-actions {
+    justify-content: center;
+  }
+  .hp-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hp-proof-card { min-height: 9.5rem; }
+}
+
+@media (max-width: 720px) {
+  .hp-persona-promise { padding-left: 1rem; padding-right: 1rem; }
+  .hp-persona-subtitle { max-width: 34rem; }
+  .hp-proof-band { padding-left: 1rem; padding-right: 1rem; }
+  .hp-terminal-body pre { padding: 1rem; }
+}
+
+@media (max-width: 480px) {
+  .hp-persona-promise { padding: 4rem 1rem 0; }
+  /* Font size is owned by the fluid clamp on the base rule; here we only let the
+     deliberate desktop line breaks ("Refreshingly open" / "intelligence.") wrap
+     by word, since neither phrase fits on one line at phone widths. */
+  .hp-persona-title-line {
+    white-space: normal;
+  }
+  .hp-persona-subtitle { font-size: 1.08rem; }
+  .hp-persona-switch {
+    width: min(100%, 22rem);
+  }
+  .hp-persona-switch-btn {
+    flex: 1 1 0;
+    padding: 14px 16px;
+    font-size: 1rem;
+  }
+  .hp-proof-grid { grid-template-columns: 1fr; }
+  .hp-proof-card { min-height: 0; }
+  .hp-cta-actions { flex-direction: column; align-items: stretch; }
+  .hp-cta-btn { justify-content: center; }
+}
+
+/* Dev-quickstart proofs: the desktop 2x2 cross (icon column beside a narrow text
+   column) stays readable only while each cell is wide. Once the panel narrows —
+   which starts well before phone widths, e.g. a minimum-width desktop Chrome window
+   (~500px) where the panel is full-width but each cell is barely ~110px of text —
+   the descriptions crush to 1-2 words per line. Below 640px, reflow to a single
+   column where [icon + title] share a row and the description spans the FULL panel
+   width beneath (≈2-3 lines): readable, and a genuinely tight use of the space.
+   (#dev-quickstart ID specificity beats the 2-col `.hp-proof-grid` rule above.) */
+@media (max-width: 640px) {
+  #dev-quickstart .hp-proof-grid { grid-template-columns: 1fr; }
+  #dev-quickstart .hp-proof-grid::before,
+  #dev-quickstart .hp-proof-grid::after { display: none; }
+  #dev-quickstart .hp-proof-card,
+  #dev-quickstart .hp-proof-card:nth-child(-n + 2),
+  #dev-quickstart .hp-proof-card:nth-child(n + 3) {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 0.6rem;
+    row-gap: 0.25rem;
+    padding: 0.85rem 0.4rem;
+  }
+  #dev-quickstart .hp-proof-icon { grid-column: 1; grid-row: 1; margin: 0; }
+  #dev-quickstart .hp-proof-card h3 { grid-column: 2; grid-row: 1; margin: 0; }
+  #dev-quickstart .hp-proof-card p { grid-column: 1 / -1; grid-row: 2; }
+  #dev-quickstart .hp-proof-card:not(:last-child) {
+    border-bottom: 1px solid rgba(252, 216, 70, 0.1);
+  }
+}
+
+
+/* ======================================================================
+   Developer · "Standard interfaces" section (developers/interfaces.js).
+   One subject — the lemond server — across four facets, all on a shared dark
+   "server board" with a green ● lemond · :13305 identity bar (NO desktop-app
+   chrome, so nothing reads as an app). Cards/pills/tiles cascade in with the
+   shared --row stagger; inactive slides are frozen at frame 0 by the
+   .hp-slide:not(.is-active) rule.
+   ====================================================================== */
+.hp-iface-board {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  color: #f8f3da;
+  background:
+    radial-gradient(circle at 74% 10%, rgba(252, 216, 70, 0.16), transparent 38%),
+    #11110d;
+}
+
+/* Server identity bar — the consistent "this is the lemond server" header. */
+.hp-iface-server {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+.hp-iface-server-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #50c878;
+  box-shadow: 0 0 8px rgba(80, 200, 120, 0.7);
+}
+.hp-iface-server-name { font-family: var(--font-display); font-weight: 800; font-size: 0.82rem; color: #f4efdc; }
+.hp-iface-server-url { color: rgba(248, 243, 218, 0.55); }
+.hp-iface-server-tag {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ffe680;
+  background: rgba(252, 216, 70, 0.14);
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-btn);
+}
+
+.hp-iface-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.95rem;
+  padding: 1.3rem 1.4rem;
+}
+
+/* Quiet uppercase sub-label (mirrors .hp-private-libhead). */
+.hp-iface-head {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 243, 218, 0.5);
+  text-align: center;
+}
+
+.hp-iface-foot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: rgba(248, 243, 218, 0.72);
+}
+.hp-iface-foot .material-symbols-outlined { font-size: 1rem; color: #fcd846; }
+
+/* ---- Slide 1: OpenAI endpoint wall -------------------------------------- */
+.hp-iface-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.hp-iface-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.46rem 0.58rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hp-iface-pill-in 0.55s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.06s + 0.1s);
+}
+
+.hp-iface-pill-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 0.45rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
+.hp-iface-pill-icon .material-symbols-outlined { font-size: 0.92rem; }
+
+.hp-iface-verb {
+  flex: 0 0 auto;
+  width: 2.3rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0;
+  border-radius: 0.4rem;
+  background: rgba(252, 216, 70, 0.16);
+  color: #ffe680;
+}
+.hp-iface-verb-get { background: rgba(80, 200, 120, 0.16); color: #7fe0a0; }
+
+.hp-iface-path {
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+  color: #f4efdc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes hp-iface-pill-in {
+  0% { opacity: 0; transform: translateY(8px); box-shadow: 0 0 0 rgba(252, 216, 70, 0); }
+  60% { opacity: 1; transform: translateY(0); box-shadow: 0 0 18px rgba(252, 216, 70, 0.35); }
+  100% { opacity: 1; transform: translateY(0); box-shadow: 0 0 0 rgba(252, 216, 70, 0); }
+}
+
+/* ---- Slide 2: any client / any language → the server -------------------- */
+.hp-iface-langs-stage {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hp-iface-langcol { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.hp-iface-lang { display: flex; align-items: center; gap: 0.5rem; }
+.hp-iface-lang-right { justify-content: flex-end; }
+
+.hp-iface-lang-id { display: inline-flex; align-items: center; gap: 0.5rem; }
+.hp-iface-lang-right .hp-iface-lang-id { flex-direction: row-reverse; }
+
+/* Monochrome cream logos sit directly on the dark board — always visible. */
+.hp-iface-lang-logo { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: inline-flex; }
+.hp-iface-lang-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.hp-iface-lang-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f4efdc;
+  white-space: nowrap;
+}
+
+/* Connector wire to the server, with a pulse running toward it (this slide
+   uses animationMode 'repeat', so the pulse loops continuously). */
+.hp-iface-wire {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(252, 216, 70, 0.05), rgba(252, 216, 70, 0.28));
+}
+.hp-iface-lang-right .hp-iface-wire {
+  background: linear-gradient(90deg, rgba(252, 216, 70, 0.28), rgba(252, 216, 70, 0.05));
+}
+
+.hp-iface-pulse {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #ffe680);
+  animation: hp-iface-pulse-l 1.8s linear infinite;
+  animation-delay: var(--pulse-delay, 0s);
+}
+.hp-iface-lang-right .hp-iface-pulse {
+  background: linear-gradient(90deg, #ffe680, transparent);
+  animation-name: hp-iface-pulse-r;
+}
+@keyframes hp-iface-pulse-l {
+  0% { left: -16px; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+@keyframes hp-iface-pulse-r {
+  0% { left: 100%; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { left: -16px; opacity: 0; }
+}
+
+/* The server, drawn as the destination node (not an app window). */
+.hp-iface-hubserver {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08rem;
+  width: 6rem;
+  padding: 0.85rem 0.6rem;
+  border-radius: 1.1rem;
+  background: radial-gradient(circle at 50% 30%, rgba(252, 216, 70, 0.95), rgba(252, 216, 70, 0.52));
+  color: #3a2f00;
+  box-shadow: 0 0 30px rgba(252, 216, 70, 0.4);
+}
+.hp-iface-hubserver-icon .material-symbols-outlined { font-size: 1.4rem; color: #3a2f00; }
+.hp-iface-hubserver-name { font-family: var(--font-display); font-weight: 800; font-size: 0.84rem; }
+.hp-iface-hubserver-url { font-family: var(--font-mono); font-weight: 700; font-size: 0.72rem; }
+.hp-iface-hubserver-tag {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+/* ---- Slide 3: server control plane ------------------------------------- */
+.hp-iface-dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.hp-iface-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(252, 216, 70, 0.12);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.42s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.09s + 0.12s);
+}
+.hp-iface-tile-wide { grid-column: 1 / -1; }
+
+.hp-iface-tile-head { display: flex; align-items: center; gap: 0.5rem; }
+.hp-iface-tile-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 0.5rem;
+  background: rgba(252, 216, 70, 0.14);
+  color: #fcd846;
+}
+.hp-iface-tile-icon .material-symbols-outlined { font-size: 1.02rem; }
+.hp-iface-tile-title { font-family: var(--font-display); font-size: 0.84rem; font-weight: 800; color: #f4efdc; }
+
+.hp-iface-tile-eps { display: flex; flex-wrap: wrap; gap: 0.32rem; }
+/* Each endpoint chip is METHOD + path so it unmistakably reads as a callable
+   HTTP endpoint (mirrors the verb colours on slide 1). */
+.hp-iface-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: rgba(248, 243, 218, 0.85);
+  padding: 0.15rem 0.42rem 0.15rem 0.22rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.hp-iface-ep-verb {
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.07rem 0.3rem;
+  border-radius: 0.3rem;
+  background: rgba(252, 216, 70, 0.18);
+  color: #ffe680;
+}
+.hp-iface-ep-verb-get { background: rgba(80, 200, 120, 0.18); color: #7fe0a0; }
+
+/* ---- Slide 4: extra API dialects → more clients, no adapters ------------ */
+.hp-iface-dialect {
+  position: relative;
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: hp-appstore-in 0.45s ease forwards;
+  animation-delay: calc(var(--row, 0) * 0.14s + 0.15s);
+}
+.hp-iface-dialect-logo { flex: 0 0 auto; width: 2rem; height: 2rem; display: inline-flex; margin-top: 0.1rem; }
+.hp-iface-dialect-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.hp-iface-dialect-text { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.hp-iface-dialect-name { font-family: var(--font-display); font-weight: 800; font-size: 0.96rem; color: #f4efdc; }
+/* Badge pinned to the card's top-right corner so the row body stays uncluttered. */
+.hp-iface-dialect-badge {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.66rem;
+  color: #7fe0a0;
+  background: rgba(80, 200, 120, 0.16);
+  padding: 0.18rem 0.45rem;
+  border-radius: var(--radius-btn);
+}
+.hp-iface-dialect-badge .material-symbols-outlined { font-size: 0.9rem; }
+.hp-iface-dialect-ep { font-family: var(--font-mono); font-size: 0.72rem; color: #fff8d8; }
+.hp-iface-dialect-benefit { font-family: var(--font-body); font-size: 0.8rem; color: rgba(248, 243, 218, 0.66); line-height: 1.4; }
+
+/* ---- Interfaces on phones: trim padding so the grids still fit --------- */
+@media (max-width: 480px) {
+  .hp-iface-body { padding: 1.1rem 1rem; gap: 0.8rem; }
+  .hp-iface-path { font-size: 0.66rem; }
+  .hp-iface-hubserver { width: 5rem; padding: 0.7rem 0.5rem; }
+}
+
+/* The two dense interface slides — the OpenAI endpoint wall and the control-plane
+   tiles — are 2-column grids sized for the desktop sidebar layout. On a phone the
+   board is far narrower, so the right column was pushed past the board edge and
+   clipped (and the right-aligned facet tag in the header was cut off). Reflow them
+   so everything fits WITHOUT truncating any endpoint path. */
+@media (max-width: 560px) {
+  /* Header: shrink the identity bar, and let the URL ellipsize so the right-aligned
+     facet tag can never be pushed off the board edge. */
+  .hp-iface-server { gap: 0.4rem; padding: 0.6rem 0.75rem; font-size: 0.64rem; min-width: 0; }
+  .hp-iface-server-name { font-size: 0.74rem; flex: 0 0 auto; }
+  .hp-iface-server-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hp-iface-server-tag { flex: 0 0 auto; font-size: 0.56rem; padding: 0.15rem 0.4rem; }
+
+  /* OpenAI wall: keep two columns (all twelve endpoints must fit the fixed board
+     HEIGHT — the board can't grow, its frame clips at the stage height), but let
+     the columns shrink so the second one no longer spills past the board edge.
+     Only the few longest paths ellipsize, and only on the narrowest phones. */
+  .hp-iface-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.35rem; }
+  .hp-iface-pill { min-width: 0; padding: 0.32rem 0.4rem; gap: 0.28rem; }
+  .hp-iface-pill-icon { width: 1.15rem; height: 1.15rem; }
+  .hp-iface-pill-icon .material-symbols-outlined { font-size: 0.8rem; }
+  .hp-iface-verb { width: 1.85rem; font-size: 0.54rem; }
+  .hp-iface-path { min-width: 0; font-size: 0.66rem; }
+
+  /* Control plane: two shrinkable columns, with the METHOD+path chips wrapping
+     inside each tile rather than overflowing the board. */
+  .hp-iface-dash-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.4rem; }
+  .hp-iface-tile { min-width: 0; padding: 0.5rem 0.6rem; gap: 0.4rem; }
+  .hp-iface-ep { min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 440px) {
+  /* On phones, reclaim the decorative pill icon's width so the endpoint PATHS —
+     the meaningful content — read in full; only the longest two or three still
+     ellipsize. */
+  .hp-iface-pill-icon { display: none; }
+}
