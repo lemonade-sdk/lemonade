@@ -167,5 +167,9 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
     };
 }
 
+// Global flag: set from signal handler to cancel in-progress model downloads.
+// Checked by the libcurl progress callback during transfer.
+extern std::atomic<bool> g_download_cancelled;
+
 } // namespace utils
 } // namespace lemon
