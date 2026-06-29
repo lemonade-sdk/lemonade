@@ -22,4 +22,19 @@ set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/post
 set(CPACK_RPM_PRE_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/prerm-rpm")
 set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postrm-rpm")
 
+# Strip tray from server-only RPM (tray source stays in repo, not packaged)
+install(CODE "
+  if(DEFINED ENV{DESTDIR} AND NOT \"\$ENV{DESTDIR}\" STREQUAL \"\")
+    set(_tray_bin \"\$ENV{DESTDIR}/${CMAKE_INSTALL_PREFIX}/bin/lemonade-tray\")
+    set(_tray_symlink \"\$ENV{DESTDIR}/usr/bin/lemonade-tray\")
+    if(EXISTS \"\${_tray_bin}\")
+      message(\"-- Removing lemonade-tray from RPM (server-only package)\")
+      file(REMOVE \"\${_tray_bin}\")
+    endif()
+    if(EXISTS \"\${_tray_symlink}\")
+      file(REMOVE \"\${_tray_symlink}\")
+    endif()
+  endif()
+")
+
 # End of RPM config.
