@@ -695,127 +695,156 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                       );
                     })()}
 
-                    {/* helper to render a NOT toggle inline in a label row */}
-                    {/* ── Keywords — any ── */}
+                    {/* ++ Keywords -- any ++ */}
                     <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span>Keywords — any</span>
-                        <span className="settings-description" style={{ flex: 1 }}>(comma-separated)</span>
-                        <label className="router-not-toggle">
-                          <input type="checkbox" checked={rule.matchKeywordsAnyNot === true}
-                            onChange={(e) => patchRule(rule.id, { matchKeywordsAnyNot: e.target.checked || undefined })} />
-                          <span>NOT</span>
-                        </label>
-                      </label>
-                      <input type="text" className="form-input" style={{ fontSize: '12px' }}
-                        defaultValue={(rule.matchKeywordsAny ?? []).join(', ')}
-                        onBlur={(e) => patchRule(rule.id, {
-                          matchKeywordsAny: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                        })}
-                        placeholder="e.g. function, stack trace, def " />
+                      <label className="form-label" style={{ fontSize: '11px' }}>Keywords — any</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <select className="form-input form-select router-condition-select"
+                          title="Condition is off by default. Select YES to enable or NO to negate."
+                          value={rule.matchKeywordsAnyNot === undefined ? '' : rule.matchKeywordsAnyNot ? 'no' : 'yes'}
+                          onChange={(e) => { patchRule(rule.id, { matchKeywordsAnyNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
+                          <option value=""></option>
+                          <option value="yes">YES</option>
+                          <option value="no">NO</option>
+                        </select>
+                        <input type="text" className="form-input"
+                          style={{ fontSize: '12px', flex: 1, borderColor: rule.matchKeywordsAnyNot === true ? '#6b0101' : undefined }}
+                          defaultValue={(rule.matchKeywordsAny ?? []).join(', ')}
+                          onBlur={(e) => {
+                            const kw = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                            patchRule(rule.id, { matchKeywordsAny: kw, matchKeywordsAnyNot: kw.length > 0 && rule.matchKeywordsAnyNot === undefined ? false : rule.matchKeywordsAnyNot });
+                          }}
+                          placeholder="e.g. function, stack trace, def " />
+                      </div>
                     </div>
 
-                    {/* ── Keywords — all ── */}
+                    {/* ++ Keywords -- all ++ */}
                     <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span>Keywords — all</span>
-                        <span style={{ flex: 1 }} />
-                        <label className="router-not-toggle">
-                          <input type="checkbox" checked={rule.matchKeywordsAllNot === true}
-                            onChange={(e) => patchRule(rule.id, { matchKeywordsAllNot: e.target.checked || undefined })} />
-                          <span>NOT</span>
-                        </label>
-                      </label>
-                      <input type="text" className="form-input" style={{ fontSize: '12px' }}
-                        defaultValue={(rule.matchKeywordsAll ?? []).join(', ')}
-                        onBlur={(e) => patchRule(rule.id, {
-                          matchKeywordsAll: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                        })}
-                        placeholder="e.g. urgent, escalate" />
+                      <label className="form-label" style={{ fontSize: '11px' }}>Keywords — all</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <select className="form-input form-select router-condition-select"
+                          title="Condition is off by default. Select YES to enable or NO to negate."
+                          value={rule.matchKeywordsAllNot === undefined ? '' : rule.matchKeywordsAllNot ? 'no' : 'yes'}
+                          onChange={(e) => { patchRule(rule.id, { matchKeywordsAllNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
+                          <option value=""></option>
+                          <option value="yes">YES</option>
+                          <option value="no">NO</option>
+                        </select>
+                        <input type="text" className="form-input"
+                          style={{ fontSize: '12px', flex: 1, borderColor: rule.matchKeywordsAllNot === true ? '#6b0101' : undefined }}
+                          defaultValue={(rule.matchKeywordsAll ?? []).join(', ')}
+                          onBlur={(e) => {
+                            const kw = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                            patchRule(rule.id, { matchKeywordsAll: kw, matchKeywordsAllNot: kw.length > 0 && rule.matchKeywordsAllNot === undefined ? false : rule.matchKeywordsAllNot });
+                          }}
+                          placeholder="e.g. urgent, escalate" />
+                      </div>
                     </div>
 
-                    {/* ── Regex ── */}
+                    {/* ++ Regex ++ */}
                     <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span>Regex</span>
-                        <span style={{ flex: 1 }} />
-                        <label className="router-not-toggle">
-                          <input type="checkbox" checked={rule.matchRegexNot === true}
-                            onChange={(e) => patchRule(rule.id, { matchRegexNot: e.target.checked || undefined })} />
-                          <span>NOT</span>
-                        </label>
-                      </label>
-                      <input type="text" className="form-input"
-                        style={{ fontSize: '12px', fontFamily: 'monospace' }}
-                        value={rule.matchRegex ?? ''}
-                        onChange={(e) => patchRule(rule.id, { matchRegex: e.target.value || undefined })}
-                        placeholder="e.g. ```[a-z]*" />
+                      <label className="form-label" style={{ fontSize: '11px' }}>Regex</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <select className="form-input form-select router-condition-select"
+                          title="Condition is off by default. Select YES to enable or NO to negate."
+                          value={rule.matchRegexNot === undefined ? '' : rule.matchRegexNot ? 'no' : 'yes'}
+                          onChange={(e) => { patchRule(rule.id, { matchRegexNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
+                          <option value=""></option>
+                          <option value="yes">YES</option>
+                          <option value="no">NO</option>
+                        </select>
+                        <input type="text" className="form-input"
+                          style={{ fontSize: '12px', fontFamily: 'monospace', flex: 1, borderColor: rule.matchRegexNot === true ? '#6b0101' : undefined }}
+                          value={rule.matchRegex ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value || undefined;
+                            patchRule(rule.id, { matchRegex: v, matchRegexNot: v !== undefined && rule.matchRegexNot === undefined ? false : rule.matchRegexNot });
+                          }}
+                          placeholder="e.g. ```[a-z]*" />
+                      </div>
                     </div>
 
-                    {/* ── Min / Max chars ── */}
+                    {/* ++ Min / Max chars ++ */}
                     <div className="router-rule-field" style={{ display: 'flex', gap: 12 }}>
                       <div style={{ flex: 1 }}>
-                        <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span>Min chars</span>
-                          <label className="router-not-toggle" style={{ marginLeft: 'auto' }}>
-                            <input type="checkbox" checked={rule.matchMinCharsNot === true}
-                              onChange={(e) => patchRule(rule.id, { matchMinCharsNot: e.target.checked || undefined })} />
-                            <span>NOT</span>
-                          </label>
-                        </label>
-                        <input type="number" className="form-input" style={{ fontSize: '12px' }}
-                          min={0} value={rule.matchMinChars ?? ''}
-                          onChange={(e) => patchRule(rule.id, {
-                            matchMinChars: e.target.value ? parseInt(e.target.value) : undefined,
-                          })}
-                          placeholder="none" />
+                        <label className="form-label" style={{ fontSize: '11px' }}>Min chars</label>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <select className="form-input form-select router-condition-select"
+                            title="Condition is off by default. Select YES to enable or NO to negate."
+                            value={rule.matchMinCharsNot === undefined ? '' : rule.matchMinCharsNot ? 'no' : 'yes'}
+                            onChange={(e) => { patchRule(rule.id, { matchMinCharsNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
+                            <option value=""></option>
+                            <option value="yes">YES</option>
+                            <option value="no">NO</option>
+                          </select>
+                          <input type="number" className="form-input"
+                            style={{ fontSize: '12px', flex: 1, borderColor: rule.matchMinCharsNot === true ? '#6b0101' : undefined }}
+                            min={0} value={rule.matchMinChars ?? ''}
+                            onChange={(e) => {
+                              const n = e.target.value ? parseInt(e.target.value) : undefined;
+                              patchRule(rule.id, { matchMinChars: n, matchMinCharsNot: n !== undefined && rule.matchMinCharsNot === undefined ? false : rule.matchMinCharsNot });
+                            }}
+                            placeholder="none" />
+                        </div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label className="form-label" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span>Max chars</span>
-                          <label className="router-not-toggle" style={{ marginLeft: 'auto' }}>
-                            <input type="checkbox" checked={rule.matchMaxCharsNot === true}
-                              onChange={(e) => patchRule(rule.id, { matchMaxCharsNot: e.target.checked || undefined })} />
-                            <span>NOT</span>
-                          </label>
-                        </label>
-                        <input type="number" className="form-input" style={{ fontSize: '12px' }}
-                          min={0} value={rule.matchMaxChars ?? ''}
-                          onChange={(e) => patchRule(rule.id, {
-                            matchMaxChars: e.target.value ? parseInt(e.target.value) : undefined,
-                          })}
-                          placeholder="none" />
+                        <label className="form-label" style={{ fontSize: '11px' }}>Max chars</label>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <select className="form-input form-select router-condition-select"
+                            title="Condition is off by default. Select YES to enable or NO to negate."
+                            value={rule.matchMaxCharsNot === undefined ? '' : rule.matchMaxCharsNot ? 'no' : 'yes'}
+                            onChange={(e) => { patchRule(rule.id, { matchMaxCharsNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
+                            <option value=""></option>
+                            <option value="yes">YES</option>
+                            <option value="no">NO</option>
+                          </select>
+                          <input type="number" className="form-input"
+                            style={{ fontSize: '12px', flex: 1, borderColor: rule.matchMaxCharsNot === true ? '#6b0101' : undefined }}
+                            min={0} value={rule.matchMaxChars ?? ''}
+                            onChange={(e) => {
+                              const n = e.target.value ? parseInt(e.target.value) : undefined;
+                              patchRule(rule.id, { matchMaxChars: n, matchMaxCharsNot: n !== undefined && rule.matchMaxCharsNot === undefined ? false : rule.matchMaxCharsNot });
+                            }}
+                            placeholder="none" />
+                        </div>
                       </div>
                     </div>
 
-                    {/* ── Has tools / Has images ── */}
+                    {/* ++ Has tools / Has images -- always visible ++ */}
                     <div className="router-rule-field" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      <label className="router-mode-option" style={{ fontSize: '12px' }}>
-                        <input type="checkbox" checked={rule.matchHasTools === true}
-                          onChange={(e) => patchRule(rule.id, { matchHasTools: e.target.checked ? true : undefined })} />
-                        <span>Request has tools</span>
-                      </label>
-                      {rule.matchHasTools === true && (
-                        <label className="router-not-toggle" style={{ fontSize: '12px' }}>
-                          <input type="checkbox" checked={rule.matchHasToolsNot === true}
-                            onChange={(e) => patchRule(rule.id, { matchHasToolsNot: e.target.checked || undefined })} />
-                          <span>NOT</span>
-                        </label>
-                      )}
-                      <label className="router-mode-option" style={{ fontSize: '12px' }}>
-                        <input type="checkbox" checked={rule.matchHasImages === true}
-                          onChange={(e) => patchRule(rule.id, { matchHasImages: e.target.checked ? true : undefined })} />
-                        <span>Request has images</span>
-                      </label>
-                      {rule.matchHasImages === true && (
-                        <label className="router-not-toggle" style={{ fontSize: '12px' }}>
-                          <input type="checkbox" checked={rule.matchHasImagesNot === true}
-                            onChange={(e) => patchRule(rule.id, { matchHasImagesNot: e.target.checked || undefined })} />
-                          <span>NOT</span>
-                        </label>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <select className="form-input form-select router-condition-select"
+                          title="Condition is off by default. Select YES to enable or NO to negate."
+                          value={rule.matchHasTools === undefined ? '' : rule.matchHasToolsNot ? 'no' : 'yes'}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            patchRule(rule.id, { matchHasTools: v === '' ? undefined : true, matchHasToolsNot: v === 'no' ? true : v === '' ? undefined : false });
+                          }}>
+                          <option value=""></option>
+                          <option value="yes">YES</option>
+                          <option value="no">NO</option>
+                        </select>
+                        <span className="form-label" style={{ fontSize: '12px', margin: 0, color: rule.matchHasToolsNot ? '#6b0101' : undefined }}>
+                          Request has tools
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <select className="form-input form-select router-condition-select"
+                          title="Condition is off by default. Select YES to enable or NO to negate."
+                          value={rule.matchHasImages === undefined ? '' : rule.matchHasImagesNot ? 'no' : 'yes'}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            patchRule(rule.id, { matchHasImages: v === '' ? undefined : true, matchHasImagesNot: v === 'no' ? true : v === '' ? undefined : false });
+                          }}>
+                          <option value=""></option>
+                          <option value="yes">YES</option>
+                          <option value="no">NO</option>
+                        </select>
+                        <span className="form-label" style={{ fontSize: '12px', margin: 0, color: rule.matchHasImagesNot ? '#6b0101' : undefined }}>
+                          Request has images
+                        </span>
+                      </div>
                     </div>
-
                     {/* ── Classifier condition ── */}
                     {classifiers.length > 0 && (
                       <div className="router-rule-field">

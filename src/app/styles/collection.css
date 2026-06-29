@@ -325,6 +325,14 @@
     gap: 4px;
 }
 
+.router-condition-select {
+    width: 62px;
+    flex-shrink: 0;
+    padding: 4px 18px 4px 6px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
 .router-not-toggle {
     display: inline-flex;
     align-items: center;
