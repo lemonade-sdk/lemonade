@@ -41,39 +41,6 @@ static std::string lower_copy(std::string value) {
     return value;
 }
 
-static bool starts_with(const std::string& value, const std::string& prefix) {
-    return value.rfind(prefix, 0) == 0;
-}
-
-static bool is_huggingface_resolve_url(const std::string& url) {
-    const std::string normalized = lower_copy(trim_copy(url));
-    const bool is_hf_host = starts_with(normalized, "https://huggingface.co/") ||
-                            starts_with(normalized, "https://huggingface.co:") ||
-                            starts_with(normalized, "http://huggingface.co/") ||
-                            starts_with(normalized, "http://huggingface.co:") ||
-                            starts_with(normalized, "https://hf.co/") ||
-                            starts_with(normalized, "https://hf.co:") ||
-                            starts_with(normalized, "http://hf.co/") ||
-                            starts_with(normalized, "http://hf.co:");
-    return is_hf_host && normalized.find("/resolve/") != std::string::npos;
-}
-
-static bool should_use_initial_range_request(const std::string& url,
-                                             const DownloadOptions& options,
-                                             bool retrying_without_partial) {
-    return options.force_initial_range_request ||
-           (retrying_without_partial && options.huggingface_range_retry &&
-            is_huggingface_resolve_url(url));
-}
-
-static int effective_no_progress_timeout(const std::string& url,
-                                         const DownloadOptions& options) {
-    if (options.no_progress_timeout > 0) {
-        return options.no_progress_timeout;
-    }
-    return is_huggingface_resolve_url(url) ? 60 : 0;
-}
-
 static size_t curl_off_to_size(curl_off_t value) {
     return value > 0 ? static_cast<size_t>(value) : 0;
 }
@@ -651,15 +618,15 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    const int no_progress_timeout = effective_no_progress_timeout(url, options);
-    ProgressData* prog_data = nullptr;
+    const int no_progress_timeout = options.no_progress_timeout;
+    std::unique_ptr<ProgressData> prog_data;
     if (callback || no_progress_timeout > 0) {
-        prog_data = new ProgressData();
+        prog_data = std::make_unique<ProgressData>();
         prog_data->callback = callback;
         prog_data->no_progress_timeout = no_progress_timeout;
         prog_data->last_progress_time = std::chrono::steady_clock::now();
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -694,10 +661,6 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     result.curl_error = curl_easy_strerror(res);
 
     curl_easy_cleanup(curl);
-
-    if (prog_data) {
-        delete prog_data;
-    }
 
     if (was_stalled) {
         size_t current_file_size = 0;
@@ -980,7 +943,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         const bool retrying_without_partial = (attempt > 0 && resume_offset == 0);
         const bool initial_range_request =
-            should_use_initial_range_request(url, options, retrying_without_partial);
+            options.force_initial_range_request ||
+            (retrying_without_partial && options.range_retry_on_zero_byte_retry);
 
         final_result = download_attempt(url, partial_path, resume_offset,
                                         adjusted_callback, headers, options,
