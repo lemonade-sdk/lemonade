@@ -35,6 +35,22 @@ public:
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
 
+    // Telemetry settings
+    bool telemetry_enabled() const;
+    bool telemetry_hide_inputs() const;
+    bool telemetry_hide_outputs() const;
+    bool telemetry_hide_thinking() const;
+    int telemetry_max_queue_capacity() const;
+    int telemetry_max_attribute_length() const;
+    std::string telemetry_otlp_endpoint() const;
+    std::string telemetry_otlp_protocol() const;
+    std::vector<std::string> telemetry_otlp_semantics() const;
+    std::map<std::string, std::string> telemetry_otlp_headers() const;
+    int telemetry_otlp_max_retries() const;
+    double telemetry_otlp_retry_backoff_base_s() const;
+    int telemetry_otlp_send_batch_size() const;
+    double telemetry_otlp_batch_timeout_s() const;
+
 
     // Feature flags
     bool offline() const;
@@ -113,6 +129,13 @@ private:
     // state into `applied_diff`. Mirrors the shape of `changes` (nested for
     // backend sections).
     void apply_changes(const json& changes, json& applied_diff);
+
+    // Helpers to retrieve configuration options with environment variable override
+    // and fallback to config JSON under a shared lock.
+    bool get_bool_opt(const char* env_name, const std::vector<std::string>& path, bool default_val) const;
+    int get_int_opt(const char* env_name, const std::vector<std::string>& path, int default_val) const;
+    double get_double_opt(const char* env_name, const std::vector<std::string>& path, double default_val) const;
+    std::string get_string_opt(const char* env_name, const std::vector<std::string>& path, const std::string& default_val) const;
 
     mutable std::shared_mutex mutex_;
 

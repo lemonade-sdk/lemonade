@@ -15,6 +15,7 @@
 #include "lemon/logging_config.h"
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
+#include "telemetry.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
@@ -572,24 +573,24 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        // Also register as GET for HEAD request support (HEAD uses GET handler)
-        // Return 405 Method Not Allowed (endpoint exists but wrong method)
-        web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
+        if (endpoint != "params") {
+            web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+        }
     };
 
     // Health check
@@ -722,6 +723,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_params(req, res);
     });
 
+    register_get("params", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_get(req, res);
+    });
+
     // Backend management endpoints
     register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
         handle_install(req, res);
@@ -755,6 +760,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Internal shutdown endpoint (not part of public API)
     web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
         handle_shutdown(req, res);
+    });
+
+    web_server.Post("/internal/telemetry/flush", [](const httplib::Request& req, httplib::Response& res) {
+        lemon::telemetry::flush();
+        res.status = 200;
+        res.set_content(nlohmann::json{{"status", "flushed"}}.dump(), "application/json");
     });
 
     web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1630,6 +1641,10 @@ void Server::stop() {
                 LOG(ERROR, "Server") << "Error during cleanup: " << e.what() << std::endl;
             }
         }
+
+        LOG(INFO, "Server") << "Shutting down telemetry queue..." << std::endl;
+        lemon::telemetry::shutdown();
+
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
 
@@ -1845,6 +1860,27 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add version information
     response["version"] = LEMON_VERSION_STRING;
+
+    // Add telemetry state using in-memory runtime configuration
+    if (config_) {
+        nlohmann::json telemetry_info = {
+            {"enabled", config_->telemetry_enabled()}
+        };
+        if (config_->telemetry_enabled()) {
+            std::vector<std::string> captures;
+            if (!config_->telemetry_hide_inputs()) {
+                captures.push_back("inputs");
+            }
+            if (!config_->telemetry_hide_outputs()) {
+                captures.push_back("outputs");
+            }
+            if (!config_->telemetry_hide_thinking()) {
+                captures.push_back("thinking");
+            }
+            telemetry_info["captures"] = captures;
+        }
+        response["telemetry"] = telemetry_info;
+    }
 
     // Add model loaded information like Python implementation
     std::string loaded_model = router_->get_loaded_model();
@@ -2121,11 +2157,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             }
         }
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+
         // Handle model loading/switching
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -2133,12 +2177,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
         }
 
@@ -2148,7 +2199,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support chat completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Check if streaming is requested
@@ -2191,9 +2249,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                             return false; // We're done after the first call
                         }
 
-                        // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
-
                         return false;
                     }
                 );
@@ -2309,10 +2365,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
+
+
         }
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Chat completion failed: " << e.what() << std::endl;
+
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -2327,11 +2386,19 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -2339,12 +2406,19 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
         }
 
@@ -2354,7 +2428,14 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Check if streaming is requested
@@ -2507,24 +2588,43 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("EMBEDDING", "embeddings", requested_model, request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Call router's embeddings method
@@ -2543,24 +2643,43 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("RERANKER", "reranking", requested_model, request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Call router's reranking method
@@ -4770,6 +4889,16 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (key == "telemetry") {
+            if (value.is_object()) {
+                if (value.contains("enabled")) {
+                    bool enabled = config_->telemetry_enabled();
+                    LOG(INFO, "Server") << "Telemetry " << (enabled ? "enabled" : "disabled") << std::endl;
+                }
+                if (value.contains("otlp") && value["otlp"].is_object() && value["otlp"].contains("endpoint")) {
+                    LOG(INFO, "Server") << "Telemetry endpoint changed to: " << config_->telemetry_otlp_endpoint() << std::endl;
+                }
+            }
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
             // Recipe defaults (e.g. default_backend) are derived from these settings, so

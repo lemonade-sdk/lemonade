@@ -16,6 +16,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for launch](#options-for-launch)
 - [Options for bench](#options-for-bench)
 - [Options for scan](#options-for-scan)
+- [Options for telemetry](#options-for-telemetry)
 
 ## Commands
 
@@ -38,6 +39,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+| `telemetry`         | Dynamically enable or disable telemetry tracing. See command options [below](#options-for-telemetry). |
 
 ### Model Management
 
@@ -657,6 +659,29 @@ lemonade scan
 
 # Scan for beacons for a custom duration
 lemonade scan --duration 5
+```
+
+## Options for telemetry
+
+Dynamically toggle telemetry tracing on the server. This setting is applied immediately in-memory without requiring a server restart, but is not persisted to the server's `config.json` (meaning it will revert when the server restarts).
+
+```bash
+lemonade telemetry <on|off>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `on`     | Enable telemetry tracing. |
+| `off`    | Disable telemetry tracing. |
+
+**Examples:**
+
+```bash
+# Enable telemetry tracing dynamically
+lemonade telemetry on
+
+# Disable telemetry tracing dynamically
+lemonade telemetry off
 ```
 
 ## Options for bench
