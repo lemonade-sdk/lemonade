@@ -368,7 +368,10 @@ public:
             result = std::regex_search(ctx.request.input, regex_);
         } catch (const std::regex_error&) {
             // Catastrophic backtracking / stack overflow: fail the leaf rather
-            // than let an exception escape evaluate().
+            // than let an exception escape evaluate(). std::regex's step limit is
+            // implementation-defined (MSVC throws error_complexity here; libstdc++
+            // / libc++ may not), so this is defense-in-depth behind the load-time
+            // reject_catastrophic_regex check, not the primary guard.
             result = false;
         }
         trace_leaf(ctx, "regex", result);
@@ -378,6 +381,80 @@ public:
 private:
     std::regex regex_;
 };
+
+// Reject regex patterns prone to catastrophic backtracking (ReDoS) at policy
+// load: an unbounded quantifier applied to a group that itself contains an
+// unbounded quantifier — the (a+)+, (a*)*, (.*)+, (\d+){2,} family. std::regex
+// is a backtracking engine with no portable step limit, and the matched input
+// is untrusted end-user text, so a careless policy pattern is a denial-of-service
+// vector. This catches the common nested-quantifier shapes before they reach the
+// hot path; it is a mitigation, not a proof of linear time — alternation-overlap
+// ReDoS such as (a|a)+ is not detected. A hard linear-time guarantee would need a
+// non-backtracking engine (RE2), which — being a different dialect — would ship
+// as a separately named op, never a redefinition of this ECMAScript one.
+void reject_catastrophic_regex(const std::string& pattern) {
+    struct GroupState {
+        bool has_unbounded = false;  // an unbounded quantifier appears inside
+    };
+    std::vector<GroupState> stack;
+    bool prev_closed_group = false;       // previous token closed a group
+    bool closed_group_unbounded = false;  // ...and that group held an unbounded quantifier
+
+    for (std::size_t i = 0; i < pattern.size(); ++i) {
+        const char c = pattern[i];
+        if (c == '\\') {  // escaped metacharacter — consume the next char literally
+            ++i;
+            prev_closed_group = false;
+            continue;
+        }
+        if (c == '[') {  // character class — quantifier metacharacters are literal inside
+            ++i;
+            if (i < pattern.size() && pattern[i] == '^') ++i;
+            if (i < pattern.size() && pattern[i] == ']') ++i;  // leading ] is literal
+            while (i < pattern.size() && pattern[i] != ']') {
+                if (pattern[i] == '\\') ++i;
+                ++i;
+            }
+            prev_closed_group = false;
+            continue;
+        }
+        if (c == '(') {
+            stack.push_back(GroupState{});
+            prev_closed_group = false;
+            continue;
+        }
+        if (c == ')') {
+            closed_group_unbounded = !stack.empty() && stack.back().has_unbounded;
+            if (!stack.empty()) stack.pop_back();
+            prev_closed_group = true;
+            continue;
+        }
+
+        bool unbounded_quant = false;
+        if (c == '*' || c == '+') {
+            unbounded_quant = true;
+        } else if (c == '{') {  // {m,} is unbounded; {m} and {m,n} are bounded
+            std::size_t j = i + 1;
+            std::string inner;
+            while (j < pattern.size() && pattern[j] != '}') inner += pattern[j++];
+            const std::size_t comma = inner.find(',');
+            if (comma != std::string::npos && comma + 1 >= inner.size()) {
+                unbounded_quant = true;
+            }
+            i = j;  // advance past the brace expression (loop's ++i steps over '}')
+        }
+
+        if (unbounded_quant) {
+            if (prev_closed_group && closed_group_unbounded) {
+                throw std::invalid_argument(
+                    "regex pattern is prone to catastrophic backtracking (nested "
+                    "unbounded quantifier such as (X+)+); rewrite to avoid the nesting");
+            }
+            if (!stack.empty()) stack.back().has_unbounded = true;
+        }
+        prev_closed_group = false;
+    }
+}
 
 // min_chars / max_chars — inclusive bound on input length in UTF-8 bytes.
 class CharsCondition final : public Condition {
@@ -754,8 +831,14 @@ NamedLeafFactories make_deterministic_leaf_factories() {
         if (!value.is_string()) {
             throw std::invalid_argument("regex requires a string pattern");
         }
+        const std::string pattern = value.get<std::string>();
+        if (pattern.empty()) {
+            throw std::invalid_argument(
+                "regex pattern must be non-empty (an empty pattern matches everything)");
+        }
+        reject_catastrophic_regex(pattern);
         try {
-            return std::make_shared<RegexCondition>(value.get<std::string>());
+            return std::make_shared<RegexCondition>(pattern);
         } catch (const std::regex_error& e) {
             throw std::invalid_argument(
                 std::string("regex pattern is not valid ECMAScript: ") + e.what());

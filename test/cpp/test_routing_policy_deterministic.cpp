@@ -217,6 +217,32 @@ void test_rejections() {
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array()}}));
 }
 
+void test_regex_redos_rejected() {
+    // Nested unbounded quantifiers (catastrophic backtracking) rejected at build.
+    check("regex (a+)+ rejected", throws_invalid("regex", "(a+)+"));
+    check("regex (a*)* rejected", throws_invalid("regex", "(a*)*"));
+    check("regex (.*)+ rejected", throws_invalid("regex", "(.*)+"));
+    check("regex (\\d+){2,} rejected", throws_invalid("regex", "(\\d+){2,}"));
+    check("regex ((a+)+)+ rejected", throws_invalid("regex", "((a+)+)+"));
+    check("regex empty pattern rejected", throws_invalid("regex", ""));
+
+    // Safe patterns still accepted (no nested unbounded quantifier).
+    auto accepts = [](const json& v) {
+        try {
+            build_leaf("regex", v);
+        } catch (...) {
+            return false;
+        }
+        return true;
+    };
+    check("regex (ab)+ accepted", accepts("(ab)+"));
+    check("regex (\\d+) accepted (inner only)", accepts("(\\d+)"));
+    check("regex (a+){1,3} accepted (bounded outer)", accepts("(a+){1,3}"));
+    check("regex (a{1,3})+ accepted (bounded inner)", accepts("(a{1,3})+"));
+    check("regex ```[a-z]* accepted", accepts("```[a-z]*"));
+    check("regex \\$\\d+ accepted", accepts("\\$\\d+"));
+}
+
 void test_trace_emitted() {
     RouteContext req = make_request("write a function");
     ClassifierServices services;
@@ -267,6 +293,7 @@ int main() {
     test_metadata_any();
     test_metadata_exists();
     test_rejections();
+    test_regex_redos_rejected();
     test_trace_emitted();
     test_registry_implicit_all();
 
