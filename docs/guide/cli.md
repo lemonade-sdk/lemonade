@@ -27,7 +27,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
-| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](../server/cli-chat.md). |
+| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](./cli-chat.md). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ### Server

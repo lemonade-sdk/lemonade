@@ -14,7 +14,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Building Installers](#building-installers)
   - [Windows Installer (WiX/MSI)](#windows-installer-wixmsi)
   - [Linux .deb Package (Debian/Ubuntu)](#linux-deb-package-debianubuntu)
-  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-rhel-etc)
+  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-43-44)
 - [Developer IDE and Build Steps](#developer-ide-and-build-steps)
 - [Code Structure](#code-structure)
 - [Architecture Overview](#architecture-overview)
