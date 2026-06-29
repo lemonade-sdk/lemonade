@@ -1915,8 +1915,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    if (device_lower.find("6800") != std::string::npos ||
+	// AMD RDNA2 dGPUs (RX 6000 series) → gfx103X
+    if (device_lower.find("6950") != std::string::npos ||
+        device_lower.find("6900") != std::string::npos ||
+        device_lower.find("6800") != std::string::npos ||
+        device_lower.find("6750") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
+        device_lower.find("6650") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||
         device_lower.find("6500") != std::string::npos) {
         return "gfx103X";
