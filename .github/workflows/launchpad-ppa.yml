@@ -137,6 +137,11 @@ jobs:
     container:
       image: ubuntu:${{ matrix.release }}
     steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates
+
       - name: Checkout code
         uses: actions/checkout@v5
         with:
