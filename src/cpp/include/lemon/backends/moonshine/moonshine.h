@@ -20,7 +20,7 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {
         {"moonshine_args", "--moonshine-args", "", "ARGS",
-         "Custom arguments to pass to moonshine-server", ""},
+         "Custom arguments to pass to moonshine-server", "Moonshine Options"},
     },
     /*support*/ {
         {"cpu", {"windows"}, {{"cpu", {"x86_64"}}}, "x86_64/arm64 CPU"},
