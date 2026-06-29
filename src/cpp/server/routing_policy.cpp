@@ -183,8 +183,8 @@ private:
         if (classifier_->default_label().has_value()) {
             return score.score_of(*classifier_->default_label());
         }
-        // Single-score classifiers, e.g. semantic_similarity, declare no labels
-        // and report their score under the empty-string key.
+        // Label-less classifiers (no declared labels) return a single score;
+        // primary() reads that lone entry.
         return score.primary();
     }
 
@@ -234,75 +234,99 @@ private:
 
 class SemanticSimilarityClassifier final : public Classifier {
 public:
+    // A named concept and its reference phrases. The concept name is the label
+    // under which this concept's score is reported, aligning the output with the
+    // `classifier` type's label -> score contract.
+    using Concept = std::pair<std::string, std::vector<std::string>>;
+
+    // A single embedding vector, the phrase embeddings for one concept, and the
+    // per-concept reference embeddings for the whole classifier.
+    using Embedding = std::vector<float>;
+    using ConceptEmbeddings = std::vector<Embedding>;
+    using ReferenceEmbeddings = std::vector<ConceptEmbeddings>;
+
     SemanticSimilarityClassifier(std::string id, std::string type, std::string model,
-                                 std::vector<std::string> reference_phrases, OnError on_error)
-        : Classifier(std::move(id), std::move(type), on_error),
+                                 std::vector<Concept> concepts, OnError on_error,
+                                 std::vector<std::string> labels,
+                                 std::optional<std::string> default_label)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
+                     std::move(default_label)),
           model_(std::move(model)),
-          reference_phrases_(std::move(reference_phrases)) {
+          concepts_(std::move(concepts)) {
         if (model_.empty()) {
             throw std::invalid_argument("semantic_similarity classifier requires model");
         }
-        if (reference_phrases_.empty()) {
+        if (concepts_.empty()) {
             throw std::invalid_argument(
                 "semantic_similarity classifier requires reference_phrases");
         }
     }
 
+    // Embeds the input once and reports, per concept, the maximum cosine
+    // similarity between the input and that concept's reference phrases. The
+    // result is a label -> score map (one entry per concept), read back by a
+    // condition exactly like a `classifier` score.
     Score evaluate(const ClassifierContext& ctx) const override {
         if (!ctx.services.embed) {
             return failed_score();
         }
 
-        const std::vector<std::vector<float>>* references = nullptr;
+        const ReferenceEmbeddings* references = nullptr;
         try {
             references = &reference_embeddings(ctx.services);
         } catch (...) {
             return failed_score();
         }
 
-        std::vector<float> input_embedding;
+        Embedding input_embedding;
         try {
             input_embedding = ctx.services.embed(model_, ctx.request.input);
         } catch (...) {
             return failed_score();
         }
 
-        // Note: this clamps the max cosine into [0,1] to satisfy the band contract. The
-        // cosine similarity itself can be [-1,1], at least in principle (most embeddings
-        // are non-negative, so the practical range usually is [0,1] anyways).
-        double max_cosine = 0.0;
-        for (const auto& reference : *references) {
-            std::optional<double> cosine = cosine_similarity(input_embedding, reference);
-            if (!cosine.has_value()) {
-                return failed_score();
-            }
-            max_cosine = (std::max)(max_cosine, *cosine);
-        }
-
         Score score;
-        // The cosine score is reported under the empty-string key and read back
-        // via Score::primary(). Clamp into the [0,1] band contract.
-        score.labels[""] = std::clamp(max_cosine, 0.0, 1.0);
+        for (std::size_t i = 0; i < concepts_.size(); ++i) {
+            // Cosine can be [-1,1] in principle, though embedding vectors are
+            // usually non-negative; the running max starts at 0 and the result
+            // is clamped into the [0,1] band contract.
+            double max_cosine = 0.0;
+            for (const auto& reference : (*references)[i]) {
+                std::optional<double> cosine = cosine_similarity(input_embedding, reference);
+                if (!cosine.has_value()) {
+                    return failed_score();
+                }
+                max_cosine = (std::max)(max_cosine, *cosine);
+            }
+            score.labels[concepts_[i].first] = std::clamp(max_cosine, 0.0, 1.0);
+        }
         score.ok = true;
         return score;
     }
 
 private:
     // Embeds every reference phrase exactly once and caches the vectors on the
-    // instance. Classifiers are shared across concurrent router requests, so the
-    // cache is guarded by mutex.
-    // TODO: consider whether this should be done at construction time instead of lazily on the first evaluate() call. The
-    // constructor already has the model and reference phrases, so it could embed them immediately. The
-    // downside is that it would require the ClassifierServices to be available at construction time,
-    // which may not be the case in all contexts.
-    const std::vector<std::vector<float>>& reference_embeddings(
+    // instance, grouped by concept. Classifiers are shared across concurrent
+    // router requests, so the cache is guarded by a mutex.
+    //
+    // TODO: consider whether this should be done at construction time instead of
+    // lazily on the first evaluate() call. The constructor already has the model
+    // and reference phrases, so it could embed them immediately. The downside is
+    // that it would require the ClassifierServices to be available at
+    // construction time, which may not be the case in all contexts.
+    const ReferenceEmbeddings& reference_embeddings(
         const ClassifierServices& services) const {
         std::lock_guard<std::mutex> lock(cache_mutex_);
         if (!cached_) {
-            std::vector<std::vector<float>> embeddings;
-            embeddings.reserve(reference_phrases_.size());
-            for (const auto& phrase : reference_phrases_) {
-                embeddings.push_back(services.embed(model_, phrase));
+            ReferenceEmbeddings embeddings;
+            embeddings.reserve(concepts_.size());
+            for (const auto& concept : concepts_) {
+                ConceptEmbeddings phrase_embeddings;
+                phrase_embeddings.reserve(concept.second.size());
+                for (const auto& phrase : concept.second) {
+                    phrase_embeddings.push_back(services.embed(model_, phrase));
+                }
+                embeddings.push_back(std::move(phrase_embeddings));
             }
             reference_embeddings_ = std::move(embeddings);
             cached_ = true;
@@ -311,12 +335,87 @@ private:
     }
 
     std::string model_;
-    std::vector<std::string> reference_phrases_;
+    std::vector<Concept> concepts_;
 
     mutable std::mutex cache_mutex_;
     mutable bool cached_ = false;
-    mutable std::vector<std::vector<float>> reference_embeddings_;
+    mutable ReferenceEmbeddings reference_embeddings_;
 };
+
+std::vector<std::string> parse_labels(const json& config, const std::string& id) {
+    std::vector<std::string> labels;
+    if (config.contains("labels")) {
+        if (!config["labels"].is_array()) {
+            throw std::invalid_argument("classifier '" + id + "' labels must be an array");
+        }
+        for (const auto& item : config["labels"]) {
+            if (!item.is_string() || item.get<std::string>().empty()) {
+                throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
+            }
+            labels.push_back(item.get<std::string>());
+        }
+    }
+    return labels;
+}
+
+std::optional<std::string> parse_default_label(const json& config,
+                                               const std::vector<std::string>& labels,
+                                               const std::string& id) {
+    if (!config.contains("default_label")) {
+        return std::nullopt;
+    }
+    if (!config["default_label"].is_string() || config["default_label"].get<std::string>().empty()) {
+        throw std::invalid_argument("classifier '" + id + "' default_label must be a non-empty string");
+    }
+    std::string default_label = config["default_label"].get<std::string>();
+    if (labels.empty()) {
+        throw std::invalid_argument("classifier '" + id + "' default_label requires labels");
+    }
+    if (std::find(labels.begin(), labels.end(), default_label) == labels.end()) {
+        throw std::invalid_argument("classifier '" + id + "' default_label is not declared in labels");
+    }
+    return default_label;
+}
+
+std::vector<SemanticSimilarityClassifier::Concept> parse_reference_phrases(
+    const json& config, const std::string& id) {
+    if (!config.contains("reference_phrases")) {
+        throw std::invalid_argument(
+            "semantic_similarity classifier '" + id + "' requires reference_phrases");
+    }
+    const json& reference_phrases = config["reference_phrases"];
+    if (!reference_phrases.is_object() || reference_phrases.empty()) {
+        throw std::invalid_argument(
+            "semantic_similarity classifier '" + id +
+            "' reference_phrases must be a non-empty object mapping concept -> phrases");
+    }
+    std::vector<SemanticSimilarityClassifier::Concept> concepts;
+    for (auto it = reference_phrases.begin(); it != reference_phrases.end(); ++it) {
+        const std::string& label = it.key();
+        if (label.empty()) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier '" + id + "' has an empty concept name");
+        }
+        const json& phrases = it.value();
+        if (!phrases.is_array() || phrases.empty()) {
+            throw std::invalid_argument(
+                "semantic_similarity classifier '" + id + "' concept '" + label +
+                "' must have a non-empty array of reference phrases");
+        }
+        std::vector<std::string> phrase_list;
+        phrase_list.reserve(phrases.size());
+        for (const auto& item : phrases) {
+            if (!item.is_string() || item.get<std::string>().empty()) {
+                throw std::invalid_argument(
+                    "semantic_similarity classifier '" + id + "' concept '" + label +
+                    "' reference phrases must be non-empty strings");
+            }
+            phrase_list.push_back(item.get<std::string>());
+        }
+        concepts.emplace_back(label, std::move(phrase_list));
+    }
+    return concepts;
+}
 
 std::vector<ConditionPtr> compile_children(const std::vector<MatchExpr>& children,
                                            const LeafFactory& leaf_factory,
@@ -411,63 +510,32 @@ ClassifierPtr make_classifier(const json& config) {
     }
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
-    std::vector<std::string> labels;
-    if (config.contains("labels")) {
-        if (!config["labels"].is_array()) {
-            throw std::invalid_argument("classifier '" + id + "' labels must be an array");
-        }
-        for (const auto& item : config["labels"]) {
-            if (!item.is_string() || item.get<std::string>().empty()) {
-                throw std::invalid_argument("classifier '" + id + "' labels must be non-empty strings");
-            }
-            labels.push_back(item.get<std::string>());
-        }
-    }
-
-    std::optional<std::string> default_label;
-    if (config.contains("default_label")) {
-        if (!config["default_label"].is_string() || config["default_label"].get<std::string>().empty()) {
-            throw std::invalid_argument("classifier '" + id + "' default_label must be a non-empty string");
-        }
-        default_label = config["default_label"].get<std::string>();
-        if (labels.empty()) {
-            throw std::invalid_argument("classifier '" + id + "' default_label requires labels");
-        }
-        if (std::find(labels.begin(), labels.end(), *default_label) == labels.end()) {
-            throw std::invalid_argument("classifier '" + id + "' default_label is not declared in labels");
-        }
-    }
 
     if (type == "classifier") {
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
-            id, type, config.value("model", ""), on_error, std::move(labels), std::move(default_label));
+            id, type, config.value("model", ""), on_error,
+            std::move(labels), std::move(default_label));
     }
 
     if (type == "semantic_similarity") {
-        if (!labels.empty() || default_label.has_value()) {
-            throw std::invalid_argument(
-                "semantic_similarity classifier '" + id + "' does not support labels");
-        }
-        if (!config.contains("reference_phrases")) {
-            throw std::invalid_argument(
-                "semantic_similarity classifier '" + id + "' requires reference_phrases");
-        }
-        if (!config["reference_phrases"].is_array() || config["reference_phrases"].empty()) {
+        if (config.contains("labels")) {
             throw std::invalid_argument(
                 "semantic_similarity classifier '" + id +
-                "' reference_phrases must be a non-empty array");
+                "' does not accept labels; concept names are the reference_phrases keys");
         }
-        std::vector<std::string> reference_phrases;
-        for (const auto& item : config["reference_phrases"]) {
-            if (!item.is_string() || item.get<std::string>().empty()) {
-                throw std::invalid_argument(
-                    "semantic_similarity classifier '" + id +
-                    "' reference_phrases must be non-empty strings");
-            }
-            reference_phrases.push_back(item.get<std::string>());
+        std::vector<SemanticSimilarityClassifier::Concept> concepts =
+            parse_reference_phrases(config, id);
+        std::vector<std::string> labels;
+        labels.reserve(concepts.size());
+        for (const auto& concept : concepts) {
+            labels.push_back(concept.first);
         }
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<SemanticSimilarityClassifier>(
-            id, type, config.value("model", ""), std::move(reference_phrases), on_error);
+            id, type, config.value("model", ""), std::move(concepts), on_error,
+            std::move(labels), std::move(default_label));
     }
 
     if (type == "llm" ||

@@ -8,11 +8,13 @@
 #include "fake_classifier_services.h"
 #include "lemon/routing_policy.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using lemon::ClassifierContext;
@@ -44,81 +46,105 @@ static RouteContext make_route(const std::string& input) {
     return route;
 }
 
-static ClassifierPtr make_sim(const std::string& model,
-                              std::vector<std::string> phrases,
-                              const char* on_error = "match_false") {
+static ClassifierPtr make_sim(
+    const std::string& model,
+    const std::vector<std::pair<std::string, std::vector<std::string>>>& concepts,
+    const char* on_error = "match_false",
+    std::optional<std::string> default_label = std::nullopt) {
     json cfg = {
-        {"id", "is_coding"},
+        {"id", "topic"},
         {"type", "semantic_similarity"},
         {"model", model},
         {"on_error", on_error},
-        {"reference_phrases", json::array()},
+        {"reference_phrases", json::object()},
     };
-    for (const auto& phrase : phrases) cfg["reference_phrases"].push_back(phrase);
+    for (const auto& concept : concepts) {
+        cfg["reference_phrases"][concept.first] = json::array();
+        for (const auto& phrase : concept.second) {
+            cfg["reference_phrases"][concept.first].push_back(phrase);
+        }
+    }
+    if (default_label) cfg["default_label"] = *default_label;
     return lemon::make_classifier(cfg);
 }
 
-static void test_max_cosine() {
+static void test_per_concept_scores() {
     lemon::testing::FakeClassifierServices fake;
     const std::string model = "embed-m";
-    fake.set_embedding(model, "alpha", {1.0f, 0.0f, 0.0f});
-    fake.set_embedding(model, "beta", {0.0f, 1.0f, 0.0f});
-    // Input aligns exactly with "alpha" -> cosine 1.0 there, 0.0 with "beta".
+    fake.set_embedding(model, "code phrase", {1.0f, 0.0f, 0.0f});
+    fake.set_embedding(model, "math phrase", {0.0f, 1.0f, 0.0f});
+    // Input aligns with the coding concept -> cosine 1.0 there, 0.0 with math.
     fake.set_embedding(model, "find the bug", {1.0f, 0.0f, 0.0f});
     ClassifierServices svc = fake.make();
 
-    auto sim = make_sim(model, {"alpha", "beta"});
+    auto sim = make_sim(model, {{"coding", {"code phrase"}}, {"math", {"math phrase"}}});
     RouteContext route = make_route("find the bug");
     Score score = sim->evaluate(ClassifierContext{route, svc});
 
-    check("semantic_similarity reports a single empty-key score",
-          score.ok && score.labels.size() == 1 && score.labels.count("") == 1);
-    check("semantic_similarity returns max cosine across references",
-          near(score.primary(), 1.0));
+    check("semantic_similarity reports one score per concept",
+          score.ok && score.labels.size() == 2 &&
+              score.labels.count("coding") == 1 && score.labels.count("math") == 1);
+    check("semantic_similarity scores the matching concept high",
+          near(score.score_of("coding"), 1.0));
+    check("semantic_similarity scores the non-matching concept low",
+          near(score.score_of("math"), 0.0));
 }
 
-static void test_max_cosine_partial() {
+static void test_max_within_concept() {
     lemon::testing::FakeClassifierServices fake;
     const std::string model = "embed-m";
-    fake.set_embedding(model, "alpha", {1.0f, 0.0f, 0.0f});
-    fake.set_embedding(model, "beta", {0.0f, 1.0f, 0.0f});
-    // 45 degrees from both axes -> cosine 1/sqrt(2) with each; max is that.
-    fake.set_embedding(model, "mixed", {1.0f, 1.0f, 0.0f});
+    // Concept "coding" has two phrases; the input matches the second exactly.
+    fake.set_embedding(model, "a", {1.0f, 0.0f, 0.0f});
+    fake.set_embedding(model, "b", {0.0f, 1.0f, 0.0f});
+    fake.set_embedding(model, "q", {0.0f, 1.0f, 0.0f});
     ClassifierServices svc = fake.make();
 
-    auto sim = make_sim(model, {"alpha", "beta"});
-    RouteContext route = make_route("mixed");
+    auto sim = make_sim(model, {{"coding", {"a", "b"}}});
+    RouteContext route = make_route("q");
     Score score = sim->evaluate(ClassifierContext{route, svc});
-    check("semantic_similarity computes correct intermediate cosine",
-          score.ok && near(score.primary(), 1.0 / std::sqrt(2.0)));
+    check("concept score is the max cosine across its phrases",
+          score.ok && near(score.score_of("coding"), 1.0));
+}
+
+static void test_labels_are_concept_names() {
+    lemon::testing::FakeClassifierServices fake;
+    auto sim = make_sim("embed-m", {{"coding", {"a"}}, {"math", {"b"}}});
+    const auto& labels = sim->labels();
+    bool has_both = labels.size() == 2 &&
+                    std::find(labels.begin(), labels.end(), "coding") != labels.end() &&
+                    std::find(labels.begin(), labels.end(), "math") != labels.end();
+    check("labels() exposes the concept names", has_both);
 }
 
 static void test_reference_caching() {
     lemon::testing::FakeClassifierServices fake;
     const std::string model = "embed-m";
-    fake.set_embedding(model, "alpha", {1.0f, 0.0f, 0.0f});
-    fake.set_embedding(model, "beta", {0.0f, 1.0f, 0.0f});
+    fake.set_embedding(model, "a", {1.0f, 0.0f, 0.0f});
+    fake.set_embedding(model, "b", {0.0f, 1.0f, 0.0f});
+    fake.set_embedding(model, "c", {0.0f, 0.0f, 1.0f});
     fake.set_embedding(model, "q", {1.0f, 0.0f, 0.0f});
     ClassifierServices svc = fake.make();
 
-    auto sim = make_sim(model, {"alpha", "beta"});
+    auto sim = make_sim(model, {{"coding", {"a", "b"}}, {"math", {"c"}}});
     RouteContext route = make_route("q");
 
     sim->evaluate(ClassifierContext{route, svc});
     sim->evaluate(ClassifierContext{route, svc});
     sim->evaluate(ClassifierContext{route, svc});
 
-    check("reference phrase 'alpha' embedded exactly once", fake.embed_calls("alpha") == 1);
-    check("reference phrase 'beta' embedded exactly once", fake.embed_calls("beta") == 1);
+    check("each reference phrase embedded exactly once across concepts",
+          fake.embed_calls("a") == 1 && fake.embed_calls("b") == 1 &&
+              fake.embed_calls("c") == 1);
     check("input embedded once per evaluation", fake.embed_calls("q") == 3);
 }
 
-// Build a band condition over a similarity classifier and evaluate it.
+// Build a band condition over a similarity classifier (selecting `label`) and
+// evaluate it.
 static bool eval_band(const ClassifierPtr& sim, const ClassifierServices& svc,
-                      const RouteContext& route, std::optional<double> min_score,
-                      std::optional<double> max_score) {
+                      const RouteContext& route, std::optional<std::string> label,
+                      std::optional<double> min_score, std::optional<double> max_score) {
     ConditionPtr cond = lemon::make_classifier_band_condition(
-        sim, std::nullopt, min_score, max_score);
+        sim, std::move(label), min_score, max_score);
     EvalContext ctx{route, svc};
     return cond->evaluate(ctx);
 }
@@ -128,49 +154,55 @@ static void test_band_boundaries() {
     const std::string model = "embed-m";
     // Vectors chosen so the cosine is exactly 0.5 in IEEE floating point:
     // dot = 1, |input| = 1, |ref| = sqrt(4) = 2 -> 1 / 2 = 0.5.
-    fake.set_embedding(model, "alpha", {1.0f, 1.0f, 1.0f, 1.0f});
+    fake.set_embedding(model, "phrase", {1.0f, 1.0f, 1.0f, 1.0f});
     fake.set_embedding(model, "half", {1.0f, 0.0f, 0.0f, 0.0f});
     ClassifierServices svc = fake.make();
 
-    auto sim = make_sim(model, {"alpha"});
+    auto sim = make_sim(model, {{"coding", {"phrase"}}});
     RouteContext route = make_route("half");
 
     check("default band min_score 0.5 includes a score of exactly 0.5",
-          eval_band(sim, svc, route, std::nullopt, std::nullopt));
+          eval_band(sim, svc, route, "coding", std::nullopt, std::nullopt));
     check("min_score boundary is inclusive (0.5 >= 0.5)",
-          eval_band(sim, svc, route, 0.5, std::nullopt));
+          eval_band(sim, svc, route, "coding", 0.5, std::nullopt));
     check("max_score boundary is inclusive (0.5 <= 0.5)",
-          eval_band(sim, svc, route, std::nullopt, 0.5));
+          eval_band(sim, svc, route, "coding", std::nullopt, 0.5));
     check("score below min_score does not match",
-          !eval_band(sim, svc, route, 0.51, std::nullopt));
+          !eval_band(sim, svc, route, "coding", 0.51, std::nullopt));
     check("score above max_score does not match",
-          !eval_band(sim, svc, route, std::nullopt, 0.49));
+          !eval_band(sim, svc, route, "coding", std::nullopt, 0.49));
+
+    // A condition may omit `label` when the classifier declares a default_label.
+    auto sim_default = make_sim(model, {{"coding", {"phrase"}}}, "match_false", "coding");
+    check("default_label selects the concept when label is omitted",
+          eval_band(sim_default, svc, route, std::nullopt, std::nullopt, std::nullopt));
 }
 
 static void test_on_error() {
     lemon::testing::FakeClassifierServices fake;
     const std::string model = "embed-m";
-    fake.set_embedding(model, "alpha", {1.0f, 0.0f, 0.0f});
+    fake.set_embedding(model, "phrase", {1.0f, 0.0f, 0.0f});
     // An empty input embedding forces a cosine failure -> Score::ok=false.
     fake.set_embedding(model, "boom", std::vector<float>{});
     ClassifierServices svc = fake.make();
 
     RouteContext route = make_route("boom");
 
-    auto sim_false = make_sim(model, {"alpha"}, "match_false");
+    auto sim_false = make_sim(model, {{"coding", {"phrase"}}}, "match_false");
     Score s = sim_false->evaluate(ClassifierContext{route, svc});
     check("embed failure yields Score::ok=false", !s.ok);
     check("on_error match_false fails open (no match)",
-          !eval_band(sim_false, svc, route, std::nullopt, std::nullopt));
+          !eval_band(sim_false, svc, route, "coding", std::nullopt, std::nullopt));
 
-    auto sim_true = make_sim(model, {"alpha"}, "match_true");
+    auto sim_true = make_sim(model, {{"coding", {"phrase"}}}, "match_true");
     check("on_error match_true fails closed (matches)",
-          eval_band(sim_true, svc, route, std::nullopt, std::nullopt));
+          eval_band(sim_true, svc, route, "coding", std::nullopt, std::nullopt));
 }
 
 int main() {
-    test_max_cosine();
-    test_max_cosine_partial();
+    test_per_concept_scores();
+    test_max_within_concept();
+    test_labels_are_concept_names();
     test_reference_caching();
     test_band_boundaries();
     test_on_error();
