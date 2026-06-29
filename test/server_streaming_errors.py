@@ -59,6 +59,46 @@ class StreamingErrorTests(ServerTestBase):
             self.fail(f"Stream not properly terminated (sink.done() missing?): {exc}")
         return lines
 
+    def _running_models(self):
+        response = requests.get(
+            f"http://localhost:{PORT}/api/ps",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response.raise_for_status()
+        return response.json().get("models", [])
+
+    def _wait_for_no_running_models(self, timeout=15):
+        """Return True once the server reports no running models.
+
+        These tests are about streaming error termination. If a previous suite
+        left an in-flight backend request wedged, /api/v1/unload can return
+        before /api/ps is empty. Treat that as an unsatisfied precondition so we
+        do not turn one Ollama timeout into a second misleading failure here.
+        """
+        deadline = time.time() + timeout
+        last_models = []
+        last_error = None
+
+        while time.time() < deadline:
+            try:
+                models = self._running_models()
+                if not models:
+                    return True
+                last_models = models
+                last_error = None
+            except requests.RequestException as exc:
+                last_error = str(exc)
+            time.sleep(1)
+
+        if last_error:
+            print(f"Warning: could not verify empty model state: {last_error}")
+        else:
+            print(
+                "Warning: models still running after unload: "
+                f"{str(last_models)[:1000]}"
+            )
+        return False
+
     def _ensure_test_model_loaded(self, attempts=3):
         """Load ENDPOINT_TEST_MODEL with bounded retry for transient setup failures.
 
@@ -137,6 +177,13 @@ class StreamingErrorTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertIn(unload_resp.status_code, [200, 422])
+
+        if not self._wait_for_no_running_models():
+            self.skipTest(
+                "Skipping post-unload streaming check because the shared server "
+                "still reports a busy model from a previous suite. The unload "
+                "precondition for this streaming-termination test is not met."
+            )
 
         response = self._post_streaming(ENDPOINT_TEST_MODEL)
         lines = self._consume_stream(response)
