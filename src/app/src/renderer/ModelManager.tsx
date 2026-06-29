@@ -376,6 +376,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateCheckDoneRef = useRef(false);
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -442,6 +443,13 @@ const [searchQuery, setSearchQuery] = useState('');
           loadedModelNames.forEach(modelName => newSet.delete(modelName));
           return newSet;
         });
+
+        // Once the server's background update check completes, refresh models
+        // to pick up update_available flags
+        if (data.update_check_done && !updateCheckDoneRef.current) {
+          updateCheckDoneRef.current = true;
+          refreshModels();
+        }
       } else {
         setLoadedModels(new Set());
         setPinnedModels(new Set());

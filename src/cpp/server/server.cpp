@@ -389,16 +389,22 @@ void Server::start_model_cache_warmup() {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
             model_manager_->get_supported_models();
             LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
-
-            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-            model_manager_->check_for_model_updates();
-            update_check_done_ = true;
-            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
         } catch (...) {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
+
+        try {
+            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+            model_manager_->check_for_model_updates();
+            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+        }
+        update_check_done_ = true;
     });
 }
 
