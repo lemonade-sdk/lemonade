@@ -360,9 +360,12 @@ void Router::load_model(const std::string& model_name,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend
+    // Second pass: rebuild defaults using the resolved backend.
+    // Per-architecture defaults sit between global config and model-level recipe_options.
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
-    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
+    RecipeOptions arch_opts(model_info.recipe,
+                            model_manager_->get_architecture_defaults(model_info.gguf.architecture));
+    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);

@@ -778,6 +778,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
     recipe_options_ = load_optional_json(get_recipe_options_file());
+    architecture_defaults_ = load_architecture_defaults();
 
     // One-shot migration of recipe_options.json: older Lemonade keyed built-in
     // entries by bare name; the current spec requires a canonical "builtin."
@@ -1126,6 +1127,27 @@ json ModelManager::load_optional_json(const std::string& path) {
         LOG(WARNING, "ModelManager") << "Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
         return json::object();
     }
+}
+
+json ModelManager::load_architecture_defaults() {
+    try {
+        std::string path = get_resource_path("resources/architecture_defaults.json");
+        return JsonUtils::load_from_file(path);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Could not load architecture_defaults.json: " << e.what() << std::endl;
+        return json::object();
+    }
+}
+
+json ModelManager::get_architecture_defaults(const std::string& architecture) const {
+    if (architecture.empty() || !architecture_defaults_.is_object()) {
+        return json::object();
+    }
+    if (architecture_defaults_.contains(architecture) &&
+        architecture_defaults_[architecture].is_object()) {
+        return architecture_defaults_[architecture];
+    }
+    return json::object();
 }
 
 static void save_user_json(const std::string& save_path, const json& to_save) {
