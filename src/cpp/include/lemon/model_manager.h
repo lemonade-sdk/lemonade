@@ -242,6 +242,10 @@ public:
     // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
 
+    // Per-architecture default recipe options (loaded from resources).
+    // Override global config defaults but are overridden by model-level recipe_options.
+    json get_architecture_defaults(const std::string& architecture) const;
+
     void save_model_options(const ModelInfo& info);
 
     void start_directory_watcher();
@@ -257,6 +261,7 @@ private:
                        std::set<std::string>& visited);
 
     json load_server_models();
+    json load_architecture_defaults();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
@@ -319,6 +324,7 @@ private:
     json server_models_;
     json user_models_;
     json recipe_options_;
+    json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;

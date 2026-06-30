@@ -8,6 +8,10 @@ inputs:
   deb-version:
     description: 'Debian version (for logging)'
     required: true
+  arch-only:
+    description: 'Only build arch-specific packages, skipping arch-indep (lemonade-desktop)'
+    required: false
+    default: 'false'
 
 outputs:
   output-dir:
@@ -21,7 +25,11 @@ runs:
       shell: bash
       run: |
         set -e
-        apt-get update && apt-get build-dep . -y
+        if [ "${{ inputs.arch-only }}" = "true" ]; then
+          apt-get update && apt-get build-dep --arch-only . -y
+        else
+          apt-get update && apt-get build-dep . -y
+        fi
 
     - name: Build Debian package
       id: build
@@ -33,7 +41,11 @@ runs:
 
         if [ "$PACKAGE_TYPE" = "binary" ]; then
           echo "Building binary .deb package for version $DEB_VERSION..."
-          dpkg-buildpackage -us -uc -b
+          if [ "${{ inputs.arch-only }}" = "true" ]; then
+            dpkg-buildpackage -us -uc -B
+          else
+            dpkg-buildpackage -us -uc -b
+          fi
           OUTPUT_DIR="build-output"
           mkdir -p "$OUTPUT_DIR"
           mv ../*.deb "$OUTPUT_DIR/" || true

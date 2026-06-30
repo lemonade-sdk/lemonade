@@ -98,7 +98,8 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("Unsupported platform for whisper.cpp cpu backend");
 #endif
     } else if (backend == "rocm") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        std::string rocm_arch =
+            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
         if (rocm_arch.empty()) {
             throw std::runtime_error(SystemInfo::get_unsupported_backend_error("whispercpp", "rocm"));
         }

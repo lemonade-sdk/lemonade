@@ -574,6 +574,31 @@ static bool device_matches_constraint(const std::string& device_family,
     return false;
 }
 
+// True if (recipe, backend) is published for the given ROCm family/ISA, per the
+// support matrix assembled from backend descriptors. The matrix keys ROCm rows
+// under "rocm", so a channel-qualified backend (rocm-stable/rocm-nightly) is
+// normalized before lookup. `arch` may be a concrete ISA or a family token; the
+// trailing-X wildcard in the matrix handles ISA-to-family matching.
+bool SystemInfo::backend_supports_arch(const std::string& recipe,
+                                       const std::string& backend,
+                                       const std::string& arch) {
+    std::string matrix_backend = backend;
+    if (matrix_backend.rfind("rocm-", 0) == 0) {
+        matrix_backend = "rocm";
+    }
+    for (const auto& def : recipe_defs()) {
+        if (def.recipe != recipe || def.backend != matrix_backend) {
+            continue;
+        }
+        auto it = def.devices.find("amd_gpu");
+        if (it == def.devices.end()) {
+            return false;
+        }
+        return device_matches_constraint(arch, it->second);
+    }
+    return false;
+}
+
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
@@ -1976,9 +2001,43 @@ std::string identify_npu_arch() {
     return "";
 }
 
+namespace {
+    // Per-thread arch override consumed by get_rocm_arch(). Empty = probe hardware.
+    thread_local std::string g_rocm_arch_override;
+}
+
+void SystemInfo::set_rocm_arch_override(const std::string& arch) {
+    g_rocm_arch_override = arch;
+}
+
+std::string SystemInfo::rocm_asset_family(const std::string& arch) {
+    static const json families = []() -> json {
+        try {
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            std::ifstream file(config_path);
+            if (!file.is_open()) {
+                return json::object();
+            }
+            return json::parse(file).value("rocm_asset_families", json::object());
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    // An ISA absent from the map (e.g. gfx908/gfx90a, which ship individually)
+    // is used verbatim, as are family inputs already in family form.
+    if (auto it = families.find(arch); it != families.end() && it->is_string()) {
+        return it->get<std::string>();
+    }
+    return arch;
+}
+
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
     // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+    if (!g_rocm_arch_override.empty()) {
+        return g_rocm_arch_override;
+    }
     try {
         // Use cached system info to avoid re-detecting GPUs
         json system_info = SystemInfoCache::get_system_info_with_cache();

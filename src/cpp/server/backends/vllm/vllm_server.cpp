@@ -167,7 +167,8 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/vllm-rocm";
-        std::string target_arch = SystemInfo::get_rocm_arch();
+        std::string target_arch =
+            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("vllm", "rocm")

@@ -135,6 +135,7 @@ private:
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_install_dry_run(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
 
     // Enrich recipes JSON with release_url, download_filename, version from BackendManager

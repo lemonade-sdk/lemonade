@@ -1,5 +1,6 @@
 #include "lemon/ollama_api.h"
 #include "lemon/model_types.h"
+#include "lemon/runtime_config.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -1179,6 +1180,13 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
         if (!model_manager_->model_exists(name)) {
             res.status = 404;
             json error = {{"error", "model '" + name + "' not found"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        auto* cfg = RuntimeConfig::global();
+        if (cfg && cfg->offline()) {
+            res.status = 400;
+            json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
