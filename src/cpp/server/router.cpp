@@ -1529,6 +1529,16 @@ std::vector<std::string> Router::audio_generation_supported_formats(const std::s
     return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
+void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        if (!model_server) {
+            throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
+        }
+        model_server->model_3d_generations(request, sink);
+    });
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     return aggregate_telemetry_.to_json();

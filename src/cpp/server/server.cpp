@@ -714,6 +714,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
     });
+    // Generative-3D endpoint: image -> textured GLB mesh
+    register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_3d_generations(req, res);
+    });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -3276,6 +3280,49 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         });
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_3d_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        if (!request_json.contains("image")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'image' field in request (base64-encoded input image)"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
+
+        serve_media_or_error(res, "model/gltf-binary", [this, request_json](httplib::DataSink& sink) {
+            router_->model_3d_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << e.what() << std::endl;
         res.status = 500;
         res.set_content(nlohmann::json{{"error", {
             {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");

@@ -89,6 +89,11 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "trellis": {
+    "backend": "auto",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
   "vllm": {
     "args": "",
     "backend": "auto"

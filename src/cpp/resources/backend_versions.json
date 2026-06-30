@@ -121,5 +121,8 @@
     "rocm-stable": "v0.1.1",
     "cuda": "v0.1.1"
   },
+  "trellis": {
+    "vulkan": "v0.1.0"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

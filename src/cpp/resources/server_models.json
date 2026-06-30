@@ -1647,6 +1647,15 @@
         ],
         "size": 10.5
     },
+    "TRELLIS-3D": {
+        "checkpoint": "ilintar/trellis2-gguf",
+        "recipe": "trellis",
+        "suggested": true,
+        "labels": [
+            "3d"
+        ],
+        "size": 5.0
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
