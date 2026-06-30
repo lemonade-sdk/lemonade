@@ -228,6 +228,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
 
+        # telemetry should have enabled, and captures iff enabled is True
+        self.assertIn("telemetry", data)
+        telemetry = data["telemetry"]
+        self.assertIn("enabled", telemetry)
+        self.assertIsInstance(telemetry["enabled"], bool)
+        if telemetry["enabled"]:
+            self.assertIn("captures", telemetry)
+            self.assertIsInstance(telemetry["captures"], list)
+            for capture in telemetry["captures"]:
+                self.assertIn(capture, ["inputs", "outputs", "thinking"])
+        else:
+            self.assertNotIn("captures", telemetry)
+
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )

@@ -92,6 +92,22 @@
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"
   },
+  "rocm_asset_families": {
+    "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
+    "gfx1200": "gfx120X",
+    "gfx1201": "gfx120X",
+    "gfx1100": "gfx110X",
+    "gfx1101": "gfx110X",
+    "gfx1102": "gfx110X",
+    "gfx1103": "gfx110X",
+    "gfx1030": "gfx103X",
+    "gfx1031": "gfx103X",
+    "gfx1032": "gfx103X",
+    "gfx1033": "gfx103X",
+    "gfx1034": "gfx103X",
+    "gfx1035": "gfx103X",
+    "gfx1036": "gfx103X"
+  },
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },

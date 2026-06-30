@@ -8,13 +8,11 @@ Build-Depends:
  dh-cmake,
  dh-cmake-compat (= 1),
  dh-sequence-cmake,
- fonts-katex,
  jq,
  libdrm-dev,
  libcli11-dev,
  libcpp-httplib-dev (>> 0.26),
  libcurl4-openssl-dev,
- libjs-katex,
  libmbedtls-dev,
  libssl-dev,
  libsystemd-dev,
@@ -22,6 +20,11 @@ Build-Depends:
  libzstd-dev,
  ninja-build,
  nlohmann-json3-dev,
+ pkgconf,
+ quilt,
+Build-Depends-Indep:
+ fonts-katex,
+ libjs-katex,
  node-buffer,
  node-css-loader,
  node-highlight.js,
@@ -37,8 +40,6 @@ Build-Depends:
  node-webpack,
  node-webpack-cli,
  nodejs,
- pkgconf,
- quilt,
 Testsuite: autopkgtest-pkg-python
 Standards-Version: 4.7.3
 Homepage: https://lemonade-server.ai/

@@ -767,7 +767,8 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                         telemetry_callback(telemetry.input_tokens,
                                            telemetry.output_tokens,
                                            telemetry.time_to_first_token,
-                                           telemetry.tokens_per_second);
+                                           telemetry.tokens_per_second,
+                                           telemetry.error_message);
                     }
                 },
                 timeout_seconds,
@@ -781,6 +782,13 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     } catch (const std::exception& e) {
         // Log the error but don't crash the server
         LOG(ERROR, "WrappedServer") << "Streaming request failed: " << e.what() << std::endl;
+
+        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) && !streamed_any_bytes;
+
+        if (telemetry_callback && !will_retry) {
+            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+        }
+
         // Try to send error to client if possible
         try {
             json error;
