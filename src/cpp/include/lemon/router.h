@@ -119,6 +119,8 @@ public:
     json image_edits(const json& request);
     json image_variations(const json& request);
 
+    void audio_generations(const json& request, httplib::DataSink& sink);
+
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
