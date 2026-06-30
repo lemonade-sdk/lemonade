@@ -1682,5 +1682,37 @@
             "tool-calling"
         ],
         "size": 19.3
+    },
+    "Qwen3.6-27B-FP16-vLLM": {
+        "checkpoint": "Qwen/Qwen3.6-27B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 55.59
+    },
+    "Qwen3.6-35B-A3B-FP16-vLLM": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 71.93
+    },
+    "GLM-4.7-Flash-FP16-vLLM": {
+        "checkpoint": "zai-org/GLM-4.7-Flash",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 62.47
     }
 }

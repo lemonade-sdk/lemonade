@@ -1,4 +1,5 @@
 #include "lemon/config_file.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 
@@ -27,9 +28,25 @@ static json load_json_file(const fs::path& path) {
     }
 }
 
-json ConfigFile::get_defaults() {
+json ConfigFile::base_defaults() {
     json defaults = load_json_file(utils::path_from_utf8(
         utils::get_resource_path("resources/defaults.json")));
+
+    // Seed each backend's config.json section from its descriptor.
+    // resources/defaults.json is the generated, committed mirror; re-seeding here
+    // keeps the descriptor authoritative even if that file lags.
+    for (const auto* d : backends::all_descriptors()) {
+        json block = d->config_defaults();
+        if (!block.empty()) {
+            defaults[d->effective_config_section()] = block;
+        }
+    }
+
+    return defaults;
+}
+
+json ConfigFile::get_defaults() {
+    json defaults = base_defaults();
 
 #ifndef _WIN32
     fs::path distro_defaults = "/usr/share/lemonade/defaults.json";

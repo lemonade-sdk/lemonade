@@ -3,6 +3,7 @@
 #include "fake_classifier_services.h"
 #include "lemon/routing_policy.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <memory>
@@ -124,11 +125,74 @@ static void test_make_classifier_rejections() {
               lemon::make_classifier(json{{"id", "x"}, {"type", "mystery"},
                                           {"model", "m"}});
           }));
-    check("make_classifier clearly rejects semantic_similarity for now",
+    check("make_classifier accepts semantic_similarity", [] {
+        try {
+            auto c = lemon::make_classifier(
+                json{{"id", "topic"}, {"type", "semantic_similarity"},
+                     {"model", "m"},
+                     {"reference_phrases", {{"coding", json::array({"write a function"})},
+                                            {"math", json::array({"integral"})}}}});
+            const auto& labels = c->labels();
+            return c && c->id() == "topic" && c->type() == "semantic_similarity" &&
+                   labels.size() == 2 &&
+                   std::find(labels.begin(), labels.end(), "coding") != labels.end() &&
+                   std::find(labels.begin(), labels.end(), "math") != labels.end();
+        } catch (...) {
+            return false;
+        }
+    }());
+    check("make_classifier accepts semantic_similarity default_label", [] {
+        try {
+            auto c = lemon::make_classifier(
+                json{{"id", "topic"}, {"type", "semantic_similarity"}, {"model", "m"},
+                     {"reference_phrases", {{"coding", json::array({"write a function"})}}},
+                     {"default_label", "coding"}});
+            return c && c->default_label().has_value() && *c->default_label() == "coding";
+        } catch (...) {
+            return false;
+        }
+    }());
+    check("make_classifier rejects semantic_similarity without reference_phrases",
           throws_invalid_arg([] {
-              lemon::make_classifier(json{{"id", "sim"}, {"type", "semantic_similarity"},
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"model", "m"}});
+          }));
+    check("make_classifier rejects semantic_similarity with empty reference_phrases",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
                                           {"model", "m"},
-                                          {"reference_phrases", json::array({"return"})}});
+                                          {"reference_phrases", json::object()}});
+          }));
+    check("make_classifier rejects semantic_similarity concept with empty phrase list",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", {{"coding", json::array()}}}});
+          }));
+    check("make_classifier rejects semantic_similarity concept with empty phrase string",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", {{"coding", json::array({""})}}}});
+          }));
+    check("make_classifier rejects semantic_similarity without model",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"reference_phrases", {{"coding", json::array({"x"})}}}});
+          }));
+    check("make_classifier rejects semantic_similarity with explicit labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", {{"coding", json::array({"x"})}}},
+                                          {"labels", json::array({"coding"})}});
+          }));
+    check("make_classifier rejects semantic_similarity default_label not a concept",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "topic"}, {"type", "semantic_similarity"},
+                                          {"model", "m"},
+                                          {"reference_phrases", {{"coding", json::array({"x"})}}},
+                                          {"default_label", "math"}});
           }));
     check("make_classifier clearly rejects llm for now",
           throws_invalid_arg([] {
@@ -200,6 +264,41 @@ static void test_leaf_factory_classifier_refs() {
           }));
 }
 
+static void test_leaf_factory_label_less_primary() {
+    // A `classifier` with no declared labels: a condition may omit `label`, and
+    // selected_score() falls back to Score::primary().
+    auto label_less = lemon::make_classifier(json{
+        {"id", "toxicity"},
+        {"type", "classifier"},
+        {"model", "toxicity-small"},
+    });
+    auto leaf_factory = lemon::make_leaf_factory({{"toxicity", label_less}});
+    auto route = make_route_context();
+
+    // Single-label score: primary() reads the lone entry, so the band applies.
+    {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_classifier_scores("toxicity-small", {{"toxic", 0.91}});
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        auto condition = leaf_factory(json{{"classifier", "toxicity"}, {"min_score", 0.5}});
+        check("label-less classifier matches via primary() lone entry",
+              condition->evaluate(ctx));
+    }
+
+    // Multi-label score: primary() returns 0.0 rather than an arbitrary label,
+    // so an unlabeled condition does not silently match the first label.
+    {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_classifier_scores("toxicity-small", {{"toxic", 0.91}, {"clean", 0.09}});
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        auto condition = leaf_factory(json{{"classifier", "toxicity"}, {"min_score", 0.5}});
+        check("label-less classifier does not match on a multi-label score",
+              !condition->evaluate(ctx));
+    }
+}
+
 static void test_leaf_factory_deterministic_dispatch_and_implicit_all() {
     int keywords_calls = 0;
     int chars_calls = 0;
@@ -263,6 +362,7 @@ int main() {
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();
+    test_leaf_factory_label_less_primary();
     test_leaf_factory_deterministic_dispatch_and_implicit_all();
     test_leaf_factory_classifier_and_deterministic_implicit_all();
 

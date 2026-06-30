@@ -94,9 +94,18 @@ static void test_types_construct() {
     check(s.score_of("PII") == 0.81, "Score::score_of returns the labeled score");
     check(s.score_of("missing") == 0.0, "Score::score_of returns 0 for absent label");
 
-    Score sim;
-    sim.labels[""] = 0.73;  // semantic_similarity single-score shape
-    check(sim.primary() == 0.73, "Score::primary reads the empty-key cosine score");
+    Score single;
+    single.labels["POSITIVE"] = 0.73;  // a one-label classifier score
+    check(single.primary() == 0.73, "Score::primary reads the lone entry");
+
+    Score multi;
+    multi.labels["NEGATIVE"] = 0.30;
+    multi.labels["POSITIVE"] = 0.70;
+    check(multi.primary() == 0.0,
+          "Score::primary returns 0.0 for a multi-label score (no lone entry)");
+
+    Score none;
+    check(none.primary() == 0.0, "Score::primary returns 0.0 for an empty score");
 
     // on_error round-trips through the single-source-of-truth mapping.
     check(lemon::parse_on_error("match_true") == OnError::MatchTrue, "parse_on_error match_true");
@@ -166,12 +175,13 @@ struct LabeledClassifier : Classifier {
     }
 };
 
-// A semantic_similarity classifier: no declared labels (scores under "").
-struct SimClassifier : Classifier {
-    SimClassifier() : Classifier("sim", "semantic_similarity", OnError::MatchFalse) {}
+// A label-less classifier: declares no labels and returns a single score, read
+// via primary().
+struct SingleScoreClassifier : Classifier {
+    SingleScoreClassifier() : Classifier("single", "classifier", OnError::MatchFalse) {}
     Score evaluate(const ClassifierContext&) const override {
         Score s;
-        s.labels[""] = 0.5;
+        s.labels["POSITIVE"] = 0.5;
         return s;
     }
 };
@@ -186,9 +196,9 @@ static void test_classifier_contract() {
     check(lc.default_label().has_value() && *lc.default_label() == "PII",
           "Classifier exposes default_label");
 
-    SimClassifier sc;
+    SingleScoreClassifier sc;
     check(sc.labels().empty() && !sc.default_label().has_value(),
-          "semantic_similarity declares no labels (any label ref on it is invalid)");
+          "a label-less classifier declares no labels (read via primary())");
 }
 
 static void test_condition_seam() {

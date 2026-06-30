@@ -240,7 +240,7 @@ static void test_classifier_score_selection_and_primary() {
     check("classifier condition uses default_label when label omitted", condition->evaluate(ctx));
 
     Score single;
-    single.labels[""] = 0.72;
+    single.labels["toxic"] = 0.72;  // lone entry — primary() reads it regardless of key
     auto similarity = std::make_shared<FixedClassifier>(
         "sim", OnError::MatchFalse, single);
     EvalContext ctx2 = make_eval_context();

@@ -47,6 +47,52 @@ lemonade pull user.MyModel \
 
 Standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/completions`) work as usual. Lemonade forwards requests to the vLLM child process, which exposes the engine's own private endpoints (e.g. `/metrics`, `/version`) on a backend-only port surfaced via `GET /v1/health` (`backend_url` field) — useful for observability but not proxied through Lemonade.
 
+## Model-Family Argument Config
+
+Some vLLM model families need extra `vllm-server` arguments for correct behavior. For example, tool-calling models may need `--enable-auto-tool-choice` plus a matching `--tool-call-parser`. Lemonade keeps these built-in family defaults in [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json), separate from [`server_models.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
+
+When adding a built-in model with `recipe: "vllm"`, check whether its model family needs vLLM arguments. If it does, update `vllm_model_config.json` in the same PR as the `server_models.json` entry.
+
+The config has two layers:
+
+```json
+{
+  "schema_version": 1,
+  "enable_checkpoint_regex_match": true,
+  "families": {
+    "qwen3.": {
+      "match": [
+        {
+          "checkpoint_regex": "Qwen3\\."
+        }
+      ],
+      "args": "--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+    }
+  },
+  "models": {
+    "Qwen3.5-4B-vLLM": {
+      "family": "qwen3."
+    }
+  }
+}
+```
+
+- `families` defines reusable defaults for a model family. Each family can include `args` and optional `match` entries.
+- `models` maps Lemonade model names to a family and can also add per-model `args`.
+- `checkpoint_regex` is matched against the model checkpoint, not only the organization name. This lets one family match checkpoints from different Hugging Face organizations.
+- `enable_checkpoint_regex_match` controls automatic family matching for unlisted models. Set it to `false` to require explicit entries under `models`.
+- A model entry can set `disable_family_match: true` to prevent regex family matching for that model while still allowing model-specific `args`.
+
+Argument precedence is:
+
+1. Family `args`
+2. Exact model `args`
+3. User-provided `vllm_args`
+
+Later layers override conflicting earlier flags but keep non-conflicting flags. Binary `--flag` / `--no-flag` pairs are resolved like the rest of Lemonade's `*_args` merge behavior, and repeated generic flags are preserved when the same flag appears multiple times.
+
+Lemonade-managed process arguments cannot be set in this file or in `vllm_args`: `--model`, `--served-model-name`, `--host`, `--port`, `--max-model-len`, `--enforce-eager`, and `--enable-prefix-caching`.
+
 ## Tuning
 
 Free-form CLI args can be appended to `vllm-server` via `vllm.args`:

@@ -77,11 +77,6 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
-    // When true, LlamaCppServer launches llama-server with `-hf <checkpoint>`
-    // instead of `-m <gguf> [--mmproj <mmproj>]`. Required for models like
-    // Qwen2.5-Omni where llama-server's manual-load path rejects audio content
-    // parts — the -hf path drives the dual-clip (vision+audio) context correctly.
-    bool hf_load = false;
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -110,8 +105,18 @@ struct ModelInfo {
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
 
-    // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
-    int moonshine_arch = -1;
+    // Generic per-model fields a backend declares for itself. Any server_models.json
+    // key not consumed by a typed field above lands here, so a new backend can read
+    // custom per-model config in load() without editing this shared struct.
+    std::map<std::string, json> extras;
+
+    // Look up an extra field, returning a default when absent.
+    template <typename T>
+    T extra(const std::string& key, const T& fallback) const {
+        auto it = extras.find(key);
+        if (it == extras.end() || it->second.is_null()) return fallback;
+        try { return it->second.get<T>(); } catch (...) { return fallback; }
+    }
 
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
@@ -214,11 +219,19 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Get list of installed FLM models (for caching)
-    std::vector<std::string> get_flm_installed_models();
+    // True if the model's backend pulls its own models on demand (e.g. flm) and
+    // so should be skipped by the router's load-time auto-download path.
+    bool backend_self_manages_downloads(const std::string& recipe) const;
 
-    // Get list of all available FLM models from 'flm list --json'
-    std::vector<ModelInfo> get_flm_available_models();
+    // Shared Hugging Face completeness check: true if all required checkpoints
+    // are present and complete (per-backend file validation runs via ops). The
+    // default BackendOps::is_downloaded delegates here for HF-backed backends.
+    bool checkpoints_complete(const ModelInfo& info) const;
+
+    // Shared Hugging Face download engine. The default BackendOps::download_model
+    // delegates here; flm/cloud override with their own download.
+    void download_from_huggingface_engine(const ModelInfo& info,
+                                          DownloadProgressCallback progress_callback = nullptr);
 
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
@@ -299,11 +312,6 @@ private:
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
-
-    // Download from FLM
-    void download_from_flm(const std::string& checkpoint,
-                          bool do_not_upgrade = true,
-                          DownloadProgressCallback progress_callback = nullptr);
 
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
