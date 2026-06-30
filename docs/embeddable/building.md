@@ -73,12 +73,12 @@ If you want the embeddable build to include the browser UI assets under `resourc
 
 The `embeddable` target produces a single archive in `build/`:
 
-| Platform | Archive |
-|----------|---------|
-| Linux x86_64 | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
-| Linux ARM64 | `lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` |
-| Windows x64 | `lemonade-embeddable-{VERSION}-windows-x64.zip` |
-| macOS ARM64 | `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` |
+| Platform | GitHub Actions artifact | Archive |
+|----------|--------------------------|---------|
+| Linux x86_64 | `lemonade-embeddable-linux-x86_64` | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
+| Linux ARM64 | `lemonade-embeddable-linux-arm64` | `lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` |
+| Windows x64 | `lemonade-embeddable-windows` | `lemonade-embeddable-{VERSION}-windows-x64.zip` |
+| macOS ARM64 | `lemonade-embeddable-macos` | `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` |
 
 Each archive contains:
 
