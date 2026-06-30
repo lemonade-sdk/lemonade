@@ -238,7 +238,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-deb:
-    name: Build Lemonade .deb Package (X86_64)
+    name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -291,7 +291,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-debian13:
-    name: Build Lemonade .deb Package (Debian 13, ${{ matrix.arch-name }})
+    name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -305,10 +305,12 @@ jobs:
             runs-on: ubuntu-latest
             deb-arch: amd64
             artifact-suffix: x86_64
+            job-suffix: ""
           - arch-name: ARM64
             runs-on: ubuntu-24.04-arm
             deb-arch: arm64
             artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     steps:
       - name: Enable Trixie backports
         run: |
@@ -371,7 +373,7 @@ jobs:
           retention-days: 7
 
   test-lemonade-debian13-smoke:
-    name: Smoke test .deb (Debian 13, ${{ matrix.arch-name }})
+    name: Smoke test .deb (Debian 13)${{ matrix.job-suffix }}
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-debian13
     container:
@@ -384,10 +386,12 @@ jobs:
             runs-on: ubuntu-latest
             deb-arch: amd64
             artifact-suffix: x86_64
+            job-suffix: ""
           - arch-name: ARM64
             runs-on: ubuntu-24.04-arm
             deb-arch: arm64
             artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-debian13.outputs.version }}
     steps:
@@ -443,7 +447,7 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
 
   build-lemonade-rpm:
-    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})
+    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
     runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -458,10 +462,12 @@ jobs:
             arch-name: X86_64
             rpm-arch: x86_64
             artifact-suffix: x86_64
+            job-suffix: ""
           - runs-on: ubuntu-24.04-arm
             arch-name: ARM64
             rpm-arch: aarch64
             artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -854,7 +860,7 @@ jobs:
           fi
 
   build-lemonade-embeddable-linux:
-    name: Build Embeddable Lemonade (Linux ${{ matrix.arch-name }})
+    name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -866,10 +872,12 @@ jobs:
             runs-on: ubuntu-latest
             platform: ubuntu-x64
             artifact-suffix: x86_64
+            job-suffix: ""
           - arch-name: ARM64
             runs-on: ubuntu-24.04-arm
             platform: ubuntu-arm64
             artifact-suffix: arm64
+            job-suffix: " ARM64"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1521,7 +1529,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-rpm-package:
-    name: Test .rpm - Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})
+    name: Test .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-rpm
     container:
@@ -1537,10 +1545,12 @@ jobs:
             arch-name: X86_64
             rpm-arch: x86_64
             artifact-suffix: x86_64
+            job-suffix: ""
           - runs-on: ubuntu-24.04-arm
             arch-name: ARM64
             rpm-arch: aarch64
             artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
