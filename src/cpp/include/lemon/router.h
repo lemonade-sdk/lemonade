@@ -24,6 +24,10 @@ using json = nlohmann::json;
 
 class CloudProviderRegistry;
 
+namespace telemetry {
+class InferenceSpan;
+}
+
 struct ModelTelemetryIdentity {
     std::string model_name;
     std::string checkpoint;
@@ -167,7 +171,7 @@ private:
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
-    WrappedServer* find_flm_server_by_type(ModelType type) const;
+    WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
@@ -189,7 +193,7 @@ private:
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
 
     template<typename Func>
-    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
+    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);
 };
 
 } // namespace lemon

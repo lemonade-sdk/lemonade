@@ -19,6 +19,7 @@ public:
         int output_tokens = 0;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
+        std::string error_message = "";
 
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
@@ -50,6 +51,8 @@ public:
         long timeout_seconds = 300,
         std::function<void()> on_chunk = nullptr
     );
+
+    static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
 
 private:
     static TelemetryData parse_telemetry(const std::string& buffer);

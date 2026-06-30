@@ -1,4 +1,6 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backend_version_policy.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -35,7 +37,7 @@ std::string get_current_os() {
 }
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
@@ -61,15 +63,6 @@ std::string get_backend_runtime_version(const json& backend_versions,
         backend_versions[recipe].contains(runtime_key) &&
         backend_versions[recipe][runtime_key].is_string()) {
         return backend_versions[recipe][runtime_key].get<std::string>();
-    }
-
-    // Only fall back to llamacpp runtime version if the recipe is llamacpp
-    if (recipe == "llamacpp" &&
-        backend_versions.contains("llamacpp") &&
-        backend_versions["llamacpp"].is_object() &&
-        backend_versions["llamacpp"].contains(runtime_key) &&
-        backend_versions["llamacpp"][runtime_key].is_string()) {
-        return backend_versions["llamacpp"][runtime_key].get<std::string>();
     }
 
     throw std::runtime_error("backend_versions.json is missing runtime version for: " + recipe + ":" + runtime_key);
@@ -369,24 +362,40 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // any UI/metadata callers that still touch this code path.
     if (utils::looks_like_path(raw)) return pinned_version;
 
-    // "latest" → ask GitHub. If offline and a previously-installed version is
-    // recorded, reuse it instead of failing.
+    // "latest" → ask GitHub for the newest release. The lookup can be skipped
+    // (offline) or fail (e.g. HTTP 504, network error); in either case fall back
+    // to the binary already installed rather than refusing to load a model that
+    // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
-        if (cfg->offline()) {
-            std::string install_dir = backends::BackendUtils::get_install_directory(
-                recipe, resolved_backend);
-            std::string cached = read_version_file(fs::path(install_dir) / "version.txt");
-            if (!cached.empty()) {
+        const bool offline = cfg->offline();
+        // A non-throwing lookup so a transient GitHub failure becomes a fallback
+        // rather than an exception. Skipped entirely when offline.
+        std::string fetched = offline
+            ? std::string()
+            : fetch_latest_github_tag(repo, /*throw_on_failure=*/false);
+
+        // The install directory is not version-scoped, so version.txt always
+        // reflects the most recently installed binary for this (recipe, backend).
+        std::string install_dir = backends::BackendUtils::get_install_directory(
+            recipe, resolved_backend);
+        std::string installed = read_version_file(fs::path(install_dir) / "version.txt");
+
+        LatestPinResolution resolution =
+            resolve_latest_pin(recipe, resolved_backend, offline, fetched, installed);
+        if (!resolution.version.empty()) {
+            if (resolution.used_installed_fallback && offline) {
                 LOG(WARNING, "BackendManager") << "offline: reusing installed " << recipe
                                                << ":" << resolved_backend << " version "
-                                               << cached << " for 'latest'" << std::endl;
-                return cached;
+                                               << resolution.version << " for 'latest'" << std::endl;
+            } else if (resolution.used_installed_fallback) {
+                LOG(WARNING, "BackendManager") << "could not resolve 'latest' for " << recipe
+                                               << ":" << resolved_backend
+                                               << "; falling back to installed version "
+                                               << resolution.version << std::endl;
             }
-            throw std::runtime_error(
-                "Cannot resolve 'latest' for " + recipe + ":" + resolved_backend
-                + ": offline mode and no installed version found");
+            return resolution.version;
         }
-        return fetch_latest_github_tag(repo, /*throw_on_failure=*/true);
+        throw std::runtime_error(resolution.error);
     }
 
     // Otherwise: a bare upstream release tag (e.g. "b8664"). Pass through.
@@ -466,17 +475,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
     // Do that here before inflating the install to a multi-file UX flow.
     const std::string os = get_current_os();
-
-    const bool needs_stable_rocm_runtime =
-        ((recipe == "llamacpp" || recipe == "sd-cpp") && resolved_backend == "rocm-stable") ||
-        (recipe == "lemon-mlx" && resolved_backend == "rocm");
-
+    const bool is_rocm_stable_backend =
+        backends::recipe_has_rocm_channels(recipe) &&
+        resolved_backend == "rocm-stable";
     const bool therock_applicable =
-        needs_stable_rocm_runtime && will_install_therock(os, backend_versions_);
-
+        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
     const bool rocm_runtime_update_required =
         therock_applicable && backend_update_required(recipe, backend);
-
     const bool needs_therock_download =
         therock_applicable &&
         (rocm_runtime_update_required ||

@@ -22,6 +22,10 @@ Lemonade's roadmap is defined by a set of [working groups](./working-groups/READ
 
 The Lemonade project welcomes contributions! Learn about the project's mission, maintainers, and contribution process [here](./contribute.md).
 
+### Documentation
+
+Writing or improving docs? Read the [documentation guide](./documentation.md) for style, structure, and guidance on AI-assisted contributions.
+
 ### Lemonade Omni Models
 
 Lemonade has a unique capability to group LLM, image, and speech models together to present a unified omni-modal "model" to end-users. These one-click bundles are called Lemonade Omni Models, and they're routed via an internal mechanism called OmniRouter. Learn more [here](./lemonade-omni.md).

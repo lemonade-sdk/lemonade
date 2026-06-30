@@ -275,8 +275,13 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
+          cmake --build --preset default --target test_routing_policy_contract
+          cmake --build --preset default --target test_routing_policy_evaluator
+          cmake --build --preset default --target test_routing_policy_registry
+          cmake --build --preset default --target test_routing_policy_semantic
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic)Test"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -534,8 +539,13 @@ jobs:
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_latest_version_fallback
+          cmake --build --preset default --target test_routing_policy_contract
+          cmake --build --preset default --target test_routing_policy_evaluator
+          cmake --build --preset default --target test_routing_policy_registry
+          cmake --build --preset default --target test_routing_policy_semantic
           cd build
-          ctest --output-on-failure -R DirectoryWatcher
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic)Test"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -627,6 +637,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before CLI tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned cli"
           echo "Running CLI tests..."
           .venv/bin/python test/server_cli2.py --cli-binary ./build/lemonade
           echo "CLI tests PASSED!"
@@ -641,6 +653,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before endpoint tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned endpoints"
           echo "Running endpoint tests..."
           .venv/bin/python test/server_endpoints.py --cli-binary ./build/lemonade
           echo "Endpoint tests PASSED!"
@@ -655,6 +669,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before web-app tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned webapp"
           echo "Running web-app path traversal tests..."
           .venv/bin/python test/server_webapp.py --cli-binary ./build/lemonade
           echo "Web-app tests PASSED!"
@@ -669,6 +685,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before model name normalization tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned model-normalization"
           echo "Running model name normalization tests (:latest suffix)..."
           .venv/bin/python test/test_model_name_normalization.py --cli-binary ./build/lemonade
           echo "Model name normalization tests PASSED!"
@@ -683,6 +701,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before Ollama API tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned ollama"
           echo "Running Ollama API tests..."
           .venv/bin/python test/test_ollama.py --cli-binary ./build/lemonade
           echo "Ollama API tests PASSED!"
@@ -697,46 +717,46 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before streaming error tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned streaming-errors"
           echo "Running streaming error termination tests..."
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
-      - name: Ensure server is running before whisper tests (unsigned path)
+      - name: Restart server before whisper Metal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         env:
           LEMONADE_CI_MODE: "True"
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
-          echo "Checking if lemond is running before whisper tests..."
-          if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-            echo "Server is already running and healthy"
-          else
-            echo "Server not reachable — restarting lemond..."
-            # Kill any existing lemond that may be zombie/hung
-            pkill -f lemond 2>/dev/null || true
+          echo "Restarting lemond before whisper Metal tests so Metal env is inherited..."
+
+          pkill -f lemond 2>/dev/null || true
+          sleep 2
+
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+          ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server started successfully for whisper tests (PID $LEMOND_PID)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
             sleep 2
-            # Start lemond directly from build/ (avoid legacy shim health-check timeout)
-            mkdir -p "$RUNNER_TEMP/xdg-runtime"
-            chmod 700 "$RUNNER_TEMP/xdg-runtime"
-            echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
-            export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-            ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
-            LEMOND_PID=$!
-            disown "$LEMOND_PID"
-            # Wait for server to become healthy
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-                echo "Server started successfully (PID $LEMOND_PID)"
-                exit 0
-              fi
-              echo "Waiting for server... ($i/30)"
-              sleep 2
-            done
-            echo "ERROR: Server did not start within 60 seconds"
-            cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
-            exit 1
-          fi
+          done
+
+          echo "ERROR: Server did not start within 60 seconds"
+          cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
+          exit 1
 
       - name: Run whisper Metal inference tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -766,6 +786,12 @@ jobs:
           echo "Running moonshine inference tests..."
           .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary ./build/lemonade
           echo "Moonshine inference tests PASSED!"
+
+      - name: Capture and upload server logs (unsigned path)
+        if: always() && steps.check_signing.outputs.has_signing != 'true'
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-macos-unsigned-build
 
       - name: Ensure binaries are executable before upload (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -1416,6 +1442,10 @@ jobs:
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
+          # These jobs run directly on shared self-hosted runners (no container
+          # network isolation), so the default port can be held by a concurrent
+          # job. Use a job-unique free port to avoid the collision.
+          port: auto
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1496,6 +1526,11 @@ jobs:
 
           /opt/bin/lemonade --version
           /opt/bin/lemond --version
+
+          rpm -qpl "$RPM_FILE" | grep -Fx "/usr/lib/systemd/user/lemond.service"
+          rpm -qpl --dump "$RPM_FILE" \
+            | grep -E '^/usr/lib/systemd/user/lemond\.service ' \
+            | grep -F "/opt/lib/systemd/user/lemond.service"
 
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})
@@ -1909,45 +1944,61 @@ jobs:
       - name: Test cli
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_cli2.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu cli"
+          .venv/bin/python test/server_cli2.py --cli-binary lemonade
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
+          .venv/bin/python test/server_endpoints.py --cli-binary lemonade
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
       - name: Test mcp
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_mcp.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu mcp"
+          .venv/bin/python test/server_mcp.py --cli-binary lemonade
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_webapp.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu webapp"
+          .venv/bin/python test/server_webapp.py --cli-binary lemonade
 
       - name: Test model name normalization
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu model-normalization"
+          .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_ollama.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu ollama"
+          .venv/bin/python test/test_ollama.py --cli-binary lemonade
 
       - name: Test streaming-errors
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
+          .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_llamacpp_system_backend.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu llamacpp-system"
+          .venv/bin/python test/test_llamacpp_system_backend.py --cli-binary lemonade
 
       - name: Capture and upload server logs
         if: always()
@@ -2019,6 +2070,8 @@ jobs:
           set -e
           VENV_PYTHON=.venv/bin/python
           CLI_BINARY=./build/lemonade
+
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "arm64 ${{ matrix.test_type }}"
 
           if [ "${{ matrix.test_type }}" = "cli" ]; then
             echo "Running CLI tests..."
@@ -2150,34 +2203,46 @@ jobs:
       - name: Test cli
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} cli"
+          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} endpoints"
+          $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_webapp.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} webapp"
+          $VENV_PYTHON test/server_webapp.py --cli-binary "$CLI_BINARY"
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} ollama"
+          $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
 
       - name: Test streaming-errors
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} streaming-errors"
+          $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} llamacpp-system"
+          $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()

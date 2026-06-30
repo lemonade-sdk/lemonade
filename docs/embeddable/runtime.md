@@ -114,6 +114,7 @@ Your app can manage its `lemond` instance at runtime by using `/internal` endpoi
 |--------|------|-------------|
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/pin` | Pin or unpin a loaded model (prevents auto-eviction) |
 
 The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
@@ -135,6 +136,23 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 
     ```bash
     curl http://localhost:8000/internal/config
+    ```
+
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
+
+**Example:**
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl http://localhost:8000/internal/config/defaults
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl http://localhost:8000/internal/config/defaults
     ```
 
 #### `POST /internal/set`

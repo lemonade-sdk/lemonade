@@ -10,16 +10,19 @@ import { useModels } from './hooks/useModels';
 interface CloudProviderRow {
   name: string;
   base_url: string;
+  allow_insecure_http: boolean;
   env_var: string;
   env_var_set: boolean;
   runtime_key_set: boolean;
   models_discovered: number;
+  warnings: string[];
 }
 
 interface CloudProvidersSectionProps {
   searchQuery: string;
   showError: (msg: string) => void;
   showSuccess: (msg: string) => void;
+  showWarning: (msg: string) => void;
 }
 
 const QUICK_FILL: Array<{ label: string; name: string; baseUrl: string }> = [
@@ -28,6 +31,18 @@ const QUICK_FILL: Array<{ label: string; name: string; baseUrl: string }> = [
   { label: 'OpenRouter', name: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
   { label: 'Together', name: 'together', baseUrl: 'https://api.together.xyz/v1' },
 ];
+
+const extractWarnings = (value: any): string[] => {
+  if (Array.isArray(value?.warnings)) {
+    return value.warnings.filter((w: any) => typeof w === 'string');
+  }
+  if (typeof value?.warning === 'string' && value.warning) {
+    return [value.warning];
+  }
+  return [];
+};
+
+const isHttpBaseUrl = (value: string): boolean => value.trim().toLowerCase().startsWith('http://');
 
 const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
   const response = await serverConfig.fetch('/system-info');
@@ -40,25 +55,28 @@ const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
     .map((p: any) => ({
       name: String(p.name),
       base_url: typeof p.base_url === 'string' ? p.base_url : '',
+      allow_insecure_http: p.allow_insecure_http === true,
       env_var: typeof p.env_var === 'string' ? p.env_var : '',
       env_var_set: p.env_var_set === true,
       runtime_key_set: p.runtime_key_set === true,
       models_discovered: typeof p.models_discovered === 'number' ? p.models_discovered : 0,
+      warnings: extractWarnings(p),
     }));
 };
 
 // Install modal — single source for both new-provider registration and
 // supplying an initial key. Optional api_key because LEMONADE_<P>_API_KEY may
-// already cover this provider on the server; in that case the server returns
-// a "warning" field which we surface verbatim.
+// already cover this provider on the server; any server warnings are surfaced
+// through the shared warning toast.
 interface InstallModalProps {
   onClose: () => void;
   onInstalled: () => void;
   showError: (msg: string) => void;
   showSuccess: (msg: string) => void;
+  showWarning: (msg: string) => void;
 }
 
-const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showError, showSuccess }) => {
+const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showError, showSuccess, showWarning }) => {
   const [provider, setProvider] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -74,12 +92,20 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, string> = {
+      const normalizedBaseUrl = baseUrl.trim();
+      const normalizedApiKey = apiKey.trim();
+      const needsInsecureOptIn = isHttpBaseUrl(normalizedBaseUrl) && !!normalizedApiKey;
+      if (needsInsecureOptIn && !window.confirm('Send this API key over http://? Traffic to this provider will not be encrypted.')) {
+        setBusy(false);
+        return;
+      }
+      const body: Record<string, string | boolean> = {
         backend: 'cloud',
         provider: provider.trim(),
-        base_url: baseUrl.trim(),
+        base_url: normalizedBaseUrl,
       };
-      if (apiKey.trim()) body.api_key = apiKey.trim();
+      if (needsInsecureOptIn) body.allow_insecure_http = true;
+      if (normalizedApiKey) body.api_key = normalizedApiKey;
       const response = await serverConfig.fetch('/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,17 +119,14 @@ const InstallModal: React.FC<InstallModalProps> = ({ onClose, onInstalled, showE
       }
       const result = await response.json();
       const discovered = result?.models_discovered ?? 0;
-      if (result?.warning) {
-        showSuccess(`Installed '${provider.trim()}' (${discovered} models). ${result.warning}`);
-      } else {
-        showSuccess(`Installed '${provider.trim()}' (${discovered} models).`);
-      }
+      showSuccess(`Installed '${provider.trim()}' (${discovered} models).`);
+      extractWarnings(result).forEach((warning) => showWarning(warning));
       onInstalled();
     } catch (err) {
       setError(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
       setBusy(false);
     }
-  }, [provider, baseUrl, apiKey, onInstalled, showSuccess]);
+  }, [provider, baseUrl, apiKey, onInstalled, showSuccess, showWarning]);
 
   return (
     <>
@@ -212,9 +235,10 @@ interface EditModalProps {
   onChanged: () => void;
   showError: (msg: string) => void;
   showSuccess: (msg: string) => void;
+  showWarning: (msg: string) => void;
 }
 
-const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showError, showSuccess }) => {
+const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showError, showSuccess, showWarning }) => {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -227,10 +251,19 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
     }
     setBusy(true); setError(null);
     try {
+      const needsInsecureOptIn = isHttpBaseUrl(row.base_url) && !row.allow_insecure_http;
+      if (needsInsecureOptIn && !window.confirm('Send this API key over http://? Traffic to this provider will not be encrypted.')) {
+        setBusy(false);
+        return;
+      }
       const r = await serverConfig.fetch('/cloud/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: row.name, api_key: apiKey.trim() }),
+        body: JSON.stringify({
+          provider: row.name,
+          api_key: apiKey.trim(),
+          ...(needsInsecureOptIn ? { allow_insecure_http: true } : {}),
+        }),
       });
       if (r.status === 409) {
         const body = await r.json().catch(() => null);
@@ -246,12 +279,13 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
       }
       const result = await r.json();
       showSuccess(`API key stored for '${row.name}' (${result?.models_discovered ?? 0} models discovered).`);
+      extractWarnings(result).forEach((warning) => showWarning(warning));
       onChanged();
     } catch (err) {
       setError(`Set auth failed: ${err instanceof Error ? err.message : String(err)}`);
       setBusy(false);
     }
-  }, [apiKey, row.env_var, row.name, onChanged, showSuccess]);
+  }, [apiKey, row.allow_insecure_http, row.base_url, row.env_var, row.name, onChanged, showSuccess, showWarning]);
 
   const clearKey = useCallback(async () => {
     setBusy(true); setError(null);
@@ -309,6 +343,17 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
             style={{ opacity: 0.7 }}
           />
         </div>
+
+        {row.warnings.length > 0 && (
+          <div className="form-section">
+            <label className="form-label">Warnings</label>
+            <div style={{ fontSize: '0.85rem', lineHeight: 1.5, color: 'var(--warning-color)' }}>
+              {row.warnings.map((warning) => (
+                <div key={warning}>{warning}</div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="form-section">
           <label className="form-label">API key</label>
@@ -396,7 +441,7 @@ const EditModal: React.FC<EditModalProps> = ({ row, onClose, onChanged, showErro
   );
 };
 
-const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQuery, showError, showSuccess }) => {
+const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQuery, showError, showSuccess, showWarning }) => {
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modal, setModal] = useState<
@@ -504,6 +549,14 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
                           <span className="backend-version">
                             {p.models_discovered} model{p.models_discovered === 1 ? '' : 's'}
                           </span>
+                          {p.warnings.length > 0 && (
+                            <>
+                              <span className="backend-meta-separator">•</span>
+                              <span className="backend-version" style={{ color: 'var(--warning-color)' }}>
+                                {p.warnings[0]}
+                              </span>
+                            </>
+                          )}
                           {p.base_url && (
                             <>
                               <span className="backend-meta-separator">•</span>
@@ -546,6 +599,7 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
                 onInstalled={() => { setModal(null); reloadAll(); }}
                 showError={showError}
                 showSuccess={showSuccess}
+                showWarning={showWarning}
               />
             ) : (
               <EditModal
@@ -554,6 +608,7 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
                 onChanged={() => { setModal(null); reloadAll(); }}
                 showError={showError}
                 showSuccess={showSuccess}
+                showWarning={showWarning}
               />
             )}
           </div>
