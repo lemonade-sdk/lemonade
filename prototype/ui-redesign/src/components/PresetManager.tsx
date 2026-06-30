@@ -665,7 +665,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         <div className="recipes__head">
           <div className="recipes__title">
             <h1>Presets</h1>
-            <span className="recipes__title-sub" data-recipes-count>Default · {STARTERS.length} starters · {userPresets.length} yours</span>
+            <span className="recipes__title-sub" data-recipes-count>{STARTERS.length + 1} starters · {userPresets.length} yours</span>
           </div>
           <div className="recipes__actions">
             <button className="btn btn--primary" onClick={handleNewPreset}>+ New Preset</button>
