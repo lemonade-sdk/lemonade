@@ -291,12 +291,26 @@ jobs:
           retention-days: 7
 
   build-lemonade-debian13:
-    name: Build Lemonade .deb Package (Debian 13)
-    runs-on: ubuntu-latest
+    name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     container:
       image: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            deb-arch: amd64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            deb-arch: arm64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     steps:
       - name: Enable Trixie backports
         run: |
@@ -340,13 +354,13 @@ jobs:
           set -e
           VERSION="${{ steps.get_version.outputs.version }}"
           OUTPUT_DIR="${{ steps.build_deb.outputs.output-dir }}"
-          SRC=$(ls "$OUTPUT_DIR"/lemonade-server_*_amd64.deb | head -n1)
+          SRC=$(ls "$OUTPUT_DIR"/lemonade-server_*_${{ matrix.deb-arch }}.deb | head -n1)
           if [ -z "$SRC" ]; then
             echo "ERROR: server .deb not found in $OUTPUT_DIR"
             ls -la "$OUTPUT_DIR"
             exit 1
           fi
-          DEST="$OUTPUT_DIR/lemonade-server_${VERSION}-debian13_amd64.deb"
+          DEST="$OUTPUT_DIR/lemonade-server_${VERSION}-debian13_${{ matrix.deb-arch }}.deb"
           mv "$SRC" "$DEST"
           echo "Renamed $SRC -> $DEST"
           echo "deb-path=$DEST" >> $GITHUB_OUTPUT
@@ -354,36 +368,50 @@ jobs:
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-${{ matrix.artifact-suffix }}
           path: ${{ steps.rename.outputs.deb-path }}
           retention-days: 7
 
   test-lemonade-debian13-smoke:
-    name: Smoke test .deb (Debian 13)
-    runs-on: ubuntu-latest
+    name: Smoke test .deb (Debian 13)${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-debian13
     container:
       image: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            deb-arch: amd64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            deb-arch: arm64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-debian13.outputs.version }}
     steps:
       - name: Download Lemonade .deb Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-${{ matrix.artifact-suffix }}
           path: .
 
       - name: Install and smoke test
         shell: bash
         run: |
           set -e
-          DEB_FILE=$(ls lemonade-server_*-debian13_amd64.deb 2>/dev/null | head -n1)
+          DEB_FILE=$(ls lemonade-server_*-debian13_${{ matrix.deb-arch }}.deb 2>/dev/null | head -n1)
           if [ -z "$DEB_FILE" ]; then
             echo "ERROR: .deb file not found"
             ls -la *.deb 2>/dev/null || echo "No .deb files found in current directory"
             exit 1
           fi
-          echo "Debian 13 version: $(cat /etc/os-release | grep PRETTY_NAME)"
+          echo "Debian 13 ${{ matrix.arch-name }} version: $(cat /etc/os-release | grep PRETTY_NAME)"
           echo "Testing artifact: $DEB_FILE"
 
           echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
@@ -419,8 +447,8 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
 
   build-lemonade-rpm:
-    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}
-    runs-on: ubuntu-latest
+    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
 
@@ -428,6 +456,18 @@ jobs:
       fail-fast: false
       matrix:
         fedora-version: ["43", "44"]
+        runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
+        include:
+          - runs-on: ubuntu-latest
+            arch-name: X86_64
+            rpm-arch: x86_64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - runs-on: ubuntu-24.04-arm
+            arch-name: ARM64
+            rpm-arch: aarch64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -455,7 +495,7 @@ jobs:
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
 
-          echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }}..."
+          echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})..."
           cmake --build --preset default
 
           cd build
@@ -463,8 +503,8 @@ jobs:
           echo "Creating .rpm package with CPack..."
           cpack -G RPM -V
 
-          CPACK_RPM="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
+          CPACK_RPM="lemonade-server-${LEMONADE_VERSION}.${{ matrix.rpm-arch }}.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm"
 
           if [ ! -f "$CPACK_RPM" ]; then
               echo "ERROR: .rpm package not created!"
@@ -481,8 +521,8 @@ jobs:
       - name: Upload .rpm package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
-          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.x86_64.rpm
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-${{ matrix.artifact-suffix }}
+          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm
           retention-days: 7
 
   build-lemonade-macos-dmg:
@@ -820,10 +860,24 @@ jobs:
           fi
 
   build-lemonade-embeddable-linux:
-    name: Build Embeddable Lemonade (Linux)
-    runs-on: ubuntu-latest
+    name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
+    runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            platform: ubuntu-x64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            platform: ubuntu-arm64
+            artifact-suffix: arm64
+            job-suffix: " ARM64"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -851,7 +905,7 @@ jobs:
           cmake --preset default -DBUILD_WEB_APP=OFF
           cmake --build --preset default --target embeddable
 
-          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}.tar.gz"
           test -f "$ARCHIVE"
           echo "Archive contents:"
           tar tzf "$ARCHIVE"
@@ -860,8 +914,8 @@ jobs:
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-embeddable-linux
-          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+          name: lemonade-embeddable-linux-${{ matrix.artifact-suffix }}
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-${{ matrix.platform }}.tar.gz
           retention-days: 7
 
   build-lemonade-linux-arm64:
@@ -1475,8 +1529,8 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-rpm-package:
-    name: Test .rpm - Fedora ${{ matrix.fedora-version }}
-    runs-on: ubuntu-latest
+    name: Test .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-rpm
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -1485,6 +1539,18 @@ jobs:
       fail-fast: false
       matrix:
         fedora-version: ["43", "44"]
+        runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
+        include:
+          - runs-on: ubuntu-latest
+            arch-name: X86_64
+            rpm-arch: x86_64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - runs-on: ubuntu-24.04-arm
+            arch-name: ARM64
+            rpm-arch: aarch64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
@@ -1492,7 +1558,7 @@ jobs:
       - name: Download Lemonade .rpm Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-${{ matrix.artifact-suffix }}
           path: .
 
       - name: Install and verify Lemonade (.rpm)
@@ -1500,7 +1566,7 @@ jobs:
         run: |
           set -e
 
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm"
 
           if [ ! -f "$RPM_FILE" ]; then
               echo "ERROR: .rpm file not found: $RPM_FILE"
@@ -1540,7 +1606,11 @@ jobs:
           - label: Linux
             os: ubuntu-latest
             platform: ubuntu-x64
-            artifact: lemonade-embeddable-linux
+            artifact: lemonade-embeddable-linux-x86_64
+          - label: Linux ARM64
+            os: ubuntu-24.04-arm
+            platform: ubuntu-arm64
+            artifact: lemonade-embeddable-linux-arm64
           - label: macOS
             os: macos-latest
             platform: macos-arm64
@@ -2503,17 +2573,30 @@ jobs:
           name: Lemonade_Server_MSI_Signed
           path: .
 
-      - name: Download Lemonade .rpm Packages
+      - name: Download Lemonade .rpm Packages (x86_64)
         uses: actions/download-artifact@v7
         with:
-          pattern: lemonade-rpm-fedora-*
+          pattern: lemonade-rpm-fedora-*-x86_64
           path: .
           merge-multiple: true
 
-      - name: Download Lemonade .deb (Debian 13)
+      - name: Download Lemonade .rpm Packages (ARM64)
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          pattern: lemonade-rpm-fedora-*-arm64
+          path: .
+          merge-multiple: true
+
+      - name: Download Lemonade .deb (Debian 13, X86_64)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13-x86_64
+          path: .
+
+      - name: Download Lemonade .deb (Debian 13, ARM64)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13-arm64
           path: .
 
       - name: Download Lemonade macOS .pkg Package
@@ -2522,10 +2605,16 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
-      - name: Download Lemonade Embeddable (Linux)
+      - name: Download Lemonade Embeddable (Linux, X86_64)
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-embeddable-linux
+          name: lemonade-embeddable-linux-x86_64
+          path: .
+
+      - name: Download Lemonade Embeddable (Linux, ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-linux-arm64
           path: .
 
       - name: Download Lemonade Embeddable (Windows)
@@ -2546,9 +2635,12 @@ jobs:
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
           ls -lh lemonade-server-*.x86_64.rpm
+          ls -lh lemonade-server-*.aarch64.rpm
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
+          ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
 
@@ -2569,9 +2661,12 @@ jobs:
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server-*.x86_64.rpm
+            lemonade-server-*.aarch64.rpm
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
+            lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
             *.pkg
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
           fail_on_unmatched_files: true
