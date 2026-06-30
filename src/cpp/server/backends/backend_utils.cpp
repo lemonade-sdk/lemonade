@@ -2,14 +2,7 @@
 #include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/backends/llamacpp_server.h"
-#include "lemon/backends/whisper_server.h"
-#include "lemon/backends/sd_server.h"
-#include "lemon/backends/kokoro_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/vllm_server.h"
-#include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/moonshine_server.h"
+#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
@@ -41,15 +34,8 @@ using json = nlohmann::json;
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
-        if (recipe == "whispercpp") return &WhisperServer::SPEC;
-        if (recipe == "sd-cpp") return &SDServer::SPEC;
-        if (recipe == "kokoro") return &KokoroServer::SPEC;
-        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
-        if (recipe == "vllm") return &VLLMServer::SPEC;
-        if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "moonshine") return &MoonshineServer::SPEC;
-        return nullptr;
+        // Each backend exposes its install/download spec through the registry.
+        return spec_for(recipe);
     }
 
     static std::string hash_string_from_json(const json& node) {
@@ -315,8 +301,8 @@ namespace lemon::backends {
                                               std::string& out_section,
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-stable" || backend == "rocm-nightly")) {
+        if ((recipe_has_rocm_channels(recipe) &&
+            (backend == "rocm-stable" || backend == "rocm-nightly"))) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -369,7 +355,7 @@ namespace lemon::backends {
 
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -409,7 +395,7 @@ namespace lemon::backends {
         // directory or ROCm backends remain stuck in update_required after a
         // successful install.
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -423,7 +409,7 @@ namespace lemon::backends {
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
             std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {
@@ -558,8 +544,6 @@ namespace lemon::backends {
             // Remove the downloaded archive on ANY exit from here on — success
             // OR exception, including a throw from commit_staged_install() below
             // (a swap/rename failure) — so the cache archive is never leaked.
-            // Mirrors StagingGuard above; replaces the per-throw fs::remove(zip_path)
-            // calls that did not cover the commit_staged_install throw path.
             struct ZipGuard {
                 const std::string& path;
                 ~ZipGuard() {
@@ -767,9 +751,7 @@ namespace lemon::backends {
                 LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
                 throw std::runtime_error("Extraction failed: executable not found");
             }
-            // Swap succeeded: staging was consumed by the rename, so disarm the
-            // guard (its cleanup would now be a no-op, but disarm to make intent
-            // explicit and skip a pointless filesystem call).
+            // Swap succeeded: staging was consumed by the rename, so disarm the guard.
             staging_guard.active = false;
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;

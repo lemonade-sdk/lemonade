@@ -1,14 +1,15 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/backends/cloud_server.h"
-#include "lemon/backends/llamacpp_server.h"
-#include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/whisper_server.h"
-#include "lemon/backends/moonshine_server.h"
-#include "lemon/backends/kokoro_server.h"
-#include "lemon/backends/sd_server.h"
-#include "lemon/backends/vllm_server.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
+#include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/backends/whispercpp/whispercpp_server.h"
+#include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/backends/kokoro/kokoro_server.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
@@ -152,12 +153,25 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
     }
 }
 
+// Slot/eviction policy for a recipe, from its descriptor (default Standard).
+// This is the recipe-static policy used for pre-load slot decisions.
+static SlotPolicy slot_policy_for_recipe(const std::string& recipe) {
+    if (const auto* desc = backends::descriptor_for(recipe)) {
+        return desc->slot_policy;
+    }
+    return SlotPolicy::Standard;
+}
+
+static bool is_unmetered_recipe(const std::string& recipe) {
+    return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
+}
+
 int Router::count_servers_by_type(ModelType type) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
-        // Cloud servers consume no local memory and stay loaded for free, so
-        // they are excluded from the slot accounting that drives LRU eviction.
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered backends (cloud) consume no local memory and stay loaded for
+        // free, so they are excluded from the slot accounting that drives LRU eviction.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type) {
@@ -171,10 +185,10 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
-        // Cloud servers are not eviction candidates; they have no memory cost
-        // and reloading them is essentially free, but evicting them throws
-        // away the cached api key/upstream-id binding for no benefit.
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered backends (cloud) are not eviction candidates; they have no
+        // memory cost and reloading them is essentially free, but evicting them
+        // throws away the cached api key/upstream-id binding for no benefit.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type) {
@@ -219,10 +233,11 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
-WrappedServer* Router::find_flm_server_by_type(ModelType type) const {
+WrappedServer* Router::find_coexisting_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
-            server->get_recipe_options().get_recipe() == "flm" &&
+            slot_policy_for_recipe(server->get_recipe_options().get_recipe()) ==
+                SlotPolicy::CoexistByType &&
             server->get_model_type() == type) {
             return server.get();
         }
@@ -308,49 +323,27 @@ void Router::simulate_vram_pressure(double pct) {
 }
 
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
-    std::unique_ptr<WrappedServer> new_server;
     std::string log_level = config_->log_level();
 
-    if (model_info.recipe == "cloud") {
-        LOG(DEBUG, "Router") << "Creating CloudServer backend (provider: "
-                             << model_info.cloud_provider << ")" << std::endl;
-        new_server = std::make_unique<backends::CloudServer>(model_info.cloud_provider, log_level,
-                                                              model_manager_, backend_manager_,
-                                                              cloud_registry_);
-    } else if (model_info.recipe == "whispercpp") {
-        LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
-        new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "moonshine") {
-        LOG(DEBUG, "Router") << "Creating MoonshineServer backend" << std::endl;
-        new_server = std::make_unique<backends::MoonshineServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "kokoro") {
-        LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
-        new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "sd-cpp") {
-        LOG(DEBUG, "Router") << "Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "flm") {
-        LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
-        new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "ryzenai-llm") {
-        LOG(DEBUG, "Router") << "Creating RyzenAI-Server backend" << std::endl;
+    backends::BackendContext ctx;
+    ctx.log_level = log_level;
+    ctx.model_manager = model_manager_;
+    ctx.backend_manager = backend_manager_;
+    ctx.cloud_registry = cloud_registry_;
+    ctx.model_info = &model_info;
 
-        std::string model_path = model_info.resolved_path();
-        LOG(DEBUG, "Router") << "Using model path: " << model_path << std::endl;
-
-        auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
-                                                  log_level == "debug", model_manager_, backend_manager_);
-        ryzenai_server->set_model_path(model_path);
-        new_server.reset(ryzenai_server);
-    } else if (model_info.recipe == "vllm") {
-        LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
-        new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);
-    } else {
-        LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+    // The backend registry binds each recipe to its create() (see LEMON_BACKENDS).
+    std::unique_ptr<WrappedServer> new_server = backends::create_server(model_info.recipe, ctx);
+    if (new_server) {
+        LOG(DEBUG, "Router") << "Created backend for recipe '" << model_info.recipe
+                             << "' via registry" << std::endl;
+        return new_server;
     }
 
-    return new_server;
+    // Unknown recipe: fall back to llamacpp, preserving the historical default.
+    LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
+                         << "', defaulting to LlamaCpp" << std::endl;
+    return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
 }
 
 void Router::load_model(const std::string& model_name,
@@ -436,52 +429,61 @@ void Router::load_model(const std::string& model_name,
         // Get max models for this type (same limit for all types)
         int max_models = config_->max_loaded_models();
 
-        // NPU EXCLUSIVITY CHECK (recipe-aware rules)
-        // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 transcription + 1 embedding)
-        // RyzenAI and WhisperCpp lock the entire NPU exclusively
-        if (device_type & DEVICE_NPU) {
-            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp") {
-                // Exclusive NPU recipes - evict ALL NPU servers
+        // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
+        //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
+        //                evicting ALL NPU servers first.
+        //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
+        //                but evict exclusive-NPU peers.
+        // Standard/Unmetered backends share no device exclusivity.
+        switch (slot_policy_for_recipe(model_info.recipe)) {
+            case SlotPolicy::ExclusiveNpu: {
                 if (has_npu_server()) {
                     LOG(INFO, "Router") << model_info.recipe
                               << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
                     evict_all_npu_servers();
                 }
-            } else if (model_info.recipe == "flm") {
-                // FLM can coexist with other FLM types, but not with exclusive-NPU recipes
-                // 1. Evict any exclusive-NPU server (mutually exclusive)
-                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp"}) {
-                    WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
-                    if (exclusive_server) {
-                        LOG(INFO, "Router") << "FLM cannot coexist with " << exclusive_recipe
-                                  << ", evicting: " << exclusive_server->get_model_name() << std::endl;
-                        evict_server(exclusive_server);
+                break;
+            }
+            case SlotPolicy::CoexistByType: {
+                // 1. Evict every NPU holder that is not itself a coexisting (FLM)
+                //    backend — i.e. exclusive-NPU peers like ryzenai-llm and
+                //    whisper-on-npu. Collect first; evict_server mutates loaded_servers_.
+                std::vector<WrappedServer*> exclusive_peers;
+                for (const auto& server : loaded_servers_) {
+                    if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
+                        slot_policy_for_recipe(server->get_recipe_options().get_recipe()) !=
+                            SlotPolicy::CoexistByType) {
+                        exclusive_peers.push_back(server.get());
                     }
                 }
+                for (auto* peer : exclusive_peers) {
+                    LOG(INFO, "Router") << "FLM cannot coexist with "
+                              << peer->get_recipe_options().get_recipe()
+                              << ", evicting: " << peer->get_model_name() << std::endl;
+                    evict_server(peer);
+                }
                 // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 transcription, 1 embed)
-                WrappedServer* same_type_flm = find_flm_server_by_type(model_type);
+                WrappedServer* same_type_flm = find_coexisting_server_by_type(model_type);
                 if (same_type_flm) {
                     LOG(INFO, "Router") << "FLM " << model_type_to_string(model_type)
                               << " slot occupied by: " << same_type_flm->get_model_name()
                               << ", evicting..." << std::endl;
                     evict_server(same_type_flm);
                 }
-            } else {
-                // Unknown NPU recipe - default to exclusive access
-                if (has_npu_server()) {
-                    LOG(INFO, "Router") << "Unknown NPU recipe, evicting all NPU servers..." << std::endl;
-                    evict_all_npu_servers();
-                }
+                break;
             }
+            case SlotPolicy::Standard:
+            case SlotPolicy::Unmetered:
+                break;
         }
 
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
-        // Skip eviction if unlimited (-1). Cloud-recipe loads also skip the
+        // Skip eviction if unlimited (-1). Unmetered (cloud) loads also skip the
         // check entirely: they consume no local resources, so they have no
         // business kicking a warm local model out of memory.
-        bool is_cloud_load = (model_info.recipe == "cloud");
+        bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
         int current_count = count_servers_by_type(model_type);
-        if (!is_cloud_load && max_models != -1 && current_count >= max_models) {
+        if (!is_unmetered_load && max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
             if (lru) {
                 LOG(INFO, "Router") << "Slot limit reached for type "
@@ -2006,7 +2008,8 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
 int Router::count_pinned_servers_by_type(ModelType type) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered servers (cloud) never occupy a slot, so they don't count.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type && server->is_pinned()) {
