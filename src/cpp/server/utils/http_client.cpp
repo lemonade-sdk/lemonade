@@ -257,7 +257,7 @@ struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
     bool stalled = false;
-    bool download_phase_started = false;
+    bool waiting_for_first_byte = false;
     long current_response_code = 0;
     int no_progress_timeout = 0;
     curl_off_t last_downloaded = 0;
@@ -289,8 +289,9 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
     std::string line(buffer, total);
 
     if (line.rfind("HTTP/", 0) == 0) {
-        data->download_phase_started = false;
+        data->waiting_for_first_byte = false;
         data->current_response_code = 0;
+        data->last_progress_time = std::chrono::steady_clock::now();
 
         std::istringstream iss(line);
         std::string http_version;
@@ -308,7 +309,7 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
             data->current_response_code != 304;
 
         if (response_can_have_body) {
-            data->download_phase_started = true;
+            data->waiting_for_first_byte = true;
             data->last_progress_time = std::chrono::steady_clock::now();
         }
     }
@@ -336,26 +337,21 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 
     const auto now = std::chrono::steady_clock::now();
     if (dlnow > data->last_downloaded) {
-        data->download_phase_started = true;
+        data->waiting_for_first_byte = false;
         data->last_downloaded = dlnow;
         data->last_progress_time = now;
-    } else {
-        const bool transfer_has_started =
-            data->download_phase_started || dltotal > 0 || data->last_downloaded > 0;
+    } else if (data->no_progress_timeout > 0) {
+        const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            now - data->last_progress_time).count();
 
-        if (!transfer_has_started) {
-            // Do not count DNS/connect/redirect time as download idleness.
-            data->last_progress_time = now;
-            return 0;
-        }
+        const long stall_timeout =
+            data->waiting_for_first_byte
+                ? static_cast<long>(data->no_progress_timeout) * 5L
+                : static_cast<long>(data->no_progress_timeout);
 
-        if (data->no_progress_timeout > 0) {
-            const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
-                now - data->last_progress_time).count();
-            if (idle_seconds >= data->no_progress_timeout) {
-                data->stalled = true;
-                return 1;
-            }
+        if (idle_seconds >= stall_timeout) {
+            data->stalled = true;
+            return 1;
         }
     }
 
@@ -424,15 +420,28 @@ HttpResponse HttpClient::post(const std::string& url,
     std::string response_body;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
      // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -560,15 +569,28 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     callback_data.buffer = nullptr;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
