@@ -23,9 +23,10 @@ Use Embeddable Lemonade instead of a global Lemonade Service when you want a coh
 
 Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
 
-- Windows: `lemonade-embeddable-10.1.0-windows-x64.zip`
-- Ubuntu: `lemonade-embeddable-10.1.0-ubuntu-x64.tar.gz`
-- macOS: `lemonade-embeddable-10.1.0-macos-arm64.tar.gz`
+- Windows x64: `lemonade-embeddable-{VERSION}-windows-x64.zip`
+- Linux x86_64: `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz`
+- Linux ARM64: `lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz`
+- macOS ARM64: `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`
 
 > Note: see the [Building from Source](./building.md) for instructions for building your own embeddable Lemonade from source, including for other Linux distros.
 
