@@ -173,7 +173,7 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "regex": {
-          "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex), case-sensitive. A different regex engine ships as a separately named op, never a redefinition of this one. Must be non-empty (an empty pattern matches everything; express an always-match rule by omitting the condition). Patterns prone to catastrophic backtracking (a nested unbounded quantifier such as (X+)+) are rejected at policy load to prevent denial-of-service on untrusted input.",
+          "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex), case-sensitive. A different regex engine ships as a separately named op, never a redefinition of this one. Must be non-empty (an empty pattern matches everything; express an always-match rule by omitting the condition). Patterns with a nested unbounded quantifier (such as (X+)+) — the most common catastrophic-backtracking shape — are rejected at policy load as a safeguard on untrusted input; this mitigates but does not eliminate all backtracking risk, and a 1 MiB input cap bounds the worst case at evaluation time.",
           "type": "string",
           "minLength": 1
         },
@@ -200,7 +200,8 @@
       "properties": {
         "key": {
           "description": "The metadata key to read. A missing, empty, or whitespace-only value matches only `exists: false`.",
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "equals": {
           "description": "True if the raw metadata value equals this string exactly (case-sensitive).",
@@ -209,7 +210,8 @@
         "any": {
           "description": "True if the value's comma-decoded token set intersects this list (handles both scalar and comma-encoded list-valued metadata).",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "exists": {
           "description": "exists:true matches when the key is present and non-empty; exists:false matches when it is absent or empty.",

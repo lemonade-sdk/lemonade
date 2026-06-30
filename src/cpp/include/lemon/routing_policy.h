@@ -281,6 +281,10 @@ struct EvalContext {
     // Per-condition trace; appended only when want_trace, surfaced verbatim as
     // Decision::trace.
     std::vector<TraceEntry> trace;
+
+    // ASCII-lowered copy of request.input, memoized so keyword leaves fold the
+    // input at most once per request (the input is constant within a request).
+    std::optional<std::string> lowered_input;
 };
 
 // A node in a rule's compiled match tree. Both composites (all/any/not) and

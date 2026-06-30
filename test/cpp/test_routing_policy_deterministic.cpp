@@ -112,6 +112,15 @@ void test_regex() {
     check("regex digit class", eval_leaf("regex", "\\d{3,}", digits));
 }
 
+void test_regex_input_cap() {
+    // A matching pattern on an oversized input is treated as a non-match (fail-safe
+    // against a hung worker), while just under the cap still matches.
+    RouteContext under = make_request("x" + std::string((1u << 20) - 1, 'a'));  // 1 MiB total
+    check("regex matches at/under 1 MiB cap", eval_leaf("regex", "x", under));
+    RouteContext over = make_request("x" + std::string(1u << 20, 'a'));  // 1 MiB + 1
+    check("regex over 1 MiB cap => non-match", !eval_leaf("regex", "x", over));
+}
+
 void test_chars() {
     RouteContext req = make_request("12345");  // 5 bytes
     check("min_chars inclusive lower boundary", eval_leaf("min_chars", 5, req));
@@ -215,6 +224,10 @@ void test_rejections() {
                          json{{"key", "k"}, {"equals", "a"}, {"exists", true}}));
     check("metadata empty any rejected",
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array()}}));
+    check("metadata empty key rejected",
+          throws_invalid("metadata", json{{"key", ""}, {"exists", true}}));
+    check("metadata empty any item rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"any", json::array({""})}}));
 }
 
 void test_regex_redos_rejected() {
@@ -225,6 +238,9 @@ void test_regex_redos_rejected() {
     check("regex (\\d+){2,} rejected", throws_invalid("regex", "(\\d+){2,}"));
     check("regex ((a+)+)+ rejected", throws_invalid("regex", "((a+)+)+"));
     check("regex empty pattern rejected", throws_invalid("regex", ""));
+    // Wrapper group must not hide the nested unbounded quantifier.
+    check("regex ((a+))+ rejected", throws_invalid("regex", "((a+))+"));
+    check("regex (a(b+))+ rejected", throws_invalid("regex", "(a(b+))+"));
 
     // Safe patterns still accepted (no nested unbounded quantifier).
     auto accepts = [](const json& v) {
@@ -286,6 +302,7 @@ int main() {
     test_keywords_all();
     test_case_insensitive();
     test_regex();
+    test_regex_input_cap();
     test_chars();
     test_chars_utf8_bytes();
     test_has_features();

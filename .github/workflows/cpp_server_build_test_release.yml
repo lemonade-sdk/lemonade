@@ -280,6 +280,7 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
           cd build
           ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic)Test"
 
@@ -544,6 +545,7 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
           cd build
           ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic)Test"
 

@@ -546,7 +546,12 @@ public:
     }
 
     bool evaluate(EvalContext& ctx) const override {
-        const std::string haystack = ascii_lower(ctx.request.input);
+        // Fold the input at most once per request — it is constant within a
+        // request and several keyword leaves may share it.
+        if (!ctx.lowered_input.has_value()) {
+            ctx.lowered_input = ascii_lower(ctx.request.input);
+        }
+        const std::string& haystack = *ctx.lowered_input;
         bool result = require_all_;
         for (const auto& needle : keywords_lower_) {
             const bool present = haystack.find(needle) != std::string::npos;
@@ -575,6 +580,16 @@ public:
         : regex_(pattern, std::regex::ECMAScript) {}
 
     bool evaluate(EvalContext& ctx) const override {
+        // Even a well-formed pattern can take pathologically long on a very large
+        // input. The load-time reject_catastrophic_regex check cannot bound that,
+        // so cap the input fed to the engine: an input above the cap is treated as
+        // a non-match (fail-safe) rather than risking a hung worker thread.
+        constexpr std::size_t kRegexMaxInputBytes = 1u << 20;  // 1 MiB
+        if (ctx.request.input.size() > kRegexMaxInputBytes) {
+            trace_leaf(ctx, "regex", false);
+            return false;
+        }
+
         bool result = false;
         try {
             result = std::regex_search(ctx.request.input, regex_);
@@ -638,6 +653,12 @@ void reject_catastrophic_regex(const std::string& pattern) {
         if (c == ')') {
             closed_group_unbounded = !stack.empty() && stack.back().has_unbounded;
             if (!stack.empty()) stack.pop_back();
+            // A wrapper group must not hide its child's unbounded quantifier: an
+            // unbounded inner group makes the enclosing group unbounded too, so a
+            // later quantifier on the wrapper (e.g. ((a+))+) is still caught.
+            if (closed_group_unbounded && !stack.empty()) {
+                stack.back().has_unbounded = true;
+            }
             prev_closed_group = true;
             continue;
         }
