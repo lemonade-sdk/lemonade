@@ -7,6 +7,9 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -404,15 +407,8 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
 // Recipe/Backend definition table - single source of truth for support matrix
 // ============================================================================
 
-// Device constraints: device_type -> set of allowed families (empty = all families)
-using DeviceConstraints = std::map<std::string, std::set<std::string>>;
-
-struct RecipeBackendDef {
-    std::string recipe;
-    std::string backend;
-    std::set<std::string> supported_os;
-    DeviceConstraints devices;
-};
+// RecipeBackendDef and DeviceConstraints are declared in lemon/recipe_backend_def.h
+// so backend descriptors can carry their own support rows.
 
 // Recipe definitions table - single source of truth for all recipe/backend support
 // Format: {recipe, backend, {supported_os}, {{device_type, {allowed_families}}}}
@@ -422,115 +418,21 @@ struct RecipeBackendDef {
 // Example: metal is listed before vulkan on macOS, vulkan before cpu elsewhere.
 //
 // Empty family set {} means "all families of that device type"
-static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference)
-    {"llamacpp", "system", {"linux"}, {
-        {"cpu", {"x86_64", "arm64"}}, // Placeholder, actual check is PATH-based
-    }},
-    {"llamacpp", "metal", {"macos"},
-    {
-        {"metal", {}},
-    }},
-    {"llamacpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
-    }},
-    {"llamacpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-        {"amd_gpu", {}},      // all AMD GPU families
-    }},
-    {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
-    }},
-    {"llamacpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-    }},
-
-    // whisper.cpp - NPU, ROCm GPU, Vulkan, CPU, Metal
-    {"whispercpp", "npu", {"windows"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-    {"whispercpp", "rocm", {"windows", "linux"}, {
-        // gfx103X omitted: lemonade-sdk/whisper.cpp-rocm publishes no gfx103X
-        // ROCm whisper build, so advertising it would yield a 404 on install.
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
-    }},
-    {"whispercpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-        {"amd_gpu", {}},
-    }},
-    {"whispercpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"whispercpp", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
-    {"kokoro", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"kokoro", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // stable-diffusion.cpp - ROCm backend for AMD GPUs
-    {"sd-cpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {
-            "gfx1150", "gfx1151", "gfx1152",
-            "gfx103X", "gfx110X", "gfx120X"
-        }},
-    }},
-
-    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Linux)
-    {"sd-cpp", "cuda", {"linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
-    }},
-
-    // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
-    {"sd-cpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-        {"amd_gpu", {}},
-        {"nvidia_gpu", {}},
-    }},
-
-    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
-    {"sd-cpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
-    }},
-
-    // stable-diffusion.cpp - Metal backend (macOS arm64)
-    {"sd-cpp", "metal", {"macos"}, {
-        {"metal", {}},
-    }},
-
-    // FLM - NPU (XDNA2)
-    {"flm", "npu", {"windows", "linux"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-
-    // RyzenAI LLM - Windows NPU (XDNA2)
-    {"ryzenai-llm", "npu", {"windows"}, {
-        {"amd_npu", {"XDNA2"}},
-    }},
-
-    // vLLM - ROCm backend for AMD GPUs (Linux only)
-    {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
-    }},
-
-    // Moonshine - CPU-only streaming STT. Platforms match the published
-    // moonshine-server-rocm bundles (moonshine-voice wheels): Windows x64,
-    // Linux x64/arm64, macOS arm64. No Intel macOS or Windows-arm64 wheel.
-    {"moonshine", "cpu", {"windows"}, {
-        {"cpu", {"x86_64"}},
-    }},
-    {"moonshine", "cpu", {"linux"}, {
-        {"cpu", {"x86_64", "arm64"}},
-    }},
-    {"moonshine", "cpu", {"macos"}, {
-        {"cpu", {"arm64"}},
-    }},
-};
+// The recipe/backend support matrix is assembled from every backend descriptor's
+// `support` rows. Concatenated in registry order; within a recipe, row order is
+// the backend preference order.
+static const std::vector<RecipeBackendDef>& recipe_defs() {
+    static const std::vector<RecipeBackendDef> defs = [] {
+        std::vector<RecipeBackendDef> v;
+        for (const auto* desc : lemon::backends::all_descriptors()) {
+            for (const auto& row : desc->support) {
+                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices, row.device_summary});
+            }
+        }
+        return v;
+    }();
+    return defs;
+}
 
 // ============================================================================
 // Device family to human-readable name mapping
@@ -592,7 +494,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
     std::string error;
 
     // Find the recipe/backend in RECIPE_DEFS
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         if (def.recipe == recipe && def.backend == backend) {
             // Collect all required family names
             std::vector<std::string> family_names;
@@ -674,76 +576,49 @@ static bool device_matches_constraint(const std::string& device_family,
 
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
-    bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
-
-    // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    bool is_vllm_rocm_backend = recipe == "vllm" && backend == "rocm";
-    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend) {
-        if (needs_gfx1151_cwsr_fix()) {
-            error_message = "Linux kernel missing support";
-            return false;
-        }
+    // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
+    // CWSR fix is missing (a per-descriptor flag).
+    const auto* cwsr_desc = backends::descriptor_for(recipe);
+    if (backend == "rocm" && cwsr_desc && cwsr_desc->rocm_requires_cwsr_fix &&
+        needs_gfx1151_cwsr_fix()) {
+        error_message = "Linux kernel missing support";
+        return false;
     }
-    auto* spec = try_get_spec_for_recipe(recipe);
-    if (spec) {
+    // Find the managed binary, then let the backend's ops decide installed-ness
+    // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
+    bool binary_found = false;
+    if (auto* spec = try_get_spec_for_recipe(recipe)) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
-
-            // For system llamacpp backend, also verify the HIP plugin is available
-            // This is required for ROCm GPU acceleration with dynamically loaded backends
-            if (recipe == "llamacpp" && backend == "system") {
-#ifdef __linux__
-                // Check if AMD GPU driver is loaded (KFD indicates amdgpu driver)
-                if (fs::exists("/sys/class/kfd")) {
-                    // System has AMD GPU(s), so we need the HIP plugin
-                    if (!is_ggml_hip_plugin_available()) {
-                        error_message = "HIP plugin libggml-hip.so not installed";
-                        return false;
-                    }
-                }
-#endif
-            }
-
-            return true;
+            binary_found = true;
         } catch (...) {
-#ifndef _WIN32
-            // On Linux, FLM is installed as a system package (in PATH, not install dir)
-            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
-                return true;
-            }
-#endif
-            return false;
+            binary_found = false;
         }
     }
-    return false;
+    auto check = backends::ops_for(recipe)->check_install(backend, binary_found);
+    if (!check.installed && !check.error.empty()) {
+        error_message = check.error;
+    }
+    return check.installed;
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
-    if (recipe == "llamacpp" && backend == "system") {
-        return SystemInfo::get_system_llamacpp_version();
-    }
+    // Read the on-disk version.txt generically, then let the backend's ops
+    // override (llamacpp "system" runs llama-server --version; flm queries the
+    // CLI when no file is present).
     auto* spec = try_get_spec_for_recipe(recipe);
+    std::string file_version;
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
-        if (version_file.empty()) {
-#ifndef _WIN32
-            // On Linux, FLM is a system package with no version.txt - query directly
-            if (recipe == "flm") {
-                return SystemInfo::get_flm_version();
-            }
-#endif
-            return "unknown";
+        if (!version_file.empty()) {
+            file_version = read_version_file(version_file);
         }
-        std::string version = read_version_file(version_file);
-#ifndef _WIN32
-        // On Linux, version.txt may not exist on disk for system-installed FLM
-        if (recipe == "flm" && (version.empty() || version == "unknown")) {
-            return SystemInfo::get_flm_version();
-        }
-#endif
-        return version;
     }
-    return "";
+    std::string resolved = backends::ops_for(recipe)->resolve_version(backend, file_version);
+    if (!spec && resolved.empty()) {
+        return "";
+    }
+    return resolved.empty() ? "unknown" : resolved;
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
@@ -828,7 +703,7 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     // version pins ("rocm-stable", "rocm-nightly") in backend_versions.json.
     // Mirror the resolution done by BackendUtils::get_backend_version().
     std::string resolved_backend = backend;
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         std::string channel = "stable";
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel_for_recipe(recipe);
@@ -1215,12 +1090,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
     std::map<std::string, std::string> configured_default_backends;
     if (auto* cfg = RuntimeConfig::global()) {
         std::set<std::string> processed_recipes;
-        for (const auto& def : RECIPE_DEFS) {
+        for (const auto& def : recipe_defs()) {
             if (!processed_recipes.insert(def.recipe).second) continue;
             std::string section = RuntimeConfig::recipe_to_config_section(def.recipe);
             std::string backend = cfg->backend_string(section, "backend");
             if (backend.empty() || backend == "auto") continue;
-            bool known = std::any_of(RECIPE_DEFS.begin(), RECIPE_DEFS.end(),
+            bool known = std::any_of(recipe_defs().begin(), recipe_defs().end(),
                 [&](const RecipeBackendDef& d) {
                     return d.recipe == def.recipe && d.backend == backend;
                 });
@@ -1280,7 +1155,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Build recipes from the definition table
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         // Skip if not supported on current OS
         if (def.supported_os.count(current_os) == 0) {
             // Helper to format OS name nicely
@@ -1439,41 +1314,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            // FLM on Linux needs richer state to guide users through manual setup
-            // (installing .deb, xrt drivers, etc.)
-            if (def.recipe == "flm") {
-                bool is_not_installed = install_error.empty()
-                                     || install_error.find("not installed") != std::string::npos
-                                     || install_error.find("not found") != std::string::npos;
-                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
-
-                if (is_not_installed) {
-                    backend["state"] = "installable";
-                } else if (is_version_mismatch) {
-                    backend["state"] = "update_required";
-                } else {
-                    backend["state"] = "action_required";
-                }
-                backend["message"] = install_error;
-
-                if (!is_not_installed) {
+            // Backends with bespoke unavailable-state guidance (flm: a system .deb
+            // + drivers needing manual setup) classify themselves; everyone else
+            // uses the generic installable/no-fetch default below.
+            const std::string default_install_command = get_install_command(def.recipe, def.backend);
+            if (auto st = backends::ops_for(def.recipe)->classify_unavailable(
+                    def.backend, install_error, default_install_command)) {
+                backend["state"] = st->state;
+                backend["message"] = st->message;
+                backend["action"] = st->action;
+                if (st->attach_installed_version) {
                     std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
                         backend["version"] = installed_version;
                     }
                 }
-
-#ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
-#elif defined(_WIN32)
-                if (!is_not_installed && !is_version_mismatch) {
-                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
-                } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                }
-#else
-                backend["action"] = get_install_command(def.recipe, def.backend);
-#endif
             } else {
                 auto* cfg = RuntimeConfig::global();
                 bool no_fetch = cfg && cfg->no_fetch_executables();
@@ -1483,16 +1338,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     : "Backend is supported but not installed.";
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
-                bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
-                    (def.recipe == "llamacpp" && def.backend == "rocm") ||
-                    (def.recipe == "vllm" && def.backend == "rocm");
+                const auto* cwsr_desc = backends::descriptor_for(def.recipe);
+                bool is_rocm_backend = def.backend == "rocm" && cwsr_desc &&
+                                       cwsr_desc->rocm_requires_cwsr_fix;
 
-                // Special action for ROCm backends on llamacpp/sd-cpp/vllm if CWSR fix is missing
+                // Special action for ROCm backends that need the gfx1151 CWSR fix.
                 if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
+                    backend["action"] = default_install_command;
                 }
             }
         } else {
@@ -1537,9 +1392,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 return installed.compare(0, prefix.size(), prefix) == 0;
             };
 #if !defined(_WIN32)
-            // On non-Windows, FLM is a system-managed package; a version newer
-            // than the minimum required is acceptable.
-            if (def.recipe == "flm") {
+            // System-managed packages (e.g. flm on Linux) accept a version newer
+            // than the minimum required.
+            const auto* ver_desc = backends::descriptor_for(def.recipe);
+            if (ver_desc && ver_desc->version_policy == VersionPolicy::AtLeast) {
                 auto installed_ver = utils::Version::parse(installed_version);
                 auto expected_ver = utils::Version::parse(expected_version);
                 // If either version cannot be parsed, fall back to exact equality check
@@ -1611,6 +1467,57 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Enrich each recipe entry with descriptor metadata so clients (the desktop
+    // app, the docs generator) can render display names and per-recipe option
+    // schemas without hardcoding them.
+    int recipe_order = 0;
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        auto it = recipes.find(desc->recipe);
+        if (it == recipes.end()) {
+            ++recipe_order;
+            continue;  // recipe not surfaced on this system (e.g. cloud has no support rows)
+        }
+        json& entry = it.value();
+        entry["order"] = recipe_order++;  // descriptor registry order, for deterministic doc rendering
+        entry["display_name"] = desc->display_name;
+        entry["selectable_backend"] = desc->selectable_backend;
+        entry["uses_ctx_size"] = desc->uses_ctx_size;
+        entry["modality"] = desc->modality;
+        entry["experimental"] = desc->experimental;
+        entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
+        entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
+        // Machine-independent support matrix (OS + device families + friendly
+        // device summary per backend), straight from the descriptor.
+        json support = json::array();
+        for (const auto& row : desc->support) {
+            json devices = json::array();
+            for (const auto& [device, families] : row.devices) {
+                devices.push_back({{"device", device},
+                                   {"families", std::vector<std::string>(families.begin(), families.end())}});
+            }
+            support.push_back({
+                {"backend", row.backend},
+                {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
+                {"devices", devices},
+                {"device_summary", row.device_summary},
+            });
+        }
+        entry["support"] = support;
+        json options = json::array();
+        for (const auto& opt : desc->options) {
+            json o = {
+                {"name", opt.name},
+                {"cli_flag", opt.cli_flag},
+                {"default", opt.default_value},
+                {"type_name", opt.type_name},
+                {"help", opt.help},
+                {"group", opt.group},
+            };
+            options.push_back(o);
+        }
+        entry["options"] = options;
+    }
+
     return recipes;
 }
 
@@ -1643,7 +1550,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
     }
 
     // Collect remaining supported backends and capture first error (in preference order from RECIPE_DEFS)
-    for (const auto& def : RECIPE_DEFS) {
+    for (const auto& def : recipe_defs()) {
         if (def.recipe == recipe) {
             // Skip the default_backend since we already added it
             if (def.backend == default_backend) {
@@ -1672,11 +1579,11 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 }
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
-    // Cloud offload has no local hardware/OS requirements; availability is
-    // gated by the CloudProviderRegistry (config.json "cloud_providers") and
-    // a resolvable API key (env var or runtime auth), checked elsewhere in
-    // filter_models_by_backend / CloudServer::load.
-    if (recipe == "cloud") {
+    // A backend whose descriptor declares no support rows has no local
+    // hardware/OS gating (e.g. cloud offload): availability is determined at
+    // runtime (provider creds via the CloudProviderRegistry / API key).
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && desc->support.empty()) {
         return "";
     }
     auto result = get_supported_backends(recipe);
@@ -1697,7 +1604,7 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
 
         if (recipe_info.contains("backends") && recipe_info["backends"].is_object()) {
             // Iterate in preference order (from RECIPE_DEFS table)
-            for (const auto& def : RECIPE_DEFS) {
+            for (const auto& def : recipe_defs()) {
                 if (def.recipe != recipe_name) continue;
 
                 if (!recipe_info["backends"].contains(def.backend)) continue;
@@ -1733,43 +1640,6 @@ static std::string read_version_file(const fs::path& version_file) {
             }
         }
     }
-    return "unknown";
-}
-
-std::string SystemInfo::get_system_llamacpp_version() {
-    std::string output;
-    #ifdef _WIN32
-    std::string command = "llama-server --version 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    #else
-    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
-    if (!pipe) {
-        return "unknown";
-    }
-
-    char buffer[256];
-    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output = buffer;
-    }
-
-    pclose(pipe);
-    #endif
-
-    // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
-    if (!output.empty()) {
-        // Try to find a version number
-        std::regex version_regex(R"(version:\s*(\d+)|version\s+b?(\d+))");
-        std::smatch match;
-        if (std::regex_search(output, match, version_regex)) {
-            for (size_t i = 1; i < match.size(); ++i) {
-                if (match[i].matched) {
-                    return "b" + match[i].str();
-                }
-            }
-        }
-        return "detected";
-    }
-
     return "unknown";
 }
 
@@ -2324,74 +2194,6 @@ bool SystemInfo::get_has_igpu() {
     }
 
     return false;  // No iGPU detected
-}
-
-std::string SystemInfo::get_flm_version() {
-    // Cache real version strings to avoid spawning the subprocess twice per
-    // build_recipes_info() pass. "unknown" is NOT cached so that post-install
-    // verification in fastflowlm_server.cpp gets a fresh result after FLM is installed.
-    static std::string cached_version;
-    if (!cached_version.empty()) {
-        return cached_version;
-    }
-
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return "unknown";
-    }
-
-    std::string output;
-    #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    #else
-    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return "unknown";
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-    #endif
-
-    // Parse JSON output: { "version": "0.9.34" }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("version") && j["version"].is_string()) {
-            std::string version = j["version"].get<std::string>();
-            // If the version doesn't start with 'v', prepend it
-            // for backend_versions.json compatibility (e.g. "v0.9.34").
-            if (!version.empty() && version[0] != 'v') {
-                version = "v" + version;
-            }
-            cached_version = version;
-            return cached_version;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
-    }
-
-    // Legacy parsing from output like "FLM v0.9.4"
-    if (output.find("FLM v") != std::string::npos) {
-        size_t pos = output.find("FLM v");
-        // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
-        std::string version = output.substr(pos + 4);
-        // Trim whitespace and newlines
-        size_t end = version.find_first_of(" \t\n\r");
-        if (end != std::string::npos) {
-            version = version.substr(0, end);
-        }
-        cached_version = version;
-        return cached_version;
-    }
-
-    return "unknown";
 }
 
 // ============================================================================
@@ -3959,7 +3761,25 @@ static json s_cached_system_info;
 static bool s_hardware_computed = false;
 static bool s_recipes_computed = false;
 
+// True while THIS thread is inside build_recipes_info(). That computation can
+// call back into get_system_info_with_cache() on the same thread (e.g.
+// SystemInfo::get_rocm_arch() while resolving a backend's install params).
+// Because the outer call holds s_system_info_mutex, the nested call must not
+// try to re-lock it. thread_local (not a shared atomic) is deliberate: only the
+// recursing thread short-circuits — genuinely concurrent threads still block on
+// the mutex and receive fully-populated data, never a recipe-less snapshot.
+static thread_local bool s_building_recipes = false;
+
 json SystemInfoCache::get_system_info_with_cache() {
+    // Re-entrant call from within our own build_recipes_info(). The flag is set
+    // only after hardware detection, so s_cached_system_info already holds
+    // "devices" here, and the outer frame still owns the mutex — return that
+    // snapshot (all the nested caller needs) instead of self-deadlocking on a
+    // re-lock.
+    if (s_building_recipes) {
+        return s_cached_system_info;
+    }
+
     std::lock_guard<std::mutex> lock(s_system_info_mutex);
 
     // Return fully cached result if both hardware and recipes are computed
@@ -4009,6 +3829,14 @@ json SystemInfoCache::get_system_info_with_cache() {
 
     // Compute recipes if not cached (or invalidated)
     if (!s_recipes_computed) {
+        // Mark this thread as building recipes so any re-entrant call (via
+        // get_rocm_arch() etc.) short-circuits instead of re-locking. The guard
+        // clears on every exit path, including exceptions.
+        struct RecipeBuildGuard {
+            ~RecipeBuildGuard() { s_building_recipes = false; }
+        } recipe_build_guard;
+        s_building_recipes = true;
+
         try {
             auto sys_info = create_system_info();
             json devices = s_cached_system_info.contains("devices")

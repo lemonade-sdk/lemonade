@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <utility>
 #include <vector>
+#include "lemon/backends/backend_descriptor.h"
 
 namespace fs = std::filesystem;
 
@@ -41,6 +42,15 @@ namespace lemon::backends {
 
         std::string log_name() const { return recipe + " Server"; };
     };
+
+    // Build a backend's install/download spec from its descriptor's recipe/binary
+    // and the server class T's get_install_params. The construct-on-first-use
+    // static gives the registry a stable pointer.
+    template <typename T>
+    const BackendSpec* make_spec(const BackendDescriptor& d, bool split = false) {
+        static const BackendSpec kSpec(d.recipe, d.binary, T::get_install_params, split);
+        return &kSpec;
+    }
 
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.

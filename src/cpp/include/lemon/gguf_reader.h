@@ -219,7 +219,6 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
         uint32_t type = 0;
         if (!read_gguf_string(in, key) || !read_gguf_le(in, type)) return false;
 
-        // Read architecture
         if (key == "general.architecture" && type == 8) {
             if (!read_gguf_string(in, out.architecture)) return false;
             if (pending_context_length > 0) {

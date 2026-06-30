@@ -97,6 +97,10 @@ set(COMMON_SOURCES
     agent_config_file.cpp
     opencode_profile.cpp
     pi_profile.cpp
+    # Self-describing backend descriptors (plain data; CLI-safe). Lets the CLI
+    # read recipe options/flags from descriptors without linking server classes.
+    # The matching factories (create()) are server-only and NOT listed here.
+    ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
 )
 
 # Add platform-specific sources
