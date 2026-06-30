@@ -1,14 +1,9 @@
 // Unit tests for lemon::backends::BackendUtils::resolve_rocm_root().
 //
-// resolve_rocm_root() lets Lemonade reuse an externally-installed ROCm instead
-// of downloading its own TheRock runtime. It resolves the install root in
-// priority order: ROCM_PATH -> `rocm-sdk path --root` -> /opt/rocm, returning
-// the first directory that ships lib{,64}/libamdhip64.so.
-//
-// These tests drive the ROCM_PATH and fallback paths with temp dirs containing
-// a fake libamdhip64.so. They cannot deterministically exercise the rocm-sdk
-// or /opt/rocm branches (host-dependent), so they only assert invariants that
-// hold regardless of host state.
+// The rocm-sdk and /opt/rocm branches are host-dependent and can't be driven
+// deterministically, so these tests exercise the ROCM_PATH branch with a temp
+// dir containing a fake libamdhip64.so and otherwise assert only invariants
+// that hold regardless of host state.
 
 #include <cstdlib>
 #include <filesystem>
@@ -87,7 +82,6 @@ int main() {
     const fs::path invalid_root = tmp / "invalid";
     fs::create_directories(invalid_root / "lib");  // no libamdhip64.so
 
-    // Case 1: ROCM_PATH points at a valid root (lib/) -> resolves it, explicit.
     {
         bool explicit_source = false;
         set_rocm_path(valid_root.string());
@@ -98,7 +92,6 @@ int main() {
         check(explicit_source, "ROCM_PATH (lib/) is marked explicit");
     }
 
-    // Case 2: ROCM_PATH points at a valid root (lib64/) -> resolves it.
     {
         bool explicit_source = false;
         set_rocm_path(valid_root_lib64.string());
@@ -109,22 +102,20 @@ int main() {
         check(explicit_source, "ROCM_PATH (lib64/) is marked explicit");
     }
 
-    // Case 3: ROCM_PATH set but missing libamdhip64.so -> must NOT return that
-    // path; falls through to rocm-sdk / /opt/rocm (host-dependent, may be none).
+    // A ROCM_PATH missing libamdhip64.so must fall through, never resolve to
+    // itself, and never be reported as explicit.
     {
         bool explicit_source = false;
         set_rocm_path(invalid_root.string());
         auto root = BackendUtils::resolve_rocm_root(&explicit_source);
         check(!root.has_value() || !fs::equivalent(*root, invalid_root),
               "invalid ROCM_PATH does not resolve to itself");
-        // The invalid path itself must never be reported as an explicit match.
         if (!root.has_value()) {
             check(!explicit_source, "invalid ROCM_PATH does not mark explicit");
         }
     }
 
-    // Case 4: ROCM_PATH set to a non-existent path -> same fall-through, no
-    // throw from the non-throwing filesystem probes.
+    // A non-existent ROCM_PATH must fall through without the fs probes throwing.
     {
         bool explicit_source = false;
         set_rocm_path((tmp / "does-not-exist").string());
@@ -137,17 +128,14 @@ int main() {
         }
     }
 
-    // Case 5: nullptr out-param is accepted.
     {
         set_rocm_path(valid_root.string());
         auto root = BackendUtils::resolve_rocm_root(nullptr);
         check(root.has_value(), "nullptr resolved_explicitly is accepted");
     }
 
-    // Case 6: no ROCM_PATH and (assuming) no rocm-sdk/opt-rocm on this host ->
-    // resolver is well-behaved (returns a value only if the host genuinely has
-    // ROCm at /opt/rocm or via rocm-sdk). We only assert it does not throw and,
-    // if it resolves, the result is not explicit unless rocm-sdk supplied it.
+    // With no ROCM_PATH the result is host-dependent; only assert the no-ROCm
+    // host resolves to nullopt and clears the explicit flag.
     {
         clear_rocm_path();
         bool explicit_source = true;  // sentinel; must be overwritten to false

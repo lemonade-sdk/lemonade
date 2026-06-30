@@ -813,9 +813,8 @@ namespace lemon::backends {
         }
     }
     namespace {
-        // A directory qualifies as a ROCm root only if it ships the HIP runtime
-        // (lib{,64}/libamdhip64.so). Uses the non-throwing fs overloads so a
-        // bogus user-supplied path reports "not a root" instead of throwing.
+        // Non-throwing fs overloads so a bogus user-supplied path reports
+        // "not a root" instead of throwing.
         std::optional<fs::path> validate_rocm_root(const fs::path& root) {
             std::error_code ec;
             if (root.empty() || !fs::exists(root, ec)) {
@@ -829,8 +828,6 @@ namespace lemon::backends {
             return std::nullopt;
         }
 
-        // Query `rocm-sdk path --root` when rocm-sdk is on PATH. Returns the
-        // first non-empty line of output (the install root) or nullopt.
         std::optional<fs::path> query_rocm_sdk_root() {
             if (utils::find_executable_in_path("rocm-sdk").empty()) {
                 return std::nullopt;
@@ -867,7 +864,6 @@ namespace lemon::backends {
             *resolved_explicitly = false;
         }
 
-        // 1. ROCM_PATH env var (e.g. exported by an external ROCm installer).
         if (const char* env = std::getenv("ROCM_PATH"); env && *env != '\0') {
             if (auto root = validate_rocm_root(fs::path(env))) {
                 if (resolved_explicitly) {
@@ -881,7 +877,6 @@ namespace lemon::backends {
                       << " has no lib{,64}/libamdhip64.so; trying other sources" << std::endl;
         }
 
-        // 2. rocm-sdk on PATH.
         if (auto sdk_root = query_rocm_sdk_root()) {
             if (auto root = validate_rocm_root(*sdk_root)) {
                 if (resolved_explicitly) {
@@ -895,7 +890,6 @@ namespace lemon::backends {
                       << " but it has no lib{,64}/libamdhip64.so; trying /opt/rocm" << std::endl;
         }
 
-        // 3. /opt/rocm (historical default).
         if (auto root = validate_rocm_root("/opt/rocm")) {
             LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default /opt/rocm" << std::endl;
             return root;
