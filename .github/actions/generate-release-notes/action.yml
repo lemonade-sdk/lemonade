@@ -149,7 +149,7 @@ runs:
           echo ""
           echo "| Platform | Download |"
           echo "|----------|----------|"
-          echo "| **Ubuntu x64** | [lemonade-embeddable-${VERSION}-ubuntu-x64.tar.gz](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-ubuntu-x64.tar.gz) |"
+          echo "| **Ubuntu x86_64** | [lemonade-embeddable-${VERSION}-ubuntu-x86_64.tar.gz](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-ubuntu-x86_64.tar.gz) |"
           echo "| **Windows x64** | [lemonade-embeddable-${VERSION}-windows-x64.zip](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-windows-x64.zip) |"
           echo "| **macOS arm64** | [lemonade-embeddable-${VERSION}-macos-arm64.tar.gz](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-embeddable-${VERSION}-macos-arm64.tar.gz) |"
           echo ""

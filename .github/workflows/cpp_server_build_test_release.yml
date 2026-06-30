@@ -870,7 +870,7 @@ jobs:
         include:
           - arch-name: X86_64
             runs-on: ubuntu-latest
-            platform: ubuntu-x64
+            platform: ubuntu-x86_64
             artifact-suffix: x86_64
             job-suffix: ""
           - arch-name: ARM64
@@ -1605,7 +1605,7 @@ jobs:
         include:
           - label: Linux
             os: ubuntu-latest
-            platform: ubuntu-x64
+            platform: ubuntu-x86_64
             artifact: lemonade-embeddable-linux-x86_64
           - label: Linux ARM64
             os: ubuntu-24.04-arm
@@ -2639,7 +2639,7 @@ jobs:
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
-          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x86_64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
@@ -2665,7 +2665,7 @@ jobs:
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
             *.pkg
-            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x86_64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz

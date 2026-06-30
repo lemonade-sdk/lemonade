@@ -1741,7 +1741,7 @@ else()
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
         set(EMBEDDABLE_PLATFORM "ubuntu-arm64")
     else()
-        set(EMBEDDABLE_PLATFORM "ubuntu-x64")
+        set(EMBEDDABLE_PLATFORM "ubuntu-x86_64")
     endif()
 endif()
 
