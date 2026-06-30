@@ -498,6 +498,8 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 **`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
 
+For built-in models using `recipe: "vllm"`, also check [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json). Some vLLM families need family-level arguments such as tool-call parser settings; see the [vLLM model-family argument config](./vllm.md#model-family-argument-config) docs before adding or updating vLLM model entries.
+
 For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 
 ## See Also

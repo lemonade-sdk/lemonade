@@ -195,7 +195,7 @@ These MUST be maintained in all changes:
 2. **NPU exclusivity** — Exclusive-NPU recipes (`ryzenai-llm`, `whispercpp` on NPU) evict ALL other NPU models before loading. FastFlowLM (`flm`) can coexist with other FLM types (max 1 per FLM type) but not with exclusive-NPU recipes.
 3. **WrappedServer contract** — New backends MUST implement all core virtual methods: `load()`, `unload()`, `chat_completion()`, `completion()`, `responses()`.
 4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server). They must NOT run in-process.
-5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`.
+5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`. When adding or updating `vllm` models, also update `src/cpp/resources/vllm_model_config.json` if the model family needs vLLM-specific args such as tool-call parser settings.
 6. **Cross-platform** — Code must compile on Windows (MSVC), Linux (GCC/Clang), macOS (AppleClang). Platform-specific code must use `#ifdef` guards.
 7. **No hardcoded paths** — Use path utilities. Windows/Linux/macOS paths differ.
 8. **Thread safety** — Router serves concurrent HTTP requests. Shared state must be properly guarded.

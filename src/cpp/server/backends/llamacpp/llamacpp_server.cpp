@@ -608,25 +608,13 @@ bool LlamaCppServer::downsize() {
 }
 
 json LlamaCppServer::chat_completion(const json& request) {
-    // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
-    // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
-    // but llama.cpp only supports the older max_tokens parameter
-    json modified_request = request;
-    if (modified_request.contains("max_completion_tokens") && !modified_request.contains("max_tokens")) {
-        modified_request["max_tokens"] = modified_request["max_completion_tokens"];
-    }
-    return forward_request("/v1/chat/completions", modified_request);
+    return forward_request("/v1/chat/completions",
+                           JsonUtils::with_legacy_max_tokens_alias(request));
 }
 
 json LlamaCppServer::completion(const json& request) {
-    // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
-    // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
-    // but llama.cpp only supports the older max_tokens parameter
-    json modified_request = request;
-    if (modified_request.contains("max_completion_tokens") && !modified_request.contains("max_tokens")) {
-        modified_request["max_tokens"] = modified_request["max_completion_tokens"];
-    }
-    return forward_request("/v1/completions", modified_request);
+    return forward_request("/v1/completions",
+                           JsonUtils::with_legacy_max_tokens_alias(request));
 }
 
 json LlamaCppServer::embeddings(const json& request) {

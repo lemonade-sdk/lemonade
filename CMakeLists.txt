@@ -7,6 +7,8 @@ endif()
 
 project(lemon_cpp VERSION 10.8.1)
 
+include(CTest)
+
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -791,6 +793,16 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
+endif()
+
+set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
+if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
+    add_executable(test_vllm_arg_resolver
+        ${VLLM_ARG_RESOLVER_TEST_SOURCE}
+        src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
+    )
+    target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -1764,6 +1776,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -1933,6 +1948,28 @@ if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
+endif()
+
+# Routing semantic_similarity classifier (issue #2381): max-cosine scoring over
+# reference phrases, reference-phrase embedding caching, inclusive band
+# boundaries, and on_error handling, all against a fake embedder.
+set(_ROUTING_SEMANTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_semantic.cpp"
+)
+if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
+    add_executable(test_routing_policy_semantic
+        test/cpp/test_routing_policy_semantic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_semantic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_semantic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.

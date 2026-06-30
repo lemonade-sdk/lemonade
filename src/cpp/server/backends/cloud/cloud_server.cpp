@@ -6,6 +6,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -412,11 +413,7 @@ std::string CloudServer::insecure_http_sse() const {
 json CloudServer::rewrite_model_field(const json& request) const {
     json modified = request;
     modified["model"] = upstream_model_;
-    // Map OpenAI's max_completion_tokens to max_tokens for providers that
-    // haven't migrated yet (most accept both, but be safe).
-    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
-        modified["max_tokens"] = modified["max_completion_tokens"];
-    }
+    utils::JsonUtils::add_legacy_max_tokens_alias(modified);
     return modified;
 }
 
@@ -526,9 +523,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     try {
         json req = json::parse(request_body);
         req["model"] = upstream_model_;
-        if (req.contains("max_completion_tokens") && !req.contains("max_tokens")) {
-            req["max_tokens"] = req["max_completion_tokens"];
-        }
+        utils::JsonUtils::add_legacy_max_tokens_alias(req);
         forwarded_body = req.dump();
     } catch (const json::exception&) {
         // Best-effort: forward whatever we got.

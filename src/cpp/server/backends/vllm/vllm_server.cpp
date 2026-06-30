@@ -2,13 +2,16 @@
 #include "lemon/backends/vllm/vllm.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/vllm/vllm_arg_resolver.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -21,6 +24,8 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -36,6 +41,86 @@ static std::string parse_quant_method(const std::string& config_json) {
         // fall through
     }
     return "";
+}
+
+static void copy_if_present(json& target, const json& source, const char* key) {
+    if (source.contains(key)) {
+        target[key] = source[key];
+    }
+}
+
+static void merge_chat_template_kwarg(json& target, const json& source, const char* key) {
+    if (!source.contains(key)) {
+        return;
+    }
+    if (!target.contains("chat_template_kwargs")) {
+        target["chat_template_kwargs"] = json::object();
+    }
+    if (target["chat_template_kwargs"].is_object() &&
+        !target["chat_template_kwargs"].contains(key)) {
+        target["chat_template_kwargs"][key] = source[key];
+    }
+}
+
+static void add_reasoning_effort_template_kwargs(json& target, const json& source) {
+    merge_chat_template_kwarg(target, source, "reasoning_effort");
+    if (!source.contains("reasoning_effort") || !source["reasoning_effort"].is_string() ||
+        !target["chat_template_kwargs"].is_object() ||
+        target["chat_template_kwargs"].contains("enable_thinking")) {
+        return;
+    }
+    target["chat_template_kwargs"]["enable_thinking"] =
+        source["reasoning_effort"].get<std::string>() != "none";
+}
+
+static void backup_invalid_vllm_model_config(const std::string& config_path) {
+    fs::path backup_path = utils::path_from_utf8(config_path);
+    backup_path += ".corrupted";
+
+    std::error_code ec;
+    fs::rename(utils::path_from_utf8(config_path), backup_path, ec);
+    if (!ec) {
+        LOG(WARNING, "vLLM") << "Renamed invalid vLLM model config to "
+                             << utils::path_to_utf8(backup_path) << std::endl;
+    }
+}
+
+static json load_vllm_model_config(const std::string& config_path,
+                                   const std::string& model_name,
+                                   const std::string& model_id) {
+    const std::string fallback_message = "; continuing with user vllm_args only";
+    if (!fs::exists(utils::path_from_utf8(config_path))) {
+        LOG(WARNING, "vLLM") << "vLLM model config not found at "
+                             << config_path << fallback_message << std::endl;
+        return json::object();
+    }
+
+    json config;
+    try {
+        config = JsonUtils::load_from_file(config_path);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "vLLM") << "Ignoring unreadable vLLM model config at "
+                             << config_path << ": " << e.what()
+                             << fallback_message << std::endl;
+        backup_invalid_vllm_model_config(config_path);
+        return json::object();
+    }
+
+    try {
+        (void)resolve_vllm_args(model_name, model_id, config, "");
+    } catch (const std::exception& e) {
+        LOG(WARNING, "vLLM") << "Ignoring invalid vLLM model config at "
+                             << config_path << ": " << e.what()
+                             << fallback_message << std::endl;
+        backup_invalid_vllm_model_config(config_path);
+        return json::object();
+    }
+
+    return config;
+}
+
+json VLLMServer::prepare_openai_request(const json& request) {
+    return JsonUtils::with_legacy_max_tokens_alias(fit_openai_max_tokens_to_context(request));
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
@@ -226,6 +311,7 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
+    max_model_len_ = ctx_size;
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
@@ -238,6 +324,13 @@ void VLLMServer::load(const std::string& model_name,
     }
 
     LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
+
+    std::string vllm_model_config_path =
+        utils::get_resource_path("resources/vllm_model_config.json");
+    json vllm_model_config =
+        load_vllm_model_config(vllm_model_config_path, model_name, model_id);
+    VLLMArgResolution resolved_vllm_args =
+        resolve_vllm_args(model_name, model_id, vllm_model_config, vllm_args);
 
     port_ = choose_port();
 
@@ -268,9 +361,26 @@ void VLLMServer::load(const std::string& model_name,
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
     std::string quant_method = detect_quant_method(model_id);
     if (quant_method == "awq") {
-        LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
-        args.push_back("--quantization");
-        args.push_back("awq");
+        if (!resolved_vllm_args.has_quantization_arg) {
+            LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
+            args.push_back("--quantization");
+            args.push_back("awq");
+        } else {
+            LOG(DEBUG, "vLLM") << "Detected AWQ; using resolved --quantization "
+                               << resolved_vllm_args.quantization_arg << std::endl;
+        }
+        // vLLM's AWQ kernels only support float16. Many AWQ repos still declare
+        // bfloat16 in config.json, which makes vLLM abort with "torch.bfloat16 is
+        // not supported for quantization method awq". Force float16 so AWQ models
+        // load, unless the user already pinned a --dtype themselves.
+        bool effective_awq_quantization =
+            !resolved_vllm_args.has_quantization_arg ||
+            resolved_vllm_args.quantization_arg == "awq";
+        if (effective_awq_quantization && !resolved_vllm_args.has_dtype_arg) {
+            LOG(DEBUG, "vLLM") << "Forcing --dtype float16 for AWQ" << std::endl;
+            args.push_back("--dtype");
+            args.push_back("float16");
+        }
     } else if (!quant_method.empty()) {
         LOG(DEBUG, "vLLM") << "Detected quantization '" << quant_method
                            << "'; letting vLLM auto-select kernel" << std::endl;
@@ -280,19 +390,14 @@ void VLLMServer::load(const std::string& model_name,
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
     // Keep this overridable through vllm_args for users that want another limit.
-    if (vllm_args.find("--gpu-memory-utilization") == std::string::npos &&
-        vllm_args.find("--kv-cache-memory-bytes") == std::string::npos) {
+    if (!resolved_vllm_args.has_memory_budget_arg) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
     }
 
-    if (!vllm_args.empty()) {
-        LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;
-        std::istringstream iss(vllm_args);
-        std::string arg;
-        while (iss >> arg) {
-            args.push_back(arg);
-        }
+    if (!resolved_vllm_args.args.empty()) {
+        LOG(DEBUG, "vLLM") << "Adding model/user arguments from vLLM resolver" << std::endl;
+        args.insert(args.end(), resolved_vllm_args.args.begin(), resolved_vllm_args.args.end());
     }
 
     LOG(INFO, "vLLM") << "Starting vllm-server on port " << get_backend_port() << "..." << std::endl;
@@ -316,6 +421,7 @@ void VLLMServer::load(const std::string& model_name,
             ProcessManager::stop_process(handle);
         }
         cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
+        max_model_len_ = 0;
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
@@ -338,14 +444,15 @@ void VLLMServer::unload() {
         ProcessManager::stop_process(handle);
     }
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
+    max_model_len_ = 0;
 }
 
 json VLLMServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    return forward_request("/v1/chat/completions", prepare_openai_request(request));
 }
 
 json VLLMServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    return forward_request("/v1/completions", prepare_openai_request(request));
 }
 
 json VLLMServer::responses(const json& request) {
@@ -363,7 +470,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
         try {
-            json request = json::parse(request_body);
+            json request = prepare_openai_request(json::parse(request_body));
             json& stream_options = request["stream_options"];
             if (!stream_options.is_object()) {
                 stream_options = json::object();
@@ -413,6 +520,111 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
                                telemetry_error);
         }
     }
+}
+
+json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
+    if (max_model_len_ <= 0) {
+        return request;
+    }
+
+    bool has_max_completion_tokens = request.contains("max_completion_tokens") &&
+        (request["max_completion_tokens"].is_number_integer() ||
+         request["max_completion_tokens"].is_number_unsigned());
+    bool has_max_tokens = request.contains("max_tokens") &&
+        (request["max_tokens"].is_number_integer() ||
+         request["max_tokens"].is_number_unsigned());
+    if (!has_max_completion_tokens && !has_max_tokens) {
+        return request;
+    }
+
+    int64_t requested_max_tokens = has_max_completion_tokens
+        ? request["max_completion_tokens"].get<int64_t>()
+        : request["max_tokens"].get<int64_t>();
+    const int64_t preflight_threshold =
+        std::min<int64_t>(VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD, max_model_len_);
+    if (requested_max_tokens <= 0 ||
+        requested_max_tokens <= preflight_threshold) {
+        return request;
+    }
+
+    int64_t input_tokens = count_openai_prompt_tokens(request);
+    if (input_tokens <= 0) {
+        return request;
+    }
+
+    int64_t available_output_tokens = max_model_len_ - input_tokens;
+    if (available_output_tokens <= 0) {
+        return request;
+    }
+
+    if (requested_max_tokens <= available_output_tokens) {
+        return request;
+    }
+
+    json modified_request = request;
+    if (has_max_completion_tokens) {
+        modified_request["max_completion_tokens"] = available_output_tokens;
+    }
+    if (has_max_tokens) {
+        modified_request["max_tokens"] = available_output_tokens;
+    }
+    LOG(INFO, "vLLM") << "Reduced OpenAI max tokens from " << requested_max_tokens
+                      << " to " << available_output_tokens
+                      << " so input_tokens (" << input_tokens
+                      << ") fits max_model_len (" << max_model_len_ << ")" << std::endl;
+    return modified_request;
+}
+
+int64_t VLLMServer::count_openai_prompt_tokens(const json& request) {
+    json tokenize_request;
+    tokenize_request["model"] = model_name_;
+    if (request.contains("messages")) {
+        tokenize_request["messages"] = request["messages"];
+        copy_if_present(tokenize_request, request, "add_generation_prompt");
+        copy_if_present(tokenize_request, request, "continue_final_message");
+        copy_if_present(tokenize_request, request, "add_special_tokens");
+        copy_if_present(tokenize_request, request, "chat_template");
+        copy_if_present(tokenize_request, request, "chat_template_kwargs");
+        copy_if_present(tokenize_request, request, "media_io_kwargs");
+        copy_if_present(tokenize_request, request, "mm_processor_kwargs");
+        copy_if_present(tokenize_request, request, "tools");
+        merge_chat_template_kwarg(tokenize_request, request, "documents");
+        add_reasoning_effort_template_kwargs(tokenize_request, request);
+    } else if (request.contains("prompt")) {
+        tokenize_request["prompt"] = request["prompt"];
+        copy_if_present(tokenize_request, request, "add_special_tokens");
+    } else {
+        return 0;
+    }
+
+    // This is a synchronous backend round trip on the request path. It only
+    // runs for oversized max-token requests so vLLM receives a context-safe
+    // limit before generation or streaming begins.
+    auto response = forward_request("/tokenize", tokenize_request);
+    if (response.contains("error")) {
+        LOG(DEBUG, "vLLM") << "Skipping max token fit; /tokenize returned error: "
+                           << response.dump() << std::endl;
+        return 0;
+    }
+
+    if (response.contains("count") &&
+        (response["count"].is_number_integer() || response["count"].is_number_unsigned())) {
+        return response["count"].get<int64_t>();
+    }
+    if (response.contains("token_count") &&
+        (response["token_count"].is_number_integer() || response["token_count"].is_number_unsigned())) {
+        return response["token_count"].get<int64_t>();
+    }
+    if (response.contains("tokens") && response["tokens"].is_array()) {
+        return static_cast<int64_t>(response["tokens"].size());
+    }
+    if (response.contains("token_ids") && response["token_ids"].is_array()) {
+        return static_cast<int64_t>(response["token_ids"].size());
+    }
+
+    LOG(DEBUG, "vLLM") << "Skipping max token fit; unrecognized /tokenize response: "
+                       << response.dump() << std::endl;
+    return 0;
 }
 
 std::map<std::string, nlohmann::json> parse_vllm_metrics_text(const std::string& body) {
