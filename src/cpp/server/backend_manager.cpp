@@ -149,6 +149,10 @@ void report_backend_ready(const std::string& recipe,
     progress_cb(p);
 }
 
+bool github_download_service_reachable() {
+    return utils::HttpClient::is_reachable("https://github.com/", 2);
+}
+
 bool has_matching_system_rocm_runtime(const std::string& expected_runtime_version) {
     const fs::path version_file = "/opt/rocm/.info/version";
     const std::string system_version = read_version_file(version_file);
@@ -497,28 +501,39 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
-    if (!force && !existing_backend_binary.empty()) {
-        // Non-forced calls are used by model load / ensure flows. They must be
-        // cache-first: a model that worked yesterday must still load today when
-        // GitHub is unreachable or a newer backend tag exists. Explicit backend
-        // update/install actions pass force=true and take the normal download path.
-        LOG(INFO, "BackendManager")
-            << "Using installed " << recipe << ":" << resolved_backend
-            << " backend at " << existing_backend_binary
-            << "; skipping update check during ensure" << std::endl;
-        report_backend_ready(recipe, resolved_backend, progress_cb);
-        return;
-    }
+    const bool has_existing_backend = !existing_backend_binary.empty();
 
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
         const bool no_fetch = cfg->no_fetch_executables();
         if (offline || no_fetch) {
+            if (!force && has_existing_backend) {
+                LOG(WARNING, "BackendManager")
+                    << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
+                    << "; using installed " << recipe << ":" << resolved_backend
+                    << " backend at " << existing_backend_binary << std::endl;
+                report_backend_ready(recipe, resolved_backend, progress_cb);
+                return;
+            }
+
             throw std::runtime_error(
                 (offline ? "Cannot install " : "Fetching executable artifacts is disabled for ") +
                 recipe + ":" + resolved_backend +
                 (offline ? ": offline mode" : ""));
         }
+    }
+
+    if (!force && has_existing_backend && !github_download_service_reachable()) {
+        // enter install_from_github() when GitHub is reachable, so available
+        // backend updates are applied before the model starts. Only skip the
+        // update path when the machine is effectively offline and a usable
+        // backend binary is already present.
+        LOG(WARNING, "BackendManager")
+            << "GitHub is not reachable; using installed " << recipe << ":"
+            << resolved_backend << " backend at " << existing_backend_binary
+            << " and deferring update" << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
     }
 
     auto params = get_install_params(recipe, resolved_backend);
