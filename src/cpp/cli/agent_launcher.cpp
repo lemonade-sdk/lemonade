@@ -137,10 +137,13 @@ void configure_codex_agent(const std::string& base_url,
                            AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
-    config.binary_name = "codex";
 #ifdef _WIN32
-    config.binary_alternatives = {"codex.cmd", "codex.exe"};
+    // npm puts a Unix shell script named just "codex" next to codex.cmd.
+    // Windows cannot run the shell script, so look for .cmd/.exe first.
+    config.binary_name = "codex.cmd";
+    config.binary_alternatives = {"codex.exe", "codex"};
 #else
+    config.binary_name = "codex";
     config.binary_alternatives = {};
 #endif
     config.fallback_paths = {
@@ -220,10 +223,13 @@ void configure_pi_agent(const std::string& model,
                         AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
-    config.binary_name = "pi";
 #ifdef _WIN32
-    config.binary_alternatives = {"pi.cmd", "pi.exe"};
+    // npm puts a Unix shell script named just "pi" next to pi.cmd.
+    // Windows cannot run the shell script, so look for .cmd/.exe first.
+    config.binary_name = "pi.cmd";
+    config.binary_alternatives = {"pi.exe", "pi"};
 #else
+    config.binary_name = "pi";
     config.binary_alternatives = {};
 #endif
     config.fallback_paths = {
