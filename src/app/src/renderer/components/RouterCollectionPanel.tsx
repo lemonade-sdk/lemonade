@@ -10,6 +10,7 @@ import {
   getRouterCandidateOptions,
   routingToRouterCollectionDraft,
 } from '../utils/customCollections';
+import { isCollectionRecipe } from '../utils/recipeNames';
 
 interface RouterCollectionPanelProps {
   mode: 'create' | 'edit';
@@ -52,6 +53,17 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   const clfSeqRef = useRef(0);
 
   const candidateOptions = useMemo(() => getRouterCandidateOptions(modelsData), [modelsData]);
+
+  // Embedding models: any non-collection model with the 'embeddings' label.
+  const embeddingOptions = useMemo(() =>
+    Object.entries(modelsData)
+      .filter(([, info]) => (info?.labels ?? []).includes('embeddings') && !isCollectionRecipe(info?.recipe))
+      .map(([id, info]) => ({ id, info }))
+      .sort((a, b) => {
+        const dl = Number(b.info.downloaded === true) - Number(a.info.downloaded === true);
+        return dl !== 0 ? dl : (a.info.model_name ?? a.id).localeCompare(b.info.model_name ?? b.id);
+      }),
+  [modelsData]);
 
   useEffect(() => {
     setError(null);
@@ -153,7 +165,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       ...prev,
       rules: [
         ...(prev.rules ?? []),
-        { id: nextRuleId(), routeTo: prev.candidates[0] ?? '', matchKeywordsAny: [] },
+        { id: nextRuleId(), routeTo: prev.candidates[0] ?? '' },
       ],
     }));
   };
@@ -191,8 +203,14 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           }
         }
         if (c.type === 'semantic_similarity') {
-          if (!(c.referencePhrases ?? []).filter(Boolean).length) {
-            setError(`Classifier "${c.id}": add at least one reference phrase.`); return null;
+          const concepts = Object.keys(c.referencePhrases ?? {});
+          if (concepts.length === 0) {
+            setError(`Classifier "${c.id}": add at least one concept.`); return null;
+          }
+          for (const k of concepts) {
+            if (!(c.referencePhrases![k]?.length)) {
+              setError(`Classifier "${c.id}" concept "${k}": add at least one phrase.`); return null;
+            }
           }
         }
       }
@@ -203,9 +221,9 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         if (!draft.candidates.includes(r.routeTo)) {
           setError(`Rule "${r.id}": target model must be a candidate.`); return null;
         }
-        const hasKw = (r.matchKeywordsAny?.length ?? 0) > 0;
-        const hasKwAll = (r.matchKeywordsAll?.length ?? 0) > 0;
-        const hasRegex = !!r.matchRegex?.trim();
+        const hasKw = (r.matchKeywordsAny ?? []).some(e => e.keywords?.length > 0);
+        const hasKwAll = (r.matchKeywordsAll ?? []).some(e => e.keywords?.length > 0);
+        const hasRegex = (r.matchRegex ?? []).some(e => e.pattern?.trim());
         const hasMin = r.matchMinChars !== undefined;
         const hasMax = r.matchMaxChars !== undefined;
         const hasTools = r.matchHasTools !== undefined;
@@ -262,9 +280,9 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
   const activeConditionCount = (r: RouterRule) =>
     [
-      (r.matchKeywordsAny?.length ?? 0) > 0,
-      (r.matchKeywordsAll?.length ?? 0) > 0,
-      !!r.matchRegex?.trim(),
+      (r.matchKeywordsAny ?? []).some(e => e.keywords?.length > 0),
+      (r.matchKeywordsAll ?? []).some(e => e.keywords?.length > 0),
+      (r.matchRegex ?? []).some(e => e.pattern?.trim()),
       r.matchMinChars !== undefined,
       r.matchMaxChars !== undefined,
       r.matchHasTools !== undefined,
@@ -304,7 +322,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <label className="form-label">
             Candidate Models *
             <span className="settings-description" style={{ marginLeft: 6 }}>
-              — the LLMs that can answer requests
+              - the LLMs that can answer requests
             </span>
           </label>
           {candidateOptions.length === 0 ? (
@@ -337,7 +355,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <label className="form-label">
             Default Model *
             <span className="settings-description" style={{ marginLeft: 6 }}>
-              — fallback when no rule matches
+              - fallback when no rule matches
             </span>
           </label>
           <select
@@ -391,7 +409,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <label className="form-label">
                 Router LLM *
                 <span className="settings-description" style={{ marginLeft: 6 }}>
-                  — small model that reads your prompt
+                  - small model that reads your prompt
                 </span>
               </label>
               <select className="form-input form-select"
@@ -440,7 +458,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                 <label className="form-label" style={{ margin: 0 }}>
                   Classifiers
                   <span className="settings-description" style={{ marginLeft: 6 }}>
-                    — optional classifiers for semantic or model-based matching
+                    - optional classifiers for semantic or model-based matching
                   </span>
                 </label>
                 <button type="button" className="settings-reset-button"
@@ -482,7 +500,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                           value={clf.type}
                           onChange={(e) => patchClassifier(clf.id, {
                             type: e.target.value as RouterClassifier['type'],
-                            labels: [], defaultLabel: '', referencePhrases: [], prompt: undefined,
+                            labels: [], defaultLabel: '', referencePhrases: {}, prompt: undefined,
                           })}>
                           <option value="classifier">Classifier</option>
                           <option value="semantic_similarity">Semantic Similarity</option>
@@ -496,10 +514,15 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                           value={clf.model}
                           onChange={(e) => patchClassifier(clf.id, { model: e.target.value })}>
                           <option value="">Select a model…</option>
-                          {candidateOptions.map(({ id }) => (
+                          {(clf.type === 'semantic_similarity' ? embeddingOptions : candidateOptions).map(({ id }) => (
                             <option key={id} value={id}>{displayNameWithStatus(id)}</option>
                           ))}
                         </select>
+                        {clf.type === 'semantic_similarity' && embeddingOptions.length === 0 && (
+                          <span className="settings-description" style={{ display: 'block', fontSize: '0.68rem', marginTop: 3 }}>
+                            No embedding models found. Pull one first (e.g. nomic-embed-text-v1.5-GGUF).
+                          </span>
+                        )}
                       </div>
 
                       {clf.type === 'llm' && (
@@ -537,7 +560,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                             <div className="router-classifier-field">
                               <label className="form-label" style={{ fontSize: '11px' }}>
                                 Default Label
-                                <span className="settings-description" style={{ marginLeft: 4 }}>— used when rule omits label</span>
+                                <span className="settings-description" style={{ marginLeft: 4 }}>- used when rule omits label</span>
                               </label>
                               <select className="form-input form-select" style={{ fontSize: '12px' }}
                                 value={clf.defaultLabel ?? ''}
@@ -553,8 +576,8 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                             <select className="form-input form-select" style={{ fontSize: '12px' }}
                               value={clf.onError ?? 'match_false'}
                               onChange={(e) => patchClassifier(clf.id, { onError: e.target.value as RouterClassifier['onError'] })}>
-                              <option value="match_false">match_false — fail-open (default)</option>
-                              <option value="match_true">match_true — fail-closed (safer for security)</option>
+                              <option value="match_false">match_false - fail-open (default)</option>
+                              <option value="match_true">match_true - fail-closed (safer for security)</option>
                             </select>
                           </div>
                         </>
@@ -562,20 +585,74 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
                       {clf.type === 'semantic_similarity' && (
                         <div className="router-classifier-field">
-                          <label className="form-label" style={{ fontSize: '11px' }}>
-                            Reference Phrases *
-                            <span className="settings-description" style={{ marginLeft: 4 }}>
-                              (one per line — exemplar sentences to compare against)
-                            </span>
-                          </label>
-                          <textarea className="form-input" rows={4}
-                            style={{ fontSize: '12px', resize: 'vertical', fontFamily: 'monospace' }}
-                            value={(clf.referencePhrases ?? []).join('\n')}
-                            onChange={(e) => {
-                              const referencePhrases = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean);
-                              patchClassifier(clf.id, { referencePhrases });
-                            }}
-                            placeholder={'how do I return my order\ntrack my package\nrefund policy'} />
+                          <div className="router-classifier-section-header" style={{ marginBottom: 4 }}>
+                            <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>
+                              Concepts *
+                              <span className="settings-description" style={{ marginLeft: 4 }}>
+                                - each concept becomes an output label scored by cosine similarity
+                              </span>
+                            </label>
+                            <button type="button" className="settings-reset-button"
+                              style={{ fontSize: '11px', padding: '1px 8px' }}
+                              onClick={() => {
+                                const existing = clf.referencePhrases ?? {};
+                                const newKey = `concept-${Object.keys(existing).length + 1}`;
+                                patchClassifier(clf.id, {
+                                  referencePhrases: { ...existing, [newKey]: [] },
+                                });
+                              }}>
+                              + Add Concept
+                            </button>
+                          </div>
+                          {Object.entries(clf.referencePhrases ?? {}).map(([concept, phrases]) => (
+                            <div key={concept} className="router-classifier-card" style={{ marginBottom: 4 }}>
+                              <div className="router-classifier-header">
+                                <input type="text" className="form-input"
+                                  style={{ fontSize: '12px', fontFamily: 'monospace', flex: 1 }}
+                                  defaultValue={concept}
+                                  onBlur={(e) => {
+                                    const newName = e.target.value.trim();
+                                    if (!newName || newName === concept) return;
+                                    const existing = { ...clf.referencePhrases };
+                                    const phrs = existing[concept];
+                                    delete existing[concept];
+                                    existing[newName] = phrs;
+                                    patchClassifier(clf.id, { referencePhrases: existing });
+                                  }}
+                                  placeholder="concept name (= output label)" />
+                                <button type="button" className="settings-reset-button"
+                                  style={{ fontSize: '11px', padding: '1px 8px', marginLeft: 6 }}
+                                  onClick={() => {
+                                    const existing = { ...clf.referencePhrases };
+                                    delete existing[concept];
+                                    patchClassifier(clf.id, { referencePhrases: existing });
+                                  }}>
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="router-classifier-field">
+                                <label className="form-label" style={{ fontSize: '10px' }}>
+                                  Phrases
+                                  <span className="settings-description" style={{ marginLeft: 4 }}>(one per line)</span>
+                                </label>
+                                <textarea className="form-input" rows={3}
+                                  style={{ fontSize: '12px', resize: 'vertical', fontFamily: 'monospace' }}
+                                  defaultValue={phrases.join('\n')}
+                                  onBlur={(e) => {
+                                    const updated = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean);
+                                    patchClassifier(clf.id, {
+                                      referencePhrases: { ...clf.referencePhrases, [concept]: updated },
+                                    });
+                                  }}
+                                  placeholder={'how do I return my order\ntrack my package\nrefund policy'} />
+                              </div>
+                            </div>
+                          ))}
+                          {Object.keys(clf.referencePhrases ?? {}).length === 0 && (
+                            <div className="collection-role-empty" style={{ marginTop: 4 }}>
+                              No concepts yet. Click "+ Add Concept" to create one.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -615,7 +692,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                           }));
                         }}
                         placeholder={rule.id}
-                        title="Rule ID — used in routing decisions and audit trace" />
+                        title="Rule ID - used in routing decisions and audit trace" />
                       <button type="button" className="settings-reset-button"
                         style={{ fontSize: '11px', padding: '1px 8px', flexShrink: 0 }}
                         onClick={() => removeRule(rule.id)}>
@@ -639,7 +716,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                       <label className="form-label" style={{ fontSize: '11px' }}>
                         Outputs
                         <span className="settings-description" style={{ marginLeft: 4 }}>
-                          — optional JSON passed to the decision
+                          - optional JSON passed to the decision
                         </span>
                       </label>
                       <input
@@ -695,74 +772,161 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                       );
                     })()}
 
-                    {/* ++ Keywords -- any ++ */}
-                    <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px' }}>Keywords — any</label>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select className="form-input form-select router-condition-select"
-                          title="Condition is off by default. Select YES to enable or NO to negate."
-                          value={rule.matchKeywordsAnyNot === undefined ? '' : rule.matchKeywordsAnyNot ? 'no' : 'yes'}
-                          onChange={(e) => { patchRule(rule.id, { matchKeywordsAnyNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
-                          <option value=""></option>
-                          <option value="yes">YES</option>
-                          <option value="no">NO</option>
-                        </select>
-                        <input type="text" className="form-input"
-                          style={{ fontSize: '12px', flex: 1, borderColor: rule.matchKeywordsAnyNot === true ? '#6b0101' : undefined }}
-                          defaultValue={(rule.matchKeywordsAny ?? []).join(', ')}
-                          onBlur={(e) => {
-                            const kw = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-                            patchRule(rule.id, { matchKeywordsAny: kw, matchKeywordsAnyNot: kw.length > 0 && rule.matchKeywordsAnyNot === undefined ? false : rule.matchKeywordsAnyNot });
-                          }}
-                          placeholder="e.g. function, stack trace, def " />
-                      </div>
-                    </div>
+                    {/* ++ Keywords — any (up to 2 entries) ++ */}
+                    {(() => {
+                      const entries = rule.matchKeywordsAny ?? [];
+                      return (
+                        <div className="router-rule-field">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>Keywords — any</label>
+                            <button type="button" className="settings-reset-button"
+                              style={{ fontSize: '11px', padding: '1px 8px' }}
+                              disabled={entries.length >= 2}
+                              onClick={() => patchRule(rule.id, { matchKeywordsAny: [...entries, { keywords: [] }] })}>
+                              +
+                            </button>
+                          </div>
+                          {entries.map((entry, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                              <select className="form-input form-select router-condition-select"
+                                title="YES = match, NO = negate (does NOT contain)"
+                                value={entry.not === undefined ? 'yes' : entry.not ? 'no' : 'yes'}
+                                onChange={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, not: e.target.value === 'no' ? true : undefined };
+                                  patchRule(rule.id, { matchKeywordsAny: updated });
+                                }}>
+                                <option value="yes">YES</option>
+                                <option value="no">NO</option>
+                              </select>
+                              <input type="text" className="form-input"
+                                style={{ fontSize: '12px', flex: 1, borderColor: entry.not ? '#6b0101' : undefined }}
+                                defaultValue={entry.keywords.join(', ')}
+                                onBlur={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) };
+                                  patchRule(rule.id, { matchKeywordsAny: updated });
+                                }}
+                                placeholder="e.g. function, stack trace, def " />
+                              <button type="button" className="settings-reset-button"
+                                style={{ fontSize: '11px', padding: '1px 8px' }}
+                                onClick={() => patchRule(rule.id, { matchKeywordsAny: entries.filter((_, j) => j !== i) })}>
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {entries.length === 0 && (
+                            <div className="settings-description" style={{ fontSize: '0.68rem' }}>
+                              Click + to add a keywords-any condition.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
-                    {/* ++ Keywords -- all ++ */}
-                    <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px' }}>Keywords — all</label>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select className="form-input form-select router-condition-select"
-                          title="Condition is off by default. Select YES to enable or NO to negate."
-                          value={rule.matchKeywordsAllNot === undefined ? '' : rule.matchKeywordsAllNot ? 'no' : 'yes'}
-                          onChange={(e) => { patchRule(rule.id, { matchKeywordsAllNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
-                          <option value=""></option>
-                          <option value="yes">YES</option>
-                          <option value="no">NO</option>
-                        </select>
-                        <input type="text" className="form-input"
-                          style={{ fontSize: '12px', flex: 1, borderColor: rule.matchKeywordsAllNot === true ? '#6b0101' : undefined }}
-                          defaultValue={(rule.matchKeywordsAll ?? []).join(', ')}
-                          onBlur={(e) => {
-                            const kw = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-                            patchRule(rule.id, { matchKeywordsAll: kw, matchKeywordsAllNot: kw.length > 0 && rule.matchKeywordsAllNot === undefined ? false : rule.matchKeywordsAllNot });
-                          }}
-                          placeholder="e.g. urgent, escalate" />
-                      </div>
-                    </div>
+                    {/* ++ Keywords — all (up to 2 entries) ++ */}
+                    {(() => {
+                      const entries = rule.matchKeywordsAll ?? [];
+                      return (
+                        <div className="router-rule-field">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>Keywords — all</label>
+                            <button type="button" className="settings-reset-button"
+                              style={{ fontSize: '11px', padding: '1px 8px' }}
+                              disabled={entries.length >= 2}
+                              onClick={() => patchRule(rule.id, { matchKeywordsAll: [...entries, { keywords: [] }] })}>
+                              +
+                            </button>
+                          </div>
+                          {entries.map((entry, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                              <select className="form-input form-select router-condition-select"
+                                title="YES = match, NO = negate"
+                                value={entry.not ? 'no' : 'yes'}
+                                onChange={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, not: e.target.value === 'no' ? true : undefined };
+                                  patchRule(rule.id, { matchKeywordsAll: updated });
+                                }}>
+                                <option value="yes">YES</option>
+                                <option value="no">NO</option>
+                              </select>
+                              <input type="text" className="form-input"
+                                style={{ fontSize: '12px', flex: 1, borderColor: entry.not ? '#6b0101' : undefined }}
+                                defaultValue={entry.keywords.join(', ')}
+                                onBlur={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) };
+                                  patchRule(rule.id, { matchKeywordsAll: updated });
+                                }}
+                                placeholder="e.g. urgent, escalate" />
+                              <button type="button" className="settings-reset-button"
+                                style={{ fontSize: '11px', padding: '1px 8px' }}
+                                onClick={() => patchRule(rule.id, { matchKeywordsAll: entries.filter((_, j) => j !== i) })}>
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {entries.length === 0 && (
+                            <div className="settings-description" style={{ fontSize: '0.68rem' }}>
+                              Click + to add a keywords-all condition.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
-                    {/* ++ Regex ++ */}
-                    <div className="router-rule-field">
-                      <label className="form-label" style={{ fontSize: '11px' }}>Regex</label>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select className="form-input form-select router-condition-select"
-                          title="Condition is off by default. Select YES to enable or NO to negate."
-                          value={rule.matchRegexNot === undefined ? '' : rule.matchRegexNot ? 'no' : 'yes'}
-                          onChange={(e) => { patchRule(rule.id, { matchRegexNot: e.target.value === '' ? undefined : e.target.value === 'no' }); }}>
-                          <option value=""></option>
-                          <option value="yes">YES</option>
-                          <option value="no">NO</option>
-                        </select>
-                        <input type="text" className="form-input"
-                          style={{ fontSize: '12px', fontFamily: 'monospace', flex: 1, borderColor: rule.matchRegexNot === true ? '#6b0101' : undefined }}
-                          value={rule.matchRegex ?? ''}
-                          onChange={(e) => {
-                            const v = e.target.value || undefined;
-                            patchRule(rule.id, { matchRegex: v, matchRegexNot: v !== undefined && rule.matchRegexNot === undefined ? false : rule.matchRegexNot });
-                          }}
-                          placeholder="e.g. ```[a-z]*" />
-                      </div>
-                    </div>
+                    {/* ++ Regex (up to 2 entries) ++ */}
+                    {(() => {
+                      const entries = rule.matchRegex ?? [];
+                      return (
+                        <div className="router-rule-field">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>Regex</label>
+                            <button type="button" className="settings-reset-button"
+                              style={{ fontSize: '11px', padding: '1px 8px' }}
+                              disabled={entries.length >= 2}
+                              onClick={() => patchRule(rule.id, { matchRegex: [...entries, { pattern: '' }] })}>
+                              +
+                            </button>
+                          </div>
+                          {entries.map((entry, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                              <select className="form-input form-select router-condition-select"
+                                title="YES = match, NO = negate"
+                                value={entry.not ? 'no' : 'yes'}
+                                onChange={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, not: e.target.value === 'no' ? true : undefined };
+                                  patchRule(rule.id, { matchRegex: updated });
+                                }}>
+                                <option value="yes">YES</option>
+                                <option value="no">NO</option>
+                              </select>
+                              <input type="text" className="form-input"
+                                style={{ fontSize: '12px', fontFamily: 'monospace', flex: 1, borderColor: entry.not ? '#6b0101' : undefined }}
+                                value={entry.pattern}
+                                onChange={(e) => {
+                                  const updated = [...entries];
+                                  updated[i] = { ...entry, pattern: e.target.value };
+                                  patchRule(rule.id, { matchRegex: updated });
+                                }}
+                                placeholder="e.g. ```[a-z]*" />
+                              <button type="button" className="settings-reset-button"
+                                style={{ fontSize: '11px', padding: '1px 8px' }}
+                                onClick={() => patchRule(rule.id, { matchRegex: entries.filter((_, j) => j !== i) })}>
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {entries.length === 0 && (
+                            <div className="settings-description" style={{ fontSize: '0.68rem' }}>
+                              Click + to add a regex condition.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* ++ Min / Max chars ++ */}
                     <div className="router-rule-field" style={{ display: 'flex', gap: 12 }}>
@@ -864,7 +1028,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                           </div>
                           {rule.matchClassifier?.classifierId && (() => {
                             const activeCLF = classifiers.find((c) => c.id === rule.matchClassifier!.classifierId);
-                            const clfLabels = activeCLF?.labels?.filter(Boolean) ?? [];
+                            // semantic_similarity: labels = concept keys; classifier: labels declared explicitly
+                            const clfLabels = activeCLF?.type === 'semantic_similarity'
+                              ? Object.keys(activeCLF.referencePhrases ?? {}).filter(Boolean)
+                              : activeCLF?.labels?.filter(Boolean) ?? [];
                             return (
                               <>
                                 {clfLabels.length > 0 && (
