@@ -17,23 +17,69 @@ void StreamingProxy::forward_sse_stream(
     long timeout_seconds,
     std::function<void()> on_chunk) {
 
-    std::string telemetry_buffer;
+    TelemetryData telemetry;
+    std::string line_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
     bool has_first_token = false;
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
 
+    auto process_line = [&telemetry](const std::string& line) {
+        std::string json_str;
+        if (line.find("data: ") == 0) {
+            json_str = line.substr(6);
+        } else if (line.find("ChatCompletionChunk: ") == 0) {
+            json_str = line.substr(21);
+        }
+        if (!json_str.empty() && json_str != "[DONE]") {
+            try {
+                auto chunk = json::parse(json_str);
+                if (chunk.contains("usage")) {
+                    auto usage = chunk["usage"];
+                    if (usage.contains("prompt_tokens")) {
+                        telemetry.input_tokens = usage["prompt_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        telemetry.output_tokens = usage["completion_tokens"].get<int>();
+                    }
+                    if (usage.contains("prefill_duration_ttft")) {
+                        telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
+                    }
+                    if (usage.contains("decoding_speed_tps")) {
+                        telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
+                    }
+                }
+                if (chunk.contains("timings")) {
+                    auto timings = chunk["timings"];
+                    if (timings.contains("prompt_n")) {
+                        telemetry.input_tokens = timings["prompt_n"].get<int>();
+                    }
+                    if (timings.contains("predicted_n")) {
+                        telemetry.output_tokens = timings["predicted_n"].get<int>();
+                    }
+                    if (timings.contains("prompt_ms")) {
+                        telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
+                    }
+                    if (timings.contains("predicted_per_second")) {
+                        telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
+                    }
+                }
+            } catch (...) {}
+        }
+    };
+
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &telemetry_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time, &on_chunk](const char* data, size_t length) {
+        [&sink, &line_buffer, &has_done_marker, &has_first_token,
+         &time_to_first_token, &start_time, &on_chunk, &process_line](const char* data, size_t length) {
             if (on_chunk) {
                 on_chunk();
             }
 
-            telemetry_buffer.append(data, length);
+            line_buffer.append(data, length);
+            process_sse_lines(line_buffer, process_line);
 
             std::string chunk(data, length);
             if (!has_first_token && chunk.find("data: ") != std::string::npos) {
@@ -62,6 +108,7 @@ void StreamingProxy::forward_sse_stream(
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
+        telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
     }
 
     if (transport_interrupted && !has_done_marker) {
@@ -89,9 +136,23 @@ void StreamingProxy::forward_sse_stream(
 
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
-        auto telemetry = parse_telemetry(telemetry_buffer);
+        if (!line_buffer.empty()) {
+            if (line_buffer.back() == '\r') {
+                line_buffer.pop_back();
+            }
+            process_line(line_buffer);
+        }
+
         if (telemetry.time_to_first_token <= 0.0) {
             telemetry.time_to_first_token = time_to_first_token;
+        }
+        if (telemetry.tokens_per_second <= 0.0 && telemetry.output_tokens > 0) {
+            double total_duration = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - start_time).count();
+            double decode_duration = total_duration - telemetry.time_to_first_token;
+            if (decode_duration > 0.0) {
+                telemetry.tokens_per_second = telemetry.output_tokens / decode_duration;
+            }
         }
         telemetry.print();
 
@@ -100,6 +161,9 @@ void StreamingProxy::forward_sse_stream(
         }
     } else {
         sink.done();
+        if (on_complete) {
+            on_complete(telemetry);
+        }
     }
 }
 
@@ -231,6 +295,18 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     }
 
     return telemetry;
+}
+
+void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback) {
+    size_t pos;
+    while ((pos = line_buffer.find('\n')) != std::string::npos) {
+        std::string line = line_buffer.substr(0, pos);
+        line_buffer.erase(0, pos + 1);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        line_callback(line);
+    }
 }
 
 } // namespace lemon

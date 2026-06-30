@@ -51,6 +51,10 @@ public:
     // Get server status
     bool is_running() const;
 
+    // True if run() aborted startup (e.g. the port was already in use), so
+    // main() can report failure and exit non-zero.
+    bool startup_failed() const;
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -69,6 +73,7 @@ private:
     // Unified config endpoints
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -130,6 +135,7 @@ private:
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_install_dry_run(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
 
     // Enrich recipes JSON with release_url, download_filename, version from BackendManager
@@ -206,6 +212,10 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    bool parse_required_json_body(const httplib::Request& req,
+                                  httplib::Response& res,
+                                  nlohmann::json& out);
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
@@ -264,6 +274,7 @@ private:
     std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;
 
     bool running_;
+    bool startup_failed_ = false;
     std::atomic<bool> shutdown_requested_{false};
     std::atomic<bool> rebind_requested_{false};
     std::atomic<bool> metrics_access_logged_{false};

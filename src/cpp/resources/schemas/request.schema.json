@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lemonade-sdk.github.io/schemas/request.schema.json",
+  "title": "Lemonade routing request extension",
+  "description": "The lemonade-specific fields a client adds to a standard OpenAI chat-completions body when addressing a collection.router model: routing inputs on `metadata` and the optional `route_trace` opt-in. Validates ONLY these extension fields — the rest of the OpenAI body (model, messages, ...) passes through untouched (additionalProperties: true). No `version` field: this rides on the stock OpenAI request for maximum drop-in, so there is no document the client versions.",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "description": "Caller-supplied routing inputs exposed verbatim to conditions (e.g. task_class, consent). Values are strings only; list values are comma-encoded (decoded into a token set by the metadata condition).",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "route_trace": {
+      "description": "Opt-in: when true, the response carries the full per-condition trace. Default omitted; minimal trace otherwise.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

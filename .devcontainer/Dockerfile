@@ -26,7 +26,14 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+RUN chown -R vscode:vscode ${VIRTUAL_ENV}
+
 WORKDIR /usr/src/app
 
 # Copy the Project Root into the container
 COPY . .
+
+# We create XDG_RUNTIME ENV VAR.
+RUN mkdir -p /run/lemonade
+RUN chown vscode:vscode /run/lemonade
+ENV XDG_RUNTIME_DIR=/run/lemonade

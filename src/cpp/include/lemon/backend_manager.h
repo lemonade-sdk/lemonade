@@ -43,6 +43,17 @@ public:
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
     BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
 
+    // Install parameters for a backend (repo + filename + version)
+    struct InstallParams {
+        std::string repo;
+        std::string filename;
+        std::string version;
+    };
+
+    // Unlike the enrichment helpers above, this returns the repo and lets
+    // exceptions propagate so callers can surface stale-pin/404-shaped failures.
+    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
+
     // Returns the most-recent upstream release tag for the given (recipe, backend),
     // resolved via GitHub. The result is cached for the lifetime of this
     // BackendManager so each repo is queried at most once. Returns "" on failure
@@ -70,22 +81,14 @@ private:
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);
 
-    // Install parameters for a backend (repo + filename + version)
-    struct InstallParams {
-        std::string repo;
-        std::string filename;
-        std::string version;
-    };
-
-    // Get the install parameters for a recipe/backend combination
-    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
-
     // Resolve the user's *_bin config value for a (recipe, backend) into a
     // concrete release tag. Falls back to `pinned_version` for "" / "builtin"
-    // / path-syntax values. For "latest", queries GitHub (cached). For any
+    // / path-syntax values. For "latest", queries GitHub (cached); if the
+    // lookup fails (e.g. HTTP 504) or is skipped (offline), falls back to the
+    // installed version.txt so an already-installed binary still loads. For any
     // other value, returns the value verbatim as a release tag.
-    // Throws on failure for "latest" when offline/no_fetch_executables block
-    // resolution and no installed version.txt exists.
+    // Throws on failure for "latest" only when the lookup cannot be satisfied
+    // (offline or GitHub error) AND no installed version.txt exists.
     std::string resolve_user_version(const std::string& recipe,
                                      const std::string& resolved_backend,
                                      const std::string& pinned_version,

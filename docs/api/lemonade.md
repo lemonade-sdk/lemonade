@@ -18,6 +18,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
@@ -26,6 +27,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
+| `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -682,6 +684,9 @@ curl http://localhost:13305/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
+  },
+  "telemetry": {
+    "enabled": false
   }
 }
 ```
@@ -711,6 +716,9 @@ curl http://localhost:13305/v1/health
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `telemetry` - Structured telemetry state object:
+  - `enabled` - Boolean indicating if telemetry collection is active
+  - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -746,6 +754,43 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /v1/system-stats`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Current host resource usage as measured by the Lemonade Server process. This endpoint is useful for first-party clients and dashboards that need lightweight runtime telemetry without scraping Prometheus.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/system-stats
+```
+
+### Response format
+
+```json
+{
+  "cpu_percent": 12.3,
+  "memory_gb": 8.4,
+  "gpu_percent": 45.0,
+  "vram_gb": 2.1,
+  "npu_percent": null
+}
+```
+
+**Field Descriptions:**
+
+- `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
+- `memory_gb` - System RAM currently in use, in GiB
+- `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+- `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `npu_percent` - NPU utilization percentage, or `null` when unavailable
+
+GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -843,6 +888,12 @@ curl "http://localhost:13305/v1/system-info"
   "BIOS Version": "1.0.0",
   "CPU Max Clock": "5100 MHz",
   "Windows Power Setting": "Balanced",
+  "model_storage": {
+    "path": "/path/to/models",
+    "used_bytes": 123456789,
+    "total_bytes": 987654321,
+    "free_bytes": 864197532
+  },
   "devices": {
     "cpu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
@@ -956,6 +1007,12 @@ curl "http://localhost:13305/v1/system-info"
   - `BIOS Version` - BIOS information (Windows only)
   - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
   - `Windows Power Setting` - Current power plan (Windows only)
+
+- `model_storage` - Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.
+  - `path` - Active model storage path from server configuration
+  - `used_bytes` - Used bytes on the model-storage drive
+  - `total_bytes` - Total capacity of the model-storage drive
+  - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
@@ -1332,4 +1389,33 @@ curl http://localhost:13305/live
 
 ```json
 {"status":"ok"}
+```
+
+## Internal Endpoints
+
+Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
+
+## `POST /internal/telemetry/flush`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/telemetry/flush
+```
+
+#### Response Format
+
+Returns a JSON object indicating successful completion of the flush operation:
+
+```json
+{
+  "status": "flushed"
+}
 ```

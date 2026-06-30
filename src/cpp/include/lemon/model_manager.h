@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
 #include "directory_watcher.h"
+#include "gguf_reader.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -76,19 +77,11 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
-    // When true, LlamaCppServer launches llama-server with `-hf <checkpoint>`
-    // instead of `-m <gguf> [--mmproj <mmproj>]`. Required for models like
-    // Qwen2.5-Omni where llama-server's manual-load path rejects audio content
-    // parts — the -hf path drives the dual-clip (vision+audio) context correctly.
-    bool hf_load = false;
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
     // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
-    int64_t gguf_block_count = 0;       // number of transformer blocks (layers)
-    int64_t gguf_embedding_length = 0;  // hidden size
-    int64_t gguf_head_count_kv = 0;     // KV attention heads
-    int64_t gguf_key_length = 0;        // key head dimension
+    GgufMetadata gguf;
     RecipeOptions recipe_options;
 
     // Multi-model support fields
@@ -97,6 +90,11 @@ struct ModelInfo {
 
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
+
+    // Per-collection system prompt template (collection.omni models only).
+    // When non-empty, overrides the global default in toolDefinitions.json.
+    // Stays a template — {tool_list} / {tool_guidance} are substituted at runtime.
+    std::string system_prompt;
 
     // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
     // (e.g., "fireworks"). Empty for non-cloud recipes.
@@ -107,8 +105,18 @@ struct ModelInfo {
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
 
-    // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
-    int moonshine_arch = -1;
+    // Generic per-model fields a backend declares for itself. Any server_models.json
+    // key not consumed by a typed field above lands here, so a new backend can read
+    // custom per-model config in load() without editing this shared struct.
+    std::map<std::string, json> extras;
+
+    // Look up an extra field, returning a default when absent.
+    template <typename T>
+    T extra(const std::string& key, const T& fallback) const {
+        auto it = extras.find(key);
+        if (it == extras.end() || it->second.is_null()) return fallback;
+        try { return it->second.get<T>(); } catch (...) { return fallback; }
+    }
 
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
@@ -211,11 +219,19 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Get list of installed FLM models (for caching)
-    std::vector<std::string> get_flm_installed_models();
+    // True if the model's backend pulls its own models on demand (e.g. flm) and
+    // so should be skipped by the router's load-time auto-download path.
+    bool backend_self_manages_downloads(const std::string& recipe) const;
 
-    // Get list of all available FLM models from 'flm list --json'
-    std::vector<ModelInfo> get_flm_available_models();
+    // Shared Hugging Face completeness check: true if all required checkpoints
+    // are present and complete (per-backend file validation runs via ops). The
+    // default BackendOps::is_downloaded delegates here for HF-backed backends.
+    bool checkpoints_complete(const ModelInfo& info) const;
+
+    // Shared Hugging Face download engine. The default BackendOps::download_model
+    // delegates here; flm/cloud override with their own download.
+    void download_from_huggingface_engine(const ModelInfo& info,
+                                          DownloadProgressCallback progress_callback = nullptr);
 
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
@@ -225,6 +241,10 @@ public:
     // automatically refreshes the model cache when files are added or
     // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
+
+    // Per-architecture default recipe options (loaded from resources).
+    // Override global config defaults but are overridden by model-level recipe_options.
+    json get_architecture_defaults(const std::string& architecture) const;
 
     void save_model_options(const ModelInfo& info);
 
@@ -241,6 +261,7 @@ private:
                        std::set<std::string>& visited);
 
     json load_server_models();
+    json load_architecture_defaults();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
@@ -297,17 +318,13 @@ private:
     void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
 
-    // Download from FLM
-    void download_from_flm(const std::string& checkpoint,
-                          bool do_not_upgrade = true,
-                          DownloadProgressCallback progress_callback = nullptr);
-
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
 
     json server_models_;
     json user_models_;
     json recipe_options_;
+    json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;

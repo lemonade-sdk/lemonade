@@ -1,0 +1,6 @@
+{
+  "model": "user.Router-Shopping",
+  "messages": [{ "role": "user", "content": "how do I return this order?" }],
+  "metadata": { "task_class": "payment", "site_tags": "shopping" },
+  "route_trace": true
+}

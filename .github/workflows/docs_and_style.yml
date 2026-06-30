@@ -24,6 +24,23 @@ jobs:
       - name: Run app regression tests
         run: node test/app/run-app-regression-tests.cjs
 
+  backend-docs-drift:
+    # The backend reference doc (docs/dev/backends-reference.md) is generated from
+    # the self-describing backend descriptors. Build lemond, regenerate, and fail
+    # if the committed doc is stale — the same guarantee a lint provides.
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure and install build dependencies
+        run: ./setup.sh
+      - name: Build lemond
+        run: cmake --build --preset default --target lemond
+      - name: Check backend reference docs are up to date
+        run: python3 docs/tools/gen_backend_boilerplate.py --check
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:

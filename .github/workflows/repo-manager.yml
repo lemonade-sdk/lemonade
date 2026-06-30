@@ -7,14 +7,20 @@ on:
       - 'release-v*'
   workflow_dispatch:
 
+# One run at a time; a new push cancels any queued or in-progress run.
+concurrency:
+  group: repo-manager
+  cancel-in-progress: true
+
 permissions:
-  contents: read
+  contents: write
   pull-requests: read
-  issues: read
+  issues: write
 
 jobs:
   repo-manager:
     runs-on: [self-hosted, linux, repo-manager]
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -23,6 +29,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity and safe directories
+        run: |
+          git config --global user.name "Lemonade Bot"
+          git config --global user.email "lemonade@amd.com"
+          # repo-manager clones lemonade into /opt/lemonade-manager/.repo-manager/checkout
+          # as root during initial setup; mark it safe for the runner user.
+          git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
+          gh auth setup-git
+
+      - name: Clean stale repo-manager state
+        run: rm -rf /opt/lemonade-manager/.repo-manager/pages
+
       - name: Run repo-manager
+        # /opt/lemonade-manager is the pre-existing repo-manager config/DB directory
+        # that targets lemonade-sdk/lemonade. It is separate from $GITHUB_WORKSPACE
+        # (the checked-out repo), which repo-manager reads via the gh CLI.
         working-directory: /opt/lemonade-manager
         run: repo-manager all

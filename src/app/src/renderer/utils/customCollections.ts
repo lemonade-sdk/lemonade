@@ -2,8 +2,16 @@ import type { ModelInfo, ModelsData } from './modelData';
 import { USER_MODEL_PREFIX } from './modelData';
 import { isChatPlannerCandidate } from './modelLabels';
 import { COLLECTION_OMNI_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
+import toolDefinitions from './toolDefinitions.json';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
+
+// The shipped OmniRouter system prompt, exposed so the Omni Model editor can
+// show authors the text they're (potentially) overriding. Matched verbatim on
+// save: when the textarea content equals this string, the editor stores no
+// override and the collection stays on whatever the global default is at
+// runtime — so a future tweak to toolDefinitions.json propagates automatically.
+export const DEFAULT_OMNI_SYSTEM_PROMPT: string = toolDefinitions.system_prompt;
 
 export type CustomCollectionRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 
@@ -22,6 +30,10 @@ export interface CustomCollection {
   createdAt?: string;
   updatedAt?: string;
   components: CustomCollectionComponents;
+  // Optional per-collection system prompt template. Overrides the global
+  // default in toolDefinitions.json when set; still uses {tool_list} and
+  // {tool_guidance} placeholders for runtime substitution.
+  systemPrompt?: string;
 }
 
 export interface CustomCollectionDraft {
@@ -29,12 +41,15 @@ export interface CustomCollectionDraft {
   name: string;
   createdAt?: string;
   components: CustomCollectionComponents;
+  systemPrompt?: string;
 }
 
 export interface CustomCollectionPullRequest {
   model_name: string;
   recipe: typeof COLLECTION_OMNI_MODEL_RECIPE;
   components: string[];
+  // Optional template (matches the registry's system_prompt field).
+  system_prompt?: string;
 }
 
 const roleLabels: Record<CustomCollectionRole, string> = {
@@ -168,10 +183,15 @@ export const modelEntryToCustomCollection = (
   const components = normalizeComponents(info?.components, modelsData);
   if (!components) return null;
 
+  const systemPrompt = typeof info?.system_prompt === 'string' && info.system_prompt
+    ? info.system_prompt
+    : undefined;
+
   return {
     id: modelId,
     name: getCollectionDisplayName(modelId),
     components,
+    systemPrompt,
   };
 };
 
@@ -188,6 +208,10 @@ export const buildCustomCollectionPullRequest = (draft: CustomCollectionDraft): 
     recipe: COLLECTION_OMNI_MODEL_RECIPE,
     components,
   };
+  const systemPrompt = typeof draft.systemPrompt === 'string' ? draft.systemPrompt.trim() : '';
+  if (systemPrompt) {
+    request.system_prompt = systemPrompt;
+  }
   return request;
 };
 

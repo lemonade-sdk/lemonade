@@ -23,6 +23,9 @@ Usage:
 import json
 import os
 import platform
+import socket
+import subprocess
+import time
 import unittest
 import shutil
 import tempfile
@@ -40,6 +43,10 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    get_default_lemond_binary,
+    SHARED_REPO_MODEL_A_NAME,
+    SHARED_REPO_MODEL_A_CHECKPOINT,
+    SHARED_REPO_MODEL_B_NAME,
     SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -50,6 +57,47 @@ from utils.test_models import (
     get_hf_cache_dir,
     get_hf_cache_dir_candidates,
 )
+
+
+def _resolve_lemond_binary():
+    """Locate the lemond daemon binary for the duplicate-port test.
+
+    Prefers the binary built alongside this checkout; falls back to whatever is
+    on PATH. Returns None if neither exists so the test can skip cleanly rather
+    than fail on a machine without a built daemon.
+    """
+    candidate = get_default_lemond_binary()
+    if candidate and os.path.exists(candidate):
+        return candidate
+    return shutil.which("lemond")
+
+
+def _pick_free_port():
+    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
+
+    Binding to port 0 lets the kernel pick a free port; we read it back and
+    close the socket immediately. Both lemond instances in the duplicate-port
+    test target this port, which is independent of the suite's server on PORT.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+def _lemond_health_ok(port, headers):
+    """True if lemond answers a 200 on /api/v1/health at the given port."""
+    try:
+        response = requests.get(
+            f"http://localhost:{port}/api/v1/health",
+            headers=headers,
+            timeout=2,
+        )
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
 
 
 class EndpointTests(ServerTestBase):
@@ -179,6 +227,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("llm", max_models)
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
+
+        # telemetry should have enabled, and captures iff enabled is True
+        self.assertIn("telemetry", data)
+        telemetry = data["telemetry"]
+        self.assertIn("enabled", telemetry)
+        self.assertIsInstance(telemetry["enabled"], bool)
+        if telemetry["enabled"]:
+            self.assertIn("captures", telemetry)
+            self.assertIsInstance(telemetry["captures"], list)
+            for capture in telemetry["captures"]:
+                self.assertIn(capture, ["inputs", "outputs", "thinking"])
+        else:
+            self.assertNotIn("captures", telemetry)
 
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
@@ -845,7 +906,11 @@ class EndpointTests(ServerTestBase):
             # (3) /cloud/auth stores the runtime key and triggers discovery.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "dummy-key"},
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, f"auth set failed: {resp.text}")
@@ -956,7 +1021,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             requests.delete(
@@ -1008,7 +1077,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             # Load the model so the router holds a live CloudServer instance.
@@ -1115,7 +1188,11 @@ class EndpointTests(ServerTestBase):
             )
             requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k"},
+                json={
+                    "provider": provider,
+                    "api_key": "k",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
 
@@ -1189,57 +1266,167 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(body["error"]["type"], "invalid_request_error")
         print("[OK] /install rejects non-[a-z0-9_-]+ provider names with 400")
 
-    def test_012h_install_rejects_insecure_http_base_url(self):
-        """An http:// base URL to a non-loopback host would leak the Bearer
-        API key in plaintext on every forwarded request. Refuse those at
-        install time. https:// and http://localhost are both allowed."""
-        # http:// to a non-loopback host: rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "httpguard",
-                "base_url": "http://api.example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
-        body = resp.json()
-        self.assertEqual(body["error"]["type"], "invalid_request_error")
-        self.assertIn("plaintext", body["error"]["message"].lower())
+    def test_012h_http_base_url_requires_opt_in_for_keys(self):
+        """Custom OpenAI-compatible backends may be on trusted LAN HTTP. Do
+        not block keyless URLs, but require explicit opt-in before Lemonade
+        stores or uses an API key over plaintext HTTP."""
+        installed = []
 
-        # gopher:// (any non-http(s) scheme): rejected.
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "schemeguard",
-                "base_url": "gopher://example.com/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 400, resp.text)
+        def cleanup(provider):
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
-        # http://localhost: allowed (mock-provider tests need this).
-        resp = requests.post(
-            f"{self.base_url}/install",
-            json={
-                "backend": "cloud",
-                "provider": "localhttpguard",
-                "base_url": "http://localhost:1/v1",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 200, resp.text)
-        # Clean up the test provider so the registry doesn't accumulate state.
-        requests.post(
-            f"{self.base_url}/uninstall",
-            json={"backend": "cloud", "provider": "localhttpguard"},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        print(
-            "[OK] /install rejects http:// to non-loopback hosts, allows http://localhost"
-        )
+        try:
+            # http:// to a non-loopback host: accepted with a transport warning.
+            provider = "httpguard"
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": "http://api.example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            installed.append(provider)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertEqual(body["status"], "success")
+            warnings = body.get("warnings", [])
+            self.assertTrue(any("http://" in w for w in warnings), body)
+            self.assertFalse(any("Bearer token" in w for w in warnings), body)
+            self.assertIn("warning", body)
+
+            info = requests.get(
+                f"{self.base_url}/system-info",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            entry = next(
+                p
+                for p in info.get("cloud", {}).get("providers", [])
+                if p["name"] == provider
+            )
+            self.assertFalse(entry["allow_insecure_http"])
+            self.assertTrue(any("http://" in w for w in entry.get("warnings", [])))
+
+            # gopher:// (any non-http(s) scheme): still rejected.
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": "schemeguard",
+                    "base_url": "gopher://example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            # Bare http(s) schemes without hosts are rejected.
+            for bad_url in ["http://", "https://"]:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": "bareurl",
+                        "base_url": bad_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertIn("host", resp.json()["error"]["message"])
+
+            # Install + api_key in one request is rejected by default, then
+            # accepted with explicit allow_insecure_http opt-in.
+            provider = "httpkeyinstall"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-key"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+
+            # Auth after an HTTP install is rejected by default, then accepted
+            # with the same explicit opt-in.
+            provider = "httpkeyauth"
+            base_url, stop_provider = self._start_mock_cloud_provider(
+                ["vendor/http-auth"]
+            )
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/install",
+                    json={
+                        "backend": "cloud",
+                        "provider": provider,
+                        "base_url": base_url,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                installed.append(provider)
+                self.assertEqual(resp.status_code, 200, resp.text)
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={"provider": provider, "api_key": "dummy-key"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 400, resp.text)
+                self.assertEqual(
+                    resp.json()["error"]["code"], "insecure_http_requires_opt_in"
+                )
+                resp = requests.post(
+                    f"{self.base_url}/cloud/auth",
+                    json={
+                        "provider": provider,
+                        "api_key": "dummy-key",
+                        "allow_insecure_http": True,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertTrue(resp.json()["allow_insecure_http"])
+                warnings = resp.json().get("warnings", [])
+                self.assertTrue(any("http://" in w for w in warnings), resp.text)
+                self.assertTrue(any("Bearer token" in w for w in warnings), resp.text)
+            finally:
+                stop_provider()
+        finally:
+            for provider in installed:
+                cleanup(provider)
+
+        print("[OK] http:// cloud keys require explicit opt-in")
 
     def test_012i_cloud_refresh_is_idempotent_no_duplicates(self):
         """refresh_cloud_models must evict-then-emplace this provider's prior
@@ -1261,7 +1448,11 @@ class EndpointTests(ServerTestBase):
             # First auth: discover both upstream ids.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)
@@ -1271,7 +1462,11 @@ class EndpointTests(ServerTestBase):
             # eviction step removes the previous entries before re-emplacing.
             resp = requests.post(
                 f"{self.base_url}/cloud/auth",
-                json={"provider": provider, "api_key": "k1"},
+                json={
+                    "provider": provider,
+                    "api_key": "k1",
+                    "allow_insecure_http": True,
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(resp.status_code, 200, resp.text)
@@ -2014,6 +2209,71 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] Registered omni collection: {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021j_register_user_collection_with_system_prompt(self):
+        """A registered user collection round-trips an optional system_prompt.
+
+        Verifies the per-collection override path documented in
+        docs/dev/lemonade-omni.md: a custom omni model can ship its own
+        system_prompt template; the global default in toolDefinitions.json is
+        the fallback. The wire surface must echo the field on GET /models/{id}
+        and on /models?show_all=true so the desktop app can read it back when
+        re-opening the Omni Model editor.
+        """
+        canonical_name = f"user.PromptColl-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+        prompt_template = (
+            "You are a focused tester. Tools available:\n\n"
+            "{tool_list}\n\n"
+            "Use them sparingly.{tool_guidance}"
+        )
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "system_prompt": prompt_template,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            single = requests.get(
+                f"{self.base_url}/models/{public_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(single.status_code, 200)
+            self.assertEqual(
+                single.json().get("system_prompt"),
+                prompt_template,
+                "GET /models/{id} must echo the registered system_prompt verbatim.",
+            )
+
+            listing = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(listing.status_code, 200)
+            entry = next(
+                (m for m in listing.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.get("system_prompt"), prompt_template)
+
+            print(f"[OK] system_prompt round-tripped for {public_name}")
         finally:
             try:
                 requests.post(
@@ -3258,6 +3518,264 @@ class EndpointTests(ServerTestBase):
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    def test_035_second_lemond_on_busy_port_exits_nonzero(self):
+        """A second lemond on an in-use port must refuse to start and exit non-zero.
+
+        Regression test for the duplicate-port guard: lemond preflight-probes the
+        listen port and if another server already holds it, prints a clear error
+        to stderr and exits non-zero instead of silently failing to bind. This
+        test starts a real lemond on a fresh port, launches a second lemond on the
+        same port, and asserts the second one (a) exits non-zero, (b) reports the
+        port is already in use, and (c) leaves the first server healthy.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_dupport_")
+        first_log_path = os.path.join(cache_dir, "first_lemond.log")
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        first = None
+        second = None
+        try:
+            # --- Start the first lemond and wait until it is healthy ---
+            with open(first_log_path, "w", encoding="utf-8") as first_log:
+                first = subprocess.Popen(
+                    cmd,
+                    stdout=first_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            deadline = time.time() + 60
+            first_healthy = False
+            while time.time() < deadline:
+                if first.poll() is not None:
+                    break  # exited early; surface the log below
+                if _lemond_health_ok(port, headers):
+                    first_healthy = True
+                    break
+                time.sleep(1)
+
+            if not first_healthy:
+                with open(first_log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"First lemond never became healthy on port {port}.\n"
+                    f"=== lemond log ===\n{log}"
+                )
+
+            # --- Start the second lemond on the SAME port; it must refuse ---
+            second = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=os.environ.copy(),
+            )
+            try:
+                out, err = second.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                second.kill()
+                out, err = second.communicate()
+                self.fail(
+                    "Second lemond did not exit; it should fail fast on the "
+                    f"in-use port {port}."
+                )
+
+            combined = f"{out or ''}\n{err or ''}"
+
+            self.assertNotEqual(
+                second.returncode,
+                0,
+                "Second lemond on an in-use port must exit non-zero, "
+                f"got exit code 0.\n=== output ===\n{combined}",
+            )
+            self.assertIn(
+                "already in use",
+                combined.lower(),
+                "Second lemond should report the port is already in use.\n"
+                f"=== output ===\n{combined}",
+            )
+
+            # --- The original server must still be healthy ---
+            self.assertTrue(
+                _lemond_health_ok(port, headers),
+                "First lemond should remain healthy after the duplicate was "
+                "rejected.",
+            )
+
+            print(
+                f"[OK] Second lemond on in-use port {port} exited "
+                f"{second.returncode} and first server stayed healthy"
+            )
+        finally:
+            for proc in (second, first):
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def test_034_shared_repo_variant_resolves_after_refs_main_advances(self):
+        """Regression for #2300: two models sharing one HF repo with different
+        quants must both stay resolvable after refs/main advances past one of them.
+
+        HF refs/main is a single sticky per-repo pointer (advanced only on a
+        successful pull). When a sibling variant is pulled/updated, refs/main moves
+        to a snapshot that contains only that variant; the other variant stays in
+        the previous snapshot, so refs/main no longer covers both. On the next
+        models-cache build (i.e. after a lemond restart) the GGUF resolver, which
+        searches only the refs/main snapshot, then reports the variant not covered
+        by refs/main as not downloaded even though its file is still cached. The fix
+        broadens the resolver to fall back to all snapshots when the active one
+        lacks the requested variant.
+
+        Repro without waiting for a real upstream commit: pull both variants (they
+        land in one snapshot under the current commit), then move one variant into a
+        fresh snapshot and repoint refs/main at it, so the two variants live in
+        different snapshots. The models cache is then rebuilt by pulling an
+        unrelated model from a *different* repo (re-pulling a shared-repo model would
+        query HF and repair refs/main, masking the bug).
+        """
+        a_name = SHARED_REPO_MODEL_A_NAME
+        b_name = SHARED_REPO_MODEL_B_NAME
+        repo_id, a_file = SHARED_REPO_MODEL_A_CHECKPOINT.split(":", 1)
+        b_file = SHARED_REPO_MODEL_B_CHECKPOINT.split(":", 1)[1]
+        repo_cache_dir = "models--" + repo_id.replace("/", "--")
+        throwaway = f"user.OrphanRebuild-{uuid.uuid4().hex[:8]}"
+
+        def _pull(model_name, checkpoint):
+            r = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "recipe": "llamacpp",
+                    "checkpoints": {"main": checkpoint},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+
+        def _delete(model_name):
+            # Best-effort cleanup; ignore status so one failure does not mask others.
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+            except requests.RequestException:
+                pass
+
+        def _downloaded(model_name):
+            # GET /models/{id} -> get_model_info() -> build_cache(), so this re-runs
+            # the on-disk resolver against the staged cache state.
+            r = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+            return r.json().get("downloaded", False)
+
+        try:
+            # 1. Pull both variants of the shared repo. With a single upstream commit
+            #    both files land in the same snapshots/<commit>/ directory.
+            _pull(a_name, SHARED_REPO_MODEL_A_CHECKPOINT)
+            _pull(b_name, SHARED_REPO_MODEL_B_CHECKPOINT)
+            self.assertTrue(_downloaded(a_name), "Variant A should download")
+            self.assertTrue(_downloaded(b_name), "Variant B should download")
+
+            # Locate the server's real HF cache (handles config models_dir overrides
+            # and packaged servers running under a different user/HOME).
+            cache_root = self._server_hf_cache_root(repo_cache_dir)
+            if cache_root is None:
+                self.skipTest(
+                    "Cannot locate the server's HF cache from the test process; "
+                    "the shared-repo resolution path needs on-disk snapshot access."
+                )
+
+            repo_dir = os.path.join(cache_root, repo_cache_dir)
+            snapshots_dir = os.path.join(repo_dir, "snapshots")
+            refs_main = os.path.join(repo_dir, "refs", "main")
+
+            with open(refs_main, encoding="utf-8") as f:
+                cur_rev = f.read().strip()
+            cur_snapshot = os.path.join(snapshots_dir, cur_rev)
+            a_in_cur = os.path.join(cur_snapshot, a_file)
+            b_in_cur = os.path.join(cur_snapshot, b_file)
+            if not (os.path.exists(a_in_cur) and os.path.exists(b_in_cur)):
+                self.skipTest(
+                    "Shared-repo variants are not co-located in the active snapshot "
+                    "(upstream layout changed); cannot stage the orphan."
+                )
+
+            # 2. Simulate an upstream commit being pulled for one variant: move B
+            #    into a fresh snapshot and advance refs/main to it. This mirrors what
+            #    a real pull does — only the freshly pulled file lands in the new
+            #    snapshot, so the two variants no longer share one snapshot and
+            #    refs/main no longer covers both of them. (The repo here stores real
+            #    files in the snapshot dirs, so the file is relocated directly.)
+            new_rev = "0" * 40
+            new_snapshot = os.path.join(snapshots_dir, new_rev)
+            os.makedirs(new_snapshot, exist_ok=True)
+            os.rename(b_in_cur, os.path.join(new_snapshot, b_file))
+            os.makedirs(os.path.dirname(refs_main), exist_ok=True)
+            with open(refs_main, "w", encoding="utf-8") as f:
+                f.write(new_rev)
+
+            # Sanity: each variant now lives in a different snapshot, and refs/main
+            # points at the one that holds only B.
+            self.assertTrue(
+                os.path.exists(os.path.join(new_snapshot, b_file)),
+                "Setup error: B must be in the new refs/main snapshot",
+            )
+            self.assertFalse(
+                os.path.exists(os.path.join(new_snapshot, a_file)),
+                "Setup error: A must not be in the new refs/main snapshot",
+            )
+            self.assertTrue(
+                os.path.exists(a_in_cur),
+                "Setup error: A must remain in the previous snapshot",
+            )
+
+            # 3. Force a models-cache rebuild without touching the shared repo (this
+            #    is what a lemond restart would do). Pulling an unrelated model from a
+            #    different repo invalidates the cache so the resolver re-runs.
+            _pull(throwaway, USER_MODEL_MAIN_CHECKPOINT)
+
+            # 4. #2300: both variants are still physically cached (one in each
+            #    snapshot), so both must resolve as downloaded. Before the fix the
+            #    resolver searched only the refs/main snapshot, so the variant not
+            #    covered by refs/main was reported missing.
+            self.assertTrue(
+                _downloaded(b_name),
+                "#2300: variant B must remain downloaded after refs/main advances "
+                "(its file is still cached, in the new snapshot)",
+            )
+            self.assertTrue(
+                _downloaded(a_name),
+                "#2300: variant A must remain downloaded after refs/main advances "
+                "(its file is still cached, in the previous snapshot)",
+            )
+            print(
+                "[OK] #2300 shared-repo variants both resolve after refs/main advance"
+            )
+        finally:
+            _delete(a_name)
+            _delete(b_name)
+            _delete(throwaway)
 
 
 if __name__ == "__main__":

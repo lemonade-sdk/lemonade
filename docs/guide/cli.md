@@ -16,6 +16,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for launch](#options-for-launch)
 - [Options for bench](#options-for-bench)
 - [Options for scan](#options-for-scan)
+- [Options for telemetry](#options-for-telemetry)
 
 ## Commands
 
@@ -26,7 +27,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
-| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](../server/cli-chat.md). |
+| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](./cli-chat.md). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ### Server
@@ -35,9 +36,10 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+| `telemetry`         | Dynamically enable or disable telemetry tracing. See command options [below](#options-for-telemetry). |
 
 ### Model Management
 
@@ -325,44 +327,56 @@ The following options apply to all model loads:
 
 The following options are available depending on the recipe being used:
 
-#### Llama.cpp (`llamacpp` recipe)
+<!-- BEGIN GENERATED: cli-recipe-options -->
+#### Llama.cpp GPU (`llamacpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
+| `--ctx-size SIZE` | Context size for the model | auto |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
-| `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
-
-#### FLM (`flm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### RyzenAI LLM (`ryzenai-llm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### SD.cpp (`sd-cpp` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
-| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
-| `--steps N` | Number of inference steps for image generation | `20` |
-| `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
-| `--width PX` | Image width in pixels | `512` |
-| `--height PX` | Image height in pixels | `512` |
+| `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
 
+#### Moonshine (`moonshine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
+
+#### StableDiffusion.cpp (`sd-cpp` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+
+#### FastFlowLM NPU (`flm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Ryzen AI LLM (`ryzenai-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### vLLM ROCm (experimental) (`vllm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--vllm BACKEND` | vLLM backend to use | Auto-detected |
+| `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
+<!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
@@ -460,30 +474,35 @@ lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 
 ## Options for backends
 
-The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
+lemonade backends --all
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
 
 | Command | Description |
 |--------|-------------|
-| `lemonade backends` | List available recipes and backends |
+| `lemonade backends` | List supported recipes and backends |
+| `lemonade backends --all` | List all available recipes and backends |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
-- Available backends depend on your system and the recipe
-- Use `lemonade backends` to list all available recipes and backends
+- Supported backends depend on your system and the recipe
+- Use `lemonade backends --all` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
-# List all available recipes and backends
+# List supported recipes and backends
 lemonade backends
+
+# List all available recipes and backends
+lemonade backends --all
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
@@ -528,7 +547,7 @@ Codex-only option:
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
+- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
@@ -654,6 +673,29 @@ lemonade scan
 lemonade scan --duration 5
 ```
 
+## Options for telemetry
+
+Dynamically toggle telemetry tracing on the server. This setting is applied immediately in-memory without requiring a server restart, but is not persisted to the server's `config.json` (meaning it will revert when the server restarts).
+
+```bash
+lemonade telemetry <on|off>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `on`     | Enable telemetry tracing. |
+| `off`    | Disable telemetry tracing. |
+
+**Examples:**
+
+```bash
+# Enable telemetry tracing dynamically
+lemonade telemetry on
+
+# Disable telemetry tracing dynamically
+lemonade telemetry off
+```
+
 ## Options for bench
 
 The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
@@ -685,6 +727,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--response-log FILE` | Write response produced by the benchmark to a JSONL logfile, for later quality evaluation. | - |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
@@ -758,6 +801,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 

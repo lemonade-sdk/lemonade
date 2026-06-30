@@ -14,7 +14,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Building Installers](#building-installers)
   - [Windows Installer (WiX/MSI)](#windows-installer-wixmsi)
   - [Linux .deb Package (Debian/Ubuntu)](#linux-deb-package-debianubuntu)
-  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-rhel-etc)
+  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-43-44)
 - [Developer IDE and Build Steps](#developer-ide-and-build-steps)
 - [Code Structure](#code-structure)
 - [Architecture Overview](#architecture-overview)
@@ -239,8 +239,9 @@ Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd6
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
-- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
-- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
+- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`, `libcpp-httplib0.41`
+- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, `libxrt-npu2` for NPU acceleration,
+  plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
@@ -624,6 +625,7 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
 | `POST` | `/internal/pin` | Pin or unpin a loaded model |
 
@@ -673,6 +675,15 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 **Example:**
 ```bash
 curl http://localhost:13305/internal/config
+```
+
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's `config_defaults()`), making this the authoritative source of the factory defaults. `docs/tools/gen_backend_boilerplate.py` reads this endpoint to regenerate the committed `src/cpp/resources/defaults.json`, and a CI `--check` fails if that file drifts from the descriptors.
+
+**Example:**
+```bash
+curl http://localhost:13305/internal/config/defaults
 ```
 
 ### Dependencies

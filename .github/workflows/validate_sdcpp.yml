@@ -1,0 +1,552 @@
+name: Validate New stable-diffusion.cpp Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Optional upstream leejet tag, e.g. master-714-db48014. Empty = latest."
+        required: false
+        type: string
+      cuda_release:
+        description: "Optional lemonade-sdk CUDA tag, e.g. master-714-db48014. Empty = latest CUDA release."
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/validate_sdcpp.yml"
+      - ".github/scripts/update_sdcpp_versions.py"
+      - ".github/scripts/render_sdcpp_pr_body.py"
+      - "test/validate_sdcpp.py"
+      - "src/cpp/resources/backend_versions.json"
+      - "src/cpp/resources/server_models.json"
+      - "src/cpp/server/backends/sd_server.cpp"
+      - "src/cpp/server/backend_manager.cpp"
+      - "src/cpp/server/runtime_config.cpp"
+      - "src/cpp/server/system_info.cpp"
+  schedule:
+    # Sunday at 17:20 UTC, staggered after the llama.cpp auto-update workflow.
+    - cron: "20 17 * * 0"
+
+permissions:
+  contents: read
+
+env:
+  LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+  SDCPP_REPO: leejet/stable-diffusion.cpp
+  SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
+  # Non-CUDA assets are published by leejet. CUDA assets are published by the
+  # lemonade-sdk fork and may intentionally be on a different release tag.
+  SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
+  SDCPP_CUDA_UPDATE_BACKENDS: cuda
+  SDCPP_VALIDATED_LABELS: cpu,vulkan,rocm-stable
+  SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
+  SDCPP_TEST_MODELS: "SD-Turbo-GGUF,Flux-2-Klein-4B"
+  SDCPP_TEST_SIZES: "512x256,1024x1024"
+  SDCPP_TEST_SEED: "12345"
+  SDCPP_TEST_STEPS: "4"
+  LEMONADE_VALIDATE_SD_TIMEOUT: "7200"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discover-release:
+    name: Discover stable-diffusion.cpp releases
+    runs-on: ubuntu-latest
+    outputs:
+      base_release: ${{ steps.release.outputs.base_release }}
+      base_short_release: ${{ steps.release.outputs.base_short_release }}
+      cuda_release: ${{ steps.release.outputs.cuda_release }}
+      cuda_short_release: ${{ steps.release.outputs.cuda_short_release }}
+      is_update_run: ${{ steps.release.outputs.is_update_run }}
+      base_update_backends: ${{ steps.assets.outputs.base_update_backends }}
+      cuda_update_backends: ${{ steps.assets.outputs.cuda_update_backends }}
+      update_backends: ${{ steps.assets.outputs.update_backends }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve release tags
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release || '' }}
+          INPUT_CUDA_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.cuda_release || '' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            read -r BASE_RELEASE CUDA_RELEASE < <(python3 - <<'PY'
+          import json
+          with open('src/cpp/resources/backend_versions.json', encoding='utf-8') as f:
+              data = json.load(f)
+          print(data['sd-cpp']['cpu'], data['sd-cpp']['cuda'])
+          PY
+          )
+          else
+            if [ -n "$INPUT_RELEASE" ]; then
+              BASE_RELEASE="$INPUT_RELEASE"
+            else
+              BASE_RELEASE=$(gh api repos/${SDCPP_REPO}/releases/latest --jq '.tag_name')
+            fi
+
+            if [ -n "$INPUT_CUDA_RELEASE" ]; then
+              CUDA_RELEASE="$INPUT_CUDA_RELEASE"
+            else
+              CUDA_RELEASE=$(gh api repos/${SDCPP_CUDA_REPO}/releases/latest --jq '.tag_name')
+            fi
+          fi
+
+          python3 - "$BASE_RELEASE" "$CUDA_RELEASE" <<'PY' > release_outputs.env
+          import re
+          import sys
+
+          release_re = re.compile(r"^master-[0-9]+-[0-9a-f]{7,40}$")
+
+          def short_release(value: str) -> str:
+              parts = value.split('-', 2)
+              if len(parts) != 3:
+                  raise SystemExit(f"Invalid stable-diffusion.cpp release tag: {value}")
+              return f"{parts[0]}-{parts[2]}"
+
+          base_release, cuda_release = sys.argv[1], sys.argv[2]
+          for label, value in (("base", base_release), ("cuda", cuda_release)):
+              if not release_re.match(value):
+                  raise SystemExit(
+                      f"Invalid {label} stable-diffusion.cpp release tag: {value}. "
+                      "Expected format like master-714-db48014."
+                  )
+
+          print(f"base_release={base_release}")
+          print(f"base_short_release={short_release(base_release)}")
+          print(f"cuda_release={cuda_release}")
+          print(f"cuda_short_release={short_release(cuda_release)}")
+          PY
+
+          cat release_outputs.env >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "is_update_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_update_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Using base stable-diffusion.cpp release: ${BASE_RELEASE}"
+          echo "Using CUDA stable-diffusion.cpp release: ${CUDA_RELEASE}"
+
+      - name: Verify base release assets
+        id: assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_RELEASE: ${{ steps.release.outputs.base_release }}
+          BASE_SHORT_RELEASE: ${{ steps.release.outputs.base_short_release }}
+        run: |
+          set -euo pipefail
+
+          echo "Base assets from ${SDCPP_REPO}@${BASE_RELEASE}:"
+          gh api repos/${SDCPP_REPO}/releases/tags/${BASE_RELEASE} --jq '.assets[].name' | sort > assets.txt
+          cat assets.txt
+
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          base_short = os.environ['BASE_SHORT_RELEASE']
+          base_assets = set(Path('assets.txt').read_text(encoding='utf-8').splitlines())
+
+          checks = {
+              'cpu': [
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-avx2-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64\.zip$'),
+              ],
+              'vulkan': [
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-vulkan-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-vulkan\.zip$'),
+              ],
+              'rocm-stable': [
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-rocm-[0-9][^/]*-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-rocm-[0-9][^/]*\.zip$'),
+              ],
+              'metal': [
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$'),
+              ],
+          }
+
+          missing = []
+          for backend, patterns in checks.items():
+              for assets, pattern in patterns:
+                  if not any(re.match(pattern, asset) for asset in assets):
+                      missing.append(f"{backend}: {pattern}")
+
+          if missing:
+              print('Missing expected release assets:', file=sys.stderr)
+              for item in missing:
+                  print(f'  - {item}', file=sys.stderr)
+              sys.exit(1)
+          PY
+
+          echo "base_update_backends=${SDCPP_BASE_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "cuda_update_backends=${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "update_backends=${SDCPP_BASE_UPDATE_BACKENDS},${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "Will update base sd-cpp pins: ${SDCPP_BASE_UPDATE_BACKENDS} -> ${BASE_RELEASE}"
+          echo "Will update CUDA sd-cpp pins later after validation: ${SDCPP_CUDA_UPDATE_BACKENDS} -> ${{ steps.release.outputs.cuda_release }}"
+
+  build:
+    name: Build Lemonade with sd-cpp pins
+    needs: discover-release
+    if: always() && !failure() && !cancelled()
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Update backend_versions.json for validation
+        if: needs.discover-release.outputs.is_update_run == 'true'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          python .github/scripts/update_sdcpp_versions.py `
+            --release "${{ needs.discover-release.outputs.base_release }}" `
+            --backends "${{ needs.discover-release.outputs.base_update_backends }}"
+          python .github/scripts/update_sdcpp_versions.py `
+            --release "${{ needs.discover-release.outputs.cuda_release }}" `
+            --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
+
+      - name: Build C++ Server with CMake
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+          cmake --preset vs18
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --target lemond lemonade
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "build\Release\lemond.exe")) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          if (-not (Test-Path "build\Release\lemonade.exe")) {
+              Write-Host "ERROR: lemonade.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Build successful!" -ForegroundColor Green
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdcpp-build
+          path: |
+            build/Release/
+            build/resources/
+          retention-days: 7
+
+  validate:
+    name: Validate ${{ matrix.label }}
+    needs: [discover-release, build]
+    if: always() && needs.build.result == 'success'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 420
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: cpu
+            backend: cpu
+            channel: ""
+            runner: [self-hosted, Windows, 128gb, vulkan]
+          - label: vulkan
+            backend: vulkan
+            channel: ""
+            runner: [self-hosted, Windows, 128gb, vulkan]
+          - label: rocm-stable
+            backend: rocm
+            channel: stable
+            runner: [self-hosted, Windows, 128gb, rocm]
+          # CUDA is pinned by the updater and its assets are required by the
+          # verify-cuda-assets job after this validation matrix completes.
+          # Validation stays disabled until a matching runner exists.
+          # - label: cuda
+          #   backend: cuda
+          #   channel: ""
+          #   runner: [self-hosted, Windows, 128gb, cuda]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: sdcpp-build
+          path: build
+
+      - name: Verify binaries
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemondExe = "build\Release\lemond.exe"
+          $lemonadeExe = "build\Release\lemonade.exe"
+          if (-not (Test-Path $lemondExe)) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          if (-not (Test-Path $lemonadeExe)) {
+              Write-Host "ERROR: lemonade.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          & $lemondExe --version
+          & $lemonadeExe --version
+          Write-Host "Binaries verified!" -ForegroundColor Green
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation with lemond
+        shell: PowerShell
+        env:
+          HF_TOKEN: ${{ env.HF_TOKEN }}
+          LEMONADE_VALIDATE_SD_PROMPT: ${{ env.SDCPP_TEST_PROMPT }}
+          LEMONADE_VALIDATE_SD_STEPS: ${{ env.SDCPP_TEST_STEPS }}
+          LEMONADE_VALIDATE_SD_TIMEOUT: ${{ env.LEMONADE_VALIDATE_SD_TIMEOUT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
+          $backend = "${{ matrix.backend }}"
+          $channel = "${{ matrix.channel }}"
+          $label = "${{ matrix.label }}"
+          $logsDir = "server-logs-$label"
+          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $venvPython = ".\.venv\Scripts\python.exe"
+
+          New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+          $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
+          $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
+
+          $proc = Start-Process `
+            -FilePath $lemondExe `
+            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+
+          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+
+          try {
+            $validationArgs = @(
+              "test/validate_sdcpp.py",
+              "--backend", $backend,
+              "--seed", "${{ env.SDCPP_TEST_SEED }}",
+              "--warmup",
+              "--output", "sdcpp_validation_$label.json",
+              "--images-dir", "sdcpp-images-$label"
+            )
+            foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
+              $model = $model.Trim()
+              if ($model) {
+                $validationArgs += "--model"
+                $validationArgs += $model
+              }
+            }
+            foreach ($size in "${{ env.SDCPP_TEST_SIZES }}".Split(',')) {
+              $size = $size.Trim()
+              if ($size) {
+                $validationArgs += "--size"
+                $validationArgs += $size
+              }
+            }
+            if ($channel) {
+              $validationArgs += "--channel"
+              $validationArgs += $channel
+            }
+            & $venvPython @validationArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
+                -Method POST -TimeoutSec 10 | Out-Null
+              Start-Sleep -Seconds 2
+            } catch {
+              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            }
+          }
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdcpp-validation-${{ matrix.label }}
+          path: |
+            sdcpp_validation_${{ matrix.label }}.json
+            sdcpp-images-${{ matrix.label }}/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdcpp-server-logs-${{ matrix.label }}
+          path: server-logs-${{ matrix.label }}/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  verify-cuda-assets:
+    name: Verify required CUDA assets
+    needs: [discover-release, validate]
+    if: always() && needs.discover-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify CUDA release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          CUDA_SHORT_RELEASE: ${{ needs.discover-release.outputs.cuda_short_release }}
+        run: |
+          set -euo pipefail
+          echo "CUDA asset validation intentionally runs after the image validation matrix."
+          echo "If CUDA assets are missing, this job hard-fails after CPU/Vulkan/ROCm evidence is available."
+          echo "CUDA assets from ${SDCPP_CUDA_REPO}@${CUDA_RELEASE}:"
+          gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${CUDA_RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt
+          cat cuda-assets.txt
+
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          cuda_short = os.environ['CUDA_SHORT_RELEASE']
+          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
+          patterns = [
+              rf'^sd-{re.escape(cuda_short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
+              rf'^sd-{re.escape(cuda_short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
+          ]
+
+          missing = []
+          for pattern in patterns:
+              if not any(re.match(pattern, asset) for asset in cuda_assets):
+                  missing.append(pattern)
+
+          if missing:
+              print('Missing expected CUDA release assets:', file=sys.stderr)
+              for pattern in missing:
+                  print(f'  - {pattern}', file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  create-pr:
+    name: Create update PR
+    needs: [discover-release, validate, verify-cuda-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.validate.result == 'success' &&
+      needs.verify-cuda-assets.result == 'success'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: sdcpp-validation-*
+          merge-multiple: true
+
+      - name: Update backend_versions.json
+        run: |
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --release "${{ needs.discover-release.outputs.base_release }}" \
+            --backends "${{ needs.discover-release.outputs.base_update_backends }}"
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --release "${{ needs.discover-release.outputs.cuda_release }}" \
+            --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
+
+      - name: Normalize validation evidence and generate PR body
+        shell: bash
+        env:
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          BASE_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.base_update_backends }}
+          CUDA_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.cuda_update_backends }}
+        run: |
+          set -euo pipefail
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          EVIDENCE_ROOT=".github/sdcpp-validation"
+          EVIDENCE_DIR="${EVIDENCE_ROOT}/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          # Keep only the current update evidence so merged auto-update PRs do not
+          # accumulate old binary PNG evidence indefinitely.
+          rm -rf "$EVIDENCE_ROOT"
+          python3 .github/scripts/render_sdcpp_pr_body.py \
+            --base-release "$BASE_RELEASE" \
+            --cuda-release "$CUDA_RELEASE" \
+            --base-update-backends "$BASE_UPDATE_BACKENDS" \
+            --cuda-update-backends "$CUDA_UPDATE_BACKENDS" \
+            --validated-labels "${SDCPP_VALIDATED_LABELS}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --image-ref "$BRANCH" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --models "${SDCPP_TEST_MODELS}" \
+            --sizes "${SDCPP_TEST_SIZES}" \
+            --output pr_body.md
+
+      - name: Create Pull Request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+        run: |
+          set -euo pipefail
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet src/cpp/resources/backend_versions.json .github/sdcpp-validation; then
+            echo "backend_versions.json and validation evidence are unchanged; nothing to update."
+            exit 0
+          fi
+
+          git checkout -B "$BRANCH"
+          git add src/cpp/resources/backend_versions.json .github/sdcpp-validation
+          git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
+          git push --force-with-lease origin "$BRANCH"
+
+          gh pr create \
+            --title "Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"
