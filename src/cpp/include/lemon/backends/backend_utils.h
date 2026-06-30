@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <optional>
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
@@ -105,6 +106,31 @@ namespace lemon::backends {
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
+
+        /**
+         * Resolve the ROCm install root, honoring an externally-installed ROCm
+         * before the bundled default. Resolution order, returning the first root
+         * that contains lib{,64}/libamdhip64.so:
+         *   1. ROCM_PATH environment variable
+         *   2. `rocm-sdk path --root` (when rocm-sdk is on PATH)
+         *   3. /opt/rocm
+         * Returns std::nullopt when none validate. When resolved_explicitly is
+         * non-null, it is set to true when the root came from ROCM_PATH or
+         * rocm-sdk (a user-selected ROCm) and false for the /opt/rocm fallback.
+         *
+         * Probes Linux HIP runtime artifacts (lib{,64}/libamdhip64.so, /opt/rocm)
+         * and is only meaningful on Linux; current callers reach it solely behind
+         * is_rocm_installed_system_wide() (Linux-gated).
+         */
+        static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
+
+        /**
+         * Read the ROCm version string from a resolved install root, probing the
+         * known version-file locations ({root}/.info/version,
+         * {root}/share/rocm/version, {root}/version). Returns the trimmed first
+         * line of the first file found, or "" when none exist.
+         */
+        static std::string read_rocm_version_from_root(const fs::path& root);
 
         /** Check if ROCm libraries are installed system-wide (Linux only) */
         static bool is_rocm_installed_system_wide();

@@ -2015,3 +2015,12 @@ if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
 endif()
+
+# ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
+# external-ROCm detection that lets Lemonade skip the bundled TheRock download.
+set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
+if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
+    add_executable(test_rocm_root_resolution test/cpp/test_rocm_root_resolution.cpp)
+    target_link_libraries(test_rocm_root_resolution PRIVATE lemonade-server-core)
+    add_test(NAME RocmRootResolutionTest COMMAND test_rocm_root_resolution)
+endif()
