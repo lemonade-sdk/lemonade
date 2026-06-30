@@ -3768,6 +3768,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         if (stream) {
             auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
                 model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
@@ -3829,7 +3836,12 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         bool not_found = false;
         nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
         if (not_found) {

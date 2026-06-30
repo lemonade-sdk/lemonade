@@ -116,6 +116,43 @@ std::string read_version_file(const fs::path& version_file) {
     return trim(version);
 }
 
+std::string installed_backend_binary_path(const backends::BackendSpec& spec,
+                                          const std::string& resolved_backend) {
+    std::string external_binary = backends::BackendUtils::find_external_backend_binary(
+        spec.recipe, resolved_backend);
+    if (!external_binary.empty()) {
+        return external_binary;
+    }
+
+    const std::string install_dir = backends::BackendUtils::get_install_directory(
+        spec.recipe, resolved_backend);
+    return backends::BackendUtils::find_executable_in_install_dir(
+        install_dir, spec.binary);
+}
+
+void report_backend_ready(const std::string& recipe,
+                          const std::string& resolved_backend,
+                          DownloadProgressCallback progress_cb) {
+    if (!progress_cb) {
+        return;
+    }
+
+    DownloadProgress p;
+    p.file = recipe + ":" + resolved_backend;
+    p.file_index = 1;
+    p.total_files = 1;
+    p.bytes_downloaded = 0;
+    p.bytes_total = 0;
+    p.total_download_size = 0;
+    p.percent = 100;
+    p.complete = true;
+    progress_cb(p);
+}
+
+bool github_download_service_reachable() {
+    return utils::HttpClient::is_reachable("https://github.com/", 2);
+}
+
 bool has_matching_system_rocm_runtime(const std::string& expected_runtime_version) {
     const fs::path version_file = "/opt/rocm/.info/version";
     const std::string system_version = read_version_file(version_file);
@@ -457,18 +494,49 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->no_fetch_executables()) {
-            throw std::runtime_error(
-                "Fetching executable artifacts is disabled");
-        }
-    }
-
-    auto params = get_install_params(recipe, resolved_backend);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
+
+    const std::string existing_backend_binary =
+        installed_backend_binary_path(*spec, resolved_backend);
+    const bool has_existing_backend = !existing_backend_binary.empty();
+
+    if (auto* cfg = RuntimeConfig::global()) {
+        const bool offline = cfg->offline();
+        const bool no_fetch = cfg->no_fetch_executables();
+        if (offline || no_fetch) {
+            if (!force && has_existing_backend) {
+                LOG(WARNING, "BackendManager")
+                    << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
+                    << "; using installed " << recipe << ":" << resolved_backend
+                    << " backend at " << existing_backend_binary << std::endl;
+                report_backend_ready(recipe, resolved_backend, progress_cb);
+                return;
+            }
+
+            throw std::runtime_error(
+                (offline ? "Cannot install " : "Fetching executable artifacts is disabled for ") +
+                recipe + ":" + resolved_backend +
+                (offline ? ": offline mode" : ""));
+        }
+    }
+
+    if (!force && has_existing_backend && !github_download_service_reachable()) {
+        // enter install_from_github() when GitHub is reachable, so available
+        // backend updates are applied before the model starts. Only skip the
+        // update path when the machine is effectively offline and a usable
+        // backend binary is already present.
+        LOG(WARNING, "BackendManager")
+            << "GitHub is not reachable; using installed " << recipe << ":"
+            << resolved_backend << " backend at " << existing_backend_binary
+            << " and deferring update" << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
+
+    auto params = get_install_params(recipe, resolved_backend);
 
     // Check if we need to download additional runtime components after the main backend.
     // `will_install_therock` intentionally answers whether TheRock is applicable
