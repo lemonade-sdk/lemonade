@@ -190,27 +190,35 @@ export interface RouterClassifier {
   labels?: string[];                       // text-classification output labels
   defaultLabel?: string;                   // label used when condition omits label
   onError?: 'match_true' | 'match_false';  // fail-closed vs fail-open
-  // semantic_similarity-only fields:
-  referencePhrases?: string[];             // phrases for cosine comparison
+  referencePhrases?: Record<string, string[]>;
 }
 
 // How multiple conditions on one rule are combined.
 export type RouterRuleOperator = 'any' | 'all';
 
+// One keywords-any/all entry (up to 2 per rule, each independently negatable).
+export interface RouterKeywordEntry {
+  keywords: string[];
+  not?: boolean;   // true → emit { not: { keywords_any/all: [...] } }
+}
+
+// One regex entry (up to 2 per rule).
+export interface RouterRegexEntry {
+  pattern: string;
+  not?: boolean;
+}
+
 // A single rule: one or more conditions + one route_to target.
-// Each condition can be individually negated — the Not flag wraps just that
-// one leaf in { not: leaf } before combining with the operator.
+// keywords-any, keywords-all, and regex each support up to 2 independent
+// entries so you can express e.g. "contains 'function' AND does NOT contain 'tutorial'".
 export interface RouterRule {
   id: string;
   routeTo: string;                      // must be in candidates
   operator?: RouterRuleOperator;        // 'any' (OR, default) or 'all' (AND)
-  // Deterministic conditions (each with an optional per-condition NOT):
-  matchKeywordsAny?: string[];
-  matchKeywordsAnyNot?: boolean;
-  matchKeywordsAll?: string[];
-  matchKeywordsAllNot?: boolean;
-  matchRegex?: string;
-  matchRegexNot?: boolean;
+  // Deterministic conditions:
+  matchKeywordsAny?: RouterKeywordEntry[];   // up to 2, each optionally negated
+  matchKeywordsAll?: RouterKeywordEntry[];   // up to 2, each optionally negated
+  matchRegex?: RouterRegexEntry[];           // up to 2, each optionally negated
   matchMinChars?: number;
   matchMinCharsNot?: boolean;
   matchMaxChars?: number;
@@ -304,8 +312,8 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
           if (c.defaultLabel) base.default_label = c.defaultLabel;
           base.on_error = c.onError ?? 'match_false';
         } else {
-          // semantic_similarity
-          base.reference_phrases = c.referencePhrases ?? [];
+          // semantic_similarity: reference_phrases is { concept: string[] }
+          base.reference_phrases = c.referencePhrases ?? {};
         }
         return base;
       });
@@ -317,12 +325,12 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
         notFlag ? { not: leaf } : leaf;
 
       const leaves: Record<string, unknown>[] = [];
-      if (r.matchKeywordsAny?.length)
-        leaves.push(n({ keywords_any: r.matchKeywordsAny }, r.matchKeywordsAnyNot));
-      if (r.matchKeywordsAll?.length)
-        leaves.push(n({ keywords_all: r.matchKeywordsAll }, r.matchKeywordsAllNot));
-      if (r.matchRegex?.trim())
-        leaves.push(n({ regex: r.matchRegex.trim() }, r.matchRegexNot));
+      for (const entry of r.matchKeywordsAny ?? [])
+        if (entry.keywords?.length) leaves.push(n({ keywords_any: entry.keywords }, entry.not));
+      for (const entry of r.matchKeywordsAll ?? [])
+        if (entry.keywords?.length) leaves.push(n({ keywords_all: entry.keywords }, entry.not));
+      for (const entry of r.matchRegex ?? [])
+        if (entry.pattern?.trim()) leaves.push(n({ regex: entry.pattern.trim() }, entry.not));
       if (r.matchMinChars !== undefined)
         leaves.push(n({ min_chars: r.matchMinChars }, r.matchMinCharsNot));
       if (r.matchMaxChars !== undefined)
@@ -396,7 +404,9 @@ export const routingToRouterCollectionDraft = (
     labels: Array.isArray(c.labels) ? (c.labels as string[]) : undefined,
     defaultLabel: typeof c.default_label === 'string' ? c.default_label : undefined,
     onError: c.on_error === 'match_true' ? ('match_true' as const) : ('match_false' as const),
-    referencePhrases: Array.isArray(c.reference_phrases) ? (c.reference_phrases as string[]) : undefined,
+    referencePhrases: (c.reference_phrases && typeof c.reference_phrases === 'object' && !Array.isArray(c.reference_phrases))
+        ? (c.reference_phrases as Record<string, string[]>)
+        : undefined,
   }));
 
   const rawRules = Array.isArray(routing.rules) ? routing.rules : [];
@@ -434,16 +444,16 @@ export const routingToRouterCollectionDraft = (
     for (const rawLeaf of leaves) {
       const { inner: leaf, negated } = unwrapNot(rawLeaf);
       if (Array.isArray(leaf.keywords_any)) {
-        rule.matchKeywordsAny = leaf.keywords_any as string[];
-        if (negated) rule.matchKeywordsAnyNot = true;
+        rule.matchKeywordsAny = [...(rule.matchKeywordsAny ?? []),
+          { keywords: leaf.keywords_any as string[], not: negated || undefined }];
       }
       if (Array.isArray(leaf.keywords_all)) {
-        rule.matchKeywordsAll = leaf.keywords_all as string[];
-        if (negated) rule.matchKeywordsAllNot = true;
+        rule.matchKeywordsAll = [...(rule.matchKeywordsAll ?? []),
+          { keywords: leaf.keywords_all as string[], not: negated || undefined }];
       }
       if (typeof leaf.regex === 'string') {
-        rule.matchRegex = leaf.regex;
-        if (negated) rule.matchRegexNot = true;
+        rule.matchRegex = [...(rule.matchRegex ?? []),
+          { pattern: leaf.regex, not: negated || undefined }];
       }
       if (typeof leaf.min_chars === 'number') {
         rule.matchMinChars = leaf.min_chars;
