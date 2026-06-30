@@ -4,17 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Optional upstream tag, e.g. master-684-138da14. Empty = latest."
+        description: "Optional upstream leejet tag, e.g. master-714-db48014. Empty = latest."
         required: false
         type: string
-      lite:
-        description: "Smoke test only: first model at 512x256. Full update PRs should leave this off."
-        type: boolean
-        default: false
+      cuda_release:
+        description: "Optional lemonade-sdk CUDA tag, e.g. master-714-db48014. Empty = latest CUDA release."
+        required: false
+        type: string
   pull_request:
     paths:
       - ".github/workflows/validate_sdcpp.yml"
       - ".github/scripts/update_sdcpp_versions.py"
+      - ".github/scripts/render_sdcpp_pr_body.py"
       - "test/validate_sdcpp.py"
       - "src/cpp/resources/backend_versions.json"
       - "src/cpp/resources/server_models.json"
@@ -34,12 +35,16 @@ env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
   SDCPP_REPO: leejet/stable-diffusion.cpp
   SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
-  # Base sd-cpp pins to update. CUDA is added only when matching CUDA assets exist.
+  # Non-CUDA assets are published by leejet. CUDA assets are published by the
+  # lemonade-sdk fork and may intentionally be on a different release tag.
   SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
+  SDCPP_CUDA_UPDATE_BACKENDS: cuda
+  SDCPP_VALIDATED_LABELS: cpu,vulkan,rocm-stable
   SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
+  SDCPP_TEST_MODELS: "SD-Turbo-GGUF,Flux-2-Klein-4B"
+  SDCPP_TEST_SIZES: "512x256,1024x1024"
   SDCPP_TEST_SEED: "12345"
   SDCPP_TEST_STEPS: "4"
   LEMONADE_VALIDATE_SD_TIMEOUT: "7200"
@@ -50,83 +55,101 @@ concurrency:
 
 jobs:
   discover-release:
-    name: Discover stable-diffusion.cpp release
+    name: Discover stable-diffusion.cpp releases
     runs-on: ubuntu-latest
     outputs:
-      release: ${{ steps.release.outputs.release }}
-      short_release: ${{ steps.release.outputs.short_release }}
+      base_release: ${{ steps.release.outputs.base_release }}
+      base_short_release: ${{ steps.release.outputs.base_short_release }}
+      cuda_release: ${{ steps.release.outputs.cuda_release }}
+      cuda_short_release: ${{ steps.release.outputs.cuda_short_release }}
       is_update_run: ${{ steps.release.outputs.is_update_run }}
+      base_update_backends: ${{ steps.assets.outputs.base_update_backends }}
+      cuda_update_backends: ${{ steps.assets.outputs.cuda_update_backends }}
       update_backends: ${{ steps.assets.outputs.update_backends }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Resolve release tag
+      - name: Resolve release tags
         id: release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release || '' }}
+          INPUT_CUDA_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.cuda_release || '' }}
         run: |
           set -euo pipefail
 
-          if [ -n "$INPUT_RELEASE" ]; then
-            RELEASE="$INPUT_RELEASE"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            RELEASE=$(python3 - <<'PY'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            read -r BASE_RELEASE CUDA_RELEASE < <(python3 - <<'PY'
           import json
           with open('src/cpp/resources/backend_versions.json', encoding='utf-8') as f:
               data = json.load(f)
-          print(data['sd-cpp']['cpu'])
+          print(data['sd-cpp']['cpu'], data['sd-cpp']['cuda'])
           PY
           )
           else
-            RELEASE=$(gh api repos/${SDCPP_REPO}/releases/latest --jq '.tag_name')
+            if [ -n "$INPUT_RELEASE" ]; then
+              BASE_RELEASE="$INPUT_RELEASE"
+            else
+              BASE_RELEASE=$(gh api repos/${SDCPP_REPO}/releases/latest --jq '.tag_name')
+            fi
+
+            if [ -n "$INPUT_CUDA_RELEASE" ]; then
+              CUDA_RELEASE="$INPUT_CUDA_RELEASE"
+            else
+              CUDA_RELEASE=$(gh api repos/${SDCPP_CUDA_REPO}/releases/latest --jq '.tag_name')
+            fi
           fi
 
-          if ! [[ "$RELEASE" =~ ^master-[0-9]+-[0-9a-f]{7,40}$ ]]; then
-            echo "Invalid stable-diffusion.cpp release tag: $RELEASE" >&2
-            exit 1
-          fi
+          python3 - "$BASE_RELEASE" "$CUDA_RELEASE" <<'PY' > release_outputs.env
+          import re
+          import sys
 
-          SHORT_RELEASE=$(python3 - <<PY
-          release = "$RELEASE"
-          parts = release.split('-', 2)
-          print(parts[0] + '-' + parts[2])
+          release_re = re.compile(r"^master-[0-9]+-[0-9a-f]{7,40}$")
+
+          def short_release(value: str) -> str:
+              parts = value.split('-', 2)
+              if len(parts) != 3:
+                  raise SystemExit(f"Invalid stable-diffusion.cpp release tag: {value}")
+              return f"{parts[0]}-{parts[2]}"
+
+          base_release, cuda_release = sys.argv[1], sys.argv[2]
+          for label, value in (("base", base_release), ("cuda", cuda_release)):
+              if not release_re.match(value):
+                  raise SystemExit(
+                      f"Invalid {label} stable-diffusion.cpp release tag: {value}. "
+                      "Expected format like master-714-db48014."
+                  )
+
+          print(f"base_release={base_release}")
+          print(f"base_short_release={short_release(base_release)}")
+          print(f"cuda_release={cuda_release}")
+          print(f"cuda_short_release={short_release(cuda_release)}")
           PY
-          )
 
-          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
-          echo "short_release=$SHORT_RELEASE" >> "$GITHUB_OUTPUT"
+          cat release_outputs.env >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "is_update_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_update_run=true" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Using stable-diffusion.cpp release: $RELEASE ($SHORT_RELEASE)"
+          echo "Using base stable-diffusion.cpp release: ${BASE_RELEASE}"
+          echo "Using CUDA stable-diffusion.cpp release: ${CUDA_RELEASE}"
 
-      - name: Verify upstream release has expected backend assets
+      - name: Verify base release assets
         id: assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE: ${{ steps.release.outputs.release }}
-          SHORT_RELEASE: ${{ steps.release.outputs.short_release }}
+          BASE_RELEASE: ${{ steps.release.outputs.base_release }}
+          BASE_SHORT_RELEASE: ${{ steps.release.outputs.base_short_release }}
         run: |
           set -euo pipefail
-          gh api repos/${SDCPP_REPO}/releases/tags/${RELEASE} --jq '.assets[].name' | sort > assets.txt
-          cat assets.txt
 
-          # CUDA validation is disabled until a CUDA runner exists. Keep the CUDA
-          # asset probe non-blocking, but use the real CUDA artifact names from
-          # lemonade-sdk/stable-diffusion.cpp: windows-cuda and ubuntu-cuda.
-          if gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt 2>/dev/null; then
-            echo "CUDA release assets from ${SDCPP_CUDA_REPO}:"
-            cat cuda-assets.txt
-          else
-            echo "::notice::No matching CUDA release found in ${SDCPP_CUDA_REPO} for ${RELEASE}; CUDA validation is disabled for this workflow run."
-            : > cuda-assets.txt
-          fi
+          echo "Base assets from ${SDCPP_REPO}@${BASE_RELEASE}:"
+          gh api repos/${SDCPP_REPO}/releases/tags/${BASE_RELEASE} --jq '.assets[].name' | sort > assets.txt
+          cat assets.txt
 
           python3 <<'PY'
           import os
@@ -134,41 +157,32 @@ jobs:
           import sys
           from pathlib import Path
 
-          short = os.environ['SHORT_RELEASE']
-          assets = set(Path('assets.txt').read_text(encoding='utf-8').splitlines())
-          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
+          base_short = os.environ['BASE_SHORT_RELEASE']
+          base_assets = set(Path('assets.txt').read_text(encoding='utf-8').splitlines())
 
           checks = {
               'cpu': [
-                  rf'^sd-{re.escape(short)}-bin-win-avx2-x64\.zip$',
-                  rf'^sd-{re.escape(short)}-bin-Linux-Ubuntu-24\.04-x86_64\.zip$',
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-avx2-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64\.zip$'),
               ],
               'vulkan': [
-                  rf'^sd-{re.escape(short)}-bin-win-vulkan-x64\.zip$',
-                  rf'^sd-{re.escape(short)}-bin-Linux-Ubuntu-24\.04-x86_64-vulkan\.zip$',
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-vulkan-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-vulkan\.zip$'),
               ],
               'rocm-stable': [
-                  rf'^sd-{re.escape(short)}-bin-win-rocm-[0-9][^/]*-x64\.zip$',
-                  rf'^sd-{re.escape(short)}-bin-Linux-Ubuntu-24\.04-x86_64-rocm-[0-9][^/]*\.zip$',
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-rocm-[0-9][^/]*-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-rocm-[0-9][^/]*\.zip$'),
               ],
               'metal': [
-                  rf'^sd-{re.escape(short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$',
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$'),
               ],
           }
 
           missing = []
           for backend, patterns in checks.items():
-              for pattern in patterns:
+              for assets, pattern in patterns:
                   if not any(re.match(pattern, asset) for asset in assets):
                       missing.append(f"{backend}: {pattern}")
-          cuda_patterns = [
-              rf'^sd-{re.escape(short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
-              rf'^sd-{re.escape(short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
-          ]
-          if cuda_assets:
-              for pattern in cuda_patterns:
-                  if not any(re.match(pattern, asset) for asset in cuda_assets):
-                      missing.append(f"cuda: {pattern}")
 
           if missing:
               print('Missing expected release assets:', file=sys.stderr)
@@ -177,16 +191,14 @@ jobs:
               sys.exit(1)
           PY
 
-          if [ -s cuda-assets.txt ]; then
-            UPDATE_BACKENDS="${SDCPP_BASE_UPDATE_BACKENDS},cuda"
-          else
-            UPDATE_BACKENDS="${SDCPP_BASE_UPDATE_BACKENDS}"
-          fi
-          echo "update_backends=${UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
-          echo "Will update sd-cpp backend pins: ${UPDATE_BACKENDS}"
+          echo "base_update_backends=${SDCPP_BASE_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "cuda_update_backends=${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "update_backends=${SDCPP_BASE_UPDATE_BACKENDS},${SDCPP_CUDA_UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "Will update base sd-cpp pins: ${SDCPP_BASE_UPDATE_BACKENDS} -> ${BASE_RELEASE}"
+          echo "Will update CUDA sd-cpp pins later after validation: ${SDCPP_CUDA_UPDATE_BACKENDS} -> ${{ steps.release.outputs.cuda_release }}"
 
   build:
-    name: Build Lemonade with sd-cpp pin
+    name: Build Lemonade with sd-cpp pins
     needs: discover-release
     if: always() && !failure() && !cancelled()
     runs-on: windows-latest
@@ -202,8 +214,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python .github/scripts/update_sdcpp_versions.py `
-            --release "${{ needs.discover-release.outputs.release }}" `
-            --backends "${{ needs.discover-release.outputs.update_backends }}"
+            --release "${{ needs.discover-release.outputs.base_release }}" `
+            --backends "${{ needs.discover-release.outputs.base_update_backends }}"
+          python .github/scripts/update_sdcpp_versions.py `
+            --release "${{ needs.discover-release.outputs.cuda_release }}" `
+            --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
 
       - name: Build C++ Server with CMake
         shell: PowerShell
@@ -247,8 +262,6 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
-            # No dedicated CPU runner label exists; run CPU validation on the
-            # existing Windows 128GB Vulkan host with the sd-cpp CPU backend.
             runner: [self-hosted, Windows, 128gb, vulkan]
           - label: vulkan
             backend: vulkan
@@ -258,9 +271,9 @@ jobs:
             backend: rocm
             channel: stable
             runner: [self-hosted, Windows, 128gb, rocm]
-          # CUDA validation is prepared but disabled until a CUDA runner is available.
-          # The updater still pins sd-cpp.cuda and the release step probes CUDA
-          # artifact names. Re-enable this block once the runner exists.
+          # CUDA is pinned by the updater and its assets are required by the
+          # verify-cuda-assets job after this validation matrix completes.
+          # Validation stays disabled until a matching runner exists.
           # - label: cuda
           #   backend: cuda
           #   channel: ""
@@ -343,19 +356,28 @@ jobs:
               "test/validate_sdcpp.py",
               "--backend", $backend,
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
-              "--size", "512x256",
-              "--size", "1024x1024",
+              "--warmup",
               "--output", "sdcpp_validation_$label.json",
               "--images-dir", "sdcpp-images-$label"
             )
+            foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
+              $model = $model.Trim()
+              if ($model) {
+                $validationArgs += "--model"
+                $validationArgs += $model
+              }
+            }
+            foreach ($size in "${{ env.SDCPP_TEST_SIZES }}".Split(',')) {
+              $size = $size.Trim()
+              if ($size) {
+                $validationArgs += "--size"
+                $validationArgs += $size
+              }
+            }
             if ($channel) {
               $validationArgs += "--channel"
               $validationArgs += $channel
             }
-            if ("${{ env.LITE_MODE }}" -eq "true") {
-              $validationArgs += "--lite"
-            }
-
             & $venvPython @validationArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
@@ -392,16 +414,62 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
+  verify-cuda-assets:
+    name: Verify required CUDA assets
+    needs: [discover-release, validate]
+    if: always() && needs.discover-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify CUDA release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          CUDA_SHORT_RELEASE: ${{ needs.discover-release.outputs.cuda_short_release }}
+        run: |
+          set -euo pipefail
+          echo "CUDA asset validation intentionally runs after the image validation matrix."
+          echo "If CUDA assets are missing, this job hard-fails after CPU/Vulkan/ROCm evidence is available."
+          echo "CUDA assets from ${SDCPP_CUDA_REPO}@${CUDA_RELEASE}:"
+          gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${CUDA_RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt
+          cat cuda-assets.txt
+
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          cuda_short = os.environ['CUDA_SHORT_RELEASE']
+          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
+          patterns = [
+              rf'^sd-{re.escape(cuda_short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
+              rf'^sd-{re.escape(cuda_short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
+          ]
+
+          missing = []
+          for pattern in patterns:
+              if not any(re.match(pattern, asset) for asset in cuda_assets):
+                  missing.append(pattern)
+
+          if missing:
+              print('Missing expected CUDA release assets:', file=sys.stderr)
+              for pattern in missing:
+                  print(f'  - {pattern}', file=sys.stderr)
+              sys.exit(1)
+          PY
+
   create-pr:
     name: Create update PR
-    needs: [discover-release, validate]
+    needs: [discover-release, validate, verify-cuda-assets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.verify-cuda-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
@@ -414,105 +482,49 @@ jobs:
       - name: Update backend_versions.json
         run: |
           python3 .github/scripts/update_sdcpp_versions.py \
-            --release "${{ needs.discover-release.outputs.release }}" \
-            --backends "${{ needs.discover-release.outputs.update_backends }}"
+            --release "${{ needs.discover-release.outputs.base_release }}" \
+            --backends "${{ needs.discover-release.outputs.base_update_backends }}"
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --release "${{ needs.discover-release.outputs.cuda_release }}" \
+            --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
 
-      - name: Generate PR body
+      - name: Normalize validation evidence and generate PR body
         shell: bash
         env:
-          SDCPP_RELEASE: ${{ needs.discover-release.outputs.release }}
-          SDCPP_SHORT_RELEASE: ${{ needs.discover-release.outputs.short_release }}
-          SDCPP_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.update_backends }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          BASE_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.base_update_backends }}
+          CUDA_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.cuda_update_backends }}
         run: |
-          python3 <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          release = os.environ["SDCPP_RELEASE"]
-          short_release = os.environ["SDCPP_SHORT_RELEASE"]
-          update_backends = os.environ["SDCPP_UPDATE_BACKENDS"]
-          updated = [item.strip() for item in update_backends.split(",") if item.strip()]
-          labels = ["cpu", "vulkan", "rocm-stable"]
-          unvalidated = [backend for backend in updated if backend not in labels]
-
-          rows = []
-          prompt = None
-          for label in labels:
-              path = Path(f"sdcpp_validation_{label}.json")
-              if not path.exists():
-                  rows.append({"label": label, "missing": True})
-                  continue
-              for row in json.loads(path.read_text(encoding="utf-8")):
-                  if prompt is None and row.get("prompt"):
-                      prompt = row["prompt"]
-                  row["artifact"] = f"sdcpp-validation-{label}"
-                  rows.append(row)
-
-          summary = {}
-          for row in rows:
-              label = row.get("label")
-              item = summary.setdefault(
-                  label,
-                  {"total": 0, "passed": 0, "elapsed": 0.0, "missing": False},
-              )
-              if row.get("missing"):
-                  item["missing"] = True
-                  continue
-              item["total"] += 1
-              if row.get("pass"):
-                  item["passed"] += 1
-              try:
-                  item["elapsed"] += float(row.get("elapsed_s", 0) or 0)
-              except (TypeError, ValueError):
-                  pass
-
-          lines = [
-              f"This updates the existing `sd-cpp` backend pins to `{release}`.",
-              "",
-              f"- Updated pins: `{', '.join(updated)}`",
-              f"- Validated backends: `{', '.join(labels)}`",
-              "- Updated but not validated here: " + (f"`{', '.join(unvalidated)}`" if unvalidated else "none"),
-              "",
-              "Validated with the same prompt and seed on each available runner:",
-              "",
-              f"- Prompt: `{prompt or os.environ.get('SDCPP_TEST_PROMPT', '')}`",
-              "- Seed / steps: `12345` / `4`",
-              "- Models: `SD-Turbo-GGUF`, `Flux-2-Klein-4B`",
-              "- Sizes: `512x256`, `1024x1024`",
-              "",
-              "| Backend | Result | Total time | Evidence |",
-              "|---|---:|---:|---|",
-          ]
-
-          for label in labels:
-              item = summary.get(label, {"missing": True, "total": 0, "passed": 0, "elapsed": 0.0})
-              if item.get("missing") and item.get("total", 0) == 0:
-                  lines.append(f"| {label} | missing | - | `sdcpp-validation-{label}` |")
-                  continue
-              result = f"{item['passed']}/{item['total']} images"
-              elapsed = f"{item['elapsed']:.1f}s"
-              lines.append(f"| {label} | {result} | {elapsed} | `sdcpp-validation-{label}` |")
-
-          lines += [
-              "",
-              "The workflow artifacts contain the generated PNGs plus per-image timings.",
-              "CUDA is only pinned when matching CUDA assets exist; CUDA validation remains disabled until a matching runner is available.",
-              "Metal is pinned when updated, but not validated in this workflow because there is no macOS matrix leg.",
-              "`sd-cpp.rocm-nightly` is not touched.",
-          ]
-
-          Path("pr_body.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
+          set -euo pipefail
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          EVIDENCE_ROOT=".github/sdcpp-validation"
+          EVIDENCE_DIR="${EVIDENCE_ROOT}/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          # Keep only the current update evidence so merged auto-update PRs do not
+          # accumulate old binary PNG evidence indefinitely.
+          rm -rf "$EVIDENCE_ROOT"
+          python3 .github/scripts/render_sdcpp_pr_body.py \
+            --base-release "$BASE_RELEASE" \
+            --cuda-release "$CUDA_RELEASE" \
+            --base-update-backends "$BASE_UPDATE_BACKENDS" \
+            --cuda-update-backends "$CUDA_UPDATE_BACKENDS" \
+            --validated-labels "${SDCPP_VALIDATED_LABELS}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --image-ref "$BRANCH" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --models "${SDCPP_TEST_MODELS}" \
+            --sizes "${SDCPP_TEST_SIZES}" \
+            --output pr_body.md
 
       - name: Create Pull Request
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SDCPP_RELEASE: ${{ needs.discover-release.outputs.release }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
         run: |
           set -euo pipefail
-          BRANCH="auto/sdcpp-update-${SDCPP_RELEASE}"
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
 
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -n "$EXISTING_PR" ]; then
@@ -523,18 +535,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet src/cpp/resources/backend_versions.json; then
-            echo "backend_versions.json is unchanged; nothing to update."
+          if git diff --quiet src/cpp/resources/backend_versions.json .github/sdcpp-validation; then
+            echo "backend_versions.json and validation evidence are unchanged; nothing to update."
             exit 0
           fi
 
           git checkout -B "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
-          git commit -m "Update stable-diffusion.cpp to ${SDCPP_RELEASE}"
+          git add src/cpp/resources/backend_versions.json .github/sdcpp-validation
+          git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
           git push --force-with-lease origin "$BRANCH"
 
           gh pr create \
-            --title "Update stable-diffusion.cpp to ${SDCPP_RELEASE}" \
+            --title "Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"

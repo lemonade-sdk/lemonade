@@ -7,6 +7,8 @@ endif()
 
 project(lemon_cpp VERSION 10.8.1)
 
+include(CTest)
+
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -32,6 +34,38 @@ include(GNUInstallDirs)
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
      )
+
+# ============================================================
+# Self-describing backends registry
+# ============================================================
+# The authoritative backend list. Each entry is "<recipe>|<stem>":
+#   recipe - the recipe string used in server_models.json (may contain dashes)
+#   stem   - identifier-safe name and folder. Each backend lives in its own
+#            folder, shipping (in namespace lemon::backends::<stem>):
+#              include/lemon/backends/<stem>/<stem>.h         inline const descriptor (CLI-safe data)
+#              include/lemon/backends/<stem>/<stem>_server.h  WrappedServer subclass + create() decl
+#              server/backends/<stem>/<stem>_server.cpp       implementation + create() def
+#
+# Adding a backend is one line here plus that folder. The codegen later in this
+# file (see "Self-describing backends registry codegen") compiles the server
+# source and regenerates the registry headers, which bind each descriptor to its
+# create(). Because this list is a tracked input, editing it forces regeneration
+# on the next build (a file(GLOB) would silently miss a newly added backend). The
+# descriptor is a header-only inline const, so it links into both the lemonade
+# CLI and lemond; only lemond links the server sources.
+set(LEMON_BACKENDS
+    # "<recipe>|<stem>"
+    "llamacpp|llamacpp"
+    "whispercpp|whispercpp"
+    "moonshine|moonshine"
+    "kokoro|kokoro"
+    "sd-cpp|sdcpp"
+    "flm|fastflowlm"
+    "ryzenai-llm|ryzenai"
+    "vllm|vllm"
+    "cloud|cloud"
+)
+
 # ============================================================
 # Tauri app source paths (used by both runtime and installers)
 # ============================================================
@@ -408,8 +442,8 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
-    # Set Windows target version to Windows 10 for httplib v0.26.0
-    add_compile_definitions(_WIN32_WINNT=0x0A00)
+    # Set Windows target version to Windows 10 for httplib v0.26.0, and prevent Windows.h min/max macro definitions
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX)
     if(MSVC)
         # Add security-hardening compiler flags for MSVC
         # Control Flow Guard - prevents control flow hijacking
@@ -595,7 +629,9 @@ set(SOURCES_CORE
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_policy.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/prometheus_metrics.cpp
@@ -607,15 +643,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
-    src/cpp/server/backends/cloud_server.cpp
-    src/cpp/server/backends/llamacpp_server.cpp
-    src/cpp/server/backends/fastflowlm_server.cpp
-    src/cpp/server/backends/ryzenaiserver.cpp
-    src/cpp/server/backends/whisper_server.cpp
-    src/cpp/server/backends/moonshine_server.cpp
-    src/cpp/server/backends/kokoro_server.cpp
-    src/cpp/server/backends/sd_server.cpp
-    src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
@@ -646,6 +673,59 @@ elseif(UNIX)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
 endif()
+
+# ============================================================
+# Self-describing backends registry codegen
+# ============================================================
+# Consumes LEMON_BACKENDS (defined near the top of this file): the foreach below
+# compiles each backend's server source and regenerates the registry headers that
+# bind every descriptor to its create().
+set(LEMON_DESCRIPTOR_INCLUDES "")
+set(LEMON_DESCRIPTOR_ENTRIES "")
+set(LEMON_FACTORY_INCLUDES "")
+set(LEMON_FACTORY_ENTRIES "")
+# The data registry (descriptors, header-only) links into both binaries; the
+# factory registry + per-backend server sources are server-only.
+# Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
+set(LEMON_BACKEND_DESCRIPTOR_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
+set(LEMON_BACKEND_FACTORY_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
+foreach(_backend_entry ${LEMON_BACKENDS})
+    string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
+    list(GET _backend_parts 1 _backend_stem)
+    # The descriptor is header-only (no source). Compile every .cpp in the
+    # backend's folder (server class + any backend-private helpers like GGUF
+    # parsing) — CONFIGURE_DEPENDS re-globs when a file is added/removed so a new
+    # helper in a folder needs no CMake edit. (The backend LIST is still explicit
+    # above so a whole new backend is never silently missed.)
+    file(GLOB _backend_srcs CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/*.cpp)
+    list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
+    string(APPEND LEMON_DESCRIPTOR_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}.h\"\n")
+    string(APPEND LEMON_DESCRIPTOR_ENTRIES
+        "        &lemon::backends::${_backend_stem}::descriptor,\n")
+    string(APPEND LEMON_FACTORY_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
+    string(APPEND LEMON_FACTORY_ENTRIES
+        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+endforeach()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptors_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_descriptors_generated.h
+    @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
+    @ONLY)
+
+# lemond gets both descriptor data and factories; the CLI gets only the data
+# (see src/cpp/cli/CMakeLists.txt, which reuses LEMON_BACKEND_DESCRIPTOR_SOURCES).
+list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_FACTORY_SOURCES})
 
 # ============================================================
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
@@ -713,6 +793,16 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
+endif()
+
+set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
+if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
+    add_executable(test_vllm_arg_resolver
+        ${VLLM_ARG_RESOLVER_TEST_SOURCE}
+        src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
+    )
+    target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -1325,6 +1415,10 @@ if(APPLE)
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
+    # Declare the package arm64-only so the macOS Installer does not assume our
+    # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
+    set(CPACK_APPLE_PKG_INSTALLER_CONTENT "<hostArchitectures><hostArchitecture>arm64</hostArchitecture></hostArchitectures>")
+
     set(CPACK_PRODUCTBUILD_DOMAIN "system")
 
     if(INSTALLER_IDENTITY)
@@ -1682,6 +1776,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -1788,6 +1885,93 @@ if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
     add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
 endif()
 
+# Routing engine contract surface (issue #2407). Header-only foundation: the
+# shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
+# The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
+set(_ROUTING_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
+)
+if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+    add_executable(test_routing_policy_contract
+        test/cpp/test_routing_policy_contract.cpp
+    )
+    target_include_directories(test_routing_policy_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_contract PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_contract PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
+endif()
+
+# Routing match evaluator (issue #2378): composite Condition nodes,
+# classifier-band leaf evaluation, MatchExpr compilation, trace and memoization.
+set(_ROUTING_EVALUATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_evaluator.cpp"
+)
+if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
+    add_executable(test_routing_policy_evaluator
+        test/cpp/test_routing_policy_evaluator.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_evaluator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_evaluator PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEvaluatorTest COMMAND test_routing_policy_evaluator)
+endif()
+
+# Routing classifier/condition registry (issue #2379): classifier JSON
+# instantiation, classifier leaf resolution, deterministic leaf dispatch seams.
+set(_ROUTING_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_registry.cpp"
+)
+if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
+    add_executable(test_routing_policy_registry
+        test/cpp/test_routing_policy_registry.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_registry PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_registry PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
+endif()
+
+# Routing semantic_similarity classifier (issue #2381): max-cosine scoring over
+# reference phrases, reference-phrase embedding caching, inclusive band
+# boundaries, and on_error handling, all against a fake embedder.
+set(_ROUTING_SEMANTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_semantic.cpp"
+)
+if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
+    add_executable(test_routing_policy_semantic
+        test/cpp/test_routing_policy_semantic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_semantic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_semantic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.
@@ -1805,4 +1989,25 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME AutoTuneTest COMMAND test_auto_tune)
+endif()
+
+set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
+if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
+    add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
+    target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
+    add_test(NAME TelemetryHelpersTest COMMAND test_telemetry_helpers)
+endif()
+
+set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
+if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
+    add_executable(test_config_migration test/cpp/test_config_migration.cpp)
+    target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
+    add_test(NAME ConfigMigrationTest COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
+if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
+    add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
+    target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
+    add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
 endif()
