@@ -14,6 +14,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
+| `openmoss` | OpenMOSS TTS | yes | no | rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -41,6 +42,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
+| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `openmoss` | rocm | linux, windows | amd_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cuda | linux | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -231,6 +234,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Medium-Streaming` | 1.08 | transcription, realtime-transcription, hot |
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
+
+#### `openmoss` — OpenMOSS TTS (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `MOSS-VoiceGen` | 7.8 | tts, voice-design |
+| `OpenMOSS-TTS` | 8.7 | tts |
 
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)
 

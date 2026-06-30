@@ -9,6 +9,7 @@ const RECIPE_PRIORITY = [
   'kokoro',
   'llamacpp',
   'moonshine',
+  'openmoss',
   'ryzenai-llm',
   'sd-cpp',
   'thinksound',
@@ -24,7 +25,8 @@ const RECIPE_DISPLAY_NAMES = {
   'ryzenai-llm': 'Ryzen AI SW NPU',
   vllm: 'vLLM ROCm (experimental)',
   thinksound: 'ThinkSound',
-  acestep: 'ACE-Step'
+  acestep: 'ACE-Step',
+  openmoss: 'OpenMOSS TTS'
 };
 /* END GENERATED: models-js-recipes */
 

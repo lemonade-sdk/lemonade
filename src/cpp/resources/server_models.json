@@ -1647,6 +1647,25 @@
         ],
         "size": 10.5
     },
+    "OpenMOSS-TTS": {
+        "checkpoint": "ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts"
+        ],
+        "size": 8.7
+    },
+    "MOSS-VoiceGen": {
+        "checkpoint": "ilintar/moss-voicegen-gguf:moss-voicegen.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 7.8
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
