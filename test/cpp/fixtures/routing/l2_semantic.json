@@ -9,11 +9,17 @@
     "classifiers": [
       { "id": "is_coding", "type": "semantic_similarity",
         "model": "nomic-embed-text-v1.5-GGUF",
-        "reference_phrases": ["write a function", "fix this bug", "refactor this code", "time complexity"] }
+        "reference_phrases": {
+          "coding": ["write a function", "fix this bug", "refactor this code", "time complexity"],
+          "math":   ["integral", "prove this theorem"]
+        } }
     ],
     "rules": [
       { "id": "coding-to-big",
-        "match": { "classifier": "is_coding", "min_score": 0.78 },
+        "match": { "classifier": "is_coding", "label": "coding", "min_score": 0.75 },
+        "route_to": "vllm.qwen3-32b" },
+      { "id": "math-to-big",
+        "match": { "classifier": "is_coding", "label": "math", "min_score": 0.80 },
         "route_to": "vllm.qwen3-32b" }
     ]
   }

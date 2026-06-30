@@ -71,7 +71,7 @@ Supported registration flags:
 | Flag | Description |
 |------|-------------|
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `collection.omni`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -497,6 +497,8 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 3. Global configuration values, see [Server Configuration](./README.md)
 
 **`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
+
+For built-in models using `recipe: "vllm"`, also check [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json). Some vLLM families need family-level arguments such as tool-call parser settings; see the [vLLM model-family argument config](./vllm.md#model-family-argument-config) docs before adding or updating vLLM model entries.
 
 For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 

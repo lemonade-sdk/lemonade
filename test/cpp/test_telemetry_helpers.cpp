@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
-#include "lemon/backends/vllm_server.h"
+#include "lemon/backends/vllm/vllm_server.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);

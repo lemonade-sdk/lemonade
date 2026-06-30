@@ -73,6 +73,7 @@ private:
     // Unified config endpoints
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.

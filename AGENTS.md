@@ -175,6 +175,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/include/lemon/server_capabilities.h` | Backend capability interfaces |
 | `src/cpp/resources/server_models.json` | Model registry |
 | `src/cpp/resources/backend_versions.json` | Backend version pins |
+| `docs/tools/gen_backend_boilerplate.py` | Regenerates committed artifacts from the C++ backend descriptors. Outputs: the whole of `src/cpp/resources/defaults.json` (per-recipe sections only; global keys stay hand-maintained in that file), and `<!-- BEGIN/END GENERATED -->` regions in `docs/dev/backends-reference.md`, root `README.md`, `docs/guide/cli.md`, `docs/guide/configuration/{README,multi-model,custom-models}.md`, and `docs/assets/models.js`. Don't hand-edit those regions/sections; CI runs `--check` and fails on drift. |
 | `src/cpp/server/anthropic_api.cpp` | Anthropic API compatibility |
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/server/mcp_server.cpp` | MCP gateway (POST /mcp) |
@@ -194,7 +195,7 @@ These MUST be maintained in all changes:
 2. **NPU exclusivity** — Exclusive-NPU recipes (`ryzenai-llm`, `whispercpp` on NPU) evict ALL other NPU models before loading. FastFlowLM (`flm`) can coexist with other FLM types (max 1 per FLM type) but not with exclusive-NPU recipes.
 3. **WrappedServer contract** — New backends MUST implement all core virtual methods: `load()`, `unload()`, `chat_completion()`, `completion()`, `responses()`.
 4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server). They must NOT run in-process.
-5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`.
+5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`. When adding or updating `vllm` models, also update `src/cpp/resources/vllm_model_config.json` if the model family needs vLLM-specific args such as tool-call parser settings.
 6. **Cross-platform** — Code must compile on Windows (MSVC), Linux (GCC/Clang), macOS (AppleClang). Platform-specific code must use `#ifdef` guards.
 7. **No hardcoded paths** — Use path utilities. Windows/Linux/macOS paths differ.
 8. **Thread safety** — Router serves concurrent HTTP requests. Shared state must be properly guarded.
