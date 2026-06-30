@@ -22,7 +22,9 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ## Device Constraints
 
-- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+<!-- BEGIN GENERATED: npu-exclusivity -->
+- **NPU Exclusivity:** `whispercpp`, `flm`, and `ryzenai-llm` are mutually exclusive on the NPU.
+<!-- END GENERATED: npu-exclusivity -->
     - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
     - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
@@ -104,5 +106,7 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from environment variables or server startup arguments (see [Server Configuration](./README.md))
-3. Hardcoded defaults in `lemond` (lowest priority)
+2. Per-model values from `recipe_options.json`
+3. Per-architecture defaults from `architecture_defaults.json` (shipped resource; keyed by GGUF architecture name)
+4. Values from environment variables or server startup arguments (see [Server Configuration](./README.md))
+5. Hardcoded defaults in `lemond` (lowest priority)

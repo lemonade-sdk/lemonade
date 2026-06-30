@@ -1,12 +1,5 @@
 // Standalone test for GGUF array storage and weighted KV cache computation.
 //
-// Covers:
-//  - GgufMetadata raw array fields (head_count_kv_per_layer, sliding_window_pattern)
-//  - Post-loop derivation of scalar convenience fields
-//  - compute_weighted_kv_cache_bytes_per_token() with per-layer arrays
-//  - full_attention_interval exact count (floor((n-1)/interval) + 1)
-//  - SWA precise weighted sum vs proportional approximation
-//
 // Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_auto_tune.cpp -o test_auto_tune
 
 #include "lemon/gguf_reader.h"
@@ -23,17 +16,13 @@ static void check(const char* name, bool ok) {
     if (!ok) ++g_failures;
 }
 
-// Floating-point equality with tolerance
 static bool approx_eq(double a, double b, double tol = 0.001) {
     return std::fabs(a - b) < tol;
 }
 
-// ── Helpers to simulate post-loop derivation ─────────────────────────
-
 /// Simulate what read_gguf_metadata does after the KV loop:
 /// derive head_count_kv and swa_layer_count from raw arrays/scalars.
 static void derive_scalars(GgufMetadata& m) {
-    // head_count_kv derivation
     if (!m.head_count_kv_per_layer.empty()) {
         for (int64_t v : m.head_count_kv_per_layer)
             m.head_count_kv += v;
@@ -42,19 +31,16 @@ static void derive_scalars(GgufMetadata& m) {
         m.head_count_kv_per_layer.assign(m.block_count, m.head_count_kv_scalar);
     }
 
-    // swa_layer_count derivation
     if (!m.sliding_window_pattern.empty()) {
         for (bool v : m.sliding_window_pattern)
             if (v) m.swa_layer_count++;
     }
 }
 
-// ── Test: scalar head_count_kv derivation ─────────────────────────────
-
 static void test_scalar_head_count_kv() {
     GgufMetadata m;
     m.block_count = 32;
-    m.head_count_kv_scalar = 4;  // 4 KV heads per block
+    m.head_count_kv_scalar = 4;
 
     derive_scalars(m);
 
@@ -67,8 +53,6 @@ static void test_scalar_head_count_kv() {
                       m.head_count_kv_per_layer.end(),
                       [](int64_t v) { return v == 4; }));
 }
-
-// ── Test: array head_count_kv derivation ──────────────────────────────
 
 static void test_array_head_count_kv() {
     GgufMetadata m;
@@ -83,8 +67,6 @@ static void test_array_head_count_kv() {
           m.head_count_kv == 48);
 }
 
-// ── Test: sliding_window_pattern derivation ───────────────────────────
-
 static void test_swa_pattern_derivation() {
     GgufMetadata m;
     m.block_count = 8;
@@ -96,13 +78,11 @@ static void test_swa_pattern_derivation() {
           m.swa_layer_count == 4);
 }
 
-// ── Test: standard MHA/GQA (no scaling) ──────────────────────────────
-
 static void test_standard_mha() {
     GgufMetadata m;
     m.block_count = 32;
     m.key_length = 128;
-    m.head_count_kv_per_layer.assign(32, 4);  // 4 KV heads per block
+    m.head_count_kv_per_layer.assign(32, 4);
 
     derive_scalars(m);
     // Expected: 128 total heads * 128 key_len * 2[F16] * 2[K+V] = 65536
@@ -111,8 +91,6 @@ static void test_standard_mha() {
     check("standard: kv_bytes = total_heads * key_len * 4",
           approx_eq(bytes, 128.0 * 128.0 * 4.0));
 }
-
-// ── Test: SWA with per-layer arrays (precise weighted sum) ───────────
 
 static void test_swa_precise() {
     GgufMetadata m;
@@ -140,18 +118,14 @@ static void test_swa_precise() {
 
     double scale = 0;
     lemon::compute_weighted_kv_cache_bytes_per_token(m, &scale);
-    // Unweighted: (8+4+8+4) * 256 = 4608
-    // scale = 5120 / 4608 ≈ 1.1111... wait, that's > 1 which is wrong
-    // Actually: weighted = 8*256 + 4*128 + 8*256 + 4*128 = 2048+512+2048+512 = 5120
-    // unweighted = (8+4+8+4) * 256 = 24 * 256 = 6144
+    // weighted = 8*256 + 4*128 + 8*256 + 4*128 = 5120
+    // unweighted = (8+4+8+4) * 256 = 6144
     // scale = 5120 / 6144 ≈ 0.8333
     check("swa-precise: scale factor < 1.0",
           scale > 0.0 && scale < 1.0);
     check("swa-precise: scale ≈ 0.8333",
           approx_eq(scale, 5120.0 / 6144.0));
 }
-
-// ── Test: SWA with scalar fallback (proportional approximation) ──────
 
 static void test_swa_scalar_fallback() {
     GgufMetadata m;
@@ -160,7 +134,7 @@ static void test_swa_scalar_fallback() {
     m.key_length_swa = 128;
 
     // Scalar case: no per-layer array, no sliding_window_pattern
-    m.head_count_kv_scalar = 8;  // uniform 8 heads per block
+    m.head_count_kv_scalar = 8;
 
     derive_scalars(m);
     // After derivation, per_layer IS populated from scalar, and swa_pattern is empty.
@@ -175,14 +149,12 @@ static void test_swa_scalar_fallback() {
           approx_eq(bytes, 32.0 * 256.0 * 4.0));
 }
 
-// ── Test: SWA with scalar + manually set swa_layer_count ─────────────
-
 static void test_swa_scalar_with_count() {
     GgufMetadata m;
     m.block_count = 4;
     m.key_length = 256;
     m.key_length_swa = 128;
-    m.swa_layer_count = 2;  // 2 out of 4 layers are SWA
+    m.swa_layer_count = 2;
 
     m.head_count_kv_scalar = 8;
 
@@ -195,8 +167,6 @@ static void test_swa_scalar_with_count() {
     check("swa-scalar-count: proportional factor applied",
           approx_eq(bytes, 32.0 * 256.0 * 4.0 * 0.75));
 }
-
-// ── Test: full_attention_interval exact count ─────────────────────────
 
 static void test_full_attention_interval() {
     // For each (blocks, interval), verify the exact count:
@@ -251,8 +221,6 @@ static void test_full_attention_interval() {
     }
 }
 
-// ── Test: full_attention_interval formula vs old approximation ────────
-
 static void test_fai_improvement() {
     // Demonstrate that the exact formula differs meaningfully from 1/interval
     // for non-divisible block counts.
@@ -278,8 +246,6 @@ static void test_fai_improvement() {
           scale > old_approx);
 }
 
-// ── Test: missing metadata returns 0 ──────────────────────────────────
-
 static void test_missing_metadata() {
     GgufMetadata m_empty;
     double bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m_empty);
@@ -298,11 +264,8 @@ static void test_missing_metadata() {
     check("missing: no key_length returns 0", bytes == 0.0);
 }
 
-// ── Test: varying head counts with SWA ────────────────────────────────
-
 static void test_varying_heads_swa() {
     // Model where SWA layers have FEWER heads than full layers.
-    // This is where the precise weighted sum matters most.
     GgufMetadata m;
     m.block_count = 6;
     m.key_length = 256;
@@ -326,13 +289,10 @@ static void test_varying_heads_swa() {
     // Old proportional approximation (with uniform head count = total/6 = 6):
     //   factor = 1 - 3/6 + 3/6 * 64/256 = 1 - 0.5 + 0.125 = 0.625
     //   bytes = 60 * 256 * 4 * 0.625 = 38400
-    // The precise value (52224) is significantly different!
     double old_approx = 60.0 * 256.0 * 4.0 * 0.625;
     check("varying-heads-swa: precise differs from proportional",
           !approx_eq(bytes, old_approx, 1000.0));
 }
-
-// ── Main ──────────────────────────────────────────────────────────────
 
 int main() {
     test_scalar_head_count_kv();

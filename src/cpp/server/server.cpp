@@ -5,8 +5,8 @@
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
-#include "lemon/backends/cloud_server.h"
-#include "lemon/backends/sd_server.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
@@ -732,6 +732,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_install(req, res);
     });
 
+    register_post("install/dry-run", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_install_dry_run(req, res);
+    });
+
     register_post("uninstall", [this](const httplib::Request& req, httplib::Response& res) {
         handle_uninstall(req, res);
     });
@@ -778,6 +782,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
+    });
+    web_server.Get("/internal/config/defaults", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_defaults_get(req, res);
     });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
@@ -1804,7 +1811,8 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     //   - If model is NOT downloaded: Download it from HuggingFace
     //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
@@ -3460,7 +3468,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         // as a separate request from generation, which lets the frontend show
         // the original and upscaled images side by side with independent timing.
         std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            lemon::backends::SDServer::SPEC, backend);
+            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
         std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
 #ifdef _WIN32
             "sd-cli.exe";
@@ -3764,6 +3772,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         if (stream) {
             auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
                 model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
@@ -3825,7 +3840,12 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         bool not_found = false;
         nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
         if (not_found) {
@@ -4362,59 +4382,11 @@ void Server::resolve_and_register_local_model(
     std::string recipe = model_data.value("recipe", "");
     bool vision = model_data.value("vision", false);
 
-    std::string resolved_checkpoint;
+    // The backend's ops locate its primary artifact within the imported
+    // directory (.gguf / .bin file, genai_config.json dir, …); "" means register
+    // the directory itself.
+    std::string resolved_checkpoint = backends::ops_for(recipe)->find_imported_checkpoint(dest_path);
     std::string resolved_mmproj;
-
-    // For RyzenAI LLM models, find genai_config.json
-    if (recipe == "ryzenai-llm") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                resolved_checkpoint = entry.path().parent_path().string();
-                break;
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
-    // For llamacpp models, find the GGUF file
-    else if (recipe == "llamacpp") {
-        std::string gguf_file_found;
-
-        // If no variant or variant not found, search for any .gguf file (excluding mmproj)
-        if (gguf_file_found.empty()) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    std::string filename_lower = filename;
-                    std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-
-                    if (filename_lower.find(".gguf") != std::string::npos &&
-                        filename_lower.find("mmproj") == std::string::npos) {
-                        gguf_file_found = entry.path().string();
-                        break;
-                    }
-                }
-            }
-        }
-
-        resolved_checkpoint = gguf_file_found.empty() ? dest_path : gguf_file_found;
-    }
-    // For whispercpp, find .bin file
-    else if (recipe == "whispercpp") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".bin") != std::string::npos) {
-                    resolved_checkpoint = entry.path().string();
-                    break;
-                }
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
 
     // Search for mmproj file if vision is enabled or mmproj hint provided
     if (vision || !mmproj.empty()) {
@@ -4534,7 +4506,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     if (config_) {
         system_info["model_storage"] = get_model_storage_stats(utils::get_hf_cache_dir());
     }
-    
+
     // Cloud providers: per-provider {name, base_url, env_var_set,
     // runtime_key_set, models_discovered}. Never includes the key itself.
     // Clients use this to decide whether to prompt for an API key, show a
@@ -4735,6 +4707,19 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
     }
 }
 
+void Server::handle_config_defaults_get(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        // The canonical default config (global keys + descriptor-derived per-recipe
+        // sections), independent of this host's config.json or deployment overrides.
+        res.set_content(ConfigFile::base_defaults().dump(2), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_defaults_get: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_bin_change(const std::string& section,
                                 const std::string& bin_key,
                                 const std::string& new_value) {
@@ -4745,9 +4730,8 @@ void Server::handle_bin_change(const std::string& section,
     std::string backend = bin_key.substr(0, bin_key.size() - 4);
 
     // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
-    // current install flow — find_external_backend_binary uses recipe-based
-    // section lookup and there is no recipe whose section equals "ryzenai".
-    // Skip the hot-swap rather than attempt an install that won't help.
+    // current install flow, so skip the hot-swap rather than attempt an install
+    // that won't help.
     if (backend == "server") {
         LOG(WARNING, "Server") << section << "." << bin_key
                                << " is not consumed by the install flow; "
@@ -5580,6 +5564,72 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_install_dry_run(const httplib::Request& req, httplib::Response& res) {
+    // Resolve the backend asset URL that install_backend() would download for a
+    // given recipe/backend, optionally for a mocked GPU arch, without fetching
+    // any bytes — so a 404 from a stale target-name or version pin can be caught
+    // for any arch without that GPU present.
+    std::string requested_arch;
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        const std::string recipe = request_json.value("recipe", "");
+        const std::string backend = request_json.value("backend", "");
+        requested_arch = request_json.value("arch", "");
+
+        if (recipe.empty() || backend.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Both 'recipe' and 'backend' are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!requested_arch.empty()) {
+            SystemInfo::set_rocm_arch_override(requested_arch);
+        }
+
+        auto params = backend_manager_->get_install_params(recipe, backend);
+
+        // Clear the override as soon as resolution is done so it cannot leak to
+        // any later work on this thread.
+        SystemInfo::set_rocm_arch_override("");
+
+        const std::string url = "https://github.com/" + params.repo +
+                                "/releases/download/" + params.version + "/" +
+                                params.filename;
+
+        bool supports_split_archive = false;
+        if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {
+            supports_split_archive = spec->supports_split_archive;
+        }
+
+        bool supported = requested_arch.empty()
+            ? true
+            : SystemInfo::backend_supports_arch(recipe, backend, requested_arch);
+
+        nlohmann::json response = {
+            {"recipe", recipe},
+            {"backend", backend},
+            {"arch", requested_arch},
+            {"repo", params.repo},
+            {"version", params.version},
+            {"filename", params.filename},
+            {"url", url},
+            {"supports_split_archive", supports_split_archive},
+            {"supported", supported}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        SystemInfo::set_rocm_arch_override("");
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        if (!requested_arch.empty()) {
+            error["arch"] = requested_arch;
+        }
         res.set_content(error.dump(), "application/json");
     }
 }

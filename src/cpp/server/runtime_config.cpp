@@ -1,4 +1,5 @@
 #include "lemon/runtime_config.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -30,22 +31,26 @@ RuntimeConfig* RuntimeConfig::global() {
     return s_global_instance.load(std::memory_order_acquire);
 }
 
-static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
-};
-
+// A valid config.json backend section is the config_section of any descriptor
+// that runs a local subprocess (binary != ""). Cloud has no binary, so it is not
+// a backend section.
 static bool is_backend_name(const std::string& key) {
-    return std::find(s_backend_names.begin(), s_backend_names.end(), key) != s_backend_names.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (!desc->binary.empty() && desc->effective_config_section() == key) {
+            return true;
+        }
+    }
+    return false;
 }
 
-// Backends that have a selectable "backend" key
-static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp", "vllm"
-};
-
+// A config section has a selectable "backend" key iff its descriptor opts in.
 static bool has_backend_selection(const std::string& config_section) {
-    return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
-                     config_section) != s_selectable_backends.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->selectable_backend && desc->effective_config_section() == config_section) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
@@ -107,12 +112,18 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
 }
 
 std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
-    if (config_section == "sdcpp") return "sd-cpp";
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() == config_section) {
+            return desc->recipe;
+        }
+    }
     return config_section;
 }
 
 std::string RuntimeConfig::recipe_to_config_section(const std::string& recipe) {
-    if (recipe == "sd-cpp") return "sdcpp";
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        return desc->effective_config_section();
+    }
     return recipe;
 }
 
@@ -279,9 +290,15 @@ std::string RuntimeConfig::rocm_channel() const {
 
 std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
     std::string channel = rocm_channel();
-    // sd-cpp currently has no nightly artifacts; use stable builds.
-    if (recipe == "sd-cpp" && channel == "nightly") {
-        return "stable";
+    // Clamp to a channel the backend actually publishes. A backend that lists
+    // only {"stable"} (e.g. sd-cpp, which has no nightly artifacts) falls back to
+    // its first channel when "nightly" is requested.
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && !desc->rocm_channels.empty()) {
+        const auto& channels = desc->rocm_channels;
+        if (std::find(channels.begin(), channels.end(), channel) == channels.end()) {
+            return channels.front();
+        }
     }
     return channel;
 }
@@ -420,56 +437,43 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         return val;
     };
 
+    auto ends_with = [](const std::string& s, const std::string& suf) {
+        return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+    };
+
     const std::string backend_args = backend + "_args";
 
-    if (config_.contains("llamacpp")) {
-        const auto& lc = config_["llamacpp"];
-        if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
-        if (lc.contains(backend_args) && lc[backend_args] != "") {
-            result["llamacpp_args"] = lc[backend_args];
-        } else if (lc.contains("args")) {
-            result["llamacpp_args"] = lc["args"];
+    // Translate each backend's nested config.json section into the flat
+    // recipe_options format, driven by the descriptor's option list. The flat
+    // key is the descriptor option name; the config.json key is derived from the
+    // option's role (its name suffix):
+    //   *_backend -> "backend"   *_args -> variant "<backend>_args" then "args"
+    //   *_device  -> "device"    everything else -> the option name verbatim
+    //                            (sd-cpp's steps/cfg_scale/width/height/…)
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        const std::string section = desc->effective_config_section();
+        if (!config_.contains(section) || !config_[section].is_object()) {
+            continue;
         }
-        if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
-    }
-
-    if (config_.contains("whispercpp")) {
-        const auto& wc = config_["whispercpp"];
-        if (wc.contains("backend")) result["whispercpp_backend"] = resolve_auto(wc["backend"]);
-        if (wc.contains(backend_args) && wc[backend_args] != "") {
-            result["whispercpp_args"] = wc[backend_args];
-        } else if (wc.contains("args")) {
-            result["whispercpp_args"] = wc["args"];
+        const auto& cfg = config_[section];
+        for (const auto& opt : desc->options) {
+            if (ends_with(opt.name, "_backend")) {
+                if (cfg.contains("backend")) {
+                    result[opt.name] = resolve_auto(cfg["backend"]);
+                }
+            } else if (ends_with(opt.name, "_args")) {
+                if (cfg.contains(backend_args) && cfg[backend_args] != "") {
+                    result[opt.name] = cfg[backend_args];
+                } else if (cfg.contains("args")) {
+                    result[opt.name] = cfg["args"];
+                }
+            } else {
+                const std::string ckey = ends_with(opt.name, "_device") ? "device" : opt.name;
+                if (cfg.contains(ckey)) {
+                    result[opt.name] = cfg[ckey];
+                }
+            }
         }
-    }
-
-    if (config_.contains("moonshine")) {
-        const auto& ms = config_["moonshine"];
-        if (ms.contains(backend_args) && ms[backend_args] != "") {
-            result["moonshine_args"] = ms[backend_args];
-        } else if (ms.contains("args")) {
-            result["moonshine_args"] = ms["args"];
-        }
-    }
-
-    if (config_.contains("sdcpp")) {
-        const auto& sd = config_["sdcpp"];
-        if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
-        if (sd.contains(backend_args) && sd[backend_args] != "") {
-            result["sdcpp_args"] = sd[backend_args];
-        } else if (sd.contains("args")) {
-            result["sdcpp_args"] = sd["args"];
-        }
-        if (sd.contains("steps")) result["steps"] = sd["steps"];
-        if (sd.contains("cfg_scale")) result["cfg_scale"] = sd["cfg_scale"];
-        if (sd.contains("width")) result["width"] = sd["width"];
-        if (sd.contains("height")) result["height"] = sd["height"];
-    }
-
-    if (config_.contains("vllm")) {
-        const auto& vl = config_["vllm"];
-        if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);
-        if (vl.contains("args")) result["vllm_args"] = vl["args"];
     }
 
     if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];

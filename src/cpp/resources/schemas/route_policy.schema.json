@@ -96,9 +96,14 @@
           "type": "string"
         },
         "reference_phrases": {
-          "description": "semantic_similarity only: exemplar phrases embedded once and compared to the input by cosine. Named distinctly from routing.candidates (the routing targets) to avoid overloading that core term.",
-          "type": "array",
-          "items": { "type": "string" }
+          "description": "semantic_similarity only: a map of concept label -> exemplar phrases. Each concept's phrases are embedded once and compared to the input by cosine; the classifier reports the max cosine per concept as that concept's label score. The concept labels are this classifier's output labels (so a condition references a concept via `label`).",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
         },
         "on_error": {
           "description": "Behavior when the classifier fails to evaluate. match_true = fail-closed authoring. Frozen v1 default when omitted: match_false (fail-open).",
@@ -109,7 +114,7 @@
       "additionalProperties": false,
       "allOf": [
         { "if":   { "required": ["type"], "properties": { "type": { "const": "semantic_similarity" } } },
-          "then": { "required": ["model", "reference_phrases"] } },
+          "then": { "required": ["model", "reference_phrases"], "not": { "required": ["labels"] } } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
           "then": { "required": ["model"] } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
