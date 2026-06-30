@@ -1,5 +1,6 @@
 {
-  "_comment": "Per-architecture default recipe options. Keys are GGUF architecture names (e.g. qwen35, gemma4). Values are recipe option key-value pairs that override global config defaults but are overridden by model-level recipe_options. Loaded from resources at startup; optional - missing file or unknown architecture silently applies no overlay.",
+  "_comment": "Per-architecture default recipe options. Keys are GGUF architecture names (e.g. qwen35, gemma4). Values are recipe option key-value pairs that override global config defaults but are overridden by model-level recipe_options.",
+  "_warning": "IMPORTANT: Do NOT define *_backend options here. This file is meant mostly for sampler options or other options that might be necessary to run a specific model family.",
   "gemma4": {
     "llamacpp_args": "--temp 1.0 --top-p 0.95 --top-k 64"
   },
