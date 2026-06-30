@@ -672,6 +672,32 @@ sys.exit(0)
             # Restore the default (empty) value so later tests are unaffected.
             run_cli_command(["config", "set", "vllm.args="])
 
+    def test_044_config_set_cli(self):
+        """Verify that CLI config set parses nested dotted keys and modifies the server config."""
+        # 1. Set some values using the CLI config set
+        result = self.assertCommandSucceeds(
+            [
+                "config",
+                "set",
+                "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
+                "telemetry.otlp.protocol=http/json",
+            ]
+        )
+        print(f"Config set output: {result.stdout}")
+
+        # 2. Query the params to verify it parsed correctly and merged
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/params",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        telemetry = response.json().get("telemetry", {})
+        self.assertEqual(
+            telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
+        )
+        self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+
     # =============================================================================
     # Pull Tests
     # =============================================================================

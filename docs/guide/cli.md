@@ -16,6 +16,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for launch](#options-for-launch)
 - [Options for bench](#options-for-bench)
 - [Options for scan](#options-for-scan)
+- [Options for telemetry](#options-for-telemetry)
 
 ## Commands
 
@@ -26,7 +27,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
-| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](../server/cli-chat.md). |
+| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](./cli-chat.md). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ### Server
@@ -38,6 +39,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+| `telemetry`         | Dynamically enable or disable telemetry tracing. See command options [below](#options-for-telemetry). |
 
 ### Model Management
 
@@ -325,44 +327,56 @@ The following options apply to all model loads:
 
 The following options are available depending on the recipe being used:
 
-#### Llama.cpp (`llamacpp` recipe)
+<!-- BEGIN GENERATED: cli-recipe-options -->
+#### Llama.cpp GPU (`llamacpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
+| `--ctx-size SIZE` | Context size for the model | auto |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
-| `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
-
-#### FLM (`flm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### RyzenAI LLM (`ryzenai-llm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### SD.cpp (`sd-cpp` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
-| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
-| `--steps N` | Number of inference steps for image generation | `20` |
-| `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
-| `--width PX` | Image width in pixels | `512` |
-| `--height PX` | Image height in pixels | `512` |
+| `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
 
+#### Moonshine (`moonshine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
+
+#### StableDiffusion.cpp (`sd-cpp` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+
+#### FastFlowLM NPU (`flm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Ryzen AI LLM (`ryzenai-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### vLLM ROCm (experimental) (`vllm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--vllm BACKEND` | vLLM backend to use | Auto-detected |
+| `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
+<!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
@@ -657,6 +671,29 @@ lemonade scan
 
 # Scan for beacons for a custom duration
 lemonade scan --duration 5
+```
+
+## Options for telemetry
+
+Dynamically toggle telemetry tracing on the server. This setting is applied immediately in-memory without requiring a server restart, but is not persisted to the server's `config.json` (meaning it will revert when the server restarts).
+
+```bash
+lemonade telemetry <on|off>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `on`     | Enable telemetry tracing. |
+| `off`    | Disable telemetry tracing. |
+
+**Examples:**
+
+```bash
+# Enable telemetry tracing dynamically
+lemonade telemetry on
+
+# Disable telemetry tracing dynamically
+lemonade telemetry off
 ```
 
 ## Options for bench

@@ -1,4 +1,5 @@
 #include "lemon/runtime_config.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -29,22 +31,26 @@ RuntimeConfig* RuntimeConfig::global() {
     return s_global_instance.load(std::memory_order_acquire);
 }
 
-static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
-};
-
+// A valid config.json backend section is the config_section of any descriptor
+// that runs a local subprocess (binary != ""). Cloud has no binary, so it is not
+// a backend section.
 static bool is_backend_name(const std::string& key) {
-    return std::find(s_backend_names.begin(), s_backend_names.end(), key) != s_backend_names.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (!desc->binary.empty() && desc->effective_config_section() == key) {
+            return true;
+        }
+    }
+    return false;
 }
 
-// Backends that have a selectable "backend" key
-static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp", "vllm"
-};
-
+// A config section has a selectable "backend" key iff its descriptor opts in.
 static bool has_backend_selection(const std::string& config_section) {
-    return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
-                     config_section) != s_selectable_backends.end();
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->selectable_backend && desc->effective_config_section() == config_section) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
@@ -106,12 +112,18 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
 }
 
 std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
-    if (config_section == "sdcpp") return "sd-cpp";
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() == config_section) {
+            return desc->recipe;
+        }
+    }
     return config_section;
 }
 
 std::string RuntimeConfig::recipe_to_config_section(const std::string& recipe) {
-    if (recipe == "sd-cpp") return "sdcpp";
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        return desc->effective_config_section();
+    }
     return recipe;
 }
 
@@ -278,11 +290,96 @@ std::string RuntimeConfig::rocm_channel() const {
 
 std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
     std::string channel = rocm_channel();
-    // sd-cpp currently has no nightly artifacts; use stable builds.
-    if (recipe == "sd-cpp" && channel == "nightly") {
-        return "stable";
+    // Clamp to a channel the backend actually publishes. A backend that lists
+    // only {"stable"} (e.g. sd-cpp, which has no nightly artifacts) falls back to
+    // its first channel when "nightly" is requested.
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (desc && !desc->rocm_channels.empty()) {
+        const auto& channels = desc->rocm_channels;
+        if (std::find(channels.begin(), channels.end(), channel) == channels.end()) {
+            return channels.front();
+        }
     }
     return channel;
+}
+
+bool RuntimeConfig::telemetry_enabled() const {
+    return get_bool_opt(nullptr, {"telemetry", "enabled"}, false);
+}
+
+bool RuntimeConfig::telemetry_hide_inputs() const {
+    return get_bool_opt(nullptr, {"telemetry", "hide_inputs"}, false);
+}
+
+bool RuntimeConfig::telemetry_hide_outputs() const {
+    return get_bool_opt(nullptr, {"telemetry", "hide_outputs"}, false);
+}
+
+bool RuntimeConfig::telemetry_hide_thinking() const {
+    return get_bool_opt(nullptr, {"telemetry", "hide_thinking"}, false);
+}
+
+int RuntimeConfig::telemetry_max_queue_capacity() const {
+    return get_int_opt(nullptr, {"telemetry", "max_queue_capacity"}, 1000);
+}
+
+int RuntimeConfig::telemetry_max_attribute_length() const {
+    return get_int_opt(nullptr, {"telemetry", "max_attribute_length"}, 4096);
+}
+
+std::string RuntimeConfig::telemetry_otlp_endpoint() const {
+    return get_string_opt(nullptr, {"telemetry", "otlp", "endpoint"}, "http://localhost:4318/v1/traces");
+}
+
+std::string RuntimeConfig::telemetry_otlp_protocol() const {
+    return get_string_opt(nullptr, {"telemetry", "otlp", "protocol"}, "http/protobuf");
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_otlp_semantics() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> semantics;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("otlp") && config_["telemetry"]["otlp"].is_object() &&
+        config_["telemetry"]["otlp"].contains("semantics") && config_["telemetry"]["otlp"]["semantics"].is_array()) {
+        for (const auto& item : config_["telemetry"]["otlp"]["semantics"]) {
+            if (item.is_string()) {
+                semantics.push_back(item.get<std::string>());
+            }
+        }
+    }
+    return semantics;
+}
+
+std::map<std::string, std::string> RuntimeConfig::telemetry_otlp_headers() const {
+    std::map<std::string, std::string> headers;
+    std::shared_lock lock(mutex_);
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("otlp") && config_["telemetry"]["otlp"].is_object() &&
+        config_["telemetry"]["otlp"].contains("headers") && config_["telemetry"]["otlp"]["headers"].is_object()) {
+        const auto& headers_json = config_["telemetry"]["otlp"]["headers"];
+        for (auto& [key, value] : headers_json.items()) {
+            if (value.is_string()) {
+                headers[key] = value.get<std::string>();
+            }
+        }
+    }
+    return headers;
+}
+
+int RuntimeConfig::telemetry_otlp_max_retries() const {
+    return get_int_opt(nullptr, {"telemetry", "otlp", "max_retries"}, 0);
+}
+
+double RuntimeConfig::telemetry_otlp_retry_backoff_base_s() const {
+    return get_double_opt(nullptr, {"telemetry", "otlp", "retry_backoff_base_s"}, 5.0);
+}
+
+int RuntimeConfig::telemetry_otlp_send_batch_size() const {
+    return get_int_opt(nullptr, {"telemetry", "otlp", "send_batch_size"}, 100);
+}
+
+double RuntimeConfig::telemetry_otlp_batch_timeout_s() const {
+    return get_double_opt(nullptr, {"telemetry", "otlp", "batch_timeout_s"}, 1.0);
 }
 
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
@@ -340,56 +437,43 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         return val;
     };
 
+    auto ends_with = [](const std::string& s, const std::string& suf) {
+        return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+    };
+
     const std::string backend_args = backend + "_args";
 
-    if (config_.contains("llamacpp")) {
-        const auto& lc = config_["llamacpp"];
-        if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
-        if (lc.contains(backend_args) && lc[backend_args] != "") {
-            result["llamacpp_args"] = lc[backend_args];
-        } else if (lc.contains("args")) {
-            result["llamacpp_args"] = lc["args"];
+    // Translate each backend's nested config.json section into the flat
+    // recipe_options format, driven by the descriptor's option list. The flat
+    // key is the descriptor option name; the config.json key is derived from the
+    // option's role (its name suffix):
+    //   *_backend -> "backend"   *_args -> variant "<backend>_args" then "args"
+    //   *_device  -> "device"    everything else -> the option name verbatim
+    //                            (sd-cpp's steps/cfg_scale/width/height/…)
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        const std::string section = desc->effective_config_section();
+        if (!config_.contains(section) || !config_[section].is_object()) {
+            continue;
         }
-        if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
-    }
-
-    if (config_.contains("whispercpp")) {
-        const auto& wc = config_["whispercpp"];
-        if (wc.contains("backend")) result["whispercpp_backend"] = resolve_auto(wc["backend"]);
-        if (wc.contains(backend_args) && wc[backend_args] != "") {
-            result["whispercpp_args"] = wc[backend_args];
-        } else if (wc.contains("args")) {
-            result["whispercpp_args"] = wc["args"];
+        const auto& cfg = config_[section];
+        for (const auto& opt : desc->options) {
+            if (ends_with(opt.name, "_backend")) {
+                if (cfg.contains("backend")) {
+                    result[opt.name] = resolve_auto(cfg["backend"]);
+                }
+            } else if (ends_with(opt.name, "_args")) {
+                if (cfg.contains(backend_args) && cfg[backend_args] != "") {
+                    result[opt.name] = cfg[backend_args];
+                } else if (cfg.contains("args")) {
+                    result[opt.name] = cfg["args"];
+                }
+            } else {
+                const std::string ckey = ends_with(opt.name, "_device") ? "device" : opt.name;
+                if (cfg.contains(ckey)) {
+                    result[opt.name] = cfg[ckey];
+                }
+            }
         }
-    }
-
-    if (config_.contains("moonshine")) {
-        const auto& ms = config_["moonshine"];
-        if (ms.contains(backend_args) && ms[backend_args] != "") {
-            result["moonshine_args"] = ms[backend_args];
-        } else if (ms.contains("args")) {
-            result["moonshine_args"] = ms["args"];
-        }
-    }
-
-    if (config_.contains("sdcpp")) {
-        const auto& sd = config_["sdcpp"];
-        if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
-        if (sd.contains(backend_args) && sd[backend_args] != "") {
-            result["sdcpp_args"] = sd[backend_args];
-        } else if (sd.contains("args")) {
-            result["sdcpp_args"] = sd["args"];
-        }
-        if (sd.contains("steps")) result["steps"] = sd["steps"];
-        if (sd.contains("cfg_scale")) result["cfg_scale"] = sd["cfg_scale"];
-        if (sd.contains("width")) result["width"] = sd["width"];
-        if (sd.contains("height")) result["height"] = sd["height"];
-    }
-
-    if (config_.contains("vllm")) {
-        const auto& vl = config_["vllm"];
-        if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);
-        if (vl.contains("args")) result["vllm_args"] = vl["args"];
     }
 
     if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
@@ -495,6 +579,124 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
         }
+    } else if (key == "telemetry") {
+        if (!value.is_object()) {
+            throw std::invalid_argument("'telemetry' must be an object");
+        }
+        static const std::unordered_set<std::string> valid_telemetry_keys = {
+            "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "max_queue_capacity", "max_attribute_length", "otlp"
+        };
+        for (auto& [t_key, t_val] : value.items()) {
+            if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
+                throw std::invalid_argument("Unknown config key: 'telemetry." + t_key + "'");
+            }
+        }
+        if (value.contains("enabled") && !value["enabled"].is_boolean()) {
+            throw std::invalid_argument("'telemetry.enabled' must be a boolean");
+        }
+        if (value.contains("hide_inputs") && !value["hide_inputs"].is_boolean()) {
+            throw std::invalid_argument("'telemetry.hide_inputs' must be a boolean");
+        }
+        if (value.contains("hide_outputs") && !value["hide_outputs"].is_boolean()) {
+            throw std::invalid_argument("'telemetry.hide_outputs' must be a boolean");
+        }
+        if (value.contains("hide_thinking") && !value["hide_thinking"].is_boolean()) {
+            throw std::invalid_argument("'telemetry.hide_thinking' must be a boolean");
+        }
+        if (value.contains("max_queue_capacity")) {
+            if (!value["max_queue_capacity"].is_number_integer()) {
+                throw std::invalid_argument("'telemetry.max_queue_capacity' must be an integer");
+            }
+            if (value["max_queue_capacity"].get<int>() <= 0) {
+                throw std::invalid_argument("'telemetry.max_queue_capacity' must be > 0");
+            }
+        }
+        if (value.contains("max_attribute_length")) {
+            if (!value["max_attribute_length"].is_number_integer()) {
+                throw std::invalid_argument("'telemetry.max_attribute_length' must be an integer");
+            }
+            if (value["max_attribute_length"].get<int>() <= 0) {
+                throw std::invalid_argument("'telemetry.max_attribute_length' must be > 0");
+            }
+        }
+        if (value.contains("otlp")) {
+            const auto& otlp = value["otlp"];
+            if (!otlp.is_object()) {
+                throw std::invalid_argument("'telemetry.otlp' must be an object");
+            }
+            static const std::unordered_set<std::string> valid_otlp_keys = {
+                "endpoint", "protocol", "semantics", "headers", "max_retries",
+                "retry_backoff_base_s", "send_batch_size", "batch_timeout_s"
+            };
+            for (auto& [otlp_key, otlp_val] : otlp.items()) {
+                if (valid_otlp_keys.find(otlp_key) == valid_otlp_keys.end()) {
+                    throw std::invalid_argument("Unknown config key: 'telemetry.otlp." + otlp_key + "'");
+                }
+            }
+            if (otlp.contains("endpoint") && !otlp["endpoint"].is_string()) {
+                throw std::invalid_argument("'telemetry.otlp.endpoint' must be a string");
+            }
+            if (otlp.contains("protocol")) {
+                if (!otlp["protocol"].is_string()) {
+                    throw std::invalid_argument("'telemetry.otlp.protocol' must be a string");
+                }
+                std::string proto = otlp["protocol"].get<std::string>();
+                if (proto != "http/protobuf" && proto != "http/json") {
+                    throw std::invalid_argument("'telemetry.otlp.protocol' must be either 'http/protobuf', or 'http/json'");
+                }
+            }
+            if (otlp.contains("semantics")) {
+                if (!otlp["semantics"].is_array()) {
+                    throw std::invalid_argument("'telemetry.otlp.semantics' must be an array");
+                }
+                for (const auto& item : otlp["semantics"]) {
+                    if (!item.is_string()) {
+                        throw std::invalid_argument("'telemetry.otlp.semantics' items must be strings");
+                    }
+                    std::string sem = item.get<std::string>();
+                    if (sem != "openinference" && sem != "otel_genai") {
+                        throw std::invalid_argument("'telemetry.otlp.semantics' items must be 'openinference' or 'otel_genai'");
+                    }
+                }
+            }
+            if (otlp.contains("headers") && !otlp["headers"].is_object()) {
+                throw std::invalid_argument("'telemetry.otlp.headers' must be an object");
+            }
+            if (otlp.contains("max_retries")) {
+                if (!otlp["max_retries"].is_number_integer()) {
+                    throw std::invalid_argument("'telemetry.otlp.max_retries' must be an integer");
+                }
+                if (otlp["max_retries"].get<int>() < 0) {
+                    throw std::invalid_argument("'telemetry.otlp.max_retries' must be >= 0");
+                }
+            }
+            if (otlp.contains("retry_backoff_base_s")) {
+                if (!otlp["retry_backoff_base_s"].is_number()) {
+                    throw std::invalid_argument("'telemetry.otlp.retry_backoff_base_s' must be a number");
+                }
+                double base_val = otlp["retry_backoff_base_s"].get<double>();
+                if (base_val < 0.0) {
+                    throw std::invalid_argument("'telemetry.otlp.retry_backoff_base_s' must be >= 0");
+                }
+            }
+            if (otlp.contains("send_batch_size")) {
+                if (!otlp["send_batch_size"].is_number_integer()) {
+                    throw std::invalid_argument("'telemetry.otlp.send_batch_size' must be an integer");
+                }
+                if (otlp["send_batch_size"].get<int>() < 1) {
+                    throw std::invalid_argument("'telemetry.otlp.send_batch_size' must be >= 1");
+                }
+            }
+            if (otlp.contains("batch_timeout_s")) {
+                if (!otlp["batch_timeout_s"].is_number()) {
+                    throw std::invalid_argument("'telemetry.otlp.batch_timeout_s' must be a number");
+                }
+                double to_val = otlp["batch_timeout_s"].get<double>();
+                if (to_val <= 0.0) {
+                    throw std::invalid_argument("'telemetry.otlp.batch_timeout_s' must be positive");
+                }
+            }
+        }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
@@ -574,6 +776,37 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                     applied_diff[key][sub_key] = sub_value;
                 }
             }
+        } else if (key == "telemetry" && value.is_object()) {
+            if (!config_.contains("telemetry") || !config_["telemetry"].is_object()) {
+                config_["telemetry"] = json::object();
+            }
+            for (auto& [t_key, t_val] : value.items()) {
+                if (t_key == "otlp" && t_val.is_object()) {
+                    if (!config_["telemetry"].contains("otlp") || !config_["telemetry"]["otlp"].is_object()) {
+                        config_["telemetry"]["otlp"] = json::object();
+                    }
+                    for (auto& [otlp_key, otlp_val] : t_val.items()) {
+                        if (!config_["telemetry"]["otlp"].contains(otlp_key) || config_["telemetry"]["otlp"][otlp_key] != otlp_val) {
+                            config_["telemetry"]["otlp"][otlp_key] = otlp_val;
+                            if (!applied_diff.contains("telemetry")) {
+                                applied_diff["telemetry"] = json::object();
+                            }
+                            if (!applied_diff["telemetry"].contains("otlp")) {
+                                applied_diff["telemetry"]["otlp"] = json::object();
+                            }
+                            applied_diff["telemetry"]["otlp"][otlp_key] = otlp_val;
+                        }
+                    }
+                } else {
+                    if (!config_["telemetry"].contains(t_key) || config_["telemetry"][t_key] != t_val) {
+                        config_["telemetry"][t_key] = t_val;
+                        if (!applied_diff.contains("telemetry")) {
+                            applied_diff["telemetry"] = json::object();
+                        }
+                        applied_diff["telemetry"][t_key] = t_val;
+                    }
+                }
+            }
         } else {
             if (!config_.contains(key) || config_[key] != value) {
                 config_[key] = value;
@@ -623,6 +856,75 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
 json RuntimeConfig::snapshot() const {
     std::shared_lock lock(mutex_);
     return config_;
+}
+
+bool RuntimeConfig::get_bool_opt(const char* env_name, const std::vector<std::string>& path, bool default_val) const {
+    if (env_name) {
+        if (const char* env = std::getenv(env_name)) {
+            std::string s(env);
+            return s == "1" || s == "true" || s == "True" || s == "TRUE" || s == "yes" || s == "YES";
+        }
+    }
+    std::shared_lock lock(mutex_);
+    const json* current = &config_;
+    for (const auto& key : path) {
+        if (!current->is_object() || !current->contains(key)) return default_val;
+        current = &((*current)[key]);
+    }
+    return current->is_boolean() ? current->get<bool>() : default_val;
+}
+
+int RuntimeConfig::get_int_opt(const char* env_name, const std::vector<std::string>& path, int default_val) const {
+    if (env_name) {
+        if (const char* env = std::getenv(env_name)) {
+            try { return std::stoi(env); } catch (...) {}
+        }
+    }
+    std::shared_lock lock(mutex_);
+    const json* current = &config_;
+    for (const auto& key : path) {
+        if (!current->is_object() || !current->contains(key)) return default_val;
+        current = &((*current)[key]);
+    }
+    try {
+        if (current->is_number_integer()) return current->get<int>();
+        if (current->is_string()) return std::stoi(current->get<std::string>());
+    } catch (...) {}
+    return default_val;
+}
+
+double RuntimeConfig::get_double_opt(const char* env_name, const std::vector<std::string>& path, double default_val) const {
+    if (env_name) {
+        if (const char* env = std::getenv(env_name)) {
+            try { return std::stod(env); } catch (...) {}
+        }
+    }
+    std::shared_lock lock(mutex_);
+    const json* current = &config_;
+    for (const auto& key : path) {
+        if (!current->is_object() || !current->contains(key)) return default_val;
+        current = &((*current)[key]);
+    }
+    try {
+        if (current->is_number()) return current->get<double>();
+        if (current->is_string()) return std::stod(current->get<std::string>());
+    } catch (...) {}
+    return default_val;
+}
+
+std::string RuntimeConfig::get_string_opt(const char* env_name, const std::vector<std::string>& path, const std::string& default_val) const {
+    if (env_name) {
+        if (const char* env = std::getenv(env_name)) {
+            return std::string(env);
+        }
+    }
+    std::shared_lock lock(mutex_);
+    const json* current = &config_;
+    for (const auto& key : path) {
+        if (!current->is_object() || !current->contains(key)) return default_val;
+        current = &((*current)[key]);
+    }
+    return current->is_string() ? current->get<std::string>() : default_val;
 }
 
 } // namespace lemon

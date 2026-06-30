@@ -181,6 +181,93 @@ defineTest('regular-model export carries no collection fields', () => {
   assert.ok(!('created' in payload));
 });
 
+defineTest('DEFAULT_OMNI_SYSTEM_PROMPT is the canonical default from toolDefinitions.json', () => {
+  const toolDefinitionsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'toolDefinitions.json');
+  const toolDefs = JSON.parse(fs.readFileSync(toolDefinitionsPath, 'utf8'));
+  assert.equal(
+    typeof collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    'string',
+    'The default prompt constant should be exported as a string.',
+  );
+  assert.equal(
+    collectionUtils.DEFAULT_OMNI_SYSTEM_PROMPT,
+    toolDefs.system_prompt,
+    'The editor default must match toolDefinitions.json verbatim so diff-on-save is exact.',
+  );
+});
+
+defineTest('buildCustomCollectionPullRequest attaches an optional system_prompt and omits it when blank', () => {
+  const baseDraft = {
+    name: 'WithPrompt',
+    components: { llm: 'planner' },
+  };
+
+  const withoutPrompt = collectionUtils.buildCustomCollectionPullRequest(baseDraft);
+  assert.equal(
+    'system_prompt' in withoutPrompt,
+    false,
+    'A draft without systemPrompt should not include the wire field.',
+  );
+
+  const blankPrompt = collectionUtils.buildCustomCollectionPullRequest({ ...baseDraft, systemPrompt: '   \n   ' });
+  assert.equal(
+    'system_prompt' in blankPrompt,
+    false,
+    'A whitespace-only systemPrompt should be treated as absent.',
+  );
+
+  const customPrompt = '   You are a helpful tester. Tools: {tool_list}{tool_guidance}\n   ';
+  const withPrompt = collectionUtils.buildCustomCollectionPullRequest({ ...baseDraft, systemPrompt: customPrompt });
+  assert.equal(withPrompt.system_prompt, customPrompt.trim());
+});
+
+defineTest('modelEntryToCustomCollection surfaces system_prompt back into the editable draft', () => {
+  const modelsData = {
+    'planner': model(['tool-calling']),
+    'user.MyKit': model(['collection'], true, 'collection.omni', {
+      components: ['planner'],
+      system_prompt: 'Greetings. {tool_list}{tool_guidance}',
+    }),
+  };
+
+  const custom = collectionUtils.modelEntryToCustomCollection('user.MyKit', modelsData['user.MyKit'], modelsData);
+  assert.equal(custom.systemPrompt, 'Greetings. {tool_list}{tool_guidance}');
+});
+
+defineTest('collection export round-trip preserves system_prompt on the import-ready payload', () => {
+  const raw = {
+    id: 'CreatorStudio',
+    object: 'model',
+    created: 1234567890,
+    owned_by: 'lemonade',
+    recipe: 'collection.omni',
+    checkpoint: '',
+    checkpoints: { main: '' },
+    components: ['planner'],
+    labels: [],
+    recipe_options: {},
+    suggested: true,
+    downloaded: true,
+    system_prompt: 'Custom override. {tool_list}{tool_guidance}',
+    models: [
+      {
+        id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',
+        recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M',
+        checkpoints: { main: 'org/planner:Q4_K_M' },
+        components: [], labels: ['tool-calling'], recipe_options: {},
+        suggested: true, downloaded: true, size: 2.5,
+      },
+    ],
+  };
+
+  const { payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.equal(
+    payload.system_prompt,
+    'Custom override. {tool_list}{tool_guidance}',
+    'system_prompt should survive the export normalization step.',
+  );
+});
+
 defineTest('role options include registered concrete compatible models', () => {
   const modelsData = {
     'plain-chat': model(['tool-calling']),

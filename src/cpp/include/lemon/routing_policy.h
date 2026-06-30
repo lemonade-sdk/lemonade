@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -35,6 +36,11 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+// Maximum nesting for routing match expressions. The parser should enforce this
+// at policy load time; compile_match_expr also uses it defensively for manually
+// constructed ASTs.
+constexpr std::size_t kMaxMatchExprDepth = 64;
+
 // ---------------------------------------------------------------------------
 // Request-side context
 // ---------------------------------------------------------------------------
@@ -67,15 +73,17 @@ struct RouteContext {
 // Classifier output + error policy
 // ---------------------------------------------------------------------------
 
-// What a Classifier produces for one (classifier, input) pair. A `classifier`
-// returns label -> score in [0,1] (HF text-classification convention);
-// `semantic_similarity` is the fixed-shape exception and reports a single cosine
-// score under the empty-string key.
+// What a Classifier produces for one (classifier, input) pair. Both `classifier`
+// and `semantic_similarity` return label -> score in [0,1]: a `classifier` uses
+// the model's labels (HF text-classification convention), while
+// `semantic_similarity` reports the max cosine per concept under that concept's
+// label. A label-less classifier may instead report a single score under an
+// arbitrary key (read via primary()).
 //
 // Scores are engine-opaque: a condition applies a min_score/max_score band to
 // the score of a chosen label to produce a bool.
 struct Score {
-    // label -> score. For semantic_similarity: {"": max_cosine}.
+    // label -> score. For semantic_similarity: one entry per concept.
     std::map<std::string, double> labels;
 
     // false => the classifier failed to evaluate (model error / timeout); the
@@ -86,18 +94,20 @@ struct Score {
     // — surfaced in the trace, never used for matching.
     std::string rationale;
 
-    // Score for an explicit label, or 0.0 if absent.
+    // Score for an explicit label, or 0.0 if absent. Extra labels returned by
+    // a classifier are ignored unless a condition references them.
     double score_of(const std::string& label) const {
         auto it = labels.find(label);
         return it == labels.end() ? 0.0 : it->second;
     }
 
-    // The single/primary score — the lone entry, or the empty-key entry for
-    // semantic_similarity. Returns 0.0 if empty.
+    // The single/primary score — the lone entry of a one-label classifier.
+    // Returns 0.0 unless the score has exactly one label, so a condition that
+    // omits `label` against a multi-label classifier never silently matches an
+    // arbitrary label. Used by classifiers that declare no labels() (their model
+    // returns one score and no label name is needed to address it).
     double primary() const {
-        if (labels.empty()) return 0.0;
-        auto it = labels.find("");
-        return it != labels.end() ? it->second : labels.begin()->second;
+        return labels.size() == 1 ? labels.begin()->second : 0.0;
     }
 };
 
@@ -177,10 +187,10 @@ public:
     // Declared output labels and the optional default. Intrinsic to the
     // declaration, so the registry resolves condition `label` refs against
     // labels() and falls back to default_label() when a condition omits `label`
-    // — no sidecar metadata table. semantic_similarity declares no labels
-    // (it scores under the empty-string key, read via Score::primary), so its
-    // labels() is empty and default_label() is nullopt — which correctly makes
-    // any `label` ref on a similarity condition invalid.
+    // — no sidecar metadata table. For `classifier` these are the model's
+    // labels; for `semantic_similarity` they are the concept names (the keys of
+    // reference_phrases map).
+    // A label-less classifier leaves labels() empty and is read via Score::primary().
     const std::vector<std::string>& labels() const { return labels_; }
     const std::optional<std::string>& default_label() const { return default_label_; }
 
@@ -295,6 +305,36 @@ using ConditionPtr = std::shared_ptr<Condition>;
 // ops + classifier-band) registered downstream — neither side depends on the
 // other's implementation, only on this typedef.
 using LeafFactory = std::function<ConditionPtr(const json& leaf)>;
+using NamedLeafFactories = std::map<std::string, LeafFactory>;
+
+// Composite evaluator nodes and compiler (#2378). These are pure structural
+// conditions; concrete leaf behavior is supplied through LeafFactory.
+ConditionPtr make_all_condition(std::vector<ConditionPtr> children);
+ConditionPtr make_any_condition(std::vector<ConditionPtr> children);
+ConditionPtr make_not_condition(ConditionPtr child);
+
+// Classifier-band leaf (#2378). Applies an inclusive score band to a resolved
+// Classifier's Score, memoizing classifier execution in EvalContext.
+ConditionPtr make_classifier_band_condition(ClassifierPtr classifier,
+                                            std::optional<std::string> label,
+                                            std::optional<double> min_score,
+                                            std::optional<double> max_score);
+
+// Compile a parsed MatchExpr into an executable Condition tree. Composite nodes
+// are built here; leaf nodes delegate to the injected factory so deterministic
+// ops and classifier-band leaves can be registered independently.
+ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_factory);
+
+// Classifier / condition registry helpers (#2379). These instantiate the
+// behavior-free contract objects from policy JSON while keeping live backend
+// access behind ClassifierServices.
+ClassifierPtr make_classifier(const json& config);
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json);
+
+// Builds the leaf factory used by compile_match_expr. Classifier leaves are
+// resolved here; deterministic leaf types are supplied by later issues.
+LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,
+                              NamedLeafFactories deterministic_factories = {});
 
 // ---------------------------------------------------------------------------
 // Policy + engine (constructor signature only here)
