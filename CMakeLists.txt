@@ -64,6 +64,8 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "cloud|cloud"
+    "thinksound|thinksound"
+    "acestep|acestep"
 )
 
 # ============================================================

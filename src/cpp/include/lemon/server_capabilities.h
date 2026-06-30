@@ -64,6 +64,15 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
+// Generative audio capability (text -> audio clip). Serves both music and
+// sound-effect models; the loaded model decides which. Streams the encoded
+// audio bytes (wav/mp3/…) to the sink, like ITextToSpeechServer.
+class IAudioGenerationServer : public virtual ICapability {
+public:
+    virtual ~IAudioGenerationServer() = default;
+    virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
+};
+
 class ISlotsServer : public virtual ICapability {
 public:
     virtual ~ISlotsServer() = default;
