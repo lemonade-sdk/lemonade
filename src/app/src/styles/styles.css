@@ -8183,6 +8183,11 @@ input, textarea {
   overflow: hidden;
 }
 
+.model-list-panel__title {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  flex-shrink: 0;
+}
+
 .model-list-panel__search-row {
   display: flex;
   align-items: center;
@@ -8647,6 +8652,24 @@ input, textarea {
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.model-detail-panel__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+.model-detail-panel__actions .btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.model-detail-panel__actions .btn--danger {
+  width: 28px;
+  padding: 0;
 }
 
 .model-detail-panel__error {
