@@ -1094,4 +1094,44 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
+    : policy_(std::move(policy)), services_(std::move(services)) {
+    // Compile every rule's match expression once, at construction, so route()
+    // does pure tree-walking on immutable state. Classifier leaves resolve
+    // against policy_.classifiers; deterministic leaf types (keywords/regex/
+    // min_chars/has_*/metadata) plug in via make_deterministic_leaf_factories().
+    LeafFactory leaf_factory =
+        make_leaf_factory(policy_.classifiers, make_deterministic_leaf_factories());
+    compiled_rules_.reserve(policy_.rules.size());
+    for (const auto& rule : policy_.rules) {
+        compiled_rules_.push_back(compile_match_expr(rule.match, leaf_factory));
+    }
+}
+
+Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
+    EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
+
+    // First-match-wins over the compiled rules. A classifier-level failure is
+    // already absorbed upstream by ClassifierBandCondition (Score::ok + the
+    // band's on_error), so this catch is only a last-resort guard: any
+    // unexpected throw fails the whole request open to default_model rather than
+    // escaping route().
+    try {
+        for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
+            if (compiled_rules_[i]->evaluate(eval)) {
+                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Routing") << "Routing policy evaluation threw; failing open to '"
+                                << policy_.default_model << "': " << e.what() << std::endl;
+    } catch (...) {
+        LOG(WARNING, "Routing") << "Routing policy evaluation threw an unknown exception; "
+                                << "failing open to '" << policy_.default_model << "'"
+                                << std::endl;
+    }
+
+    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+}
+
 } // namespace lemon
