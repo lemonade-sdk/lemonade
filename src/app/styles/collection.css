@@ -357,6 +357,119 @@
     flex-shrink: 0;
 }
 
+/* ── Chip grid (collapsed classifier/rule cards) ─────────────────────────── */
+
+.router-chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    min-height: 56px;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.router-chip-grid::-webkit-scrollbar { width: 6px; }
+.router-chip-grid::-webkit-scrollbar-track { background: transparent; }
+.router-chip-grid::-webkit-scrollbar-thumb { background: var(--color-5); border-radius: 3px; }
+
+.router-chip {
+    position: relative;
+    width: 200px;
+    min-height: 68px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    cursor: default;
+    transition: border-color 0.15s;
+}
+
+.router-chip:hover { border-color: var(--border-5); }
+
+.router-chip-id {
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: var(--text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 22px;
+}
+
+.router-chip-line {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.router-chip-expand {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+}
+
+.router-chip-expand:hover {
+    background: var(--bg-alpha-1);
+    color: var(--text-primary);
+}
+
+/* ── Detail panel overlay (floating editor over RouterCollectionPanel) ─────── */
+
+.router-detail-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 10100;  /* above settings-overlay which is 10000 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.router-detail-panel {
+    width: min(800px, calc(100vw - 40px));
+    max-height: calc(100vh - 80px);
+    background: var(--settings-bg);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.router-detail-panel .settings-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.router-detail-panel .settings-header {
+    flex-shrink: 0;
+}
+
+.router-detail-panel .settings-footer {
+    flex-shrink: 0;
+}
+
 /* ── JSON preview block ───────────────────────────────────────────────────── */
 
 .router-json-preview {
