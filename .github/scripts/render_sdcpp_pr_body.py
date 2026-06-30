@@ -3,8 +3,8 @@
 
 The validation workflow downloads artifacts named ``sdcpp-validation-*`` with
 JSON summaries and PNGs. This script normalizes those PNGs into a small evidence
-folder that is committed to the auto-update branch, then writes a PR body that
-links to the committed images so GitHub renders them directly in the PR.
+folder, then writes a PR body that links to a published image ref so GitHub
+renders them directly in the PR.
 """
 
 from __future__ import annotations
@@ -245,7 +245,7 @@ def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied:
 
     lines += [
         "",
-        f"Rendered `{copied}` committed validation image(s) in this PR body.",
+        f"Rendered `{copied}` validation image(s) in this PR body.",
         "CUDA is pinned from `lemonade-sdk/stable-diffusion.cpp` but CUDA validation remains disabled until a matching runner exists.",
         "Metal is pinned when updated, but not validated in this workflow because there is no macOS matrix leg.",
         "`sd-cpp.rocm-nightly` is not touched.",
@@ -261,7 +261,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cuda-update-backends", required=True)
     parser.add_argument("--validated-labels", default=",".join(DEFAULT_VALIDATED_LABELS))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "lemonade-sdk/lemonade"))
-    parser.add_argument("--image-ref", required=True, help="Branch or commit ref that will contain committed evidence images")
+    parser.add_argument("--image-ref", required=True, help="Branch or commit ref that contains published evidence images")
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--output", default="pr_body.md")
     parser.add_argument("--prompt", default=os.environ.get("SDCPP_TEST_PROMPT", ""))
