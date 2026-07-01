@@ -361,7 +361,7 @@ static bool has_manual_pull_options(const CliConfig& config) {
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
-        if (lemon::is_collection_recipe(config.recipe)) {
+        if (lemon::is_omni_collection_recipe(config.recipe)) {
             if (config.components.empty()) {
                 std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
                           << std::endl;

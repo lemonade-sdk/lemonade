@@ -98,6 +98,12 @@ static void test_rejects_bad_routing(ModelManager& manager) {
     err = manager.validate_collection_request("user.RouterKit", bad_band);
     check("invalid score band is rejected",
           error_contains(err, "min_score greater than max_score"));
+
+    json bad_regex = valid_router_collection();
+    bad_regex["routing"]["rules"][1]["match"] = {{"regex", "(a+)+"}};
+    err = manager.validate_collection_request("user.RouterKit", bad_regex);
+    check("compile-time leaf validation rejects catastrophic regex",
+          error_contains(err, "catastrophic backtracking"));
 }
 
 static void test_register_preserves_routing(ModelManager& manager) {
