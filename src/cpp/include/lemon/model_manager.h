@@ -339,6 +339,7 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+    mutable std::mutex recipe_options_mutex_;
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name

@@ -263,6 +263,10 @@ void Router::evict_server(WrappedServer* server, int timeout_seconds) {
     if (!server) return;
 
     std::string model_name = server->get_model_name();
+    if (server->is_pinned()) {
+        LOG(WARNING, "Router") << "Evicting pinned model: " << model_name
+                               << " (due to NPU exclusivity or capacity limits)" << std::endl;
+    }
     LOG(INFO, "Router") << "Evicting model: " << model_name << std::endl;
 
     // Wait for any ongoing inference to complete. For watchdog-reset/dead
@@ -421,6 +425,9 @@ void Router::load_model(const std::string& model_name,
                 existing->update_access_time();
                 is_loading_ = false;
                 load_cv_.notify_all();
+                if (pinned.has_value()) {
+                    persist_pinned_state(canonical_model_name, pinned.value());
+                }
                 return;
             }
         }
@@ -557,6 +564,10 @@ void Router::load_model(const std::string& model_name,
 
             LOG(INFO, "Router") << "Model loaded successfully. Total loaded: "
                       << loaded_servers_.size() << std::endl;
+
+            if (pinned.has_value()) {
+                persist_pinned_state(canonical_model_name, pinned.value());
+            }
         } else {
             // ERROR HANDLING (from spec: Error Handling section)
             // Check if error is "file not found" (exception to nuclear policy)
@@ -604,6 +615,10 @@ void Router::load_model(const std::string& model_name,
                 load_cv_.notify_all();
 
                 LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+
+                if (pinned.has_value()) {
+                    persist_pinned_state(canonical_model_name, pinned.value());
+                }
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
@@ -2041,6 +2056,25 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
         throw std::runtime_error("Model not loaded: " + model_name);
     }
     server->set_pinned(pinned);
+    persist_pinned_state(model_name, pinned);
+}
+
+void Router::persist_pinned_state(const std::string& model_name, bool pinned) {
+    try {
+        ModelInfo info = model_manager_->get_model_info(model_name);
+        bool already_pinned = false;
+        json p_opt = info.recipe_options.get_option("pinned");
+        if (p_opt.is_boolean()) {
+            already_pinned = p_opt.get<bool>();
+        }
+        if (pinned == already_pinned) {
+            return; // Avoid redundant write
+        }
+        info.recipe_options.set_option("pinned", pinned);
+        model_manager_->save_model_options(info);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Router") << "Failed to persist pinned state for model " << model_name << ": " << e.what() << std::endl;
+    }
 }
 
 } // namespace lemon

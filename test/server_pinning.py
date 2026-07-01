@@ -13,6 +13,7 @@ from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    get_default_lemond_binary,
 )
 
 EVICTION_POLL_INTERVAL = 0.5
@@ -27,6 +28,14 @@ def _headers():
     if admin_key:
         headers["Authorization"] = f"Bearer {admin_key}"
     return headers
+
+
+def get_free_port():
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("localhost", 0))
+        return s.getsockname()[1]
 
 
 class PinningTests(ServerTestBase):
@@ -386,6 +395,181 @@ class PinningTests(ServerTestBase):
             info.get("pinned"),
             "Model should be unpinned by explicit load with pinned=False",
         )
+
+    def test_pinned_model_persists_and_autoloads_on_restart(self):
+        """A pinned model's pinned status persists in recipe_options.json and is autoloaded on boot."""
+        import tempfile
+        import shutil
+        import subprocess
+        import json
+
+        # Create a temp directory for cache/config
+        tmp_dir = tempfile.mkdtemp()
+        port = get_free_port()
+        lemond_bin = get_default_lemond_binary()
+
+        server_proc = None
+        log1 = open(os.path.join(tmp_dir, "lemond1.log"), "w")
+        log2 = open(os.path.join(tmp_dir, "lemond2.log"), "w")
+        try:
+            # 1. Start lemond on custom port with temp directory
+            env = os.environ.copy()
+            # Link to the existing models directory so we don't have to re-download the model
+            real_config = requests.get(
+                f"{self.base_url.replace('/api/v1', '')}/internal/config",
+                headers=_headers(),
+            ).json()
+            models_dir = real_config.get("models_dir", "")
+
+            # Write a custom config.json to the temp dir to use the same models directory
+            config_json_path = os.path.join(tmp_dir, "config.json")
+            with open(config_json_path, "w") as f:
+                json.dump({"models_dir": models_dir}, f)
+
+            # Start the server
+            server_proc = subprocess.Popen(
+                [lemond_bin, tmp_dir, "--port", str(port)],
+                stdout=log1,
+                stderr=log1,
+                text=True,
+                env=env,
+            )
+
+            # Wait for server to be ready
+            url = f"http://localhost:{port}/api/v1"
+            for _ in range(30):
+                try:
+                    requests.get(f"{url}/models", timeout=1)
+                    break
+                except Exception:
+                    time.sleep(1)
+                if server_proc.poll() is not None:
+                    self.fail("Server process died early during start")
+            else:
+                self.fail("Server timed out starting up")
+
+            # 2. Pin model via /internal/pin
+            # First, load the model unpinned
+            response = requests.post(
+                f"{url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL, "pinned": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            # Pin it via the /pin endpoint to test dynamic pin persistence
+            response = requests.post(
+                f"http://localhost:{port}/internal/pin",
+                json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
+                headers=_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            # Verify the model is loaded and is pinned in registry/options
+            models_response = requests.get(
+                f"{url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            model_info = None
+            for m in models_response.get("data", []):
+                if m.get("id") == ENDPOINT_TEST_MODEL:
+                    model_info = m
+                    break
+            self.assertIsNotNone(model_info)
+            self.assertTrue(model_info.get("recipe_options", {}).get("pinned"))
+
+            # 3. Kill server and its children to prevent orphaned backends
+            import psutil
+
+            try:
+                parent = psutil.Process(server_proc.pid)
+                children = parent.children(recursive=True)
+            except psutil.NoSuchProcess:
+                children = []
+
+            server_proc.terminate()
+            try:
+                server_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
+                server_proc.wait()
+            server_proc = None
+
+            for child in children:
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+
+            # 4. Restart server
+            server_proc = subprocess.Popen(
+                [lemond_bin, tmp_dir, "--port", str(port)],
+                stdout=log2,
+                stderr=log2,
+                text=True,
+                env=env,
+            )
+
+            # Wait for server to be ready
+            for _ in range(30):
+                try:
+                    requests.get(f"{url}/models", timeout=1)
+                    break
+                except Exception:
+                    time.sleep(1)
+            else:
+                self.fail("Server timed out starting up after restart")
+
+            # 5. Check if the model is automatically loaded in the background
+            loaded = False
+            for _ in range(30):
+                health = requests.get(f"{url}/health", timeout=TIMEOUT_DEFAULT).json()
+                for m in health.get("all_models_loaded", []):
+                    if m.get("model_name") == ENDPOINT_TEST_MODEL and m.get(
+                        "loaded", True
+                    ):
+                        loaded = True
+                        break
+                if loaded:
+                    break
+                time.sleep(1)
+
+            if not loaded:
+                # Read and print log files for debugging
+                log1.close()
+                log2.close()
+                with open(os.path.join(tmp_dir, "lemond1.log"), "r") as f:
+                    print(f"\n--- lemond1.log ---\n{f.read()}")
+                with open(os.path.join(tmp_dir, "lemond2.log"), "r") as f:
+                    print(f"\n--- lemond2.log ---\n{f.read()}")
+
+            self.assertTrue(loaded, "Pinned model did not autoload on server restart")
+
+        except Exception as e:
+            # Read and print log files for debugging
+            log1.close()
+            log2.close()
+            try:
+                with open(os.path.join(tmp_dir, "lemond1.log"), "r") as f:
+                    print(f"\n--- lemond1.log ---\n{f.read()}")
+            except Exception:
+                pass
+            try:
+                with open(os.path.join(tmp_dir, "lemond2.log"), "r") as f:
+                    print(f"\n--- lemond2.log ---\n{f.read()}")
+            except Exception:
+                pass
+            raise e
+        finally:
+            log1.close()
+            log2.close()
+            if server_proc:
+                server_proc.terminate()
+                try:
+                    server_proc.wait(timeout=3)
+                except Exception:
+                    server_proc.kill()
+            shutil.rmtree(tmp_dir)
 
 
 if __name__ == "__main__":

@@ -1210,9 +1210,12 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
-    recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
+    {
+        std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+        recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
+        save_user_json(get_recipe_options_file(), recipe_options_);
+    }
     update_model_options_in_cache(info);
-    save_user_json(get_recipe_options_file(), recipe_options_);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -1598,9 +1601,12 @@ void ModelManager::build_cache() {
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
     // we translate before lookup.
-    for (auto& [name, info] : all_models) {
-        json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
-        info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
+    {
+        std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+        for (auto& [name, info] : all_models) {
+            json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
+            info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
+        }
     }
 
     // Step 2: Filter by backend availability
@@ -1691,7 +1697,10 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     parse_extras(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
         ? (*model_json)["recipe_options"] : json(nullptr);
-    info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(model_name), recipe_options_);
+    {
+        std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+        info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(model_name), recipe_options_);
+    }
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
