@@ -103,30 +103,6 @@ bool looks_like_path(const std::string& v) {
     }
 }
 
-std::string find_flm_executable() {
-#ifdef _WIN32
-    // On Windows, only check the Lemonade install directory (auto-installed zip).
-    // No system PATH fallback - FLM should be installed via install_backend().
-    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
-    if (fs::exists(install_dir)) {
-        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
-            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
-                std::string path = entry.path().string();
-                if (is_safe_executable_path(path)) {
-                    return path;
-                }
-            }
-        }
-    }
-    return "";
-#else
-    // Walk PATH directly — minimal Fedora/openSUSE containers do not ship `which`.
-    if (!find_executable_in_path("flm").empty()) {
-        return "flm";
-    }
-    return "";
-#endif
-}
 
 std::string find_executable_in_path(const std::string& executable_name) {
     if (!is_safe_executable_path(executable_name)) {
@@ -180,50 +156,6 @@ std::string find_executable_in_path(const std::string& executable_name) {
 #endif
 }
 
-bool is_ggml_hip_plugin_available() {
-#ifdef __linux__
-    // Allow distros/packagers that install outside the FHS paths below
-    // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
-    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
-        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
-        // case-insensitive, versioned sonames allowed). This is a sanity check,
-        // not a security boundary: the path is not forwarded to ggml's loader,
-        // so we cannot verify it is actually loadable. It only guards against an
-        // accidental override pointing at an unrelated existing file.
-        std::string name = fs::path(env).filename().string();
-        std::transform(name.begin(), name.end(), name.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
-                                  name.find(".so") != std::string::npos;
-        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
-        // filesystem overload: an odd or malformed path resolves to "not a
-        // regular file" (ec set) instead of raising a filesystem_error.
-        std::error_code hip_path_ec;
-        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
-            return true;
-        }
-    }
-    // On Linux x86_64, check common system library paths for the HIP plugin
-    std::vector<std::string> possible_paths = {
-        // Debian/Ubuntu multiarch path (most common)
-        "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
-	// Arch AUR path
-	"/usr/lib/libggml-hip.so",
-        // Standard Linux paths
-        "/usr/lib/ggml/backends0/libggml-hip.so",
-        "/usr/lib64/ggml/backends0/libggml-hip.so"
-    };
-
-    // Check all possible paths
-    for (const auto& path : possible_paths) {
-        if (fs::exists(path)) {
-            return true;
-        }
-    }
-#endif
-
-    return false;
-}
 
 std::string get_cache_dir() {
     // If set_cache_dir() was called at startup, use that
@@ -295,98 +227,5 @@ std::string get_downloaded_bin_dir() {
     return bin_dir;
 }
 
-bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
-    std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
-    if (flm_exe.empty()) {
-        error_message = "FLM executable not found";
-        return false;
-    }
-    if (!is_safe_executable_path(flm_exe)) {
-        error_message = "FLM path contains invalid characters";
-        return false;
-    }
-
-    std::string command = "\"" + flm_exe + "\" validate --json";
-    std::string output;
-    int exit_code;
-#ifdef _WIN32
-    exit_code = ProcessManager::run_command(command, output);
-#else
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        error_message = "Failed to execute " + flm_exe;
-        return false;
-    }
-
-    char buffer[1024];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    exit_code = pclose(pipe);
-    if (exit_code != -1) {
-        exit_code = WEXITSTATUS(exit_code);
-    }
-#endif
-
-    try {
-        if (!output.empty()) {
-            json j = JsonUtils::parse(output);
-            if (j.is_object()) {
-                // Check for overall status
-                bool validation_ok = false;
-                if (j.contains("ready")) {
-                    validation_ok = j["ready"].get<bool>();
-                }
-
-                if (validation_ok) {
-                    error_message.clear();
-                    return true;
-                }
-
-                std::vector<std::string> errors;
-
-                if (j.contains("amd_device_found") && !j["amd_device_found"].get<bool>()) {
-                    errors.push_back("No AMD NPU device found.");
-                }
-
-                if (j.contains("all_fw_ok") && !j["all_fw_ok"].get<bool>()) {
-                    errors.push_back("NPU firmware is incompatible.");
-                }
-                if (j.contains("kernel_ok") && !j["kernel_ok"].get<bool>()) {
-                    errors.push_back("Kernel version is incompatible.");
-                }
-
-                if (j.contains("memlock_ok") && !j["memlock_ok"].get<bool>()) {
-                    errors.push_back("Memlock limits are too low.");
-                }
-
-                if (j.contains("npu_driver_ok") && !j["npu_driver_ok"].get<bool>()) {
-                    errors.push_back("NPU driver version is too old.");
-                }
-
-                if (errors.empty()) {
-                    error_message = "NPU validation failed.";
-                } else {
-                    error_message = "";
-                    for (size_t i = 0; i < errors.size(); ++i) {
-                        error_message += errors[i] + (i == errors.size() - 1 ? "" : " ");
-                    }
-                }
-                return false;
-            }
-        }
-    } catch (...) {
-        // Fallback for non-JSON output or parsing error
-    }
-
-    if (exit_code != 0) {
-        error_message = "flm validate failed with exit code " + std::to_string(exit_code);
-        return false;
-    }
-
-    error_message.clear();
-    return true;
-}
 
 } // namespace utils::lemon

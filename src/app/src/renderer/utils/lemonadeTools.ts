@@ -118,7 +118,12 @@ export function buildLemonadeTools(
 
   const toolList = tools.map(t => `- ${t.function.name}: ${t.function.description}`).join('\n');
   const toolGuidance = guidance.length ? `\n${guidance.join('\n')}` : '';
-  const systemPrompt = toolDefinitions.system_prompt
+  // The collection's own system_prompt (when set) overrides the global default
+  // — mirrors collection_orchestrator.cpp::build_tools on the server side.
+  const collectionPrompt = typeof info?.system_prompt === 'string' && info.system_prompt
+    ? info.system_prompt
+    : toolDefinitions.system_prompt;
+  const systemPrompt = collectionPrompt
     .replace('{tool_list}', toolList)
     .replace('{tool_guidance}', toolGuidance);
 

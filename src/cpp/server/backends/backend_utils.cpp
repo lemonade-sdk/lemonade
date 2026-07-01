@@ -2,14 +2,7 @@
 #include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/backends/llamacpp_server.h"
-#include "lemon/backends/whisper_server.h"
-#include "lemon/backends/sd_server.h"
-#include "lemon/backends/kokoro_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/vllm_server.h"
-#include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/moonshine_server.h"
+#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
@@ -41,15 +34,8 @@ using json = nlohmann::json;
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
-        if (recipe == "whispercpp") return &WhisperServer::SPEC;
-        if (recipe == "sd-cpp") return &SDServer::SPEC;
-        if (recipe == "kokoro") return &KokoroServer::SPEC;
-        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
-        if (recipe == "vllm") return &VLLMServer::SPEC;
-        if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "moonshine") return &MoonshineServer::SPEC;
-        return nullptr;
+        // Each backend exposes its install/download spec through the registry.
+        return spec_for(recipe);
     }
 
     static std::string hash_string_from_json(const json& node) {
@@ -315,8 +301,8 @@ namespace lemon::backends {
                                               std::string& out_section,
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-stable" || backend == "rocm-nightly")) {
+        if ((recipe_has_rocm_channels(recipe) &&
+            (backend == "rocm-stable" || backend == "rocm-nightly"))) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -369,7 +355,7 @@ namespace lemon::backends {
 
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -409,7 +395,7 @@ namespace lemon::backends {
         // directory or ROCm backends remain stuck in update_required after a
         // successful install.
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -423,7 +409,7 @@ namespace lemon::backends {
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
             std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {
@@ -558,8 +544,6 @@ namespace lemon::backends {
             // Remove the downloaded archive on ANY exit from here on — success
             // OR exception, including a throw from commit_staged_install() below
             // (a swap/rename failure) — so the cache archive is never leaked.
-            // Mirrors StagingGuard above; replaces the per-throw fs::remove(zip_path)
-            // calls that did not cover the commit_staged_install throw path.
             struct ZipGuard {
                 const std::string& path;
                 ~ZipGuard() {
@@ -767,9 +751,7 @@ namespace lemon::backends {
                 LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
                 throw std::runtime_error("Extraction failed: executable not found");
             }
-            // Swap succeeded: staging was consumed by the rename, so disarm the
-            // guard (its cleanup would now be a no-op, but disarm to make intent
-            // explicit and skip a pointless filesystem call).
+            // Swap succeeded: staging was consumed by the rename, so disarm the guard.
             staging_guard.active = false;
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
@@ -830,48 +812,141 @@ namespace lemon::backends {
             }
         }
     }
+    namespace {
+        // Non-throwing fs overloads so a bogus user-supplied path reports
+        // "not a root" instead of throwing.
+        std::optional<fs::path> validate_rocm_root(const fs::path& root) {
+            std::error_code ec;
+            if (root.empty() || !fs::exists(root, ec)) {
+                return std::nullopt;
+            }
+            for (const char* lib_subdir : {"lib", "lib64"}) {
+                if (fs::exists(root / lib_subdir / "libamdhip64.so", ec)) {
+                    return root;
+                }
+            }
+            return std::nullopt;
+        }
+
+        std::optional<fs::path> query_rocm_sdk_root() {
+            if (utils::find_executable_in_path("rocm-sdk").empty()) {
+                return std::nullopt;
+            }
+
+            std::string captured;
+            auto on_line = [&captured](const std::string& line) {
+                if (captured.empty()) {
+                    captured = line;
+                }
+                return true;
+            };
+
+            int rc = utils::ProcessManager::run_process_with_output(
+                "rocm-sdk", {"path", "--root"}, on_line, /*working_dir=*/"",
+                /*timeout_seconds=*/5);
+            if (rc != 0) {
+                LOG(DEBUG, "BackendUtils") << "rocm-sdk path --root exited with " << rc
+                          << "; ignoring" << std::endl;
+                return std::nullopt;
+            }
+
+            const auto first = captured.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                return std::nullopt;
+            }
+            const auto last = captured.find_last_not_of(" \t\r\n");
+            return fs::path(captured.substr(first, last - first + 1));
+        }
+    }  // namespace
+
+    std::optional<fs::path> BackendUtils::resolve_rocm_root(bool* resolved_explicitly) {
+        if (resolved_explicitly) {
+            *resolved_explicitly = false;
+        }
+
+        if (const char* env = std::getenv("ROCM_PATH"); env && *env != '\0') {
+            if (auto root = validate_rocm_root(fs::path(env))) {
+                if (resolved_explicitly) {
+                    *resolved_explicitly = true;
+                }
+                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from ROCM_PATH: "
+                          << root->string() << std::endl;
+                return root;
+            }
+            LOG(DEBUG, "BackendUtils") << "ROCM_PATH=" << env
+                      << " has no lib{,64}/libamdhip64.so; trying other sources" << std::endl;
+        }
+
+        if (auto sdk_root = query_rocm_sdk_root()) {
+            if (auto root = validate_rocm_root(*sdk_root)) {
+                if (resolved_explicitly) {
+                    *resolved_explicitly = true;
+                }
+                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
+                          << root->string() << std::endl;
+                return root;
+            }
+            LOG(DEBUG, "BackendUtils") << "rocm-sdk reported " << sdk_root->string()
+                      << " but it has no lib{,64}/libamdhip64.so; trying /opt/rocm" << std::endl;
+        }
+
+        if (auto root = validate_rocm_root("/opt/rocm")) {
+            LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default /opt/rocm" << std::endl;
+            return root;
+        }
+
+        return std::nullopt;
+    }
+
+    std::string BackendUtils::read_rocm_version_from_root(const fs::path& root) {
+        const std::vector<fs::path> version_paths = {
+            root / ".info" / "version",
+            root / "share" / "rocm" / "version",
+            root / "version"
+        };
+        for (const auto& version_path : version_paths) {
+            std::error_code ec;
+            if (!fs::exists(version_path, ec)) {
+                continue;
+            }
+            std::ifstream file(version_path);
+            if (!file.is_open()) {
+                continue;
+            }
+            std::string line;
+            std::getline(file, line);
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                continue;
+            }
+            const auto last = line.find_last_not_of(" \t\r\n");
+            return line.substr(first, last - first + 1);
+        }
+        return "";
+    }
+
     bool BackendUtils::is_rocm_installed_system_wide() {
 #ifndef __linux__
         return false;
 #else
-        // Only check /opt/rocm for system-wide installation
-        // (/usr is handled by the system backend separately)
-        fs::path rocm_root("/opt/rocm");
-
-        // Check for libamdhip64.so in lib directories
-        std::vector<std::string> lib_subdirs = {"lib", "lib64"};
-        bool found_lib = false;
-
-        for (const auto& lib_subdir : lib_subdirs) {
-            fs::path lib_path = rocm_root / lib_subdir / "libamdhip64.so";
-            if (fs::exists(lib_path)) {
-                found_lib = true;
-                break;
-            }
-        }
-
-        if (!found_lib) {
-            LOG(DEBUG, "BackendUtils") << "No system-wide ROCm installation detected at /opt/rocm" << std::endl;
+        auto rocm_root_opt = resolve_rocm_root();
+        if (!rocm_root_opt) {
+            LOG(DEBUG, "BackendUtils")
+                << "No ROCm installation detected (ROCM_PATH, rocm-sdk, /opt/rocm)" << std::endl;
             return false;
         }
+        const fs::path& rocm_root = *rocm_root_opt;
 
-        // Verify with version file
-        std::vector<std::string> version_paths = {
-            (rocm_root / ".info" / "version").string(),
-            (rocm_root / "share" / "rocm" / "version").string(),
-            (rocm_root / "version").string()
-        };
-
-        for (const auto& version_path : version_paths) {
-            if (fs::exists(version_path)) {
-                LOG(DEBUG, "BackendUtils") << "Found system ROCm at /opt/rocm with version file: "
-                          << version_path << std::endl;
-                return true;
-            }
+        // resolve_rocm_root already verified libamdhip64.so. The version file is
+        // best-effort: accept the install even when it ships none.
+        const std::string version = read_rocm_version_from_root(rocm_root);
+        if (!version.empty()) {
+            LOG(DEBUG, "BackendUtils") << "Found system ROCm at " << rocm_root.string()
+                      << " with version " << version << std::endl;
+        } else {
+            LOG(DEBUG, "BackendUtils") << "Found ROCm libraries at " << rocm_root.string()
+                      << " (no version file found)" << std::endl;
         }
-
-        // If we found the lib but no version file, log a warning but still accept it
-        LOG(DEBUG, "BackendUtils") << "Found ROCm libraries at /opt/rocm (no version file found)" << std::endl;
         return true;
 #endif
     }

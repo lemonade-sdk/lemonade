@@ -1,5 +1,6 @@
 #include "lemon/ollama_api.h"
 #include "lemon/model_types.h"
+#include "lemon/runtime_config.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -238,8 +239,9 @@ void OllamaApi::auto_load_model(const std::string& model) {
 
     auto info = model_manager_->get_model_info(name);
 
-    // Download if not cached
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(name)) {
+    // Download if not cached (backends that self-manage downloads pull on load)
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(name)) {
         LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
         model_manager_->download_registered_model(info, true);
         info = model_manager_->get_model_info(name);
@@ -1178,6 +1180,13 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
         if (!model_manager_->model_exists(name)) {
             res.status = 404;
             json error = {{"error", "model '" + name + "' not found"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        auto* cfg = RuntimeConfig::global();
+        if (cfg && cfg->offline()) {
+            res.status = 400;
+            json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
             res.set_content(error.dump(), "application/json");
             return;
         }

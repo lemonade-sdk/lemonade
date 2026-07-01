@@ -4,10 +4,10 @@
 
 ### Build Options
 
-#### `REQUIRE_LINUX_TRAY` (Default: **OFF** / auto-detect)
+#### `REQUIRE_LINUX_TRAY` (Default: **OFF**)
 Enable system tray support on Linux via AppIndicator3 (GTK3 not required when using the GLib variant).
 
-- When **OFF** (default): Tray support is auto-detected at configure time. If AppIndicator3 libraries are found, `lemonade-tray` is built as a separate executable. `lemond` on Linux is always headless regardless. If dependencies are missing, only `lemond` is built (headless mode).
+- When **OFF** (default): Tray support is disabled. The tray is not built or packaged. `lemond` on Linux is always headless.
 - When **ON**: Tray support is required — the build will fail if the dependencies are not found.
 
 Optional runtime dependencies (for tray support):
@@ -18,10 +18,10 @@ Optional runtime dependencies (for tray support):
 - `libnotify-devel` (optional, enables desktop notifications)
 
 ```bash
-# Auto-detect (default): tray enabled if deps are found
+# Disabled (default): tray is not built
 cmake ../src/cpp
 
-# Explicitly require tray support (fail if deps missing)
+# Explicitly enable tray support (fail if deps missing)
 cmake -DREQUIRE_LINUX_TRAY=ON ../src/cpp
 ```
 

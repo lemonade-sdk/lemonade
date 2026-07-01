@@ -60,6 +60,9 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
+    bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
@@ -122,7 +125,8 @@ private:
                                            size_t resume_from,
                                            ProgressCallback callback,
                                            const std::map<std::string, std::string>& headers,
-                                           const DownloadOptions& options);
+                                           const DownloadOptions& options,
+                                           bool initial_range_request);
 };
 
 // Creates a throttled progress callback that prints at most once per second.

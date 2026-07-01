@@ -30,7 +30,8 @@ const std::vector<std::string> kKnownKeys = {
     "labels",
     "recipe",
     "recipe_options",
-    "size"
+    "size",
+    "system_prompt"
 };
 
 bool is_json_recipe_file(const nlohmann::json& entry) {

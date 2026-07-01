@@ -28,7 +28,6 @@ from utils.server_base import (
     PORT,
     pull_model_with_retry,
     set_server_config,
-    wait_for_server,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -62,6 +61,17 @@ def get_arg(flag, default):
         if index + 1 < len(sys.argv):
             return sys.argv[index + 1]
     return default
+
+
+# lemond detects the system llama-server version by running
+# `llama-server --version` and reading one line of stdout (see
+# SystemInfo::get_system_llamacpp_version in src/cpp/server/system_info.cpp).
+# The real binary prints a version line and exits immediately. We must mirror
+# that: otherwise the probe blocks forever on our long-lived HTTP server and
+# /internal/set hangs until the client times out.
+if "--version" in sys.argv or "--help" in sys.argv:
+    print("version: 9999 (mock)")
+    sys.exit(0)
 
 
 class ReusableHTTPServer(ThreadingHTTPServer):
@@ -168,7 +178,7 @@ def _is_server_running(port=PORT):
 
 
 def _wait_for_server_stop(port=PORT, timeout=30):
-    """Wait for server to stop."""
+    """Wait for the server's HTTP endpoint to stop accepting connections."""
     start_time = time.time()
     while time.time() - start_time < timeout:
         if not _is_server_running(port):
@@ -189,42 +199,123 @@ def _get_lemond_binary():
     return shutil.which("lemond") or "lemond"
 
 
+def _pick_free_port():
+    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
+
+    Each lemond instance this test starts uses a fresh OS-assigned port. That
+    sidesteps a TCP rebind hazard: lemond (the server) initiates the close on
+    shutdown, so its accepted socket on the listen port lingers in FIN_WAIT2 /
+    TIME_WAIT. Once the process is gone that socket is orphaned and, on Linux,
+    can keep the port un-bindable for up to ~60s even with SO_REUSEADDR. Because
+    this test restarts lemond many times in quick succession, reusing one fixed
+    port makes startup flaky in CI; a fresh port is always immediately bindable.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
 def _stop_server():
-    """Stop the server via /internal/shutdown."""
+    """Stop the currently-running server via /internal/shutdown."""
     try:
         requests.post(
             f"http://localhost:{PORT}/internal/shutdown",
             headers=_auth_headers(),
             timeout=5,
         )
-        _wait_for_server_stop()
+        _wait_for_server_stop(PORT)
     except Exception as e:
         print(f"Warning: Failed to stop server: {e}")
 
 
+def _server_healthy(port=PORT):
+    """True if lemond answers a health check on the port."""
+    try:
+        response = requests.get(
+            f"http://localhost:{port}/api/v1/health",
+            headers=_auth_headers(),
+            timeout=2,
+        )
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
-    """Start lemond and wait for it to be ready."""
+    """Start a fresh lemond on a new OS-assigned port and wait until ready.
+
+    Each call binds a brand-new port (see _pick_free_port) and republishes it as
+    the module-level ``PORT`` so the rest of the test talks to the current
+    instance. Binding a fresh port every time means the rapid restarts this test
+    performs never contend for a port still held in a lingering TCP teardown
+    state by a previously stopped instance.
+    """
+    global PORT
+
     lemond_binary = _get_lemond_binary()
     cache_dir = LlamaCppSystemBackendTests.cache_dir
-    cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
-    if sys.platform == "win32":
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=os.environ.copy(),
-        )
-    else:
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=os.environ.copy(),
-        )
+    # Stop the instance we previously started, if any, so it releases its
+    # resources before we launch the next one.
+    if _is_server_running(PORT):
+        _stop_server()
 
-    wait_for_server(timeout=60)
+    # Redirect output to a log file rather than a PIPE: lemond runs with
+    # debug logging here, and an undrained PIPE can fill its buffer and block
+    # the process before it opens the port. The log is printed on failure.
+    log_path = os.path.join(tempfile.gettempdir(), "lemond_test.log")
+    last_log = ""
+
+    proc = None
+    started = False
+    max_attempts = 5
+    for _attempt in range(1, max_attempts + 1):
+        port = _pick_free_port()
+        PORT = port
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+            )
+
+        # Wait for this instance to become healthy, bailing early if it exits
+        # so we can retry on a fresh port.
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break  # lemond exited early -> retry on a new port
+            if _server_healthy(port):
+                started = True
+                break
+            time.sleep(1)
+
+        if started:
+            break
+
+        # This attempt failed: clean up before retrying on a new port.
+        try:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+        except Exception:
+            pass
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                last_log = f.read()
+        except OSError:
+            last_log = ""
+
+    if not started:
+        print("=== lemond startup log (last attempt) ===")
+        print(last_log)
+        raise RuntimeError(f"lemond failed to start after {max_attempts} attempts")
 
     runtime_config = {}
     if wrapped_server == "llamacpp" and backend:
@@ -326,7 +417,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         if cls._model_pulled:
             return
 
-        pull_model_with_retry(ENDPOINT_TEST_MODEL)
+        pull_model_with_retry(ENDPOINT_TEST_MODEL, port=PORT)
         cls._model_pulled = True
 
     @unittest.skipUnless(

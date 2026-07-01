@@ -276,8 +276,13 @@ jobs:
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
           cmake --build --preset default --target test_latest_version_fallback
+          cmake --build --preset default --target test_routing_policy_contract
+          cmake --build --preset default --target test_routing_policy_evaluator
+          cmake --build --preset default --target test_routing_policy_registry
+          cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic)Test"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -287,12 +292,26 @@ jobs:
           retention-days: 7
 
   build-lemonade-debian13:
-    name: Build Lemonade .deb Package (Debian 13)
-    runs-on: ubuntu-latest
+    name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     container:
       image: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            deb-arch: amd64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            deb-arch: arm64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     steps:
       - name: Enable Trixie backports
         run: |
@@ -336,13 +355,13 @@ jobs:
           set -e
           VERSION="${{ steps.get_version.outputs.version }}"
           OUTPUT_DIR="${{ steps.build_deb.outputs.output-dir }}"
-          SRC=$(ls "$OUTPUT_DIR"/lemonade-server_*_amd64.deb | head -n1)
+          SRC=$(ls "$OUTPUT_DIR"/lemonade-server_*_${{ matrix.deb-arch }}.deb | head -n1)
           if [ -z "$SRC" ]; then
             echo "ERROR: server .deb not found in $OUTPUT_DIR"
             ls -la "$OUTPUT_DIR"
             exit 1
           fi
-          DEST="$OUTPUT_DIR/lemonade-server_${VERSION}-debian13_amd64.deb"
+          DEST="$OUTPUT_DIR/lemonade-server_${VERSION}-debian13_${{ matrix.deb-arch }}.deb"
           mv "$SRC" "$DEST"
           echo "Renamed $SRC -> $DEST"
           echo "deb-path=$DEST" >> $GITHUB_OUTPUT
@@ -350,36 +369,50 @@ jobs:
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-${{ matrix.artifact-suffix }}
           path: ${{ steps.rename.outputs.deb-path }}
           retention-days: 7
 
   test-lemonade-debian13-smoke:
-    name: Smoke test .deb (Debian 13)
-    runs-on: ubuntu-latest
+    name: Smoke test .deb (Debian 13)${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-debian13
     container:
       image: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            deb-arch: amd64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            deb-arch: arm64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-debian13.outputs.version }}
     steps:
       - name: Download Lemonade .deb Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          name: lemonade-debian13-${{ matrix.artifact-suffix }}
           path: .
 
       - name: Install and smoke test
         shell: bash
         run: |
           set -e
-          DEB_FILE=$(ls lemonade-server_*-debian13_amd64.deb 2>/dev/null | head -n1)
+          DEB_FILE=$(ls lemonade-server_*-debian13_${{ matrix.deb-arch }}.deb 2>/dev/null | head -n1)
           if [ -z "$DEB_FILE" ]; then
             echo "ERROR: .deb file not found"
             ls -la *.deb 2>/dev/null || echo "No .deb files found in current directory"
             exit 1
           fi
-          echo "Debian 13 version: $(cat /etc/os-release | grep PRETTY_NAME)"
+          echo "Debian 13 ${{ matrix.arch-name }} version: $(cat /etc/os-release | grep PRETTY_NAME)"
           echo "Testing artifact: $DEB_FILE"
 
           echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
@@ -415,8 +448,8 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
 
   build-lemonade-rpm:
-    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}
-    runs-on: ubuntu-latest
+    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
 
@@ -424,6 +457,18 @@ jobs:
       fail-fast: false
       matrix:
         fedora-version: ["43", "44"]
+        runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
+        include:
+          - runs-on: ubuntu-latest
+            arch-name: X86_64
+            rpm-arch: x86_64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - runs-on: ubuntu-24.04-arm
+            arch-name: ARM64
+            rpm-arch: aarch64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -451,7 +496,7 @@ jobs:
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
 
-          echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }}..."
+          echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})..."
           cmake --build --preset default
 
           cd build
@@ -459,8 +504,8 @@ jobs:
           echo "Creating .rpm package with CPack..."
           cpack -G RPM -V
 
-          CPACK_RPM="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
+          CPACK_RPM="lemonade-server-${LEMONADE_VERSION}.${{ matrix.rpm-arch }}.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm"
 
           if [ ! -f "$CPACK_RPM" ]; then
               echo "ERROR: .rpm package not created!"
@@ -477,8 +522,8 @@ jobs:
       - name: Upload .rpm package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
-          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.x86_64.rpm
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-${{ matrix.artifact-suffix }}
+          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm
           retention-days: 7
 
   build-lemonade-macos-dmg:
@@ -536,8 +581,13 @@ jobs:
         run: |
           cmake --build --preset default --target test_directory_watcher
           cmake --build --preset default --target test_latest_version_fallback
+          cmake --build --preset default --target test_routing_policy_contract
+          cmake --build --preset default --target test_routing_policy_evaluator
+          cmake --build --preset default --target test_routing_policy_registry
+          cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic)Test"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -629,6 +679,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before CLI tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned cli"
           echo "Running CLI tests..."
           .venv/bin/python test/server_cli2.py --cli-binary ./build/lemonade
           echo "CLI tests PASSED!"
@@ -643,6 +695,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before endpoint tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned endpoints"
           echo "Running endpoint tests..."
           .venv/bin/python test/server_endpoints.py --cli-binary ./build/lemonade
           echo "Endpoint tests PASSED!"
@@ -657,6 +711,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before web-app tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned webapp"
           echo "Running web-app path traversal tests..."
           .venv/bin/python test/server_webapp.py --cli-binary ./build/lemonade
           echo "Web-app tests PASSED!"
@@ -671,6 +727,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before model name normalization tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned model-normalization"
           echo "Running model name normalization tests (:latest suffix)..."
           .venv/bin/python test/test_model_name_normalization.py --cli-binary ./build/lemonade
           echo "Model name normalization tests PASSED!"
@@ -685,6 +743,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before Ollama API tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned ollama"
           echo "Running Ollama API tests..."
           .venv/bin/python test/test_ollama.py --cli-binary ./build/lemonade
           echo "Ollama API tests PASSED!"
@@ -699,6 +759,8 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
+          echo "Resetting server state before streaming error tests..."
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned streaming-errors"
           echo "Running streaming error termination tests..."
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
@@ -767,6 +829,12 @@ jobs:
           .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary ./build/lemonade
           echo "Moonshine inference tests PASSED!"
 
+      - name: Capture and upload server logs (unsigned path)
+        if: always() && steps.check_signing.outputs.has_signing != 'true'
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-macos-unsigned-build
+
       - name: Ensure binaries are executable before upload (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -794,10 +862,24 @@ jobs:
           fi
 
   build-lemonade-embeddable-linux:
-    name: Build Embeddable Lemonade (Linux)
-    runs-on: ubuntu-latest
+    name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
+    runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            platform: ubuntu-x64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            platform: ubuntu-arm64
+            artifact-suffix: arm64
+            job-suffix: " ARM64"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -825,7 +907,7 @@ jobs:
           cmake --preset default -DBUILD_WEB_APP=OFF
           cmake --build --preset default --target embeddable
 
-          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}.tar.gz"
           test -f "$ARCHIVE"
           echo "Archive contents:"
           tar tzf "$ARCHIVE"
@@ -834,8 +916,8 @@ jobs:
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-embeddable-linux
-          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+          name: lemonade-embeddable-linux-${{ matrix.artifact-suffix }}
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-${{ matrix.platform }}.tar.gz
           retention-days: 7
 
   build-lemonade-linux-arm64:
@@ -1411,6 +1493,10 @@ jobs:
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
+          # These jobs run directly on shared self-hosted runners (no container
+          # network isolation), so the default port can be held by a concurrent
+          # job. Use a job-unique free port to avoid the collision.
+          port: auto
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1445,8 +1531,8 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-rpm-package:
-    name: Test .rpm - Fedora ${{ matrix.fedora-version }}
-    runs-on: ubuntu-latest
+    name: Test .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-rpm
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -1455,6 +1541,18 @@ jobs:
       fail-fast: false
       matrix:
         fedora-version: ["43", "44"]
+        runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
+        include:
+          - runs-on: ubuntu-latest
+            arch-name: X86_64
+            rpm-arch: x86_64
+            artifact-suffix: x86_64
+            job-suffix: ""
+          - runs-on: ubuntu-24.04-arm
+            arch-name: ARM64
+            rpm-arch: aarch64
+            artifact-suffix: arm64
+            job-suffix: " (ARM64)"
 
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
@@ -1462,7 +1560,7 @@ jobs:
       - name: Download Lemonade .rpm Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}-${{ matrix.artifact-suffix }}
           path: .
 
       - name: Install and verify Lemonade (.rpm)
@@ -1470,7 +1568,7 @@ jobs:
         run: |
           set -e
 
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.${{ matrix.rpm-arch }}.rpm"
 
           if [ ! -f "$RPM_FILE" ]; then
               echo "ERROR: .rpm file not found: $RPM_FILE"
@@ -1497,6 +1595,24 @@ jobs:
             | grep -E '^/usr/lib/systemd/user/lemond\.service ' \
             | grep -F "/opt/lib/systemd/user/lemond.service"
 
+          # Verify tray is NOT in the server RPM
+          echo "Verifying server-only RPM content..."
+          if rpm -qpl "$RPM_FILE" | grep -Fxq "/opt/bin/lemonade-tray"; then
+              echo "ERROR: lemonade-tray binary found in server RPM"
+              exit 1
+          fi
+          if rpm -qpl "$RPM_FILE" | grep -Fxq "/usr/bin/lemonade-tray"; then
+              echo "ERROR: lemonade-tray symlink found in server RPM"
+              exit 1
+          fi
+
+          # Verify no desktop dependency leakage
+          if rpm -qpR "$RPM_FILE" | grep -qiE "gtk|appindicator|ayatana"; then
+              echo "ERROR: server RPM requires desktop dependencies (GTK/AppIndicator/Ayatana)"
+              rpm -qpR "$RPM_FILE" | grep -iE "gtk|appindicator|ayatana"
+              exit 1
+          fi
+
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
@@ -1510,7 +1626,11 @@ jobs:
           - label: Linux
             os: ubuntu-latest
             platform: ubuntu-x64
-            artifact: lemonade-embeddable-linux
+            artifact: lemonade-embeddable-linux-x86_64
+          - label: Linux ARM64
+            os: ubuntu-24.04-arm
+            platform: ubuntu-arm64
+            artifact: lemonade-embeddable-linux-arm64
           - label: macOS
             os: macos-latest
             platform: macos-arm64
@@ -1909,45 +2029,61 @@ jobs:
       - name: Test cli
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_cli2.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu cli"
+          .venv/bin/python test/server_cli2.py --cli-binary lemonade
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
+          .venv/bin/python test/server_endpoints.py --cli-binary lemonade
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
       - name: Test mcp
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_mcp.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu mcp"
+          .venv/bin/python test/server_mcp.py --cli-binary lemonade
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_webapp.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu webapp"
+          .venv/bin/python test/server_webapp.py --cli-binary lemonade
 
       - name: Test model name normalization
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu model-normalization"
+          .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_ollama.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu ollama"
+          .venv/bin/python test/test_ollama.py --cli-binary lemonade
 
       - name: Test streaming-errors
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
+          .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: .venv/bin/python test/test_llamacpp_system_backend.py --cli-binary lemonade
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu llamacpp-system"
+          .venv/bin/python test/test_llamacpp_system_backend.py --cli-binary lemonade
 
       - name: Capture and upload server logs
         if: always()
@@ -2019,6 +2155,8 @@ jobs:
           set -e
           VENV_PYTHON=.venv/bin/python
           CLI_BINARY=./build/lemonade
+
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "arm64 ${{ matrix.test_type }}"
 
           if [ "${{ matrix.test_type }}" = "cli" ]; then
             echo "Running CLI tests..."
@@ -2150,34 +2288,46 @@ jobs:
       - name: Test cli
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} cli"
+          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} endpoints"
+          $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_webapp.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} webapp"
+          $VENV_PYTHON test/server_webapp.py --cli-binary "$CLI_BINARY"
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} ollama"
+          $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
 
       - name: Test streaming-errors
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} streaming-errors"
+          $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        run: $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} llamacpp-system"
+          $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()
@@ -2443,17 +2593,30 @@ jobs:
           name: Lemonade_Server_MSI_Signed
           path: .
 
-      - name: Download Lemonade .rpm Packages
+      - name: Download Lemonade .rpm Packages (x86_64)
         uses: actions/download-artifact@v7
         with:
-          pattern: lemonade-rpm-fedora-*
+          pattern: lemonade-rpm-fedora-*-x86_64
           path: .
           merge-multiple: true
 
-      - name: Download Lemonade .deb (Debian 13)
+      - name: Download Lemonade .rpm Packages (ARM64)
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-debian13
+          pattern: lemonade-rpm-fedora-*-arm64
+          path: .
+          merge-multiple: true
+
+      - name: Download Lemonade .deb (Debian 13, X86_64)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13-x86_64
+          path: .
+
+      - name: Download Lemonade .deb (Debian 13, ARM64)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13-arm64
           path: .
 
       - name: Download Lemonade macOS .pkg Package
@@ -2462,10 +2625,16 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
-      - name: Download Lemonade Embeddable (Linux)
+      - name: Download Lemonade Embeddable (Linux, X86_64)
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-embeddable-linux
+          name: lemonade-embeddable-linux-x86_64
+          path: .
+
+      - name: Download Lemonade Embeddable (Linux, ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-linux-arm64
           path: .
 
       - name: Download Lemonade Embeddable (Windows)
@@ -2486,9 +2655,12 @@ jobs:
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
           ls -lh lemonade-server-*.x86_64.rpm
+          ls -lh lemonade-server-*.aarch64.rpm
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
+          ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
 
@@ -2509,9 +2681,12 @@ jobs:
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server-*.x86_64.rpm
+            lemonade-server-*.aarch64.rpm
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
+            lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
             *.pkg
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
           fail_on_unmatched_files: true

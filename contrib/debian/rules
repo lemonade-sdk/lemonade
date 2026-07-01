@@ -13,3 +13,8 @@ override_dh_auto_test:
 
 override_dh_install:
 	dh_install
+
+# #2125: ship per-user lemond.service DISABLED to avoid port conflicts with
+# the system service in every --user session.
+override_dh_installsystemduser:
+	dh_installsystemduser --no-enable

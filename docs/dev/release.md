@@ -132,7 +132,25 @@ git tag -f vX.Y.Z
 git push origin vX.Y.Z --force
 ```
 
-## Step 6: Update the Release Notes
+## Step 6: Reconcile the Tag into `main`
+
+The tag lives on `release-vX.Y.Z`, so it isn't reachable from `main`, and `git describe --tags` on `main` reports the *previous* release — feeding a stale version into the Debian/PPA build (`prepare-debian-build`) and `test_release_notes.yml`. Link it in with an `ours` merge (records the ancestry only, changes no files).
+
+First confirm **every release-branch fix is forward-ported to `main`** — `-s ours` silently drops anything that isn't (see Step 2's forward-port guidance).
+
+```bash
+git checkout main
+git pull
+git merge -s ours --no-ff vX.Y.Z -m "chore: link vX.Y.Z into main history for git describe"
+git push origin main
+git describe --tags --abbrev=0   # expect vX.Y.Z; `git diff origin/main HEAD` should be empty
+```
+
+The push is blocked by `main`'s classic branch protection (PR / merge queue / status checks). You need the repo **Admin** role, and the rule must have *Do not allow bypassing the above settings* unchecked (Settings → Branches → Branch protection rules → `main`); admins then push directly.
+
+**IMPORTANT:** re-enable *Do not allow bypassing the above settings* as soon as you're done with this step.
+
+## Step 7: Update the Release Notes
 
 Open the **`vX.Y.Z release notes`** GitHub issue. Repo-manager has pre-populated the **Headline** and **Breaking Changes** sections from the commit history. Review and edit them — the release action pulls these sections directly from this issue to build the GitHub release page.
 
@@ -153,7 +171,7 @@ The list should be the 3-5 most noteworthy aspects of the release. Keep items co
 
 Bulleted list with one item per breaking change. Keep it concise, and link to a wiki article for migration if more details are needed.
 
-## Step 7: Discord Announcement
+## Step 8: Discord Announcement
 
 Open the **`vX.Y.Z announcement`** GitHub issue. Repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits, and post it in `#announcements` on the Lemonade Discord.
 
@@ -162,7 +180,7 @@ Open the **`vX.Y.Z announcement`** GitHub issue. Repo-manager has drafted a full
 
 The auto-generated announcement uses people's github usernames for shoutouts. Please try to translate those to Discord usernames to the best of your ability before posting.
 
-## Step 8: Social Media
+## Step 9: Social Media
 
 Not required, but it is always good to promote the new release online.
 
