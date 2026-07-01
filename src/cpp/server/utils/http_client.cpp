@@ -668,8 +668,15 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.low_speed_limit));
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
+    // Stall detection: if no bytes transfer within the stall window, abort.
+    // When options.low_speed_limit is 0 (default), use a safe fallback of
+    // 1 byte/sec for 30s to prevent indefinite hangs (e.g., Xet-bridge stalls).
+    long speed_limit = options.low_speed_limit > 0
+        ? static_cast<long>(options.low_speed_limit) : 1L;
+    long speed_time = options.low_speed_time > 0
+        ? static_cast<long>(options.low_speed_time) : 30L;
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, speed_limit);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, speed_time);
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
