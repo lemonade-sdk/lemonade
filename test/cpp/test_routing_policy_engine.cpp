@@ -5,9 +5,11 @@
 // default (fail-open) path, want_trace on/off, the classifier on_error error
 // path, and concurrent route() calls on one shared engine instance.
 //
-// Deterministic leaf conditions (#2380) are not yet wired into the leaf factory,
-// so every rule here uses classifier-band leaves, which resolve against the
-// policy's classifiers today.
+// Deterministic leaf conditions (#2380) are wired into the engine's leaf factory
+// via make_deterministic_leaf_factories(), so the deterministic-rule tests below
+// build keywords_any / regex / min_chars / metadata leaves directly (mirroring
+// the committed l1_keywords / l1_metadata fixtures) and drive them through
+// route() with no classifier backend involved.
 //
 // Compile (standalone):
 //   g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include -I test/cpp \
@@ -48,6 +50,21 @@ MatchExpr classifier_leaf(const std::string& classifier_id, const std::string& l
     MatchExpr expr;
     expr.op = MatchExpr::Op::Leaf;
     expr.leaf = json{{"classifier", classifier_id}, {"label", label}, {"min_score", min_score}};
+    return expr;
+}
+
+// A raw deterministic leaf, e.g. {"keywords_any": [...]} or {"min_chars": 4000}.
+MatchExpr deterministic_leaf(json leaf) {
+    MatchExpr expr;
+    expr.op = MatchExpr::Op::Leaf;
+    expr.leaf = std::move(leaf);
+    return expr;
+}
+
+MatchExpr any_of(std::vector<MatchExpr> children) {
+    MatchExpr expr;
+    expr.op = MatchExpr::Op::Any;
+    expr.children = std::move(children);
     return expr;
 }
 
@@ -200,6 +217,82 @@ static void test_on_error_match_true_routes_to_rule() {
           d.route_to == "guard" && d.matched_rule == "guard" && !d.default_used);
 }
 
+// Deterministic leaves (#2380) must resolve on the engine path via
+// make_deterministic_leaf_factories(). Mirrors l1_keywords.json: an `any` of
+// keywords_any / regex routes code to the big model, and min_chars routes long
+// context there too; everything else falls open to the default. No classifier
+// backend is touched, so an empty ClassifierServices is sufficient.
+static RoutePolicy make_keywords_policy() {
+    RoutePolicy policy;
+    policy.candidates = {"small-llm", "big-llm"};
+    policy.default_model = "small-llm";
+    policy.rules = {
+        make_rule("code-to-big",
+                  any_of({deterministic_leaf(json{{"keywords_any",
+                              json::array({"def ", "function", "stack trace", "compile"})}}),
+                          deterministic_leaf(json{{"regex", "```[a-z]*"}})}),
+                  "big-llm"),
+        make_rule("long-context-to-big",
+                  deterministic_leaf(json{{"min_chars", 4000}}), "big-llm"),
+    };
+    return policy;
+}
+
+static void test_deterministic_keywords_route() {
+    RoutingPolicyEngine engine(make_keywords_policy(), lemon::ClassifierServices{});
+
+    RouteContext ctx;
+    ctx.input = "please write a function that reverses a list";
+    Decision hit = engine.route(ctx, /*want_trace=*/false);
+    check("keywords_any leaf matches and routes to big-llm",
+          hit.route_to == "big-llm" && hit.matched_rule == "code-to-big");
+
+    RouteContext plain;
+    plain.input = "what is the capital of France?";
+    Decision miss = engine.route(plain, false);
+    check("non-matching deterministic rules fall open to default",
+          miss.route_to == "small-llm" && miss.default_used);
+}
+
+static void test_deterministic_min_chars_route() {
+    RoutingPolicyEngine engine(make_keywords_policy(), lemon::ClassifierServices{});
+
+    RouteContext ctx;
+    ctx.input = std::string(5000, 'a');
+    ctx.params.chars = ctx.input.size();  // min_chars bounds params.chars (UTF-8 bytes)
+    Decision d = engine.route(ctx, false);
+    check("min_chars leaf routes long input to its rule",
+          d.route_to == "big-llm" && d.matched_rule == "long-context-to-big");
+}
+
+// Mirrors l1_metadata.json: a metadata `equals` leaf keeps flagged requests on
+// the local model. Proves the metadata deterministic leaf constructs and
+// evaluates on the engine path.
+static void test_deterministic_metadata_route() {
+    RoutePolicy policy;
+    policy.candidates = {"local-llm", "cloud-llm"};
+    policy.default_model = "cloud-llm";
+    policy.rules = {
+        make_rule("keep-confidential",
+                  deterministic_leaf(json{{"metadata",
+                      json{{"key", "task_class"}, {"equals", "confidential"}}}}),
+                  "local-llm"),
+    };
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{});
+
+    RouteContext hit;
+    hit.metadata = {{"task_class", "confidential"}};
+    Decision d = engine.route(hit, false);
+    check("metadata equals leaf routes to its rule",
+          d.route_to == "local-llm" && d.matched_rule == "keep-confidential");
+
+    RouteContext miss;
+    miss.metadata = {{"task_class", "public"}};
+    Decision open = engine.route(miss, false);
+    check("metadata mismatch falls open to default",
+          open.route_to == "cloud-llm" && open.default_used);
+}
+
 // One const engine, many threads: per-request state must live only in the local
 // EvalContext, so concurrent want_trace=true/false calls never corrupt each
 // other's trace and every call returns the same deterministic Decision.
@@ -240,6 +333,9 @@ int main() {
     test_trace_on_and_off();
     test_classifier_failure_falls_open();
     test_on_error_match_true_routes_to_rule();
+    test_deterministic_keywords_route();
+    test_deterministic_min_chars_route();
+    test_deterministic_metadata_route();
     test_concurrent_route_is_consistent();
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL ENGINE TESTS PASSED"
