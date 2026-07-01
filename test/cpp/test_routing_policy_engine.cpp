@@ -169,19 +169,22 @@ static void test_trace_on_and_off() {
               *on.trace[0].score == 0.9 && on.trace[0].result);
 }
 
-// A failed classifier (Score::ok=false) drives the band's on_error. With the
-// default on_error=match_false the rule cannot match, so the request fails open
-// to default_model — route() must never throw on that path.
+// A genuinely failed classifier (run_classifier throws => Score::ok=false)
+// drives the band's on_error. The "pii" classifier leaves on_error unset, so it
+// defaults to match_false: the rule cannot match and the request fails open to
+// default_model — the symmetric counterpart to the match_true test below, and a
+// guarantee that route() never lets the exception escape.
 static void test_classifier_failure_falls_open() {
-    lemon::testing::FakeClassifierServices fake;
-    // No scores configured for "pii-model": the fake returns an empty map, and
-    // an empty label set makes score_of("PII") == 0.0 < 0.5 (band false).
-    RoutingPolicyEngine engine(make_pii_policy(), fake.make());
+    lemon::ClassifierServices services;
+    services.run_classifier = [](const std::string&, const std::string&)
+        -> std::map<std::string, double> { throw std::runtime_error("model down"); };
+    RoutingPolicyEngine engine(make_pii_policy(), std::move(services));
 
     RouteContext ctx;
     ctx.input = "anything";
     Decision d = engine.route(ctx, false);
     check("classifier failure path lands on default_model", d.route_to == "cloud-llm");
+    check("classifier failure path leaves matched_rule empty", d.matched_rule.empty());
     check("classifier failure path sets default_used", d.default_used);
 }
 
