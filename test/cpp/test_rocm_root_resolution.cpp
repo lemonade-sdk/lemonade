@@ -1,10 +1,12 @@
-// Unit tests for lemon::backends::BackendUtils::resolve_rocm_root().
+// Unit tests for lemon::backends::BackendUtils::resolve_rocm_root() and its
+// pure line-selection helper pick_rocm_root_candidates().
 //
 // The rocm-sdk and platform-default branches are host-dependent and can't be
 // driven deterministically, so these tests exercise the ROCM_PATH branch with a
 // temp dir containing a fake HIP runtime (amdhip64.dll on Windows,
 // libamdhip64.so elsewhere) and otherwise assert only invariants that hold
-// regardless of host state.
+// regardless of host state. pick_rocm_root_candidates is pure, so its line
+// selection is tested directly.
 
 #include <cstdlib>
 #include <filesystem>
@@ -92,6 +94,37 @@ int main() {
 
     const fs::path invalid_root = tmp / "invalid";
     fs::create_directories(invalid_root / "lib");  // no HIP runtime
+
+    // pick_rocm_root_candidates: pure selection of absolute-path lines from
+    // `rocm-sdk path --root` output, whose stdout may be interleaved with the
+    // child's stderr (warnings). No filesystem access.
+    {
+#ifdef _WIN32
+        const std::string abs_path = "C:\\opt\\rocm";
+        const std::string abs_path_crlf = "C:\\opt\\rocm\r";
+#else
+        const std::string abs_path = "/opt/rocm";
+        const std::string abs_path_crlf = "/opt/rocm\r";
+#endif
+        const auto warn_then_path =
+            BackendUtils::pick_rocm_root_candidates({"WARNING deprecated", abs_path});
+        check(warn_then_path.size() == 1 && warn_then_path.front() == abs_path,
+              "pick_rocm_root_candidates skips a leading stderr warning");
+
+        const auto with_blanks =
+            BackendUtils::pick_rocm_root_candidates({"", "   ", abs_path});
+        check(with_blanks.size() == 1 && with_blanks.front() == abs_path,
+              "pick_rocm_root_candidates skips blank lines");
+
+        const auto none =
+            BackendUtils::pick_rocm_root_candidates({"WARNING deprecated", "relative/dir"});
+        check(none.empty(),
+              "pick_rocm_root_candidates returns empty when no line is an absolute path");
+
+        const auto crlf = BackendUtils::pick_rocm_root_candidates({abs_path_crlf});
+        check(crlf.size() == 1 && crlf.front() == abs_path,
+              "pick_rocm_root_candidates trims trailing CR");
+    }
 
     {
         bool explicit_source = false;

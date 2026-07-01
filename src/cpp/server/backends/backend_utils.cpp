@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <system_error>
@@ -849,11 +850,13 @@ namespace lemon::backends {
                 return std::nullopt;
             }
 
-            std::string captured;
-            auto on_line = [&captured](const std::string& line) {
-                if (captured.empty()) {
-                    captured = line;
-                }
+            // run_process_with_output merges the child's stderr into stdout, and
+            // rocm-sdk is a Python console script that may emit warnings there.
+            // Collect every line and pick the first that validates, rather than
+            // trusting the first line (which could be a warning).
+            std::vector<std::string> lines;
+            auto on_line = [&lines](const std::string& line) {
+                lines.push_back(line);
                 return true;
             };
 
@@ -866,12 +869,12 @@ namespace lemon::backends {
                 return std::nullopt;
             }
 
-            const auto first = captured.find_first_not_of(" \t\r\n");
-            if (first == std::string::npos) {
-                return std::nullopt;
+            for (const auto& candidate : BackendUtils::pick_rocm_root_candidates(lines)) {
+                if (auto root = validate_rocm_root(fs::path(candidate))) {
+                    return root;
+                }
             }
-            const auto last = captured.find_last_not_of(" \t\r\n");
-            return fs::path(captured.substr(first, last - first + 1));
+            return std::nullopt;
         }
     }  // namespace
 
@@ -894,16 +897,12 @@ namespace lemon::backends {
         }
 
         if (auto sdk_root = query_rocm_sdk_root()) {
-            if (auto root = validate_rocm_root(*sdk_root)) {
-                if (resolved_explicitly) {
-                    *resolved_explicitly = true;
-                }
-                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
-                          << root->string() << std::endl;
-                return root;
+            if (resolved_explicitly) {
+                *resolved_explicitly = true;
             }
-            LOG(DEBUG, "BackendUtils") << "rocm-sdk reported " << sdk_root->string()
-                      << " but it has no HIP runtime; trying platform default" << std::endl;
+            LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
+                      << sdk_root->string() << std::endl;
+            return *sdk_root;
         }
 
 #ifdef _WIN32
@@ -924,6 +923,23 @@ namespace lemon::backends {
 #endif
 
         return std::nullopt;
+    }
+
+    std::vector<std::string> BackendUtils::pick_rocm_root_candidates(
+        const std::vector<std::string>& lines) {
+        std::vector<std::string> candidates;
+        for (const auto& line : lines) {
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                continue;
+            }
+            const auto last = line.find_last_not_of(" \t\r\n");
+            std::string trimmed = line.substr(first, last - first + 1);
+            if (fs::path(trimmed).is_absolute()) {
+                candidates.push_back(std::move(trimmed));
+            }
+        }
+        return candidates;
     }
 
     std::string BackendUtils::read_rocm_version_from_root(const fs::path& root) {
@@ -951,29 +967,6 @@ namespace lemon::backends {
             return line.substr(first, last - first + 1);
         }
         return "";
-    }
-
-    bool BackendUtils::is_rocm_installed_system_wide() {
-        auto rocm_root_opt = resolve_rocm_root();
-        if (!rocm_root_opt) {
-            LOG(DEBUG, "BackendUtils")
-                << "No ROCm installation detected (ROCM_PATH, rocm-sdk, platform default)"
-                << std::endl;
-            return false;
-        }
-        const fs::path& rocm_root = *rocm_root_opt;
-
-        // resolve_rocm_root already verified the HIP runtime. The version file is
-        // best-effort: accept the install even when it ships none.
-        const std::string version = read_rocm_version_from_root(rocm_root);
-        if (!version.empty()) {
-            LOG(DEBUG, "BackendUtils") << "Found system ROCm at " << rocm_root.string()
-                      << " with version " << version << std::endl;
-        } else {
-            LOG(DEBUG, "BackendUtils") << "Found ROCm libraries at " << rocm_root.string()
-                      << " (no version file found)" << std::endl;
-        }
-        return true;
     }
 
     std::string BackendUtils::get_therock_install_dir(const std::string& arch, const std::string& version) {

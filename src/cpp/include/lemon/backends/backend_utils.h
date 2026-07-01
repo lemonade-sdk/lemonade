@@ -123,15 +123,21 @@ namespace lemon::backends {
         static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
 
         /**
+         * Trim each line and keep those that name an absolute path, preserving
+         * order. `rocm-sdk path --root`'s stdout can be interleaved with the
+         * child's stderr (warnings), so the wanted path is not necessarily the
+         * first line. Pure string logic; the caller validates each candidate.
+         */
+        static std::vector<std::string> pick_rocm_root_candidates(
+            const std::vector<std::string>& lines);
+
+        /**
          * Read the ROCm version string from a resolved install root, probing the
          * known version-file locations ({root}/.info/version,
          * {root}/share/rocm/version, {root}/version). Returns the trimmed first
          * line of the first file found, or "" when none exist.
          */
         static std::string read_rocm_version_from_root(const fs::path& root);
-
-        /** Check if a system-wide ROCm install can be located (see resolve_rocm_root) */
-        static bool is_rocm_installed_system_wide();
 
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
