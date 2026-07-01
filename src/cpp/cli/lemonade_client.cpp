@@ -1,12 +1,12 @@
 #include "lemon_cli/lemonade_client.h"
 #include <httplib.h>
-#include <iostream>
 #include <algorithm>
 #include <iomanip>
+#include <iostream>
+#include <numeric>
 #include <regex>
 #include <sstream>
 #include <nlohmann/json.hpp>
-#include <sstream>
 
 namespace lemonade {
 
@@ -343,7 +343,7 @@ static double get_collection_component_size(const json& model) {
     if (model.contains("recipe") && model["recipe"].is_string() && model["recipe"].get<std::string>() == "cloud") {
         return UNKNOWN_MODEL_SIZE;
     }
-    if (model.contains("size") && 
+    if (model.contains("size") &&
             model["size"].is_number()) {
         return model["size"].get<double>();
     }
@@ -430,6 +430,71 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
                     }
                 }
             }
+
+            if (model_item.contains("source") && model_item["source"].is_string()) {
+                info.source = model_item["source"].get<std::string>();
+            } else {
+                if (info.recipe == "cloud") {
+                    info.source = "cloud";
+                } else if (info.id.rfind("user.", 0) == 0) {
+                    info.source = "user";
+                } else if (info.id.rfind("extra.", 0) == 0) {
+                    info.source = "extra";
+                } else if (info.id.rfind("builtin.", 0) == 0) {
+                    info.source = "builtin";
+                } else {
+                    info.source = "builtin";
+                }
+            }
+
+            if (model_item.contains("type") && model_item["type"].is_string()) {
+                info.type = model_item["type"].get<std::string>();
+            } else {
+                info.type = "llm"; // Default fallback
+                for (const auto& label : info.labels) {
+                    if (label == "embeddings" || label == "embedding") {
+                        info.type = "embedding";
+                        break;
+                    }
+                    if (label == "reranking") {
+                        info.type = "reranking";
+                        break;
+                    }
+                    if (label == "transcription") {
+                        info.type = "transcription";
+                        break;
+                    }
+                    if (label == "image") {
+                        info.type = "image";
+                        break;
+                    }
+                    if (label == "tts") {
+                        info.type = "tts";
+                        break;
+                    }
+                }
+            }
+
+            if (model_item.contains("device") && model_item["device"].is_string()) {
+                info.device = model_item["device"].get<std::string>();
+            } else {
+                if (info.recipe == "llamacpp") {
+                    info.device = "gpu";
+                } else if (info.recipe == "ryzenai-llm" || info.recipe == "flm") {
+                    info.device = "npu";
+                } else if (info.recipe == "whispercpp" || info.recipe == "moonshine" ||
+                           info.recipe == "sd-cpp" || info.recipe == "kokoro") {
+                    info.device = "cpu";
+                } else {
+                    info.device = "none";
+                }
+            }
+
+            if (model_item.contains("recipe_options") && model_item["recipe_options"].is_object()) {
+                info.recipe_options = model_item["recipe_options"];
+            } else {
+                info.recipe_options = nlohmann::json::object();
+            }
             if (model_item.contains("components") && model_item["components"].is_array() && !model_item["components"].empty()) {
                 info.component_sizes=get_collection_sizes(model_item["components"], json_response["data"]);
             } else {
@@ -451,20 +516,89 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
     return models;
 }
 
-int LemonadeClient::list_models(bool show_all, const std::string& name_filter) const {
-    try {
-        std::vector<ModelInfo> models = get_models(show_all);
+// Case-insensitive helpers (avoids allocating new strings)
+static bool iequals(const std::string& a, const std::string& b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+        [](char c1, char c2) { return std::tolower(c1) == std::tolower(c2); });
+}
 
-        if (!name_filter.empty()) {
-            const std::regex filter_regex = build_name_filter_regex(name_filter);
-            models.erase(
-                std::remove_if(models.begin(), models.end(),
-                    [&](const ModelInfo& m) {
-                        return !std::regex_search(m.id, filter_regex) &&
-                               !std::regex_search(strip_canonical_prefix(m.id), filter_regex);
-                    }),
-                models.end());
+static bool icontains(const std::string& haystack, const std::string& needle) {
+    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+        [](char c1, char c2) { return std::tolower(c1) == std::tolower(c2); });
+    return it != haystack.end();
+}
+
+int LemonadeClient::list_models(const ListModelOptions& options) const {
+    try {
+        std::vector<ModelInfo> models = get_models(options.show_all);
+
+        // Pre-lowercase filter criteria once
+        std::string f_type = options.type;
+        std::transform(f_type.begin(), f_type.end(), f_type.begin(), ::tolower);
+
+        std::string f_source = options.source;
+        std::transform(f_source.begin(), f_source.end(), f_source.begin(), ::tolower);
+
+        std::string f_device = options.device;
+        std::transform(f_device.begin(), f_device.end(), f_device.begin(), ::tolower);
+
+        std::string f_backend = options.backend;
+        std::transform(f_backend.begin(), f_backend.end(), f_backend.begin(), ::tolower);
+
+        std::vector<std::string> f_labels = options.labels;
+        for (auto& l : f_labels) {
+            std::transform(l.begin(), l.end(), l.begin(), ::tolower);
         }
+
+        // Build name filter regex once if specified
+        std::optional<std::regex> name_regex;
+        if (!options.name_filter.empty()) {
+            name_regex = build_name_filter_regex(options.name_filter);
+        }
+
+        // Single-pass filter
+        models.erase(
+            std::remove_if(models.begin(), models.end(),
+                [&](const ModelInfo& m) {
+                    // Return true to REMOVE the item
+
+                    // 1. Name Filter
+                    if (name_regex.has_value()) {
+                        bool name_matches = std::regex_search(m.id, *name_regex) ||
+                                            std::regex_search(strip_canonical_prefix(m.id), *name_regex);
+                        if (!name_matches) return true;
+                    }
+
+                    // 2. Type Filter
+                    if (!f_type.empty() && !iequals(m.type, f_type)) return true;
+
+                    // 3. Source Filter
+                    if (!f_source.empty() && !iequals(m.source, f_source)) return true;
+
+                    // 4. Device Filter (icontains since device might be e.g. "gpu (vulkan)")
+                    if (!f_device.empty() && !icontains(m.device, f_device)) return true;
+
+                    // 5. Suggested Filter
+                    if (options.suggested_only && !m.suggested) return true;
+
+                    // 6. Backend Filter
+                    if (!f_backend.empty() && !iequals(m.recipe, f_backend)) return true;
+
+                    // 7. Labels Filter
+                    for (const auto& f_label_lower : f_labels) {
+                        bool label_found = false;
+                        for (const auto& m_label : m.labels) {
+                            if (iequals(m_label, f_label_lower)) {
+                                label_found = true;
+                                break;
+                            }
+                        }
+                        if (!label_found) return true; // Label not found, remove
+                    }
+
+                    return false; // Keep the model
+                }),
+            models.end());
 
         std::sort(models.begin(), models.end(),
             [](const ModelInfo& a, const ModelInfo& b) {
@@ -479,8 +613,30 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
                 return a.id < b.id;
             });
 
+        if (options.json_output) {
+            nlohmann::json json_models = nlohmann::json::array();
+            for (const auto& model : models) {
+                nlohmann::json model_json = {
+                    {"id", model.id},
+                    {"checkpoint", model.checkpoint},
+                    {"recipe", model.recipe},
+                    {"downloaded", model.downloaded},
+                    {"suggested", model.suggested},
+                    {"labels", model.labels},
+                    {"source", model.source},
+                    {"type", model.type},
+                    {"device", model.device},
+                    {"recipe_options", model.recipe_options}
+                };
+                model_json["size_gb"] = std::accumulate(model.component_sizes.begin(), model.component_sizes.end(), 0.0);
+                json_models.push_back(model_json);
+            }
+            std::cout << json_models.dump(4) << std::endl;
+            return 0;
+        }
+
         if (models.empty()) {
-            std::cout << (show_all ? "No models available" : "No local models downloaded.") << std::endl;
+            std::cout << (options.show_all ? "No models available" : "No local models downloaded.") << std::endl;
             return 0;
         }
 
@@ -492,12 +648,6 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
                       << "Details" << std::endl;
             std::cout << std::string(100, '-') << std::endl;
 
-            // Model Name is the API id emitted verbatim by `/v1/models`. For each
-            // bare name, the precedence-winning source (registered > imported >
-            // builtin) shows as the bare name; any shadowed sources show as their
-            // canonical id (user.NAME / extra.NAME / builtin.NAME). Either form is
-            // valid input to `lemonade load`, `lemonade delete`, etc., so the
-            // column is always copy-paste-safe.
             for (const auto& model : models) {
                 std::string downloaded = model.downloaded ? "Yes" : "No";
                 std::string details = model.recipe.empty() ? "-" : model.recipe;
@@ -510,7 +660,7 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             std::cout << std::string(100, '-') << std::endl;
         };
 
-        if (!show_all) {
+        if (!options.show_all) {
             print_model_table(models);
             return 0;
         }
