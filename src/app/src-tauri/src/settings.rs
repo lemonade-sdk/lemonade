@@ -1,7 +1,9 @@
-//! App-settings persistence. Reads and writes `~/.cache/lemonade/app_settings.json`,
-//! sanitizing values and applying defaults for missing/invalid fields before
-//! handing the struct back to the renderer. The JSON shape matches what the
-//! existing React renderer expects (each user-tunable field is a
+//! App-settings persistence. Reads and writes `app_settings.json` from the
+//! platform's per-user config directory (XDG_CONFIG_HOME on Linux,
+//! Library/Application Support on macOS, APPDATA on Windows), sanitizing
+//! values and applying defaults for missing/invalid fields before handing the
+//! struct back to the renderer. The JSON shape matches what the existing
+//! React renderer expects (each user-tunable field is a
 //! `{ value, useDefault }` envelope).
 
 use serde::{Deserialize, Serialize};
@@ -202,8 +204,69 @@ impl Default for AppSettings {
 
 // ---------- Path helpers ----------
 
+/// Per-user config directory for the desktop app. Resolves to
+/// `$XDG_CONFIG_HOME/lemonade` (Linux), `~/Library/Application Support/lemonade`
+/// (macOS), or `%APPDATA%\lemonade` (Windows). Returns `None` only when the
+/// OS can't tell us where the user's config root lives.
+fn settings_dir() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("lemonade"))
+}
+
 fn settings_file_path() -> Option<PathBuf> {
-    Some(dirs::home_dir()?.join(".cache").join("lemonade").join(SETTINGS_FILE_NAME))
+    Some(settings_dir()?.join(SETTINGS_FILE_NAME))
+}
+
+/// Pre-XDG location: the host always wrote to `~/.cache/lemonade/` regardless
+/// of platform. `.cache` is the wrong basedir for user config (the OS may
+/// prune it) and the literal `~/.cache` path doesn't fit macOS or Windows
+/// conventions. Kept only so we can migrate existing files forward.
+fn legacy_settings_file_path() -> Option<PathBuf> {
+    Some(
+        dirs::home_dir()?
+            .join(".cache")
+            .join("lemonade")
+            .join(SETTINGS_FILE_NAME),
+    )
+}
+
+/// One-shot, idempotent migration. If a legacy settings file exists and the
+/// new location does not, move it. When both exist we leave the legacy file
+/// alone — the new file is the source of truth and a leftover legacy file is
+/// harmless.
+fn migrate_legacy_settings_if_needed() {
+    let Some(new_path) = settings_file_path() else {
+        return;
+    };
+    if new_path.exists() {
+        return;
+    }
+    let Some(legacy_path) = legacy_settings_file_path() else {
+        return;
+    };
+    if !legacy_path.exists() {
+        return;
+    }
+    if let Some(parent) = new_path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            log::warn!(
+                "Skipping legacy settings migration; failed to create {}: {err}",
+                parent.display()
+            );
+            return;
+        }
+    }
+    match fs::rename(&legacy_path, &new_path) {
+        Ok(()) => log::info!(
+            "Migrated legacy app settings from {} to {}",
+            legacy_path.display(),
+            new_path.display()
+        ),
+        Err(err) => log::warn!(
+            "Failed to migrate legacy app settings from {} to {}: {err}",
+            legacy_path.display(),
+            new_path.display()
+        ),
+    }
 }
 
 // ---------- Sanitize helpers ----------
@@ -349,6 +412,8 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
 // ---------- Read / write ----------
 
 pub(crate) fn read_app_settings() -> AppSettings {
+    migrate_legacy_settings_if_needed();
+
     let Some(path) = settings_file_path() else {
         return AppSettings::default();
     };
@@ -370,8 +435,10 @@ pub(crate) fn read_app_settings() -> AppSettings {
 }
 
 pub(crate) fn write_app_settings(incoming: &Value) -> Result<AppSettings, String> {
+    migrate_legacy_settings_if_needed();
+
     let path = settings_file_path()
-        .ok_or_else(|| "Unable to locate the Lemonade home directory".to_string())?;
+        .ok_or_else(|| "Unable to locate the user config directory".to_string())?;
 
     let sanitized = sanitize_app_settings(incoming);
 
