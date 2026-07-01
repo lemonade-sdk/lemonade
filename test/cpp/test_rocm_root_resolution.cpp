@@ -1,9 +1,10 @@
 // Unit tests for lemon::backends::BackendUtils::resolve_rocm_root().
 //
-// The rocm-sdk and /opt/rocm branches are host-dependent and can't be driven
-// deterministically, so these tests exercise the ROCM_PATH branch with a temp
-// dir containing a fake libamdhip64.so and otherwise assert only invariants
-// that hold regardless of host state.
+// The rocm-sdk and platform-default branches are host-dependent and can't be
+// driven deterministically, so these tests exercise the ROCM_PATH branch with a
+// temp dir containing a fake HIP runtime (amdhip64.dll on Windows,
+// libamdhip64.so elsewhere) and otherwise assert only invariants that hold
+// regardless of host state.
 
 #include <cstdlib>
 #include <filesystem>
@@ -59,6 +60,16 @@ void write_stub(const fs::path& p) {
     std::ofstream(p) << "stub";
 }
 
+// Write a fake HIP runtime where resolve_rocm_root probes. `primary` picks the
+// first probed subdir, otherwise the fallback one.
+void write_hip_runtime_stub(const fs::path& root, bool primary) {
+#ifdef _WIN32
+    write_stub(root / (primary ? "bin" : "lib") / "amdhip64.dll");
+#else
+    write_stub(root / (primary ? "lib" : "lib64") / "libamdhip64.so");
+#endif
+}
+
 }  // namespace
 
 int main() {
@@ -74,35 +85,35 @@ int main() {
     fs::create_directories(tmp);
 
     const fs::path valid_root = tmp / "valid";
-    write_stub(valid_root / "lib" / "libamdhip64.so");
+    write_hip_runtime_stub(valid_root, /*primary=*/true);
 
-    const fs::path valid_root_lib64 = tmp / "valid64";
-    write_stub(valid_root_lib64 / "lib64" / "libamdhip64.so");
+    const fs::path valid_root_alt = tmp / "valid_alt";
+    write_hip_runtime_stub(valid_root_alt, /*primary=*/false);
 
     const fs::path invalid_root = tmp / "invalid";
-    fs::create_directories(invalid_root / "lib");  // no libamdhip64.so
+    fs::create_directories(invalid_root / "lib");  // no HIP runtime
 
     {
         bool explicit_source = false;
         set_rocm_path(valid_root.string());
         auto root = BackendUtils::resolve_rocm_root(&explicit_source);
-        check(root.has_value(), "ROCM_PATH (lib/) resolves");
+        check(root.has_value(), "ROCM_PATH (primary subdir) resolves");
         check(root.has_value() && fs::equivalent(*root, valid_root),
-              "ROCM_PATH (lib/) resolves to the given root");
-        check(explicit_source, "ROCM_PATH (lib/) is marked explicit");
+              "ROCM_PATH (primary subdir) resolves to the given root");
+        check(explicit_source, "ROCM_PATH (primary subdir) is marked explicit");
     }
 
     {
         bool explicit_source = false;
-        set_rocm_path(valid_root_lib64.string());
+        set_rocm_path(valid_root_alt.string());
         auto root = BackendUtils::resolve_rocm_root(&explicit_source);
-        check(root.has_value(), "ROCM_PATH (lib64/) resolves");
-        check(root.has_value() && fs::equivalent(*root, valid_root_lib64),
-              "ROCM_PATH (lib64/) resolves to the given root");
-        check(explicit_source, "ROCM_PATH (lib64/) is marked explicit");
+        check(root.has_value(), "ROCM_PATH (fallback subdir) resolves");
+        check(root.has_value() && fs::equivalent(*root, valid_root_alt),
+              "ROCM_PATH (fallback subdir) resolves to the given root");
+        check(explicit_source, "ROCM_PATH (fallback subdir) is marked explicit");
     }
 
-    // A ROCM_PATH missing libamdhip64.so must fall through, never resolve to
+    // A ROCM_PATH missing the HIP runtime must fall through, never resolve to
     // itself, and never be reported as explicit.
     {
         bool explicit_source = false;
