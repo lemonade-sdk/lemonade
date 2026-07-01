@@ -698,31 +698,60 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         agent_config.extra_args.insert(agent_config.extra_args.end(), user_args.begin(), user_args.end());
     }
 
+    nlohmann::json request_body = config.recipe_options;
+    request_body["model_name"] = config.model;
+    request_body["save_options"] = false;
+    const std::string load_body = request_body.dump();
+
     // Find agent binary
     const std::string agent_binary = lemon_tray::find_agent_binary(agent_config);
-    if (agent_binary.empty()) {
-        LOG(ERROR, "AgentBuilder") << "Agent binary not found for " << config.agent << std::endl;
-        if (!agent_config.install_instructions.empty()) {
-            LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
-        }
-        return 1;
-    }
 
     std::cout << "Loading model in background: " << config.model << std::endl;
+
+    if (agent_binary.empty()) {
+        try {
+            // Send the request before exiting. The short read timeout lets the server keep
+            // loading after the CLI prints the manual launch instructions.
+            (void)client.make_request("/api/v1/load", "POST", load_body, "application/json", 30000, 1000);
+        } catch (const std::exception& e) {
+            (void)e;
+        }
+
+        std::cout << "The " << config.agent << " CLI is not installed or was not found on PATH."
+                  << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            std::cout << agent_config.install_instructions << std::endl;
+        }
+
+        std::cout << std::endl;
+        std::cout << "Environment variables for " << config.agent << ":" << std::endl;
+        for (const auto& [key, val] : agent_config.env_vars) {
+            std::cout << "  " << key << "=" << val << std::endl;
+        }
+
+        std::cout << std::endl;
+        std::cout << "Command:" << std::endl;
+        std::cout << "  " << agent_config.binary_name;
+        for (const auto& arg : agent_config.extra_args) {
+            std::cout << " " << arg;
+        }
+        std::cout << std::endl;
+
+        std::cout << std::endl;
+        std::cout << "Note: update the URL in the command if the agent will connect from a remote machine to the Lemonade server."
+                  << std::endl;
+        return 1;
+    }
 
     // Trigger load asynchronously so launch is non-blocking for agent startup.
     std::thread([host = config.host,
                  port = config.port,
                  api_key = config.api_key,
-                 model = config.model,
-                 recipe_options = config.recipe_options]() {
+                 load_body]() {
         try {
             lemonade::LemonadeClient async_client(host, port, api_key);
-            nlohmann::json request_body = recipe_options;
-            request_body["model_name"] = model;
-            request_body["save_options"] = false;
             // Keep async load silent to avoid disrupting interactive agent UIs.
-            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+            (void)async_client.make_request("/api/v1/load", "POST", load_body, "application/json");
         } catch (const std::exception& e) {
             (void)e;
         }
