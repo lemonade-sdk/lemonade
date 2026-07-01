@@ -428,6 +428,34 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     return total;
 }
 
+
+std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
+    ModelInfo info = get_model_info(model_name);
+    std::vector<ModelFileInfo> files;
+    files.reserve(info.resolved_paths.size());
+
+    for (const auto& [role, resolved_path] : info.resolved_paths) {
+        if (resolved_path.empty()) {
+            continue;
+        }
+
+        fs::path path = path_from_utf8(resolved_path);
+        const bool path_exists = safe_exists(path);
+
+        ModelFileInfo file;
+        file.name = path_to_utf8(path.filename());
+        file.path = resolved_path;
+        file.role = role;
+        file.exists = path_exists;
+        file.size_bytes = path_exists
+            ? static_cast<std::uint64_t>(resolved_path_size_bytes(path))
+            : 0;
+        files.push_back(std::move(file));
+    }
+
+    return files;
+}
+
 static void cleanup_orphaned_blobs_under(const fs::path& path,
                                          const fs::path& models_dir) {
     if (!safe_exists(path)) {

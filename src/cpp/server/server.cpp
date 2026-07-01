@@ -614,6 +614,21 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_models(req, res);
     });
 
+    // Model files endpoint for the Files tab. Register before the generic
+    // /models/(.+) route so '<model-id>/files' is not parsed as the model ID.
+    web_server.Get(R"(/api/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/api/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -2078,6 +2093,50 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
     } else {
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_model_files(const httplib::Request& req, httplib::Response& res) {
+    std::string model_id = req.matches[1];
+    const bool include_paths = req.has_param("include_paths") &&
+        req.get_param_value("include_paths") == "true";
+
+    try {
+        if (!model_manager_->model_exists(model_id)) {
+            res.status = 404;
+            auto error_response = create_model_error(model_id, "Model not found");
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
+        std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        auto files = model_manager_->list_model_files(model_id);
+
+        nlohmann::json response;
+        response["model_id"] = wire_id;
+        response["files"] = nlohmann::json::array();
+
+        for (const auto& file : files) {
+            nlohmann::json file_json = {
+                {"name", file.name},
+                {"role", file.role},
+                {"size_bytes", file.size_bytes},
+                {"exists", file.exists}
+            };
+
+            if (include_paths) {
+                file_json["path"] = file.path;
+            }
+
+            response["files"].push_back(std::move(file_json));
+        }
+
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception&) {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
