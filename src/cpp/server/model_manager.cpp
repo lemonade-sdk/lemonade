@@ -4278,7 +4278,8 @@ std::optional<std::string> ModelManager::validate_collection_request(
             }
         };
         try {
-            parse_route_policy_collection(model_data, options);
+            RoutePolicy policy = parse_route_policy_collection(model_data, options);
+            RoutingPolicyEngine(std::move(policy), ClassifierServices{});
         } catch (const std::exception& e) {
             return std::string("Invalid collection.router routing policy: ") + e.what();
         }
