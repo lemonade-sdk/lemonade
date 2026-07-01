@@ -488,7 +488,20 @@ jobs:
             --release "${{ needs.discover-release.outputs.cuda_release }}" \
             --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
 
+      - name: Check update diff
+        id: update-diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged; nothing to update."
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Normalize validation evidence and generate PR body
+        if: steps.update-diff.outputs.has_update == 'true'
         shell: bash
         env:
           BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
@@ -497,11 +510,12 @@ jobs:
           CUDA_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.cuda_update_backends }}
         run: |
           set -euo pipefail
-          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          UPDATE_BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          EVIDENCE_BRANCH="auto-sdcpp-validation-images-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
           EVIDENCE_ROOT=".github/sdcpp-validation"
           EVIDENCE_DIR="${EVIDENCE_ROOT}/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-          # Keep only the current update evidence so merged auto-update PRs do not
-          # accumulate old binary PNG evidence indefinitely.
+          # Keep only the current update evidence in the dedicated evidence branch
+          # so update PRs do not accumulate binary PNG evidence in their diffs.
           rm -rf "$EVIDENCE_ROOT"
           python3 .github/scripts/render_sdcpp_pr_body.py \
             --base-release "$BASE_RELEASE" \
@@ -510,13 +524,19 @@ jobs:
             --cuda-update-backends "$CUDA_UPDATE_BACKENDS" \
             --validated-labels "${SDCPP_VALIDATED_LABELS}" \
             --repository "${GITHUB_REPOSITORY}" \
-            --image-ref "$BRANCH" \
+            --image-ref "$EVIDENCE_BRANCH" \
             --evidence-dir "$EVIDENCE_DIR" \
             --models "${SDCPP_TEST_MODELS}" \
             --sizes "${SDCPP_TEST_SIZES}" \
             --output pr_body.md
+          {
+            echo "UPDATE_BRANCH=$UPDATE_BRANCH"
+            echo "EVIDENCE_BRANCH=$EVIDENCE_BRANCH"
+            echo "EVIDENCE_ROOT=$EVIDENCE_ROOT"
+          } >> "$GITHUB_ENV"
 
-      - name: Create Pull Request
+      - name: Publish validation images
+        if: steps.update-diff.outputs.has_update == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -524,29 +544,70 @@ jobs:
           CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
         run: |
           set -euo pipefail
-          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
-            exit 0
+          if [ ! -d "$EVIDENCE_ROOT" ]; then
+            echo "Expected validation evidence directory is missing: $EVIDENCE_ROOT" >&2
+            exit 1
           fi
+
+          PUBLISH_DIR="$(mktemp -d)"
+          EVIDENCE_COPY="$(mktemp -d)"
+          cp -R "$EVIDENCE_ROOT" "$EVIDENCE_COPY/sdcpp-validation"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
+          cd "$PUBLISH_DIR"
+          git checkout --orphan "$EVIDENCE_BRANCH"
+          git rm -rf . >/dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          mkdir -p .github
+          cp -R "$EVIDENCE_COPY/sdcpp-validation" .github/sdcpp-validation
+          touch .nojekyll
+          git add .nojekyll .github/sdcpp-validation
+          git commit -m "Publish stable-diffusion.cpp validation images for ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
+          git push --force origin "$EVIDENCE_BRANCH"
+
+      - name: Create or update Pull Request
+        if: steps.update-diff.outputs.has_update == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+        run: |
+          set -euo pipefail
+          BRANCH="$UPDATE_BRANCH"
+          TITLE="Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet src/cpp/resources/backend_versions.json .github/sdcpp-validation; then
-            echo "backend_versions.json and validation evidence are unchanged; nothing to update."
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged; nothing to update."
             exit 0
           fi
 
           git checkout -B "$BRANCH"
-          git add src/cpp/resources/backend_versions.json .github/sdcpp-validation
+          git add src/cpp/resources/backend_versions.json
           git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
-          git push --force-with-lease origin "$BRANCH"
 
-          gh pr create \
-            --title "Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}" \
-            --body-file pr_body.md \
-            --base main \
-            --head "$BRANCH"
+          REMOTE_SHA=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
+          if [ -n "$REMOTE_SHA" ]; then
+            git push --force-with-lease="refs/heads/$BRANCH:$REMOTE_SHA" origin "$BRANCH"
+          else
+            git push origin "$BRANCH"
+          fi
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr edit "$EXISTING_PR" \
+              --title "$TITLE" \
+              --body-file pr_body.md \
+              --base main
+          else
+            gh pr create \
+              --title "$TITLE" \
+              --body-file pr_body.md \
+              --base main \
+              --head "$BRANCH"
+          fi
