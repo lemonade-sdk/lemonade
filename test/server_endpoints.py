@@ -690,6 +690,86 @@ class EndpointTests(ServerTestBase):
             f"(ctx_size={custom_ctx})"
         )
 
+    def test_012m_load_response_echoes_recipe_options(self):
+        """The POST /load response body echoes the model's persisted recipe_options.
+
+        A client driving the API programmatically (e.g. an agent iteratively tuning a
+        recipe) can then observe what a save_options request persisted directly from the
+        load response — and, because a save replaces the stored options with exactly the
+        set sent, can see that a key it did not resend was cleared — without a follow-up
+        /models query or having to learn the replace-on-save contract from the docs.
+
+        Teeth: against a server that does not echo, the response JSON has no
+        'recipe_options' key, so the first assertion fails."""
+        # This test persists recipe options for the shared test model; reset them
+        # afterward (an empty save_options clears the stored set) so the leaked state
+        # does not bleed into later tests.
+        self.addCleanup(
+            lambda: requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL, "save_options": True},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        )
+
+        # 1. Save an option set containing ctx_size; the load response echoes it back.
+        first_ctx = 5120
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": first_ctx,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn(
+            "recipe_options",
+            body,
+            "POST /load response must echo recipe_options so a client can observe "
+            "the effective/persisted set without a separate /models request",
+        )
+        self.assertEqual(
+            body["recipe_options"].get("ctx_size"),
+            first_ctx,
+            "Echoed recipe_options should reflect the just-saved ctx_size",
+        )
+
+        # 2. Save a DIFFERENT partial set (no ctx_size). The documented contract is that
+        #    a save *replaces* the stored options, so ctx_size is cleared. The response
+        #    must make that observable rather than reporting a bare success.
+        resp2 = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--top-k 20",
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(resp2.status_code, 200)
+        echoed = resp2.json().get("recipe_options", {})
+        self.assertEqual(
+            echoed.get("llamacpp_args"),
+            "--top-k 20",
+            "Echoed recipe_options should reflect the newly-saved llamacpp_args",
+        )
+        # This relies on RecipeOptions.to_json() returning only explicitly-set keys
+        # (not resolving/injecting defaults, unlike to_log_string(resolve_defaults=True)).
+        # If that serialization ever changes to bake in defaults, revisit this assertion.
+        self.assertNotIn(
+            "ctx_size",
+            echoed,
+            "replace-on-save cleared ctx_size; the /load response must surface its "
+            "absence so a client can observe the contract instead of inferring it",
+        )
+        print(
+            "[OK] /load response echoes effective recipe_options "
+            "(replace-on-save is observable)"
+        )
+
     def test_012c_load_noop_when_already_loaded_by_inference(self):
         """Regression test for #1603: /load after an inference-triggered
         auto-load should no-op, not evict and reload the model.

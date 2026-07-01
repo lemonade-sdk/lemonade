@@ -3920,7 +3920,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // Persist request options to model info if requested. Per the documented
+        // contract, a save *replaces* the model's stored options with the set sent in
+        // this request (omitting a key clears it). That semantics is intentional, but
+        // it is invisible to a client driving the API programmatically — the success
+        // response below echoes the resulting recipe_options so a caller can observe
+        // exactly what is now persisted/effective instead of inferring it from the docs.
         if (save_options) {
             info.recipe_options = options;
             model_manager_->save_model_options(info);
@@ -3939,10 +3944,15 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (is_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            // Echo recipe_options here too so the /load response shape does not vary
+            // by recipe type (matches the non-collection branch below). Per-model
+            // options are not forwarded to components, so this is the collection's own
+            // persisted set (typically empty).
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
-                {"recipe", info.recipe}
+                {"recipe", info.recipe},
+                {"recipe_options", info.recipe_options.to_json()}
             };
             res.set_content(response.dump(), "application/json");
         } else {
@@ -3953,12 +3963,18 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                                 /*allow_reload_on_option_change=*/true,
                                 pinned_opt);
 
-            // Return success response
+            // Return success response. Echo the model's recipe_options — the persisted
+            // set that a future option-free load will recall — so a client (e.g. an
+            // agent iteratively tuning a recipe) can observe what a save_options request
+            // persisted, including that the replace-on-save contract cleared any key it
+            // did not resend, without a follow-up /models query or reading the API docs.
+            // Mirrors model_info_to_json(), which already serializes recipe_options.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
-                {"recipe", info.recipe}
+                {"recipe", info.recipe},
+                {"recipe_options", info.recipe_options.to_json()}
             };
             res.set_content(response.dump(), "application/json");
         }

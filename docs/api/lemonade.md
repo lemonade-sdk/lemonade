@@ -556,10 +556,15 @@ curl -X POST http://localhost:13305/v1/load \
 
 ```json
 {
-  "status":"success",
-  "message":"Loaded model: Qwen3-0.6B-GGUF"
+  "status": "success",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "checkpoint": "Qwen/Qwen3-0.6B-GGUF",
+  "recipe": "llamacpp",
+  "recipe_options": {"ctx_size": 8192}
 }
 ```
+
+`recipe_options` echoes the model's **persisted** recipe options — the same set returned by `GET /v1/models`, i.e. what a future option-free load will recall. When the request set `save_options: true`, this reflects the just-saved set, so a client can confirm what was persisted (including that any key it did not resend was cleared by the replace-on-save behavior of `save_options`). It is the persisted set, not the per-request effective options: runtime options sent without `save_options` are applied for that load but are not reflected here. Collection loads return their own (typically empty) persisted `recipe_options`; per-model options are not forwarded to components.
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
