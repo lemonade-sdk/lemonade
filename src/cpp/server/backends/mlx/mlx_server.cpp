@@ -1,4 +1,6 @@
-#include "lemon/backends/mlx_server.h"
+#include "lemon/backends/mlx/mlx_server.h"
+#include "lemon/backends/mlx/mlx.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/error_types.h"
@@ -51,9 +53,9 @@ bool is_macos_arm64() {
 }
 
 bool is_supported_rocm_arch(const std::string& arch) {
-    // Current lemon-mlx-engine ROCm releases are built on the gfx1151 runner and
-    // published as a single ubuntu-rocm-x64 asset. Keep this intentionally
-    // narrow until the engine publishes per-arch or verified multi-arch assets.
+    // Current lemon-mlx-engine ROCm releases are built and validated on gfx1151.
+    // Keep this intentionally narrow until the engine publishes per-arch or
+    // verified multi-arch assets.
     return arch == "gfx1151";
 }
 
@@ -1171,6 +1173,12 @@ MlxServer::~MlxServer() {
     unload();
 }
 
+DeviceType MlxServer::effective_device(const RecipeOptions& options) const {
+    const std::string configured_backend = options.get_option("lemon-mlx_backend");
+    const std::string backend = resolve_mlx_backend(configured_backend);
+    return (backend == "cpu") ? DEVICE_CPU : DEVICE_GPU;
+}
+
 void MlxServer::load(const std::string& model_name,
                      const ModelInfo& model_info,
                      const RecipeOptions& options,
@@ -1189,7 +1197,7 @@ void MlxServer::load(const std::string& model_name,
     LOG(INFO, kLog) << "Using lemon-mlx backend: " << backend << std::endl;
 
     device_type_ = (backend == "cpu") ? DEVICE_CPU : DEVICE_GPU;
-    backend_manager_->install_backend(SPEC.recipe, backend);
+    backend_manager_->install_backend(mlx::spec()->recipe, backend);
 
     std::string model_ref = model_info.checkpoint();
     if (model_ref.empty()) {
@@ -1201,7 +1209,7 @@ void MlxServer::load(const std::string& model_name,
     loaded_model_ref_ = model_ref;
 
     port_ = choose_port();
-    const std::string executable = BackendUtils::get_backend_binary_path(SPEC, backend);
+    const std::string executable = BackendUtils::get_backend_binary_path(*mlx::spec(), backend);
 
     std::vector<std::string> args = {
         model_ref,
@@ -1725,7 +1733,8 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             telemetry_callback(telemetry.input_tokens,
                                telemetry.output_tokens,
                                telemetry.time_to_first_token,
-                               telemetry.tokens_per_second);
+                               telemetry.tokens_per_second,
+                               "");
         }
 
         LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
@@ -1749,3 +1758,23 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
 
 } // namespace backends
 } // namespace lemon
+
+namespace lemon {
+namespace backends {
+namespace mlx {
+
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
+    return make_server<MlxServer>(ctx);
+}
+
+const BackendSpec* spec() {
+    return make_spec<MlxServer>(descriptor);
+}
+
+const BackendOps* ops() {
+    return default_backend_ops();
+}
+
+}  // namespace mlx
+}  // namespace backends
+}  // namespace lemon

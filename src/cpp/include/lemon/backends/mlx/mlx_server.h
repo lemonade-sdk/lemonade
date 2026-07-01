@@ -1,7 +1,9 @@
 #pragma once
 
-#include "../wrapped_server.h"
-#include "backend_utils.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/wrapped_server.h"
+
 #include <mutex>
 #include <string>
 #include <utility>
@@ -14,21 +16,13 @@ class MlxServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
-            "lemon-mlx",
-    #ifdef _WIN32
-            "server.exe"
-    #else
-            "server"
-    #endif
-        , get_install_params
-    );
-
     MlxServer(const std::string& log_level,
               ModelManager* model_manager,
               BackendManager* backend_manager);
 
     ~MlxServer() override;
+
+    DeviceType effective_device(const RecipeOptions& options) const override;
 
     void load(const std::string& model_name,
               const ModelInfo& model_info,
@@ -60,5 +54,11 @@ private:
     std::mutex backend_restart_mutex_;
 };
 
-} // namespace backends
-} // namespace lemon
+namespace mlx {
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
+const BackendSpec* spec();
+const BackendOps* ops();
+}  // namespace mlx
+
+}  // namespace backends
+}  // namespace lemon
