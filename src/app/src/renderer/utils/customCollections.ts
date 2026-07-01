@@ -184,58 +184,48 @@ export interface RouterClassifier {
   id: string;
   type: 'classifier' | 'semantic_similarity' | 'llm';
   model: string;
-  // llm-only: same concept as NL Router routerPrompt
   prompt?: string;
-  // classifier-only fields:
-  labels?: string[];                       // text-classification output labels
-  defaultLabel?: string;                   // label used when condition omits label
-  onError?: 'match_true' | 'match_false';  // fail-closed vs fail-open
+  labels?: string[];
+  defaultLabel?: string;
+  onError?: 'match_true' | 'match_false';
   referencePhrases?: Record<string, string[]>;
 }
 
-// How multiple conditions on one rule are combined.
 export type RouterRuleOperator = 'any' | 'all';
 
-// One keywords-any/all entry (up to 2 per rule, each independently negatable).
-export interface RouterKeywordEntry {
-  keywords: string[];
-  not?: boolean;   // true → emit { not: { keywords_any/all: [...] } }
-}
-
-// One regex entry (up to 2 per rule).
-export interface RouterRegexEntry {
-  pattern: string;
+// One atomic condition inside a condition group.
+export interface RouterCondition {
+  id: string;
+  type: 'keywords_any' | 'keywords_all' | 'regex' | 'min_chars' | 'max_chars'
+      | 'has_tools' | 'has_images' | 'classifier';
   not?: boolean;
+  // keywords_any / keywords_all
+  keywords?: string[];
+  // regex
+  pattern?: string;
+  // min_chars / max_chars
+  value?: number;
+  // classifier
+  classifierId?: string;
+  label?: string;
+  minScore?: number;
+  maxScore?: number;
 }
 
-// A single rule: one or more conditions + one route_to target.
-// keywords-any, keywords-all, and regex each support up to 2 independent
-// entries so you can express e.g. "contains 'function' AND does NOT contain 'tutorial'".
+// A group of conditions combined by a single AND or OR operator.
+// joinOperator is undefined on the first group; on subsequent groups it controls
+// how this group joins with the result of all groups before it.
+export interface RouterConditionGroup {
+  id: string;
+  operator: RouterRuleOperator;
+  conditions: RouterCondition[];
+  joinOperator?: RouterRuleOperator;
+}
+
 export interface RouterRule {
   id: string;
-  routeTo: string;                      // must be in candidates
-  operator?: RouterRuleOperator;        // 'any' (OR, default) or 'all' (AND)
-  // Deterministic conditions:
-  matchKeywordsAny?: RouterKeywordEntry[];   // up to 2, each optionally negated
-  matchKeywordsAll?: RouterKeywordEntry[];   // up to 2, each optionally negated
-  matchRegex?: RouterRegexEntry[];           // up to 2, each optionally negated
-  matchMinChars?: number;
-  matchMinCharsNot?: boolean;
-  matchMaxChars?: number;
-  matchMaxCharsNot?: boolean;
-  matchHasTools?: boolean;
-  matchHasToolsNot?: boolean;
-  matchHasImages?: boolean;
-  matchHasImagesNot?: boolean;
-  // Classifier-band condition:
-  matchClassifier?: {
-    classifierId: string;               // references a RouterClassifier id
-    label?: string;                     // which label's score to apply the band to
-    minScore?: number;                  // inclusive [0,1]
-    maxScore?: number;                  // inclusive [0,1]
-    not?: boolean;                      // wrap this leaf in { not: { classifier: ... } }
-  };
-  // Engine-opaque pass-through bag copied verbatim into the Decision.
+  routeTo: string;
+  groups: RouterConditionGroup[];
   outputs?: Record<string, unknown>;
 }
 
@@ -320,40 +310,80 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
     }
 
     routing.rules = draft.rules.map((r) => {
-      // Helper: wrap a leaf in { not: leaf } when the condition's Not flag is set
-      const n = (leaf: Record<string, unknown>, notFlag: boolean | undefined): Record<string, unknown> =>
-        notFlag ? { not: leaf } : leaf;
+      // Wrap a leaf in { not: inner } when the condition is negated.
+      const maybeNot = (leaf: Record<string, unknown>, not: boolean | undefined): Record<string, unknown> =>
+        not ? { not: leaf } : leaf;
 
-      const leaves: Record<string, unknown>[] = [];
-      for (const entry of r.matchKeywordsAny ?? [])
-        if (entry.keywords?.length) leaves.push(n({ keywords_any: entry.keywords }, entry.not));
-      for (const entry of r.matchKeywordsAll ?? [])
-        if (entry.keywords?.length) leaves.push(n({ keywords_all: entry.keywords }, entry.not));
-      for (const entry of r.matchRegex ?? [])
-        if (entry.pattern?.trim()) leaves.push(n({ regex: entry.pattern.trim() }, entry.not));
-      if (r.matchMinChars !== undefined)
-        leaves.push(n({ min_chars: r.matchMinChars }, r.matchMinCharsNot));
-      if (r.matchMaxChars !== undefined)
-        leaves.push(n({ max_chars: r.matchMaxChars }, r.matchMaxCharsNot));
-      if (r.matchHasTools !== undefined)
-        leaves.push(n({ has_tools: r.matchHasTools }, r.matchHasToolsNot));
-      if (r.matchHasImages !== undefined)
-        leaves.push(n({ has_images: r.matchHasImages }, r.matchHasImagesNot));
-      if (r.matchClassifier?.classifierId) {
-        const leaf: Record<string, unknown> = { classifier: r.matchClassifier.classifierId };
-        if (r.matchClassifier.label) leaf.label = r.matchClassifier.label;
-        if (r.matchClassifier.minScore !== undefined) leaf.min_score = r.matchClassifier.minScore;
-        if (r.matchClassifier.maxScore !== undefined) leaf.max_score = r.matchClassifier.maxScore;
-        leaves.push(r.matchClassifier.not ? { not: leaf } : leaf);
-      }
+      // Convert one RouterCondition to its JSON leaf.
+      const condToLeaf = (c: RouterCondition): Record<string, unknown> | null => {
+        if (c.type === 'keywords_any' && c.keywords?.length)
+          return maybeNot({ keywords_any: c.keywords }, c.not);
+        if (c.type === 'keywords_all' && c.keywords?.length)
+          return maybeNot({ keywords_all: c.keywords }, c.not);
+        if (c.type === 'regex' && c.pattern?.trim())
+          return maybeNot({ regex: c.pattern.trim() }, c.not);
+        if (c.type === 'min_chars' && c.value !== undefined)
+          return maybeNot({ min_chars: c.value }, c.not);
+        if (c.type === 'max_chars' && c.value !== undefined)
+          return maybeNot({ max_chars: c.value }, c.not);
+        if (c.type === 'has_tools')
+          return maybeNot({ has_tools: true }, c.not);
+        if (c.type === 'has_images')
+          return maybeNot({ has_images: true }, c.not);
+        if (c.type === 'classifier' && c.classifierId) {
+          const leaf: Record<string, unknown> = { classifier: c.classifierId };
+          if (c.label) leaf.label = c.label;
+          if (c.minScore !== undefined) leaf.min_score = c.minScore;
+          if (c.maxScore !== undefined) leaf.max_score = c.maxScore;
+          return maybeNot(leaf, c.not);
+        }
+        return null;
+      };
 
-      const op = r.operator ?? 'any';
+      // Convert one group to its match expression.
+      const groupToMatch = (g: RouterConditionGroup): Record<string, unknown> | null => {
+        const leaves = g.conditions.map(condToLeaf).filter((l): l is Record<string, unknown> => l !== null);
+        if (leaves.length === 0) return null;
+        if (leaves.length === 1) return leaves[0];
+        return { [g.operator]: leaves };
+      };
+
+      const groups = r.groups ?? [];
+      const groupMatches = groups
+        .map((g, i) => ({ m: groupToMatch(g), join: i === 0 ? undefined : (g.joinOperator ?? 'any') }))
+        .filter((x): x is { m: Record<string, unknown>; join: RouterRuleOperator | undefined } => x.m !== null);
+
+      // Left-fold: accumulate groups one at a time using each group's joinOperator.
+      // If consecutive groups share the same joinOperator, flatten them into one array.
       const match: Record<string, unknown> = {};
-      if (leaves.length === 1) {
-        Object.assign(match, leaves[0]);
-      } else if (leaves.length > 1) {
-        match[op] = leaves;
+      if (groupMatches.length === 0) {
+        // empty — leave match blank
+      } else if (groupMatches.length === 1) {
+        Object.assign(match, groupMatches[0].m);
+      } else {
+        // Build a fold accumulator: { op, items[] } where items are the flat children.
+        // When the next joinOperator differs, nest the current accumulator and start fresh.
+        type Acc = { op: RouterRuleOperator; items: Record<string, unknown>[] };
+        let acc: Acc = { op: groupMatches[1].join!, items: [groupMatches[0].m] };
+        for (let i = 1; i < groupMatches.length; i++) {
+          const { m, join } = groupMatches[i];
+          const op = join!;
+          if (op === acc.op) {
+            acc.items.push(m);
+          } else {
+            // Seal current accumulator into a nested node, start new level.
+            const sealed: Record<string, unknown> = acc.items.length === 1
+              ? acc.items[0]
+              : { [acc.op]: acc.items };
+            acc = { op, items: [sealed, m] };
+          }
+        }
+        const final: Record<string, unknown> = acc.items.length === 1
+          ? acc.items[0]
+          : { [acc.op]: acc.items };
+        Object.assign(match, final);
       }
+
       const emitted: Record<string, unknown> = { id: r.id, match, route_to: r.routeTo };
       if (r.outputs && Object.keys(r.outputs).length > 0) emitted.outputs = r.outputs;
       return emitted;
@@ -409,79 +439,86 @@ export const routingToRouterCollectionDraft = (
         : undefined,
   }));
 
+  let condSeq = 0;
+  let groupSeq = 0;
+  const nextCondId = () => `cond-${++condSeq}`;
+  const nextGroupId = () => `grp-${++groupSeq}`;
+
+  // Parse a JSON leaf (possibly not-wrapped) into a RouterCondition.
+  const leafToCondition = (rawLeaf: Record<string, unknown>): RouterCondition | null => {
+    let not = false;
+    let leaf = rawLeaf;
+    if (leaf.not && typeof leaf.not === 'object' && !Array.isArray(leaf.not)) {
+      not = true;
+      leaf = leaf.not as Record<string, unknown>;
+    }
+    if (Array.isArray(leaf.keywords_any))
+      return { id: nextCondId(), type: 'keywords_any', keywords: leaf.keywords_any as string[], not: not || undefined };
+    if (Array.isArray(leaf.keywords_all))
+      return { id: nextCondId(), type: 'keywords_all', keywords: leaf.keywords_all as string[], not: not || undefined };
+    if (typeof leaf.regex === 'string')
+      return { id: nextCondId(), type: 'regex', pattern: leaf.regex, not: not || undefined };
+    if (typeof leaf.min_chars === 'number')
+      return { id: nextCondId(), type: 'min_chars', value: leaf.min_chars, not: not || undefined };
+    if (typeof leaf.max_chars === 'number')
+      return { id: nextCondId(), type: 'max_chars', value: leaf.max_chars, not: not || undefined };
+    if ('has_tools' in leaf)
+      return { id: nextCondId(), type: 'has_tools', not: not || undefined };
+    if ('has_images' in leaf)
+      return { id: nextCondId(), type: 'has_images', not: not || undefined };
+    if (typeof leaf.classifier === 'string')
+      return {
+        id: nextCondId(), type: 'classifier', classifierId: leaf.classifier,
+        label: typeof leaf.label === 'string' ? leaf.label : undefined,
+        minScore: typeof leaf.min_score === 'number' ? leaf.min_score : undefined,
+        maxScore: typeof leaf.max_score === 'number' ? leaf.max_score : undefined,
+        not: not || undefined,
+      };
+    return null;
+  };
+
+  // Parse one item from a top-level any/all array into a group.
+  // An item that is itself any/all becomes a group; a flat leaf becomes a 1-condition group.
+  const itemToGroup = (item: Record<string, unknown>, defaultOp: RouterRuleOperator): RouterConditionGroup => {
+    if (Array.isArray(item.all)) {
+      const conds = (item.all as Record<string, unknown>[]).map(leafToCondition).filter((c): c is RouterCondition => c !== null);
+      return { id: nextGroupId(), operator: 'all', conditions: conds };
+    }
+    if (Array.isArray(item.any)) {
+      const conds = (item.any as Record<string, unknown>[]).map(leafToCondition).filter((c): c is RouterCondition => c !== null);
+      return { id: nextGroupId(), operator: 'any', conditions: conds };
+    }
+    const cond = leafToCondition(item);
+    return { id: nextGroupId(), operator: defaultOp, conditions: cond ? [cond] : [] };
+  };
+
+  // Parse a match expression into RouterConditionGroups with joinOperator set on each
+  // group after the first (joinOperator = the op that connects it to the previous group).
+  const matchToGroups = (rawMatch: Record<string, unknown>): RouterConditionGroup[] => {
+    for (const op of ['any', 'all'] as const) {
+      if (Array.isArray(rawMatch[op])) {
+        const items = rawMatch[op] as Record<string, unknown>[];
+        const groups = items.map((item, i) => ({
+          ...itemToGroup(item, op),
+          joinOperator: i === 0 ? undefined : op,
+        }));
+        return groups.length ? groups : [{ id: nextGroupId(), operator: op, conditions: [] }];
+      }
+    }
+    // Single flat leaf — one group, no joinOperator.
+    const cond = leafToCondition(rawMatch);
+    return [{ id: nextGroupId(), operator: 'any', conditions: cond ? [cond] : [] }];
+  };
+
   const rawRules = Array.isArray(routing.rules) ? routing.rules : [];
   const rules: RouterRule[] = (rawRules as Record<string, unknown>[]).map((r) => {
     const rawMatch = (r.match && typeof r.match === 'object' ? r.match : {}) as Record<string, unknown>;
-
-    let leaves: Record<string, unknown>[];
-    let operator: RouterRuleOperator = 'any';
-    if (Array.isArray(rawMatch.any)) {
-      leaves = rawMatch.any as Record<string, unknown>[];
-      operator = 'any';
-    } else if (Array.isArray(rawMatch.all)) {
-      leaves = rawMatch.all as Record<string, unknown>[];
-      operator = 'all';
-    } else {
-      // Single leaf (possibly not-wrapped): pass as-is to unwrapNot below
-      leaves = [rawMatch];
-    }
-
-    const rule: RouterRule = {
+    return {
       id: typeof r.id === 'string' ? r.id : '',
       routeTo: typeof r.route_to === 'string' ? r.route_to : '',
-      operator,
+      groups: matchToGroups(rawMatch),
       outputs: r.outputs && typeof r.outputs === 'object' ? r.outputs as Record<string, unknown> : undefined,
     };
-
-    // Helper: unwrap a { not: inner } leaf, returning { inner, negated }
-    const unwrapNot = (leaf: Record<string, unknown>) => {
-      if (leaf.not && typeof leaf.not === 'object' && !Array.isArray(leaf.not)) {
-        return { inner: leaf.not as Record<string, unknown>, negated: true };
-      }
-      return { inner: leaf, negated: false };
-    };
-
-    for (const rawLeaf of leaves) {
-      const { inner: leaf, negated } = unwrapNot(rawLeaf);
-      if (Array.isArray(leaf.keywords_any)) {
-        rule.matchKeywordsAny = [...(rule.matchKeywordsAny ?? []),
-          { keywords: leaf.keywords_any as string[], not: negated || undefined }];
-      }
-      if (Array.isArray(leaf.keywords_all)) {
-        rule.matchKeywordsAll = [...(rule.matchKeywordsAll ?? []),
-          { keywords: leaf.keywords_all as string[], not: negated || undefined }];
-      }
-      if (typeof leaf.regex === 'string') {
-        rule.matchRegex = [...(rule.matchRegex ?? []),
-          { pattern: leaf.regex, not: negated || undefined }];
-      }
-      if (typeof leaf.min_chars === 'number') {
-        rule.matchMinChars = leaf.min_chars;
-        if (negated) rule.matchMinCharsNot = true;
-      }
-      if (typeof leaf.max_chars === 'number') {
-        rule.matchMaxChars = leaf.max_chars;
-        if (negated) rule.matchMaxCharsNot = true;
-      }
-      if (typeof leaf.has_tools === 'boolean') {
-        rule.matchHasTools = leaf.has_tools;
-        if (negated) rule.matchHasToolsNot = true;
-      }
-      if (typeof leaf.has_images === 'boolean') {
-        rule.matchHasImages = leaf.has_images;
-        if (negated) rule.matchHasImagesNot = true;
-      }
-      if (typeof leaf.classifier === 'string') {
-        rule.matchClassifier = {
-          classifierId: leaf.classifier,
-          label: typeof leaf.label === 'string' ? leaf.label : undefined,
-          minScore: typeof leaf.min_score === 'number' ? leaf.min_score : undefined,
-          maxScore: typeof leaf.max_score === 'number' ? leaf.max_score : undefined,
-          not: negated || undefined,
-        };
-      }
-    }
-    return rule;
   });
 
   return {
