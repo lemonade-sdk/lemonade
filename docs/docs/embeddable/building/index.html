@@ -1143,6 +1143,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/app/" class="md-nav__link">
         
   
@@ -2288,7 +2344,7 @@ sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w
 cmake<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>-DBUILD_WEB_APP<span class="o">=</span>OFF
 cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>embeddable
 </code></pre></div>
-<p>This produces <code>build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz</code>.</p>
+<p>This produces <code>build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz</code> on x86_64 Linux and <code>build/lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz</code> on ARM64 Linux.</p>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>brew<span class="w"> </span>install<span class="w"> </span>cmake<span class="w"> </span>ninja
@@ -2331,8 +2387,12 @@ cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class=
 </thead>
 <tbody>
 <tr>
-<td>Linux</td>
+<td>Linux (x86_64)</td>
 <td><code>lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz</code></td>
+</tr>
+<tr>
+<td>Linux (ARM64)</td>
+<td><code>lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz</code></td>
 </tr>
 <tr>
 <td>Windows</td>

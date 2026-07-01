@@ -929,6 +929,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#model-family-argument-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model-Family Argument Config
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tuning" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1260,6 +1271,62 @@
     
   
     C++
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
   
 
     
@@ -2328,6 +2395,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#model-family-argument-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model-Family Argument Config
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tuning" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2402,11 +2480,51 @@
 <span class="w">  </span>--recipe<span class="w"> </span>vllm
 </code></pre></div>
 <p>Standard OpenAI-compatible endpoints (<code>/v1/chat/completions</code>, <code>/v1/completions</code>) work as usual. Lemonade forwards requests to the vLLM child process, which exposes the engine's own private endpoints (e.g. <code>/metrics</code>, <code>/version</code>) on a backend-only port surfaced via <code>GET /v1/health</code> (<code>backend_url</code> field) — useful for observability but not proxied through Lemonade.</p>
-<h2 id="tuning">Tuning</h2>
-<p>Free-form CLI args can be appended to <code>vllm-server</code> via <code>vllm_args</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Allow more concurrent sequences and turn on prefix caching</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">vllm_args</span><span class="o">=</span><span class="s2">&quot;--max-num-seqs 128 --enable-prefix-caching&quot;</span>
+<h2 id="model-family-argument-config">Model-Family Argument Config</h2>
+<p>Some vLLM model families need extra <code>vllm-server</code> arguments for correct behavior. For example, tool-calling models may need <code>--enable-auto-tool-choice</code> plus a matching <code>--tool-call-parser</code>. Lemonade keeps these built-in family defaults in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json"><code>vllm_model_config.json</code></a>, separate from <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json"><code>server_models.json</code></a>.</p>
+<p>When adding a built-in model with <code>recipe: "vllm"</code>, check whether its model family needs vLLM arguments. If it does, update <code>vllm_model_config.json</code> in the same PR as the <code>server_models.json</code> entry.</p>
+<p>The config has two layers:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;schema_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;enable_checkpoint_regex_match&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;families&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;qwen3.&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;checkpoint_regex&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3\\.&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--enable-auto-tool-choice --tool-call-parser qwen3_coder&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;Qwen3.5-4B-vLLM&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;family&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;qwen3.&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
 </code></pre></div>
+<ul>
+<li><code>families</code> defines reusable defaults for a model family. Each family can include <code>args</code> and optional <code>match</code> entries.</li>
+<li><code>models</code> maps Lemonade model names to a family and can also add per-model <code>args</code>.</li>
+<li><code>checkpoint_regex</code> is matched against the model checkpoint, not only the organization name. This lets one family match checkpoints from different Hugging Face organizations.</li>
+<li><code>enable_checkpoint_regex_match</code> controls automatic family matching for unlisted models. Set it to <code>false</code> to require explicit entries under <code>models</code>.</li>
+<li>A model entry can set <code>disable_family_match: true</code> to prevent regex family matching for that model while still allowing model-specific <code>args</code>.</li>
+</ul>
+<p>Argument precedence is:</p>
+<ol>
+<li>Family <code>args</code></li>
+<li>Exact model <code>args</code></li>
+<li>User-provided <code>vllm_args</code></li>
+</ol>
+<p>Later layers override conflicting earlier flags but keep non-conflicting flags. Binary <code>--flag</code> / <code>--no-flag</code> pairs are resolved like the rest of Lemonade's <code>*_args</code> merge behavior, and repeated generic flags are preserved when the same flag appears multiple times.</p>
+<p>Lemonade-managed process arguments cannot be set in this file or in <code>vllm_args</code>: <code>--model</code>, <code>--served-model-name</code>, <code>--host</code>, <code>--port</code>, <code>--max-model-len</code>, <code>--enforce-eager</code>, and <code>--enable-prefix-caching</code>.</p>
+<h2 id="tuning">Tuning</h2>
+<p>Free-form CLI args can be appended to <code>vllm-server</code> via <code>vllm.args</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Allow more concurrent sequences and turn on prefix caching</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>vllm.args<span class="o">=</span><span class="s2">&quot;--max-num-seqs 128 --enable-prefix-caching&quot;</span>
+</code></pre></div>
+<p>The flat form (<code>vllm_args=...</code>) is also accepted and maps to the same setting.</p>
 <h2 id="known-gotchas">Known gotchas</h2>
 <ul>
 <li><strong>Cold first-load JIT.</strong> Loading a new model size triggers a Triton kernel compile. Expect 20 s – several minutes the first time you hit a given model+shape; subsequent loads of the same shape are faster as kernels cache to disk.</li>

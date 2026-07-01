@@ -16,7 +16,7 @@
         <link rel="prev" href="../documentation/">
       
       
-        <link rel="next" href="../app/">
+        <link rel="next" href="../adding-a-backend/">
       
       
         
@@ -1569,6 +1569,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-internalconfigdefaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>GET /internal/config/defaults</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1744,6 +1755,62 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -3132,6 +3199,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-internalconfigdefaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>GET /internal/config/defaults</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3335,7 +3413,7 @@
 <li><a href="#building-installers">Building Installers</a></li>
 <li><a href="#windows-installer-wixmsi">Windows Installer (WiX/MSI)</a></li>
 <li><a href="#linux-deb-package-debianubuntu">Linux .deb Package (Debian/Ubuntu)</a></li>
-<li><a href="#linux-rpm-package-fedora-rhel-etc">Linux .rpm Package (Fedora, RHEL etc)</a></li>
+<li><a href="#linux-rpm-package-fedora-43-44">Linux .rpm Package (Fedora, RHEL etc)</a></li>
 <li><a href="#developer-ide-and-build-steps">Developer IDE and Build Steps</a></li>
 <li><a href="#code-structure">Code Structure</a></li>
 <li><a href="#architecture-overview">Architecture Overview</a></li>
@@ -3861,6 +3939,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <td>Returns the full runtime config snapshot</td>
 </tr>
 <tr>
+<td><code>GET</code></td>
+<td><code>/internal/config/defaults</code></td>
+<td>Returns the canonical default config (factory defaults)</td>
+</tr>
+<tr>
 <td><code>POST</code></td>
 <td><code>/internal/cleanup-cache</code></td>
 <td>Cleans up orphaned files in the Hugging Face cache</td>
@@ -3984,6 +4067,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <p>Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.</p>
 <p><strong>Example:</strong>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/internal/config
+</code></pre></div></p>
+<h4 id="get-internalconfigdefaults"><code>GET /internal/config/defaults</code></h4>
+<p>Returns the canonical default configuration — the values a brand-new <code>config.json</code> is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's <code>config_defaults()</code>), making this the authoritative source of the factory defaults. <code>docs/tools/gen_backend_boilerplate.py</code> reads this endpoint to regenerate the committed <code>src/cpp/resources/defaults.json</code>, and a CI <code>--check</code> fails if that file drifts from the descriptors.</p>
+<p><strong>Example:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/internal/config/defaults
 </code></pre></div></p>
 <h3 id="dependencies">Dependencies</h3>
 <p>All dependencies are automatically fetched by CMake via FetchContent:</p>
@@ -4211,13 +4299,13 @@ python<span class="w"> </span>test/server_sd.py
         
         
           
-          <a href="../app/" class="md-footer__link md-footer__link--next" aria-label="Next: Desktop App">
+          <a href="../adding-a-backend/" class="md-footer__link md-footer__link--next" aria-label="Next: Adding a Backend">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Desktop App
+                Adding a Backend
               </div>
             </div>
             <div class="md-footer__button md-icon">

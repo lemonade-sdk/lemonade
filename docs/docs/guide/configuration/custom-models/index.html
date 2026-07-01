@@ -1557,6 +1557,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/app/" class="md-nav__link">
         
   
@@ -2983,7 +3039,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tr>
 <tr>
 <td><code>--recipe RECIPE</code></td>
-<td>Recipe to associate with the new <code>user.*</code> model. Common values: <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>sd-cpp</code>, <code>kokoro</code>, <code>collection.omni</code>.</td>
+<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
@@ -3056,6 +3112,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tbody>
 </table>
 <p>If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.</p>
+<p>The editor also exposes a <strong>System Prompt</strong> field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a <em>template</em> — both the <code>{tool_list}</code> and <code>{tool_guidance}</code> placeholders are <strong>required</strong> in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via <strong>Reset to default</strong> — stores no override and keeps tracking whatever the global default is at runtime.</p>
 <h3 id="share-a-collection-export-import-and-hugging-face">Share a collection: export, import, and Hugging Face</h3>
 <p><code>lemonade export &lt;collection&gt;</code> (and the desktop app's Export button) writes a <em>collection file</em>: the
 collection's <a href="../../../api/openai/#get-v1modelsmodel_id"><code>/v1/models/{model_id}</code></a> object normalized into
@@ -3496,9 +3553,11 @@ Or just <code>lemonade pull nomic-ai/nomic-embed-text-v1-GGUF</code> — the <co
 <ol>
 <li>Values explicitly passed in the <code>/api/v1/load</code> request</li>
 <li>Per-model values from <code>recipe_options.json</code></li>
+<li>Per-architecture defaults from <code>architecture_defaults.json</code> (shipped resource; keyed by GGUF architecture name read from the model file)</li>
 <li>Global configuration values, see <a href=".././">Server Configuration</a></li>
 </ol>
 <p><strong><code>*_args</code> merge behavior:</strong> For options ending in <code>_args</code> (e.g., <code>llamacpp_args</code>, <code>whispercpp_args</code>, <code>sdcpp_args</code>, <code>vllm_args</code>), the CLI/API arguments are <strong>merged</strong> rather than replaced. The merge works at the flag level with higher priority settings taking priority.</p>
+<p>For built-in models using <code>recipe: "vllm"</code>, also check <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json"><code>vllm_model_config.json</code></a>. Some vLLM families need family-level arguments such as tool-call parser settings; see the <a href=".././vllm/#model-family-argument-config">vLLM model-family argument config</a> docs before adding or updating vLLM model entries.</p>
 <p>For full details, see the <a href="../../../api/lemonade/#post-v1load">load endpoint documentation</a>.</p>
 <h2 id="see-also">See Also</h2>
 <ul>

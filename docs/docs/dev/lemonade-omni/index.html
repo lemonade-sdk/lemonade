@@ -1147,6 +1147,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../app/" class="md-nav__link">
         
   
@@ -1299,6 +1355,23 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Available Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-collection-system-prompt-override" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Per-collection system prompt override
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2301,6 +2374,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Available Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-collection-system-prompt-override" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Per-collection system prompt override
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2479,6 +2569,9 @@
 </tbody>
 </table>
 <p>Endpoint request/response shapes are documented in the <a href="../../api/">Endpoints Spec</a>.</p>
+<h3 id="per-collection-system-prompt-override">Per-collection system prompt override</h3>
+<p>The default OmniRouter system prompt lives in <code>toolDefinitions.json</code> and is a <em>template</em> with <code>{tool_list}</code> and <code>{tool_guidance}</code> placeholders that the server (and app) expand at runtime based on which components are present.</p>
+<p>Each collection model can override that default by setting its own <code>system_prompt</code> template — either in its registry entry (<code>server_models.json</code> for built-ins), in its published Hugging Face collection JSON (for HF-backed collections like <code>LMX-Omni-*</code>), or via the desktop app's Omni Model editor for custom collections. When present, the per-collection value wins; otherwise the global default applies. Tool definitions stay global — only the prompt text is per-collection.</p>
 <h2 id="how-to-use-omni-models">How to Use Omni Models</h2>
 <p>Any app can use an omni collection by simply requesting <code>/chat/completions</code> and receiving multi-media results in the response content. Apps that want a higher degree of customization can instead send their requests to the collection's planner LLM, with a custom system prompt and tool definitions, and receive tool calls in the response.</p>
 <table>

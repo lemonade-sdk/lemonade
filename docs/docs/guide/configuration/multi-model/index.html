@@ -1308,6 +1308,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/app/" class="md-nav__link">
         
   
@@ -2439,14 +2495,17 @@
 </ul>
 <p>Each type has its own independent LRU cache, all sharing the same slot limit set by <code>max_loaded_models</code>.</p>
 <h2 id="device-constraints">Device Constraints</h2>
+<!-- BEGIN GENERATED: npu-exclusivity -->
 <ul>
-<li><strong>NPU Exclusivity:</strong> <code>flm</code>, <code>ryzenai-llm</code>, and <code>whispercpp</code> are mutually exclusive on the NPU.<ul>
-<li>Loading a model from one of these backends will automatically evict all NPU models from the other backends.</li>
-<li><code>flm</code> supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.</li>
-<li><code>ryzenai-llm</code> supports loading exactly 1 LLM, which uses the entire NPU.</li>
-<li><code>whispercpp</code> supports loading exactly 1 ASR model at a time, which uses the entire NPU.</li>
+<li><strong>NPU Exclusivity:</strong> <code>whispercpp</code>, <code>flm</code>, and <code>ryzenai-llm</code> are mutually exclusive on the NPU.</li>
 </ul>
-</li>
+<!-- END GENERATED: npu-exclusivity -->
+<pre><code>- Loading a model from one of these backends will automatically evict all NPU models from the other backends.
+- `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
+- `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
+- `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
+</code></pre>
+<ul>
 <li><strong>CPU/GPU:</strong> No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.</li>
 </ul>
 <h2 id="eviction-policy">Eviction Policy</h2>
@@ -2536,8 +2595,10 @@ lemonade<span class="w"> </span>unpin<span class="w"> </span>Qwen3-0.6B-GGUF
 <p>Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the <code>/api/v1/load</code> endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the <a href="../../../api/lemonade/#post-v1load"><code>/api/v1/load</code> endpoint documentation</a> for details.</p>
 <p><strong>Setting Priority Order:</strong>
 1. Values passed explicitly in <code>/api/v1/load</code> request (highest priority)
-2. Values from environment variables or server startup arguments (see <a href=".././">Server Configuration</a>)
-3. Hardcoded defaults in <code>lemond</code> (lowest priority)</p>
+2. Per-model values from <code>recipe_options.json</code>
+3. Per-architecture defaults from <code>architecture_defaults.json</code> (shipped resource; keyed by GGUF architecture name)
+4. Values from environment variables or server startup arguments (see <a href=".././">Server Configuration</a>)
+5. Hardcoded defaults in <code>lemond</code> (lowest priority)</p>
 
 
 

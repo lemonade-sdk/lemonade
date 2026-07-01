@@ -1145,6 +1145,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/app/" class="md-nav__link">
         
   
@@ -3050,7 +3106,7 @@
 <p>Save the prompt cache of a specific slot to a file. This allows you to persist the current context state for later restoration.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's <code>/slots/{id}?action=save</code> endpoint.</p>
-<p><strong>Note:</strong> The llama.cpp server must be started with the <code>--slot-save-path</code> argument for save operations to work. See <a href="../../server/configuration/">Server Configuration</a> for details on configuring backend arguments.</p>
+<p><strong>Note:</strong> The llama.cpp server must be started with the <code>--slot-save-path</code> argument for save operations to work. See <a href="../../guide/configuration/">Server Configuration</a> for details on configuring backend arguments.</p>
 <p>Example configuration:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.args<span class="o">=</span><span class="s2">&quot;--slot-save-path /path/to/slot/saves&quot;</span>
 </code></pre></div></p>

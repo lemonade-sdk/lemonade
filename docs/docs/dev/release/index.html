@@ -1147,6 +1147,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../app/" class="md-nav__link">
         
   
@@ -1414,15 +1470,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-update-the-release-notes" class="md-nav__link">
+  <a href="#step-6-reconcile-the-tag-into-main" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 6: Update the Release Notes
+        Step 6: Reconcile the Tag into <code>main</code>
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Step 6: Update the Release Notes">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-update-the-release-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 7: Update the Release Notes
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 7: Update the Release Notes">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1453,10 +1520,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-7-discord-announcement" class="md-nav__link">
+  <a href="#step-8-discord-announcement" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 7: Discord Announcement
+        Step 8: Discord Announcement
       </span>
     </span>
   </a>
@@ -1464,15 +1531,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-8-social-media" class="md-nav__link">
+  <a href="#step-9-social-media" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 8: Social Media
+        Step 9: Social Media
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Step 8: Social Media">
+    <nav class="md-nav" aria-label="Step 9: Social Media">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2448,15 +2515,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-update-the-release-notes" class="md-nav__link">
+  <a href="#step-6-reconcile-the-tag-into-main" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 6: Update the Release Notes
+        Step 6: Reconcile the Tag into <code>main</code>
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Step 6: Update the Release Notes">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-update-the-release-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 7: Update the Release Notes
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 7: Update the Release Notes">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2487,10 +2565,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-7-discord-announcement" class="md-nav__link">
+  <a href="#step-8-discord-announcement" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 7: Discord Announcement
+        Step 8: Discord Announcement
       </span>
     </span>
   </a>
@@ -2498,15 +2576,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-8-social-media" class="md-nav__link">
+  <a href="#step-9-social-media" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 8: Social Media
+        Step 9: Social Media
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Step 8: Social Media">
+    <nav class="md-nav" aria-label="Step 9: Social Media">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2627,7 +2705,18 @@ git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </
 git<span class="w"> </span>tag<span class="w"> </span>-f<span class="w"> </span>vX.Y.Z
 git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>vX.Y.Z<span class="w"> </span>--force
 </code></pre></div>
-<h2 id="step-6-update-the-release-notes">Step 6: Update the Release Notes</h2>
+<h2 id="step-6-reconcile-the-tag-into-main">Step 6: Reconcile the Tag into <code>main</code></h2>
+<p>The tag lives on <code>release-vX.Y.Z</code>, so it isn't reachable from <code>main</code>, and <code>git describe --tags</code> on <code>main</code> reports the <em>previous</em> release — feeding a stale version into the Debian/PPA build (<code>prepare-debian-build</code>) and <code>test_release_notes.yml</code>. Link it in with an <code>ours</code> merge (records the ancestry only, changes no files).</p>
+<p>First confirm <strong>every release-branch fix is forward-ported to <code>main</code></strong> — <code>-s ours</code> silently drops anything that isn't (see Step 2's forward-port guidance).</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>checkout<span class="w"> </span>main
+git<span class="w"> </span>pull
+git<span class="w"> </span>merge<span class="w"> </span>-s<span class="w"> </span>ours<span class="w"> </span>--no-ff<span class="w"> </span>vX.Y.Z<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;chore: link vX.Y.Z into main history for git describe&quot;</span>
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main
+git<span class="w"> </span>describe<span class="w"> </span>--tags<span class="w"> </span>--abbrev<span class="o">=</span><span class="m">0</span><span class="w">   </span><span class="c1"># expect vX.Y.Z; `git diff origin/main HEAD` should be empty</span>
+</code></pre></div>
+<p>The push is blocked by <code>main</code>'s classic branch protection (PR / merge queue / status checks). You need the repo <strong>Admin</strong> role, and the rule must have <em>Do not allow bypassing the above settings</em> unchecked (Settings → Branches → Branch protection rules → <code>main</code>); admins then push directly.</p>
+<p><strong>IMPORTANT:</strong> re-enable <em>Do not allow bypassing the above settings</em> as soon as you're done with this step.</p>
+<h2 id="step-7-update-the-release-notes">Step 7: Update the Release Notes</h2>
 <p>Open the <strong><code>vX.Y.Z release notes</code></strong> GitHub issue. Repo-manager has pre-populated the <strong>Headline</strong> and <strong>Breaking Changes</strong> sections from the commit history. Review and edit them — the release action pulls these sections directly from this issue to build the GitHub release page.</p>
 <p>You may also need to manually edit the GitHub release after it publishes to:
 - add co-author contributors who were missing
@@ -2639,14 +2728,14 @@ git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </
 <p>The list should be the 3-5 most noteworthy aspects of the release. Keep items concise; no special formatting or links, no shoutouts.</p>
 <h3 id="breaking-changes">Breaking Changes</h3>
 <p>Bulleted list with one item per breaking change. Keep it concise, and link to a wiki article for migration if more details are needed.</p>
-<h2 id="step-7-discord-announcement">Step 7: Discord Announcement</h2>
+<h2 id="step-8-discord-announcement">Step 8: Discord Announcement</h2>
 <p>Open the <strong><code>vX.Y.Z announcement</code></strong> GitHub issue. Repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits, and post it in <code>#announcements</code> on the Lemonade Discord.</p>
 <ul>
 <li>Major and Minor releases: <code>@everyone</code></li>
 <li>Patch releases: <code>@release</code></li>
 </ul>
 <p>The auto-generated announcement uses people's github usernames for shoutouts. Please try to translate those to Discord usernames to the best of your ability before posting.</p>
-<h2 id="step-8-social-media">Step 8: Social Media</h2>
+<h2 id="step-9-social-media">Step 9: Social Media</h2>
 <p>Not required, but it is always good to promote the new release online.</p>
 <h3 id="reddit">Reddit</h3>
 <p>There are two kinds of Reddit posts we typically do. It's ok to do both for a single release, but in that case post one on Wednesday and one 2+ days later.</p>

@@ -968,6 +968,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#reusing-a-system-installed-rocm-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reusing a System-Installed ROCm (Linux)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1410,6 +1421,62 @@
     
   
     C++
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/backends-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends Reference
   
 
     
@@ -2545,6 +2612,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#reusing-a-system-installed-rocm-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reusing a System-Installed ROCm (Linux)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2773,6 +2851,16 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <p>After changing channels, you'll need to reinstall the ROCm backend:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:rocm
 </code></pre></div></p>
+<h3 id="reusing-a-system-installed-rocm-linux">Reusing a System-Installed ROCm (Linux)</h3>
+<p>On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains <code>lib{,64}/libamdhip64.so</code>:</p>
+<ol>
+<li>The <code>ROCM_PATH</code> environment variable</li>
+<li><code>rocm-sdk path --root</code>, when <code>rocm-sdk</code> is on your <code>PATH</code> (e.g. a ROCm installed from the TheRock pip wheels)</li>
+<li><code>/opt/rocm</code></li>
+</ol>
+<p>When the runtime is found via <code>ROCM_PATH</code> or <code>rocm-sdk</code>, a <code>major.minor</code> version match is accepted (and a runtime with no version file is accepted as-is), so a patch-level difference won't trigger a second download. To force Lemonade to use a specific ROCm, export <code>ROCM_PATH</code> before starting the server:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ROCM_PATH</span><span class="o">=</span>/path/to/rocm
+</code></pre></div>
 <h3 id="pinning-to-a-specific-version-tag">Pinning to a Specific Version Tag</h3>
 <p>You can pin <code>llamacpp.rocm_bin</code> to a specific release tag instead of using <code>"builtin"</code> or <code>"latest"</code>. <strong>Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.</strong></p>
 <table>
