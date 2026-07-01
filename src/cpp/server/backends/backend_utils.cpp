@@ -954,9 +954,6 @@ namespace lemon::backends {
     }
 
     bool BackendUtils::is_rocm_installed_system_wide() {
-#if !defined(__linux__) && !defined(_WIN32)
-        return false;
-#else
         auto rocm_root_opt = resolve_rocm_root();
         if (!rocm_root_opt) {
             LOG(DEBUG, "BackendUtils")
@@ -977,7 +974,6 @@ namespace lemon::backends {
                       << " (no version file found)" << std::endl;
         }
         return true;
-#endif
     }
 
     std::string BackendUtils::get_therock_install_dir(const std::string& arch, const std::string& version) {

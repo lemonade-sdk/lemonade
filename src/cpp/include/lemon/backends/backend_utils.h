@@ -119,9 +119,6 @@ namespace lemon::backends {
          * Returns std::nullopt when none validate. When resolved_explicitly is
          * non-null, it is set to true when the root came from ROCM_PATH or
          * rocm-sdk (a user-selected ROCm) and false for the platform default.
-         *
-         * Meaningful on Windows and Linux; on other platforms callers reach it
-         * solely behind is_rocm_installed_system_wide(), which returns false.
          */
         static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
 
@@ -133,7 +130,7 @@ namespace lemon::backends {
          */
         static std::string read_rocm_version_from_root(const fs::path& root);
 
-        /** Check if ROCm libraries are installed system-wide (Windows and Linux) */
+        /** Check if a system-wide ROCm install can be located (see resolve_rocm_root) */
         static bool is_rocm_installed_system_wide();
 
         /** Get TheRock installation directory for a specific architecture and version */

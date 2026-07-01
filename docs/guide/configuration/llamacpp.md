@@ -129,7 +129,7 @@ On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock)
 `ROCM_PATH` and `rocm-sdk` work on both platforms. When the runtime is found via one of them, a `major.minor` version match is accepted (and a runtime with no version file is accepted as-is), so a patch-level difference won't trigger a second download. To force Lemonade to use a specific ROCm, set `ROCM_PATH` before starting the server:
 
 ```bash
-# Linux / macOS
+# Linux
 export ROCM_PATH=/path/to/rocm
 ```
 
