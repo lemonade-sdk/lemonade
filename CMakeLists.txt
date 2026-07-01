@@ -114,6 +114,7 @@ set(MIN_HTTPLIB_VERSION "0.26.0")
 set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
+find_package(OpenSSL REQUIRED)
 
 # Try to find system packages with version requirements
 find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)

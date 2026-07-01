@@ -144,6 +144,7 @@ static void hide_all_options_except_help(CLI::App& app) {
 struct CliConfig {
     std::string host = "127.0.0.1";
     int port = 13305;
+    bool is_ssl = false;
     std::string api_key;
     std::string model;
     std::string list_filter;
@@ -272,7 +273,7 @@ static bool try_lemonade_protocol(const std::string& lemonade_url) {
 #endif
 }
 
-static void open_url(const std::string& host, int port, const std::string& path = "/") {
+static void open_url(const std::string& host, int port, const std::string& path = "/", bool is_ssl = false) {
     // Map web path to lemonade:// route and try the desktop app first
     std::string lemonade_url = "lemonade://open";
     if (path == "/?logs=true") {
@@ -284,7 +285,8 @@ static void open_url(const std::string& host, int port, const std::string& path 
     }
 
     // Fall back to web app in browser
-    std::string url = "http://" + host + ":" + std::to_string(port) + path;
+    std::string scheme = is_ssl ? "https" : "http";
+    std::string url = scheme + "://" + host + ":" + std::to_string(port) + path;
     std::cout << "Opening URL: " << url << std::endl;
 
 #ifdef _WIN32
@@ -509,7 +511,7 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
         return handle_chat_command(client, config);
     }
 
-    open_url(config.host, config.port);
+    open_url(config.host, config.port, "/", config.is_ssl);
     return 0;
 }
 
@@ -714,10 +716,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     std::thread([host = config.host,
                  port = config.port,
                  api_key = config.api_key,
+                 is_ssl = config.is_ssl,
                  model = config.model,
                  recipe_options = config.recipe_options]() {
         try {
-            lemonade::LemonadeClient async_client(host, port, api_key);
+            lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
             nlohmann::json request_body = recipe_options;
             request_body["model_name"] = model;
             request_body["save_options"] = false;
@@ -750,9 +753,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
 
 // Attempt a quick liveness check against the given host:port
 static bool try_live_check(const std::string& host, int port, const std::string& api_key,
-                           int timeout_ms = 500) {
+                           bool is_ssl = false, int timeout_ms = 500) {
     try {
-        lemonade::LemonadeClient client(host, port, api_key);
+        lemonade::LemonadeClient client(host, port, api_key, is_ssl);
         client.make_request("/live", "GET", "", "", timeout_ms, timeout_ms);
         return true;
     } catch (const std::exception&) {
@@ -1394,6 +1397,17 @@ int main(int argc, char* argv[]) {
         return app.exit(e);
     }
 
+    // Parse URL scheme and override host, port, is_ssl
+    {
+        std::string clean_host;
+        int clean_port = config.port;
+        bool is_ssl = false;
+        lemonade::ParseTargetUrl(config.host, clean_host, clean_port, is_ssl);
+        config.host = clean_host;
+        config.port = clean_port;
+        config.is_ssl = is_ssl;
+    }
+
     if (load_cmd->count() > 0) {
         if (load_cmd->count("--pinned") > 0) {
             config.pinned = load_pinned_flag;
@@ -1419,7 +1433,7 @@ int main(int argc, char* argv[]) {
                          config.host == "localhost" || config.host == "0.0.0.0");
         int live_timeout_ms = is_local ? 100 : 3000;
 
-        if (!try_live_check(config.host, config.port, config.api_key, live_timeout_ms)) {
+        if (!try_live_check(config.host, config.port, config.api_key, config.is_ssl, live_timeout_ms)) {
             int discovered_port = discover_local_server_port();
             if (discovered_port > 0 && discovered_port != config.port) {
                 config.port = discovered_port;
@@ -1434,7 +1448,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create client
-    lemonade::LemonadeClient client(config.host, config.port, config.api_key);
+    lemonade::LemonadeClient client(config.host, config.port, config.api_key, config.is_ssl);
 
     // Execute command
     if (status_cmd->count() > 0) {
@@ -1442,7 +1456,7 @@ int main(int argc, char* argv[]) {
             // Verify the server is actually reachable before reporting its port.
             // Without this check, we'd report the default port even when no server is running,
             // which could cause callers to target the wrong process.
-            bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
+            bool reachable = try_live_check(config.host, config.port, config.api_key, config.is_ssl, 500);
             if (!reachable) {
                 std::cerr << "Server is not running" << std::endl;
                 return 1;
@@ -1534,7 +1548,7 @@ int main(int argc, char* argv[]) {
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
-        open_url(config.host, config.port, "/?logs=true");
+        open_url(config.host, config.port, "/?logs=true", config.is_ssl);
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
