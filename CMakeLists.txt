@@ -1269,6 +1269,19 @@ endif()
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
+# When the web app is auto-built, force it to finish before any executable's
+# POST_BUILD step copies build/resources/ to build/<config>/resources/.
+# Without this, parallel MSBuild can race and leave build/<config>/resources/web-app
+# empty, so lemond logs "Web app directory not found" at startup.
+if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP AND TARGET web-app)
+    if(TARGET ${EXECUTABLE_NAME})
+        add_dependencies(${EXECUTABLE_NAME} web-app)
+    endif()
+    if(TARGET LemonadeServer)
+        add_dependencies(LemonadeServer web-app)
+    endif()
+endif()
+
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
