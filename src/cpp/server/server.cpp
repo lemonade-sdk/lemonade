@@ -2062,11 +2062,18 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
-    // Collections (Omni) additionally embed each component's full model object,
+    if (is_router_collection_recipe(info.recipe)) {
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end() && routing_it->second.is_object()) {
+            model_json["routing"] = routing_it->second;
+        }
+    }
+
+    // Collections additionally embed each component's full model object,
     // in component order, under "models". Embedding is bounded by
     // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
     // cannot recurse unboundedly.
-    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+    if (is_model_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
         nlohmann::json component_models = nlohmann::json::array();
         for (const auto& component : info.components) {
             if (!model_manager_->model_exists(component)) {
@@ -3828,7 +3835,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        if (is_collection_recipe(recipe)) {
+        if (is_model_collection_recipe(recipe)) {
             if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
                 bad_request(*err);
                 return;
