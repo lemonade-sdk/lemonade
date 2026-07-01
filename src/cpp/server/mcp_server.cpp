@@ -818,7 +818,7 @@ json McpServer::tool_omni(const json& arguments) {
         model = arguments["model"].get<std::string>();
     } else {
         for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
-            if (is_collection_recipe(info.recipe)) {
+            if (is_omni_collection_recipe(info.recipe)) {
                 model = name;
                 break;
             }
@@ -851,7 +851,7 @@ json McpServer::tool_omni(const json& arguments) {
     }
 
     ModelInfo info = model_manager_->get_model_info(model);
-    if (!is_collection_recipe(info.recipe)) {
+    if (!is_omni_collection_recipe(info.recipe)) {
         return json{
             {"content", json::array({text_content_block(
                 "Model '" + model + "' is not an Omni collection (recipe='" +

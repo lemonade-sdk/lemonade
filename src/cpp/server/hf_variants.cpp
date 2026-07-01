@@ -323,7 +323,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
             manifest = nlohmann::json();
         }
         bool valid_manifest = manifest.is_object() &&
-            is_collection_recipe(manifest.value("recipe", std::string())) &&
+            is_omni_collection_recipe(manifest.value("recipe", std::string())) &&
             manifest.contains("components") && manifest["components"].is_array() &&
             !manifest["components"].empty() &&
             manifest.contains("models") && manifest["models"].is_array();

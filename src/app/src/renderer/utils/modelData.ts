@@ -1,4 +1,4 @@
-import { isCollectionRecipe } from './recipeNames';
+import { isModelCollectionRecipe } from './recipeNames';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -36,6 +36,9 @@ export interface ModelInfo {
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
   // {tool_guidance} placeholders so runtime substitution still works.
   system_prompt?: string;
+  // collection.router policies. Kept opaque in the general model catalog; router
+  // authoring tools validate against the routing schema.
+  routing?: unknown;
   [key: string]: unknown;
 }
 
@@ -76,7 +79,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
+  if (!recipe || (!checkpoint && !isModelCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -140,6 +143,10 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const systemPrompt = info['system_prompt'];
   if (typeof systemPrompt === 'string' && systemPrompt) {
     normalized.system_prompt = systemPrompt;
+  }
+
+  if (isRecord(info['routing'])) {
+    normalized.routing = info['routing'];
   }
 
   const vision = info['vision'];
@@ -234,6 +241,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.system_prompt = model.system_prompt;
       }
 
+      if (model.routing && typeof model.routing === 'object' && !Array.isArray(model.routing)) {
+        modelInfo.routing = model.routing;
+      }
+
       // cloud_provider distinguishes per-provider buckets in the Model
       // Manager grouping (recipe="cloud" alone collapses all providers
       // into a single sub-heading).
@@ -289,6 +300,7 @@ const EXPORT_KNOWN_KEYS = new Set([
   'labels',
   'recipe',
   'recipe_options',
+  'routing',
   'size',
   'system_prompt',
 ]);
@@ -323,7 +335,7 @@ export const normalizeModelExportPayload = (
   const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
   payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
 
-  if (isCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+  if (isModelCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
     // Normalize each embedded component with the same transform. Components
     // are leaf models: drop their (empty) collection fields and keep bare
     // names — the server decides `user.` prefixing when registering them.

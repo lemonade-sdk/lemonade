@@ -30,6 +30,7 @@ const std::vector<std::string> kKnownKeys = {
     "labels",
     "recipe",
     "recipe_options",
+    "routing",
     "size",
     "system_prompt"
 };
@@ -244,7 +245,7 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
         return false;
     }
 
-    bool is_collection = lemon::is_collection_recipe(model_data["recipe"].get<std::string>());
+    bool is_collection = lemon::is_model_collection_recipe(model_data["recipe"].get<std::string>());
 
     bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
     bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
