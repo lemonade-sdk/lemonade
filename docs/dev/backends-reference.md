@@ -100,13 +100,14 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Models
 
 <!-- BEGIN GENERATED: backend-models -->
-#### `collection.omni` — collection.omni (4 models)
+#### `collection.omni` — collection.omni (5 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `LMX-Omni-5.5B-Lite` | 9.3 | — |
 | `LMX-Omni-52B-Halo` | 44.77 | — |
 | `Lite Collection` |  | — |
+| `RPG-HaloTales-V1` | 39.77 | — |
 | `Ultra Collection` |  | — |
 
 #### `kokoro` — Kokoro (1 models)
