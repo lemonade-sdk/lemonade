@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -144,6 +145,30 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     (void)recipe;
     return DEVICE_NONE;
+}
+
+// Infer capability labels from a model name or checkpoint string.
+// Used as a fallback when labels are not explicitly provided (e.g.
+// user-pulled models registered without the --label flag).
+inline std::vector<std::string> infer_labels_from_name(const std::string& model_name,
+                                                       const std::string& checkpoint = "") {
+    std::vector<std::string> labels;
+    auto to_lower = [](const std::string& s) {
+        std::string result = s;
+        std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+        return result;
+    };
+    std::string name_lower = to_lower(model_name);
+    std::string checkpoint_lower = to_lower(checkpoint);
+    if (name_lower.find("embed") != std::string::npos ||
+        checkpoint_lower.find("embed") != std::string::npos) {
+        labels.push_back("embeddings");
+    }
+    if (name_lower.find("rerank") != std::string::npos ||
+        checkpoint_lower.find("rerank") != std::string::npos) {
+        labels.push_back("reranking");
+    }
+    return labels;
 }
 
 } // namespace lemon
