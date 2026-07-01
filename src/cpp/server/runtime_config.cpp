@@ -252,6 +252,14 @@ bool RuntimeConfig::auto_evict() const {
     return false;
 }
 
+bool RuntimeConfig::inhibit_suspend() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("inhibit_suspend")) {
+        return config_["inhibit_suspend"].get<bool>();
+    }
+    return true;
+}
+
 double RuntimeConfig::auto_evict_threshold_pct() const {
     std::shared_lock lock(mutex_);
     if (config_.contains("auto_evict_threshold_pct")) {
@@ -556,6 +564,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "auto_evict") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'auto_evict' must be a boolean");
+        }
+    } else if (key == "inhibit_suspend") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'inhibit_suspend' must be a boolean");
         }
     } else if (key == "auto_evict_threshold_pct") {
         if (!value.is_number()) {
