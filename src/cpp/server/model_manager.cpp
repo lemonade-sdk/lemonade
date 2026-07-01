@@ -1393,9 +1393,6 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
     if (!safe_exists(resolved)) return false;
 
     // A manifest or .partial file indicates an interrupted multi-file download.
-    // Preserve the existing semantics: file checkpoints check their parent
-    // directory for the manifest and their own .partial marker; directory
-    // checkpoints check the directory itself.
     fs::path marker_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
     if (safe_exists(marker_dir / ".download_manifest.json")) return false;
 
@@ -1403,7 +1400,43 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // .completed sentinel: authoritative marker that a download finished
+    // successfully. Without it, a crash during download (between fs::rename
+    // and manifest removal) leaves a corrupt directory that appears complete
+    // by other checks alone.
+    fs::path completed_path = marker_dir / ".completed";
+    if (safe_exists(completed_path)) {
+        return true;
+    }
+
+    // Backward-compat: pre-existing downloads (before .completed was
+    // introduced) won't have the sentinel. If the directory has content
+    // and no manifest/partial files, write the sentinel and accept it.
+    // Also prevents re-download loops after upgrades. See #1999.
+    std::error_code ec;
+    bool has_content = false;
+    for (auto it = fs::directory_iterator(resolved, ec); it != fs::directory_iterator(); ++it) {
+        std::string name = it->path().filename().string();
+        // Skip sentinel files and partials
+        if (name != ".completed" && name != ".partial" &&
+            name.find(".partial") == std::string::npos) {
+            has_content = true;
+            break;
+        }
+        if (ec) break;
+    }
+
+    if (has_content) {
+        // Write .completed sentinel for future checks
+        std::ofstream cf(path_to_utf8(completed_path));
+        cf << "completed\n";
+        cf.close();
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -2056,18 +2089,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::string filter_reason;
 
         // Collections are UI-level entries that orchestrate components.
-        // They should always be visible if present in the registry.
-        if (is_collection_recipe(recipe)) {
-            filtered[name] = info;
-            continue;
-        }
+        // Skip the recipe-support check (collections have no hardware recipe),
+        // but still apply size-vs-RAM filtering so models that won't fit
+        // on the system are hidden. See #2201.
+        bool is_collection = is_collection_recipe(recipe);
 
-        // Cloud-offloaded models bypass local backend/RAM checks (the model
-        // executes on a remote provider). Discovery is server-side and runs
-        // at every cache build, so this branch normally sees the full set
-        // of discovered cloud entries plus anything a user pinned into
-        // user_models.json.
-        if (recipe == "cloud") {
+        // Cloud-offloaded models bypass all local checks.
+        if (!is_collection && recipe == "cloud") {
             filtered[name] = info;
             continue;
         }
@@ -2076,8 +2104,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                                            is_extra_model_name(name) ||
                                            info.source == "local_upload";
 
-        // Check recipe support using the centralized system_info recipes structure
-        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        // Check recipe support — skip for collections (no hardware recipe)
+        std::string unsupported_reason;
+        if (!is_collection) {
+            unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        }
         if (!unsupported_reason.empty()) {
             filter_out = true;
             filter_reason = unsupported_reason + " "
@@ -3808,6 +3839,24 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
+
+    // Proactive disk-space check before starting the download.
+    // Mirror of the check inside download_from_manifest() — doing it
+    // here too catches failures early, before the manifest is persisted.
+    {
+        size_t total_bytes = 0;
+        for (const auto& file_entry : manifest["files"]) {
+            total_bytes += file_entry["size"].get<size_t>();
+        }
+        std::error_code ec;
+        auto si = fs::space(path_from_utf8(manifest["download_path"].get<std::string>()), ec);
+        if (!ec && si.available < total_bytes) {
+            throw std::runtime_error(
+                "Insufficient disk space: need " + std::to_string(total_bytes / (1024*1024))
+                + " MB but only " + std::to_string(si.available / (1024*1024))
+                + " MB available at " + manifest["download_path"].get<std::string>());
+        }
+    }
 
     download_from_manifest(manifest, headers, progress_callback);
 
