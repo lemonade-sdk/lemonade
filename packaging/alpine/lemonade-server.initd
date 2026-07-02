@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+
+name="Lemonade Server"
+description="Local LLM server with GPU/NPU acceleration"
+
+command="/usr/bin/lemond"
+command_user="lemonade:lemonade"
+command_background=true
+supervisor="supervise-daemon"
+pidfile="/run/lemonade/lemonade-server.pid"
+directory="/var/lib/lemonade"
+
+export HOME="/var/lib/lemonade"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	checkpath -d -m 0700 -o lemonade:lemonade /run/lemonade
+	checkpath -d -m 0750 -o lemonade:lemonade /var/lib/lemonade
+
+	# Mirror the systemd EnvironmentFile drop-in: load HF_TOKEN,
+	# LEMONADE_API_KEY, etc. from /etc/lemonade/conf.d/*.conf.
+	if [ -d /etc/lemonade/conf.d ]; then
+		set -a
+		for f in /etc/lemonade/conf.d/*.conf; do
+			[ -f "$f" ] && . "$f"
+		done
+		set +a
+	fi
+}
