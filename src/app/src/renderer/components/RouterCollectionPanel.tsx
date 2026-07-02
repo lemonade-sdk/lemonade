@@ -11,7 +11,9 @@ import {
   routingToRouterCollectionDraft,
 } from '../utils/customCollections';
 import { isCollectionRecipe } from '../utils/recipeNames';
+import { isLeaf, isOperatorNode, validateRuleNode } from '../utils/routerTree';
 import RouterPipelineCanvas from './RouterPipelineCanvas';
+import { ModelCheckboxList, ModelSelect, type ModelOption } from './ModelSearchPicker';
 
 interface RouterCollectionPanelProps {
   mode: 'create' | 'edit';
@@ -36,18 +38,33 @@ const emptyDraft = (): RouterCollectionDraft => ({
   rules: [],
 });
 
+// Remove all references to a classifier id from a conditionTree
+function stripClassifierFromTree(
+  node: RouterRule['conditionTree'],
+  classifierId: string,
+): RouterRule['conditionTree'] {
+  if (!node) return null;
+  if (isLeaf(node)) {
+    return node.signalType === 'classifier' && node.classifierId === classifierId ? null : node;
+  }
+  if (isOperatorNode(node)) {
+    const cleaned = node.conditions
+      .map(c => stripClassifierFromTree(c, classifierId))
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+    if (cleaned.length === 0) return null;
+    if (node.operator !== 'NOT' && cleaned.length === 1) return cleaned[0];
+    return { ...node, conditions: cleaned };
+  }
+  return node;
+}
+
 const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
-  mode,
-  collectionId,
-  onClose,
-  onSave,
-  onExport,
+  mode, collectionId, onClose, onSave, onExport,
 }) => {
   const { modelsData } = useModels();
   const [draft, setDraft] = useState<RouterCollectionDraft>(() => emptyDraft());
   const [error, setError] = useState<string | null>(null);
   const [previewJson, setPreviewJson] = useState<string | null>(null);
-  const [highlightedClassifierId, setHighlightedClassifierId] = useState<string | null>(null);
   const ruleSeqRef = useRef(0);
   const clfSeqRef = useRef(0);
 
@@ -66,21 +83,16 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   useEffect(() => {
     setError(null);
     setPreviewJson(null);
-    if (mode !== 'edit' || !collectionId) {
-      setDraft(emptyDraft());
-      return;
-    }
+    if (mode !== 'edit' || !collectionId) { setDraft(emptyDraft()); return; }
     serverFetch(`/v1/models/${encodeURIComponent(collectionId)}`)
-      .then((r) => r.json())
+      .then(r => r.json())
       .then((raw: unknown) => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-          setError('Could not load router policy. Refresh and try again.');
-          return;
+          setError('Could not load router policy. Refresh and try again.'); return;
         }
         const rec = raw as Record<string, unknown>;
         if (!rec.routing || typeof rec.routing !== 'object') {
-          setError('This model has no routing policy. Refresh and try again.');
-          return;
+          setError('This model has no routing policy. Refresh and try again.'); return;
         }
         setDraft(routingToRouterCollectionDraft(
           collectionId,
@@ -92,7 +104,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   }, [mode, collectionId]);
 
   const nextRuleId = () => {
-    const existing = new Set((draft.rules ?? []).map((r) => r.id));
+    const existing = new Set((draft.rules ?? []).map(r => r.id));
     let n = ruleSeqRef.current + 1;
     while (existing.has(`rule-${n}`)) n++;
     ruleSeqRef.current = n;
@@ -100,7 +112,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   };
 
   const nextClassifierId = () => {
-    const existing = new Set((draft.classifiers ?? []).map((c) => c.id));
+    const existing = new Set((draft.classifiers ?? []).map(c => c.id));
     let n = clfSeqRef.current + 1;
     while (existing.has(`clf-${n}`)) n++;
     clfSeqRef.current = n;
@@ -108,18 +120,18 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   };
 
   const patch = (p: Partial<RouterCollectionDraft>) => {
-    setDraft((prev) => ({ ...prev, ...p }));
+    setDraft(prev => ({ ...prev, ...p }));
     setError(null);
     setPreviewJson(null);
   };
 
   const toggleCandidate = (id: string) => {
-    setDraft((prev) => {
+    setDraft(prev => {
       const next = prev.candidates.includes(id)
-        ? prev.candidates.filter((c) => c !== id)
+        ? prev.candidates.filter(c => c !== id)
         : [...prev.candidates, id];
       const defaultModel = next.includes(prev.defaultModel) ? prev.defaultModel : '';
-      const rules = (prev.rules ?? []).filter((r) => next.includes(r.routeTo));
+      const rules = (prev.rules ?? []).filter(r => next.includes(r.routeTo));
       return { ...prev, candidates: next, defaultModel, rules };
     });
     setError(null);
@@ -127,33 +139,28 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
   const addClassifier = () => {
     const id = nextClassifierId();
-    setDraft((prev) => ({
+    setDraft(prev => ({
       ...prev,
-      classifiers: [
-        ...(prev.classifiers ?? []),
-        { id, type: 'classifier', model: '', labels: [], defaultLabel: '', onError: 'match_false' },
-      ],
+      classifiers: [...(prev.classifiers ?? []),
+        { id, type: 'classifier', model: '', labels: [], defaultLabel: '', onError: 'match_false' }],
     }));
   };
 
   const removeClassifier = (id: string) => {
-    setDraft((prev) => ({
+    setDraft(prev => ({
       ...prev,
-      classifiers: (prev.classifiers ?? []).filter((c) => c.id !== id),
-      rules: (prev.rules ?? []).map((r) => ({
+      classifiers: (prev.classifiers ?? []).filter(c => c.id !== id),
+      rules: (prev.rules ?? []).map(r => ({
         ...r,
-        groups: r.groups.map((g) => ({
-          ...g,
-          conditions: g.conditions.filter((cond) => !(cond.type === 'classifier' && cond.classifierId === id)),
-        })),
+        conditionTree: stripClassifierFromTree(r.conditionTree, id),
       })),
     }));
   };
 
   const patchClassifier = (id: string, p: Partial<RouterClassifier>) => {
-    setDraft((prev) => ({
+    setDraft(prev => ({
       ...prev,
-      classifiers: (prev.classifiers ?? []).map((c) => (c.id === id ? { ...c, ...p } : c)),
+      classifiers: (prev.classifiers ?? []).map(c => c.id === id ? { ...c, ...p } : c),
     }));
     setError(null);
   };
@@ -164,23 +171,20 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       return;
     }
     const id = nextRuleId();
-    setDraft((prev) => ({
+    setDraft(prev => ({
       ...prev,
-      rules: [
-        ...(prev.rules ?? []),
-        { id, routeTo: prev.candidates[0] ?? '', groups: [{ id: 'grp-1', operator: 'any' as const, conditions: [] }] },
-      ],
+      rules: [...(prev.rules ?? []), { id, routeTo: prev.candidates[0] ?? '', conditionTree: null }],
     }));
   };
 
   const removeRule = (id: string) => {
-    setDraft((prev) => ({ ...prev, rules: (prev.rules ?? []).filter((r) => r.id !== id) }));
+    setDraft(prev => ({ ...prev, rules: (prev.rules ?? []).filter(r => r.id !== id) }));
   };
 
   const patchRule = (id: string, p: Partial<RouterRule>) => {
-    setDraft((prev) => ({
+    setDraft(prev => ({
       ...prev,
-      rules: (prev.rules ?? []).map((r) => (r.id === id ? { ...r, ...p } : r)),
+      rules: (prev.rules ?? []).map(r => r.id === id ? { ...r, ...p } : r),
     }));
     setError(null);
   };
@@ -214,26 +218,15 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         }
       }
       if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
-      const classifierIds = new Set((draft.classifiers ?? []).map((c) => c.id));
+      const classifierIds = new Set((draft.classifiers ?? []).map(c => c.id));
       for (const r of draft.rules) {
         if (!r.routeTo) { setError(`Rule "${r.id}": select a target model.`); return null; }
         if (!draft.candidates.includes(r.routeTo)) {
           setError(`Rule "${r.id}": target model must be a candidate.`); return null;
         }
-        const allConditions = r.groups.flatMap((g) => g.conditions);
-        const hasAny = allConditions.some((cond) => {
-          if (cond.type === 'keywords_any' || cond.type === 'keywords_all') return (cond.keywords?.length ?? 0) > 0;
-          if (cond.type === 'regex') return !!cond.pattern?.trim();
-          if (cond.type === 'classifier') return !!cond.classifierId;
-          return true;
-        });
-        if (!hasAny) { setError(`Rule "${r.id}": add at least one condition.`); return null; }
-        for (const cond of allConditions) {
-          if (cond.type === 'classifier' && cond.classifierId && !classifierIds.has(cond.classifierId)) {
-            setError(`Rule "${r.id}": references unknown classifier "${cond.classifierId}".`);
-            return null;
-          }
-        }
+        if (!r.conditionTree) { setError(`Rule "${r.id}": add at least one condition.`); return null; }
+        const treeErrors = validateRuleNode(r.conditionTree, classifierIds);
+        if (treeErrors.length) { setError(`Rule "${r.id}": ${treeErrors[0]}`); return null; }
       }
     }
     return { ...draft, name };
@@ -262,20 +255,14 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     }
   };
 
-  const displayName = (id: string) => {
-    const info = modelsData[id];
-    return info?.model_name ?? getModelDisplayName(id);
-  };
-
+  const displayName = (id: string) => modelsData[id]?.model_name ?? getModelDisplayName(id);
   const displayNameWithStatus = (id: string) => {
     const info = modelsData[id];
-    const name = info?.model_name ?? getModelDisplayName(id);
-    return `${name} (${info?.downloaded === true ? 'downloaded' : 'registered - will download'})`;
+    return `${info?.model_name ?? getModelDisplayName(id)} (${info?.downloaded === true ? 'downloaded' : 'registered - will download'})`;
   };
 
   return (
     <>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="settings-header">
         <h3>{mode === 'edit' ? 'Edit Hybrid Router' : 'New Hybrid Router'}</h3>
         <button type="button" className="settings-close-button" onClick={onClose} title="Close">
@@ -285,19 +272,16 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         </button>
       </div>
 
-      {/* ── Scrollable content ─────────────────────────────────────────────── */}
       <div className="settings-content custom-collection-content">
 
-        {/* Name */}
         <div className="form-section">
           <label className="form-label">Router Name *</label>
           <input type="text" className="form-input"
             value={draft.name}
-            onChange={(e) => patch({ name: e.target.value.replace(/^user\./, '') })}
+            onChange={e => patch({ name: e.target.value.replace(/^user\./, '') })}
             placeholder="MyHybridRouter" />
         </div>
 
-        {/* Candidates */}
         <div className="form-section">
           <label className="form-label">
             Candidate Models *
@@ -306,35 +290,33 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           {candidateOptions.length === 0 ? (
             <div className="collection-role-empty">No compatible models found. Pull or register LLM models first.</div>
           ) : (
-            <div className="router-candidate-list">
-              {candidateOptions.map(({ id, info }) => (
-                <label key={id} className="router-candidate-row">
-                  <input type="checkbox" checked={draft.candidates.includes(id)} onChange={() => toggleCandidate(id)} />
-                  <span className="router-candidate-name">{info.model_name ?? getModelDisplayName(id)}</span>
-                  {info.downloaded === true
-                    ? <span className="router-candidate-badge downloaded">local</span>
-                    : <span className="router-candidate-badge">will download</span>}
-                </label>
-              ))}
-            </div>
+            <ModelCheckboxList
+              options={candidateOptions.map(({ id, info }) => ({
+                id,
+                label: info.model_name ?? getModelDisplayName(id),
+                sublabel: info.downloaded === true ? 'local' : 'will download',
+                downloaded: info.downloaded === true,
+              }) satisfies ModelOption)}
+              selected={draft.candidates}
+              onToggle={toggleCandidate}
+            />
           )}
         </div>
 
-        {/* Default model */}
         <div className="form-section">
           <label className="form-label">
             Default Model *
             <span className="settings-description" style={{ marginLeft: 6 }}>- fallback when no rule matches</span>
           </label>
-          <select className="form-input form-select" value={draft.defaultModel}
-            onChange={(e) => patch({ defaultModel: e.target.value })}
-            disabled={draft.candidates.length === 0}>
-            <option value="">{draft.candidates.length === 0 ? 'Select candidates first' : 'Select default model…'}</option>
-            {draft.candidates.map((id) => <option key={id} value={id}>{displayName(id)}</option>)}
-          </select>
+          <ModelSelect
+            options={draft.candidates.map(id => ({ id, label: displayName(id) }))}
+            value={draft.defaultModel}
+            onChange={id => patch({ defaultModel: id })}
+            placeholder={draft.candidates.length === 0 ? 'Select candidates first' : 'Select default model…'}
+            disabled={draft.candidates.length === 0}
+          />
         </div>
 
-        {/* Routing mode */}
         <div className="form-section">
           <label className="form-label">Routing Mode</label>
           <div className="router-mode-options">
@@ -344,12 +326,11 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             </label>
             <label className="router-mode-option">
               <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules' })} />
-              <span><strong>Rules</strong><span className="settings-description" style={{ display: 'block' }}>Keyword, length, and classifier conditions.</span></span>
+              <span><strong>Rules</strong><span className="settings-description" style={{ display: 'block' }}>Visual boolean expression builder with drag-and-drop conditions.</span></span>
             </label>
           </div>
         </div>
 
-        {/* NL Router fields */}
         {draft.routingMode === 'llm' && (
           <>
             <div className="form-section">
@@ -357,17 +338,18 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                 Router LLM *
                 <span className="settings-description" style={{ marginLeft: 6 }}>- small model that reads your prompt</span>
               </label>
-              <select className="form-input form-select" value={draft.routerModel ?? ''} onChange={(e) => patch({ routerModel: e.target.value })}>
-                <option value="">Select a router LLM…</option>
-                {candidateOptions.map(({ id }) => (
-                  <option key={id} value={id}>{displayNameWithStatus(id)}{draft.candidates.includes(id) ? ' (also a candidate)' : ''}</option>
-                ))}
-              </select>
+              <ModelSelect
+                options={candidateOptions.map(({ id }) => ({ id, label: displayNameWithStatus(id) }))}
+                value={draft.routerModel ?? ''}
+                onChange={id => patch({ routerModel: id })}
+                placeholder="Select a router LLM…"
+                annotate={id => draft.candidates.includes(id) ? '(also a candidate)' : null}
+              />
             </div>
             <div className="form-section">
               <label className="form-label">Routing Prompt *</label>
               <textarea className="form-input" rows={5} value={draft.routerPrompt ?? ''}
-                onChange={(e) => patch({ routerPrompt: e.target.value })}
+                onChange={e => patch({ routerPrompt: e.target.value })}
                 placeholder={DEFAULT_ROUTER_PROMPT} spellCheck={false}
                 style={{ fontFamily: 'monospace', fontSize: '12px', resize: 'vertical' }} />
               <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
@@ -382,7 +364,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           </>
         )}
 
-        {/* Rules mode - pipeline canvas */}
         {draft.routingMode === 'rules' && (
           <RouterPipelineCanvas
             draft={draft}
@@ -396,26 +377,25 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             onPatchRule={patchRule}
             onAddRule={addRule}
             onRemoveRule={removeRule}
-            highlightedClassifierId={highlightedClassifierId}
-            onHighlightClassifier={setHighlightedClassifierId}
+            highlightedClassifierId={null}
+            previewJson={previewJson}
+            onPreviewJson={handlePreview}
           />
         )}
 
       </div>
-      {/* ── End scrollable content ─────────────────────────────────────────── */}
 
-      {/* ── JSON preview ───────────────────────────────────────────────────── */}
       {previewJson !== null && (
         <div className="router-json-preview">
           <div className="router-json-preview-header">
             <span className="router-json-preview-title">Generated JSON</span>
-            <button type="button" className="router-json-preview-btn" title="Copy to clipboard"
+            <button type="button" className="router-json-preview-btn" title="Copy"
               onClick={() => navigator.clipboard.writeText(previewJson)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
-            <button type="button" className="router-json-preview-btn" title="Download as JSON"
+            <button type="button" className="router-json-preview-btn" title="Download"
               onClick={() => {
                 const blob = new Blob([previewJson], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
@@ -439,7 +419,6 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
       {error && <div className="router-panel-error">{error}</div>}
 
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div className="settings-footer custom-collection-footer">
         <button type="button" className="settings-reset-button" onClick={handlePreview}>
           {previewJson !== null ? 'Hide JSON' : 'Preview JSON'}
