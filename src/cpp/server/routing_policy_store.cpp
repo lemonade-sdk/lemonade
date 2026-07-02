@@ -6,6 +6,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -70,6 +71,9 @@ std::shared_ptr<const RoutingPolicyStore::Snapshot> RoutingPolicyStore::load_dir
         return next;
     }
 
+    std::map<std::string, std::string> policy_files_by_model;
+    std::set<std::string> duplicate_models;
+
     for (fs::recursive_directory_iterator it(directory_, fs::directory_options::skip_permission_denied, ec), end;
          !ec && it != end; it.increment(ec)) {
         if (ec || !it->is_regular_file(ec) || !is_json_file(it->path())) {
@@ -84,6 +88,27 @@ std::shared_ptr<const RoutingPolicyStore::Snapshot> RoutingPolicyStore::load_dir
             }
 
             const std::string model_name = policy_model_name(doc, it->path());
+            auto [model_file_it, inserted] = policy_files_by_model.emplace(model_name, file);
+            if (!inserted) {
+                duplicate_models.insert(model_name);
+                const std::string first_file = model_file_it->second;
+                next->errors[file] = "duplicate collection.router model_name '" +
+                                     model_name + "' also defined by '" +
+                                     first_file + "'";
+                if (next->errors.count(first_file) == 0) {
+                    next->errors[first_file] =
+                        "duplicate collection.router model_name '" + model_name +
+                        "' also defined by '" + file + "'";
+                }
+                next->engines.erase(model_name);
+                continue;
+            }
+            if (duplicate_models.count(model_name) != 0) {
+                next->errors[file] =
+                    "duplicate collection.router model_name '" + model_name + "'";
+                continue;
+            }
+
             RoutePolicy policy = parse_route_policy_collection(doc, parse_options_);
             auto engine = std::make_shared<RoutingPolicyEngine>(std::move(policy), services_);
             next->engines[model_name] = std::move(engine);

@@ -141,10 +141,31 @@ static void test_invalid_policy_reports_error() {
     fs::remove_all(dir);
 }
 
+static void test_duplicate_policy_model_names_report_errors() {
+    fs::path dir = make_temp_dir();
+    json doc = load_fixture("l1_keywords.json");
+    write_json(dir / "first.json", doc);
+    write_json(dir / "second.json", doc);
+
+    lemon::testing::FakeClassifierServices fake;
+    RoutingPolicyStore store(dir.string(), fake.make());
+    auto snapshot = store.reload();
+
+    check("duplicate policy model names do not load an arbitrary engine",
+          snapshot->engines.empty());
+    check("duplicate policy model names record per-file errors",
+          snapshot->errors.size() == 2 &&
+          snapshot->errors.begin()->second.find("duplicate collection.router model_name") !=
+              std::string::npos);
+
+    fs::remove_all(dir);
+}
+
 int main() {
     test_reload_swaps_snapshot();
     test_directory_watcher_reload();
     test_invalid_policy_reports_error();
+    test_duplicate_policy_model_names_report_errors();
 
     if (g_failures == 0) {
         std::printf("All routing policy store tests passed.\n");
