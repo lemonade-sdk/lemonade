@@ -28,6 +28,23 @@ public:
         embeddings_[model] = std::move(vec);
     }
 
+    // Configure a fixed embedding for a specific (model, text) pair. Takes
+    // precedence over the per-model default, letting tests give each reference
+    // phrase and the input their own vector.
+    void set_embedding(const std::string& model, const std::string& text,
+                       std::vector<float> vec) {
+        text_embeddings_[model][text] = std::move(vec);
+    }
+
+    // Number of embed() calls observed for `text` (across all models).
+    int embed_calls(const std::string& text) const {
+        auto it = embed_calls_.find(text);
+        return it == embed_calls_.end() ? 0 : it->second;
+    }
+
+    // Total embed() calls observed.
+    int total_embed_calls() const { return total_embed_calls_; }
+
     // Configure a fixed label->score map returned for `model`.
     void set_classifier_scores(const std::string& model,
                                std::map<std::string, double> scores) {
@@ -45,7 +62,14 @@ public:
     ClassifierServices make() {
         ClassifierServices svc;
         FakeClassifierServices* self = this;
-        svc.embed = [self](const std::string& model, const std::string&) {
+        svc.embed = [self](const std::string& model, const std::string& text) {
+            ++self->total_embed_calls_;
+            ++self->embed_calls_[text];
+            auto model_it = self->text_embeddings_.find(model);
+            if (model_it != self->text_embeddings_.end()) {
+                auto text_it = model_it->second.find(text);
+                if (text_it != model_it->second.end()) return text_it->second;
+            }
             auto it = self->embeddings_.find(model);
             if (it != self->embeddings_.end()) return it->second;
             return std::vector<float>{1.0f, 0.0f, 0.0f};
@@ -66,6 +90,9 @@ public:
 
 private:
     std::map<std::string, std::vector<float>> embeddings_;
+    std::map<std::string, std::map<std::string, std::vector<float>>> text_embeddings_;
+    std::map<std::string, int> embed_calls_;
+    int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, std::string> chat_replies_;
 };

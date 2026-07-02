@@ -73,6 +73,7 @@ private:
     // Unified config endpoints
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -135,6 +136,7 @@ private:
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_install_dry_run(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
 
     // Enrich recipes JSON with release_url, download_filename, version from BackendManager
@@ -294,6 +296,9 @@ private:
 
     // Platform-specific system metrics
     std::unique_ptr<SystemMetricsPlatform> metrics_platform_;
+
+    // Set to true after check_for_model_updates() completes at startup.
+    std::atomic<bool> update_check_done_{false};
 };
 
 } // namespace lemon

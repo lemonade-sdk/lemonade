@@ -1,0 +1,22 @@
+{
+  "_comment": "Per-architecture default recipe options. Keys are GGUF architecture names (e.g. qwen35, gemma4). Values are recipe option key-value pairs that override global config defaults but are overridden by model-level recipe_options.",
+  "_warning": "IMPORTANT: Do NOT define *_backend options here. This file is meant mostly for sampler options or other options that might be necessary to run a specific model family.",
+  "gemma4": {
+    "llamacpp_args": "--temp 1.0 --top-p 0.95 --top-k 64"
+  },
+  "nemotron_h_moe": {
+    "llamacpp_args": "--temp 0.6 --top-p 0.95"
+  },
+  "qwen3": {
+    "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0"
+  },
+  "qwen3next": {
+    "llamacpp_args": "--temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 1.0"
+  },
+  "qwen35": {
+    "llamacpp_args": "--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.00 --repeat-penalty 1.0 --chat-template-kwargs '{\"preserve_thinking\":true}'"
+  },
+  "qwen35moe": {
+    "llamacpp_args": "--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.00 --repeat-penalty 1.0 --chat-template-kwargs '{\"preserve_thinking\":true}'"
+  }
+}

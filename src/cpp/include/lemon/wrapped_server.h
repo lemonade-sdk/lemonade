@@ -17,6 +17,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
+#include "backends/backend_descriptor.h"
 
 namespace lemon {
 
@@ -307,10 +308,45 @@ public:
         // No-op by default
     }
 
-    // ICompletionServer implementation - forward requests to the wrapped server
-    virtual json chat_completion(const json& request) override = 0;
-    virtual json completion(const json& request) override = 0;
-    virtual json responses(const json& request) = 0;
+    // Default to an "unsupported" error so non-chat backends (TTS, image,
+    // transcription) inherit a sensible response instead of stubbing each one.
+    virtual json chat_completion(const json& request) override {
+        return unsupported_capability_error("chat completion");
+    }
+    virtual json completion(const json& request) override {
+        return unsupported_capability_error("text completion");
+    }
+    virtual json responses(const json& request) {
+        return unsupported_capability_error("responses");
+    }
+
+    // Descriptor association (set by the backend registry at create() time). The
+    // effective_* hooks below default to the descriptor's declared values; a
+    // backend whose device or eviction rule depends on the chosen backend
+    // variant overrides them (e.g. whisper on npu vs cpu, llamacpp on cpu vs gpu).
+    void set_descriptor(const BackendDescriptor* descriptor) { descriptor_ = descriptor; }
+    const BackendDescriptor* get_descriptor() const { return descriptor_; }
+
+    // Effective accelerator device for this load. The router calls this after it
+    // resolves the "<recipe>_backend" option but before eviction. Defaults to the
+    // descriptor's default_device; variant-dependent backends override.
+    virtual DeviceType effective_device(const RecipeOptions& options) const {
+        (void)options;
+        return descriptor_ ? descriptor_->default_device : device_type_;
+    }
+
+    // Effective slot/eviction policy for this load. The router switches on this
+    // value to enforce NPU exclusivity and LRU slot accounting. Defaults to the
+    // descriptor's slot_policy; variant-dependent backends override.
+    virtual SlotPolicy effective_slot_policy(const RecipeOptions& options) const {
+        (void)options;
+        return descriptor_ ? descriptor_->slot_policy : SlotPolicy::Standard;
+    }
+
+    // Dynamic availability check. Returns "" if the backend can run on this
+    // system, or a user-facing reason why it cannot. Defaults to "available";
+    // backends with runtime-dependent availability (cloud) override.
+    virtual std::string availability() const { return ""; }
 
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
@@ -386,6 +422,17 @@ protected:
         BackendRequestKind kind_;
     };
 
+    // Standard "this backend does not serve <what>" error payload, matching the
+    // shape backends return from unsupported capability methods.
+    json unsupported_capability_error(const std::string& what) const {
+        return json{{"error", {
+            {"message", server_name_ + " does not support " + what +
+                            ". Use the appropriate endpoint for this model type instead."},
+            {"type", "unsupported_operation"},
+            {"code", "model_not_applicable"}
+        }}};
+    }
+
     static bool has_process_handle(const ProcessHandle& handle);
     ProcessHandle get_process_handle_snapshot() const;
     void set_process_handle(ProcessHandle handle);
@@ -433,6 +480,7 @@ protected:
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
+    const BackendDescriptor* descriptor_ = nullptr;  // Non-owning; set by the backend registry at create()
 
     // Multi-model support fields
     std::string model_name_;

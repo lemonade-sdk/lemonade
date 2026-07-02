@@ -23,6 +23,10 @@ Lemonade's roadmap is defined by a set of [working groups](./working-groups/READ
 
 Not sure what to work on? Come to the feature-requests and troubleshooting channels on the Discord and see what people need!
 
+### Adding a Backend
+
+Inference backends are self-describing: a backend is a descriptor (plain data) plus a server class, and everything else (router, CLI, `/system-info`, docs) is derived from it. See [Adding a backend](./adding-a-backend.md) for the full contract and a minimal example.
+
 ### Issues
 
 Issues are a great way to document a bug or feature request. However, Lemonade is a community-driven project and you still need to find someone to implement your issue. It is highly recommended that you bring your issue to the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk) and connect with a contributor who wants to implement it.
