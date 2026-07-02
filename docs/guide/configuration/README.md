@@ -46,6 +46,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "global_timeout": 600,
   "host": "localhost",
+  "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
   },
@@ -144,6 +145,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `offline` | bool | false | Skip model downloads |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
+| `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 
