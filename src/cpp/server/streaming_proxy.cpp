@@ -46,9 +46,13 @@ void StreamingProxy::forward_sse_stream(
                 if (!usage.is_null()) {
                     if (usage.contains("prompt_tokens")) {
                         telemetry.input_tokens = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        telemetry.input_tokens = usage["input_tokens"].get<int>();
                     }
                     if (usage.contains("completion_tokens")) {
                         telemetry.output_tokens = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        telemetry.output_tokens = usage["output_tokens"].get<int>();
                     }
                     if (usage.contains("prefill_duration_ttft")) {
                         telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
@@ -295,9 +299,13 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
             if (!usage.is_null()) {
                 if (usage.contains("prompt_tokens")) {
                     telemetry.input_tokens = usage["prompt_tokens"].get<int>();
+                } else if (usage.contains("input_tokens")) {
+                    telemetry.input_tokens = usage["input_tokens"].get<int>();
                 }
                 if (usage.contains("completion_tokens")) {
                     telemetry.output_tokens = usage["completion_tokens"].get<int>();
+                } else if (usage.contains("output_tokens")) {
+                    telemetry.output_tokens = usage["output_tokens"].get<int>();
                 }
 
                 // FLM format

@@ -184,7 +184,7 @@ int main() {
             check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
         }
 
-        // 2. Nested usage under response
+        // 2. Nested usage under response (OpenAI keys)
         {
             std::string buffer = "data: {\"response\": {\"usage\": {\"prompt_tokens\": 30, \"completion_tokens\": 40, \"prefill_duration_ttft\": 0.15, \"decoding_speed_tps\": 45.2}}}\n";
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
@@ -192,6 +192,16 @@ int main() {
             check_int("parse_telemetry: nested usage completion_tokens", tel.output_tokens, 40);
             check_double_val("parse_telemetry: nested usage prefill_duration_ttft", tel.time_to_first_token, 0.15);
             check_double_val("parse_telemetry: nested usage decoding_speed_tps", tel.tokens_per_second, 45.2);
+        }
+
+        // 2b. Nested usage under response (Responses API keys)
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"input_tokens\": 35, \"output_tokens\": 45, \"prefill_duration_ttft\": 0.18, \"decoding_speed_tps\": 50.0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested usage input_tokens", tel.input_tokens, 35);
+            check_int("parse_telemetry: nested usage output_tokens", tel.output_tokens, 45);
+            check_double_val("parse_telemetry: nested usage input prefill_duration_ttft", tel.time_to_first_token, 0.18);
+            check_double_val("parse_telemetry: nested usage input decoding_speed_tps", tel.tokens_per_second, 50.0);
         }
 
         // 3. Root level timings
