@@ -19,11 +19,18 @@ VERSION=$(sed -n 's/^project(lemon_cpp VERSION \([0-9.]*\)).*/\1/p' "$REPO_ROOT/
 # alpine-sdk brings abuild + build-base + git; abuild -r installs makedepends.
 apk add --no-cache alpine-sdk
 
-# abuild refuses to run without a signing key. Generate a throwaway one and
-# install its public half so the freshly built .apk verifies.
+# We run as root in the CI container, so force abuild to use apk directly for
+# installing makedepends instead of its default doas/sudo escalation (the base
+# alpine image ships neither).
+export SUDO_APK="apk"
+
+# abuild refuses to run without a signing key. Generate a throwaway one.
+# Don't use `-i`: that shells out to doas to copy the pubkey into
+# /etc/apk/keys, which fails in the bare image — we're root, so cp it ourselves.
 if ! ls "$HOME"/.abuild/*.rsa >/dev/null 2>&1; then
-	abuild-keygen -a -n -i
+	abuild-keygen -a -n
 fi
+cp "$HOME"/.abuild/*.rsa.pub /etc/apk/keys/
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
