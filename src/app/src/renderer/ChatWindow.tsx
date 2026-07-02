@@ -104,6 +104,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return labels.includes('chat-transcription');
   }, [selectedModel, modelsData]);
 
+  // A chat model that produces audio (native voice) directly in the
+  // /chat/completions response (message.audio) — e.g. vLLM-Omni's Qwen2.5-Omni.
+  // Distinct from TTS models that serve /audio/speech (the "tts" label). Enables
+  // the voice-output toggle in the chat input.
+  const isAudioOutput = useMemo(() => {
+    if (!selectedModel) return false;
+    const info = modelsData[selectedModel];
+    if (isCollectionModel(info)) {
+      return getCollectionComponents(info).some(component =>
+        (modelsData[component]?.labels || []).includes('chat-speech'));
+    }
+    return (info?.labels || []).includes('chat-speech');
+  }, [selectedModel, modelsData]);
+
   const isCollectionSelected = useMemo(() => {
     if (!selectedModel) return false;
     return isCollectionModel(modelsData[selectedModel]);
@@ -319,6 +333,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           {...sharedProps}
           isVision={isVision}
           isAudioChat={isAudioChat}
+          isAudioOutput={isAudioOutput}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
           collectionMode={collectionMode}
