@@ -143,12 +143,13 @@ jobs:
               "sm_120",
           )
           ROCM_NIGHTLY_ARCHES = (
-              "gfx1150",
               "gfx1151",
-              "gfx1152",
-              "gfx103X",
-              "gfx110X",
+              "gfx1150",
               "gfx120X",
+              "gfx110X",
+              "gfx103X",
+              "gfx90a",
+              "gfx908",
           )
 
           def require_release(name):
