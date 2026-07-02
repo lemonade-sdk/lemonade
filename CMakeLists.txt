@@ -63,6 +63,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "vllm-omni|vllm_omni"
     "cloud|cloud"
 )
 
