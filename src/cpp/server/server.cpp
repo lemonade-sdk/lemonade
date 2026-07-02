@@ -695,6 +695,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
+    // Generative-audio endpoint: text -> audio clip (music, sound effects)
+    register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_generations(req, res);
+    });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -3065,6 +3069,77 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             {"type", "internal_error"}
         }}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::serve_media_or_error(httplib::Response& res, const std::string& mime_type,
+                                  const std::function<void(httplib::DataSink&)>& generate) {
+    // Buffer the generated media so we can tell success from a silent failure. A
+    // streaming content provider commits a 200 before the backend runs, so a backend
+    // crash/OOM mid-stream would surface as a successful empty file; buffering lets us
+    // return a real error instead.
+    std::string buf;
+    httplib::DataSink sink;
+    sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+    sink.is_writable = []() { return true; };
+    sink.done = []() {};
+    generate(sink);
+    if (buf.empty()) {
+        res.status = 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", "Generation failed: the backend produced no output (it likely crashed or ran "
+                        "out of GPU memory). Check the server logs."},
+            {"type", "backend_error"}}}}.dump(), "application/json");
+        return;
+    }
+    res.set_content(buf, mime_type);
+}
+
+void Server::handle_audio_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load audio-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        std::string mime_type = MIME_TYPES["wav"];
+        if (request_json.contains("response_format") && MIME_TYPES.contains(request_json["response_format"])) {
+            mime_type = MIME_TYPES[request_json["response_format"]];
+        }
+
+        LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
+
+        serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+            router_->audio_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
     }
 }
 
