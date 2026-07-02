@@ -1664,8 +1664,9 @@
         "deploy_config": "resources/omni_deploy/qwen2_5_omni_1gpu.yaml",
         "suggested": true,
         "labels": [
-            "audio",
             "vision",
+            "chat-transcription",
+            "chat-speech",
             "omni"
         ],
         "size": 7.0
