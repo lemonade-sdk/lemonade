@@ -49,6 +49,11 @@ package() {
 	# install rules emit and ship an OpenRC service instead.
 	rm -rf "$pkgdir"/usr/lib/systemd "$pkgdir"/usr/lib/sysusers.d
 
+	# abuild rejects uncompressed man pages; the Linux install rules ship them
+	# plain. Keep everything in one package (so the OpenRC service ships with the
+	# binaries) rather than splitting a -doc subpackage, and just gzip them.
+	gzip -9 "$pkgdir"/usr/share/man/man1/*.1
+
 	install -Dm755 "$builddir"/packaging/alpine/lemonade-server.initd \
 		"$pkgdir"/etc/init.d/lemonade-server
 }
