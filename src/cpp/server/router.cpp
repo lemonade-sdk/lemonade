@@ -1925,6 +1925,13 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                             if (parsed.contains("response") && parsed["response"].is_string()) {
                                 *accumulated_text += parsed["response"].get<std::string>();
                             }
+                            if (parsed.contains("delta")) {
+                                if (parsed["delta"].is_string()) {
+                                    *accumulated_text += parsed["delta"].get<std::string>();
+                                } else if (parsed["delta"].is_object() && parsed["delta"].contains("text") && parsed["delta"]["text"].is_string()) {
+                                    *accumulated_text += parsed["delta"]["text"].get<std::string>();
+                                }
+                            }
                         }
                     } catch (...) {}
                 }
