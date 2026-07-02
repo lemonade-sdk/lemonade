@@ -141,7 +141,6 @@ jobs:
               "sm_90",
               "sm_100",
               "sm_120",
-              "sm_121",
           )
           ROCM_NIGHTLY_ARCHES = (
               "gfx1150",
