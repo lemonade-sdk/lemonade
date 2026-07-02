@@ -4,7 +4,7 @@ const newsData = [
         title: "This local AI model is a complete multimedia role playing experience!",
         url: "https://www.youtube.com/watch?v=mxiK8Fjm9OQ",
         date: "July 2, 2026",
-        description: "A walkthrough of the RPG-HaloTales-V1 model—a fully illustrated and narrated storytelling experience you can run through Lemonade with any multimedia client like Open WebUI—plus how to customize your own adventure.",
+        description: "A walkthrough of the RPG-HaloTales-V1 model, a fully illustrated and narrated storytelling experience you can run through Lemonade with any multimedia client like Open WebUI—plus how to customize your own adventure.",
         image: "https://img.youtube.com/vi/mxiK8Fjm9OQ/maxresdefault.jpg",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "video"
@@ -13,7 +13,7 @@ const newsData = [
         title: "Give your app local AI superpowers in minutes with Lemonade embedded SDK",
         url: "https://www.youtube.com/watch?v=quMbaHVAlAg",
         date: "June 30, 2026",
-        description: "See how the Lemonade embedded SDK lets you bundle local AI—text, image, and speech—directly into your own app in just a few minutes, with no cloud dependencies.",
+        description: "See how the Lemonade embedded SDK lets you bundle local AI—text, image, and speech directly into your own app in just a few minutes, with no cloud dependencies.",
         image: "https://img.youtube.com/vi/quMbaHVAlAg/maxresdefault.jpg",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "video"
