@@ -1658,6 +1658,19 @@
         ],
         "size": 1.77
     },
+    "Qwen2.5-Omni-3B-vLLM-Omni": {
+        "checkpoint": "Qwen/Qwen2.5-Omni-3B",
+        "recipe": "vllm-omni",
+        "deploy_config": "resources/omni_deploy/qwen2_5_omni_1gpu.yaml",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "chat-transcription",
+            "chat-speech",
+            "omni"
+        ],
+        "size": 7.0
+    },
     "Qwen3.5-2B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
         "recipe": "vllm",
