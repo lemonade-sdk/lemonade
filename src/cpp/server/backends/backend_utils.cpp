@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <system_error>
@@ -820,24 +821,42 @@ namespace lemon::backends {
             if (root.empty() || !fs::exists(root, ec)) {
                 return std::nullopt;
             }
+#ifdef _WIN32
+            for (const char* subdir : {"bin", "lib"}) {
+                if (fs::exists(root / subdir / "amdhip64.dll", ec)) {
+                    return root;
+                }
+            }
+#else
             for (const char* lib_subdir : {"lib", "lib64"}) {
                 if (fs::exists(root / lib_subdir / "libamdhip64.so", ec)) {
                     return root;
                 }
             }
+#endif
             return std::nullopt;
         }
 
         std::optional<fs::path> query_rocm_sdk_root() {
-            if (utils::find_executable_in_path("rocm-sdk").empty()) {
+#ifdef _WIN32
+            // SearchPathA (used by find_executable_in_path) does not append a
+            // default extension, so the console-script shim must be named
+            // explicitly. CreateProcess resolves the .exe for the spawn itself.
+            const char* rocm_sdk_exe = "rocm-sdk.exe";
+#else
+            const char* rocm_sdk_exe = "rocm-sdk";
+#endif
+            if (utils::find_executable_in_path(rocm_sdk_exe).empty()) {
                 return std::nullopt;
             }
 
-            std::string captured;
-            auto on_line = [&captured](const std::string& line) {
-                if (captured.empty()) {
-                    captured = line;
-                }
+            // run_process_with_output merges the child's stderr into stdout, and
+            // rocm-sdk is a Python console script that may emit warnings there.
+            // Collect every line and pick the first that validates, rather than
+            // trusting the first line (which could be a warning).
+            std::vector<std::string> lines;
+            auto on_line = [&lines](const std::string& line) {
+                lines.push_back(line);
                 return true;
             };
 
@@ -850,12 +869,12 @@ namespace lemon::backends {
                 return std::nullopt;
             }
 
-            const auto first = captured.find_first_not_of(" \t\r\n");
-            if (first == std::string::npos) {
-                return std::nullopt;
+            for (const auto& candidate : BackendUtils::pick_rocm_root_candidates(lines)) {
+                if (auto root = validate_rocm_root(fs::path(candidate))) {
+                    return root;
+                }
             }
-            const auto last = captured.find_last_not_of(" \t\r\n");
-            return fs::path(captured.substr(first, last - first + 1));
+            return std::nullopt;
         }
     }  // namespace
 
@@ -874,28 +893,53 @@ namespace lemon::backends {
                 return root;
             }
             LOG(DEBUG, "BackendUtils") << "ROCM_PATH=" << env
-                      << " has no lib{,64}/libamdhip64.so; trying other sources" << std::endl;
+                      << " has no HIP runtime; trying other sources" << std::endl;
         }
 
         if (auto sdk_root = query_rocm_sdk_root()) {
-            if (auto root = validate_rocm_root(*sdk_root)) {
-                if (resolved_explicitly) {
-                    *resolved_explicitly = true;
-                }
-                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
+            if (resolved_explicitly) {
+                *resolved_explicitly = true;
+            }
+            LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
+                      << sdk_root->string() << std::endl;
+            return *sdk_root;
+        }
+
+#ifdef _WIN32
+        // The AMD HIP SDK installer sets HIP_PATH; treat it as the platform
+        // default (like /opt/rocm on Linux), not a user selection.
+        if (const char* hip = std::getenv("HIP_PATH"); hip && *hip != '\0') {
+            if (auto root = validate_rocm_root(fs::path(hip))) {
+                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default HIP_PATH: "
                           << root->string() << std::endl;
                 return root;
             }
-            LOG(DEBUG, "BackendUtils") << "rocm-sdk reported " << sdk_root->string()
-                      << " but it has no lib{,64}/libamdhip64.so; trying /opt/rocm" << std::endl;
         }
-
+#else
         if (auto root = validate_rocm_root("/opt/rocm")) {
             LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default /opt/rocm" << std::endl;
             return root;
         }
+#endif
 
         return std::nullopt;
+    }
+
+    std::vector<std::string> BackendUtils::pick_rocm_root_candidates(
+        const std::vector<std::string>& lines) {
+        std::vector<std::string> candidates;
+        for (const auto& line : lines) {
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                continue;
+            }
+            const auto last = line.find_last_not_of(" \t\r\n");
+            std::string trimmed = line.substr(first, last - first + 1);
+            if (fs::path(trimmed).is_absolute()) {
+                candidates.push_back(std::move(trimmed));
+            }
+        }
+        return candidates;
     }
 
     std::string BackendUtils::read_rocm_version_from_root(const fs::path& root) {
@@ -923,32 +967,6 @@ namespace lemon::backends {
             return line.substr(first, last - first + 1);
         }
         return "";
-    }
-
-    bool BackendUtils::is_rocm_installed_system_wide() {
-#ifndef __linux__
-        return false;
-#else
-        auto rocm_root_opt = resolve_rocm_root();
-        if (!rocm_root_opt) {
-            LOG(DEBUG, "BackendUtils")
-                << "No ROCm installation detected (ROCM_PATH, rocm-sdk, /opt/rocm)" << std::endl;
-            return false;
-        }
-        const fs::path& rocm_root = *rocm_root_opt;
-
-        // resolve_rocm_root already verified libamdhip64.so. The version file is
-        // best-effort: accept the install even when it ships none.
-        const std::string version = read_rocm_version_from_root(rocm_root);
-        if (!version.empty()) {
-            LOG(DEBUG, "BackendUtils") << "Found system ROCm at " << rocm_root.string()
-                      << " with version " << version << std::endl;
-        } else {
-            LOG(DEBUG, "BackendUtils") << "Found ROCm libraries at " << rocm_root.string()
-                      << " (no version file found)" << std::endl;
-        }
-        return true;
-#endif
     }
 
     std::string BackendUtils::get_therock_install_dir(const std::string& arch, const std::string& version) {

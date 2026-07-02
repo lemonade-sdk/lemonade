@@ -1898,6 +1898,7 @@ set(_ROUTING_CONTRACT_TEST_SRC
 if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
     add_executable(test_routing_policy_contract
         test/cpp/test_routing_policy_contract.cpp
+        src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_policy_contract PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -1995,6 +1996,30 @@ if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyDeterministicTest COMMAND test_routing_policy_deterministic)
+endif()
+
+# Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
+# compilation, first-match-wins route(), default fail-open, trace opt-in,
+# on_error error paths, and concurrent route() consistency against a fake.
+set(_ROUTING_ENGINE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_engine.cpp"
+)
+if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
+    add_executable(test_routing_policy_engine
+        test/cpp/test_routing_policy_engine.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_engine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_engine PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_engine PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.

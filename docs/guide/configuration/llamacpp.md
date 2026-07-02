@@ -118,18 +118,24 @@ After changing channels, you'll need to reinstall the ROCm backend:
 lemonade backends install llamacpp:rocm
 ```
 
-### Reusing a System-Installed ROCm (Linux)
+### Reusing a System-Installed ROCm (Windows and Linux)
 
-On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains `lib{,64}/libamdhip64.so`:
+On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
 
 1. The `ROCM_PATH` environment variable
 2. `rocm-sdk path --root`, when `rocm-sdk` is on your `PATH` (e.g. a ROCm installed from the TheRock pip wheels)
-3. `/opt/rocm`
+3. The platform default: `HIP_PATH` (set by the AMD HIP SDK installer) on Windows, `/opt/rocm` on Linux
 
-When the runtime is found via `ROCM_PATH` or `rocm-sdk`, a `major.minor` version match is accepted (and a runtime with no version file is accepted as-is), so a patch-level difference won't trigger a second download. To force Lemonade to use a specific ROCm, export `ROCM_PATH` before starting the server:
+`ROCM_PATH` and `rocm-sdk` work on both platforms. When the runtime is found via one of them, a `major.minor` version match is accepted (and a runtime with no version file is accepted as-is), so a patch-level difference won't trigger a second download. To force Lemonade to use a specific ROCm, set `ROCM_PATH` before starting the server:
 
 ```bash
+# Linux
 export ROCM_PATH=/path/to/rocm
+```
+
+```powershell
+# Windows (PowerShell)
+$env:ROCM_PATH = "C:\path\to\rocm"
 ```
 
 ### Pinning to a Specific Version Tag
