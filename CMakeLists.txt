@@ -629,6 +629,8 @@ set(SOURCES_CORE
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_classifier_services.cpp
+    src/cpp/server/routing_classifier_services_router.cpp
     src/cpp/server/routing_policy.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
@@ -2023,6 +2025,27 @@ if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
+endif()
+
+# Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
+# embed/run_classifier/chat lambdas to Router-style JSON calls.
+set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_classifier_services.cpp"
+)
+if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
+    add_executable(test_routing_classifier_services
+        test/cpp/test_routing_classifier_services.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_classifier_services PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_classifier_services PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingClassifierServicesTest COMMAND test_routing_classifier_services)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
