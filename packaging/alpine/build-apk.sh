@@ -16,8 +16,13 @@ OUTDIR=${OUTDIR:-"$REPO_ROOT/dist"}
 VERSION=$(sed -n 's/^project(lemon_cpp VERSION \([0-9.]*\)).*/\1/p' "$REPO_ROOT/CMakeLists.txt")
 [ -n "$VERSION" ] || { echo "could not parse project version from CMakeLists.txt" >&2; exit 1; }
 
+# Populate the on-disk package index so abuild's own `apk add` (for makedepends)
+# can resolve packages. `apk add --no-cache` fetches the index to memory only and
+# leaves nothing on disk, which makes the later builddeps step fail.
+apk update
+
 # alpine-sdk brings abuild + build-base + git; abuild -r installs makedepends.
-apk add --no-cache alpine-sdk
+apk add alpine-sdk
 
 # We run as root in the CI container, so force abuild to use apk directly for
 # installing makedepends instead of its default doas/sudo escalation (the base
