@@ -33,9 +33,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 ## `GET /v1/models/{id}/files`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-List resolved local file metadata for a single model. This endpoint is intended
-for model-detail UIs such as the Files tab. It is per-model inventory, not
-system or drive storage accounting.
+List resolved local file metadata for a single model. This endpoint is intended for model-detail UIs such as the Files tab. It is per-model inventory, not system or drive storage accounting.
 
 The endpoint is available at:
 
@@ -44,10 +42,7 @@ The endpoint is available at:
 - `/v0/models/{id}/files`
 - `/api/v0/models/{id}/files`
 
-By default, the response does not include absolute filesystem paths. Trusted
-local clients that need paths for native UI actions can request them explicitly
-with `?include_paths=true`. Absolute paths may reveal local usernames and cache
-layout, so clients should only request them when that disclosure is acceptable.
+By default, the response does not include absolute filesystem paths. Trusted local clients that need paths for native UI actions can request them explicitly with `?include_paths=true`. Absolute paths may reveal local usernames and cache layout, so clients should only request them when that disclosure is acceptable.
 
 ### Example request
 
