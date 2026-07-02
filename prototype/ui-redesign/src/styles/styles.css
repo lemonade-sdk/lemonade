@@ -9001,22 +9001,91 @@ input, textarea {
   margin: 0;
 }
 
-/* ── Files tab stub ───────────────────────────────────────────── */
+/* ── Files tab ────────────────────────────────────────────────── */
 
-.detail-files--stub {
+.detail-files {
   flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.detail-files--loading,
+.detail-files--empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
   color: var(--text-tertiary);
-  font-size: var(--text-sm);
   text-align: center;
-  padding: var(--space-6);
+  min-height: 160px;
 }
 
-.detail-files--stub small { font-size: var(--text-xs); }
+.detail-files--empty small { font-size: var(--text-xs); }
+
+.detail-files__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.detail-files__table th,
+.detail-files__table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.detail-files__table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.detail-files__table tbody tr:last-child td { border-bottom: none; }
+
+.detail-files__col-size { text-align: right; white-space: nowrap; }
+th.detail-files__col-size { text-align: right; }
+
+.detail-files__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.88em;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.detail-files__name svg { flex-shrink: 0; color: var(--text-tertiary); }
+
+.detail-files__role-badge {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.detail-files__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.detail-files__status--present { color: var(--success, var(--accent-fg)); }
+.detail-files__status--missing { color: var(--text-tertiary); }
 
 /* ── btn size helpers ─────────────────────────────────────────── */
 
