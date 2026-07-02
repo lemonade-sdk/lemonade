@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -24,6 +25,21 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 namespace {
+
+// Testing hook: redirect backend downloads from the production lemonade-sdk/*
+// release repos to a fork owner that publishes work-in-progress assets (e.g. a
+// personal fork cutting musl releases). Set LEMONADE_BACKEND_REPO_OWNER to the
+// fork owner. Only lemonade-sdk/* repos are remapped; upstream repos
+// (ggml-org, leejet, ...) are left untouched so their assets still resolve.
+std::string apply_repo_owner_override(const std::string& repo) {
+    const char* owner = std::getenv("LEMONADE_BACKEND_REPO_OWNER");
+    if (!owner || !*owner) return repo;
+    const std::string prefix = "lemonade-sdk/";
+    if (repo.rfind(prefix, 0) == 0) {
+        return std::string(owner) + "/" + repo.substr(prefix.size());
+    }
+    return repo;
+}
 
 std::string get_current_os() {
 #ifdef _WIN32
@@ -498,7 +514,8 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         // First call extracts the repo for this (recipe, backend); filename
         // templating is discarded.
         auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
-        return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
+        return fetch_latest_github_tag(apply_repo_owner_override(pinned_params.repo),
+                                       /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
         LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
                                        << ":" << backend << ") failed: " << e.what() << std::endl;
@@ -522,9 +539,11 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     // Two-pass: first call gets the repo for resolve_user_version (filename
     // discarded); second call templates the resolved tag into the real filename.
     auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+    pinned_params.repo = apply_repo_owner_override(pinned_params.repo);
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
     auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
+    final_params.repo = apply_repo_owner_override(final_params.repo);
     // Allow backends to override the release tag (e.g. per-GPU-target releases)
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version

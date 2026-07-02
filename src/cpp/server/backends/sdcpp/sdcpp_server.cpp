@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/platform.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -163,7 +164,15 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #endif
     } else {
         // CPU build (default)
-    #ifdef _WIN32
+#ifdef LEMON_LINUX_MUSL
+        // Upstream ships only glibc Linux builds; musl comes from the fork.
+        params.repo = "lemonade-sdk/stable-diffusion.cpp";
+#if defined(__aarch64__)
+        params.filename = "sd-" + short_version + "-bin-Linux-musl-aarch64.zip";
+#else
+        params.filename = "sd-" + short_version + "-bin-Linux-musl-x86_64.zip";
+#endif
+#elif defined(_WIN32)
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
