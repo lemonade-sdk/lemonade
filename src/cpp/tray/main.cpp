@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -69,6 +70,14 @@ static bool wait_for_server(const std::string& host, int port, int timeout_secon
     std::string connect_host = (host.empty() || host == "0.0.0.0" || host == "localhost")
         ? "127.0.0.1" : host;
 
+    // Pass API key if set - prefer admin key over regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+    httplib::Headers headers;
+    if (api_key && api_key[0]) {
+        headers.emplace("Authorization", std::string("Bearer ") + api_key);
+    }
+
     for (int i = 0; i < timeout_seconds * 2; ++i) {
         try {
             httplib::Client cli(connect_host, port);
@@ -76,7 +85,7 @@ static bool wait_for_server(const std::string& host, int port, int timeout_secon
             cli.set_read_timeout(5);
             // Use /api/v1/health instead of /live — /live responds before the model
             // cache is built, which causes 500s on /models if clients connect too early.
-            auto res = cli.Get("/api/v1/health");
+            auto res = cli.Get("/api/v1/health", headers);
             if (res && res->status == 200) {
                 return true;
             }
