@@ -280,8 +280,10 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
+          cmake --build --preset default --target test_routing_policy_engine
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic)Test"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine)Test"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -584,8 +586,10 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_deterministic
+          cmake --build --preset default --target test_routing_policy_engine
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic)Test"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine)Test"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -1592,6 +1596,24 @@ jobs:
           rpm -qpl --dump "$RPM_FILE" \
             | grep -E '^/usr/lib/systemd/user/lemond\.service ' \
             | grep -F "/opt/lib/systemd/user/lemond.service"
+
+          # Verify tray is NOT in the server RPM
+          echo "Verifying server-only RPM content..."
+          if rpm -qpl "$RPM_FILE" | grep -Fxq "/opt/bin/lemonade-tray"; then
+              echo "ERROR: lemonade-tray binary found in server RPM"
+              exit 1
+          fi
+          if rpm -qpl "$RPM_FILE" | grep -Fxq "/usr/bin/lemonade-tray"; then
+              echo "ERROR: lemonade-tray symlink found in server RPM"
+              exit 1
+          fi
+
+          # Verify no desktop dependency leakage
+          if rpm -qpR "$RPM_FILE" | grep -qiE "gtk|appindicator|ayatana"; then
+              echo "ERROR: server RPM requires desktop dependencies (GTK/AppIndicator/Ayatana)"
+              rpm -qpR "$RPM_FILE" | grep -iE "gtk|appindicator|ayatana"
+              exit 1
+          fi
 
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})

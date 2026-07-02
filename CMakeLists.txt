@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.8.1)
+project(lemon_cpp VERSION 10.9.0)
 
 include(CTest)
 
@@ -1898,6 +1898,7 @@ set(_ROUTING_CONTRACT_TEST_SRC
 if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
     add_executable(test_routing_policy_contract
         test/cpp/test_routing_policy_contract.cpp
+        src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_policy_contract PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -1976,6 +1977,51 @@ if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
     add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
 endif()
 
+# Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
+# max_chars/has_*/metadata conditions and their leaf-factory map.
+set(_ROUTING_DETERMINISTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_deterministic.cpp"
+)
+if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
+    add_executable(test_routing_policy_deterministic
+        test/cpp/test_routing_policy_deterministic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_deterministic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_deterministic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyDeterministicTest COMMAND test_routing_policy_deterministic)
+endif()
+
+# Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
+# compilation, first-match-wins route(), default fail-open, trace opt-in,
+# on_error error paths, and concurrent route() consistency against a fake.
+set(_ROUTING_ENGINE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_engine.cpp"
+)
+if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
+    add_executable(test_routing_policy_engine
+        test/cpp/test_routing_policy_engine.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_engine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_engine PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_engine PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.
@@ -2014,4 +2060,13 @@ if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
+endif()
+
+# ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
+# external-ROCm detection that lets Lemonade skip the bundled TheRock download.
+set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
+if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
+    add_executable(test_rocm_root_resolution test/cpp/test_rocm_root_resolution.cpp)
+    target_link_libraries(test_rocm_root_resolution PRIVATE lemonade-server-core)
+    add_test(NAME RocmRootResolutionTest COMMAND test_rocm_root_resolution)
 endif()

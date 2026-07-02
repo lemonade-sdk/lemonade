@@ -295,6 +295,9 @@ private:
 
     // Platform-specific system metrics
     std::unique_ptr<SystemMetricsPlatform> metrics_platform_;
+
+    // Set to true after check_for_model_updates() completes at startup.
+    std::atomic<bool> update_check_done_{false};
 };
 
 } // namespace lemon

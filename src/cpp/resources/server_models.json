@@ -1614,6 +1614,12 @@
             "kokoro-v1"
         ]
     },
+    "RPG-HaloTales-V1": {
+        "checkpoint": "lemonade-sdk/RPG-HaloTales-V1",
+        "recipe": "collection.omni",
+        "suggested": true,
+        "size": 39.77
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",

@@ -77,6 +77,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    bool update_available = false; // Whether a newer version exists on HuggingFace
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -218,6 +219,13 @@ public:
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
+
+    // Check all downloaded models for updates on HuggingFace.
+    // Fetches the latest commit SHA for each model's repo and compares it
+    // with the cached commit (refs/main). Sets update_available on models
+    // whose upstream repo has changed.
+    // Safe to call from a background thread — locks are internal.
+    void check_for_model_updates();
 
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.

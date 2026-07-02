@@ -41,6 +41,10 @@ static std::string lower_copy(std::string value) {
     return value;
 }
 
+static size_t curl_off_to_size(curl_off_t value) {
+    return value > 0 ? static_cast<size_t>(value) : 0;
+}
+
 static bool is_hex_digest(const std::string& value, size_t expected_len) {
     if (value.size() != expected_len) {
         return false;
@@ -249,10 +253,15 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
-// Callback for download progress
 struct ProgressData {
     ProgressCallback callback;
-    bool cancelled = false;  // Set to true when callback returns false
+    bool cancelled = false;
+    bool stalled = false;
+    bool waiting_for_first_byte = false;
+    long current_response_code = 0;
+    int no_progress_timeout = 0;
+    curl_off_t last_downloaded = 0;
+    std::chrono::steady_clock::time_point last_progress_time = std::chrono::steady_clock::now();
 };
 
 static fs::path get_disk_space_probe_path(const fs::path& output_path) {
@@ -270,25 +279,83 @@ static fs::path get_disk_space_probe_path(const fs::path& output_path) {
     return fs::path(".");
 }
 
-// CURL progress callback - returns non-zero to abort transfer
+static size_t header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    const size_t total = size * nitems;
+    ProgressData* data = static_cast<ProgressData*>(userdata);
+    if (!data || total == 0) {
+        return total;
+    }
+
+    std::string line(buffer, total);
+
+    if (line.rfind("HTTP/", 0) == 0) {
+        data->waiting_for_first_byte = false;
+        data->current_response_code = 0;
+        data->last_progress_time = std::chrono::steady_clock::now();
+
+        std::istringstream iss(line);
+        std::string http_version;
+        long status_code = 0;
+        iss >> http_version >> status_code;
+        data->current_response_code = status_code;
+        return total;
+    }
+
+    if (line == "\r\n" || line == "\n") {
+        const bool response_can_have_body =
+            data->current_response_code >= 200 &&
+            data->current_response_code < 300 &&
+            data->current_response_code != 204 &&
+            data->current_response_code != 304;
+
+        if (response_can_have_body) {
+            data->waiting_for_first_byte = true;
+            data->last_progress_time = std::chrono::steady_clock::now();
+        }
+    }
+
+    return total;
+}
+
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                              curl_off_t ultotal, curl_off_t ulnow) {
+    (void)ultotal;
+    (void)ulnow;
+
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
 
-    // Check if already cancelled
     if (data->cancelled) {
-        return 1;  // Abort transfer
+        return 1;
     }
 
-    if (dltotal > 0 && data->callback) {
-        // Call user callback - returns false to cancel
-        if (!data->callback(dlnow, dltotal)) {
-            data->cancelled = true;
-            return 1;  // Abort transfer
+    if (data->callback &&
+        !data->callback(curl_off_to_size(dlnow), curl_off_to_size(dltotal))) {
+        data->cancelled = true;
+        return 1;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (dlnow > data->last_downloaded) {
+        data->waiting_for_first_byte = false;
+        data->last_downloaded = dlnow;
+        data->last_progress_time = now;
+    } else if (data->no_progress_timeout > 0) {
+        const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            now - data->last_progress_time).count();
+
+        const long stall_timeout =
+            data->waiting_for_first_byte
+                ? static_cast<long>(data->no_progress_timeout) * 5L
+                : static_cast<long>(data->no_progress_timeout);
+
+        if (idle_seconds >= stall_timeout) {
+            data->stalled = true;
+            return 1;
         }
     }
-    return 0;  // Continue transfer
+
+    return 0;
 }
 
 HttpResponse HttpClient::get(const std::string& url,
@@ -510,8 +577,20 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -558,7 +637,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                                             size_t resume_from,
                                             ProgressCallback callback,
                                             const std::map<std::string, std::string>& headers,
-                                            const DownloadOptions& options) {
+                                            const DownloadOptions& options,
+                                            bool initial_range_request) {
     DownloadResult result;
 
     CURL* curl = curl_easy_init();
@@ -593,14 +673,21 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
+    } else if (initial_range_request) {
+        curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    ProgressData* prog_data = nullptr;
-    if (callback) {
-        prog_data = new ProgressData();
+    const int no_progress_timeout = options.no_progress_timeout;
+    std::unique_ptr<ProgressData> prog_data;
+    if (callback || no_progress_timeout > 0) {
+        prog_data = std::make_unique<ProgressData>();
         prog_data->callback = callback;
+        prog_data->no_progress_timeout = no_progress_timeout;
+        prog_data->last_progress_time = std::chrono::steady_clock::now();
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -616,8 +703,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     CURLcode res = curl_easy_perform(curl);
 
-    // Check if download was cancelled by user callback
     bool was_cancelled = (prog_data && prog_data->cancelled);
+    bool was_stalled = (prog_data && prog_data->stalled);
 
     curl_off_t downloaded = 0;
     curl_off_t total = 0;
@@ -636,9 +723,22 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     curl_easy_cleanup(curl);
 
-    // Clean up progress data
-    if (prog_data) {
-        delete prog_data;
+    if (was_stalled) {
+        size_t current_file_size = 0;
+        if (fs::exists(output_path_fs)) {
+            current_file_size = fs::file_size(output_path_fs);
+        }
+
+        result.cancelled = false;
+        result.can_resume = current_file_size > 0;
+        std::ostringstream oss;
+        oss << "Download stalled: no bytes received for "
+            << no_progress_timeout << " seconds";
+        if (current_file_size > 0) {
+            oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB (resumable)";
+        }
+        result.error_message = oss.str();
+        return result;
     }
 
     // Handle user cancellation
@@ -894,20 +994,22 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         ProgressCallback adjusted_callback = nullptr;
         if (callback) {
-            // Adjust progress to account for resume offset
-            // curl reports: current = bytes downloaded this session, total = remaining bytes
-            // We want to show: (resume_offset + current) / (resume_offset + total)
             adjusted_callback = [callback, resume_offset](size_t current, size_t total) -> bool {
-                if (total > 0) {  // Only call when we have valid progress info
+                if (total > 0) {
                     return callback(resume_offset + current, resume_offset + total);
                 }
-                return true;  // Continue if no progress info yet
+                return callback(resume_offset + current, 0);
             };
         }
 
-        // Download to .partial file
+        const bool retrying_without_partial = (attempt > 0 && resume_offset == 0);
+        const bool initial_range_request =
+            options.force_initial_range_request ||
+            (retrying_without_partial && options.range_retry_on_zero_byte_retry);
+
         final_result = download_attempt(url, partial_path, resume_offset,
-                                        adjusted_callback, headers, options);
+                                        adjusted_callback, headers, options,
+                                        initial_range_request);
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {

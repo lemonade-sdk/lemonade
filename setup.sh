@@ -418,7 +418,7 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             fi
         fi
     else
-        print_success "All optional tray dependencies are installed (lemonade-tray will be built)"
+        print_success "All optional tray dependencies are installed (enable with -DREQUIRE_LINUX_TRAY=ON)"
     fi
     echo ""
 fi

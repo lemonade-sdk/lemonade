@@ -24,6 +24,7 @@
 #include <chrono>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -1231,6 +1232,102 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
+void ModelManager::check_for_model_updates() {
+    // Collect (model_name, repo_id, cached_sha) for downloaded models,
+    // deduplicated by repo_id so we only fetch HF API once per repo.
+    // All model variants sharing a repo are marked together.
+    struct RepoEntry {
+        std::vector<std::string> model_names;
+        std::string cached_sha;
+    };
+    std::unordered_map<std::string, RepoEntry> repos;
+
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        if (!cache_valid_) {
+            return;
+        }
+        for (const auto& [name, info] : models_cache_) {
+            if (!info.downloaded) continue;
+            if (is_collection_recipe(info.recipe)) continue;
+            if (info.recipe == "flm" || info.recipe == "cloud") continue;
+
+            std::string main_cp = info.checkpoint("main");
+            if (main_cp.empty()) continue;
+
+            std::string repo_id = checkpoint_to_repo_id(main_cp);
+            if (repo_id.empty()) continue;
+
+            auto& entry = repos[repo_id];
+            entry.model_names.push_back(name);
+            // Read cached SHA only on the first model we see for this repo
+            if (entry.cached_sha.empty()) {
+                fs::path cache_path = path_from_utf8(get_hf_cache_dir())
+                    / repo_id_to_cache_dir_name(repo_id);
+                entry.cached_sha = read_hf_ref_main(cache_path);
+            }
+        }
+    }
+
+    // Build headers with HF token if available
+    std::map<std::string, std::string> headers;
+    const char* hf_token = std::getenv("HF_TOKEN");
+    if (hf_token && hf_token[0]) {
+        headers["Authorization"] = "Bearer " + std::string(hf_token);
+    }
+
+    std::unordered_set<std::string> updated_models;
+
+    for (auto& [repo_id, entry] : repos) {
+        // Skip repos with no cached SHA — can't reliably compare
+        if (entry.cached_sha.empty()) continue;
+
+        try {
+            LOG(DEBUG, "ModelManager") << "Checking for updates: " << repo_id << std::endl;
+            std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+            auto response = HttpClient::get(api_url, headers, 10);
+
+            if (response.status_code != 200) {
+                LOG(DEBUG, "ModelManager") << "HF API returned " << response.status_code
+                    << " for " << repo_id << ", skipping" << std::endl;
+                continue;
+            }
+
+            auto model_info = JsonUtils::parse(response.body);
+
+            std::string latest_sha;
+            if (model_info.contains("sha") && model_info["sha"].is_string()) {
+                latest_sha = model_info["sha"].get<std::string>();
+            }
+
+            if (latest_sha.empty() || latest_sha == entry.cached_sha) continue;
+
+            LOG(INFO, "ModelManager") << "Update available for " << repo_id
+                << ": cached=" << entry.cached_sha.substr(0, 12)
+                << ", latest=" << latest_sha.substr(0, 12)
+                << " (" << entry.model_names.size() << " variant(s))" << std::endl;
+
+            for (const auto& model_name : entry.model_names) {
+                updated_models.insert(model_name);
+            }
+        } catch (const std::exception& e) {
+            LOG(WARNING, "ModelManager") << "Failed to check updates for "
+                << repo_id << ": " << e.what() << std::endl;
+        }
+    }
+
+    if (!updated_models.empty()) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        for (auto& [name, info] : models_cache_) {
+            if (updated_models.count(name)) {
+                info.update_available = true;
+            }
+        }
+        LOG(INFO, "ModelManager") << "Updates available for " << updated_models.size()
+            << " model(s)" << std::endl;
+    }
+}
+
 static void load_checkpoints(ModelInfo& info, json& model_json) {
     if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
         for (auto& [key, value] : model_json["checkpoints"].items()) {
@@ -1663,6 +1760,11 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     if (it != models_cache_.end()) {
         it->second.downloaded = downloaded;
 
+        // After a fresh download the model is up to date
+        if (downloaded) {
+            it->second.update_available = false;
+        }
+
         // Recompute resolved_path after download
         // The path changes now that files exist on disk
         if (downloaded) {
@@ -1740,6 +1842,7 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
+            it->second.update_available = false;
             LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
         }
     }

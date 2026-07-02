@@ -394,6 +394,17 @@ void Server::start_model_cache_warmup() {
         } catch (...) {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
+
+        try {
+            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+            model_manager_->check_for_model_updates();
+            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+        }
+        update_check_done_ = true;
     });
 }
 
@@ -1909,6 +1920,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         response["websocket_port"] = websocket_server_->get_port();
     }
 
+    // Add update check status
+    response["update_check_done"] = update_check_done_.load();
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -1978,6 +1992,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
+        {"update_available", info.update_available},
         {"suggested", info.suggested},
         {"labels", info.labels},
         {"components", public_components},
