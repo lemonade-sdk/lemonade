@@ -25,11 +25,33 @@
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
 #include "lemon/eviction_engine.h"
+#include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
 
 namespace lemon {
 
+namespace {
 
+// RAII: holds a suspend-inhibitor refcount for the duration of one inference,
+// but only when the feature is enabled in config. Released on scope exit so all
+// early-return/exception paths are covered.
+class InhibitGuard {
+public:
+    InhibitGuard(SuspendInhibitor* inhibitor, bool enabled)
+        : inhibitor_(enabled ? inhibitor : nullptr) {
+        if (inhibitor_) inhibitor_->acquire();
+    }
+    ~InhibitGuard() {
+        if (inhibitor_) inhibitor_->release();
+    }
+    InhibitGuard(const InhibitGuard&) = delete;
+    InhibitGuard& operator=(const InhibitGuard&) = delete;
+
+private:
+    SuspendInhibitor* inhibitor_;
+};
+
+} // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
     : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
@@ -43,6 +65,7 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 
     vram_monitor_ = std::make_unique<GlobalVramMonitor>();
     eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
+    suspend_inhibitor_ = create_suspend_inhibitor();
 
     // Always start the monitor/engine threads; they are cheap no-ops until the
     // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
@@ -864,6 +887,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             );
         }
 
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
+
         try {
             auto response = inference_func(server);
             const bool watchdog_reset =
@@ -974,6 +999,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             sink.done();
             return;
         }
+
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
 
         try {
             streaming_func(server);

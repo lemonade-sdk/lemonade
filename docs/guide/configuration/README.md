@@ -46,6 +46,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "global_timeout": 600,
   "host": "localhost",
+  "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
   },
