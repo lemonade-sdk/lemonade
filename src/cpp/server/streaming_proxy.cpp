@@ -268,8 +268,12 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
                 auto chunk = json::parse(json_str);
-                // Look for usage or timings in the chunk
-                if (chunk.contains("usage") || chunk.contains("timings")) {
+                // Look for usage or timings in the chunk (directly or nested under "response")
+                bool has_usage = chunk.contains("usage") || chunk.contains("timings");
+                if (!has_usage && chunk.contains("response") && chunk["response"].is_object()) {
+                    has_usage = chunk["response"].contains("usage") || chunk["response"].contains("timings");
+                }
+                if (has_usage) {
                     last_chunk_with_usage = chunk;
                 }
             } catch (...) {
@@ -281,9 +285,14 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     // Extract telemetry from the last chunk with usage data
     if (!last_chunk_with_usage.empty()) {
         try {
+            nlohmann::json usage;
             if (last_chunk_with_usage.contains("usage")) {
-                auto usage = last_chunk_with_usage["usage"];
+                usage = last_chunk_with_usage["usage"];
+            } else if (last_chunk_with_usage.contains("response") && last_chunk_with_usage["response"].is_object() && last_chunk_with_usage["response"].contains("usage")) {
+                usage = last_chunk_with_usage["response"]["usage"];
+            }
 
+            if (!usage.is_null()) {
                 if (usage.contains("prompt_tokens")) {
                     telemetry.input_tokens = usage["prompt_tokens"].get<int>();
                 }
@@ -301,9 +310,14 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
             }
 
             // Alternative format (timings)
+            nlohmann::json timings;
             if (last_chunk_with_usage.contains("timings")) {
-                auto timings = last_chunk_with_usage["timings"];
+                timings = last_chunk_with_usage["timings"];
+            } else if (last_chunk_with_usage.contains("response") && last_chunk_with_usage["response"].is_object() && last_chunk_with_usage["response"].contains("timings")) {
+                timings = last_chunk_with_usage["response"]["timings"];
+            }
 
+            if (!timings.is_null()) {
                 if (timings.contains("prompt_n")) {
                     telemetry.input_tokens = timings["prompt_n"].get<int>();
                 }

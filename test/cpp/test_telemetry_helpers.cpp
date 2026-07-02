@@ -5,6 +5,7 @@
 #include <cmath>
 #include <map>
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/streaming_proxy.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
@@ -150,6 +151,68 @@ int main() {
         bool wait_missing = (it_wait == res.end());
         std::printf("[%s] parse_vllm_metrics_text malformed: num_requests_waiting (abc) is skipped\n", wait_missing ? "PASS" : "FAIL");
         if (!wait_missing) ++g_failures;
+    }
+
+    // --- parse_telemetry tests ---
+    std::printf("===========================================\n");
+    {
+        auto check_int = [](const char* name, int actual, int expected) {
+            bool ok = (actual == expected);
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) {
+                std::printf("      Expected: %d\n", expected);
+                std::printf("      Actual:   %d\n", actual);
+                ++g_failures;
+            }
+        };
+
+        auto check_double_val = [](const char* name, double actual, double expected) {
+            bool ok = (std::abs(actual - expected) < 1e-6);
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) {
+                std::printf("      Expected: %f\n", expected);
+                std::printf("      Actual:   %f\n", actual);
+                ++g_failures;
+            }
+        };
+
+        // 1. Root level usage
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: root usage prompt_tokens", tel.input_tokens, 10);
+            check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
+        }
+
+        // 2. Nested usage under response
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"prompt_tokens\": 30, \"completion_tokens\": 40, \"prefill_duration_ttft\": 0.15, \"decoding_speed_tps\": 45.2}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested usage prompt_tokens", tel.input_tokens, 30);
+            check_int("parse_telemetry: nested usage completion_tokens", tel.output_tokens, 40);
+            check_double_val("parse_telemetry: nested usage prefill_duration_ttft", tel.time_to_first_token, 0.15);
+            check_double_val("parse_telemetry: nested usage decoding_speed_tps", tel.tokens_per_second, 45.2);
+        }
+
+        // 3. Root level timings
+        {
+            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: root timings prompt_tokens", tel.input_tokens, 50);
+            check_int("parse_telemetry: root timings completion_tokens", tel.output_tokens, 60);
+            check_double_val("parse_telemetry: root timings prompt_ms", tel.time_to_first_token, 1.5);
+            check_double_val("parse_telemetry: root timings predicted_per_second", tel.tokens_per_second, 25.5);
+        }
+
+        // 4. Nested timings under response
+        {
+            std::string buffer = "data: {\"response\": {\"timings\": {\"prompt_n\": 70, \"predicted_n\": 80, \"prompt_ms\": 2000.0, \"predicted_per_second\": 30.0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested timings prompt_tokens", tel.input_tokens, 70);
+            check_int("parse_telemetry: nested timings completion_tokens", tel.output_tokens, 80);
+            check_double_val("parse_telemetry: nested timings prompt_ms", tel.time_to_first_token, 2.0);
+            check_double_val("parse_telemetry: nested timings predicted_per_second", tel.tokens_per_second, 30.0);
+        }
     }
 
     std::printf("===========================================\n");
