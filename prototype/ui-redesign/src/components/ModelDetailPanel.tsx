@@ -7,7 +7,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo } from '../api';
+import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, PresetChangeKind,
@@ -447,15 +448,124 @@ const ModelPresetsTab: React.FC<{
   );
 };
 
-/* ── Files tab stub ──────────────────────────────────────────── */
+/* ── Files tab ───────────────────────────────────────────────── */
 
-const ModelFilesTab: React.FC = () => (
-  <div className="detail-tab-content detail-files detail-files--stub">
-    <Icon name="hard-drive" size={28} aria-hidden="true" />
-    <p>Files tab — coming in a future update.</p>
-    <small>Requires a <code>GET /api/v1/models/&#123;id&#125;/files</code> endpoint in lemond.</small>
-  </div>
-);
+/** Human-readable byte size (B / KB / MB / GB) using binary units. */
+function fmtBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const decimals = unit === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(decimals)} ${units[unit]}`;
+}
+
+/** Title-case a role slug for display (e.g. "mmproj" → "Mmproj", "main" → "Main"). */
+function roleLabel(role: string): string {
+  const r = String(role || '').trim();
+  if (!r) return 'File';
+  return r.charAt(0).toUpperCase() + r.slice(1);
+}
+
+const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const modelId = model ? String(model.id || '') : '';
+  const [files, setFiles] = useState<ModelFileInfo[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!isActive) return;
+    if (!modelId) { setFiles([]); return; }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    api.getModelFiles(modelId)
+      .then(resp => {
+        if (cancelled) return;
+        if (!resp) { setError(true); setFiles(null); return; }
+        setFiles(resp.files);
+      })
+      .catch(() => { if (!cancelled) { setError(true); setFiles(null); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [modelId, isActive]);
+
+  if (loading) {
+    return (
+      <div className="detail-tab-content detail-files detail-files--loading" aria-live="polite" aria-busy="true">
+        <span>Loading files…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="detail-tab-content detail-files detail-files--empty">
+        <Icon name="hard-drive" size={32} aria-hidden="true" />
+        <p>Unable to load files for this model.</p>
+      </div>
+    );
+  }
+
+  if (!files || files.length === 0) {
+    return (
+      <div className="detail-tab-content detail-files detail-files--empty">
+        <Icon name="hard-drive" size={32} aria-hidden="true" />
+        <p>No files found for this model.</p>
+        <small>Files appear here once the model has been downloaded.</small>
+      </div>
+    );
+  }
+
+  return (
+    <div className="detail-tab-content detail-files">
+      <table className="detail-files__table">
+        <caption className="sr-only">Files backing {mdName(model) || modelId}</caption>
+        <thead>
+          <tr>
+            <th scope="col">File</th>
+            <th scope="col">Role</th>
+            <th scope="col" className="detail-files__col-size">Size</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {files.map((file, idx) => (
+            <tr key={`${file.name}-${idx}`}>
+              <td className="detail-files__name">
+                <Icon name="file" size={14} aria-hidden="true" />
+                <span title={file.name}>{file.name}</span>
+              </td>
+              <td>
+                <span className="detail-files__role-badge">{roleLabel(file.role)}</span>
+              </td>
+              <td className="detail-files__col-size">{fmtBytes(file.size_bytes)}</td>
+              <td>
+                {file.exists ? (
+                  <span className="detail-files__status detail-files__status--present">
+                    <Icon name="check" size={14} aria-hidden="true" />
+                    <span>Downloaded</span>
+                  </span>
+                ) : (
+                  <span className="detail-files__status detail-files__status--missing">
+                    <Icon name="download" size={14} aria-hidden="true" />
+                    <span>Not downloaded</span>
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 /* ── ModelDetailPanel ────────────────────────────────────────── */
 
@@ -926,7 +1036,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           {tab.id === 'presets' && (
             <ModelPresetsTab model={model} isActive={activeTab === 'presets'} />
           )}
-          {tab.id === 'files' && <ModelFilesTab />}
+          {tab.id === 'files' && (
+            <ModelFilesTab model={model} isActive={activeTab === 'files'} />
+          )}
         </div>
       ))}
     </div>

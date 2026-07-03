@@ -3705,3 +3705,115 @@ test.describe('Accessibility — update preset while loaded (#2356)', () => {
     await expect(unload).toBeFocused();
   });
 });
+
+// ─── 29. Model-detail Files tab — model file listing (#2428 Slice 2) ──────────
+//
+// Slice 2 wires the Files tab to the new GET /api/v1/models/{id}/files endpoint
+// (PR #2437). The tab renders the physical files backing a model — filename,
+// role badge, human-readable size, and download status — in an accessible
+// <table> with column headers and a caption. Empty/error/loading states are
+// covered too. Range: A180–A184.
+
+test.describe('Accessibility — model-detail Files tab (#2428)', () => {
+  const SAMPLE_FILES = [
+    { name: 'Llama-3.1-8B-Q4_K_M.gguf', role: 'main', size_bytes: 4294967296, exists: true },
+    { name: 'mmproj-Llama-3.1-8B.gguf', role: 'mmproj', size_bytes: 524288000, exists: true },
+    { name: 'tokenizer.json', role: 'tokenizer', size_bytes: 0, exists: false },
+  ];
+
+  async function goToFilesTab(
+    page: Page,
+    opts: { files?: Array<Record<string, unknown>>; filesStatus?: number } = {},
+  ): Promise<void> {
+    const files = opts.files ?? SAMPLE_FILES;
+    const filesStatus = opts.filesStatus ?? 200;
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    // Registered AFTER the generic /models** route so this more specific handler
+    // wins (Playwright matches routes in reverse registration order).
+    await page.route('**/api/v1/models/*/files', async route =>
+      route.fulfill({
+        status: filesStatus,
+        contentType: 'application/json',
+        body: JSON.stringify({ model_id: 'Llama-3.1-8B', files }),
+      }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    await page.locator('[role="tab"]').filter({ hasText: /Files/i }).click();
+    await page.waitForTimeout(200);
+  }
+
+  test('A180 — Files tab renders a table with accessible column headers', async ({ page }) => {
+    await goToFilesTab(page);
+    const table = page.locator('.detail-files__table');
+    await expect(table).toBeVisible();
+    // Column headers expose scope="col" so screen readers announce them.
+    const headers = table.locator('th[scope="col"]');
+    expect(await headers.count()).toBe(4);
+    await expect(table.locator('caption')).toHaveText(/Files backing/i);
+    // One body row per file returned by the endpoint.
+    await expect(table.locator('tbody tr')).toHaveCount(SAMPLE_FILES.length);
+  });
+
+  test('A181 — file rows show name, role badge, size, and download status', async ({ page }) => {
+    await goToFilesTab(page);
+    const firstRow = page.locator('.detail-files__table tbody tr').first();
+    await expect(firstRow.locator('.detail-files__name')).toContainText('Llama-3.1-8B-Q4_K_M.gguf');
+    await expect(firstRow.locator('.detail-files__role-badge')).toHaveText(/Main/i);
+    // 4294967296 bytes == 4.00 GB (binary units).
+    await expect(firstRow.locator('.detail-files__col-size')).toContainText('GB');
+    await expect(firstRow.locator('.detail-files__status--present')).toContainText(/Downloaded/i);
+
+    // A not-yet-downloaded file surfaces the missing state (not by color alone).
+    const missingRow = page.locator('.detail-files__table tbody tr').last();
+    await expect(missingRow.locator('.detail-files__status--missing')).toContainText(/Not downloaded/i);
+  });
+
+  test('A182 — empty file list shows an accessible empty state', async ({ page }) => {
+    await goToFilesTab(page, { files: [] });
+    await expect(page.locator('.detail-files__table')).toHaveCount(0);
+    const empty = page.locator('.detail-files--empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(/No files found/i);
+  });
+
+  test('A183 — a failed files request shows an error state, not a broken table', async ({ page }) => {
+    await goToFilesTab(page, { filesStatus: 500 });
+    await expect(page.locator('.detail-files__table')).toHaveCount(0);
+    await expect(page.locator('.detail-files--empty')).toContainText(/Unable to load files/i);
+  });
+
+  test('A184 — the Files tab passes a WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToFilesTab(page);
+    await expect(page.locator('.detail-files__table')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
