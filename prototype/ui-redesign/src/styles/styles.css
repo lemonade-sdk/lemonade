@@ -9037,6 +9037,8 @@ input, textarea {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
+  height: 40px;
+  box-sizing: border-box;
 }
 
 .detail-files__table th {
@@ -9046,12 +9048,12 @@ input, textarea {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   border-bottom: 1px solid var(--border-strong);
+  height: 32px;
 }
 
 .detail-files__table tbody tr:last-child td { border-bottom: none; }
 
-.detail-files__col-size { text-align: right; white-space: nowrap; }
-th.detail-files__col-size { text-align: right; }
+.detail-files__col-size { text-align: left; white-space: nowrap; }
 
 .detail-files__name {
   display: flex;
@@ -9061,6 +9063,9 @@ th.detail-files__col-size { text-align: right; }
   font-size: 0.88em;
   color: var(--text-primary);
   word-break: break-all;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail-files__name svg { flex-shrink: 0; color: var(--text-tertiary); }
