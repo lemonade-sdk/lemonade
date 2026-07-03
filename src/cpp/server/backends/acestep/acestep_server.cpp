@@ -125,7 +125,10 @@ void AceStepServer::load(const std::string& model_name,
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        std::string ld = therock_lib.empty() ? exe_dir : (therock_lib + ":" + exe_dir);
+        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
+        // builds) under lib/llvm/lib, next to the main lib dir.
+        std::string ld = therock_lib.empty() ? exe_dir
+            : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
