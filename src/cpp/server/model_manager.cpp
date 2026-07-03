@@ -2419,6 +2419,20 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Serialize downloads per checkpoint repo. A second request for the same
+    // repo (e.g. a client that timed out and retried /pull while the first
+    // download is still running) must wait for the in-flight download instead
+    // of writing the same .partial files concurrently, which corrupts them and
+    // sends the hash verification into an endless retry-from-scratch loop.
+    std::shared_ptr<std::mutex> repo_lock;
+    {
+        std::lock_guard<std::mutex> guard(download_locks_mutex_);
+        auto& slot = download_locks_[info.checkpoint()];
+        if (!slot) slot = std::make_shared<std::mutex>();
+        repo_lock = slot;
+    }
+    std::lock_guard<std::mutex> download_lock(*repo_lock);
+
     // The backend's ops own the download (shared HF engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
     backends::BackendOpsContext octx;

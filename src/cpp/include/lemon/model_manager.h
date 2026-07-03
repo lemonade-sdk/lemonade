@@ -351,6 +351,11 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+
+    // Serializes concurrent downloads that write into the same snapshot
+    // (keyed by checkpoint repo). See download_registered_model.
+    std::mutex download_locks_mutex_;
+    std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
