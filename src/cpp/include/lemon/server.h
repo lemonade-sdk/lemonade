@@ -20,6 +20,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
+#include "preset_store.h"
 #include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
@@ -74,6 +75,15 @@ private:
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
     void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
+    void handle_presets_list(const httplib::Request& req, httplib::Response& res);
+    void handle_preset_get(const httplib::Request& req, httplib::Response& res);
+    void handle_preset_upsert(const httplib::Request& req, httplib::Response& res);
+    void handle_preset_delete(const httplib::Request& req, httplib::Response& res);
+    void handle_presets_export(const httplib::Request& req, httplib::Response& res);
+    void handle_presets_import(const httplib::Request& req, httplib::Response& res);
+    bool apply_preset_to_load_request(nlohmann::json& request_json, httplib::Response& res);
+    bool apply_preset_to_chat_request(nlohmann::json& request_json, httplib::Response& res,
+                                      nlohmann::json& preset_recipe_options);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -217,7 +227,8 @@ private:
                                   nlohmann::json& out);
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    void auto_load_model_if_needed(const std::string& model_name);
+    void auto_load_model_if_needed(const std::string& model_name,
+                                   const nlohmann::json& load_options = nlohmann::json::object());
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
@@ -268,6 +279,7 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
+    std::unique_ptr<PresetStore> preset_store_;
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     std::mutex downloads_mutex_;

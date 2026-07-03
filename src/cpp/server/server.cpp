@@ -3,6 +3,7 @@
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
+#include "lemon/preset_store.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
@@ -343,6 +344,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             cloud_registry_->load_from_config(snap["cloud_providers"]);
         }
     }
+
+    preset_store_ = std::make_unique<PresetStore>(cache_dir_);
 
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
@@ -717,6 +720,44 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_download_control(req, res);
     });
 
+
+
+    // Presets are public profile metadata, stored on the server so the desktop
+    // UI, web UI, CLI and automation clients can share the same named profiles.
+    // They intentionally do not live in recipe_options because profiles are
+    // global/task-oriented while recipe_options are per-model/per-backend load
+    // parameters. No preset is applied unless a request explicitly includes
+    // "preset" or "preset_id".
+    register_get("presets", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_presets_list(req, res);
+    });
+    // Do not use register_post("presets") here: that helper also installs a
+    // GET 405 handler, which would collide with GET /presets above.
+    web_server.Post("/api/v0/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Post("/api/v1/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Post("/v0/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Post("/v1/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    register_get("presets/export", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_presets_export(req, res);
+    });
+    // Register import manually too so no generated GET 405 route competes with
+    // the /presets/{id} regex for the reserved id-like segment "import".
+    web_server.Post("/api/v0/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
+    web_server.Post("/api/v1/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
+    web_server.Post("/v0/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
+    web_server.Post("/v1/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
+    web_server.Get(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
+    web_server.Get(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
+    web_server.Get(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
+    web_server.Get(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
+    web_server.Put(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Put(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Put(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Put(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    web_server.Delete(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
+    web_server.Delete(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
+    web_server.Delete(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
+    web_server.Delete(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);
@@ -1793,11 +1834,17 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model) {
+void Server::auto_load_model_if_needed(const std::string& requested_model,
+                                       const nlohmann::json& load_options) {
+    const bool has_load_options = load_options.is_object() && !load_options.empty();
     // Check if this specific model is already loaded (multi-model aware)
-    if (router_->is_model_loaded(requested_model)) {
+    if (!has_load_options && router_->is_model_loaded(requested_model)) {
         LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
         return;
+    }
+    if (has_load_options && router_->is_model_loaded(requested_model)) {
+        LOG(INFO, "Server") << "Model already loaded; checking explicit preset load options: "
+                            << requested_model << std::endl;
     }
 
     // Log the auto-loading action
@@ -1837,7 +1884,11 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
+    // When a preset is explicitly requested, use its recipe_options for the
+    // load/reload decision so ctx/backend settings affect CLI/API usage too.
+    router_->load_model(requested_model, info,
+                        RecipeOptions(info.recipe, has_load_options ? load_options : json::object()),
+                        true, /*allow_reload_on_option_change=*/has_load_options);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2150,6 +2201,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        nlohmann::json preset_recipe_options = nlohmann::json::object();
+        if (!apply_preset_to_chat_request(request_json, res, preset_recipe_options)) return;
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -2189,7 +2242,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, preset_recipe_options);
                 if (span) {
                     span->cancel();
                 }
@@ -3887,6 +3940,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
+    if (!apply_preset_to_load_request(request_json, res)) return;
 
     try {
         model_name = request_json["model_name"];
@@ -4733,6 +4787,213 @@ void Server::handle_config_defaults_get(const httplib::Request& /*req*/, httplib
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+
+void Server::handle_presets_list(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        nlohmann::json response = {
+            {"object", "list"},
+            {"data", preset_store_->list_presets()}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_preset_get(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const std::string id = req.matches[1].str();
+        auto preset = preset_store_->get_preset(id);
+        if (!preset) {
+            res.status = 404;
+            res.set_content(nlohmann::json{{"error", "Preset not found: " + id}}.dump(), "application/json");
+            return;
+        }
+        res.set_content(preset->dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_preset_upsert(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json body;
+        if (!parse_required_json_body(req, res, body)) return;
+        if (req.matches.size() > 1) {
+            body["id"] = req.matches[1].str();
+        }
+        nlohmann::json preset = preset_store_->upsert_preset(body);
+        res.set_content(preset.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_preset_delete(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const std::string id = req.matches[1].str();
+        if (!preset_store_->delete_preset(id)) {
+            res.status = 404;
+            res.set_content(nlohmann::json{{"error", "Preset not found: " + id}}.dump(), "application/json");
+            return;
+        }
+        res.set_content(nlohmann::json{{"status", "success"}, {"id", id}}.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_presets_export(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        res.set_content(preset_store_->export_store().dump(2), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_presets_import(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json body;
+        if (!parse_required_json_body(req, res, body)) return;
+        res.set_content(preset_store_->import_store(body).dump(2), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+bool Server::apply_preset_to_load_request(nlohmann::json& request_json, httplib::Response& res) {
+    const std::string preset_id = PresetStore::requested_preset_id(request_json);
+    if (preset_id.empty()) {
+        // No implicit preset selection: default /load behavior remains unchanged.
+        return true;
+    }
+    auto preset = preset_store_->get_preset(preset_id);
+    if (!preset) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", "Unknown preset: " + preset_id}}.dump(), "application/json");
+        return false;
+    }
+
+    if (preset->contains("recipe_options") && (*preset)["recipe_options"].is_object()) {
+        PresetStore::merge_missing(request_json, (*preset)["recipe_options"]);
+    }
+
+    request_json.erase("preset");
+    request_json.erase("preset_id");
+    request_json.erase("apply_preset_system_prompt");
+    request_json.erase("system_prompt_policy");
+    return true;
+}
+
+bool Server::apply_preset_to_chat_request(nlohmann::json& request_json,
+                                          httplib::Response& res,
+                                          nlohmann::json& preset_recipe_options) {
+    preset_recipe_options = nlohmann::json::object();
+    const std::string preset_id = PresetStore::requested_preset_id(request_json);
+    if (preset_id.empty()) {
+        // No implicit preset selection: default chat auto-load behavior remains unchanged.
+        return true;
+    }
+
+    auto preset = preset_store_->get_preset(preset_id);
+    if (!preset) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", "Unknown preset: " + preset_id}}.dump(), "application/json");
+        return false;
+    }
+
+    if (preset->contains("recipe_options") && (*preset)["recipe_options"].is_object()) {
+        preset_recipe_options = (*preset)["recipe_options"];
+    }
+    if (preset->contains("sampling") && (*preset)["sampling"].is_object()) {
+        PresetStore::merge_missing(request_json, (*preset)["sampling"]);
+    }
+
+    // tools_enabled is persisted as client/UI metadata in this PR. The server
+    // intentionally does not add or remove tool payloads here, so existing
+    // OpenAI-compatible agent requests are not changed by preset selection.
+    bool apply_prompt = true;
+    if (request_json.contains("apply_preset_system_prompt")) {
+        if (!request_json["apply_preset_system_prompt"].is_boolean()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", "apply_preset_system_prompt must be a boolean"}}.dump(), "application/json");
+            return false;
+        }
+        apply_prompt = request_json["apply_preset_system_prompt"].get<bool>();
+    }
+
+    const std::string prompt = PresetStore::selected_system_prompt_text(*preset);
+    if (apply_prompt && !prompt.empty()) {
+        if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", "Preset system prompts require a messages array"}}.dump(), "application/json");
+            return false;
+        }
+
+        std::string policy = "prepend_if_missing";
+        if (request_json.contains("system_prompt_policy")) {
+            if (!request_json["system_prompt_policy"].is_string()) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", "system_prompt_policy must be a string"}}.dump(), "application/json");
+                return false;
+            }
+            policy = request_json["system_prompt_policy"].get<std::string>();
+        }
+        if (policy != "prepend_if_missing" && policy != "prepend" &&
+            policy != "replace_first" && policy != "skip") {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", "system_prompt_policy must be one of: prepend_if_missing, prepend, replace_first, skip"}}.dump(), "application/json");
+            return false;
+        }
+
+        bool has_system_message = false;
+        for (const auto& message : request_json["messages"]) {
+            if (message.is_object() && message.value("role", "") == "system") {
+                has_system_message = true;
+                break;
+            }
+        }
+
+        nlohmann::json system_message = {{"role", "system"}, {"content", prompt}};
+        bool replaced = false;
+        if (policy == "replace_first") {
+            for (auto& message : request_json["messages"]) {
+                if (message.is_object() && message.value("role", "") == "system") {
+                    message["content"] = prompt;
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+        if (!replaced && policy == "prepend") {
+            request_json["messages"].insert(request_json["messages"].begin(), system_message);
+        } else if (!replaced && policy == "prepend_if_missing" && !has_system_message) {
+            request_json["messages"].insert(request_json["messages"].begin(), system_message);
+        }
+    }
+
+    request_json.erase("preset");
+    request_json.erase("preset_id");
+    request_json.erase("apply_preset_system_prompt");
+    request_json.erase("system_prompt_policy");
+    return true;
 }
 
 void Server::handle_bin_change(const std::string& section,
