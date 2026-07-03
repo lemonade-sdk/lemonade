@@ -1088,10 +1088,18 @@ json Router::chat_completion(const json& request) {
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
                 }
                 if (response.contains("timings")) {
                     auto timings = response["timings"];
@@ -1179,10 +1187,18 @@ json Router::completion(const json& request) {
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
                 }
 
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
@@ -1239,9 +1255,13 @@ json Router::embeddings(const json& request) {
                 span->end_with_error(error_msg);
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
                     if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
                 }
                 std::string output_dump = "";
@@ -1291,9 +1311,13 @@ json Router::reranking(const json& request) {
                 span->end_with_error(error_msg);
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
                     if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
                 }
                 span->end_with_success(usage_payload, response.dump());
@@ -1943,15 +1967,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                     try {
                         auto parsed = json::parse(json_str);
                         if (!hide_outputs) {
-                            if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
-                                auto delta = parsed["choices"][0]["delta"];
-                                if (delta.contains("content") && delta["content"].is_string()) {
-                                    *accumulated_text += delta["content"].get<std::string>();
-                                }
-                            }
-                            if (parsed.contains("response") && parsed["response"].is_string()) {
-                                *accumulated_text += parsed["response"].get<std::string>();
-                            }
+                            StreamingProxy::accumulate_responses_delta(parsed, *accumulated_text);
                         }
                     } catch (...) {}
                 }
