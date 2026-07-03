@@ -6,6 +6,7 @@
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/model_manager.h"
 #include "lemon/backend_manager.h"
+#include "lemon/platform.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/audio_types.h"
@@ -90,7 +91,13 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
-#ifdef _WIN32
+#ifdef LEMON_LINUX_MUSL
+#if defined(__aarch64__)
+        params.filename = "whisper-" + version + "-linux-musl-cpu-aarch64.tar.gz";
+#else
+        params.filename = "whisper-" + version + "-linux-musl-cpu-x86_64.tar.gz";
+#endif
+#elif defined(_WIN32)
         params.filename = "whisper-" + version + "-windows-cpu-x64.zip";
 #elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
@@ -111,7 +118,13 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("ROCm whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "vulkan") {
-#ifdef _WIN32
+#ifdef LEMON_LINUX_MUSL
+#if defined(__aarch64__)
+        params.filename = "whisper-" + version + "-linux-musl-vulkan-aarch64.tar.gz";
+#else
+        params.filename = "whisper-" + version + "-linux-musl-vulkan-x86_64.tar.gz";
+#endif
+#elif defined(_WIN32)
         params.filename = "whisper-" + version + "-windows-vulkan-x64.zip";
 #elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";

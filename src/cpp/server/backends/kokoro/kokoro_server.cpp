@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/model_manager.h"
+#include "lemon/platform.h"
 #include "lemon/utils/path_utils.h"
 #include <filesystem>
 #include "lemon/backend_manager.h"
@@ -45,7 +46,13 @@ InstallParams KokoroServer::get_install_params(const std::string& backend, const
     params.repo = "lemonade-sdk/Kokoros";
 
     if (backend == "cpu") {
-#ifdef _WIN32
+#ifdef LEMON_LINUX_MUSL
+#if defined(__aarch64__)
+        params.filename = "kokoros-linux-musl-arm64.tar.gz";
+#else
+        params.filename = "kokoros-linux-musl-x86_64.tar.gz";
+#endif
+#elif defined(_WIN32)
         params.filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
         params.filename = "kokoros-linux-x86_64.tar.gz";

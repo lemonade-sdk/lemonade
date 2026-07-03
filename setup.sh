@@ -117,6 +117,8 @@ if ! command_exists pre-commit; then
         missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists zypper; then
         missing_packages+=("python313-pre-commit")
+    elif [ "$OS" = "linux" ] && command_exists apk; then
+        missing_packages+=("pre-commit")
     elif [ "$OS" = "macos" ] && command_exists brew; then
         missing_packages+=("pre-commit")
     elif command_exists pip || command_exists pip3; then
@@ -156,6 +158,8 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
             missing_packages+=("git" "cmake" "ninja-build" "gcc" "gcc-c++" "make")
         elif command_exists zypper; then
             missing_packages+=("git" "cmake" "ninja" "gcc" "gcc-c++" "make")
+        elif command_exists apk; then
+            missing_packages+=("git" "cmake" "samurai" "build-base")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("git" "cmake" "ninja")
@@ -248,6 +252,21 @@ if command_exists pkg-config; then
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
                     esac
                 done
+            elif command_exists apk; then
+                # Map pkg-config names to Alpine (musl) packages. Alpine has no
+                # systemd, so libsystemd is skipped — the build must not require
+                # it on musl.
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("curl-dev") ;;
+                        openssl) missing_packages+=("openssl-dev") ;;
+                        zlib) missing_packages+=("zlib-dev") ;;
+                        libsystemd) : ;;
+                        libdrm) missing_packages+=("libdrm-dev") ;;
+                        libcap) missing_packages+=("libcap-dev") ;;
+                        libwebsockets) missing_packages+=("libwebsockets-dev") ;;
+                    esac
+                done
             fi
         elif [ "$OS" = "macos" ]; then
             # macOS typically has these via Xcode Command Line Tools
@@ -274,6 +293,8 @@ else
             missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         elif command_exists zypper; then
             missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+        elif command_exists apk; then
+            missing_packages+=("pkgconf" "curl-dev" "openssl-dev" "zlib-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("pkg-config" "curl" "openssl" "zlib")
@@ -593,6 +614,12 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             else
                 install_cmd="sudo zypper install -y --replacefiles --force-resolution ${missing_packages[*]}"
             fi
+        elif command_exists apk; then
+            if is_root; then
+                install_cmd="apk add ${missing_packages[*]}"
+            else
+                install_cmd="sudo apk add ${missing_packages[*]}"
+            fi
         fi
     elif [ "$OS" = "macos" ]; then
         install_cmd="brew install ${missing_packages[*]}"
@@ -639,6 +666,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             maybe_sudo dnf install -y ${missing_packages[@]}
         elif command_exists zypper; then
             maybe_sudo zypper install -y --replacefiles --force-resolution ${missing_packages[@]}
+        elif command_exists apk; then
+            maybe_sudo apk add ${missing_packages[@]}
         fi
     elif [ "$OS" = "macos" ]; then
         brew install ${missing_packages[@]}

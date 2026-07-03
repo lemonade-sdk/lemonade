@@ -1,0 +1,81 @@
+# ==============================================================
+# Alpine / musl build of lemonade (lemond + lemonade CLI + web-app).
+#
+# Mirrors the glibc Dockerfile but on musl. NPU backends (FLM/RyzenAI) and
+# moonshine are not available on musl and are intentionally omitted. GPU
+# backends (Vulkan) require a Vulkan driver in the container/host at runtime.
+# ==============================================================
+FROM alpine:latest AS builder
+
+# Build dependencies. Alpine has no systemd, so libsystemd is absent by design;
+# the build must not require it on musl.
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    samurai \
+    git \
+    linux-headers \
+    nodejs \
+    npm \
+    pkgconf \
+    openssl-dev \
+    curl-dev \
+    zlib-dev \
+    libdrm-dev \
+    libcap-dev \
+    libwebsockets-dev
+
+COPY . /app
+WORKDIR /app
+
+RUN rm -rf build && \
+    cmake --preset default && \
+    cmake --build --preset default web-app
+
+# # ============================================================
+# # Runtime stage — small musl image
+# # ============================================================
+FROM alpine:latest
+
+# Runtime dependencies. libstdc++/libgcc back the C++ binaries; vulkan-loader +
+# a Mesa driver enable the Vulkan backends; ca-certificates lets lemond fetch
+# backends/models over HTTPS.
+RUN apk add --no-cache \
+    libstdc++ \
+    libgcc \
+    curl \
+    openssl \
+    zlib \
+    libdrm \
+    libcap \
+    libwebsockets \
+    vulkan-loader \
+    mesa-vulkan-swrast \
+    ca-certificates \
+    unzip \
+    jq
+
+WORKDIR /opt/lemonade
+
+# Provide a private runtime directory so lemond can use get_runtime_dir()
+RUN mkdir -p /run/lemonade && chmod 700 /run/lemonade
+ENV XDG_RUNTIME_DIR=/run/lemonade
+
+COPY --from=builder /app/build/lemond ./lemond
+COPY --from=builder /app/build/lemonade ./lemonade
+COPY --from=builder /app/build/resources ./resources
+
+RUN chmod +x ./lemond ./lemonade
+
+ENV PATH="/opt/lemonade:${PATH}"
+
+RUN mkdir -p /opt/lemonade/llama/cpu \
+    /opt/lemonade/llama/vulkan \
+    /root/.cache/huggingface
+
+EXPOSE 13305
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:13305/live || exit 1
+
+CMD ["./lemond", "--host", "0.0.0.0"]

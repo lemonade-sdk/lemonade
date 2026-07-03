@@ -1,0 +1,16 @@
+#!/bin/sh
+mkdir -p /var/lib/lemonade
+chown lemonade:lemonade /var/lib/lemonade
+chmod 0750 /var/lib/lemonade
+
+cat <<'EOF'
+
+lemonade-server installed.
+
+Start it now:   rc-service lemonade-server start
+Enable at boot: rc-update add lemonade-server default
+
+The web UI is served at http://localhost:13305/app
+EOF
+
+exit 0

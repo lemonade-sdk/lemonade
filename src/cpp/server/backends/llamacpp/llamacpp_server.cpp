@@ -7,6 +7,7 @@
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
+#include "lemon/platform.h"
 #include <algorithm>
 #include <filesystem>
 #include <regex>
@@ -228,6 +229,16 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
     } else if (resolved_backend == "cpu") {
+#ifdef LEMON_LINUX_MUSL
+        // Upstream ggml-org publishes only glibc ("ubuntu") Linux builds, so
+        // musl CPU binaries come from the lemonade-sdk fork instead.
+        params.repo = "lemonade-sdk/llama.cpp";
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-linux-musl-arm64.tar.gz";
+#else
+        params.filename = "llama-" + version + "-bin-linux-musl-x64.tar.gz";
+#endif
+#else
         params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
@@ -240,7 +251,16 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
+#endif
     } else {  // vulkan
+#ifdef LEMON_LINUX_MUSL
+        params.repo = "lemonade-sdk/llama.cpp";
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-linux-musl-vulkan-arm64.tar.gz";
+#else
+        params.filename = "llama-" + version + "-bin-linux-musl-vulkan-x64.tar.gz";
+#endif
+#else
         params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
@@ -252,6 +272,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
 #else
         throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
+#endif
 #endif
     }
 

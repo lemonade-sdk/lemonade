@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/platform.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -44,6 +45,14 @@ InstallParams MoonshineServer::get_install_params(const std::string& backend, co
     params.filename = "moonshine-server-" + version + "-windows-x64.zip";
 #elif defined(__APPLE__)
     params.filename = "moonshine-server-" + version + "-macos-arm64.tar.gz";
+#elif defined(LEMON_LINUX_MUSL)
+    // The upstream PyInstaller bundles are glibc-only; musl builds come from the
+    // fork so we never download a glibc binary that can't run on musl.
+#if defined(__aarch64__)
+    params.filename = "moonshine-server-" + version + "-linux-musl-arm64.tar.gz";
+#else
+    params.filename = "moonshine-server-" + version + "-linux-musl-x64.tar.gz";
+#endif
 #elif defined(__aarch64__) || defined(_M_ARM64)
     params.filename = "moonshine-server-" + version + "-linux-arm64.tar.gz";
 #else
