@@ -134,6 +134,20 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+/** One physical file backing a model (from GET /api/v1/models/{id}/files). */
+export interface ModelFileInfo {
+  name: string;
+  role: string;
+  size_bytes: number;
+  exists: boolean;
+}
+
+/** Response shape of GET /api/v1/models/{id}/files. */
+export interface ModelFilesResponse {
+  model_id: string;
+  files: ModelFileInfo[];
+}
+
 /** Real disk usage for the model-storage drive (bytes). */
 export interface StorageInfo {
   usedBytes: number;
@@ -943,6 +957,23 @@ class LemonadeAPI {
 
   async modelDetail(id: string): Promise<ModelInfo> {
     return this._json<ModelInfo>(`/api/v1/models/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * List the physical files backing a model (main weights, mmproj, tokenizer, …).
+   * Returns null when the endpoint is unreachable or the model is unknown, so the
+   * UI can fall back to an empty/error state instead of throwing.
+   */
+  async getModelFiles(id: string): Promise<ModelFilesResponse | null> {
+    try {
+      const data = await this._json<ModelFilesResponse>(
+        `/api/v1/models/${encodeURIComponent(id)}/files`,
+      );
+      if (!data || !Array.isArray(data.files)) return null;
+      return data;
+    } catch {
+      return null;
+    }
   }
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
