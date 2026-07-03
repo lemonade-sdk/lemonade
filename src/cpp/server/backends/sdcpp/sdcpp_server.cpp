@@ -13,6 +13,7 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
+#include <algorithm>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -115,6 +116,24 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         }
     }
 
+#ifdef LEMON_LINUX_MUSL
+    // musl builds come from the fork and ship only CPU and Vulkan; a musl host
+    // must never fetch a glibc rocm/cuda/ubuntu asset. load() maps any GPU
+    // backend to vulkan, so only these two asset shapes can reach here.
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
+#if defined(__aarch64__)
+    const std::string musl_arch = "aarch64";
+#else
+    const std::string musl_arch = "x86_64";
+#endif
+    if (resolved_backend == "vulkan") {
+        params.filename = "sd-" + short_version + "-bin-Linux-musl-vulkan-" + musl_arch + ".zip";
+    } else {
+        params.filename = "sd-" + short_version + "-bin-Linux-musl-" + musl_arch + ".zip";
+    }
+    return params;
+#endif
+
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
         params.filename = "sd-" + short_version + "-bin-Darwin-macOS-*-arm64.zip";
@@ -164,15 +183,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #endif
     } else {
         // CPU build (default)
-#ifdef LEMON_LINUX_MUSL
-        // Upstream ships only glibc Linux builds; musl comes from the fork.
-        params.repo = "lemonade-sdk/stable-diffusion.cpp";
-#if defined(__aarch64__)
-        params.filename = "sd-" + short_version + "-bin-Linux-musl-aarch64.zip";
-#else
-        params.filename = "sd-" + short_version + "-bin-Linux-musl-x86_64.zip";
-#endif
-#elif defined(_WIN32)
+#if defined(_WIN32)
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
@@ -207,6 +218,18 @@ void SDServer::load(const std::string& model_name,
         auto supported = SystemInfo::get_supported_backends("sd-cpp");
         backend = supported.backends.empty() ? "cpu" : supported.backends[0];
     }
+#ifdef LEMON_LINUX_MUSL
+    // musl builds ship only CPU and Vulkan; there is no musl rocm/cuda asset, so
+    // route any GPU backend through Vulkan when the platform reports it, else
+    // fall back to CPU (keeps device/args/binary dir and validation aligned).
+    if (backend != "vulkan" && backend != "cpu") {
+        auto musl_supported = SystemInfo::get_supported_backends("sd-cpp");
+        bool vulkan_ok = std::find(musl_supported.backends.begin(),
+                                   musl_supported.backends.end(),
+                                   "vulkan") != musl_supported.backends.end();
+        backend = vulkan_ok ? "vulkan" : "cpu";
+    }
+#endif
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
 
