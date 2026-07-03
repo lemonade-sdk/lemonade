@@ -33,6 +33,10 @@ export interface TTSSettings {
   model: StringSetting;
   userVoice: StringSetting;
   assistantVoice: StringSetting;
+  // Base64 WAV samples used to clone the user/assistant voice when the selected
+  // TTS model is a cloning model (e.g. OpenMOSS-TTS) instead of a fixed-voice one.
+  userVoiceSample: StringSetting;
+  assistantVoiceSample: StringSetting;
   enableTTS: BooleanSetting;
   enableUserTTS: BooleanSetting;
 }
@@ -97,6 +101,8 @@ export const DEFAULT_TTS_SETTINGS: TTSSettings = {
   model: { value: 'kokoro-v1', useDefault: true },
   userVoice: { value: 'fable', useDefault: true },
   assistantVoice: { value: 'alloy', useDefault: true },
+  userVoiceSample: { value: '', useDefault: true },
+  assistantVoiceSample: { value: '', useDefault: true },
   enableTTS: { value: false, useDefault: true },
   enableUserTTS: { value: false, useDefault: true }
 };

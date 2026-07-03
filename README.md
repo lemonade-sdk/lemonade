@@ -219,7 +219,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux, macOS</td>
     </tr>
     <tr>
-      <td rowspan="4"><strong>Text-to-speech</strong></td>
+      <td rowspan="5"><strong>Text-to-speech</strong></td>
       <td rowspan="2"><code>kokoro</code></td>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
@@ -231,14 +231,19 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>macOS</td>
     </tr>
     <tr>
-      <td rowspan="2"><code>openmoss</code> (experimental)</td>
-      <td><code>vulkan</code></td>
-      <td>Vulkan-capable GPUs</td>
+      <td rowspan="3"><code>openmoss</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>AMD GPUs (ROCm via TheRock)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>rocm</code></td>
-      <td>AMD GPUs (ROCm via TheRock)</td>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>

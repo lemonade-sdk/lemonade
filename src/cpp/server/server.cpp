@@ -3109,23 +3109,44 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        std::string mime_type;
+        const auto supported_formats =
+            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
+        std::string response_format = "mp3";
         if (is_streaming) {
-            mime_type = MIME_TYPES["pcm"];
-        } else if (request_json.contains("response_format")) {
-            if (MIME_TYPES.contains(request_json["response_format"])) {
-                mime_type = MIME_TYPES[request_json["response_format"]];
-            } else {
-                nlohmann::json error = {{"error", {
-                    {"message", "Unsupported audio format requested"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        } else {
-            mime_type = MIME_TYPES["mp3"];
+            response_format = "pcm";
+        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        } else if (!supported_formats.empty()) {
+            response_format = supported_formats.front();
         }
+        if (!MIME_TYPES.contains(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported audio format requested"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const bool format_supported = supported_formats.empty() ||
+            std::find(supported_formats.begin(), supported_formats.end(),
+                      response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES[response_format];
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -3151,7 +3172,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            res.set_content_provider(mime_type, audio_source);
+            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink);
+            });
         }
 
         return;

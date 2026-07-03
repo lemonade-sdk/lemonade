@@ -14,7 +14,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
-| `openmoss` | OpenMOSS TTS | yes | no | rocm, vulkan |
+| `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -42,8 +42,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
-| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `openmoss` | rocm | linux, windows | amd_gpu |
+| `openmoss` | cuda | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cuda | linux | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -84,6 +85,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `moonshine_args` | `--moonshine-args` | ARGS | "" | Custom arguments to pass to moonshine-server |
+
+#### `openmoss` — OpenMOSS TTS
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
 
 #### `sd-cpp` — StableDiffusion.cpp
 
@@ -239,8 +246,8 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `MOSS-VoiceGen` | 7.8 | tts, voice-design |
-| `OpenMOSS-TTS` | 8.7 | tts |
+| `MOSS-VoiceGen` | 7.3 | tts, voice-design |
+| `OpenMOSS-TTS` | 12.5 | tts |
 
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)
 
@@ -276,13 +283,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Meta-Llama-3-8B-NPU` | 9.23 | — |
 | `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | — |
 | `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | — |
-| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | — |
-| `Mistral-7B-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-v0.3-NPU` | 8.09 | — |
 | `Phi-3-Mini-Instruct-CPU` | 2.39 | — |
 | `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | — |

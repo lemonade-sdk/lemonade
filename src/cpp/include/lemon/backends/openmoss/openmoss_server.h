@@ -30,11 +30,9 @@ public:
 
     // ITextToSpeechServer
     void audio_speech(const json& request, httplib::DataSink& sink) override;
+    std::vector<std::string> supported_audio_formats() const override { return {"wav"}; }
 
 private:
-    // Backend variant to resolve/install: "<section>.backend" from config,
-    // default "vulkan". "rocm" pulls the ROCm build (shared TheRock runtime).
-    std::string backend_variant() const;
     // An explicit "<variant>_bin" config path wins (use a locally-built binary
     // with no published release); otherwise install the managed binary.
     std::string resolve_binary_path(const std::string& backend);

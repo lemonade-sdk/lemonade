@@ -44,17 +44,6 @@ OpenMossServer::~OpenMossServer() {
     unload();
 }
 
-std::string OpenMossServer::backend_variant() const {
-    if (auto* cfg = RuntimeConfig::global()) {
-        const std::string section = RuntimeConfig::recipe_to_config_section(openmoss::spec()->recipe);
-        const std::string b = cfg->backend_string(section, "backend");
-        if (!b.empty() && b != "auto") {
-            return b;
-        }
-    }
-    return "vulkan";
-}
-
 std::string OpenMossServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = openmoss::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -69,7 +58,6 @@ void OpenMossServer::load(const std::string& model_name,
                           const ModelInfo& model_info,
                           const RecipeOptions& options,
                           bool do_not_upgrade) {
-    (void)options;
     (void)do_not_upgrade;
     LOG(INFO, "openmoss-server") << "Loading model: " << model_name << std::endl;
 
@@ -78,7 +66,12 @@ void OpenMossServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
-    const std::string backend = backend_variant();
+    std::string backend = options.get_option("openmoss_backend");
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("openmoss");
+        backend = supported.backends.empty() ? "vulkan" : supported.backends[0];
+    }
+    RuntimeConfig::validate_backend_choice("openmoss", backend);
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();
@@ -93,23 +86,33 @@ void OpenMossServer::load(const std::string& model_name,
         "--no-webui",
     };
 
-    // ROCm: the slim binary finds the ROCm runtime in the shared TheRock SDK plus
-    // its colocated ggml .so. Prepend the TheRock lib dir + the exe dir to the
-    // loader path (mirrors sd-cpp / llama.cpp). Vulkan needs no special env.
+    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
+    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
+    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
+    // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+    if (backend == "rocm" || backend == "cuda") {
+        std::string therock_lib;
+        if (backend == "rocm") {
+            const std::string arch = SystemInfo::get_rocm_arch();
+            therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+        }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
         std::string path = therock_lib.empty() ? exe_dir : (therock_lib + ";" + exe_dir);
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        std::string ld = therock_lib.empty() ? exe_dir : (therock_lib + ":" + exe_dir);
+        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
+        // builds) under lib/llvm/lib, next to the main lib dir.
+        std::string ld = therock_lib.empty() ? exe_dir
+            : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
+        if (backend == "cuda") {
+            BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
+        }
     }
 
     LOG(INFO, "openmoss-server") << "Starting " << exe_path << " on port " << port_ << std::endl;

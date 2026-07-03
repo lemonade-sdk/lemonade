@@ -81,6 +81,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "offline": false,
   "openmoss": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
