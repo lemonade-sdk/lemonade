@@ -27,7 +27,7 @@ makedepends="
 # Shared-library deps of lemond/lemonade are auto-detected by abuild's tracedeps.
 # These are the runtime helpers it can't infer: TLS roots and the unzip binary
 # lemond shells out to when extracting .zip backend archives (stable-diffusion).
-depends="ca-certificates unzip"
+depends="ca-certificates unzip onnxruntime"
 install="$pkgname.pre-install $pkgname.post-install"
 source="$pkgname-$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
