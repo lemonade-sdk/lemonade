@@ -1497,6 +1497,13 @@ void Router::audio_generations(const json& request, httplib::DataSink& sink) {
     });
 }
 
+std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     return aggregate_telemetry_.to_json();

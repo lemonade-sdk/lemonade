@@ -93,13 +93,17 @@ void ThinkSoundServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
     };
 
-    // ROCm: the slim binary finds the ROCm runtime in the shared TheRock SDK plus
-    // its colocated ggml .so. Prepend the TheRock lib dir + the exe dir to the
-    // loader path (mirrors sd-cpp / llama.cpp). Vulkan needs no special env.
+    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
+    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
+    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
+    // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+    if (backend == "rocm" || backend == "cuda") {
+        std::string therock_lib;
+        if (backend == "rocm") {
+            const std::string arch = SystemInfo::get_rocm_arch();
+            therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+        }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
         std::string path = therock_lib.empty() ? exe_dir : (therock_lib + ";" + exe_dir);
@@ -110,6 +114,9 @@ void ThinkSoundServer::load(const std::string& model_name,
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
+        if (backend == "cuda") {
+            BackendUtils::apply_cuda_env_vars(env_vars, "thinksound-server");
+        }
     }
 
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
@@ -138,8 +145,8 @@ void ThinkSoundServer::unload() {
 
 void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink& sink) {
     // Map the Lemonade /audio/generations request onto ts-server's /generate, then
-    // stream the wav bytes back. Errors write nothing — the handler turns an empty
-    // body into an HTTP error.
+    // stream the wav bytes back. On failure the sink receives ts-server's JSON
+    // error body (or nothing) — the endpoint handler maps both to an HTTP error.
     json body;
     body["caption"] = request.value("prompt", std::string());
     body["description"] = request.contains("description") ? request["description"]

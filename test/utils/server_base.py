@@ -268,6 +268,10 @@ def _build_runtime_config(additional_server_args=None):
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
+    elif wrapped_server == "thinksound" and backend:
+        config["thinksound"] = {"backend": backend}
+    elif wrapped_server == "acestep" and backend:
+        config["acestep"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))

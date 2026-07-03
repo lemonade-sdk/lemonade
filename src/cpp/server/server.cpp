@@ -3131,6 +3131,28 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
     }
 }
 
+// The streaming plumbing reports backend failures as a payload in the sink —
+// either an SSE-style "data: {\"error\":...}" event or the backend's own JSON
+// error body — rather than throwing. Returns the parsed error, or null.
+static nlohmann::json extract_error_payload(const std::string& buf) {
+    std::string body = buf;
+    if (body.rfind("data: ", 0) == 0) {
+        body = body.substr(6);
+    }
+    const auto start = body.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || body[start] != '{') {
+        return nullptr;
+    }
+    try {
+        auto parsed = nlohmann::json::parse(body.substr(start));
+        if (parsed.is_object() && parsed.contains("error")) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+    return nullptr;
+}
+
 void Server::serve_media_or_error(httplib::Response& res, const std::string& mime_type,
                                   const std::function<void(httplib::DataSink&)>& generate) {
     // Buffer the generated media so we can tell success from a silent failure. A
@@ -3149,6 +3171,11 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
             {"message", "Generation failed: the backend produced no output (it likely crashed or ran "
                         "out of GPU memory). Check the server logs."},
             {"type", "backend_error"}}}}.dump(), "application/json");
+        return;
+    }
+    if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+        res.status = 500;
+        res.set_content(error_payload.dump(), "application/json");
         return;
     }
     res.set_content(buf, mime_type);
@@ -3184,10 +3211,28 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
-        std::string mime_type = MIME_TYPES["wav"];
-        if (request_json.contains("response_format") && MIME_TYPES.contains(request_json["response_format"])) {
-            mime_type = MIME_TYPES[request_json["response_format"]];
+        std::string response_format = "wav";
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
         }
+        const auto supported_formats = router_->audio_generation_supported_formats(requested_model);
+        const bool format_supported = std::find(supported_formats.begin(), supported_formats.end(),
+                                                response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!supported_formats.empty() && !format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES.contains(response_format)
+            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
 

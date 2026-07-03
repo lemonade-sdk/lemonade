@@ -115,13 +115,17 @@ void AceStepServer::load(const std::string& model_name,
         "--keep-loaded",
     };
 
-    // ROCm: the slim binary finds the ROCm runtime in the shared TheRock SDK plus
-    // its colocated ggml .so. Prepend the TheRock lib dir + the exe dir to the
-    // loader path (mirrors sd-cpp / llama.cpp). Vulkan needs no special env.
+    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
+    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
+    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
+    // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
-    if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+    if (backend == "rocm" || backend == "cuda") {
+        std::string therock_lib;
+        if (backend == "rocm") {
+            const std::string arch = SystemInfo::get_rocm_arch();
+            therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+        }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
         std::string path = therock_lib.empty() ? exe_dir : (therock_lib + ";" + exe_dir);
@@ -132,6 +136,9 @@ void AceStepServer::load(const std::string& model_name,
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
+        if (backend == "cuda") {
+            BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
+        }
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
@@ -159,6 +166,13 @@ void AceStepServer::unload() {
 }
 
 void AceStepServer::audio_generations(const json& request, httplib::DataSink& sink) {
+    // Failures write an error payload into the sink; the endpoint handler turns
+    // it into an HTTP error instead of shipping it as audio.
+    auto fail = [&sink](const std::string& message) {
+        const std::string payload =
+            json{{"error", {{"message", message}, {"type", "backend_error"}}}}.dump();
+        sink.write(payload.data(), payload.size());
+    };
     try {
         // Map the Lemonade request onto ace-server's /synth (instrumental, DiT-only).
         json synth;
@@ -175,11 +189,13 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
         if (submit.status_code != 200) {
             LOG(ERROR, "acestep-server") << "synth submit failed (HTTP " << submit.status_code
                                          << "): " << submit.body << std::endl;
+            fail("synth submit failed (HTTP " + std::to_string(submit.status_code) + ")");
             return;
         }
         std::string job_id = json::parse(submit.body).value("id", std::string());
         if (job_id.empty()) {
             LOG(ERROR, "acestep-server") << "synth submit returned no job id: " << submit.body << std::endl;
+            fail("synth submit returned no job id");
             return;
         }
 
@@ -197,22 +213,26 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
         }
         if (status != "done") {
             LOG(ERROR, "acestep-server") << "synth job " << job_id << " ended with status '" << status << "'" << std::endl;
+            fail("synth job ended with status '" + status + "'");
             return;
         }
 
         auto result = utils::HttpClient::get(job_url + "&result=1", {}, 120);
         if (result.status_code != 200) {
             LOG(ERROR, "acestep-server") << "fetching job result failed (HTTP " << result.status_code << ")" << std::endl;
+            fail("fetching job result failed (HTTP " + std::to_string(result.status_code) + ")");
             return;
         }
         std::string audio = extract_multipart_audio(result.body);
         if (audio.empty()) {
             LOG(ERROR, "acestep-server") << "no audio part in multipart result" << std::endl;
+            fail("no audio part in synth result");
             return;
         }
         sink.write(audio.data(), audio.size());
     } catch (const std::exception& e) {
         LOG(ERROR, "acestep-server") << "audio_generations failed: " << e.what() << std::endl;
+        fail(e.what());
     }
 }
 

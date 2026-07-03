@@ -9,14 +9,14 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-overview -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
-| `acestep` | ACE-Step | yes | no | rocm, vulkan |
+| `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thinksound` | ThinkSound | yes | no | rocm, vulkan |
+| `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
@@ -28,6 +28,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|---------|----|-----------------|
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu |
+| `acestep` | cuda | linux, windows | nvidia_gpu |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `kokoro` | metal | macos | metal |
@@ -48,6 +49,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | metal | macos | metal |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu |
+| `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
