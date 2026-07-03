@@ -14,7 +14,7 @@
 
 use crate::events;
 use serde::Deserialize;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
@@ -22,6 +22,20 @@ use tokio::net::UdpSocket;
 use tokio::time::Duration;
 
 pub(crate) const BEACON_PORT: u16 = 13305;
+
+async fn create_reusable_socket(addr: SocketAddr) -> Result<UdpSocket, std::io::Error> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        None,
+    )?;
+    socket.set_reuse_address(true)?;
+    socket.set_broadcast(true)?;
+    let socket_addr: socket2::SockAddr = addr.into();
+    socket.bind(&socket_addr)?;
+    socket.set_nonblocking(true)?;
+    Ok(tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?)
+}
 
 static CACHED_SERVER_PORT: AtomicU16 = AtomicU16::new(BEACON_PORT);
 
@@ -90,7 +104,7 @@ pub(crate) async fn run_beacon_listener(app: AppHandle) {
             continue;
         }
 
-        let socket = match UdpSocket::bind(("0.0.0.0", BEACON_PORT)).await {
+        let socket = match create_reusable_socket(SocketAddr::from((Ipv4Addr::UNSPECIFIED, BEACON_PORT))).await {
             Ok(s) => s,
             Err(err) => {
                 log::error!("Beacon listener bind failed: {err}, retrying in 10s");
@@ -98,7 +112,6 @@ pub(crate) async fn run_beacon_listener(app: AppHandle) {
                 continue;
             }
         };
-        let _ = socket.set_broadcast(true);
         log::info!("Beacon listener started on 0.0.0.0:{BEACON_PORT}");
 
         let mut buf = vec![0u8; 2048];

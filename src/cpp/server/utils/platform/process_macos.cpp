@@ -606,6 +606,10 @@ int MacOSProcessPlatform::find_free_port(int start_port) {
             continue;
         }
 
+        // Set SO_REUSEADDR to avoid falsely reporting TIME_WAIT ports as "in use".
+        int opt = 1;
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
         sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);

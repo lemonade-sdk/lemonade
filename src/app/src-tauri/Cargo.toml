@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["full"] }
 dirs = "5"
 url = "2"
 log = "0.4"
+socket2 = "0.5"
 env_logger = "0.11"
 
 # webview_shim.rs hooks the platform-native webview to:

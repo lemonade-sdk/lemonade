@@ -638,6 +638,10 @@ public:
                 continue;
             }
 
+            // Set SO_REUSEADDR to avoid falsely reporting TIME_WAIT ports as "in use".
+            int opt = 1;
+            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+
             sockaddr_in addr;
             addr.sin_family = AF_INET;
             addr.sin_port = htons(port);

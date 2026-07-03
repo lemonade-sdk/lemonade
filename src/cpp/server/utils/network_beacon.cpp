@@ -62,6 +62,16 @@ void NetworkBeacon::createSocket() {
     if (_socket == INVALID_SOCKET_NB) {
         throw std::runtime_error("Could not create socket");
     }
+
+    // Set SO_REUSEADDR so the broadcast socket can rebind after TIME_WAIT
+    // when the server is restarted.
+#ifdef _WIN32
+    int opt = 1;
+    setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+    int opt = 1;
+    setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
 }
 
 std::string NetworkBeacon::getLocalHostname() {
