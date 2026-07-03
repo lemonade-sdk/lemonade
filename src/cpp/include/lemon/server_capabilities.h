@@ -81,6 +81,8 @@ class IModel3DServer : public virtual ICapability {
 public:
     virtual ~IModel3DServer() = default;
     virtual void model_3d_generations(const json& request, httplib::DataSink& sink) = 0;
+    // response_format values the backend can natively produce.
+    virtual std::vector<std::string> supported_model_formats() const { return {"glb"}; }
 };
 
 class ISlotsServer : public virtual ICapability {

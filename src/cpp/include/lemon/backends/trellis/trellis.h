@@ -18,10 +18,14 @@ inline const BackendDescriptor descriptor = {
     /*selectable_backend*/ true,
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
-    /*options*/ {},
+    /*options*/ {
+        {"trellis_backend", "--trellis", "", "BACKEND",
+         "Trellis backend to use", "3D Generation Options"},
+    },
     /*support*/ {
-        {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},
+        {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
+        {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
     },
     /*default_labels*/  {"3d"},
     /*required_checkpoints*/ {"main"},
@@ -35,7 +39,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"vulkan", "rocm"},
+    /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
 };
 

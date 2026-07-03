@@ -17,7 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
-| `trellis` | TRELLIS.2 | yes | no | rocm, vulkan |
+| `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
@@ -51,8 +51,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | rocm | linux, windows | amd_gpu |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | linux, windows | amd_gpu |
+| `trellis` | cuda | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
@@ -103,6 +104,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
+
+#### `trellis` — TRELLIS.2
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 
 #### `vllm` — vLLM ROCm (experimental)
 
@@ -346,7 +353,7 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `TRELLIS-3D` | 5.0 | 3d |
+| `TRELLIS-3D` | 15.4 | 3d |
 
 #### `vllm` — vLLM ROCm (experimental) (7 models)
 

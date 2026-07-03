@@ -111,8 +111,15 @@ export interface AceStepOptions {
   saveOptions: BooleanOption;
 }
 
+export interface TrellisOptions {
+  recipe: 'trellis';
+  trellisBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -304,6 +311,15 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     isBackendOption: true,
     backendRecipe: 'acestep',
   },
+  // Trellis 3D backend
+  trellisBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'Trellis backend to use',
+    isBackendOption: true,
+    backendRecipe: 'trellis',
+  },
 
   // Common option - save settings
   saveOptions: {
@@ -326,7 +342,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -342,6 +358,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
   'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
+  'trellis': ['trellisBackend', 'pinned', 'saveOptions'],
 };
 
 /**
@@ -376,6 +393,7 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   sdcppBackend: 'sd-cpp_backend',
   thinksoundBackend: 'thinksound_backend',
   acestepBackend: 'acestep_backend',
+  trellisBackend: 'trellis_backend',
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',

@@ -3316,6 +3316,27 @@ void Server::handle_3d_generations(const httplib::Request& req, httplib::Respons
             return;
         }
 
+        std::string response_format = "glb";
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        const auto supported_formats = router_->model_3d_supported_formats(requested_model);
+        const bool format_supported = std::find(supported_formats.begin(), supported_formats.end(),
+                                                response_format) != supported_formats.end();
+        // TODO: convert from a natively supported format instead of rejecting.
+        if (!supported_formats.empty() && !format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+
         LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
 
         serve_media_or_error(res, "model/gltf-binary", [this, request_json](httplib::DataSink& sink) {

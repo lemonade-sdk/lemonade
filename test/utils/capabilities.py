@@ -203,6 +203,17 @@ CAPABILITIES = {
             },
         },
     },
+    "model3d": {
+        "trellis": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "TRELLIS-3D",
+            },
+        },
+    },
     "omni": {
         # Omni "collection" models run a server-side tool-calling loop. The
         # wrapped server here is the collection's chat (planner) component,

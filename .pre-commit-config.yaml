@@ -7,6 +7,9 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        # Allow vendored prebuilt web components (e.g. the model-viewer bundle
+        # behind the 3D preview), which are necessarily larger than 500 KB.
+        exclude: ^src/app/src/renderer/vendor/
 
   - repo: https://github.com/psf/black
     rev: 26.1.0

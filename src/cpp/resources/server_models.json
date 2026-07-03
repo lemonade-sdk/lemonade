@@ -1654,7 +1654,7 @@
         "labels": [
             "3d"
         ],
-        "size": 5.0
+        "size": 15.4
     },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
