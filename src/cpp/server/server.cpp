@@ -722,6 +722,49 @@ void Server::setup_routes(httplib::Server &web_server) {
 
 
 
+    // Helper for endpoints that intentionally follow the same four public API
+    // prefixes used by the rest of the server: /api/v0, /api/v1, /v0 and /v1.
+    auto register_public_api_paths = [&web_server](
+        const std::string& endpoint,
+        const std::function<void(const std::string&)>& register_one) {
+        const char* prefixes[] = {"/api/v0/", "/api/v1/", "/v0/", "/v1/"};
+        for (const char* prefix : prefixes) {
+            register_one(std::string(prefix) + endpoint);
+        }
+    };
+
+    auto register_post_only = [&web_server, &register_public_api_paths](
+        const std::string& endpoint,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        register_public_api_paths(endpoint, [&](const std::string& path) {
+            web_server.Post(path, handler);
+        });
+    };
+
+    auto register_get_regex = [&web_server, &register_public_api_paths](
+        const std::string& endpoint_regex,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        register_public_api_paths(endpoint_regex, [&](const std::string& path) {
+            web_server.Get(path, handler);
+        });
+    };
+
+    auto register_put_regex = [&web_server, &register_public_api_paths](
+        const std::string& endpoint_regex,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        register_public_api_paths(endpoint_regex, [&](const std::string& path) {
+            web_server.Put(path, handler);
+        });
+    };
+
+    auto register_delete_regex = [&web_server, &register_public_api_paths](
+        const std::string& endpoint_regex,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        register_public_api_paths(endpoint_regex, [&](const std::string& path) {
+            web_server.Delete(path, handler);
+        });
+    };
+
     // Presets are public profile metadata, stored on the server so the desktop
     // UI, web UI, CLI and automation clients can share the same named profiles.
     // They intentionally do not live in recipe_options because profiles are
@@ -733,31 +776,28 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     // Do not use register_post("presets") here: that helper also installs a
     // GET 405 handler, which would collide with GET /presets above.
-    web_server.Post("/api/v0/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Post("/api/v1/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Post("/v0/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Post("/v1/presets", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
+    register_post_only("presets", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_preset_upsert(req, res);
+    });
     register_get("presets/export", [this](const httplib::Request& req, httplib::Response& res) {
         handle_presets_export(req, res);
     });
-    // Register import manually too so no generated GET 405 route competes with
-    // the /presets/{id} regex for the reserved id-like segment "import".
-    web_server.Post("/api/v0/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
-    web_server.Post("/api/v1/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
-    web_server.Post("/v0/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
-    web_server.Post("/v1/presets/import", [this](const httplib::Request& req, httplib::Response& res) { handle_presets_import(req, res); });
-    web_server.Get(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
-    web_server.Get(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
-    web_server.Get(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
-    web_server.Get(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_get(req, res); });
-    web_server.Put(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Put(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Put(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Put(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_upsert(req, res); });
-    web_server.Delete(R"(/api/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
-    web_server.Delete(R"(/api/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
-    web_server.Delete(R"(/v0/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
-    web_server.Delete(R"(/v1/presets/([A-Za-z0-9._:-]+))", [this](const httplib::Request& req, httplib::Response& res) { handle_preset_delete(req, res); });
+    // Register import without GET 405 routes so the reserved id-like segment
+    // "import" cannot compete with the /presets/{id} regex.
+    register_post_only("presets/import", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_presets_import(req, res);
+    });
+
+    const std::string preset_id_route = R"(presets/([A-Za-z0-9._:-]+))";
+    register_get_regex(preset_id_route, [this](const httplib::Request& req, httplib::Response& res) {
+        handle_preset_get(req, res);
+    });
+    register_put_regex(preset_id_route, [this](const httplib::Request& req, httplib::Response& res) {
+        handle_preset_upsert(req, res);
+    });
+    register_delete_regex(preset_id_route, [this](const httplib::Request& req, httplib::Response& res) {
+        handle_preset_delete(req, res);
+    });
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);

@@ -161,7 +161,7 @@ json PresetStore::builtin_presets() {
         make_preset(
             "s-quick-chat", "Quick Chat",
             "Small context, tight sampling. Snappy responses for quick interactions.",
-            json::array({"chat"}), {{"ctx_size", 4048}},
+            json::array({"chat"}), {{"ctx_size", 4096}},
             {{"temperature", 0.60}, {"top_p", 0.80}, {"top_k", 40}, {"repeat_penalty", 1.05}},
             "llamacpp",
             "Be brief and responsive. Answer the user's direct request with minimal setup.",
