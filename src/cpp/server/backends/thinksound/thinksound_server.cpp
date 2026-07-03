@@ -43,17 +43,6 @@ ThinkSoundServer::~ThinkSoundServer() {
     unload();
 }
 
-std::string ThinkSoundServer::backend_variant() const {
-    if (auto* cfg = RuntimeConfig::global()) {
-        const std::string section = RuntimeConfig::recipe_to_config_section(thinksound::spec()->recipe);
-        const std::string b = cfg->backend_string(section, "backend");
-        if (!b.empty() && b != "auto") {
-            return b;
-        }
-    }
-    return "vulkan";
-}
-
 std::string ThinkSoundServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = thinksound::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -68,7 +57,6 @@ void ThinkSoundServer::load(const std::string& model_name,
                             const ModelInfo& model_info,
                             const RecipeOptions& options,
                             bool do_not_upgrade) {
-    (void)options;
     (void)do_not_upgrade;
     LOG(INFO, "thinksound-server") << "Loading model: " << model_name << std::endl;
 
@@ -77,7 +65,12 @@ void ThinkSoundServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
-    const std::string backend = backend_variant();
+    std::string backend = options.get_option("thinksound_backend");
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("thinksound");
+        backend = supported.backends.empty() ? "vulkan" : supported.backends[0];
+    }
+    RuntimeConfig::validate_backend_choice("thinksound", backend);
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();

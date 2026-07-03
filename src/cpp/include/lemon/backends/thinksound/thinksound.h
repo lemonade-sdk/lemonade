@@ -18,7 +18,10 @@ inline const BackendDescriptor descriptor = {
     /*selectable_backend*/ true,
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
-    /*options*/ {},
+    /*options*/ {
+        {"thinksound_backend", "--thinksound", "", "BACKEND",
+         "ThinkSound backend to use", "Audio Generation Options"},
+    },
     /*support*/ {
         {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},

@@ -32,7 +32,6 @@ public:
     void audio_generations(const json& request, httplib::DataSink& sink) override;
 
 private:
-    std::string backend_variant() const;
     std::string resolve_binary_path(const std::string& backend);
 };
 

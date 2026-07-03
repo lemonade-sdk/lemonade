@@ -16,6 +16,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
+| `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
@@ -686,6 +687,45 @@ Error response (model not found):
 In case of an error, the status will be `error` and the message will contain the error message.
 
 
+
+## `POST /v1/audio/generations`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Audio Generation API. You provide a text prompt and receive a generated audio clip. The loaded model decides the kind of audio: music with ACE-Step models (e.g. `ACE-Step-Music`), sound effects with ThinkSound models (e.g. `ThinkSound-SFX`).
+
+This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover speech and transcription only), so it is a Lemonade-specific extension.
+
+> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from seconds (short sound effects) to minutes (full-length music) depending on duration and hardware.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`). |
+| `prompt` | Yes | Text description of the music or sound effect to generate. |
+| `duration` | No | Length of the clip in seconds. Defaults to the backend's native default. |
+| `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. |
+| `cfg` | No | Classifier-free guidance strength (ThinkSound only). |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `wav`); other values are rejected with `400 Bad Request`. Default: `wav`. |
+
+### Response
+
+On success the raw audio bytes are returned with the matching content type (`audio/wav`). On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ThinkSound-SFX",
+        "prompt": "glass shattering on a stone floor",
+        "duration": 5,
+        "seed": 42
+      }' \
+  --output clip.wav
+```
 
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

@@ -309,7 +309,7 @@ def _build_runtime_config(additional_server_args=None):
 # trigger a TheRock runtime download on a cold cache (see will_install_therock in
 # backend_manager.cpp). Other rocm consumers (vllm, llamacpp rocm-nightly) bundle
 # their own runtime and do not need this.
-_THEROCK_RECIPES = ("llamacpp", "sd-cpp")
+_THEROCK_RECIPES = ("llamacpp", "sd-cpp", "thinksound", "acestep")
 
 
 def ensure_rocm_runtime():

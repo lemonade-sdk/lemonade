@@ -61,6 +61,12 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Recipe options
 
 <!-- BEGIN GENERATED: backend-options -->
+#### `acestep` — ACE-Step
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -88,6 +94,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+
+#### `thinksound` — ThinkSound
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
 
 #### `vllm` — vLLM ROCm (experimental)
 

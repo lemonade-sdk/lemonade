@@ -64,17 +64,6 @@ AceStepServer::~AceStepServer() {
     unload();
 }
 
-std::string AceStepServer::backend_variant() const {
-    if (auto* cfg = RuntimeConfig::global()) {
-        const std::string section = RuntimeConfig::recipe_to_config_section(acestep::spec()->recipe);
-        const std::string b = cfg->backend_string(section, "backend");
-        if (!b.empty() && b != "auto") {
-            return b;
-        }
-    }
-    return "vulkan";
-}
-
 std::string AceStepServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = acestep::spec();
     std::string external = BackendUtils::find_external_backend_binary(spec->recipe, backend);
@@ -89,7 +78,6 @@ void AceStepServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
                          bool do_not_upgrade) {
-    (void)options;
     (void)do_not_upgrade;
     LOG(INFO, "acestep-server") << "Loading model: " << model_name << std::endl;
 
@@ -98,7 +86,12 @@ void AceStepServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
-    const std::string backend = backend_variant();
+    std::string backend = options.get_option("acestep_backend");
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("acestep");
+        backend = supported.backends.empty() ? "vulkan" : supported.backends[0];
+    }
+    RuntimeConfig::validate_backend_choice("acestep", backend);
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();
