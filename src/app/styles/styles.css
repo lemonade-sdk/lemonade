@@ -7654,3 +7654,15 @@ input::-webkit-calendar-picker-indicator {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.audio-duration-label input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+    text-align: center;
+}
+
+.audio-duration-label input[type="number"]::-webkit-outer-spin-button,
+.audio-duration-label input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}

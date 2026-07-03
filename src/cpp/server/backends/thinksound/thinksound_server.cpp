@@ -11,8 +11,10 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -164,6 +166,28 @@ namespace {
 // Hugging Face snapshot directory (ts-server scans it via --dir).
 class ThinkSoundOps : public BackendOps {
 public:
+    // The repo also carries q8 variants of the dit/t5 networks, but ts-server
+    // loads the bf16 set by default; skip the redundant ~5 GB.
+    std::optional<std::vector<std::string>> select_checkpoint_files(
+        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
+        (void)main_variant;
+        static const std::vector<std::string> kWanted = {
+            "dit-bf16.gguf",
+            "t5-bf16.gguf",
+            "metaclip-text-f32.gguf",
+            "vae-f32.gguf",
+            "t5-tokenizer.gguf",
+            "clip-tokenizer.gguf",
+        };
+        std::vector<std::string> want;
+        for (const auto& f : kWanted) {
+            if (std::find(repo_files.begin(), repo_files.end(), f) != repo_files.end()) {
+                want.push_back(f);
+            }
+        }
+        return want;
+    }
+
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
         (void)info;

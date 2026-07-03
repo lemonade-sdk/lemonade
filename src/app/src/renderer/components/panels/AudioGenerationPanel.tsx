@@ -125,7 +125,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
                   value={duration}
                   onChange={(e) => setDuration(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
                   disabled={isBusy}
-                  style={{ width: '56px', marginLeft: '6px' }}
+                  style={{ width: '64px', marginLeft: '6px' }}
                 /> s
               </label>
             }

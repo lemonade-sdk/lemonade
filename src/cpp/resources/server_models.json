@@ -1636,7 +1636,7 @@
         "labels": [
             "audio-generation"
         ],
-        "size": 4.0
+        "size": 6.4
     },
     "ACE-Step-Music": {
         "checkpoint": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
@@ -1645,7 +1645,7 @@
         "labels": [
             "audio-generation"
         ],
-        "size": 7.7
+        "size": 10.5
     },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",

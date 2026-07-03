@@ -429,6 +429,28 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
 }
 
 
+// Replace the static registry size with the aggregate on-disk size once the
+// files exist, so directory-checkpoint models (whose repos can carry more than
+// the registry estimate) report what was actually downloaded.
+static void refresh_on_disk_size(ModelInfo& info) {
+    uintmax_t total_size = 0;
+    for (auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        total_size += resolved_path_size_bytes(path_from_utf8(path));
+    }
+    if (total_size == 0) {
+        return;
+    }
+    double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+    if (file_size_gb < 1.0) {
+        info.size = std::round(file_size_gb * 1000) / 1000;
+    } else if (file_size_gb < 10.0) {
+        info.size = std::round(file_size_gb * 100) / 100;
+    } else {
+        info.size = std::round(file_size_gb * 10) / 10;
+    }
+}
+
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
     ModelInfo info = get_model_info(model_name);
     std::vector<ModelFileInfo> files;
@@ -1668,6 +1690,9 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
+        if (info.downloaded) {
+            refresh_on_disk_size(info);
+        }
         models_cache_[name] = info;
     }
 
@@ -1812,23 +1837,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
-        // Calculate size in GB
-        uintmax_t total_size = 0;
-        for (auto& [type, path] : it->second.resolved_paths) {
-            (void)type;
-            total_size += resolved_path_size_bytes(path_from_utf8(path));
-        }
-        double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
-        if (file_size_gb < 1.0)
-        {
-            it->second.size = std::round(file_size_gb * 1000) / 1000;
-        } else if (file_size_gb < 10.0)
-        {
-            it->second.size = std::round(file_size_gb * 100) / 100;
-        } else
-        {
-            it->second.size = std::round(file_size_gb * 10) / 10;
-        }
+        refresh_on_disk_size(it->second);
 
         // Recompute downloaded status for any collections that
         // depend on this model, so the collection reflects component changes
