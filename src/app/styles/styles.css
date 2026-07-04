@@ -7642,7 +7642,7 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-primary);
     padding: 6px 8px;
     font-size: 13px;
-    width: 96px;
+    width: 64px;
 }
 
 .audio-duration-label input:focus {
