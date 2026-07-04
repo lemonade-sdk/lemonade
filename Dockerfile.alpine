@@ -61,6 +61,12 @@ WORKDIR /opt/lemonade
 RUN mkdir -p /run/lemonade && chmod 700 /run/lemonade
 ENV XDG_RUNTIME_DIR=/run/lemonade
 
+# musl backend assets (llama.cpp, whisper.cpp, stable-diffusion.cpp) are cut from
+# a fork until they land in lemonade-sdk/*. Point backend downloads at that fork
+# so the container works unpatched; override at build/run time once upstreamed.
+ARG LEMONADE_BACKEND_REPO_OWNER=clemperorpenguin
+ENV LEMONADE_BACKEND_REPO_OWNER=${LEMONADE_BACKEND_REPO_OWNER}
+
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources

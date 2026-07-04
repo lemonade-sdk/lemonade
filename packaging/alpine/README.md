@@ -35,3 +35,18 @@ Web UI: <http://localhost:13305/app>
 The service runs as the unprivileged `lemonade` user (state in
 `/var/lib/lemonade`). Env vars (`HF_TOKEN`, `LEMONADE_API_KEY`, …) go in
 `/etc/lemonade/conf.d/*.conf`, mirroring the systemd drop-in on glibc distros.
+
+## musl backend assets
+
+llama.cpp, whisper.cpp, and stable-diffusion.cpp publish musl (`-linux-musl-` /
+`-Linux-musl-`) release assets from a fork until they land in `lemonade-sdk/*`.
+Until then, point backend downloads at that fork:
+
+```sh
+export LEMONADE_BACKEND_REPO_OWNER=clemperorpenguin
+```
+
+Only `lemonade-sdk/*` repos are remapped; upstream repos (`ggml-org`, `leejet`)
+are untouched. Without this, `lemond` resolves `lemonade-sdk/*` musl assets that
+do not exist yet and the download 404s. Drop it in `/etc/lemonade/conf.d/*.conf`
+to make it persistent for the service.
