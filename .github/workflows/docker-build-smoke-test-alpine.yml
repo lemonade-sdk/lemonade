@@ -58,8 +58,10 @@ jobs:
         run: |
           # Regression guard: the lemonade/lemond binaries must be callable by
           # name via `docker exec` (i.e. on PATH), not just by absolute path.
-          docker exec lemonade-alpine-test sh -lc 'command -v lemonade && command -v lemond'
-          docker exec lemonade-alpine-test sh -lc 'lemonade status'
+          # Non-login shell so the container's ENV PATH (/opt/lemonade) is used;
+          # Alpine's /etc/profile hard-resets PATH and would hide the binaries.
+          docker exec lemonade-alpine-test sh -c 'command -v lemonade && command -v lemond'
+          docker exec lemonade-alpine-test sh -c 'lemonade status'
 
       - name: Load model
         run: |
