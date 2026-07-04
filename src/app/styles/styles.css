@@ -16,10 +16,6 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     overflow: hidden;
-    /* This app is dark-theme-only; without this, native form controls (number
-       spinner arrows, checkboxes, etc.) render with light-mode browser chrome
-       regardless of our custom colors. */
-    color-scheme: dark;
 }
 
 /* WebKit-friendly app-chrome selection reset.
@@ -7637,7 +7633,6 @@ input::-webkit-calendar-picker-indicator {
     margin-top: 4px;
 }
 
-/* Audio-generation duration input — match the themed .image-setting input. */
 .audio-duration-label input {
     -webkit-appearance: none;
     appearance: none;
@@ -7647,6 +7642,7 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-primary);
     padding: 6px 8px;
     font-size: 13px;
+    width: 96px;
 }
 
 .audio-duration-label input:focus {
