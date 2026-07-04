@@ -99,7 +99,13 @@ void OpenMossServer::load(const std::string& model_name,
         }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
-        std::string path = therock_lib.empty() ? exe_dir : (therock_lib + ";" + exe_dir);
+        // TheRock keeps its LLVM support DLLs (libomp140.x86_64.dll for
+        // OpenMP-enabled ggml builds) under lib/llvm/bin, a sibling of the
+        // main bin/ dir (therock_lib), not inside it.
+        std::string llvm_bin = therock_lib.empty() ? ""
+            : (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
+        std::string path = therock_lib.empty() ? exe_dir
+            : (therock_lib + ";" + llvm_bin + ";" + exe_dir);
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
