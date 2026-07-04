@@ -1,0 +1,93 @@
+name: Docker Build Smoke Test (Alpine/musl)
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile.alpine"
+      - ".dockerignore"
+      - "src/cpp/**"
+      - "include/**"
+      - "resources/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - "packaging/alpine/**"
+      - ".github/workflows/docker-build-smoke-test-alpine.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-smoke-test-alpine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Build Docker image
+        run: |
+          docker build -f Dockerfile.alpine -t lemonade-alpine:test .
+
+      - name: Run container
+        run: |
+          docker run -d \
+            --name lemonade-alpine-test \
+            -p 13305:13305 \
+            lemonade-alpine:test
+
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for Lemonade to start..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:13305/live > /dev/null; then
+              echo "Server is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not start in time"
+          docker logs lemonade-alpine-test
+          exit 1
+
+      - name: CLI on PATH regression check
+        run: |
+          # Regression guard: the lemonade/lemond binaries must be callable by
+          # name via `docker exec` (i.e. on PATH), not just by absolute path.
+          docker exec lemonade-alpine-test sh -lc 'command -v lemonade && command -v lemond'
+          docker exec lemonade-alpine-test sh -lc 'lemonade status'
+
+      - name: Load model
+        run: |
+          # Exercises the musl llama.cpp backend download path: on musl the
+          # backend asset is fetched from the fork release (LEMONADE_BACKEND_REPO_OWNER
+          # is baked into Dockerfile.alpine) and run under swrast Vulkan / CPU.
+          curl -X POST http://localhost:13305/api/v1/load \
+            -H "Content-Type: application/json" \
+            -d '{"model_name": "Qwen3-0.6B-GGUF"}'
+
+      - name: Chat completion smoke test
+        run: |
+          RESPONSE=$(curl -s http://localhost:13305/api/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "Qwen3-0.6B-GGUF",
+              "messages": [
+                { "role": "user", "content": "Hello, Lemonade!" }
+              ]
+            }')
+
+          echo "Response:"
+          echo "$RESPONSE"
+
+          echo "$RESPONSE" | grep -q '"choices"' || exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs lemonade-alpine-test || true
+          docker rm -f lemonade-alpine-test || true
