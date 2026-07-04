@@ -611,7 +611,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     // layer knows whether it saw the protocol-level [DONE] marker. It will treat
     // the same transport code as success after [DONE] and as backend failure
     // before [DONE]. Other CURL errors are still exceptional.
-    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR) {
         std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);

@@ -9,6 +9,61 @@
 
 namespace lemon {
 
+namespace {
+
+void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+    nlohmann::json usage;
+    if (chunk.contains("usage")) {
+        usage = chunk["usage"];
+    } else if (chunk.contains("response") && chunk["response"].is_object() && chunk["response"].contains("usage")) {
+        usage = chunk["response"]["usage"];
+    }
+
+    if (usage.is_object()) {
+        if (usage.contains("prompt_tokens")) {
+            telemetry.input_tokens = usage["prompt_tokens"].get<int>();
+        } else if (usage.contains("input_tokens")) {
+            telemetry.input_tokens = usage["input_tokens"].get<int>();
+        }
+        if (usage.contains("completion_tokens")) {
+            telemetry.output_tokens = usage["completion_tokens"].get<int>();
+        } else if (usage.contains("output_tokens")) {
+            telemetry.output_tokens = usage["output_tokens"].get<int>();
+        }
+        if (usage.contains("prefill_duration_ttft")) {
+            telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
+        }
+        if (usage.contains("decoding_speed_tps")) {
+            telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
+        }
+    }
+
+    nlohmann::json timings;
+    if (chunk.contains("timings")) {
+        timings = chunk["timings"];
+    } else if (chunk.contains("response") && chunk["response"].is_object() && chunk["response"].contains("timings")) {
+        timings = chunk["response"]["timings"];
+    }
+
+    if (timings.is_object()) {
+        if (timings.contains("prompt_n")) {
+            telemetry.input_tokens = timings["prompt_n"].get<int>();
+        }
+        if (timings.contains("predicted_n")) {
+            telemetry.output_tokens = timings["predicted_n"].get<int>();
+        }
+        if (timings.contains("prompt_ms")) {
+            telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
+        }
+        if (timings.contains("predicted_per_second")) {
+            telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
+        }
+    }
+}
+
+} // namespace
+
+
 void StreamingProxy::forward_sse_stream(
     const std::string& backend_url,
     const std::string& request_body,
@@ -35,41 +90,12 @@ void StreamingProxy::forward_sse_stream(
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
                 auto chunk = json::parse(json_str);
-                if (chunk.contains("usage")) {
-                    auto usage = chunk["usage"];
-                    if (usage.contains("prompt_tokens")) {
-                        telemetry.input_tokens = usage["prompt_tokens"].get<int>();
-                    }
-                    if (usage.contains("completion_tokens")) {
-                        telemetry.output_tokens = usage["completion_tokens"].get<int>();
-                    }
-                    if (usage.contains("prefill_duration_ttft")) {
-                        telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
-                    }
-                    if (usage.contains("decoding_speed_tps")) {
-                        telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
-                    }
-                }
-                if (chunk.contains("timings")) {
-                    auto timings = chunk["timings"];
-                    if (timings.contains("prompt_n")) {
-                        telemetry.input_tokens = timings["prompt_n"].get<int>();
-                    }
-                    if (timings.contains("predicted_n")) {
-                        telemetry.output_tokens = timings["predicted_n"].get<int>();
-                    }
-                    if (timings.contains("prompt_ms")) {
-                        telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
-                    }
-                    if (timings.contains("predicted_per_second")) {
-                        telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
-                    }
-                }
+                extract_telemetry_from_chunk(chunk, telemetry);
             } catch (...) {}
         }
     };
 
-    auto result = utils::HttpClient::post_stream(
+    utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token,
@@ -105,21 +131,32 @@ void StreamingProxy::forward_sse_stream(
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
+    if (result.curl_code != CURLE_OK) {
+        if (result.curl_code == CURLE_WRITE_ERROR) {
+            stream_error = true;
+            LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
+            telemetry.error_message = "Client disconnected during stream";
+        } else if (transport_interrupted) {
+            if (!has_done_marker) {
+                // This is the important crash path: HTTP headers may have been sent and
+                // some bytes may even have reached the client, but the SSE protocol never
+                // completed. Do not synthesize [DONE], because that hides backend crashes
+                // from the router and leaves stale loaded-model state behind.
+                throw std::runtime_error(
+                    "backend connection failed during SSE stream before DONE: CURL error: " +
+                    result.curl_error);
+            }
+        } else {
+            stream_error = true;
+            LOG(ERROR, "StreamingProxy") << "SSE stream failed: CURL error: " << result.curl_error << std::endl;
+            telemetry.error_message = "SSE stream failed: CURL error: " + result.curl_error;
+        }
+    }
+
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
         telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
-    }
-
-    if (transport_interrupted && !has_done_marker) {
-        // This is the important crash path: HTTP headers may have been sent and
-        // some bytes may even have reached the client, but the SSE protocol never
-        // completed. Do not synthesize [DONE], because that hides backend crashes
-        // from the router and leaves stale loaded-model state behind.
-        stream_error = true;
-        throw std::runtime_error(
-            "backend connection failed during SSE stream before DONE: CURL error: " +
-            result.curl_error);
     }
 
     if (!stream_error) {
@@ -176,7 +213,7 @@ void StreamingProxy::forward_byte_stream(
 
     bool stream_error = false;
 
-    auto result = utils::HttpClient::post_stream(
+    utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
         [&sink, &on_chunk](const char* data, size_t length) {
@@ -197,19 +234,25 @@ void StreamingProxy::forward_byte_stream(
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
+    if (result.curl_code != CURLE_OK) {
+        stream_error = true;
+        if (result.curl_code == CURLE_WRITE_ERROR) {
+            LOG(WARNING, "StreamingProxy") << "Client disconnected during byte stream (CURL error: " << result.curl_error << ")" << std::endl;
+        } else if (transport_interrupted) {
+            // Keep byte streams consistent with SSE: an interrupted transport is a
+            // backend failure, not a clean stream completion. The caller will mark
+            // the backend unavailable and reload after the current response unwinds.
+            throw std::runtime_error(
+                "backend connection failed during byte stream: CURL error: " +
+                result.curl_error);
+        } else {
+            LOG(ERROR, "StreamingProxy") << "Byte stream failed: CURL error: " << result.curl_error << std::endl;
+        }
+    }
+
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
-    }
-
-    if (transport_interrupted) {
-        // Keep byte streams consistent with SSE: an interrupted transport is a
-        // backend failure, not a clean stream completion. The caller will mark
-        // the backend unavailable and reload after the current response unwinds.
-        stream_error = true;
-        throw std::runtime_error(
-            "backend connection failed during byte stream: CURL error: " +
-            result.curl_error);
     }
 
     if (!stream_error) {
@@ -228,67 +271,30 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     json last_chunk_with_usage;
 
     while (std::getline(stream, line)) {
-        // Handle SSE format (data: ...)
         std::string json_str;
         if (line.find("data: ") == 0) {
-            json_str = line.substr(6); // Remove "data: " prefix
+            json_str = line.substr(6);
         } else if (line.find("ChatCompletionChunk: ") == 0) {
-            // FLM debug format
-            json_str = line.substr(21); // Remove "ChatCompletionChunk: " prefix
+            json_str = line.substr(21);
         }
 
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
                 auto chunk = json::parse(json_str);
-                // Look for usage or timings in the chunk
-                if (chunk.contains("usage") || chunk.contains("timings")) {
+                bool has_usage = chunk.contains("usage") || chunk.contains("timings");
+                if (!has_usage && chunk.contains("response") && chunk["response"].is_object()) {
+                    has_usage = chunk["response"].contains("usage") || chunk["response"].contains("timings");
+                }
+                if (has_usage) {
                     last_chunk_with_usage = chunk;
                 }
-            } catch (...) {
-                // Skip invalid JSON
-            }
+            } catch (...) {}
         }
     }
 
-    // Extract telemetry from the last chunk with usage data
     if (!last_chunk_with_usage.empty()) {
         try {
-            if (last_chunk_with_usage.contains("usage")) {
-                auto usage = last_chunk_with_usage["usage"];
-
-                if (usage.contains("prompt_tokens")) {
-                    telemetry.input_tokens = usage["prompt_tokens"].get<int>();
-                }
-                if (usage.contains("completion_tokens")) {
-                    telemetry.output_tokens = usage["completion_tokens"].get<int>();
-                }
-
-                // FLM format
-                if (usage.contains("prefill_duration_ttft")) {
-                    telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
-                }
-                if (usage.contains("decoding_speed_tps")) {
-                    telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
-                }
-            }
-
-            // Alternative format (timings)
-            if (last_chunk_with_usage.contains("timings")) {
-                auto timings = last_chunk_with_usage["timings"];
-
-                if (timings.contains("prompt_n")) {
-                    telemetry.input_tokens = timings["prompt_n"].get<int>();
-                }
-                if (timings.contains("predicted_n")) {
-                    telemetry.output_tokens = timings["predicted_n"].get<int>();
-                }
-                if (timings.contains("prompt_ms")) {
-                    telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
-                }
-                if (timings.contains("predicted_per_second")) {
-                    telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
-                }
-            }
+            extract_telemetry_from_chunk(last_chunk_with_usage, telemetry);
         } catch (const std::exception& e) {
             LOG(ERROR, "StreamingProxy") << "Error parsing telemetry: " << e.what() << std::endl;
         }
@@ -306,6 +312,35 @@ void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<v
             line.pop_back();
         }
         line_callback(line);
+    }
+}
+
+void StreamingProxy::accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text) {
+    if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+        auto choice = parsed["choices"][0];
+        if (choice.is_object() && choice.contains("delta")) {
+            auto delta = choice["delta"];
+            if (delta.is_object() && delta.contains("content") && delta["content"].is_string()) {
+                accumulated_text += delta["content"].get<std::string>();
+            }
+        }
+    }
+    if (parsed.contains("response") && parsed["response"].is_string()) {
+        accumulated_text += parsed["response"].get<std::string>();
+    }
+    // Supports Responses API type-restricted delta vs. backward compatible fallback.
+    if (parsed.contains("delta")) {
+        bool should_extract_delta = true;
+        if (parsed.contains("type")) {
+            should_extract_delta = (parsed["type"] == "response.output_text.delta");
+        }
+        if (should_extract_delta) {
+            if (parsed["delta"].is_string()) {
+                accumulated_text += parsed["delta"].get<std::string>();
+            } else if (parsed["delta"].is_object() && parsed["delta"].contains("text") && parsed["delta"]["text"].is_string()) {
+                accumulated_text += parsed["delta"]["text"].get<std::string>();
+            }
+        }
     }
 }
 

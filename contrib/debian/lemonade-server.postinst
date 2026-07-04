@@ -32,7 +32,7 @@ fi
 
 # #2125: migrate pre-fix upgrades — disable per-user lemond.service and stop
 # any still-running instance that conflicts with the system service.
-if [ "$1" = "configure" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "10.8.1~"; then
+if [ "$1" = "configure" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt "10.10.0~"; then
 	if command -v deb-systemd-helper > /dev/null 2>&1; then
 		deb-systemd-helper --user disable lemond.service > /dev/null 2>&1 || true
 	fi
