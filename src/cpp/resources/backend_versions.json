@@ -112,9 +112,9 @@
     "cpu": "moonshine0.0.62"
   },
   "thinksound": {
-    "vulkan": "v0.1.1",
-    "rocm-stable": "v0.1.1",
-    "cuda": "v0.1.1"
+    "vulkan": "v0.1.2",
+    "rocm-stable": "v0.1.2",
+    "cuda": "v0.1.2"
   },
   "acestep": {
     "vulkan": "v0.1.1",
