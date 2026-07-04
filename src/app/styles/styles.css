@@ -16,6 +16,10 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     overflow: hidden;
+    /* This app is dark-theme-only; without this, native form controls (number
+       spinner arrows, checkboxes, etc.) render with light-mode browser chrome
+       regardless of our custom colors. */
+    color-scheme: dark;
 }
 
 /* WebKit-friendly app-chrome selection reset.

@@ -3642,6 +3642,15 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     LOG(INFO, "ModelManager") << "Repository contains " << repo_files.size() << " files" << std::endl;
 
+    // Backends with a bespoke artifact layout (moonshine = a directory of
+    // files; thinksound = a curated subset that skips redundant quant
+    // variants) select their own download set. This is checked regardless of
+    // whether a GGUF variant was specified, so it also covers bare-repo
+    // checkpoints (main_variant empty) that would otherwise fall through to
+    // "download every file in the repo" below; nullopt = the default paths.
+    auto backend_files =
+        backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
+
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
         // Check if variant is a known non-GGUF file type (safetensors, pth, ckpt)
@@ -3652,11 +3661,6 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
-
-        // Backends with a bespoke artifact layout (moonshine = a directory of
-        // files) select their own download set; nullopt = the default paths.
-        auto backend_files =
-            backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3702,6 +3706,13 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
         }
+    } else if (backend_files) {
+        // Bare-repo checkpoint (no GGUF variant), but the backend still wants
+        // a curated subset instead of the entire repository.
+        files_to_download[main_repo_id] = std::move(*backend_files);
+        LOG(INFO, "ModelManager") << info.recipe << ": downloading "
+                                  << files_to_download[main_repo_id].size()
+                                  << " files (bare repo checkpoint)" << std::endl;
     } else {
         // Non-GGUF model (ONNX, etc.): Download all files in repository
         files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
