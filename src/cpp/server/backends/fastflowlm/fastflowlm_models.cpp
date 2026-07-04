@@ -599,9 +599,22 @@ std::string find_flm_executable() {
     }
     return "";
 #else
-    // Walk PATH directly — minimal Fedora/openSUSE containers do not ship `which`.
-    if (!lemon::utils::find_executable_in_path("flm").empty()) {
-        return "flm";
+    // PATH first (system package priority), then cached install dir (portable asset).
+    std::string path = lemon::utils::find_executable_in_path("flm");
+    if (!path.empty()) {
+        return path;
+    }
+    std::string install_dir =
+        (fs::path(lemon::utils::get_downloaded_bin_dir()) / "flm" / "npu")
+            .make_preferred().string();
+    if (fs::exists(install_dir)) {
+        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+            if (entry.is_regular_file() && entry.path().filename().string() == "flm") {
+                if (lemon::utils::is_safe_executable_path(entry.path().string())) {
+                    return entry.path().string();
+                }
+            }
+        }
     }
     return "";
 #endif
