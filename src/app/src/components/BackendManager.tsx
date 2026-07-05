@@ -260,7 +260,16 @@ function canShowUninstall(info: BackendInfo): boolean {
 
 /* ── Component ─────────────────────────────────────────────── */
 
-const BackendManager: React.FC = () => {
+interface BackendManagerProps {
+  /**
+   * The app keeps views mounted and hides inactive views with CSS. Refresh
+   * system-info when the Backends view becomes active so status changes made
+   * elsewhere are visible without a full page reload.
+   */
+  isActive?: boolean;
+}
+
+const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -271,6 +280,11 @@ const BackendManager: React.FC = () => {
   const [backendPresets, setBackendPresets] = useState<Record<string, string>>(loadBackendApplied);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
+  const sysInfoRef = useRef<SystemInfoData | null>(null);
+
+  useEffect(() => {
+    sysInfoRef.current = sysInfo;
+  }, [sysInfo]);
 
   useEffect(() => {
     const reloadPresetState = () => {
@@ -297,9 +311,14 @@ const BackendManager: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { void fetchInfo(); }, [fetchInfo]);
+  useEffect(() => {
+    if (!isActive) return;
+    void fetchInfo(!sysInfoRef.current);
+  }, [fetchInfo, isActive]);
 
-  useEffect(() => api.onModelsChanged(() => { void fetchInfo(false); }), [fetchInfo]);
+  useEffect(() => api.onModelsChanged(() => {
+    if (isActive) void fetchInfo(false);
+  }), [fetchInfo, isActive]);
 
   useEffect(() => downloadStore.subscribe((items) => {
     setDownloadItems(items);
@@ -310,9 +329,9 @@ const BackendManager: React.FC = () => {
       const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
       if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
       terminalBackendRefreshRef.current.add(refreshKey);
-      void fetchInfo(false);
+      if (isActive) void fetchInfo(false);
     }
-  }), [fetchInfo]);
+  }), [fetchInfo, isActive]);
 
   /* ── Actions ──────────────────────────────────────────── */
 

@@ -907,6 +907,62 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
   });
 });
 
+// ─── Backend Manager — refresh hidden mounted view on activation ─────────────
+
+test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () => {
+  function backendInfo(state: 'installed' | 'installable') {
+    return {
+      lemonade_version: '1.0.0',
+      os_version: 'Test OS',
+      devices: { cpu: { name: 'Test CPU', available: true } },
+      recipes: {
+        llamacpp: {
+          default_backend: 'cpu',
+          backends: {
+            vulkan: {
+              state,
+              version: 'b1234',
+              message: '',
+              action: '',
+              can_uninstall: state === 'installed',
+            },
+          },
+        },
+      },
+    };
+  }
+
+  test('A58 — opening Backends refreshes backend status from system-info', async ({ page }) => {
+    let currentSystemInfo = backendInfo('installable');
+
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lemonade_current_view', 'chat'); } catch {}
+    });
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/models**', route =>
+      route.fulfill({ json: { data: [] } }),
+    );
+    await page.route('**/api/v1/system-info**', route =>
+      route.fulfill({ json: currentSystemInfo }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // The Backends view is mounted but hidden in App.tsx. Before navigating to
+    // it, simulate a backend status change that should be visible immediately
+    // after opening the view without a browser reload.
+    currentSystemInfo = backendInfo('installed');
+
+    await navigateToView(page, 'Backends');
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] .cell__badge')).toHaveText('Installed');
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] button.cell__swap--danger')).toBeVisible();
+  });
+});
+
 // ─── #2432 — Backend preset rail removal + global Presets backend assignment ──
 
 test.describe('Accessibility — backend preset rail removal (#2432)', () => {
