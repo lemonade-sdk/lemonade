@@ -622,11 +622,12 @@ void Router::load_model(const std::string& model_name,
                 lock.lock();
 
                 retry_server->set_state(ModelState::READY);
+                const auto retry_duration_ms = retry_server->get_load_duration_ms();
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
