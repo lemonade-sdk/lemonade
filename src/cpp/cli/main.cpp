@@ -2,11 +2,15 @@
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
+#include "lemon_cli/bench.h"
+#include "lemon_cli/chat_repl.h"
 #include <lemon_cli/agent_config_file.h>
+#include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
+#include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -23,11 +27,14 @@
 #include <functional>
 #include <map>
 #include <vector>
+#include <optional>
 
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <shellapi.h>
+    #include <io.h>
+    #include <windows.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -36,6 +43,7 @@
     #include <sys/wait.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <termios.h>
 #endif
 
 #include "lemon/utils/aixlog.hpp"
@@ -54,7 +62,8 @@ static const std::vector<std::string> VALID_LABELS = {
 static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
-    "opencode"
+    "opencode",
+    "pi"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -120,16 +129,14 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
     return false;
 }
 
-static void hide_option(CLI::Option* option) {
-    if (option != nullptr) {
-        option->group("");
-    }
-}
-
-static void hide_new_options(CLI::App& app, size_t start_index) {
-    std::vector<CLI::Option*> options = app.get_options();
-    for (size_t i = start_index; i < options.size(); ++i) {
-        hide_option(options[i]);
+static void hide_all_options_except_help(CLI::App& app) {
+    for (auto* opt : app.get_options()) {
+        if (opt != nullptr) {
+            const std::string name = opt->get_name();
+            if (name != "--help" && name != "--help-all" && name != "-h") {
+                opt->group("");
+            }
+        }
     }
 }
 
@@ -143,9 +150,12 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
+    std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
+    bool backends_showall = false;
     bool force = false;
     std::string output_file;
     bool downloaded = false;
@@ -160,7 +170,64 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+
+    // Cloud provider commands
+    std::string cloud_provider;
+    std::string cloud_base_url;
+    std::string cloud_api_key;
+    bool cloud_allow_insecure_http = false;
+
+    // Telemetry toggle options
+    std::string telemetry_status;
+
+    // Chat REPL options
+    bool chat_cli = false;
+    bool chat_no_stream = false;
+    std::string chat_system_prompt;
+
+    // Bench command options
+    lemon_cli::BenchCliOptions bench;
 };
+
+// Read a line from stdin with terminal echo disabled, so secrets (API keys,
+// passwords) don't linger in scrollback / screen-share. Returns the typed
+// line (without trailing newline). Falls back to plain getline if the
+// terminal can't be put into no-echo mode — better to keep the prompt
+// usable than to refuse it.
+static std::string read_secret_line() {
+    std::string out;
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    bool restored = false;
+    if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
+        SetConsoleMode(h, mode & ~ENABLE_ECHO_INPUT);
+        restored = true;
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        SetConsoleMode(h, mode);
+    }
+#else
+    struct termios old_tio{}, new_tio{};
+    bool restored = false;
+    if (tcgetattr(fileno(stdin), &old_tio) == 0) {
+        new_tio = old_tio;
+        new_tio.c_lflag &= ~ECHO;
+        if (tcsetattr(fileno(stdin), TCSANOW, &new_tio) == 0) {
+            restored = true;
+        }
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        tcsetattr(fileno(stdin), TCSANOW, &old_tio);
+    }
+#endif
+    // Echo a newline so the cursor advances — the user's Enter was swallowed
+    // along with the rest of the input when echo was off.
+    std::cout << std::endl;
+    return out;
+}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -275,19 +342,34 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
+    if (!config.components.empty()) {
+        model_data["components"] = config.components;
+    }
+
     if (!config.labels.empty()) {
         model_data["labels"] = config.labels;
     }
 
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static bool has_manual_pull_options(const CliConfig& config) {
-    return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
+    return !config.checkpoints.empty() || !config.recipe.empty() ||
+           !config.labels.empty() || !config.components.empty();
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
+        if (lemon::is_collection_recipe(config.recipe)) {
+            if (config.components.empty()) {
+                std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
+                          << std::endl;
+                std::cerr << "       See 'lemonade pull --help'." << std::endl;
+                return 1;
+            }
+            return handle_manual_pull_command(client, config);
+        }
         if (config.checkpoints.empty()) {
             std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
                       << std::endl;
@@ -314,7 +396,8 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -356,13 +439,37 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
         return 1;
     }
 
-    // Check if model is downloaded
-    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
-        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
-        return 1;
+    // Pre-emptive capacity check
+    std::vector<std::string> labels;
+    if (model_info.contains("labels") && model_info["labels"].is_array()) {
+        for (const auto& label : model_info["labels"]) {
+            labels.push_back(label.get<std::string>());
+        }
+    }
+    lemon::ModelType model_type = lemon::get_model_type_from_labels(labels);
+    std::string type_str = lemon::model_type_to_string(model_type);
+
+    try {
+        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        auto health_json = nlohmann::json::parse(health_str);
+        if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
+            auto max_models = health_json["max_models"];
+            auto pinned_models = health_json["pinned_models"];
+            int max = max_models.value(type_str, -1);
+            int pinned_count = pinned_models.value(type_str, 0);
+            if (max != -1 && pinned_count >= max) {
+                std::cerr << "Warning: All slots (" << max << ") for model type '" << type_str
+                          << "' are occupied by pinned models. Loading will fail." << std::endl;
+            }
+        }
+    } catch (...) {
+        // Ignore errors checking health status pre-emptively
     }
 
-    bool is_downloaded = model_info["downloaded"].get<bool>();
+    bool is_downloaded = false;
+    if (model_info.contains("downloaded") && model_info["downloaded"].is_boolean()) {
+        is_downloaded = model_info["downloaded"].get<bool>();
+    }
 
     if (!is_downloaded) {
         std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
@@ -377,7 +484,15 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
+}
+
+static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    lemon_cli::ChatOptions options;
+    options.initial_model = config.model;
+    options.system_prompt = config.chat_system_prompt;
+    options.stream = !config.chat_no_stream;
+    return lemon_cli::run_chat_repl(client, options);
 }
 
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
@@ -388,6 +503,10 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
     int load_result = handle_load_command(client, config);
     if (load_result != 0) {
         return load_result;
+    }
+
+    if (config.chat_cli) {
+        return handle_chat_command(client, config);
     }
 
     open_url(config.host, config.port);
@@ -418,7 +537,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         return result;
     }
 
-    return client.list_recipes();
+    return client.list_recipes(config.backends_showall);
 }
 
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
@@ -495,6 +614,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     const lemon_cli::AgentConfigProfile* profile = nullptr;
     if (config.agent == "opencode") {
         profile = &lemon_cli::opencode_profile();
+    } else if (config.agent == "pi") {
+        profile = &lemon_cli::pi_profile();
     }
 
     if (profile == nullptr) {
@@ -516,6 +637,18 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
+    }
+
+    if (config.agent == "pi") {
+        // Only write settings.json if pi doesn't already have a default provider/model.
+        // This preserves existing user configuration while providing seamless first-time UX.
+        if (!lemon_cli::pi_has_default_config()) {
+            std::string settings_error;
+            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
+                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        }
     }
 }
 
@@ -890,17 +1023,40 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::string key = arg.substr(0, eq_pos);
         std::string value = arg.substr(eq_pos + 1);
 
-        size_t dot_pos = key.find('.');
-        if (dot_pos != std::string::npos) {
-            std::string section = key.substr(0, dot_pos);
-            std::string field = normalize_key(key.substr(dot_pos + 1));
-
-            if (!updates.contains(section)) {
-                updates[section] = nlohmann::json::object();
+        std::vector<std::string> path;
+        size_t last_pos = 0;
+        while (true) {
+            size_t next_dot = key.find('.', last_pos);
+            if (next_dot == std::string::npos) {
+                std::string part = key.substr(last_pos);
+                if (!part.empty()) {
+                    path.push_back(normalize_key(part));
+                }
+                break;
             }
-            updates[section][field] = parse_typed_value(value);
-        } else {
-            updates[normalize_key(key)] = parse_typed_value(value);
+            std::string part = key.substr(last_pos, next_dot - last_pos);
+            if (!part.empty()) {
+                path.push_back(normalize_key(part));
+            }
+            last_pos = next_dot + 1;
+        }
+
+        if (path.empty()) {
+            std::cerr << "Error: empty key in '" << arg << "'" << std::endl;
+            return 1;
+        }
+
+        nlohmann::json* current = &updates;
+        for (size_t i = 0; i < path.size(); ++i) {
+            const std::string& k = path[i];
+            if (i == path.size() - 1) {
+                (*current)[k] = parse_typed_value(value);
+            } else {
+                if (!current->contains(k) || !(*current)[k].is_object()) {
+                    (*current)[k] = nlohmann::json::object();
+                }
+                current = &((*current)[k]);
+            }
         }
     }
 
@@ -1056,16 +1212,23 @@ int main(int argc, char* argv[]) {
     // Quick start commands
     CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+    CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
-    CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
     backends_cmd->alias("recipes");
+    backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+
+    CLI::App* telemetry_cmd = app.add_subcommand("telemetry", "Toggle server telemetry on or off")->group("Server");
+    telemetry_cmd->add_option("status", config.telemetry_status, "Telemetry status: 'on' or 'off'")
+        ->required()
+        ->check(CLI::IsMember({"on", "off"}));
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
@@ -1074,12 +1237,14 @@ int main(int argc, char* argv[]) {
     config_set_cmd->fallthrough(false);
 
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* pin_cmd = app.add_subcommand("pin", "Pin a loaded model to prevent eviction")->group("Model management");
+    CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
@@ -1095,6 +1260,35 @@ int main(int argc, char* argv[]) {
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
+    // Cloud provider commands. `cloud` is a subcommand group with install /
+    // uninstall / auth / list. Mirrors the `backends` group shape on purpose
+    // so muscle memory transfers.
+    CLI::App* cloud_cmd = app.add_subcommand("cloud", "Manage cloud OpenAI-compatible providers")->group("Server");
+    CLI::App* cloud_install_cmd = cloud_cmd->add_subcommand("install", "Register a cloud provider")->group("Subcommands");
+    cloud_install_cmd->add_option("provider", config.cloud_provider, "Provider name (e.g. fireworks, openai)")->required()->type_name("PROVIDER");
+    cloud_install_cmd->add_option("--base-url", config.cloud_base_url, "OpenAI-compat base URL (must include /v1)")->required()->type_name("URL");
+    cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
+        "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
+        ->type_name("KEY");
+    cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
+
+    CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
+    cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_auth_cmd = cloud_cmd->add_subcommand("auth", "Set a runtime API key (in-memory only)")->group("Subcommands");
+    cloud_auth_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+    cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
+        "API key. If omitted you'll be prompted (TTY only).")
+        ->type_name("KEY");
+    cloud_auth_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
+        "Explicitly allow sending this provider's API key over http://.");
+
+    CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
+    cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
+
     // Pull options
     pull_cmd->add_option("model", config.model,
         "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
@@ -1106,7 +1300,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1115,9 +1309,15 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->add_option("--components", config.components,
+        "Components for a user.* omni collection (use with --recipe collection.omni). "
+        "Components must already be registered (built-in or previously pulled user.* models).")
+        ->group("Manual Configuration Options")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
-        "  https://lemonade-server.ai/docs/server/custom-models/");
+        "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
@@ -1134,17 +1334,35 @@ int main(int argc, char* argv[]) {
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
+    static bool load_pinned_flag = false;
     load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
+    static bool run_pinned_flag = false;
     run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
+    run_cmd->add_flag("--chat-cli", config.chat_cli,
+        "After loading, open an interactive chat REPL in the terminal instead of the browser");
+
+    // Chat options
+    chat_cmd->add_option("model", config.model,
+        "Model to chat with (optional; uses currently loaded model if omitted)")->type_name("MODEL");
+    chat_cmd->add_option("--system", config.chat_system_prompt,
+        "System prompt to seed the conversation")->type_name("TEXT");
+    chat_cmd->add_flag("--no-stream", config.chat_no_stream,
+        "Disable streaming; print the full response when it is ready");
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
+
+    // Pin/unpin options
+    pin_cmd->add_option("model", config.model, "Model name to pin")->required()->type_name("MODEL");
+    unpin_cmd->add_option("model", config.model, "Model name to unpin")->required()->type_name("MODEL");
 
     // Export options
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
@@ -1164,12 +1382,9 @@ int main(int argc, char* argv[]) {
             ->default_val(config.agent_args);
     };
 
-    size_t launch_option_count = launch_cmd->get_options().size();
     add_common_launch_options(*launch_cmd);
-    hide_new_options(*launch_cmd, launch_option_count);
-    launch_option_count = launch_cmd->get_options().size();
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
-    hide_new_options(*launch_cmd, launch_option_count);
+    hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
     for (const std::string& agent_name : SUPPORTED_AGENTS) {
@@ -1194,6 +1409,9 @@ int main(int argc, char* argv[]) {
     // Cleanup cache options
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
+    // Bench command
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
+
     // Parse arguments
     try {
         app.parse(argc, argv);
@@ -1203,6 +1421,20 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         return app.exit(e);
+    }
+
+    if (load_cmd->count() > 0) {
+        if (load_cmd->count("--pinned") > 0) {
+            config.pinned = load_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    } else if (run_cmd->count() > 0) {
+        if (run_cmd->count("--pinned") > 0) {
+            config.pinned = run_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
     }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
@@ -1265,16 +1497,69 @@ int main(int argc, char* argv[]) {
         return client.delete_model(config.model);
     } else if (run_cmd->count() > 0) {
         return handle_run_command(client, config);
+    } else if (chat_cmd->count() > 0) {
+        return handle_chat_command(client, config);
     } else if (load_cmd->count() > 0) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (pin_cmd->count() > 0) {
+        return client.pin_model(config.model, true);
+    } else if (unpin_cmd->count() > 0) {
+        return client.pin_model(config.model, false);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
     } else if (backends_cmd->count() > 0) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);
+    } else if (cloud_cmd->count() > 0) {
+        if (cloud_install_cmd->count() > 0) {
+            return client.install_cloud_provider(config.cloud_provider,
+                                                  config.cloud_base_url,
+                                                  config.cloud_api_key,
+                                                  config.cloud_allow_insecure_http);
+        }
+        if (cloud_uninstall_cmd->count() > 0) {
+            return client.uninstall_cloud_provider(config.cloud_provider);
+        }
+        if (cloud_auth_cmd->count() > 0) {
+            // Interactive prompt only when the user didn't pass --api-key and
+            // stdin is a TTY. In non-interactive contexts (CI, pipes) refuse
+            // rather than silently hang on getline.
+            std::string key = config.cloud_api_key;
+            if (key.empty()) {
+#ifdef _WIN32
+                bool is_tty = _isatty(_fileno(stdin)) != 0;
+#else
+                bool is_tty = isatty(fileno(stdin)) != 0;
+#endif
+                if (!is_tty) {
+                    std::cerr << "Error: --api-key is required when stdin is not a TTY"
+                              << std::endl;
+                    return 1;
+                }
+                std::cout << "API key for " << config.cloud_provider
+                          << " (input hidden): ";
+                std::cout.flush();
+                key = read_secret_line();
+                if (key.empty()) {
+                    std::cerr << "Error: empty API key" << std::endl;
+                    return 1;
+                }
+            }
+            return client.cloud_auth(config.cloud_provider, key,
+                                     config.cloud_allow_insecure_http);
+        }
+        if (cloud_clear_cmd->count() > 0) {
+            return client.cloud_auth_clear(config.cloud_provider);
+        }
+        if (cloud_list_cmd->count() > 0) {
+            return client.cloud_list();
+        }
+        // No subcommand specified: print help.
+        std::cout << cloud_cmd->help() << std::endl;
+        return 0;
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
@@ -1282,6 +1567,23 @@ int main(int argc, char* argv[]) {
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
+    } else if (telemetry_cmd->count() > 0) {
+        bool enable = (config.telemetry_status == "on");
+        nlohmann::json body = {{"telemetry", {{"enabled", enable}}}};
+        try {
+            std::string res_str = client.make_request("/internal/set", "POST", body.dump(), "application/json");
+            auto json_res = nlohmann::json::parse(res_str);
+            if (json_res.contains("status") && json_res["status"] == "success") {
+                std::cout << "Telemetry successfully turned " << (enable ? "on" : "off") << "." << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Failed to toggle telemetry: " << res_str << std::endl;
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error toggling telemetry: " << e.what() << std::endl;
+            return 1;
+        }
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
             return handle_config_set(client, config_set_cmd->remaining());
@@ -1289,6 +1591,9 @@ int main(int argc, char* argv[]) {
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
+    } else if (bench_cmd->count() > 0) {
+        auto bench_config = lemon_cli::build_bench_config(config.output_file, config.bench);
+        return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

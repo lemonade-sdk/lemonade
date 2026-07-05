@@ -9,6 +9,12 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <memory>
+#include <vector>
+#include <mbedtls/md.h>
 
 namespace fs = std::filesystem;
 
@@ -16,6 +22,222 @@ namespace lemon {
 namespace utils {
 
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
+
+namespace {
+
+static std::string trim_copy(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n\"'");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n\"'");
+    return value.substr(first, last - first + 1);
+}
+
+static std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static size_t curl_off_to_size(curl_off_t value) {
+    return value > 0 ? static_cast<size_t>(value) : 0;
+}
+
+static bool is_hex_digest(const std::string& value, size_t expected_len) {
+    if (value.size() != expected_len) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isxdigit(c) != 0;
+    });
+}
+
+struct ExpectedHash {
+    std::string algorithm;
+    std::string value;
+
+    bool present() const { return !algorithm.empty() && !value.empty(); }
+};
+
+struct HashCheckResult {
+    bool ok = false;
+    std::string actual;
+    std::string error;
+};
+
+static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
+    std::string algorithm = lower_copy(trim_copy(options.expected_hash_algorithm));
+    std::string value = lower_copy(trim_copy(options.expected_hash));
+
+    const auto colon = value.find(':');
+    if (colon != std::string::npos) {
+        const std::string prefix = lower_copy(trim_copy(value.substr(0, colon)));
+        if (!prefix.empty() && algorithm.empty()) {
+            algorithm = prefix;
+        }
+        value = trim_copy(value.substr(colon + 1));
+    }
+
+    if (algorithm == "sha-256") algorithm = "sha256";
+    if (algorithm == "sha-1") algorithm = "sha1";
+    if (algorithm == "gitsha1" || algorithm == "git-sha") algorithm = "git-sha1";
+
+    if (!algorithm.empty() &&
+        algorithm != "sha256" &&
+        algorithm != "sha1" &&
+        algorithm != "git-sha1") {
+        return {};
+    }
+
+    if (algorithm.empty()) {
+        if (is_hex_digest(value, 64)) {
+            algorithm = "sha256";
+        } else if (is_hex_digest(value, 40)) {
+            algorithm = "sha1";
+        }
+    }
+
+    if ((algorithm == "sha256" && !is_hex_digest(value, 64)) ||
+        ((algorithm == "sha1" || algorithm == "git-sha1") && !is_hex_digest(value, 40))) {
+        return {};
+    }
+
+    return {algorithm, value};
+}
+
+
+static std::string bytes_to_hex(const unsigned char* bytes, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i) {
+        oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
+    }
+    return oss.str();
+}
+
+static HashCheckResult digest_file_with_library(const fs::path& path,
+                                                const ExpectedHash& expected,
+                                                const std::string& git_blob_prefix) {
+    HashCheckResult result;
+
+    const mbedtls_md_type_t md_type =
+        (expected.algorithm == "sha256") ? MBEDTLS_MD_SHA256 :
+        (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") ? MBEDTLS_MD_SHA1 :
+        MBEDTLS_MD_NONE;
+
+    if (md_type == MBEDTLS_MD_NONE) {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(md_type);
+    if (!md_info) {
+        result.error = "mbedTLS digest algorithm is unavailable: " + expected.algorithm;
+        return result;
+    }
+
+    mbedtls_md_context_t ctx;
+    mbedtls_md_init(&ctx);
+
+    auto cleanup = [&ctx]() {
+        mbedtls_md_free(&ctx);
+    };
+
+    if (mbedtls_md_setup(&ctx, md_info, 0) != 0 ||
+        mbedtls_md_starts(&ctx) != 0) {
+        cleanup();
+        result.error = "failed to initialize mbedTLS digest context";
+        return result;
+    }
+
+    if (!git_blob_prefix.empty() &&
+        mbedtls_md_update(&ctx,
+                          reinterpret_cast<const unsigned char*>(git_blob_prefix.data()),
+                          git_blob_prefix.size()) != 0) {
+        cleanup();
+        result.error = "failed to hash Git blob prefix with mbedTLS";
+        return result;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        cleanup();
+        result.error = "failed to open file for hash verification";
+        return result;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<unsigned char> buffer(buffer_size);
+    while (file.good()) {
+        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = file.gcount();
+        if (count > 0 &&
+            mbedtls_md_update(&ctx, buffer.data(), static_cast<size_t>(count)) != 0) {
+            cleanup();
+            result.error = "failed while hashing file with mbedTLS";
+            return result;
+        }
+    }
+    if (file.bad()) {
+        cleanup();
+        result.error = "failed while reading file for hash verification";
+        return result;
+    }
+
+    unsigned char digest[MBEDTLS_MD_MAX_SIZE] = {};
+    if (mbedtls_md_finish(&ctx, digest) != 0) {
+        cleanup();
+        result.error = "failed to finalize mbedTLS digest";
+        return result;
+    }
+
+    const size_t digest_len = static_cast<size_t>(mbedtls_md_get_size(md_info));
+    cleanup();
+
+    result.actual = bytes_to_hex(digest, digest_len);
+    result.ok = (lower_copy(result.actual) == expected.value);
+    return result;
+}
+
+static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    HashCheckResult result;
+    if (!expected.present()) {
+        result.ok = true;
+        return result;
+    }
+
+    std::string git_blob_prefix;
+    if (expected.algorithm == "git-sha1") {
+        std::error_code ec;
+        const auto size = fs::file_size(path, ec);
+        if (ec) {
+            result.error = "failed to get file size for git-sha1 verification: " + ec.message();
+            return result;
+        }
+        git_blob_prefix = "blob " + std::to_string(size) + std::string(1, '\0');
+    }
+
+    result = digest_file_with_library(path, expected, git_blob_prefix);
+    if (!result.ok && result.error.empty()) {
+        result.error = "hash mismatch: expected " + expected.algorithm + ":" + expected.value +
+                       ", got " + expected.algorithm + ":" + result.actual;
+    }
+    return result;
+}
+
+static HashCheckResult verify_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    auto result = calculate_file_hash(path, expected);
+    if (!expected.present() || result.ok) {
+        return result;
+    }
+    LOG(ERROR, "Download") << "Content verification failed for " << path.string()
+                            << ": " << result.error << std::endl;
+    return result;
+}
+
+} // namespace
 
 // Callback for writing response data to string
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -31,10 +253,15 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
-// Callback for download progress
 struct ProgressData {
     ProgressCallback callback;
-    bool cancelled = false;  // Set to true when callback returns false
+    bool cancelled = false;
+    bool stalled = false;
+    bool waiting_for_first_byte = false;
+    long current_response_code = 0;
+    int no_progress_timeout = 0;
+    curl_off_t last_downloaded = 0;
+    std::chrono::steady_clock::time_point last_progress_time = std::chrono::steady_clock::now();
 };
 
 static fs::path get_disk_space_probe_path(const fs::path& output_path) {
@@ -52,29 +279,88 @@ static fs::path get_disk_space_probe_path(const fs::path& output_path) {
     return fs::path(".");
 }
 
-// CURL progress callback - returns non-zero to abort transfer
+static size_t header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    const size_t total = size * nitems;
+    ProgressData* data = static_cast<ProgressData*>(userdata);
+    if (!data || total == 0) {
+        return total;
+    }
+
+    std::string line(buffer, total);
+
+    if (line.rfind("HTTP/", 0) == 0) {
+        data->waiting_for_first_byte = false;
+        data->current_response_code = 0;
+        data->last_progress_time = std::chrono::steady_clock::now();
+
+        std::istringstream iss(line);
+        std::string http_version;
+        long status_code = 0;
+        iss >> http_version >> status_code;
+        data->current_response_code = status_code;
+        return total;
+    }
+
+    if (line == "\r\n" || line == "\n") {
+        const bool response_can_have_body =
+            data->current_response_code >= 200 &&
+            data->current_response_code < 300 &&
+            data->current_response_code != 204 &&
+            data->current_response_code != 304;
+
+        if (response_can_have_body) {
+            data->waiting_for_first_byte = true;
+            data->last_progress_time = std::chrono::steady_clock::now();
+        }
+    }
+
+    return total;
+}
+
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                              curl_off_t ultotal, curl_off_t ulnow) {
+    (void)ultotal;
+    (void)ulnow;
+
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
 
-    // Check if already cancelled
     if (data->cancelled) {
-        return 1;  // Abort transfer
+        return 1;
     }
 
-    if (dltotal > 0 && data->callback) {
-        // Call user callback - returns false to cancel
-        if (!data->callback(dlnow, dltotal)) {
-            data->cancelled = true;
-            return 1;  // Abort transfer
+    if (data->callback &&
+        !data->callback(curl_off_to_size(dlnow), curl_off_to_size(dltotal))) {
+        data->cancelled = true;
+        return 1;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (dlnow > data->last_downloaded) {
+        data->waiting_for_first_byte = false;
+        data->last_downloaded = dlnow;
+        data->last_progress_time = now;
+    } else if (data->no_progress_timeout > 0) {
+        const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            now - data->last_progress_time).count();
+
+        const long stall_timeout =
+            data->waiting_for_first_byte
+                ? static_cast<long>(data->no_progress_timeout) * 5L
+                : static_cast<long>(data->no_progress_timeout);
+
+        if (idle_seconds >= stall_timeout) {
+            data->stalled = true;
+            return 1;
         }
     }
-    return 0;  // Continue transfer
+
+    return 0;
 }
 
 HttpResponse HttpClient::get(const std::string& url,
-                             const std::map<std::string, std::string>& headers) {
+                             const std::map<std::string, std::string>& headers,
+                             long timeout_seconds) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -87,7 +373,8 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -133,15 +420,28 @@ HttpResponse HttpClient::post(const std::string& url,
     std::string response_body;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
      // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -269,15 +569,28 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     callback_data.buffer = nullptr;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -290,20 +603,26 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
+    response.curl_code = static_cast<int>(res);
+    response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
 
-    // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
-    // (backend closes connection after sending all data)
-    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+    // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
+    // after a backend closes the connection. Do not throw here because the SSE
+    // layer knows whether it saw the protocol-level [DONE] marker. It will treat
+    // the same transport code as success after [DONE] and as backend failure
+    // before [DONE]. Other CURL errors are still exceptional.
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR) {
+        std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
     }
 
-    // Log if we got a non-OK CURL code but continue (normal for streaming)
+    // Log if we got a non-OK CURL code but continue so the stream layer can make
+    // the protocol-aware decision.
     if (res != CURLE_OK) {
-        LOG(ERROR, "HttpClient") << "Stream ended with: " << curl_easy_strerror(res)
+        LOG(WARNING, "HttpClient") << "Stream ended with: " << response.curl_error
                   << " (response code: " << response_code << ")" << std::endl;
     }
 
@@ -318,7 +637,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                                             size_t resume_from,
                                             ProgressCallback callback,
                                             const std::map<std::string, std::string>& headers,
-                                            const DownloadOptions& options) {
+                                            const DownloadOptions& options,
+                                            bool initial_range_request) {
     DownloadResult result;
 
     CURL* curl = curl_easy_init();
@@ -353,14 +673,21 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
+    } else if (initial_range_request) {
+        curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    ProgressData* prog_data = nullptr;
-    if (callback) {
-        prog_data = new ProgressData();
+    const int no_progress_timeout = options.no_progress_timeout;
+    std::unique_ptr<ProgressData> prog_data;
+    if (callback || no_progress_timeout > 0) {
+        prog_data = std::make_unique<ProgressData>();
         prog_data->callback = callback;
+        prog_data->no_progress_timeout = no_progress_timeout;
+        prog_data->last_progress_time = std::chrono::steady_clock::now();
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -376,8 +703,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     CURLcode res = curl_easy_perform(curl);
 
-    // Check if download was cancelled by user callback
     bool was_cancelled = (prog_data && prog_data->cancelled);
+    bool was_stalled = (prog_data && prog_data->stalled);
 
     curl_off_t downloaded = 0;
     curl_off_t total = 0;
@@ -396,9 +723,22 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     curl_easy_cleanup(curl);
 
-    // Clean up progress data
-    if (prog_data) {
-        delete prog_data;
+    if (was_stalled) {
+        size_t current_file_size = 0;
+        if (fs::exists(output_path_fs)) {
+            current_file_size = fs::file_size(output_path_fs);
+        }
+
+        result.cancelled = false;
+        result.can_resume = current_file_size > 0;
+        std::ostringstream oss;
+        oss << "Download stalled: no bytes received for "
+            << no_progress_timeout << " seconds";
+        if (current_file_size > 0) {
+            oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB (resumable)";
+        }
+        result.error_message = oss.str();
+        return result;
     }
 
     // Handle user cancellation
@@ -549,19 +889,75 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          const DownloadOptions& options) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
+    const ExpectedHash expected_hash = parse_expected_hash(options);
+
+    if (!options.expected_hash.empty() && !expected_hash.present()) {
+        final_result.success = false;
+        final_result.error_message = "Invalid or unsupported expected hash: " + options.expected_hash;
+        return final_result;
+    }
 
     // Use .partial extension for in-progress downloads
     std::string partial_path = output_path + ".partial";
     fs::path output_path_fs = path_from_utf8(output_path);
     fs::path partial_path_fs = path_from_utf8(partial_path);
 
-    // Check if final file already exists and is complete
+    // If a verified final file exists next to a stale .partial file, trust the
+    // verified final file and remove the stale partial.
+    if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
+        auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+        if (hash_result.ok) {
+            std::error_code remove_partial_ec;
+            fs::remove(partial_path_fs, remove_partial_ec);
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            LOG(INFO, "Download") << "File already exists and hash verified; removed stale partial: "
+                                  << output_path << std::endl;
+            return final_result;
+        }
+
+        std::error_code remove_output_ec;
+        fs::remove(output_path_fs, remove_output_ec);
+        if (remove_output_ec) {
+            final_result.success = false;
+            final_result.error_message = "Existing file failed verification and could not be removed: "
+                                       + remove_output_ec.message();
+            return final_result;
+        }
+    }
+
+    // Check if final file already exists and is complete. When the caller
+    // provided a content hash, the final path is only trusted if the hash
+    // matches; otherwise remove it and force a fresh download.
     if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
-        // Final file exists with no partial - consider it complete
-        final_result.success = true;
-        final_result.bytes_downloaded = 0;
-        LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
-        return final_result;
+        if (expected_hash.present()) {
+            auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+            if (hash_result.ok) {
+                final_result.success = true;
+                final_result.bytes_downloaded = 0;
+                LOG(INFO, "Download") << "File already exists and hash verified: "
+                                      << output_path << std::endl;
+                return final_result;
+            }
+
+            LOG(WARNING, "Download") << "Existing file failed verification; removing for fresh download: "
+                                     << output_path << std::endl;
+            std::error_code remove_ec;
+            fs::remove(output_path_fs, remove_ec);
+            if (remove_ec) {
+                final_result.success = false;
+                final_result.error_message = "Existing file failed verification and could not be removed: "
+                                           + remove_ec.message();
+                return final_result;
+            }
+        } else {
+            // Final file exists with no partial - consider it complete when no
+            // stronger source-of-truth hash is available.
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            return final_result;
+        }
     }
 
     // Check for existing partial file to resume
@@ -598,20 +994,22 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         ProgressCallback adjusted_callback = nullptr;
         if (callback) {
-            // Adjust progress to account for resume offset
-            // curl reports: current = bytes downloaded this session, total = remaining bytes
-            // We want to show: (resume_offset + current) / (resume_offset + total)
             adjusted_callback = [callback, resume_offset](size_t current, size_t total) -> bool {
-                if (total > 0) {  // Only call when we have valid progress info
+                if (total > 0) {
                     return callback(resume_offset + current, resume_offset + total);
                 }
-                return true;  // Continue if no progress info yet
+                return callback(resume_offset + current, 0);
             };
         }
 
-        // Download to .partial file
+        const bool retrying_without_partial = (attempt > 0 && resume_offset == 0);
+        const bool initial_range_request =
+            options.force_initial_range_request ||
+            (retrying_without_partial && options.range_retry_on_zero_byte_retry);
+
         final_result = download_attempt(url, partial_path, resume_offset,
-                                        adjusted_callback, headers, options);
+                                        adjusted_callback, headers, options,
+                                        initial_range_request);
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
@@ -626,6 +1024,28 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
 
         if (final_result.success) {
+            if (expected_hash.present()) {
+                auto hash_result = verify_file_hash(partial_path_fs, expected_hash);
+                if (!hash_result.ok) {
+                    final_result.success = false;
+                    final_result.can_resume = false;
+                    final_result.error_message = "Download content verification failed for " + output_path +
+                                                 ": " + hash_result.error;
+                    std::error_code remove_ec;
+                    fs::remove(partial_path_fs, remove_ec);
+                    resume_offset = 0;
+
+                    if (attempt < options.max_retries) {
+                        LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message
+                                                  << "; retrying from scratch" << std::endl;
+                        continue;
+                    }
+
+                    break;
+                }
+                LOG(INFO, "Download") << "Hash verified for " << output_path << std::endl;
+            }
+
             // Download complete - rename .partial to final path
             std::error_code ec;
             fs::rename(partial_path_fs, output_path_fs, ec);

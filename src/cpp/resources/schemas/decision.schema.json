@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lemonade-sdk.github.io/schemas/decision.schema.json",
+  "title": "Lemonade route decision (x_lemonade_route)",
+  "description": "The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The scalar matched_rule is also surfaced in the `x-lemonade-route` response header.",
+  "type": "object",
+  "required": ["version", "route_to", "matched_rule", "default_used"],
+  "properties": {
+    "version": {
+      "description": "Schema major version of this decision object. This file defines version \"1\"; the engine always emits it so clients and audit sinks can branch on shape.",
+      "const": "1"
+    },
+    "route_to": {
+      "description": "The selected candidate; also carried by the standard `model` field.",
+      "type": "string"
+    },
+    "matched_rule": {
+      "description": "Id of the rule that matched; empty when the request fell through to default_model.",
+      "type": "string"
+    },
+    "default_used": {
+      "description": "true when no rule matched and default_model was used (fail-open).",
+      "type": "boolean"
+    },
+    "outputs": {
+      "description": "Copied verbatim from the matched rule; the engine never interprets it.",
+      "type": "object"
+    },
+    "trace": {
+      "description": "Per-condition trace. Present ONLY when the request set route_trace=true; minimal/omitted by default so policy-internal signals do not leak to end users.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/trace_entry" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "trace_entry": {
+      "type": "object",
+      "required": ["condition", "result"],
+      "properties": {
+        "condition": {
+          "description": "Identifies the leaf, e.g. \"classifier:pii\" or \"keywords_any\".",
+          "type": "string"
+        },
+        "score": {
+          "description": "Present for classifier conditions; the score the band was applied to.",
+          "type": "number"
+        },
+        "result": {
+          "description": "The leaf's boolean outcome.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

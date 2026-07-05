@@ -32,17 +32,20 @@ jobs:
               {
                 "release": "24.04",
                 "distro": "ubuntu",
-                "codename": "noble"
+                "codename": "noble",
+                "ppa": "ppa:lemonade-team/bleeding-edge"
               },
               {
                 "release": "25.10",
                 "distro": "ubuntu",
-                "codename": "questing"
+                "codename": "questing",
+                "ppa": "ppa:lemonade-team/bleeding-edge"
               },
               {
                 "release": "26.04",
                 "distro": "ubuntu",
-                "codename": "resolute"
+                "codename": "resolute",
+                "ppa": ""
               }
             ]
           }
@@ -119,6 +122,77 @@ jobs:
         with:
           name: lemonade-${{ matrix.codename }}-source-package
           path: ${{ steps.build_source.outputs.output-dir }}/*
+          retention-days: 30
+
+  package-arm64:
+    name: Build (ARM64)
+    # Uses official ubuntu:${{ matrix.release }} images from Docker Hub instead of
+    # the custom build-environment images, because the latter do not yet carry
+    # linux/arm64 manifests. build-container.yml will publish multi-arch images
+    # post-merge; once that happens this can revert to the custom build-environment.
+    needs: prepare-matrix
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    container:
+      image: ubuntu:${{ matrix.release }}
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates software-properties-common
+
+      - name: Add PPA for build dependencies
+        if: matrix.ppa != ''
+        run: add-apt-repository -y ${{ matrix.ppa }}
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            curl \
+            debhelper \
+            devscripts \
+            dpkg-dev \
+            git \
+            python3-pip \
+            python3-venv \
+            unzip
+
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: ${{ matrix.release }}
+          codename: ${{ matrix.codename }}
+
+      - name: Build binary package
+        id: build_binary
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+          arch-only: 'true'
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-${{ matrix.codename }}-arm64-deb
+          path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
           retention-days: 30
 
   upload-stable:

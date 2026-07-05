@@ -36,22 +36,6 @@ bool is_safe_executable_path(const std::string& path);
 bool looks_like_path(const std::string& v);
 
 /**
- * Find the FLM executable (flm.exe on Windows, flm on Unix).
- * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
- * then falls back to the default installation directory.
- * @return Full path to flm executable, or empty string if not found.
- */
-std::string find_flm_executable();
-
-/**
- * Run 'flm validate' command and check if it succeeds.
- * @param flm_path Optional path to flm executable. If empty, will search for it.
- * @param error_message Output parameter for error message if validation fails.
- * @return true if validation succeeds, false otherwise.
- */
-bool run_flm_validate(const std::string& flm_path, std::string& error_message);
-
-/**
  * Get an environment variable as UTF-8 text.
  */
 std::string get_environment_variable_utf8(const std::string& name);
@@ -72,13 +56,6 @@ std::string path_to_utf8(const std::filesystem::path& path);
  * @return Full path to the executable, or empty string if not found.
  */
 std::string find_executable_in_path(const std::string& executable_name);
-
-/**
- * Check if the HIP plugin for GGML backends is available on the system.
- * This function checks common installation paths for libggml-hip.so.
- * @return true if the HIP plugin is found, false otherwise.
- */
-bool is_ggml_hip_plugin_available();
 
 /**
  * Set the lemonade cache directory. Must be called once at startup before
@@ -114,9 +91,11 @@ std::string get_hf_cache_dir();
 
 /**
  * Returns a per-user runtime directory for lemonade's PID/lock/log files.
+ * On macOS, uses the system temporary directory and creates a lemonade
+ * subdirectory.
  * On Unix, uses $XDG_RUNTIME_DIR/lemonade when $XDG_RUNTIME_DIR is set,
- * exists, and is writable (creates the subdirectory if needed).
- * Falls back to /tmp when XDG_RUNTIME_DIR is unset or unusable (e.g. CI).
+ * exists, and is writable (creates the subdirectory if needed); otherwise
+ * throws.
  * On Windows, returns the system temp directory.
  */
 std::string get_runtime_dir();

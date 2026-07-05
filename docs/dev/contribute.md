@@ -6,6 +6,10 @@ Please carefully review Lemonade's [philosophy](./philosophy.md) before making a
 
 ## Development Process
 
+### Working Groups
+
+Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups. If you would like to participate, start by reading this document and then reach out to the working group lead in your subject of interest.
+
 ### Merging a Contribution
 
 1. We highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk), meet [the maintainers](#maintainers) and get a sense of what is trending.
@@ -18,6 +22,10 @@ Please carefully review Lemonade's [philosophy](./philosophy.md) before making a
 ### Picking a Project
 
 Not sure what to work on? Come to the feature-requests and troubleshooting channels on the Discord and see what people need!
+
+### Adding a Backend
+
+Inference backends are self-describing: a backend is a descriptor (plain data) plus a server class, and everything else (router, CLI, `/system-info`, docs) is derived from it. See [Adding a backend](./adding-a-backend.md) for the full contract and a minimal example.
 
 ### Issues
 
@@ -40,6 +48,8 @@ Contributors are encouraged to use AI to code their project. However, please rev
 Reviewers are expected to use tools like Claude Code's `/review` to save time by analyzing code quality and edge cases. If AI tools generate PR comments, please clearly identify which comments are AI-generated and which are authored by you.
 
 __Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
+
+AI tools may be used to draft documentation, but the author is responsible for verifying accuracy before submitting. See the [documentation guide](./documentation.md) for a pre-submission checklist and style guidance.
 
 ## Maintainers
 

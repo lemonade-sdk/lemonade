@@ -3,6 +3,10 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <optional>
+#include <utility>
+#include <vector>
+#include "lemon/backends/backend_descriptor.h"
 
 namespace fs = std::filesystem;
 
@@ -40,6 +44,15 @@ namespace lemon::backends {
         std::string log_name() const { return recipe + " Server"; };
     };
 
+    // Build a backend's install/download spec from its descriptor's recipe/binary
+    // and the server class T's get_install_params. The construct-on-first-use
+    // static gives the registry a stable pointer.
+    template <typename T>
+    const BackendSpec* make_spec(const BackendDescriptor& d, bool split = false) {
+        static const BackendSpec kSpec(d.recipe, d.binary, T::get_install_params, split);
+        return &kSpec;
+    }
+
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
@@ -65,6 +78,14 @@ namespace lemon::backends {
         */
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
 
+        /**
+        * Extract 7z files (uses bsdtar/libarchive on Windows 11 22H2+ and Linux)
+        * @param archive_path Path to the .7z file
+        * @param dest_dir Destination directory to extract to
+        * @return true if extraction was successful, false otherwise
+        */
+        static bool extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
+
 
         /**
         * Detect if archive is tar or zip
@@ -76,13 +97,47 @@ namespace lemon::backends {
 
         /** Download and install the specified version of the backend from github.
          *  If progress_cb is provided, it receives download progress events instead of console output. */
-        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
+        static void install_from_github(const BackendSpec& spec,
+                                        const std::string& expected_version,
+                                        const std::string& repo,
+                                        const std::string& filename,
+                                        const std::string& backend,
+                                        DownloadProgressCallback progress_cb = nullptr);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
 
-        /** Check if ROCm libraries are installed system-wide (Linux only) */
-        static bool is_rocm_installed_system_wide();
+        /**
+         * Resolve the ROCm install root, honoring an externally-installed ROCm
+         * before the bundled default. Resolution order, returning the first root
+         * that contains the HIP runtime (Windows: bin\amdhip64.dll or
+         * lib\amdhip64.dll; Linux: lib{,64}/libamdhip64.so):
+         *   1. ROCM_PATH environment variable
+         *   2. `rocm-sdk path --root` (when rocm-sdk is on PATH)
+         *   3. Platform default (Windows: HIP_PATH set by the AMD HIP SDK;
+         *      Linux: /opt/rocm)
+         * Returns std::nullopt when none validate. When resolved_explicitly is
+         * non-null, it is set to true when the root came from ROCM_PATH or
+         * rocm-sdk (a user-selected ROCm) and false for the platform default.
+         */
+        static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
+
+        /**
+         * Trim each line and keep those that name an absolute path, preserving
+         * order. `rocm-sdk path --root`'s stdout can be interleaved with the
+         * child's stderr (warnings), so the wanted path is not necessarily the
+         * first line. Pure string logic; the caller validates each candidate.
+         */
+        static std::vector<std::string> pick_rocm_root_candidates(
+            const std::vector<std::string>& lines);
+
+        /**
+         * Read the ROCm version string from a resolved install root, probing the
+         * known version-file locations ({root}/.info/version,
+         * {root}/share/rocm/version, {root}/version). Returns the trimmed first
+         * line of the first file found, or "" when none exist.
+         */
+        static std::string read_rocm_version_from_root(const fs::path& root);
 
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
@@ -128,5 +183,22 @@ namespace lemon::backends {
                                          const std::string& backend,
                                          std::string& out_section,
                                          std::string& out_bin_key);
+
+        /**
+         * Append shared CUDA environment variables to env_vars.
+         *
+         * Sets CUDA_VISIBLE_DEVICES to device indices matching the installed CUDA arch
+         * (unless skip_visible_devices is true or the variable is already set in the
+         * environment). On Linux, always sets __NV_PRIME_RENDER_OFFLOAD=1 so the NVIDIA
+         * dGPU is activated on Optimus/PRIME systems in On-Demand mode.
+         *
+         * Call this for every CUDA backend subprocess launch. Pass
+         * skip_visible_devices=true when the caller provides an explicit device
+         * selection through a backend-specific mechanism (e.g. llama.cpp --device).
+         */
+        static void apply_cuda_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            bool skip_visible_devices = false);
     };
 } // namespace lemon::backends

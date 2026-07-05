@@ -127,6 +127,15 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     const container = containerRef.current;
     if (!container) return;
 
+    const isSafeUrl = (url: string): boolean => {
+      try {
+        const parsed = new URL(url, 'https://example.com/');
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    };
+
     // Add click handlers for links to open in external browser
     const handleLinkClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -139,7 +148,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: href } }));
             return;
           }
-          if (window.api) {
+          if (window.api && isSafeUrl(href)) {
             window.api.openExternal(href);
           }
         }

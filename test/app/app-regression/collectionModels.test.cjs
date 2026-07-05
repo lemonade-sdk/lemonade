@@ -19,8 +19,8 @@ const tests = [
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
       assertMatches(
         source,
-        /getCollectionComponents[\s\S]*?Array\.isArray\(info\.composite_models\)[\s\S]*?info\.composite_models\.filter\(/,
-        'Collection components should only come from array-valued composite_models.',
+        /getCollectionComponents[\s\S]*?const components = info\?\.components[\s\S]*?Array\.isArray\(components\)[\s\S]*?components\.filter\(/,
+        'Collection components should only come from array-valued components.',
       );
       assertIncludes(
         source,
@@ -32,13 +32,13 @@ const tests = [
     },
   },
   {
-    name: 'collection identity depends on recipe=collection and at least one component',
+    name: 'collection identity depends on collection.omni recipe helper and at least one component',
     run() {
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
       assertMatches(
         source,
-        /isCollectionModel[\s\S]*?info\.recipe === 'collection'[\s\S]*?getCollectionComponents\(info\)\.length > 0/,
-        'A collection model should require recipe=collection and at least one concrete component.',
+        /isCollectionModel[\s\S]*?isCollectionRecipe\(info\.recipe\)[\s\S]*?getCollectionComponents\(info\)\.length > 0/,
+        'A collection model should require the collection recipe helper and at least one concrete component.',
       );
     },
   },
@@ -70,17 +70,13 @@ const tests = [
     },
   },
   {
-    name: 'primary chat routing skips non-chat components before fallback',
+    name: 'primary chat routing uses the shared planner predicate before fallback',
     run() {
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
-      const usesLocalDenylist = /NON_LLM_LABELS/.test(source)
-        && /getCollectionPrimaryChatModel[\s\S]*?components\.find[\s\S]*?!labels\.some[\s\S]*?NON_LLM_LABELS\.has\(label\)[\s\S]*?return explicitLLM \|\| components\[0\]/.test(source);
-      const usesCentralPlannerPredicate = /isChatPlannerCandidate/.test(source)
-        && /getCollectionPrimaryChatModel[\s\S]*?components\.find\(\(component\) => isChatPlannerCandidate\(modelsData\[component\]\)\)[\s\S]*?return explicitLLM \|\| components\[0\]/.test(source);
-
-      assert.ok(
-        usesLocalDenylist || usesCentralPlannerPredicate,
-        'Primary chat selection should exclude known non-chat components before falling back to the first component.',
+      assertMatches(
+        source,
+        /getCollectionPrimaryChatModel[\s\S]*?components\.find\(\(component\) => isChatPlannerCandidate\(modelsData\[component\]\)\)[\s\S]*?return explicitLLM \|\| components\[0\]/,
+        'Primary chat selection should use the shared planner predicate before falling back to the first component.',
       );
     },
   },

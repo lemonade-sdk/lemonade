@@ -1,4 +1,6 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backend_version_policy.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -9,8 +11,12 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <map>
+#include <optional>
 #include <thread>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -32,7 +38,7 @@ std::string get_current_os() {
 }
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
@@ -58,15 +64,6 @@ std::string get_backend_runtime_version(const json& backend_versions,
         backend_versions[recipe].contains(runtime_key) &&
         backend_versions[recipe][runtime_key].is_string()) {
         return backend_versions[recipe][runtime_key].get<std::string>();
-    }
-
-    // Only fall back to llamacpp runtime version if the recipe is llamacpp
-    if (recipe == "llamacpp" &&
-        backend_versions.contains("llamacpp") &&
-        backend_versions["llamacpp"].is_object() &&
-        backend_versions["llamacpp"].contains(runtime_key) &&
-        backend_versions["llamacpp"][runtime_key].is_string()) {
-        return backend_versions["llamacpp"][runtime_key].get<std::string>();
     }
 
     throw std::runtime_error("backend_versions.json is missing runtime version for: " + recipe + ":" + runtime_key);
@@ -105,6 +102,19 @@ bool runtime_version_matches_expected(const std::string& discovered_version,
     return discovered.rfind(expected + ".", 0) == 0;
 }
 
+std::string runtime_version_major_minor(const std::string& version) {
+    const std::string normalized = normalize_runtime_version(version);
+    const auto first_dot = normalized.find('.');
+    if (first_dot == std::string::npos) {
+        return normalized;
+    }
+    const auto second_dot = normalized.find('.', first_dot + 1);
+    if (second_dot == std::string::npos) {
+        return normalized;
+    }
+    return normalized.substr(0, second_dot);
+}
+
 std::string read_version_file(const fs::path& version_file) {
     if (!fs::exists(version_file)) {
         return "";
@@ -120,10 +130,92 @@ std::string read_version_file(const fs::path& version_file) {
     return trim(version);
 }
 
-bool has_matching_system_rocm_runtime(const std::string& expected_runtime_version) {
-    const fs::path version_file = "/opt/rocm/.info/version";
-    const std::string system_version = read_version_file(version_file);
-    return runtime_version_matches_expected(system_version, expected_runtime_version);
+std::string installed_backend_binary_path(const backends::BackendSpec& spec,
+                                          const std::string& resolved_backend) {
+    std::string external_binary = backends::BackendUtils::find_external_backend_binary(
+        spec.recipe, resolved_backend);
+    if (!external_binary.empty()) {
+        return external_binary;
+    }
+
+    const std::string install_dir = backends::BackendUtils::get_install_directory(
+        spec.recipe, resolved_backend);
+    return backends::BackendUtils::find_executable_in_install_dir(
+        install_dir, spec.binary);
+}
+
+void report_backend_ready(const std::string& recipe,
+                          const std::string& resolved_backend,
+                          DownloadProgressCallback progress_cb) {
+    if (!progress_cb) {
+        return;
+    }
+
+    DownloadProgress p;
+    p.file = recipe + ":" + resolved_backend;
+    p.file_index = 1;
+    p.total_files = 1;
+    p.bytes_downloaded = 0;
+    p.bytes_total = 0;
+    p.total_download_size = 0;
+    p.percent = 100;
+    p.complete = true;
+    progress_cb(p);
+}
+
+bool github_download_service_reachable() {
+    return utils::HttpClient::is_reachable("https://github.com/", 2);
+}
+
+bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
+                                      const std::string& expected_runtime_version) {
+    const std::string system_version =
+        backends::BackendUtils::read_rocm_version_from_root(rocm_root);
+
+    if (resolved_explicitly) {
+        // The user deliberately installed this ROCm (via ROCM_PATH or rocm-sdk).
+        // Don't re-download TheRock over a patch-level difference: accept a
+        // major.minor match, and accept outright when no version file is present.
+        if (system_version.empty()) {
+            LOG(INFO, "BackendManager")
+                << "Using explicitly-selected system ROCm at " << rocm_root.string()
+                << " (no version file; skipping version gate)" << std::endl;
+            return true;
+        }
+        const bool matches =
+            runtime_version_matches_expected(system_version, expected_runtime_version) ||
+            runtime_version_major_minor(system_version) ==
+                runtime_version_major_minor(expected_runtime_version);
+        LOG(matches ? DEBUG : INFO, "BackendManager")
+            << "Explicitly-selected system ROCm at " << rocm_root.string()
+            << " version '" << system_version << "' vs expected '"
+            << expected_runtime_version << "' -> "
+            << (matches ? "match" : "mismatch") << std::endl;
+        return matches;
+    }
+
+    const bool matches =
+        runtime_version_matches_expected(system_version, expected_runtime_version);
+    LOG(DEBUG, "BackendManager")
+        << "System ROCm at " << rocm_root.string() << " version '" << system_version
+        << "' vs expected '" << expected_runtime_version << "' -> "
+        << (matches ? "match" : "mismatch") << std::endl;
+    return matches;
+}
+
+
+bool backend_update_required(const std::string& recipe, const std::string& backend) {
+    for (const auto& recipe_status : SystemInfo::get_all_recipe_statuses()) {
+        if (recipe_status.name != recipe) {
+            continue;
+        }
+        for (const auto& backend_status : recipe_status.backends) {
+            if (backend_status.name == backend) {
+                return backend_status.state == "update_required";
+            }
+        }
+    }
+    return false;
 }
 
 bool will_install_therock(const std::string& os, const json& backend_versions) {
@@ -139,9 +231,12 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     std::string therock_version = backend_versions["therock"]["version"].get<std::string>();
     std::string expected_rocm_version = normalize_runtime_version(therock_version);
 
-    // Check if system ROCm matches TheRock version - if so, don't need TheRock
-    if (backends::BackendUtils::is_rocm_installed_system_wide() &&
-        has_matching_system_rocm_runtime(expected_rocm_version)) {
+    // Check if system ROCm matches TheRock version - if so, don't need TheRock.
+    // Resolve once here and thread it through, avoiding a second rocm-sdk spawn.
+    bool resolved_explicitly = false;
+    const auto rocm_root = backends::BackendUtils::resolve_rocm_root(&resolved_explicitly);
+    if (rocm_root &&
+        has_matching_system_rocm_runtime(*rocm_root, resolved_explicitly, expected_rocm_version)) {
         LOG(DEBUG, "BackendManager")
             << "System ROCm " << expected_rocm_version
             << " matches TheRock version, skipping TheRock installation" << std::endl;
@@ -170,6 +265,24 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     }
 
     return true;
+}
+
+bool is_therock_installed_for_current_arch(const json& backend_versions) {
+    if (!backend_versions.contains("therock") ||
+        !backend_versions["therock"].contains("version")) {
+        return false;
+    }
+
+    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+    if (rocm_arch.empty()) {
+        return false;
+    }
+
+    const std::string version = backend_versions["therock"]["version"].get<std::string>();
+    const fs::path version_file =
+        fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
+
+    return read_version_file(version_file) == version;
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,
@@ -333,24 +446,40 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // any UI/metadata callers that still touch this code path.
     if (utils::looks_like_path(raw)) return pinned_version;
 
-    // "latest" → ask GitHub. If offline and a previously-installed version is
-    // recorded, reuse it instead of failing.
+    // "latest" → ask GitHub for the newest release. The lookup can be skipped
+    // (offline) or fail (e.g. HTTP 504, network error); in either case fall back
+    // to the binary already installed rather than refusing to load a model that
+    // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
-        if (cfg->offline()) {
-            std::string install_dir = backends::BackendUtils::get_install_directory(
-                recipe, resolved_backend);
-            std::string cached = read_version_file(fs::path(install_dir) / "version.txt");
-            if (!cached.empty()) {
+        const bool offline = cfg->offline();
+        // A non-throwing lookup so a transient GitHub failure becomes a fallback
+        // rather than an exception. Skipped entirely when offline.
+        std::string fetched = offline
+            ? std::string()
+            : fetch_latest_github_tag(repo, /*throw_on_failure=*/false);
+
+        // The install directory is not version-scoped, so version.txt always
+        // reflects the most recently installed binary for this (recipe, backend).
+        std::string install_dir = backends::BackendUtils::get_install_directory(
+            recipe, resolved_backend);
+        std::string installed = read_version_file(fs::path(install_dir) / "version.txt");
+
+        LatestPinResolution resolution =
+            resolve_latest_pin(recipe, resolved_backend, offline, fetched, installed);
+        if (!resolution.version.empty()) {
+            if (resolution.used_installed_fallback && offline) {
                 LOG(WARNING, "BackendManager") << "offline: reusing installed " << recipe
                                                << ":" << resolved_backend << " version "
-                                               << cached << " for 'latest'" << std::endl;
-                return cached;
+                                               << resolution.version << " for 'latest'" << std::endl;
+            } else if (resolution.used_installed_fallback) {
+                LOG(WARNING, "BackendManager") << "could not resolve 'latest' for " << recipe
+                                               << ":" << resolved_backend
+                                               << "; falling back to installed version "
+                                               << resolution.version << std::endl;
             }
-            throw std::runtime_error(
-                "Cannot resolve 'latest' for " + recipe + ":" + resolved_backend
-                + ": offline mode and no installed version found");
+            return resolution.version;
         }
-        return fetch_latest_github_tag(repo, /*throw_on_failure=*/true);
+        throw std::runtime_error(resolution.error);
     }
 
     // Otherwise: a bare upstream release tag (e.g. "b8664"). Pass through.
@@ -412,47 +541,238 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->no_fetch_executables()) {
-            throw std::runtime_error(
-                "Fetching executable artifacts is disabled");
-        }
-    }
-
-    auto params = get_install_params(recipe, resolved_backend);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
-    // Check if we need to install additional runtime components after the main backend
-    bool needs_therock = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                         resolved_backend == "rocm-stable" &&
-                         will_install_therock(get_current_os(), backend_versions_);
+    const std::string existing_backend_binary =
+        installed_backend_binary_path(*spec, resolved_backend);
+    const bool has_existing_backend = !existing_backend_binary.empty();
 
-    // Wrap the progress callback to adjust file indices if runtime download follows
-    DownloadProgressCallback wrapped_progress_cb;
-    if (progress_cb && (needs_therock)) {
-        wrapped_progress_cb = [progress_cb](const DownloadProgress& p) -> bool {
-            DownloadProgress adjusted = p;
-            // Adjust to indicate this is file 1 of 2
-            adjusted.file_index = 1;
-            adjusted.total_files = 2;
-            // Suppress the completion event - we'll send it after the runtime download
-            if (p.complete) {
-                adjusted.complete = false;
+    if (auto* cfg = RuntimeConfig::global()) {
+        const bool offline = cfg->offline();
+        const bool no_fetch = cfg->no_fetch_executables();
+        if (offline || no_fetch) {
+            if (!force && has_existing_backend) {
+                LOG(WARNING, "BackendManager")
+                    << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
+                    << "; using installed " << recipe << ":" << resolved_backend
+                    << " backend at " << existing_backend_binary << std::endl;
+                report_backend_ready(recipe, resolved_backend, progress_cb);
+                return;
             }
-            return progress_cb(adjusted);
-        };
-    } else {
-        wrapped_progress_cb = progress_cb;
+
+            throw std::runtime_error(
+                (offline ? "Cannot install " : "Fetching executable artifacts is disabled for ") +
+                recipe + ":" + resolved_backend +
+                (offline ? ": offline mode" : ""));
+        }
     }
 
-    backends::BackendUtils::install_from_github(
-        *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
+    if (!force && has_existing_backend && !github_download_service_reachable()) {
+        // enter install_from_github() when GitHub is reachable, so available
+        // backend updates are applied before the model starts. Only skip the
+        // update path when the machine is effectively offline and a usable
+        // backend binary is already present.
+        LOG(WARNING, "BackendManager")
+            << "GitHub is not reachable; using installed " << recipe << ":"
+            << resolved_backend << " backend at " << existing_backend_binary
+            << " and deferring update" << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
 
-    if (needs_therock) {
-        install_therock_if_needed(get_current_os(), backend_versions_, progress_cb);
+    auto params = get_install_params(recipe, resolved_backend);
+
+    // Check if we need to download additional runtime components after the main backend.
+    // `will_install_therock` intentionally answers whether TheRock is applicable
+    // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
+    // Do that here before inflating the install to a multi-file UX flow.
+    const std::string os = get_current_os();
+    const bool is_rocm_stable_backend =
+        backends::recipe_has_rocm_channels(recipe) &&
+        resolved_backend == "rocm-stable";
+    const bool therock_applicable =
+        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
+    const bool rocm_runtime_update_required =
+        therock_applicable && backend_update_required(recipe, backend);
+    const bool needs_therock_download =
+        therock_applicable &&
+        (rocm_runtime_update_required ||
+         !is_therock_installed_for_current_arch(backend_versions_));
+
+    struct RuntimeInstallStep {
+        std::string name;
+        std::function<void(DownloadProgressCallback)> install;
+    };
+
+    std::vector<RuntimeInstallStep> runtime_steps;
+    if (needs_therock_download) {
+        runtime_steps.push_back({
+            "TheRock runtime",
+            [this, os, rocm_runtime_update_required](DownloadProgressCallback runtime_progress_cb) {
+                if (rocm_runtime_update_required) {
+                    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+                    if (rocm_arch.empty()) {
+                        throw std::runtime_error("Cannot repair TheRock runtime: ROCm architecture could not be detected");
+                    }
+
+                    const std::string version = backend_versions_["therock"]["version"].get<std::string>();
+                    const std::string install_dir =
+                        backends::BackendUtils::get_therock_install_dir(rocm_arch, version);
+
+                    std::error_code ec;
+                    fs::remove_all(install_dir, ec);
+                    if (ec) {
+                        throw std::runtime_error("Failed to remove existing TheRock runtime '" +
+                                                 install_dir + "': " + ec.message());
+                    }
+                }
+
+                install_therock_if_needed(os, backend_versions_, runtime_progress_cb);
+            }
+        });
+    }
+
+    // Track known logical file sizes. total_download_size is only forwarded
+    // once it is the real total across every logical file. This prevents a
+    // runtime-follow-up install from inheriting a backend-only total size.
+    std::map<int, size_t> logical_file_sizes;
+    auto known_total_download_size = [&logical_file_sizes](int total_files) -> size_t {
+        size_t total = 0;
+        for (int index = 1; index <= total_files; ++index) {
+            auto it = logical_file_sizes.find(index);
+            if (it == logical_file_sizes.end() || it->second == 0) {
+                return 0;
+            }
+            total += it->second;
+        }
+        return total;
+    };
+
+    auto normalize_progress = [&logical_file_sizes, &known_total_download_size](
+                                  const DownloadProgress& p,
+                                  int logical_file_index,
+                                  int logical_total_files,
+                                  bool allow_complete) -> DownloadProgress {
+        DownloadProgress adjusted = p;
+        adjusted.file_index = logical_file_index;
+        adjusted.total_files = logical_total_files;
+
+        if (adjusted.bytes_total > 0) {
+            logical_file_sizes[logical_file_index] = adjusted.bytes_total;
+        }
+
+        // Only set total_download_size when it is the true full total.
+        adjusted.total_download_size = known_total_download_size(logical_total_files);
+
+        if (!allow_complete && adjusted.complete) {
+            adjusted.complete = false;
+        }
+
+        return adjusted;
+    };
+
+    int backend_total_files = 1;
+    DownloadProgressCallback backend_progress_cb = progress_cb;
+    if (progress_cb && !runtime_steps.empty()) {
+        const int runtime_file_count = static_cast<int>(runtime_steps.size());
+        backend_progress_cb = [progress_cb,
+                               runtime_file_count,
+                               &backend_total_files,
+                               &normalize_progress](const DownloadProgress& p) -> bool {
+            backend_total_files = p.total_files > 0 ? p.total_files : 1;
+            const int logical_file_index = p.file_index > 0 ? p.file_index : 1;
+            const int logical_total_files = backend_total_files + runtime_file_count;
+            return progress_cb(normalize_progress(
+                p, logical_file_index, logical_total_files, /*allow_complete=*/false));
+        };
+    }
+
+    const std::string backend_install_dir =
+        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
+    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
+
+    bool completion_reported = false;
+
+    try {
+        backends::BackendUtils::install_from_github(
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+
+        const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
+        for (size_t i = 0; i < runtime_steps.size(); ++i) {
+            const int logical_file_index = backend_total_files + static_cast<int>(i) + 1;
+            const bool is_last_runtime_step = (i + 1 == runtime_steps.size());
+            bool runtime_reported_progress = false;
+            bool runtime_reported_completion = false;
+            DownloadProgress last_runtime_progress;
+
+            DownloadProgressCallback runtime_progress_cb;
+            if (progress_cb) {
+                runtime_progress_cb = [progress_cb,
+                                       logical_file_index,
+                                       logical_total_files,
+                                       is_last_runtime_step,
+                                       &completion_reported,
+                                       &runtime_reported_progress,
+                                       &runtime_reported_completion,
+                                       &last_runtime_progress,
+                                       &normalize_progress](const DownloadProgress& p) -> bool {
+                    runtime_reported_progress = true;
+                    DownloadProgress adjusted = normalize_progress(
+                        p, logical_file_index, logical_total_files, is_last_runtime_step);
+                    if (adjusted.complete) {
+                        runtime_reported_completion = true;
+                        completion_reported = true;
+                    }
+                    last_runtime_progress = adjusted;
+                    return progress_cb(adjusted);
+                };
+            }
+
+            runtime_steps[i].install(runtime_progress_cb);
+
+            if (!progress_cb) {
+                continue;
+            }
+
+            if (!runtime_reported_progress) {
+                DownloadProgress skipped;
+                skipped.file = runtime_steps[i].name;
+                skipped.file_index = logical_file_index;
+                skipped.total_files = logical_total_files;
+                skipped.percent = 100;
+                skipped.complete = is_last_runtime_step;
+                completion_reported = completion_reported || skipped.complete;
+                progress_cb(skipped);
+            } else if (is_last_runtime_step && !runtime_reported_completion) {
+                last_runtime_progress.file_index = logical_file_index;
+                last_runtime_progress.total_files = logical_total_files;
+                last_runtime_progress.percent = 100;
+                last_runtime_progress.complete = true;
+                completion_reported = true;
+                progress_cb(last_runtime_progress);
+            }
+        }
+
+        if (progress_cb && !runtime_steps.empty() && !completion_reported) {
+            DownloadProgress complete_progress;
+            complete_progress.file = runtime_steps.back().name;
+            complete_progress.file_index = logical_total_files;
+            complete_progress.total_files = logical_total_files;
+            complete_progress.percent = 100;
+            complete_progress.complete = true;
+            progress_cb(complete_progress);
+        }
+    } catch (...) {
+        // If the backend was newly created and a required runtime fails, roll
+        // back the backend so the status does not look ready with missing deps.
+        if (!backend_install_dir_existed_before) {
+            std::error_code cleanup_ec;
+            fs::remove_all(backend_install_dir, cleanup_ec);
+        }
+        throw;
     }
 }
 

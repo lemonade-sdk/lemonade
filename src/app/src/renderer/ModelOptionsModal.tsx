@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { serverFetch } from "./utils/serverConfig";
-import { ModelInfo } from "./utils/modelData";
+import { ModelInfo, downloadModelExportFile } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
 import { writeClipboard } from "./utils/clipboardUtils";
 import {
@@ -92,10 +92,11 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [options, setOptions] = useState<RecipeOptions>();
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModelNameCopied, setIsModelNameCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const exportModelBtn = useRef<HTMLAnchorElement | null>(null);
   const modelNameCopyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch options when modal opens
@@ -108,35 +109,46 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       clearTimeout(modelNameCopyTimeoutIdRef.current);
       modelNameCopyTimeoutIdRef.current = null;
     }
+    setLoadError(null);
+    setExportError(null);
+    setModelInfo(undefined);
+    setModelName(model ?? "");
+    setModelUrl("");
+    setOptions(undefined);
     void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
       if (isMounted) setIsLoading(true);
       if (!model) {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setLoadError('No model selected.');
+          setIsLoading(false);
+        }
         return;
       }
 
       try {
-        const response = await serverFetch(`/models/${model}`);
+        const response = await serverFetch(`/models/${encodeURIComponent(model)}`);
+        if (!response.ok) {
+          throw new Error(`Failed to load model options (${response.status})`);
+        }
         const data = await response.json();
+
+        if (!isMounted) return;
 
         setModelName(model);
         setModelInfo({ ...data });
 
-        const url = `https://huggingface.co/${data.checkpoint.replace(/:.+$/, '')}`;
-        if (url) setModelUrl(url);
+        const checkpoint = typeof data.checkpoint === 'string' ? data.checkpoint : '';
+        setModelUrl(checkpoint ? `https://huggingface.co/${checkpoint.replace(/:.+$/, '')}` : '');
 
         const recipe = data.recipe as string;
         const recipeOptions = data.recipe_options ?? {};
-
-        if (isMounted) {
-          setOptions(apiToRecipeOptions(recipe, recipeOptions));
-        }
+        setOptions(apiToRecipeOptions(recipe, recipeOptions));
       } catch (error) {
         console.error('Failed to load options:', error);
-        if (isMounted && options?.recipe) {
-          setOptions(createDefaultOptions(options.recipe));
+        if (isMounted) {
+          setLoadError('Failed to load model options.');
         }
       } finally {
         if (isMounted) setIsLoading(false);
@@ -302,30 +314,17 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     }
   };
 
-  const handleModelExport = () => {
-    let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
-
-    let modelToExport = {
-      "model_name": modelName,
-      "downloaded": modelInfo?.downloaded,
-      "labels": modelInfo?.labels,
-      "recipe": modelInfo?.recipe,
-      "recipe_options": modelInfo?.recipe_options,
-      "size": modelInfo?.size,
-      "checkpoints": modelInfo?.checkpoints,
-      "image_defaults": modelInfo?.image_defaults
-    };
-
-    if(!modelInfo?.checkpoints) {
-      Object.assign(modelToExport, {checkpoint: modelInfo?.checkpoint});
+  const handleModelExport = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    // The shared helper fetches the live /models/{id} object and saves the
+    // normalized, import-ready file (same shape the CLI export produces).
+    event.preventDefault();
+    setExportError(null);
+    try {
+      await downloadModelExportFile(modelInfo?.id as string);
+    } catch (error) {
+      console.error('Failed to export model:', error);
+      setExportError(error instanceof Error ? error.message : 'Failed to export model.');
     }
-
-    const model = JSON.stringify(modelToExport);
-    const blob = new Blob([model], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    exportModelBtn!.current!.href = url;
-    exportModelBtn!.current!.download = modelToExport?.model_name ? `${modelToExport?.model_name}.json` as string: 'model.json';
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   const handleCancel = () => {
@@ -361,7 +360,36 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     onSubmit(modelName, submitOptions);
   };
 
-  if (!isOpen || !options) return null;
+  const renderHeader = () => (
+    <div className="settings-header">
+      <h3>Model Options</h3>
+      <button className="settings-close-button" onClick={onCancel} title="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14">
+          <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+      </button>
+    </div>
+  );
+
+  if (!isOpen) return null;
+
+  if (!options) {
+    return (
+      <div className="settings-overlay">
+        <div className="settings-modal" ref={cardRef} onMouseDown={(e) => e.stopPropagation()}>
+          {renderHeader()}
+          <div className="settings-loading">
+            {loadError ?? 'Loading options...'}
+          </div>
+          {loadError && (
+            <div className="settings-footer">
+              <button className="settings-save-button" onClick={handleCancel}>Cancel</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const recipe = options.recipe;
   const availableOptions = getOptionsForRecipe(recipe);
@@ -615,17 +643,10 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   return (
     <div className="settings-overlay">
       <div className="settings-modal" ref={cardRef} onMouseDown={(e) => e.stopPropagation()}>
-        <div className="settings-header">
-          <h3>Model Options</h3>
-          <button className="settings-close-button" onClick={onCancel} title="Close">
-            <svg width="14" height="14" viewBox="0 0 14 14">
-              <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
+        {renderHeader()}
 
         {isLoading ? (
-          <div className="settings-loading">Loading options…</div>
+          <div className="settings-loading">Loading options...</div>
         ) : (
           <div className="model-options-content">
             <div className="model-options-category-header">
@@ -674,6 +695,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           </div>
         )}
 
+        {exportError && (
+          <div className="settings-export-error">{exportError}</div>
+        )}
         <div className="settings-footer">
           <button
             className="settings-reset-button"
@@ -682,20 +706,20 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           >
             Reset All
           </button>
-          <a className="settings-save-button" ref={exportModelBtn} onClick={handleModelExport} href="" download="">Export Model</a>
+          <a className="settings-save-button" onClick={handleModelExport} href="">Export Model</a>
           <button
             className="settings-save-button"
             onClick={handleCancel}
             disabled={isSubmitting || isLoading}
           >
-            {isSubmitting ? 'Cancelling…' : 'Cancel'}
+            {isSubmitting ? 'Cancelling...' : 'Cancel'}
           </button>
           <button
             className="settings-save-button"
             onClick={handleSubmit}
             disabled={isSubmitting || isLoading}
           >
-            {isSubmitting ? 'Connecting…' : 'Load'}
+            {isSubmitting ? 'Connecting...' : 'Load'}
           </button>
         </div>
       </div>

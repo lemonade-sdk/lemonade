@@ -20,6 +20,7 @@ namespace ErrorType {
     constexpr const char* PROCESS_ERROR = "process_error";
     constexpr const char* FILE_ERROR = "file_error";
     constexpr const char* INTERNAL_ERROR = "internal_error";
+    constexpr const char* SLOTS_PINNED = "slots_pinned_error";
 }
 
 // Base exception class for all Lemon errors
@@ -54,6 +55,13 @@ public:
     ModelNotLoadedException(const std::string& details = "")
         : LemonException("No model loaded" + (details.empty() ? "" : ": " + details),
                         ErrorType::MODEL_NOT_LOADED) {}
+};
+
+class SlotsPinnedException : public LemonException {
+public:
+    SlotsPinnedException(const std::string& model_type, const std::string& details = "")
+        : LemonException("All loaded models of type " + model_type + " are pinned. Unload a model first." + (details.empty() ? "" : " " + details),
+                        ErrorType::SLOTS_PINNED) {}
 };
 
 class BackendException : public LemonException {

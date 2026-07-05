@@ -74,28 +74,6 @@ Chat Completions API. You provide a list of messages and receive a completion. T
           }'
     ```
 
-### Image understanding input format (OpenAI-compatible)
-
-To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "Qwen2.5-VL-7B-Instruct",
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {"type": "text", "text": "What is in this image?"},
-              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
-            ]
-          }
-        ],
-        "stream": false
-      }'
-```
-
 ### Response format
 
 === "Non-streaming responses"
@@ -134,6 +112,95 @@ curl -X POST http://localhost:13305/v1/chat/completions \
       }]
     }
     ```
+
+### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "Qwen2.5-VL-7B-Instruct",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "The image shows a red apple resting on a wooden table."
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+### Server-side tools
+
+> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat Completions API; it is not part of the OpenAI specification. Requests that target ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.
+
+When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.g., `LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
+
+- **images** → markdown `![generated image](data:image/png;base64,…)`
+- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
+
+Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
+
+**Merge semantics.** A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "LMX-Omni-52B-Halo",
+        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+The image tool runs during the loop and its output is embedded as a markdown image in the assistant `content`:
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "LMX-Omni-52B-Halo",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
 
 
 ## `POST /v1/completions`
@@ -425,7 +492,15 @@ Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream a
 
 ### Connection
 
-The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field), then connect with the model name:
+WebSocket upgrades are accepted **directly on the main HTTP port** (default 13305) — the same port as all REST endpoints. Connect with the model name:
+
+```
+ws://localhost:13305/v1/realtime?model=Whisper-Tiny
+```
+
+Accepted paths are `/realtime` and `/logs/stream`, bare or under any of the standard prefixes (`/v1`, `/v0`, `/api/v1`, `/api/v0`), so OpenAI Realtime SDK clients (`/v1/realtime`) connect as-is. When `LEMONADE_API_KEY` is set, pass `?api_key=KEY` as a query parameter.
+
+A dedicated WebSocket port also remains for backward compatibility; it is OS-assigned and reported by the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field). New clients should prefer the main port:
 
 ```
 ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
@@ -547,6 +622,7 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
+- **Migrating off the dedicated port**: Clients that discover `websocket_port` via `/v1/health` and connect there can switch to `ws://HOST:13305/v1/realtime?model=...` — the protocol (events, audio format, auth) is identical on both ports, so it is a URL change only. This also simplifies remote setups (one port to expose) and works through reverse proxies that pass `Upgrade: websocket`. Keep the `websocket_port` fallback only if you must support servers older than this release.
 
 
 ## `POST /v1/images/generations`
@@ -601,7 +677,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` / `image[]` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -882,6 +958,8 @@ Returns a list of models available on the server in an OpenAI-compatible format.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
+When `lemond` is configured with cloud providers, cloud-routed models appear here alongside local ones with `recipe: "cloud"` and a `cloud_provider` field. They are dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard chat-completions / completions requests below — see [Cloud Offload](../guide/configuration/cloud.md).
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -915,6 +993,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "max_context_window": 40960,
       "downloaded": true,
       "suggested": true,
+      "update_available": false,
       "labels": ["reasoning"]
     },
     {
@@ -964,6 +1043,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
+  - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:
@@ -971,6 +1051,8 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+  - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
+  - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{model_id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
 
 
 ### Model Labels
@@ -1038,7 +1120,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above.
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ```json
 {

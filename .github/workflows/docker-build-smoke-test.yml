@@ -53,6 +53,13 @@ jobs:
           docker logs lemonade-test
           exit 1
 
+      - name: CLI on PATH regression check
+        run: |
+          # Regression guard: the lemonade/lemond binaries must be callable by
+          # name via `docker exec` (i.e. on PATH), not just by absolute path.
+          docker exec lemonade-test sh -lc 'command -v lemonade && command -v lemond'
+          docker exec lemonade-test sh -lc 'lemonade status'
+
       - name: Load model
         run: |
           curl -X POST http://localhost:13305/api/v1/load \

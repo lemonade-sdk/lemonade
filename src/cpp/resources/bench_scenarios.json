@@ -1,0 +1,124 @@
+{
+  "scenarios": [
+    {
+      "name": "chat-short",
+      "category": "chat",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Hello! How are you today?" }
+      ],
+      "max_tokens": 20
+    },
+    {
+      "name": "chat-long-output",
+      "category": "chat",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Explain how transformers work in deep learning, covering attention mechanisms, encoder-decoder architecture, and positional encoding in detail." }
+      ],
+      "max_tokens": 256
+    },
+    {
+      "name": "code-short",
+      "category": "coding",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Write a Python function that computes the Fibonacci sequence up to n terms." }
+      ],
+      "max_tokens": 60
+    },
+    {
+      "name": "code-explain",
+      "category": "coding",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Explain what this code does:\n\n```python\ndef merge_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n    right = merge_sort(arr[mid:])\n    return merge(left, right)\n\ndef merge(left, right):\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n```" }
+      ],
+      "max_tokens": 128
+    },
+    {
+      "name": "code-debug",
+      "category": "coding",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "My binary search implementation isn't working. Here's the code:\n\n```python\ndef binary_search(arr, target):\n    low = 0\n    high = len(arr)\n    while low <= high:\n        mid = (low + high) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            low = mid\n        else:\n            high = mid\n    return -1\n```" },
+        { "role": "assistant", "content": "There are two bugs in your binary search:\n\n1. `high` should be `len(arr) - 1` (off-by-one)\n2. When narrowing the search, you should use `mid + 1` and `mid - 1` instead of just `mid`, otherwise you can get an infinite loop." },
+        { "role": "user", "content": "Can you show me the corrected version and explain why each fix matters?" },
+        { "role": "assistant", "content": "Here's the corrected version:\n\n```python\ndef binary_search(arr, target):\n    low = 0\n    high = len(arr) - 1  # Fix 1: inclusive upper bound\n    while low <= high:\n        mid = (low + high) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            low = mid + 1   # Fix 2a: skip past mid\n        else:\n            high = mid - 1  # Fix 2b: skip past mid\n    return -1\n```" }
+      ],
+      "max_tokens": 100
+    },
+    {
+      "name": "context-32k",
+      "category": "long-context",
+      "context": {
+        "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
+        "target_tokens": 32000,
+        "position": "end"
+      },
+      "messages": [
+        { "role": "user", "content": "Question: What is the capital of France? Answer in one word." }
+      ],
+      "max_tokens": 20
+    },
+    {
+      "name": "context-64k",
+      "category": "long-context",
+      "context": {
+        "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
+        "target_tokens": 64000,
+        "position": "end"
+      },
+      "messages": [
+        { "role": "user", "content": "Question: What is the capital of France? Answer in one word." }
+      ],
+      "max_tokens": 20
+    },
+    {
+      "name": "context-128k",
+      "category": "long-context",
+      "context": {
+        "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
+        "target_tokens": 128000,
+        "position": "end"
+      },
+      "messages": [
+        { "role": "user", "content": "Question: What is the capital of France? Answer in one word." }
+      ],
+      "max_tokens": 20
+    },
+    {
+      "name": "context-multi-turn",
+      "category": "long-context",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Let's discuss software architecture patterns. What are the main types?" },
+        { "role": "assistant", "content": "The main software architecture patterns include:\n\n1. **Layered Architecture** - Organizes software into horizontal layers (presentation, business logic, data access)\n2. **Microservices** - Decomposes the application into small, independently deployable services\n3. **Event-Driven Architecture** - Components communicate through events and event handlers\n4. **Model-View-Controller (MVC)** - Separates data, UI, and control logic\n5. **Client-Server** - Clients request services from a centralized server\n6. **Peer-to-Peer (P2P)** - Distributed architecture where nodes act as both clients and servers\n7. **Space-Based Architecture** - Uses in-memory data grids for scalability\n8. **Service-Oriented Architecture (SOA)** - Coarse-grained services with loose coupling" },
+        { "role": "user", "content": "Can you elaborate on microservices versus monolithic architecture?" },
+        { "role": "assistant", "content": "Microservices vs Monolithic:\n\n**Monolithic Architecture:**\n- Single codebase, single deployment unit\n- Simpler to develop, test, and deploy initially\n- Technology stack is uniform\n- Scaling requires replicating the entire application\n- Tight coupling between components can become a problem\n- Easier to do distributed transactions\n\n**Microservices Architecture:**\n- Multiple independent services, each owning a business capability\n- Each service can use different technology stacks\n- Independent deployment and scaling\n- Better fault isolation (one service failure doesn't bring down everything)\n- More complex operations (distributed tracing, service discovery, API gateways)\n- Network latency between services\n- Data consistency challenges (eventual consistency patterns needed)" },
+        { "role": "user", "content": "What about the trade-offs in terms of team organization?" },
+        { "role": "assistant", "content": "Team organization trade-offs:\n\n**Monolithic:**\n- Single team or a few teams working on the same codebase\n- Merge conflicts become more frequent as team grows\n- Conway's Law: system mirrors org structure, so one team = one monolith\n- Easier onboarding since there's one codebase to understand\n- Code ownership can be unclear with many contributors\n\n**Microservices:**\n- Teams can own individual services end-to-end (\"you build it, you run it\")\n- Teams can scale independently based on service demand\n- Conway's Law works in your favor: org structure matches system structure\n- Higher initial overhead for team coordination and communication\n- Knowledge silos can develop (team A only knows service A)" },
+        { "role": "user", "content": "When would you recommend starting with a monolith vs microservices?" },
+        { "role": "assistant", "content": "Starting recommendation:\n\n**Start with a monolith when:**\n- You're a small team (< 10 developers)\n- You're exploring a new product/market\n- Requirements are still evolving rapidly\n- You don't have strong DevOps/SRE capabilities yet\n- Your system doesn't need to scale different parts independently\n\n**Consider microservices from the start when:**\n- You have a large, experienced team already\n- Different parts of the system have vastly different scaling needs\n- You need to integrate with many existing services\n- Regulatory requirements demand strict service boundaries\n- You're building a platform that multiple teams will extend\n\n**General advice:** Start with a well-structured monolith and extract services when you have clear pain points. Martin Fowler's principle: \"If you don't know how to build a monolith, you don't know how to build microservices.\"" },
+        { "role": "user", "content": "What are the key patterns for decomposing a monolith into microservices?" },
+        { "role": "assistant", "content": "Key decomposition patterns:\n\n1. **Strangler Fig Pattern** - Gradually replace specific functionalities with new services, routing traffic to either old or new system\n2. **Domain-Driven Design** - Use bounded contexts to identify natural service boundaries\n3. **Database-per-Service** - Each service owns its data, communicating via APIs\n4. **API Gateway** - Single entry point that routes requests to appropriate services\n5. **Event Sourcing** - Capture state changes as events, replay for new services\n6. **CQRS (Command Query Responsibility Segregation)** - Separate read and write models\n\nThe Strangler Fig pattern is the safest approach because it allows gradual migration without big-bang rewrites." },
+        { "role": "user", "content": "Can you explain the Strangler Fig pattern in more detail with a practical example?" },
+        { "role": "assistant", "content": "The Strangler Fig Pattern:\n\nNamed after the strangler fig tree that gradually envelops and replaces its host tree, this pattern works similarly for software:\n\n1. **Set up an API Gateway** in front of your monolith\n2. **Identify a bounded capability** to extract (e.g., user authentication)\n3. **Build the new microservice** for that capability\n4. **Update the gateway** to route relevant requests to the new service\n5. **Keep the monolith running** for everything else\n6. **Repeat** for other capabilities until the monolith is empty\n\n**Practical example:** An e-commerce monolith\n\n- Week 1-2: Extract Product Catalog service (read-heavy, stable API)\n- Week 3-4: Extract User/Authentication service (clear boundaries)\n- Week 5-6: Extract Order Processing service (complex business logic)\n- Week 7-8: Extract Payment service (regulatory boundaries)\n- Week 9-10: Extract Notification service (async, event-driven)\n\nEach extraction is independently deployable and can be rolled back if needed." },
+        { "role": "user", "content": "Now let's switch gears. What are the main database consistency models?" },
+        { "role": "assistant", "content": "The main database consistency models include:\n\n1. **Strong Consistency** - All reads see the most recent write (linearizability)\n2. **Eventual Consistency** - Reads eventually converge to the latest write, but may see stale data temporarily\n3. **Session Consistency** - Within a single session, reads see prior writes; no guarantee across sessions\n4. **Read-Your-Writes Consistency** - A process always sees its own writes\n5. **Monotonic Read Consistency** - Once a value is read, subsequent reads never return an older value\n6. **Monotonic Write Consistency** - Writes from a single process are delivered in order\n7. **Bounded Staleness** - Reads are at most N versions or T time units behind the latest write" },
+        { "role": "user", "content": "How do consistency models relate to the CAP theorem?" },
+        { "role": "assistant", "content": "The CAP theorem states that a distributed system can guarantee at most two of three properties:\n\n- **Consistency (C)** - Every read receives the most recent write or an error\n- **Availability (A)** - Every request receives a response (no guarantee it's the latest)\n- **Partition Tolerance (P)** - The system continues operating despite network partitions\n\nSince network partitions are inevitable in distributed systems, you effectively choose between CP (Consistency + Partition tolerance) and AP (Availability + Partition tolerance):\n\n- **CP systems** (e.g., ZooKeeper, Spanner, etcd): Block reads during partitions to maintain consistency\n- **AP systems** (e.g., Dynamo, Cassandra, CouchDB): Serve potentially stale data during partitions, reconcile later\n\nThe consistency models I listed earlier are ways to tune between pure CP and pure AP. For example, session consistency gives you strong consistency within a session (CP-like) while allowing eventual consistency across sessions (AP-like)." },
+        { "role": "user", "content": "Going back to our e-commerce example from earlier, which services would you design as CP vs AP?" },
+        { "role": "assistant", "content": "For the e-commerce services we discussed:\n\n**CP (strong consistency needed):**\n- **Payment service** - Financial transactions must be exact; you can't have double-spending or lost payments\n- **User/Authentication service** - Account state (balances, permissions) must be accurate\n- **Order Processing service** - Order state transitions must be consistent to avoid shipping issues\n\n**AP (availability preferred):**\n- **Product Catalog service** - Seeing a slightly stale price or inventory count is acceptable; users can retry\n- **Notification service** - If a notification is delayed or duplicated, it's not critical\n\n**Hybrid approach:**\n- Use CP for the critical path (payment, order creation) and AP for read-heavy paths (catalog browsing, recommendations)\n- This is exactly why CQRS (which we mentioned as a decomposition pattern) is useful here: the write side can be CP while the read side is AP" },
+        { "role": "user", "content": "What about data synchronization between CP and AP services?" },
+        { "role": "assistant", "content": "Data synchronization between CP and AP services typically uses:\n\n1. **Change Data Capture (CDC)** - Read the write-ahead log from the CP database and stream changes to AP stores\n2. **Event Sourcing** - Publish domain events from CP services that AP services consume asynchronously\n3. **Outbox Pattern** - Write events to an outbox table in the same transaction as the main data, then a separate process publishes them\n\nKey challenges:\n- **Exactly-once vs at-least-once delivery**: Most systems guarantee at-least-once, so consumers must be idempotent\n- **Schema evolution**: When the CP service changes its data model, AP consumers need to adapt\n- **Monitoring lag**: You need visibility into how stale the AP data is compared to the CP source\n- **Recovery**: If the sync pipeline fails, you need a way to replay missed events or do a full resync" },
+        { "role": "user", "content": "Let me test your memory: how many decomposition patterns did you list, and what was the name of the tree the Strangler Fig pattern is named after?" },
+        { "role": "assistant", "content": "You listed 6 decomposition patterns:\n1. Strangler Fig Pattern\n2. Domain-Driven Design\n3. Database-per-Service\n4. API Gateway\n5. Event Sourcing\n6. CQRS\n\nThe Strangler Fig pattern is named after the **strangler fig tree**, which gradually envelops and replaces its host tree." },
+        { "role": "user", "content": "And what were the 5 services in the e-commerce extraction timeline, in order?" },
+        { "role": "assistant", "content": "The 5 services extracted in order:\n1. Product Catalog (Week 1-2)\n2. User/Authentication (Week 3-4)\n3. Order Processing (Week 5-6)\n4. Payment (Week 7-8)\n5. Notification (Week 9-10)" },
+        { "role": "user", "content": "Summarize the key takeaway from our discussion, referencing both topics we covered." }
+      ],
+      "max_tokens": 100
+    }
+  ]
+}

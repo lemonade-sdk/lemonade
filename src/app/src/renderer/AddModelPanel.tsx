@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { COLLECTION_OMNI_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 export interface AddModelInitialValues {
   name: string;
@@ -8,6 +8,7 @@ export interface AddModelInitialValues {
   recipe: string;
   checkpoints?: Record<string, string>;
   mmprojOptions?: string[];
+  labels?: string[];
   vision?: boolean;
   reranking?: boolean;
   embedding?: boolean;
@@ -19,6 +20,7 @@ export interface ModelInstallData {
   recipe: string;
   checkpoints?: Record<string, string>;
   mmproj?: string;
+  labels?: string[];
   reasoning?: boolean;
   vision?: boolean;
   embedding?: boolean;
@@ -32,7 +34,7 @@ interface AddModelPanelProps {
 }
 
 const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
-const HIDDEN_RECIPE_OPTIONS = new Set(['collection']);
+const HIDDEN_RECIPE_OPTIONS = new Set([COLLECTION_OMNI_MODEL_RECIPE]);
 
 const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
 
@@ -60,6 +62,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     name: 'Whisper-Tiny',
     checkpoint: 'ggerganov/whisper.cpp:ggml-tiny.bin',
   },
+  'moonshine': {
+    name: 'Moonshine-Tiny-Streaming',
+    checkpoint: 'UsefulSensors/moonshine-streaming:onnx/tiny',
+  },
   'sd-cpp': {
     name: 'Z-Image-Turbo',
     checkpoint: 'Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors',
@@ -71,7 +77,7 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     checkpoint: 'mikkoph/kokoro-onnx',
   },
   'vllm': {
-    name: 'Qwen3.5-0.8B-vLLM',
+    name: 'Qwen3.5-0.8B-FP16-vLLM',
     checkpoint: 'Qwen/Qwen3.5-0.8B',
   },
 };
@@ -163,13 +169,15 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
     if (recipe === 'sd-cpp' && hasSdComponents && (!textEncoderCheckpoint || !vaeCheckpoint)) {
-      setError('Provide both text encoder and VAE checkpoints for sd-cpp component models.');
+      setError('Provide both text encoder and VAE checkpoints for sd-cpp components.');
       return;
     }
     if (recipe === 'sd-cpp' && ((textEncoderCheckpoint && !hasRepoRelativeFilePath(textEncoderCheckpoint)) || (vaeCheckpoint && !hasRepoRelativeFilePath(vaeCheckpoint)))) {
       setError('Additional sd-cpp checkpoints must use the full repo-relative file path, for example repo/model:path/to/file.safetensors or repo/model:path/to/file.gguf.');
       return;
     }
+
+    const labels = (initialValues?.labels ?? []).filter(label => label !== 'vision');
 
     onInstall({
       name,
@@ -179,6 +187,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
         : undefined,
       recipe,
       mmproj: !isSdCpp ? (form.mmproj.trim() || undefined) : undefined,
+      labels,
       reasoning: form.reasoning,
       vision: !isSdCpp ? form.vision : false,
       embedding: !isSdCpp ? form.embedding : false,

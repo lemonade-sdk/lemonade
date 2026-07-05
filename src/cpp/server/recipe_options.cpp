@@ -1,4 +1,5 @@
 #include <lemon/recipe_options.h>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
 #include <map>
@@ -12,73 +13,86 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-static const json DEFAULTS = {
-    {"ctx_size", 4096},
-    {"merge_args", true},
-    {"llamacpp_device", ""},
-    {"llamacpp_backend", ""},  // Will be overridden dynamically
-    {"llamacpp_args", ""},
-    {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
-    {"sdcpp_args", ""},
-    {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
-    {"whispercpp_args", ""},
-    // Image generation defaults (for sd-cpp recipe)
-    // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
-    // there are too many image gen params for CLI flags, and no universal defaults.
-    {"steps", 20},
-    {"cfg_scale", 7.0},
-    {"width", 512},
-    {"height", 512},
-    {"sampling_method", ""},
-    {"flow_shift", 0.0},
-    // FLM-specific options
-    {"flm_args", ""},       // Custom arguments to pass to flm serve
-    // vLLM-specific options
-    {"vllm_backend", ""},  // "" means auto-detect
-    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
-};
+// Options shared by every backend. Per-backend options (and ctx_size opt-in)
+// come from each backend's descriptor; these are the universal kit.
+static const json& common_defaults() {
+    static const json d = {
+        {"ctx_size", -1},  // -1 triggers auto-resolution (memory + arch metadata)
+        {"merge_args", true},
+        // Auto-eviction options (apply to every recipe)
+        {"auto_evict", nullptr},          // nullptr means fallback to global config
+        {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
+        {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
+        {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
+        {"pinned", false},
+    };
+    return d;
+}
 
-// Mapping from flat option names to CLI flags (used by to_cli_options)
-// Note: Image generation params (steps, cfg_scale, width, height, sampling_method,
-// flow_shift) are recipe-level defaults only — not exposed as CLI arguments.
-// Runtime options (diffusion_fa, offload_to_cpu) go through --sdcpp-args.
-static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
-    {"ctx_size", "--ctx-size"},
-    {"merge_args", "--merge-args"},
-    {"llamacpp_backend", "--llamacpp"},
-    {"llamacpp_device", "--llamacpp-device"},
-    {"llamacpp_args", "--llamacpp-args"},
-    {"sd-cpp_backend", "--sdcpp"},
-    {"sdcpp_args", "--sdcpp-args"},
-    {"whispercpp_backend", "--whispercpp"},
-    {"whispercpp_args", "--whispercpp-args"},
-    {"flm_args", "--flm-args"},
-    {"vllm_backend", "--vllm"},
-    {"vllm_args", "--vllm-args"}
-};
+// Defaults for every option: the common kit plus each backend descriptor's
+// declared options. Built once from the registry so config defaults, CLI flags,
+// and load-time resolution can never drift from the descriptors.
+static const json& get_defaults() {
+    static const json defaults = [] {
+        json d = common_defaults();
+        for (const auto* desc : lemon::backends::all_descriptors()) {
+            for (const auto& opt : desc->options) {
+                d[opt.name] = opt.default_value;
+            }
+        }
+        return d;
+    }();
+    return defaults;
+}
+
+// Flat option name -> CLI flag, for to_cli_options(). ctx_size/merge_args are
+// the common flags; the rest come from descriptor options that declare a flag.
+static const std::map<std::string, std::string>& get_option_to_cli_flag() {
+    static const std::map<std::string, std::string> mapping = [] {
+        std::map<std::string, std::string> m{
+            {"ctx_size", "--ctx-size"},
+            {"merge_args", "--merge-args"},
+        };
+        for (const auto* desc : lemon::backends::all_descriptors()) {
+            for (const auto& opt : desc->options) {
+                if (!opt.cli_flag.empty()) {
+                    m[opt.name] = opt.cli_flag;
+                }
+            }
+        }
+        return m;
+    }();
+    return mapping;
+}
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
-    } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend", "whispercpp_args", "merge_args"};
-    } else if (recipe == "flm") {
-        return {"ctx_size", "flm_args", "merge_args"};
-    } else if (recipe == "ryzenai-llm") {
-        return {"ctx_size"};
-    } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
-    } else if (recipe == "vllm") {
-        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
-    } else {
-        return {};
+    std::vector<std::string> keys;
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        if (desc->uses_ctx_size) {
+            keys.push_back("ctx_size");
+        }
+        for (const auto& opt : desc->options) {
+            keys.push_back(opt.name);
+        }
+        keys.push_back("merge_args");
     }
+
+    // Add auto-eviction options for all recipes
+    keys.push_back("auto_evict");
+    keys.push_back("evict_idle_timeout");
+    keys.push_back("downsize_idle_timeout");
+    keys.push_back("evict_weight_factor");
+    keys.push_back("pinned");
+
+    return keys;
 }
 
 static bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) ||
+    return option.is_null() ||
+           (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == "" || option == "auto"));
 }
+
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -102,7 +116,7 @@ static bool try_get_backend_options(const std::string& opt_name, SystemInfo::Sup
 std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) {
     std::vector<std::string> cli;
 
-    for (auto& [opt_name, cli_flag] : OPTION_TO_CLI_FLAG) {
+    for (auto& [opt_name, cli_flag] : get_option_to_cli_flag()) {
         if (raw_options.contains(opt_name)) {
             auto val = raw_options[opt_name];
             if (!val.is_null() && val != "") {
@@ -123,7 +137,7 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
 
 std::vector<std::string> RecipeOptions::known_keys() {
     std::vector<std::string> keys;
-    for (auto& [key, value] : DEFAULTS.items()) {
+    for (auto& [key, value] : get_defaults().items()) {
         keys.push_back(key);
     }
     return keys;
@@ -216,33 +230,46 @@ json RecipeOptions::get_option(const std::string& opt) const {
         }
     }
 #endif
-    return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
+    return get_defaults().contains(opt) ? get_defaults()[opt] : json();
+}
+
+void RecipeOptions::set_option(const std::string& opt, const json& value) {
+    options_[opt] = value;
 }
 
 #ifdef LEMONADE_CLI
-// CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
-static const json CLI_OPTIONS = {
-    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
-    {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"envname", "LEMONADE_MERGE_ARGS"}, {"help", "Merge global and model arguments when loading the model"}}},
-    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
-    {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"envname", "LEMONADE_LLAMACPP_DEVICE"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}}},
-    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
-    {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
-    {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
-    {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
-    {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
-    {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_VLLM"}, {"help", "vLLM backend to use"}}},
-    {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_VLLM_ARGS"}, {"help", "Custom arguments to pass to vllm-server"}}},
-    // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
-    // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
-    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
-};
+// CLI_OPTIONS used only by the lemonade CLI client for add_cli_options.
+// ctx_size/merge_args are the common flags; everything else is derived from
+// descriptor options that declare a CLI flag. Image-gen params
+// (steps/cfg_scale/width/height) have no cli_flag in their descriptor, so they
+// stay recipe-level only.
+static const json& get_cli_options() {
+    static const json cli_options = [] {
+        json o = json::object();
+        o["--ctx-size"] = {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"help", "Context size for the model"}, {"group", "General Options"}};
+        o["--merge-args"] = {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"help", "Merge global and model arguments when loading the model"}, {"group", "General Options"}};
+        for (const auto* desc : lemon::backends::all_descriptors()) {
+            for (const auto& opt : desc->options) {
+                if (opt.cli_flag.empty()) {
+                    continue;
+                }
+                json entry = {{"option_name", opt.name}, {"type_name", opt.type_name}, {"help", opt.help}};
+                if (!opt.group.empty()) {
+                    entry["group"] = opt.group;
+                }
+                o[opt.cli_flag] = entry;
+            }
+        }
+        return o;
+    }();
+    return cli_options;
+}
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
-    for (auto& [key, opt] : CLI_OPTIONS.items()) {
+    for (auto& [key, opt] : get_cli_options().items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
-        json defval = DEFAULTS[opt_name];
+        json defval = get_defaults()[opt_name];
 
         if (defval.is_number_float()) {
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
@@ -258,8 +285,8 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             o->default_val(defval);
         }
 
-        o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
+        o->group(opt.value("group", "Options"));
     }
 }
 #endif

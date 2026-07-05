@@ -51,7 +51,7 @@ Any time we have an opportunity to adhere to a standard, we should, because it s
 <details>
 <summary>Examples</summary>
 
-* [OmniRouter](./omni-router.md) achieves omni-modality through standard single-modality models being executed via standard Open AI API tool calls. Developers can add it to existing agents without refactoring.
+* [Lemonade Omni Models](./lemonade-omni.md) achieve omni-modality through standard single-modality models executed via standard OpenAI API tool calls (the OmniRouter pattern). Developers can add them to existing agents without refactoring.
 * `lemonade config` displays the service configuration and `lemonade config set` modifies it. Likewise, `lemonade backends` displays backend status and `lemonade backends install` modifies it. People who used one command can guess how the other works.
 
 </details>

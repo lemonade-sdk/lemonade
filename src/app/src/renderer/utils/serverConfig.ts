@@ -64,10 +64,9 @@ class ServerConfig {
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
+          this.initialized = true;
+          return;
         }
-
-        this.initialized = true;
-        return;
       }
 
       // No explicit URL - use localhost with port discovery
@@ -121,7 +120,7 @@ class ServerConfig {
    * Check if using an explicit remote server URL
    */
   isRemoteServer(): boolean {
-    return this.explicitBaseUrl !== null;
+    return !!this.explicitBaseUrl;
   }
 
   /**
@@ -159,16 +158,19 @@ class ServerConfig {
   }
 
   /**
-   * Build a WebSocket URL for an endpoint served on the websocket port
-   * advertised by /health. Going through URL rather than string concat is
-   * what makes this correct for IPv6 literals — URL.host preserves the
-   * brackets that hostname does not. The configured API key is appended
-   * automatically when set.
+   * Build a WebSocket URL. With wsPort, targets the dedicated websocket port
+   * advertised by /health; without it, targets the main HTTP port (which
+   * accepts WebSocket upgrades for /realtime and /logs/stream). Going through
+   * URL rather than string concat is what makes this correct for IPv6
+   * literals — URL.host preserves the brackets that hostname does not. The
+   * configured API key is appended automatically when set.
    */
-  buildWebSocketUrl(path: string, wsPort: number, query?: URLSearchParams): string {
+  buildWebSocketUrl(path: string, wsPort?: number, query?: URLSearchParams): string {
     const url = new URL(this.getServerBaseUrl());
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.port = String(wsPort);
+    if (wsPort !== undefined) {
+      url.port = String(wsPort);
+    }
     url.pathname = url.pathname.replace(/\/$/, '') + path;
 
     const params = new URLSearchParams(query);
@@ -192,10 +194,12 @@ class ServerConfig {
     }
   }
 
-  private setUpdatedURL(baseURL: string) {
-    if (this.explicitBaseUrl != baseURL) {
-      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${baseURL}`);
-      this.explicitBaseUrl = baseURL;
+  private setUpdatedURL(baseURL: string | null) {
+    const nextBaseUrl = baseURL?.trim() || null;
+
+    if (this.explicitBaseUrl !== nextBaseUrl) {
+      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${nextBaseUrl}`);
+      this.explicitBaseUrl = nextBaseUrl;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -316,7 +320,9 @@ class ServerConfig {
 
     const fullUrl = endpoint.startsWith('http')
       ? endpoint
-      : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      : endpoint.startsWith('/internal/')
+        ? `${this.getServerBaseUrl()}${endpoint}`
+        : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const options = { ...opts };
 
@@ -363,7 +369,7 @@ export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
-export const buildWebSocketUrl = (path: string, wsPort: number, query?: URLSearchParams) =>
+export const buildWebSocketUrl = (path: string, wsPort?: number, query?: URLSearchParams) =>
   serverConfig.buildWebSocketUrl(path, wsPort, query);
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);

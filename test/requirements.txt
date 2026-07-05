@@ -14,6 +14,9 @@ huggingface_hub
 # Process and system utilities
 psutil
 
+# Prometheus text format parser (required for /metrics endpoint tests)
+prometheus-client
+
 # Numerical computing (required for embedding similarity tests)
 numpy
 
@@ -22,3 +25,6 @@ websockets
 
 # Ollama client library (used for Ollama API compatibility tests)
 ollama
+
+# JSON Schema validator (required for routing policy / decision fixture tests)
+jsonschema

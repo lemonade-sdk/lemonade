@@ -14,9 +14,16 @@ namespace lemon {
 namespace utils {
 
 struct HttpResponse {
-    int status_code;
+    int status_code = 0;
     std::string body;
     std::map<std::string, std::string> headers;
+
+    // Transport status from libcurl. For non-streaming callers this remains
+    // CURLE_OK/0 because transport errors are thrown. Streaming callers need the
+    // original code so they can distinguish a clean [DONE] from an interrupted
+    // backend connection that happened after HTTP headers were received.
+    int curl_code = 0;
+    std::string curl_error;
 };
 
 struct MultipartField {
@@ -53,11 +60,21 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
+    bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
+
+    // Optional content verification. expected_hash accepts plain hex or
+    // prefixed values like "sha256:<hex>", "sha1:<hex>", or
+    // "git-sha1:<hex>". git-sha1 verifies the Git blob object id, i.e.
+    // SHA1("blob <size>\0" + file bytes), which is what Hugging Face uses
+    // for non-LFS file ETags. SHA256 is used for LFS objects and release assets.
+    std::string expected_hash;
+    std::string expected_hash_algorithm;
 };
 
 class HttpClient {
 public:
-    // Set default timeout for all requests
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
@@ -66,9 +83,10 @@ public:
         return default_timeout_seconds_;
     }
 
-    // Simple GET request
+    // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
-                           const std::map<std::string, std::string>& headers = {});
+                           const std::map<std::string, std::string>& headers = {},
+                           long timeout_seconds = 0);
 
     // Simple POST request
     static HttpResponse post(const std::string& url,
@@ -107,7 +125,8 @@ private:
                                            size_t resume_from,
                                            ProgressCallback callback,
                                            const std::map<std::string, std::string>& headers,
-                                           const DownloadOptions& options);
+                                           const DownloadOptions& options,
+                                           bool initial_range_request);
 };
 
 // Creates a throttled progress callback that prints at most once per second.

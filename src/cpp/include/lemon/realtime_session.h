@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include "streaming_audio_buffer.h"
 #include "vad.h"
+#include "utils/tcp_jsonl_client.h"
 
 namespace lemon {
 
@@ -49,6 +50,12 @@ struct RealtimeSession {
     // Interim transcription state
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
     std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
+
+    // Streaming backend connection (used when backend supports IStreamingTranscriptionServer).
+    // streaming_mutex guards streaming_client against concurrent forward/disconnect.
+    std::mutex streaming_mutex;
+    std::unique_ptr<utils::TcpJsonlClient> streaming_client;
+    std::atomic<bool> use_streaming_backend{false};
 
     RealtimeSession(const std::string& id)
         : session_id(id),
@@ -154,6 +161,14 @@ private:
 
     // Process VAD for a session
     void process_vad(std::shared_ptr<RealtimeSession> session);
+
+    // Streaming backend helpers
+    void connect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                 const std::string& base64_audio);
+    void forward_streaming_commit(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_clear(std::shared_ptr<RealtimeSession> session);
 
     // Get session by ID (returns nullptr if not found)
     std::shared_ptr<RealtimeSession> get_session(const std::string& session_id);

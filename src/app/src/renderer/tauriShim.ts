@@ -113,7 +113,14 @@ async function installTauriApi(): Promise<void> {
       await writeText(String(text));
     },
     openExternal: (url: string) => {
-      openUrl(url).catch((e) => console.warn('openExternal', e));
+      try {
+        const u = new URL(url);
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          openUrl(u.href).catch((e) => console.warn('openExternal', e));
+        }
+      } catch {
+        // Ignore invalid URLs
+      }
     },
 
     getSettings: () => invoke('get_app_settings'),

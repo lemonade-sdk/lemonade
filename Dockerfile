@@ -60,6 +60,10 @@ RUN add-apt-repository -y ppa:amd-team/xrt
 # Create application directory
 WORKDIR /opt/lemonade
 
+# Provide a private runtime directory so lemond can use get_runtime_dir()
+RUN mkdir -p /run/lemonade && chmod 700 /run/lemonade
+ENV XDG_RUNTIME_DIR=/run/lemonade
+
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
@@ -75,6 +79,10 @@ RUN FLM_VERSION=$(jq -r '.flm.npu' ./resources/backend_versions.json) && \
 
 # Make executables executable
 RUN chmod +x ./lemond ./lemonade
+
+# Expose the lemond/lemonade binaries on PATH so `docker exec` users can run
+# them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.
+ENV PATH="/opt/lemonade:${PATH}"
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \

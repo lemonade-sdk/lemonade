@@ -2,6 +2,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -9,20 +10,28 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <random>
+#include <sstream>
 #include <vector>
 
 namespace lemon_cli {
 namespace {
 
+// Keys allowed in exported/imported model files. Keep in sync with
+// EXPORT_KNOWN_KEYS in src/app/src/renderer/utils/modelData.ts (the GUI's
+// mirror of this transform).
 const std::vector<std::string> kKnownKeys = {
     "checkpoint",
     "checkpoints",
+    "components",
     "model_name",
+    "models",
     "image_defaults",
     "labels",
     "recipe",
     "recipe_options",
-    "size"
+    "size",
+    "system_prompt"
 };
 
 bool is_json_recipe_file(const nlohmann::json& entry) {
@@ -131,20 +140,47 @@ int prompt_numbered_choice(const std::string& title,
 bool download_recipe_to_temp_file(const std::string& download_url,
                                   std::filesystem::path& temp_file_out,
                                   std::string& error_out) {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    temp_file_out = std::filesystem::temp_directory_path() /
-        ("lemonade-recipe-" + std::to_string(timestamp) + ".json");
+    std::filesystem::path runtime_base = lemon::utils::path_from_utf8(lemon::utils::get_runtime_dir());
+
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    std::error_code ec;
+    std::filesystem::path temp_dir;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "recipe-import-" << nonce << "-" << std::hex << dis(rd);
+        std::filesystem::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (std::filesystem::create_directory(candidate, ec)) {
+            temp_dir = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir.empty()) {
+        error_out = "Failed to create temporary directory for recipe download";
+        return false;
+    }
+
+    temp_file_out = temp_dir / "recipe.json";
 
     lemon::utils::DownloadResult result;
     try {
         result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
     } catch (const std::exception& e) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
         error_out = "Recipe download failed: " + std::string(e.what());
         return false;
     }
 
     if (!result.success) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
         error_out = "Recipe download failed: " + result.error_message;
         if (result.http_code > 0) {
             error_out += " (HTTP " + std::to_string(result.http_code) + ")";
@@ -155,18 +191,40 @@ bool download_recipe_to_temp_file(const std::string& download_url,
     return true;
 }
 
+// Shared per-object normalization for exported model JSON: `id` → `model_name`
+// rename, singular-checkpoint dedup, and kKnownKeys filtering. Applied to the
+// top-level model and to each element of a collection's `models` array.
+static void normalize_model_json_keys(nlohmann::json& obj) {
+    if ((!obj.contains("model_name") || !obj["model_name"].is_string()) &&
+        obj.contains("id") && obj["id"].is_string()) {
+        obj["model_name"] = obj["id"];
+    }
+
+    if (obj.contains("checkpoints") && obj["checkpoints"].is_object() &&
+        obj.contains("checkpoint")) {
+        obj.erase("checkpoint");
+    }
+
+    std::vector<std::string> keys_to_remove;
+    for (auto& [key, _] : obj.items()) {
+        if (std::find(kKnownKeys.begin(), kKnownKeys.end(), key) == kKnownKeys.end()) {
+            keys_to_remove.push_back(key);
+        }
+    }
+    for (const auto& key : keys_to_remove) {
+        obj.erase(key);
+    }
+}
+
 } // namespace
 
 bool validate_and_transform_model_json(nlohmann::json& model_data) {
-    if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
-        if (model_data.contains("id") && model_data["id"].is_string()) {
-            model_data["model_name"] = model_data["id"];
-            model_data.erase("id");
-        } else {
-            std::cerr << "Error: JSON file must contain a 'model_name' string field" << std::endl;
-            return false;
-        }
+    if ((!model_data.contains("model_name") || !model_data["model_name"].is_string()) &&
+        !(model_data.contains("id") && model_data["id"].is_string())) {
+        std::cerr << "Error: JSON file must contain a 'model_name' string field" << std::endl;
+        return false;
     }
+    normalize_model_json_keys(model_data);
 
     std::string model_name = model_data["model_name"].get<std::string>();
     if (lemon::is_reserved_registration_name(model_name)) {
@@ -186,33 +244,42 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
         return false;
     }
 
+    bool is_collection = lemon::is_collection_recipe(model_data["recipe"].get<std::string>());
+
     bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
     bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
-    if (!has_checkpoints && !has_checkpoint) {
+    if (!has_checkpoints && !has_checkpoint && !is_collection) {
+        // Collections have no weights of their own — their components carry the
+        // checkpoints — so the requirement only applies to regular models.
         std::cerr << "Error: JSON file must contain either 'checkpoints' (object) or 'checkpoint' (string)" << std::endl;
         return false;
     }
 
-    if (has_checkpoints && has_checkpoint) {
-        model_data.erase("checkpoint");
+    // `components`/`models` describe collections; regular-model files stay free
+    // of them (the live API emits an empty `components` array for every model).
+    if (!is_collection) {
+        model_data.erase("components");
+        model_data.erase("models");
     }
 
-    std::vector<std::string> keys_to_remove;
-    for (auto& [key, _] : model_data.items()) {
-        bool is_known = false;
-        for (const auto& known_key : kKnownKeys) {
-            if (key == known_key) {
-                is_known = true;
-                break;
+    // Collections embed each component's definition in a `models` array; apply
+    // the same per-model normalization to every element. Unlike the top-level
+    // model, elements get no `user.` prefix — the server decides prefixing when
+    // registering them.
+    if (model_data.contains("models") && model_data["models"].is_array()) {
+        for (auto& component : model_data["models"]) {
+            if (!component.is_object()) continue;
+            normalize_model_json_keys(component);
+
+            // Components are leaf models; drop the (empty) collection fields the
+            // live API emits on every model object.
+            if (component.contains("components") && component["components"].empty()) {
+                component.erase("components");
+            }
+            if (component.contains("models") && component["models"].empty()) {
+                component.erase("models");
             }
         }
-        if (!is_known) {
-            keys_to_remove.push_back(key);
-        }
-    }
-
-    for (const auto& key : keys_to_remove) {
-        model_data.erase(key);
     }
 
     return true;
@@ -435,6 +502,7 @@ int import_remote_recipe(lemonade::LemonadeClient& client,
     if (rm_ec) {
         std::cerr << "Warning: Failed to remove temp recipe file '" << temp_file.string() << "'." << std::endl;
     }
+    std::filesystem::remove(temp_file.parent_path(), rm_ec);
 
     return import_result;
 }

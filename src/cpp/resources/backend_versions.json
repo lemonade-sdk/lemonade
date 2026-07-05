@@ -1,11 +1,12 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b9213",
-    "rocm-stable": "b9211",
-    "rocm-nightly": "b1271",
-    "metal": "b9213",
-    "cpu": "b9213"
+    "vulkan": "b9747",
+    "rocm-stable": "b9752",
+    "rocm-nightly": "b1292",
+    "cuda": "b9851",
+    "metal": "b9747",
+    "cpu": "b9747"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -15,9 +16,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-616-cde20d5",
-    "rocm-stable": "master-616-cde20d5",
-    "metal": "master-616-cde20d5"
+    "cpu": "master-721-8caa3f9",
+    "rocm-stable": "master-721-8caa3f9",
+    "vulkan": "master-721-8caa3f9",
+    "cuda": "master-726-db48014",
+    "metal": "master-721-8caa3f9"
   },
   "therock": {
     "version": "7.13.0",
@@ -28,6 +31,7 @@
       "gfx1100",
       "gfx1101",
       "gfx1102",
+      "gfx1103",
       "gfx1150",
       "gfx1151",
       "gfx1152",
@@ -42,15 +46,22 @@
       "gfx1033",
       "gfx1034",
       "gfx1035",
-      "gfx1036"
+      "gfx1036",
+      "gfx103X",
+      "gfx110X",
+      "gfx120X"
     ],
     "url_mapping": {
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
+      "gfx103X": "gfx103X-all",
+      "gfx110X": "gfx110X-all",
+      "gfx120X": "gfx120X-all",
       "gfx1100": "gfx110X-all",
       "gfx1101": "gfx110X-all",
       "gfx1102": "gfx110X-all",
+      "gfx1103": "gfx110X-all",
       "gfx1150": "gfx1150",
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
@@ -72,7 +83,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v0.9.42"
+    "npu": "v0.9.43"
   },
   "kokoro": {
     "cpu": "b17",
@@ -80,6 +91,25 @@
   },
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"
+  },
+  "rocm_asset_families": {
+    "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
+    "gfx1200": "gfx120X",
+    "gfx1201": "gfx120X",
+    "gfx1100": "gfx110X",
+    "gfx1101": "gfx110X",
+    "gfx1102": "gfx110X",
+    "gfx1103": "gfx110X",
+    "gfx1030": "gfx103X",
+    "gfx1031": "gfx103X",
+    "gfx1032": "gfx103X",
+    "gfx1033": "gfx103X",
+    "gfx1034": "gfx103X",
+    "gfx1035": "gfx103X",
+    "gfx1036": "gfx103X"
+  },
+  "moonshine": {
+    "cpu": "moonshine0.0.62"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

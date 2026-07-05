@@ -4,10 +4,12 @@ import { useSystem } from './hooks/useSystem';
 import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
+import CloudProvidersSection from './CloudProvidersSection';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
   'whispercpp',
+  'moonshine',
   'sd-cpp',
   'kokoro',
   'flm',
@@ -32,9 +34,10 @@ interface BackendManagerProps {
   searchQuery: string;
   showError: (msg: string) => void;
   showSuccess: (msg: string) => void;
+  showWarning: (msg: string) => void;
 }
 
-const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
+const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess, showWarning }) => {
   const { systemInfo, isLoading, refresh } = useSystem();
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
@@ -165,8 +168,22 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     return <div className="left-panel-empty-state">Loading backends...</div>;
   }
 
+  const cloudSection = (
+    <CloudProvidersSection
+      searchQuery={searchQuery}
+      showError={showError}
+      showSuccess={showSuccess}
+      showWarning={showWarning}
+    />
+  );
+
   if (visibleGroups.length === 0) {
-    return <div className="left-panel-empty-state">No backends match your current filter.</div>;
+    return (
+      <>
+        <div className="left-panel-empty-state">No local backends match your current filter.</div>
+        {cloudSection}
+      </>
+    );
   }
 
   return (
@@ -193,6 +210,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
           </div>
         </div>
       ))}
+      {cloudSection}
     </>
   );
 };

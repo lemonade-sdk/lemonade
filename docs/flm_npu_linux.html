@@ -165,11 +165,12 @@
             <label for="distro-select" class="flm-distro-label"><strong>Select your Linux distribution:</strong></label>
             <select id="distro-select" class="flm-distro-selector">
               <option value="" selected disabled>Select your distro...</option>
+              <option value="arch">Arch Linux</option>
+              <option value="debian-13">Debian 13</option>
+              <option value="other">Other</option>
               <option value="ubuntu-24">Ubuntu 24.04</option>
               <option value="ubuntu-25">Ubuntu 25.10</option>
               <option value="ubuntu-26">Ubuntu 26.04</option>
-              <option value="arch">Arch Linux</option>
-              <option value="other">Other</option>
             </select>
           </div>
 
@@ -227,6 +228,24 @@
                 <span class="flm-instruction-label">For Ubuntu 26.04</span>
               </div>
               <ol>
+                <li>Download FLM from <a href="https://github.com/FastFlowLM/FastFlowLM/releases" target="_blank" rel="noopener">GitHub releases</a>.</li>
+                <li>Install FLM:
+                  <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="flm-distro-instructions" id="distro-debian-13" style="display:none;">
+            <div class="flm-instruction-box">
+              <div class="flm-instruction-header">
+                <span class="flm-instruction-label">For Debian 13</span>
+              </div>
+              <ol>
+                <li>Enable backports by creating <code>/etc/apt/sources.list.d/debian-backports.sources</code>:
+                  <div class="flm-code-block"><code>sudo tee /etc/apt/sources.list.d/debian-backports.sources &lt;&lt;EOF<br>Types: deb<br>URIs: http://deb.debian.org/debian<br>Suites: trixie-backports<br>Components: main<br>Enabled: yes<br>Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg<br>EOF<br>sudo apt update</code></div>
+                  <span class="flm-inline-note">Backports is needed so apt can automatically satisfy FLM's newer runtime/driver dependencies when installing the .deb. See <a href="https://backports.debian.org/Instructions/" target="_blank" rel="noopener">backports.debian.org</a> for details.</span>
+                </li>
                 <li>Download FLM from <a href="https://github.com/FastFlowLM/FastFlowLM/releases" target="_blank" rel="noopener">GitHub releases</a>.</li>
                 <li>Install FLM:
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
@@ -384,7 +403,7 @@
       }
 
       const select = document.getElementById('distro-select');
-      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'arch', 'other'];
+      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'debian-13', 'arch', 'other'];
       const faq = document.getElementById('flm-faq-section');
 
       ids.forEach(function(id) {

@@ -127,6 +127,51 @@
       </div>
 
       <div class="install-section">
+        <h2>Still seeing ROCm failures after updating your kernel?</h2>
+        <p>
+          If your kernel is up to date but Lemonade still refuses to install or run the ROCm backend,
+          you may have the AMDGPU <strong>DKMS</strong>
+          module installed. On Ryzen AI / Strix Halo systems, the DKMS module conflicts with the
+          in-tree <code>amdgpu</code> driver and breaks GPU access for ROCm workloads.
+        </p>
+
+        <div class="option-box option-secondary">
+          <div class="option-header">
+            <span class="option-label">Fix: Use the ROCm "Ryzen AI" Use Case</span>
+          </div>
+          <h3>Reinstall ROCm without DKMS</h3>
+          <p>
+            AMD publishes a Ryzen-specific ROCm install guide that explicitly avoids the DKMS module found here:
+          </p>
+          <ul>
+            <li>
+              <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/native_linux/install-ryzen.html#set-up-rocm-usecase" target="_blank">
+                ROCm on Radeon / Ryzen — Set up ROCm use case
+              </a>
+            </li>
+          </ul>
+          <p>
+            In short, when running <code>amdgpu-install</code>, pass a use case that does
+            <strong>not</strong> include <code>dkms</code>, for example:
+          </p>
+          <div class="code-block">
+            <code>sudo amdgpu-install -y --usecase=rocm --no-dkms</code>
+          </div>
+          <p>
+            If DKMS is already installed, remove it first:
+          </p>
+          <div class="code-block">
+            <code>sudo apt remove --purge amdgpu-dkms && sudo reboot</code>
+          </div>
+          <p class="option-note">
+            After reinstalling ROCm without DKMS and rebooting, retry installing the Lemonade ROCm
+            backend (<code>llamacpp:rocm</code>, <code>sd-cpp:rocm-stable</code>, or
+            <code>vllm:rocm</code>).
+          </p>
+        </div>
+      </div>
+
+      <div class="install-section">
         <h2>Need Help?</h2>
         <p>
           If you continue to experience issues after updating your kernel:
