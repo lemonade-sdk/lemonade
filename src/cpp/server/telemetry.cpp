@@ -524,7 +524,7 @@ private:
                                 ++it;
                             }
                         }
-                        LOG(INFO, "Telemetry") << "Flush requested. Exporting batch of "
+                        LOG(DEBUG, "Telemetry") << "Flush requested. Exporting batch of "
                                                << batch_spans.size() << " spans..." << std::endl;
                         break;
                     }
@@ -575,7 +575,7 @@ private:
                             }
                         }
 
-                        LOG(INFO, "Telemetry") << "Batch target size reached or timeout elapsed. Exporting batch of "
+                        LOG(DEBUG, "Telemetry") << "Batch target size reached or timeout elapsed. Exporting batch of "
                                                << batch_spans.size() << " spans..." << std::endl;
                         break;
                     } else {
@@ -618,7 +618,7 @@ private:
                     auto response = utils::HttpClient::post(batch_endpoint, payload, batch_headers, 3);
                     if (response.status_code >= 200 && response.status_code < 300) {
                         success = true;
-                        LOG(INFO, "Telemetry") << "Successfully sent telemetry batch." << std::endl;
+                        LOG(DEBUG, "Telemetry") << "Successfully sent telemetry batch." << std::endl;
                         {
                             std::unique_lock<std::mutex> lock(mutex_);
                             endpoint_unreachable_ = false;
@@ -660,7 +660,7 @@ private:
                     std::uniform_real_distribution<double> dist(0.5, 1.5);
                     double delay_with_jitter = delay * dist(gen);
 
-                    LOG(INFO, "Telemetry") << "Retrying batch in " << delay_with_jitter << " seconds (with jitter, attempt " << retries << " of " << max_retries << ")..." << std::endl;
+                    LOG(DEBUG, "Telemetry") << "Retrying batch in " << delay_with_jitter << " seconds (with jitter, attempt " << retries << " of " << max_retries << ")..." << std::endl;
 
                     bool local_shutdown = false;
                     bool local_flush_requested = false;
@@ -671,11 +671,11 @@ private:
                         local_flush_requested = flush_requested_;
                     }
                     if (local_shutdown) {
-                        LOG(INFO, "Telemetry") << "Shutdown requested during retry sleep. Aborting." << std::endl;
+                        LOG(DEBUG, "Telemetry") << "Shutdown requested during retry sleep. Aborting." << std::endl;
                         return;
                     }
                     if (local_flush_requested) {
-                        LOG(INFO, "Telemetry") << "Flush requested during retry sleep. Aborting retries for this batch." << std::endl;
+                        LOG(DEBUG, "Telemetry") << "Flush requested during retry sleep. Aborting retries for this batch." << std::endl;
                         break;
                     }
                 } else {
@@ -758,7 +758,7 @@ public:
         if (auto* config = RuntimeConfig::global()) {
             batch_size = config->telemetry_otlp_send_batch_size();
         }
-        LOG(INFO, "Telemetry") << "Accumulating span to batch (size " << (queue_.size() + 1) << "/" << batch_size << ")..." << std::endl;
+        LOG(DEBUG, "Telemetry") << "Accumulating span to batch (size " << (queue_.size() + 1) << "/" << batch_size << ")..." << std::endl;
 
         queue_.push_back({std::move(span_details), std::move(endpoint), std::move(headers), std::move(protocol), std::chrono::steady_clock::now()});
         cv_.notify_one();

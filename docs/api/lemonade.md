@@ -16,6 +16,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
+| `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -28,6 +29,78 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+
+## `GET /v1/models/{id}/files`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List resolved local file metadata for a single model. This endpoint is intended for model-detail UIs such as the Files tab. It is per-model inventory, not system or drive storage accounting.
+
+The endpoint is available at:
+
+- `/v1/models/{id}/files`
+- `/api/v1/models/{id}/files`
+- `/v0/models/{id}/files`
+- `/api/v0/models/{id}/files`
+
+By default, the response does not include absolute filesystem paths. Trusted local clients that need paths for native UI actions can request them explicitly with `?include_paths=true`. Absolute paths may reveal local usernames and cache layout, so clients should only request them when that disclosure is acceptable.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/models/Qwen3-4B/files
+```
+
+### Response format
+
+```json
+{
+  "model_id": "Qwen3-4B",
+  "files": [
+    {
+      "name": "model.gguf",
+      "role": "main",
+      "size_bytes": 123456789,
+      "exists": true
+    },
+    {
+      "name": "mmproj.gguf",
+      "role": "mmproj",
+      "size_bytes": 12345678,
+      "exists": true
+    }
+  ]
+}
+```
+
+### Optional path disclosure
+
+```bash
+curl 'http://localhost:13305/v1/models/Qwen3-4B/files?include_paths=true'
+```
+
+When `include_paths=true` is supplied, each file entry also includes `path`:
+
+```json
+{
+  "name": "model.gguf",
+  "path": "/abs/path/model.gguf",
+  "role": "main",
+  "size_bytes": 123456789,
+  "exists": true
+}
+```
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `model_id` | Public model ID for the requested model. |
+| `files` | Array of resolved model files known to the registry. |
+| `files[].name` | Base filename from the resolved path. |
+| `files[].path` | Absolute resolved path on the local system. Only included when `include_paths=true`; privacy-sensitive. |
+| `files[].role` | Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role. |
+| `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
+| `files[].exists` | Whether the resolved path currently exists on disk. |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
