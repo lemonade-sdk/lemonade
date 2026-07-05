@@ -13,6 +13,10 @@ error_log="/var/log/lemonade/lemonade.log"
 
 export HOME="/var/lib/lemonade"
 
+# lemond resolves its runtime dir from XDG_RUNTIME_DIR (or RUNTIME_DIRECTORY);
+# without one it refuses to start. start_pre creates this dir 0700 lemonade:lemonade.
+export XDG_RUNTIME_DIR="/run/lemonade"
+
 depend() {
 	need net
 	after firewall

@@ -31,7 +31,12 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -f Dockerfile.alpine -t lemonade-alpine:test .
+          # Temporary: the musl backend assets still live in a fork, so point
+          # backend downloads there explicitly. Drop this build-arg once the
+          # companion asset PRs land in lemonade-sdk/*.
+          docker build -f Dockerfile.alpine \
+            --build-arg LEMONADE_BACKEND_REPO_OWNER=clemperorpenguin \
+            -t lemonade-alpine:test .
 
       - name: Run container
         run: |

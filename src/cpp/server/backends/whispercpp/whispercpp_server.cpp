@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/model_manager.h"
 #include "lemon/backend_manager.h"
 #include "lemon/platform.h"
@@ -82,6 +83,14 @@ WhisperServer::~WhisperServer() {
 InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+#ifdef LEMON_LINUX_MUSL
+    // musl ships only CPU and Vulkan; rocm/npu have no musl build (helper throws).
+    const auto musl_asset = musl::whispercpp(backend, version, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
+    return params;
+#endif
+
     params.repo = "lemonade-sdk/whisper.cpp-rocm";
 
     if (backend == "npu") {
@@ -91,13 +100,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
-#ifdef LEMON_LINUX_MUSL
-#if defined(__aarch64__)
-        params.filename = "whisper-" + version + "-linux-musl-cpu-aarch64.tar.gz";
-#else
-        params.filename = "whisper-" + version + "-linux-musl-cpu-x86_64.tar.gz";
-#endif
-#elif defined(_WIN32)
+#if defined(_WIN32)
         params.filename = "whisper-" + version + "-windows-cpu-x64.zip";
 #elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
@@ -118,13 +121,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("ROCm whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "vulkan") {
-#ifdef LEMON_LINUX_MUSL
-#if defined(__aarch64__)
-        params.filename = "whisper-" + version + "-linux-musl-vulkan-aarch64.tar.gz";
-#else
-        params.filename = "whisper-" + version + "-linux-musl-vulkan-x86_64.tar.gz";
-#endif
-#elif defined(_WIN32)
+#if defined(_WIN32)
         params.filename = "whisper-" + version + "-windows-vulkan-x64.zip";
 #elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";

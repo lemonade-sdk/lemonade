@@ -24,7 +24,12 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
+#ifndef LEMON_LINUX_MUSL
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+#else
+        // musl publishes both x86_64 and aarch64 CPU assets.
+        {"cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU"},
+#endif
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {},  // kokoro models carry "tts" explicitly in server_models.json

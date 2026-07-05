@@ -1,9 +1,9 @@
 # Alpine / musl packaging
 
 Builds an installable `lemonade-server` `.apk` (lemond + lemonade CLI + web app)
-for musl-based Linux. NPU backends (FastFlowLM/RyzenAI) and moonshine are not
-available on musl and are excluded; GPU (Vulkan) backends work if a Vulkan driver
-is present at runtime.
+for musl-based Linux. NPU backends (FastFlowLM/RyzenAI) are not available on musl
+and are excluded; GPU (Vulkan) backends work if a Vulkan driver is present at
+runtime.
 
 ## Build
 
@@ -38,9 +38,9 @@ The service runs as the unprivileged `lemonade` user (state in
 
 ## musl backend assets
 
-llama.cpp, whisper.cpp, and stable-diffusion.cpp publish musl (`-linux-musl-` /
-`-Linux-musl-`) release assets from a fork until they land in `lemonade-sdk/*`.
-Until then, point backend downloads at that fork:
+The backends (llama.cpp, whisper.cpp, stable-diffusion.cpp, Kokoro, Moonshine)
+publish musl (`-linux-musl-` / `-Linux-musl-`) release assets from a fork until
+they land in `lemonade-sdk/*`. Until then, point backend downloads at that fork:
 
 ```sh
 export LEMONADE_BACKEND_REPO_OWNER=clemperorpenguin

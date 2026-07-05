@@ -76,6 +76,34 @@ jobs:
             exit 1
           '
 
+      - name: Smoke test the OpenRC service
+        run: |
+          # Exercises the documented `rc-service lemonade-server start` path (not
+          # just a hand-exported `lemond`): the initd must export XDG_RUNTIME_DIR
+          # itself, or lemond refuses to start. --nodeps because a bare container
+          # has no running `net` service to depend on.
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh -eux -c '
+            apk add --allow-untrusted ./dist/lemonade-server-*.apk
+
+            # Minimal OpenRC bootstrap for a non-init container.
+            mkdir -p /run/openrc
+            touch /run/openrc/softlevel
+
+            rc-service --nodeps lemonade-server start
+            for i in $(seq 1 30); do
+              if wget -q -O - http://localhost:13305/live >/dev/null 2>&1; then
+                echo "Service is up"
+                rc-service --nodeps lemonade-server stop || true
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: service did not become healthy"
+            cat /var/log/lemonade/lemonade.log || true
+            rc-service --nodeps lemonade-server stop || true
+            exit 1
+          '
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

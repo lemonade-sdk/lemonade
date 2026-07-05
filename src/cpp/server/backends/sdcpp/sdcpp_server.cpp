@@ -2,6 +2,7 @@
 #include "lemon/backends/sdcpp/sdcpp.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/backend_manager.h"
 #include "lemon/platform.h"
 #include "lemon/runtime_config.h"
@@ -117,20 +118,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     }
 
 #ifdef LEMON_LINUX_MUSL
-    // musl builds come from the fork and ship only CPU and Vulkan; a musl host
-    // must never fetch a glibc rocm/cuda/ubuntu asset. load() maps any GPU
-    // backend to vulkan, so only these two asset shapes can reach here.
-    params.repo = "lemonade-sdk/stable-diffusion.cpp";
-#if defined(__aarch64__)
-    const std::string musl_arch = "aarch64";
-#else
-    const std::string musl_arch = "x86_64";
-#endif
-    if (resolved_backend == "vulkan") {
-        params.filename = "sd-" + short_version + "-bin-Linux-musl-vulkan-" + musl_arch + ".zip";
-    } else {
-        params.filename = "sd-" + short_version + "-bin-Linux-musl-" + musl_arch + ".zip";
-    }
+    // musl ships only CPU and Vulkan; load() maps any GPU backend to one of those,
+    // and cuda/rocm map to the CPU asset here — never a glibc/ubuntu asset.
+    const auto musl_asset = musl::sdcpp(resolved_backend, short_version, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
     return params;
 #endif
 
