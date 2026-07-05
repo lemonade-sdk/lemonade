@@ -51,10 +51,10 @@ Before opening a PR, please make sure that:
 2. The changes are limited to what is necessary.
 3. There are no unrelated local changes included.
 4. The PR description explains what changed and why.
-5. The PR describes how the change was tested.
+5. The PR describes how the change was tested, including any platforms that could not be tested locally.
 6. Larger refactoring is separated from bug fixes or feature changes.
 
-Some areas of the codebase are more sensitive than they may appear. Small changes can sometimes have large side effects, especially in recently reworked, complex, or platform-specific code. In these cases, reviewers may ask you to reduce the scope, add tests, or follow a specific implementation approach.
+Some areas of the codebase are more sensitive than they may appear. Small changes can sometimes have large side effects, especially in recently reworked, complex, or platform-specific code. In these cases, reviewers may ask you to reduce the scope, add tests, or follow a specific implementation approach. If you need help testing on a platform you do not have access to, please mention it in the PR and ask for support in the Lemonade Discord.
 
 The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
 
