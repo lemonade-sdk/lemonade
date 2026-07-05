@@ -7658,3 +7658,11 @@ input::-webkit-calendar-picker-indicator {
 .audio-duration-label input[type="number"] {
     text-align: center;
 }
+
+.audio-duration-label input {
+  color-scheme: dark;
+}
+
+[data-theme="light"] .audio-duration-label input {
+  color-scheme: light;
+}
