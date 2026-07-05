@@ -3,7 +3,7 @@ import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModel
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
@@ -641,6 +641,16 @@ function saveFavoriteModels(scope: string, names: string[]): void {
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
+type OmniCustomToolDraft = {
+  id: string;
+  name: string;
+  description: string;
+  targetModel: string;
+  systemPrompt: string;
+  promptTemplate: string;
+  parametersJson: string;
+  maxTokens: string;
+};
 type CustomModelDraftState = {
   name: string;
   displayName: string;
@@ -660,7 +670,81 @@ type CustomModelDraftState = {
   transcriptionComponent: string;
   speechComponent: string;
   omniSystemPrompt: string;
+  omniCustomTools: OmniCustomToolDraft[];
 };
+
+
+const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS = {
+  type: 'object',
+  properties: {
+    task: { type: 'string', description: 'The focused task to delegate to the target model.' },
+    context: { type: 'string', description: 'Optional context, constraints, code, or review material for the target model.' },
+  },
+  required: ['task'],
+  additionalProperties: false,
+};
+
+const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON = JSON.stringify(DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS, null, 2);
+
+function sanitizeOmniToolName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^([^a-zA-Z_])/, '_$1')
+    .slice(0, 64);
+}
+
+function nextOmniToolName(existing: OmniCustomToolDraft[], base: string): string {
+  const used = new Set(existing.map(tool => tool.name.trim().toLowerCase()).filter(Boolean));
+  let candidate = sanitizeOmniToolName(base) || 'ask_model';
+  if (!used.has(candidate.toLowerCase())) return candidate;
+  let i = 2;
+  while (used.has(`${candidate}_${i}`.toLowerCase())) i += 1;
+  return `${candidate}_${i}`;
+}
+
+function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset: 'generic' | 'coder' | 'reviewer' = 'generic', targetModel = ''): OmniCustomToolDraft {
+  const id = `custom-tool-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  if (preset === 'coder') {
+    const name = nextOmniToolName(existing, 'ask_coder');
+    return {
+      id,
+      name,
+      description: 'Delegate a focused implementation task to a coding model.',
+      targetModel,
+      systemPrompt: 'You are a focused coding assistant. Implement small, well-scoped tasks. Prefer concrete code and mention important assumptions or edge cases briefly.',
+      promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn the implementation guidance or code the planner should use.',
+      parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  if (preset === 'reviewer') {
+    const name = nextOmniToolName(existing, 'ask_reviewer');
+    return {
+      id,
+      name,
+      description: 'Ask a reviewer model to check code, plans, or patches for bugs and regressions.',
+      targetModel,
+      systemPrompt: 'You are a strict but practical code reviewer. Look for correctness bugs, regressions, missing tests, and risky assumptions. Be concise and actionable.',
+      promptTemplate: 'Review task:\n{task}\n\nMaterial to review:\n{context}\n\nReturn findings grouped by severity, plus a short verdict.',
+      parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  const name = nextOmniToolName(existing, 'ask_model');
+  return {
+    id,
+    name,
+    description: 'Delegate a focused task to another local LLM and return its result to the planner.',
+    targetModel,
+    systemPrompt: 'You are a focused internal assistant tool. Complete the delegated task and return concise, actionable results.',
+    promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn a concise result for the planner model.',
+    parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+    maxTokens: '',
+  };
+}
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all' }[] = [
   { key: 'all', label: 'All', icon: 'all' },
@@ -693,6 +777,7 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     transcriptionComponent: '',
     speechComponent: '',
     omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE,
+    omniCustomTools: [],
   };
 }
 
@@ -1608,6 +1693,43 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       if (customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && !customDraft.llmComponent.trim()) {
         throw new Error('Select a planner LLM for the Omni collection.');
       }
+      const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
+      const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
+      const seenCustomToolNames = new Set<string>();
+      const customTools = isOmniCollection
+        ? customDraft.omniCustomTools.map((tool, index) => {
+          const hasAnyValue = [tool.name, tool.description, tool.targetModel, tool.systemPrompt, tool.promptTemplate, tool.parametersJson, tool.maxTokens].some(value => String(value || '').trim());
+          if (!hasAnyValue) return null;
+          const name = sanitizeOmniToolName(tool.name);
+          if (!name) throw new Error(`Custom tool ${index + 1}: enter a tool name.`);
+          if (builtinToolNames.has(name)) throw new Error(`Custom tool ${name} conflicts with a built-in Omni tool.`);
+          if (seenCustomToolNames.has(name.toLowerCase())) throw new Error(`Custom tool ${name} is duplicated.`);
+          seenCustomToolNames.add(name.toLowerCase());
+          const targetModel = tool.targetModel.trim();
+          if (!targetModel) throw new Error(`Custom tool ${name}: select a target LLM.`);
+          const description = tool.description.trim();
+          if (!description) throw new Error(`Custom tool ${name}: enter a description so the planner knows when to call it.`);
+          let parameters: Record<string, unknown>;
+          try {
+            const parsed = JSON.parse(tool.parametersJson || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schema must be a JSON object');
+            parameters = parsed as Record<string, unknown>;
+          } catch (err) {
+            throw new Error(`Custom tool ${name}: invalid JSON parameter schema (${err instanceof Error ? err.message : String(err)}).`);
+          }
+          const maxTokens = Number(tool.maxTokens);
+          return {
+            id: tool.id,
+            name,
+            description,
+            target_model: targetModel,
+            system_prompt: tool.systemPrompt.trim() || undefined,
+            prompt_template: tool.promptTemplate.trim() || undefined,
+            parameters,
+            max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
+          };
+        }).filter((tool): tool is CustomOmniToolDefinition => Boolean(tool))
+        : [];
       const componentRoles = {
         llm: customDraft.llmComponent,
         vision: customDraft.visionComponent,
@@ -1616,10 +1738,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         transcription: customDraft.transcriptionComponent,
         speech: customDraft.speechComponent,
       };
+      const customToolTargets = customTools.map(tool => tool.target_model);
       const components = customDraft.omniSource === 'collection'
-        ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
+        ? Array.from(new Set([...Object.values(componentRoles), ...customToolTargets].map(v => v.trim()).filter(Boolean)))
         : [];
-      const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
       const omniSystemPrompt = customDraft.omniSystemPrompt.trim();
       const availableRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
@@ -1657,6 +1779,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
         components,
         componentRoles,
+        customTools,
       });
       reloadCustomModels();
       setShowCustomForm(false);
@@ -1735,6 +1858,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     }
     return roles;
   }, [allModels]);
+
+  const addOmniCustomTool = (preset: 'generic' | 'coder' | 'reviewer' = 'generic') => {
+    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
+    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, preset, targetModel);
+    handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, next] });
+  };
+
+  const addCoderReviewerPair = () => {
+    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
+    const coder = createOmniCustomToolDraft(customDraft.omniCustomTools, 'coder', targetModel);
+    const reviewer = createOmniCustomToolDraft([...customDraft.omniCustomTools, coder], 'reviewer', targetModel);
+    handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, coder, reviewer] });
+  };
+
+  const updateOmniCustomTool = (id: string, patch: Partial<OmniCustomToolDraft>) => {
+    handleCustomDraftChange({
+      omniCustomTools: customDraft.omniCustomTools.map(tool => tool.id === id ? { ...tool, ...patch } : tool),
+    });
+  };
+
+  const removeOmniCustomTool = (id: string) => {
+    handleCustomDraftChange({ omniCustomTools: customDraft.omniCustomTools.filter(tool => tool.id !== id) });
+  };
 
   const displayLoadedModels = useMemo(
     () => withVirtualLoadedCollections(loadedModels, allModels),
@@ -2733,6 +2879,98 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <div className="custom-model-form__prompt-actions custom-model-form__wide">
                     <button className="btn btn--ghost btn--tiny" type="button" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</button>
                     <span>{customDraft.omniSystemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE ? 'Default prompt will be used.' : 'Custom prompt override will be saved with this collection.'}</span>
+                  </div>
+                  <div className="custom-model-form__tools custom-model-form__wide">
+                    <div className="custom-model-form__section-head">
+                      <div>
+                        <strong>Custom LLM tools</strong>
+                        <span>Expose other local LLMs as planner-callable tools, e.g. coder/reviewer helper models.</span>
+                      </div>
+                      <div className="custom-model-form__section-actions">
+                        <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('generic')}>+ LLM tool</button>
+                        <button className="btn btn--ghost btn--tiny" type="button" onClick={addCoderReviewerPair}>+ Coder/reviewer pair</button>
+                      </div>
+                    </div>
+                    {customDraft.omniCustomTools.length === 0 ? (
+                      <div className="custom-model-form__empty-tools">No custom LLM tools configured. Built-in media/audio tools still come from the selected components.</div>
+                    ) : customDraft.omniCustomTools.map((tool, index) => {
+                      const targetListId = `omni-custom-tool-targets-${tool.id}`;
+                      return (
+                        <div className="custom-model-form__tool-card" key={tool.id}>
+                          <div className="custom-model-form__tool-card-head">
+                            <strong>Tool {index + 1}</strong>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => removeOmniCustomTool(tool.id)}>Remove</button>
+                          </div>
+                          <label className="custom-model-form__field">Tool name
+                            <input
+                              value={tool.name}
+                              onChange={e => updateOmniCustomTool(tool.id, { name: sanitizeOmniToolName(e.target.value) })}
+                              placeholder="ask_coder"
+                            />
+                            <span className="custom-model-form__field-hint">Function name exposed to the planner. Use letters, numbers, underscores, or hyphens.</span>
+                          </label>
+                          <label className="custom-model-form__field">Target LLM
+                            <input
+                              value={tool.targetModel}
+                              list={targetListId}
+                              onChange={e => updateOmniCustomTool(tool.id, { targetModel: e.target.value })}
+                              placeholder="Select or type a model id"
+                            />
+                            <datalist id={targetListId}>
+                              {omniComponentOptions.llm.map(option => (
+                                <option key={option.id} value={option.id}>{option.label}</option>
+                              ))}
+                            </datalist>
+                            <span className="custom-model-form__field-hint">The model called when this tool runs. Tool calls are plain chat completions, no recursive tools.</span>
+                          </label>
+                          <label className="custom-model-form__field custom-model-form__wide">Description
+                            <input
+                              value={tool.description}
+                              onChange={e => updateOmniCustomTool(tool.id, { description: e.target.value })}
+                              placeholder="Delegate a focused implementation task to a coding model."
+                            />
+                            <span className="custom-model-form__field-hint">Tell the planner when to call this tool.</span>
+                          </label>
+                          <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool system prompt
+                            <textarea
+                              value={tool.systemPrompt}
+                              onChange={e => updateOmniCustomTool(tool.id, { systemPrompt: e.target.value })}
+                              rows={4}
+                              spellCheck={false}
+                            />
+                            <span className="custom-model-form__field-hint custom-model-form__field-hint--wrap">Role prompt for the target LLM.</span>
+                          </label>
+                          <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">User prompt template
+                            <textarea
+                              value={tool.promptTemplate}
+                              onChange={e => updateOmniCustomTool(tool.id, { promptTemplate: e.target.value })}
+                              rows={4}
+                              spellCheck={false}
+                            />
+                            <span className="custom-model-form__field-hint custom-model-form__field-hint--wrap">Supports {'{arguments}'} plus argument placeholders like {'{task}'} and {'{context}'}.</span>
+                          </label>
+                          <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool argument schema JSON
+                            <textarea
+                              value={tool.parametersJson}
+                              onChange={e => updateOmniCustomTool(tool.id, { parametersJson: e.target.value })}
+                              rows={5}
+                              spellCheck={false}
+                            />
+                            <span className="custom-model-form__field-hint custom-model-form__field-hint--wrap">OpenAI function parameters schema. Default exposes task and context.</span>
+                          </label>
+                          <label className="custom-model-form__field">Max tokens
+                            <input
+                              value={tool.maxTokens}
+                              inputMode="numeric"
+                              onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
+                              placeholder="Optional"
+                            />
+                            <span className="custom-model-form__field-hint">Optional output cap for this tool call.</span>
+                          </label>
+                          <div className="custom-model-form__field-spacer" aria-hidden="true" />
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
