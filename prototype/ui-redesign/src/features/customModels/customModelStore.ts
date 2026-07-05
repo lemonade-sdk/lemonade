@@ -14,6 +14,17 @@ export interface CustomModelComponentRoles {
   speech?: string;
 }
 
+export interface CustomOmniToolDefinition {
+  id?: string;
+  name: string;
+  description: string;
+  target_model: string;
+  system_prompt?: string;
+  prompt_template?: string;
+  parameters?: Record<string, unknown>;
+  max_tokens?: number;
+}
+
 export interface CustomModelRecord {
   id: string;
   name: string;
@@ -31,6 +42,7 @@ export interface CustomModelRecord {
   component_roles?: CustomModelComponentRoles;
   recipe_options?: Record<string, unknown>;
   system_prompt?: string;
+  custom_tools?: CustomOmniToolDefinition[];
   createdAt: number;
   updatedAt: number;
 }
@@ -49,6 +61,7 @@ export interface CustomModelDraft {
   componentRoles?: CustomModelComponentRoles;
   recipeOptions?: Record<string, unknown>;
   system_prompt?: string;
+  customTools?: CustomOmniToolDefinition[];
 }
 
 const CUSTOM_MODELS_KEY = 'custom_models';
@@ -61,6 +74,44 @@ function normalizeModelName(name: string): string {
 
 function normalizeComponentName(value?: string): string {
   return String(value || '').trim();
+}
+
+function normalizeToolName(value?: string): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^([^a-zA-Z_])/, '_$1')
+    .slice(0, 64);
+}
+
+function normalizeCustomTools(value?: CustomOmniToolDefinition[]): CustomOmniToolDefinition[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const tools: CustomOmniToolDefinition[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const anyRaw = raw as CustomOmniToolDefinition & { targetModel?: string; model?: string };
+    const name = normalizeToolName(anyRaw.name);
+    const targetModel = normalizeComponentName(anyRaw.target_model || anyRaw.targetModel || anyRaw.model);
+    if (!name || !targetModel || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const description = String(raw.description || `Ask ${targetModel}`).trim();
+    const parameters = isPlainObject(raw.parameters) ? { ...raw.parameters } : undefined;
+    const maxTokens = Number(raw.max_tokens);
+    tools.push({
+      id: String(raw.id || name),
+      name,
+      description: description || `Ask ${targetModel}`,
+      target_model: targetModel,
+      system_prompt: String(raw.system_prompt || '').trim() || undefined,
+      prompt_template: String(raw.prompt_template || '').trim() || undefined,
+      parameters,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
+    });
+  }
+  return tools;
 }
 
 function defaultRecipe(capability: CustomModelCapability, components?: string[]): string {
@@ -116,7 +167,9 @@ function saveCustomModels(scope: string, models: CustomModelRecord[]): void {
 
 export function upsertCustomModel(scope: string, draft: CustomModelDraft): CustomModelRecord {
   const now = Date.now();
-  const normalizedComponents = Array.from(new Set((draft.components || []).map(normalizeComponentName).filter(Boolean)));
+  const customTools = normalizeCustomTools(draft.customTools);
+  const customToolComponents = customTools.map(tool => tool.target_model);
+  const normalizedComponents = Array.from(new Set([...(draft.components || []), ...customToolComponents].map(normalizeComponentName).filter(Boolean)));
   const componentRoles: CustomModelComponentRoles = {
     llm: normalizeComponentName(draft.componentRoles?.llm),
     vision: normalizeComponentName(draft.componentRoles?.vision),
@@ -153,6 +206,7 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
     component_roles: Object.fromEntries(Object.entries(componentRoles).filter(([, value]) => Boolean(value))) as CustomModelComponentRoles,
     recipe_options: isPlainObject(draft.recipeOptions) && Object.keys(draft.recipeOptions).length ? { ...draft.recipeOptions } : undefined,
     system_prompt: draft.system_prompt?.trim() || undefined,
+    custom_tools: customTools.length ? customTools : undefined,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
@@ -189,6 +243,7 @@ export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
     component_roles: record.component_roles,
     recipe_options: record.recipe_options,
     system_prompt: record.system_prompt,
+    custom_tools: record.custom_tools,
     createdAt: new Date(record.createdAt).toISOString(),
   };
 }
@@ -205,6 +260,7 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
     const opts: Record<string, unknown> = { recipe: COLLECTION_OMNI_RECIPE, components };
     const systemPrompt = String((model as any).system_prompt || '').trim();
     if (systemPrompt) opts.system_prompt = systemPrompt;
+    if (Array.isArray((model as any).custom_tools) && (model as any).custom_tools.length) opts.custom_tools = (model as any).custom_tools;
     if (serverLabels.length) opts.labels = serverLabels;
     return opts;
   }
@@ -316,6 +372,8 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
   const recipe = valueString(source, ['recipe', 'backend']) || defaultRecipe(capability, components);
   const recipeOptions = isPlainObject(source.recipe_options) ? source.recipe_options : undefined;
   const systemPrompt = valueString(source, ['system_prompt', 'systemPrompt']);
+  const customToolsRaw = Array.isArray(source.custom_tools) ? source.custom_tools : (Array.isArray(source.customTools) ? source.customTools : []);
+  const customTools = normalizeCustomTools(customToolsRaw as CustomOmniToolDefinition[]);
   return {
     name,
     displayName,
@@ -330,6 +388,7 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
     componentRoles,
     recipeOptions,
     system_prompt: systemPrompt || undefined,
+    customTools,
   };
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
+import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
 const DEFAULT_BASE_URL = 'http://localhost:13305';
 const LS_BASE_URL = 'lemonade_base_url';
@@ -1113,7 +1114,7 @@ class LemonadeAPI {
   // ── Capability-specific inference endpoints ────────────────────
 
   async imageGeneration(model: string, prompt: string, opts: Record<string, unknown> = {}): Promise<string[]> {
-    const requestedSize = typeof opts.size === 'string' ? opts.size : '1024x1024';
+    const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : COLLECTION_IMAGE_SIZE;
     const data = await this._json<Record<string, any>>('/api/v1/images/generations', {
       method: 'POST',
       body: {
@@ -1154,12 +1155,12 @@ class LemonadeAPI {
   }
 
   async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
-    const requestedSize = typeof opts.size === 'string' ? opts.size : '1024x1024';
+    const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : '';
     const imageBlob = blobFromDataUrl(imageDataUrl);
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
-    form.append('size', requestedSize);
+    if (requestedSize) form.append('size', requestedSize);
     form.append('response_format', 'b64_json');
     form.append('n', String(typeof opts.n === 'number' ? opts.n : 1));
     ['steps', 'cfg_scale', 'seed', 'sample_method', 'flow_shift'].forEach(key => {
@@ -1182,10 +1183,11 @@ class LemonadeAPI {
     return images;
   }
 
-  async audioTranscription(model: string, file: File): Promise<string> {
+  async audioTranscription(model: string, file: File, language?: string): Promise<string> {
     const form = new FormData();
     form.append('file', file);
     form.append('model', model);
+    if (language && language.trim()) form.append('language', language.trim());
     const data = await this._json<Record<string, unknown>>('/api/v1/audio/transcriptions', {
       method: 'POST',
       body: form,
