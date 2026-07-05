@@ -2379,29 +2379,36 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
@@ -2411,31 +2418,38 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 
@@ -2589,29 +2603,36 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
@@ -2620,31 +2641,38 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 

@@ -73,6 +73,12 @@ void StreamingProxy::forward_sse_stream(
     std::function<void()> on_chunk) {
 
     TelemetryData telemetry;
+    try {
+        auto req_json = json::parse(request_body);
+        if (req_json.contains("model") && req_json["model"].is_string()) {
+            telemetry.model_name = req_json["model"].get<std::string>();
+        }
+    } catch (...) {}
     std::string line_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
