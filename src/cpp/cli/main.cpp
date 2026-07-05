@@ -21,6 +21,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -127,6 +128,48 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
     }
 
     return false;
+}
+
+static bool is_shell_safe_char(char c) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    return std::isalnum(uc) || c == '_' || c == '-' || c == '.' || c == '/' ||
+           c == ':' || c == '@' || c == '%' || c == '+' || c == '=';
+}
+
+static std::string shell_quote(const std::string& value) {
+    if (value.empty()) {
+        return "''";
+    }
+
+    bool needs_quotes = false;
+    for (char c : value) {
+        if (!is_shell_safe_char(c)) {
+            needs_quotes = true;
+            break;
+        }
+    }
+    if (!needs_quotes) {
+        return value;
+    }
+
+    std::string quoted = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    quoted += "'";
+    return quoted;
+}
+
+static void print_agent_command(const lemon_tray::AgentConfig& agent_config) {
+    std::cout << "  " << shell_quote(agent_config.binary_name);
+    for (const auto& arg : agent_config.extra_args) {
+        std::cout << " " << shell_quote(arg);
+    }
+    std::cout << std::endl;
 }
 
 static void hide_all_options_except_help(CLI::App& app) {
@@ -652,6 +695,44 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 }
 
+static void print_config_synced_agent_connection_details(const CliConfig& config) {
+    const std::string base_url =
+        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
+    const std::string api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+
+    if (config.agent == "opencode") {
+        std::cout << std::endl;
+        std::cout << "OpenCode Lemonade provider details:" << std::endl;
+        std::cout << "  provider=Lemonade" << std::endl;
+        std::cout << "  baseURL=" << base_url << std::endl;
+        std::cout << "  apiKey=" << api_key << std::endl;
+        std::cout << "  model=" << config.model << std::endl;
+    } else if (config.agent == "pi") {
+        std::cout << std::endl;
+        std::cout << "Pi Lemonade provider details:" << std::endl;
+        std::cout << "  provider=Lemonade" << std::endl;
+        std::cout << "  baseUrl=" << base_url << std::endl;
+        std::cout << "  apiKey=" << api_key << std::endl;
+        std::cout << "  model=" << config.model << std::endl;
+    }
+}
+
+static void request_model_load_for_manual_agent_launch(lemonade::LemonadeClient& client,
+                                                       const std::string& load_body) {
+    std::cout << "Requesting model load so it can warm while you install or run the agent manually..."
+              << std::endl;
+    try {
+        // This mirrors the normal launch path. A short read timeout avoids making the
+        // user wait for model loading before seeing the manual launch instructions.
+        (void)client.make_request("/api/v1/load", "POST", load_body, "application/json", 30000, 1000);
+        std::cout << "Model load request accepted." << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "Model load request did not complete: " << e.what() << std::endl;
+        std::cout << "If the request reached the server, the model may still be loading; check `lemonade status` before launching manually."
+                  << std::endl;
+    }
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -705,6 +786,34 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
 
     // Find agent binary
     const std::string agent_binary = lemon_tray::find_agent_binary(agent_config);
+
+    if (agent_binary.empty()) {
+        LOG(ERROR, "AgentBuilder") << "Agent binary not found for " << config.agent << std::endl;
+
+        std::cout << "The " << config.agent << " CLI is not installed or was not found on PATH."
+                  << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            std::cout << agent_config.install_instructions << std::endl;
+        }
+
+        std::cout << std::endl;
+        std::cout << "Environment variables for " << config.agent << ":" << std::endl;
+        for (const auto& [key, val] : agent_config.env_vars) {
+            std::cout << "  " << key << "=" << val << std::endl;
+        }
+
+        print_config_synced_agent_connection_details(config);
+
+        std::cout << std::endl;
+        std::cout << "Command:" << std::endl;
+        print_agent_command(agent_config);
+
+        std::cout << std::endl;
+        std::cout << "Note: update the URL in the command if the agent will connect from a remote machine to the Lemonade server."
+                  << std::endl;
+        request_model_load_for_manual_agent_launch(client, load_body);
+        return 1;
+    }
 
     std::cout << "Loading model in background: " << config.model << std::endl;
 
