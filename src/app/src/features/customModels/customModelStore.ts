@@ -30,6 +30,7 @@ export interface CustomModelRecord {
   components?: string[];
   component_roles?: CustomModelComponentRoles;
   recipe_options?: Record<string, unknown>;
+  system_prompt?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +48,7 @@ export interface CustomModelDraft {
   components?: string[];
   componentRoles?: CustomModelComponentRoles;
   recipeOptions?: Record<string, unknown>;
+  system_prompt?: string;
 }
 
 const CUSTOM_MODELS_KEY = 'custom_models';
@@ -150,6 +152,7 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
     components: components.length ? components : undefined,
     component_roles: Object.fromEntries(Object.entries(componentRoles).filter(([, value]) => Boolean(value))) as CustomModelComponentRoles,
     recipe_options: isPlainObject(draft.recipeOptions) && Object.keys(draft.recipeOptions).length ? { ...draft.recipeOptions } : undefined,
+    system_prompt: draft.system_prompt?.trim() || undefined,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
@@ -185,6 +188,7 @@ export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
     components: record.components,
     component_roles: record.component_roles,
     recipe_options: record.recipe_options,
+    system_prompt: record.system_prompt,
     createdAt: new Date(record.createdAt).toISOString(),
   };
 }
@@ -199,6 +203,8 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   const components = Array.isArray((model as any).components) ? (model as any).components.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0) : [];
   if ((recipe === COLLECTION_OMNI_RECIPE || type === 'omni') && components.length) {
     const opts: Record<string, unknown> = { recipe: COLLECTION_OMNI_RECIPE, components };
+    const systemPrompt = String((model as any).system_prompt || '').trim();
+    if (systemPrompt) opts.system_prompt = systemPrompt;
     if (serverLabels.length) opts.labels = serverLabels;
     return opts;
   }
@@ -309,6 +315,7 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
   const name = valueString(source, ['name', 'model_name', 'id']) || displayName;
   const recipe = valueString(source, ['recipe', 'backend']) || defaultRecipe(capability, components);
   const recipeOptions = isPlainObject(source.recipe_options) ? source.recipe_options : undefined;
+  const systemPrompt = valueString(source, ['system_prompt', 'systemPrompt']);
   return {
     name,
     displayName,
@@ -322,6 +329,7 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
     components,
     componentRoles,
     recipeOptions,
+    system_prompt: systemPrompt || undefined,
   };
 }
 

@@ -642,6 +642,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const [storeTick, setStoreTick] = useState(0);
   type UpdatePhase = 'idle' | 'live' | 'reload' | 'done-live' | 'done-reload' | 'error';
   const [updateStatus, setUpdateStatus] = useState<{ phase: UpdatePhase; msg: string }>({ phase: 'idle', msg: '' });
+  const [focusUnloadAfterPresetUpdate, setFocusUnloadAfterPresetUpdate] = useState(false);
 
   const detailName = model ? mdName(model) : '';
   const detailLoaded = !!loadedModel;
@@ -683,6 +684,46 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     }
   }, [updateStatus]);
 
+  // After applying a preset, the Apply/Reload button is removed from the DOM.
+  // Keep keyboard focus inside the actions group by focusing the current Unload
+  // button only after React and any model-refresh side effects have settled.
+  useEffect(() => {
+    if (!focusUnloadAfterPresetUpdate || !detailName || !detailLoaded) return;
+
+    let raf1 = 0;
+    let raf2 = 0;
+    let retryTimer = 0;
+    const deadline = window.performance.now() + 1000;
+
+    const tryFocusUnload = (): boolean => {
+      const btn = unloadBtnRef.current;
+      if (!btn || btn.disabled || !document.contains(btn)) return false;
+      btn.focus();
+      setFocusUnloadAfterPresetUpdate(false);
+      return true;
+    };
+
+    const retryUntilReady = () => {
+      if (tryFocusUnload()) return;
+      if (window.performance.now() < deadline) {
+        retryTimer = window.setTimeout(retryUntilReady, 50);
+      } else {
+        setFocusUnloadAfterPresetUpdate(false);
+      }
+    };
+
+    raf1 = window.requestAnimationFrame(() => {
+      if (tryFocusUnload()) return;
+      raf2 = window.requestAnimationFrame(retryUntilReady);
+    });
+
+    return () => {
+      if (raf1) window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [focusUnloadAfterPresetUpdate, detailName, detailLoaded, updateStatus.phase]);
+
   const handleUpdatePreset = useCallback(async () => {
     if (!model || !loadedModel) return;
     const targetName = mdName(model);
@@ -700,7 +741,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       // record the new running preset so the affordance clears.
       setRunningPreset(targetName, linked.id);
       setUpdateStatus({ phase: 'done-live', msg: `Preset updated to “${linked.name}” — applied live, no reload needed.` });
-      requestAnimationFrame(() => unloadBtnRef.current?.focus());
+      setFocusUnloadAfterPresetUpdate(true);
     } else {
       // Load-time change: a real reload (unload + load) is required. The
       // active-preset binding PERSISTS across the reload — `linked` is already
@@ -711,7 +752,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         await onReloadModel?.(loadedModel, linked.recipe_options as Record<string, unknown> | undefined);
         setRunningPreset(targetName, linked.id);
         setUpdateStatus({ phase: 'done-reload', msg: `Preset updated to “${linked.name}” — model reloaded.` });
-        requestAnimationFrame(() => unloadBtnRef.current?.focus());
+        setFocusUnloadAfterPresetUpdate(true);
       } catch {
         setUpdateStatus({ phase: 'error', msg: `Couldn’t reload ${targetName} with the new preset. Please try again.` });
         requestAnimationFrame(() => updateBtnRef.current?.focus());
