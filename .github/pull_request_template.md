@@ -7,7 +7,11 @@ Before submitting this PR, please read:
 
 ## Summary
 
-<!-- What does this PR change? Keep it short and specific. -->
+<!--
+What does this PR change? Keep it short and specific.
+For bug fixes, link the related issue and/or include exact reproduction steps.
+For new features, explain how the feature works and what use case it supports.
+-->
 
 ## Scope
 
