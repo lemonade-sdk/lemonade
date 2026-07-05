@@ -12,6 +12,7 @@ import { ModelListPanel } from './ModelListPanel';
 import type { PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
+import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -658,6 +659,7 @@ type CustomModelDraftState = {
   editComponent: string;
   transcriptionComponent: string;
   speechComponent: string;
+  omniSystemPrompt: string;
 };
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all' }[] = [
@@ -690,6 +692,7 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     editComponent: '',
     transcriptionComponent: '',
     speechComponent: '',
+    omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE,
   };
 }
 
@@ -1616,6 +1619,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       const components = customDraft.omniSource === 'collection'
         ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
         : [];
+      const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
+      const omniSystemPrompt = customDraft.omniSystemPrompt.trim();
       const availableRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
         || availableRecipeOptions[0];
@@ -1644,6 +1649,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         mmproj: selectedRecipe === 'llamacpp' ? customDraft.mmproj : undefined,
         recipe: selectedRecipe || customDraft.recipe,
         recipeOptions: undefined,
+        system_prompt: isOmniCollection && omniSystemPrompt && omniSystemPrompt !== DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE
+          ? omniSystemPrompt
+          : undefined,
         capability: customDraft.capability,
         maxContextWindow: undefined,
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
@@ -2713,6 +2721,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <OmniComponentPicker role="edit" value={customDraft.editComponent} options={omniComponentOptions.edit} onChange={value => updateOmniComponent('edit', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="transcription" value={customDraft.transcriptionComponent} options={omniComponentOptions.transcription} onChange={value => updateOmniComponent('transcription', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="speech" value={customDraft.speechComponent} options={omniComponentOptions.speech} onChange={value => updateOmniComponent('speech', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
+                    <textarea
+                      value={customDraft.omniSystemPrompt}
+                      onChange={e => handleCustomDraftChange({ omniSystemPrompt: e.target.value })}
+                      rows={10}
+                      spellCheck={false}
+                    />
+                    <span className="custom-model-form__field-hint custom-model-form__field-hint--wrap">Optional planner prompt template. Keep {'{tool_list}'} and {'{tool_guidance}'} to insert the active Omni tools and runtime guidance automatically.</span>
+                  </label>
+                  <div className="custom-model-form__prompt-actions custom-model-form__wide">
+                    <button className="btn btn--ghost btn--tiny" type="button" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</button>
+                    <span>{customDraft.omniSystemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE ? 'Default prompt will be used.' : 'Custom prompt override will be saved with this collection.'}</span>
+                  </div>
                 </>
               )}
               {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
@@ -2769,4 +2790,4 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   );
 };
 
-export default ModelManager;
+export default ModelManager;

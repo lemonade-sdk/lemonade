@@ -3207,6 +3207,15 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
       }),
     );
+    // Keep the storage-meter tests deterministic: this helper intentionally
+    // exercises the fallback estimate path instead of inheriting whatever disk
+    // shape a local dev server may expose today.
+    await page.route('**/api/v1/system-info**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({}),
+      }),
+    );
     await page.route('**/api/v1/models**', async route =>
       route.fulfill({
         contentType: 'application/json',
@@ -3378,18 +3387,32 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
   // ── 7. Storage meter uses derived data, not the 32/512 mock (#2424) ───────
 
-  test('A151 — Storage meter derives from data (no hardcoded 512 GB) and labels the estimate', async ({ page }) => {
+  test('A151 — Storage meter derives from data (no hardcoded 512 GB) and labels fallback estimates', async ({ page }) => {
     await goToModelsRefined(page);
     const value = page.locator('.model-nav-rail__storage-value');
     const text = (await value.textContent()) ?? '';
-    // Downloaded mock sizes total 11 GB → derived capacity is a headroom bucket
-    // (32 GB), never the old 512 GB literal.
+    // Downloaded mock sizes total 11 GB → the fallback capacity is derived from
+    // the data (32 GB), never the old 512 GB literal. If a real storage source
+    // is available in the test/browser environment, this assertion still guards
+    // against regressing to the hardcoded mock.
     expect(text).not.toContain('512');
-    expect(text).toMatch(/\d+\s*GB\s*\/\s*\d+\s*GB/);
+    const match = text.match(/(\d+)\s*GB\s*\/\s*(\d+)\s*GB/i);
+    expect(match).not.toBeNull();
+
     const bar = page.locator('.model-nav-rail__storage-bar');
-    // Without a real disk source in the POC the meter is flagged as estimated.
-    expect(((await bar.getAttribute('aria-label')) ?? '').toLowerCase()).toContain('estimat');
-    expect(Number(await bar.getAttribute('aria-valuemax'))).not.toBe(512);
+    const ariaLabel = ((await bar.getAttribute('aria-label')) ?? '').toLowerCase();
+    const ariaValueText = ((await bar.getAttribute('aria-valuetext')) ?? '').toLowerCase();
+    const ariaValueMax = Number(await bar.getAttribute('aria-valuemax'));
+    const visibleTotal = Number(match?.[2] ?? NaN);
+
+    expect(ariaLabel).toContain('model storage used');
+    expect(ariaValueMax).toBe(visibleTotal);
+    expect(ariaValueMax).not.toBe(512);
+
+    const labelText = ((await page.locator('.model-nav-rail__storage-label').textContent()) ?? '').toLowerCase();
+    expect(labelText).toContain('est');
+    expect(ariaLabel).toContain('estimat');
+    expect(ariaValueText).toContain('estimat');
   });
 
   // ── 8. HuggingFace search nav entry in the left rail (#2424) ──────────────
@@ -3697,11 +3720,16 @@ test.describe('Accessibility — update preset while loaded (#2356)', () => {
   });
 
   test('A166 — after a reload apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
-    await setup(page, 'p-base');
+    const calls = await setup(page, 'p-base');
     await switchLinkedPreset(page, 'Big Context');
     await page.locator(updateBtn).click();
-    await page.waitForTimeout(500);
+
+    // Wait for the actual reload contract instead of relying on a fixed delay.
+    await expect.poll(() => calls.map(c => c.kind).join(','), { timeout: 5000 }).toBe('unload,load');
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+
     const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
+    await expect(unload).toBeEnabled();
     await expect(unload).toBeFocused();
   });
 });

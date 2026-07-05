@@ -11,6 +11,17 @@ import type { ChatToolRuntime, ToolCall, ToolExecutionPayload, ToolArtifact } fr
 
 const OMNI_IMAGE_SIZE = '1024x1024';
 
+export const DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE = [
+  'You are a helpful multimodal AI assistant with access to the following tools:',
+  '',
+  '{tool_list}',
+  '',
+  'When the user asks you to perform an action that matches one of these tools, use the appropriate tool.',
+  'You may call multiple tools if the request requires it.',
+  'After using a tool, describe what you did to the user in a brief, friendly response.',
+  "If the user's request does not require any tool, respond normally with text.{tool_guidance}",
+].join('\n');
+
 type ComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 
 interface OmniFunctionTool extends Record<string, unknown> {
@@ -61,6 +72,42 @@ function componentByCapability(model: ModelInfo, allModels: ModelInfo[], capabil
 
 function makeTool(name: string, description: string, parameters: Record<string, unknown>): OmniFunctionTool {
   return { type: 'function', function: { name, description, parameters } };
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function customSystemPromptTemplate(model: ModelInfo): string {
+  const direct = stringValue((model as any).system_prompt);
+  if (direct) return direct;
+  const options = (model as any).recipe_options;
+  if (options && typeof options === 'object' && !Array.isArray(options)) {
+    const fromOptions = stringValue((options as Record<string, unknown>).system_prompt)
+      || stringValue((options as Record<string, unknown>).omni_system_prompt);
+    if (fromOptions) return fromOptions;
+  }
+  return DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE;
+}
+
+function replaceToken(value: string, token: string, replacement: string): string {
+  return value.split(token).join(replacement);
+}
+
+function renderOmniSystemPrompt(template: string, toolList: string, toolGuidance: string): string {
+  const source = template.trim() || DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE;
+  const hasToolList = source.includes('{tool_list}');
+  const hasToolGuidance = source.includes('{tool_guidance}');
+  const guidanceBlock = toolGuidance.trim() ? `\n\nAdditional tool guidance:\n${toolGuidance.trim()}` : '';
+
+  let rendered = replaceToken(source, '{tool_list}', toolList || 'No Omni tools available.');
+  rendered = replaceToken(rendered, '{tool_guidance}', guidanceBlock);
+
+  // Be forgiving for hand-written prompts: keep the collection usable even if a
+  // user removes one of the placeholders from the template.
+  if (!hasToolList && toolList.trim()) rendered = `${rendered}\n\nAvailable Omni tools:\n${toolList}`;
+  if (!hasToolGuidance && guidanceBlock) rendered = `${rendered}${guidanceBlock}`;
+  return rendered.trim();
 }
 
 function artifactFromDataUrl(url: string, type: 'image' | 'audio', name?: string): ToolArtifact {
@@ -183,20 +230,16 @@ export function buildOmniToolRuntime(
   if (tools.length === 0) return null;
 
   const toolList = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}`).join('\n');
-  const systemPrompt = [
-    'You are a helpful multimodal AI assistant and the planner LLM for a Lemonade Omni model.',
-    'You can chat normally, and you can call specialized Omni tools when the user asks for media work.',
-    '',
-    'Available Omni tools:',
-    toolList,
-    '',
-    'Use generate_image only for creating a brand-new image. If an image already exists and the user asks to add, remove, change, modify, fix, or adjust it, use edit_image when available.',
-    'Use text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.',
-    "When the user message contains '[User provided image #N]', call analyze_image before answering image-specific questions.",
-    "When the user message contains '[User provided audio file #N]', call transcribe_audio before answering audio-specific questions.",
+  const toolGuidance = [
+    models.generate_image ? 'Use generate_image only for creating a brand-new image from scratch.' : '',
+    models.edit_image ? 'When an image already exists and the user asks to add, remove, change, modify, fix, or adjust it, use edit_image rather than generate_image.' : '',
+    models.text_to_speech ? 'Use text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.' : '',
+    models.analyze_image ? "When the user message contains '[User provided image #N]', call analyze_image before answering image-specific questions." : '',
+    models.transcribe_audio ? "When the user message contains '[User provided audio file #N]', call transcribe_audio before answering audio-specific questions." : '',
     'After a tool succeeds, give a brief friendly response. Do not include base64 data in your message; the UI renders media artifacts automatically.',
     `Planner model: ${plannerModel || String((collectionModel as any).name || collectionModel.id || 'planner')}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+  const systemPrompt = renderOmniSystemPrompt(customSystemPromptTemplate(collectionModel), toolList, toolGuidance);
 
   const execute = async (call: ToolCall): Promise<ToolExecutionPayload> => {
     const name = call.function.name as keyof OmniComponentMap;
