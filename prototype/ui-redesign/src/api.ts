@@ -1031,7 +1031,10 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
-    const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
+    const data = await this._json<Record<string, unknown>>(
+      '/api/v1/system-info',
+      { cache: 'no-store' } as LemonadeRequestInit,
+    );
     this._systemInfoData = data;
     return data;
   }

@@ -480,7 +480,7 @@ const App: React.FC = () => {
         </div>
         <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="backends">
-            <BackendManager />
+            <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
