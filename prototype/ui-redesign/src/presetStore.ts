@@ -62,9 +62,22 @@ export interface Preset {
   tools_enabled?: boolean;
 }
 
+export interface ModelTuning {
+  /** Load-time runtime options for this concrete model. */
+  recipe_options: RecipeOptions;
+  /** Request-time sampling defaults for this concrete model. */
+  sampling: SamplingParams;
+  /** Optional runtime hint kept separate from shared Preset intent. */
+  engine_hint?: PresetRecipe;
+  /** 'model' means discovered from model metadata/GGUF; 'user' means locally customized. */
+  source?: 'model' | 'user';
+  updated_at?: string;
+}
+
 export const LS_USER_PRESETS = 'user_presets';
 export const LS_APPLIED_PRESETS = 'applied_presets';
 export const LS_BACKEND_PRESETS = 'backend_presets';
+export const LS_MODEL_TUNINGS = 'model_tunings';
 // Client-local record of which preset each *currently-loaded* model is actually
 // running with. Distinct from `applied_presets` (the preset LINKED to a model):
 // the linked preset can be changed while a model is loaded, and the divergence
@@ -91,10 +104,10 @@ function emitPresetStoreEvent(): void {
 export const DEFAULT_PRESET: Preset = {
   id: 's-default',
   name: 'Default',
-  description: 'Use current models defaults and automatic backend selection.',
+  description: 'Use current model settings and automatic backend selection.',
   applies_to: ['all'],
   recipe_options: {},
-  sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
+  sampling: {},
   engine_hint: 'auto',
   starter: true,
   auto_opt_enabled: true,
@@ -119,15 +132,15 @@ export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to
 }
 
 const STARTER_BASE: Preset[] = [
-  { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], recipe_options: { ctx_size: 16384 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.40, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-quick-chat', name: 'Quick Chat', description: 'Small context, tight sampling. Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: { ctx_size: 4048 }, sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-creative', name: 'Creative', description: 'Higher temperature for brainstorming, dialog, and divergent thinking.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], recipe_options: { ctx_size: 262144 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-code', name: 'Code', description: 'Low temperature, tight sampling for code generation and refactoring.', applies_to: ['chat'], recipe_options: { ctx_size: 131072 }, sampling: { temperature: 0.20, top_p: 0.95, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-quality', name: 'Quality', description: 'More steps and tighter guidance for crisp, deliberate image generation.', applies_to: ['image'], recipe_options: { steps: 20, cfg_scale: 8.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
-  { id: 's-preview', name: 'Preview', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], recipe_options: { steps: 8, cfg_scale: 6.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
-  { id: 's-turbo', name: 'Turbo', description: 'Fastest image drafts for rapid iteration.', applies_to: ['image'], recipe_options: { steps: 4, cfg_scale: 1.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
+  { id: 's-balanced', name: 'Balanced', description: 'Everyday chat intent. Concrete runtime values come from this model tuning.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-quick-chat', name: 'Quick Chat', description: 'Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-creative', name: 'Creative', description: 'Brainstorming, dialog, and divergent writing intent.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-code', name: 'Code', description: 'Coding, refactoring, and technical review intent.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-quality', name: 'Quality', description: 'Crisp, deliberate image generation intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-preview', name: 'Preview', description: 'Fast image drafts and iteration intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-turbo', name: 'Turbo', description: 'Fastest image draft intent for rapid iteration.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
 ];
 
 export const STARTERS: Preset[] = STARTER_BASE.map(preset => ({
@@ -467,6 +480,258 @@ export function saveBackendApplied(applied: Record<string, string>): void {
   emitPresetStoreEvent();
 }
 
+function isBlankValue(value: unknown): boolean {
+  return value === undefined || value === null || value === '';
+}
+
+function positiveNumberValue(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function optionalNumberValue(value: unknown): number | undefined {
+  if (isBlankValue(value)) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function optionalStringValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+const RECIPE_OPTION_NUMBER_KEYS = new Set<keyof RecipeOptions>([
+  'ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed',
+]);
+
+export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | undefined): RecipeOptions {
+  const out: RecipeOptions = {};
+  if (!options || typeof options !== 'object') return out;
+  for (const [key, value] of Object.entries(options) as Array<[keyof RecipeOptions, unknown]>) {
+    if (isBlankValue(value)) continue;
+    if (key === 'merge_args') {
+      if (typeof value === 'boolean') out.merge_args = value;
+      continue;
+    }
+    if (RECIPE_OPTION_NUMBER_KEYS.has(key)) {
+      const n = optionalNumberValue(value);
+      if (n !== undefined) (out as Record<string, unknown>)[key] = n;
+      continue;
+    }
+    if (typeof value === 'string') {
+      const str = optionalStringValue(value);
+      if (str !== undefined) (out as Record<string, unknown>)[key] = str;
+      continue;
+    }
+    (out as Record<string, unknown>)[key] = value;
+  }
+  return out;
+}
+
+export function sanitizeSamplingParams(params: Partial<SamplingParams> | null | undefined): SamplingParams {
+  const out: SamplingParams = {};
+  if (!params || typeof params !== 'object') return out;
+  for (const key of ['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
+    const n = optionalNumberValue(params[key]);
+    if (n !== undefined) out[key] = n;
+  }
+  return out;
+}
+
+export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined): ModelTuning {
+  const recipe_options = sanitizeRecipeOptions(raw?.recipe_options || {});
+  const sampling = sanitizeSamplingParams(raw?.sampling || {});
+  const engine_hint = raw?.engine_hint && ['auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm', 'ryzenai-llm', 'vllm', 'kokoro'].includes(String(raw.engine_hint))
+    ? raw.engine_hint
+    : undefined;
+  return {
+    recipe_options,
+    sampling,
+    ...(engine_hint ? { engine_hint } : {}),
+    source: raw?.source === 'user' ? 'user' : (raw?.source === 'model' ? 'model' : undefined),
+    updated_at: typeof raw?.updated_at === 'string' ? raw.updated_at : undefined,
+  };
+}
+
+export function loadModelTunings(): Record<string, ModelTuning> {
+  try {
+    const raw = localStorage.getItem(scopedPresetKey(LS_MODEL_TUNINGS));
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).map(([name, tuning]) => [name, sanitizeModelTuning(tuning as Partial<ModelTuning>)]));
+  } catch {}
+  return {};
+}
+
+export function saveModelTunings(tunings: Record<string, ModelTuning>): void {
+  localStorage.setItem(scopedPresetKey(LS_MODEL_TUNINGS), JSON.stringify(tunings));
+  emitPresetStoreEvent();
+}
+
+export function loadModelTuning(modelName: string): ModelTuning | null {
+  if (!modelName) return null;
+  return loadModelTunings()[modelName] || null;
+}
+
+export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>): void {
+  if (!modelName) return;
+  const sanitized = sanitizeModelTuning({ ...tuning, source: 'user', updated_at: new Date().toISOString() });
+  const hasValues = Object.keys(sanitized.recipe_options).length > 0 || Object.keys(sanitized.sampling).length > 0 || !!sanitized.engine_hint;
+  const next = { ...loadModelTunings() };
+  if (hasValues) next[modelName] = sanitized;
+  else delete next[modelName];
+  saveModelTunings(next);
+}
+
+export function resetModelTuning(modelName: string): void {
+  if (!modelName) return;
+  const next = { ...loadModelTunings() };
+  delete next[modelName];
+  saveModelTunings(next);
+}
+
+export function hasModelTuning(modelName: string): boolean {
+  const tuning = loadModelTuning(modelName);
+  return !!tuning && (Object.keys(tuning.recipe_options).length > 0 || Object.keys(tuning.sampling).length > 0 || !!tuning.engine_hint);
+}
+
+function readStringFrom(value: unknown, paths: string[][]): string | undefined {
+  for (const path of paths) {
+    let cur: unknown = value;
+    for (const key of path) {
+      if (!cur || typeof cur !== 'object') { cur = undefined; break; }
+      cur = (cur as Record<string, unknown>)[key];
+    }
+    const str = optionalStringValue(cur);
+    if (str !== undefined) return str;
+  }
+  return undefined;
+}
+
+function activeRecipeName(model: ModelInfo | null | undefined): string {
+  const direct = String((model as Record<string, unknown> | null | undefined)?.recipe || '').trim().toLowerCase();
+  if (direct) return direct;
+  const first = recipesForModel(model)[0];
+  return recipeName(first);
+}
+
+function readStringFromModelOrRecipe(model: ModelInfo | null | undefined, paths: string[][]): string | undefined {
+  return readStringFrom(model, paths) ?? readStringFromActiveRecipe(model, paths);
+}
+
+function readStringFromActiveRecipe(model: ModelInfo | null | undefined, paths: string[][]): string | undefined {
+  const recipes = recipesForModel(model);
+  const activeRecipe = activeRecipeName(model);
+  if (activeRecipe) {
+    for (const recipe of recipes) {
+      if (recipeName(recipe) === activeRecipe) {
+        const str = readStringFrom(recipe, paths);
+        if (str !== undefined) return str;
+      }
+    }
+  }
+  for (const recipe of recipes) {
+    const str = readStringFrom(recipe, paths);
+    if (str !== undefined) return str;
+  }
+  return undefined;
+}
+
+export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): RecipeOptions {
+  if (!model) return {};
+  const recipe = activeRecipeName(model);
+  const capability = capabilityFromModelInfo(model);
+  const out: RecipeOptions = {};
+  const ctx = modelContextSize(model, fallbackCtxSize);
+
+  if (capability === 'chat' || capability === 'omni' || capability === 'unknown') {
+    if (ctx) out.ctx_size = ctx;
+  }
+
+  const backend = readStringFromModelOrRecipe(model, [
+    ['recipe_options', 'backend'], ['options', 'backend'], ['backend'], ['default_backend'], ['recommended_backend'],
+  ]);
+
+  if (recipe === 'llamacpp' || recipe === '') {
+    if (ctx) out.ctx_size = ctx;
+    out.llamacpp_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'llamacpp_backend'], ['options', 'llamacpp_backend'], ['llamacpp_backend']]) ?? backend;
+    out.llamacpp_device = readStringFromModelOrRecipe(model, [['recipe_options', 'llamacpp_device'], ['options', 'llamacpp_device'], ['llamacpp_device'], ['device']]);
+    out.llamacpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'llamacpp_args'], ['options', 'llamacpp_args'], ['llamacpp_args'], ['args']]);
+  }
+  if (recipe === 'flm') {
+    if (ctx) out.ctx_size = ctx;
+    out.flm_args = readStringFromModelOrRecipe(model, [['recipe_options', 'flm_args'], ['options', 'flm_args'], ['flm_args'], ['args']]);
+  }
+  if (recipe === 'vllm') {
+    if (ctx) out.ctx_size = ctx;
+    out.vllm_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'vllm_backend'], ['options', 'vllm_backend'], ['vllm_backend']]) ?? backend;
+    out.vllm_args = readStringFromModelOrRecipe(model, [['recipe_options', 'vllm_args'], ['options', 'vllm_args'], ['vllm_args'], ['args']]);
+  }
+  if (recipe === 'ryzenai-llm') {
+    if (ctx) out.ctx_size = ctx;
+  }
+
+  if (capability === 'image' || recipe === 'sd-cpp') {
+    out.steps = readNumberFromModelOrRecipe(model, [['recipe_options', 'steps'], ['sample_params', 'steps'], ['sample_steps'], ['steps']]);
+    out.cfg_scale = readNumberFromModelOrRecipe(model, [['recipe_options', 'cfg_scale'], ['sample_params', 'cfg_scale'], ['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg'], ['cfg_scale']]);
+    out.width = readNumberFromModelOrRecipe(model, [['recipe_options', 'width'], ['sample_params', 'width'], ['width']]);
+    out.height = readNumberFromModelOrRecipe(model, [['recipe_options', 'height'], ['sample_params', 'height'], ['height']]);
+    out.sampling_method = readStringFromModelOrRecipe(model, [['recipe_options', 'sampling_method'], ['sample_params', 'sampling_method'], ['sampling_method']]);
+    out.flow_shift = readNumberFromModelOrRecipe(model, [['recipe_options', 'flow_shift'], ['sample_params', 'flow_shift'], ['flow_shift']]);
+    out.sdcpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'sdcpp_args'], ['options', 'sdcpp_args'], ['sdcpp_args'], ['args']]);
+  }
+
+  if (capability === 'audio' || recipe === 'whispercpp' || recipe === 'moonshine') {
+    if (recipe === 'moonshine') {
+      out.moonshine_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend']]) ?? backend;
+      out.moonshine_args = readStringFromModelOrRecipe(model, [['recipe_options', 'moonshine_args'], ['options', 'moonshine_args'], ['moonshine_args'], ['args']]);
+    } else {
+      out.whispercpp_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'whispercpp_backend'], ['options', 'whispercpp_backend'], ['whispercpp_backend']]) ?? backend;
+      out.whispercpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'whispercpp_args'], ['options', 'whispercpp_args'], ['whispercpp_args'], ['args']]);
+    }
+  }
+
+  if (capability === 'tts' || recipe === 'kokoro') {
+    out.voice = readStringFromModelOrRecipe(model, [['recipe_options', 'voice'], ['sample_params', 'voice'], ['default_voice'], ['voice']]);
+    out.speed = readNumberFromModelOrRecipe(model, [['recipe_options', 'speed'], ['sample_params', 'speed'], ['default_speed'], ['speed']]);
+  }
+
+  return sanitizeRecipeOptions(out);
+}
+
+export function modelDefaultSampling(model: ModelInfo | null | undefined): SamplingParams {
+  if (!model) return {};
+  return sanitizeSamplingParams({
+    temperature: readNumberFrom(model, [['sampling', 'temperature'], ['sample_params', 'temperature'], ['recipe_options', 'temperature'], ['temperature']]),
+    top_p: readNumberFrom(model, [['sampling', 'top_p'], ['sample_params', 'top_p'], ['recipe_options', 'top_p'], ['top_p']]),
+    top_k: readNumberFrom(model, [['sampling', 'top_k'], ['sample_params', 'top_k'], ['recipe_options', 'top_k'], ['top_k']]),
+    repeat_penalty: readNumberFrom(model, [['sampling', 'repeat_penalty'], ['sample_params', 'repeat_penalty'], ['recipe_options', 'repeat_penalty'], ['repeat_penalty']]),
+  });
+}
+
+export function modelBaseTuningForModel(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): ModelTuning {
+  return {
+    recipe_options: modelDefaultRecipeOptions(model, fallbackCtxSize),
+    sampling: modelDefaultSampling(model),
+    engine_hint: (activeRecipeName(model) as PresetRecipe) || 'auto',
+    source: 'model',
+  };
+}
+
+export function effectiveModelTuningForModel(modelName: string, model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): ModelTuning {
+  const base = modelBaseTuningForModel(model, fallbackCtxSize);
+  const user = loadModelTuning(modelName);
+  if (!user) return base;
+  return {
+    recipe_options: { ...base.recipe_options, ...user.recipe_options },
+    sampling: { ...base.sampling, ...user.sampling },
+    engine_hint: user.engine_hint || base.engine_hint,
+    source: user.source || 'user',
+    updated_at: user.updated_at,
+  };
+}
+
 export function allStoredPresets(): Preset[] {
   return [DEFAULT_PRESET, ...STARTERS, ...loadUserPresets()];
 }
@@ -721,35 +986,45 @@ export function recipeOptionsForModel(
 ): RecipeOptions | undefined {
   const capability = model ? capabilityFromModelInfo(model) : undefined;
 
-  // Model preset = model-specific defaults.
-  const modelPreset = activePresetForModel(modelName);
-  const modelPresetOptions = modelPreset.recipe_options || {};
-  const modelOptions = model
-    ? recipeOptionsForCapability(modelPresetOptions, capability!)
-    : modelPresetOptions;
+  // Shared Preset = user intent. It may still carry legacy/custom recipe_options,
+  // but concrete per-model values now belong to Model Tuning and win below.
+  const preset = activePresetForModel(modelName);
+  const presetOptionsRaw = preset.recipe_options || {};
+  const presetOptions = model
+    ? recipeOptionsForCapability(presetOptionsRaw, capability!)
+    : presetOptionsRaw;
+
+  // Model Tuning = per-model user override layer. The UI still displays
+  // built-in/GGUF-derived model defaults through effectiveModelTuningForModel(),
+  // but load options should only send explicit overrides. Otherwise a UI fallback
+  // such as ctx_size=4096 would accidentally override preset/backend defaults.
+  const modelTuningOptionsRaw = loadModelTuning(modelName)?.recipe_options || {};
+  const modelTuningOptions = model
+    ? recipeOptionsForCapability(modelTuningOptionsRaw, capability!)
+    : modelTuningOptionsRaw;
 
   // Backend preset = GLOBAL backend/runtime defaults (#2432). It only applies
-  // when the CONCRETE backend this load resolves to (explicit options → model
-  // preset → recipe default_backend) matches its exact `recipe:backend` binding.
-  // Merge precedence: start from the backend preset's args as the base/global
-  // defaults, then layer the model preset's args on top so model-specific values
-  // WIN on conflict. This matches `main`'s "more specific source wins" merge.
-  // Default backend preset contributes nothing (resolver returns null).
+  // when the CONCRETE backend this load resolves to matches its exact
+  // `recipe:backend` binding. The backend preset is a base layer; preset intent
+  // and model tuning are more specific.
   const backendPreset = activePresetForModelBackend(model, {
     explicitOptions,
-    modelPresetOptions,
+    modelPresetOptions: { ...presetOptions, ...modelTuningOptions },
     systemInfo,
   });
   const backendOptions = backendPreset && model
     ? recipeOptionsForCapability(backendPreset.recipe_options || {}, capability!)
     : (backendPreset ? (backendPreset.recipe_options || {}) : {});
 
-  const merged: RecipeOptions = { ...backendOptions, ...modelOptions };
+  const merged: RecipeOptions = { ...backendOptions, ...presetOptions, ...modelTuningOptions };
   return Object.keys(merged || {}).length > 0 ? merged : undefined;
 }
 
-export function samplingForModel(modelName: string): SamplingParams {
-  return activePresetForModel(modelName).sampling || {};
+export function samplingForModel(modelName: string, model?: ModelInfo | null): SamplingParams {
+  const presetSampling = activePresetForModel(modelName).sampling || {};
+  const modelSampling = loadModelTuning(modelName)?.sampling || {};
+  const merged = { ...presetSampling, ...modelSampling };
+  return Object.keys(merged).length > 0 ? merged : {};
 }
 
 export type PresetIconName =
@@ -779,6 +1054,8 @@ export function getPresetIcon(id: string, nameRaw: string): PresetIconName {
   if (name.includes('long')) return 'library';
   if (name.includes('code')) return 'code';
   if (name.includes('memory')) return 'hard-drive';
+  if (name.includes('transcription') || name.includes('transcribe')) return 'scan-eye';
+  if (name.includes('voice')) return 'hard-drive';
   // Image
   if (name.includes('quality')) return 'gem';
   if (name.includes('preview')) return 'scan-eye';

@@ -495,6 +495,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
   }, [detectedDevices, matrixCells]);
 
+  // Keep the matrix skeleton mounted even when /system-info is unavailable.
+  // This preserves navigation/test affordances while the cells truthfully show
+  // no backend entries until the server reports real data.
+  const matrixRowsForRender = matrixRows.length > 0 ? matrixRows : (['cpu'] as DeviceKey[]);
+
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
@@ -599,15 +604,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         )}
       </div>
 
-      {matrixRows.length === 0 ? (
-        <div className="matrix matrix--empty" data-backends-matrix-empty>
-          <div className="hf-zone__empty">
-            <Icon name="box" size={20} />
-            <span>No backend/device data is available for this Lemonade server yet.</span>
-          </div>
-        </div>
-      ) : (
-        <div className="matrix" data-backends-matrix>
+      {matrixRows.length === 0 && (
+        <p className="sr-only" data-backends-matrix-empty>No backend/device data is available for this Lemonade server yet.</p>
+      )}
+
+      <div className="matrix" data-backends-matrix>
           <table>
             <thead>
               <tr>
@@ -618,7 +619,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               </tr>
             </thead>
             <tbody>
-              {matrixRows.map(deviceKey => (
+              {matrixRowsForRender.map(deviceKey => (
                 <tr key={deviceKey}>
                   <th scope="row">
                     {DEVICE_LABELS[deviceKey]}
@@ -724,7 +725,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </tbody>
           </table>
         </div>
-      )}
 
       {/* #2351: always-present polite live region so NVDA announces toast messages */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
