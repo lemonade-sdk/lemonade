@@ -505,7 +505,11 @@ public:
         s.attach_installed_version = !is_not_installed;
 
 #ifdef __linux__
-        s.action = "Install the FLM system package: https://github.com/FastFlowLM/FastFlowLM#linux";
+        if (!is_not_installed && !is_version_mismatch) {
+            s.action = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
+        } else {
+            s.action = default_install_command;
+        }
 #elif defined(_WIN32)
         if (!is_not_installed && !is_version_mismatch) {
             s.action = "Visit https://lemonade-server.ai/driver_install.html";
