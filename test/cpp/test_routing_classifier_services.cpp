@@ -146,6 +146,38 @@ static void test_run_classifier_uses_router_chat_completion() {
           near(scores.at("PII"), 0.85) && near(scores.at("NO_PII"), 0.15));
 }
 
+static void test_run_classifier_ignores_openai_metadata() {
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) {
+            return json{
+                {"id", "chatcmpl-abc123"},
+                {"object", "chat.completion"},
+                {"created", 1742927481},
+                {"model", "pii-model"},
+                {"choices", json::array({
+                    json{
+                        {"index", 0},
+                        {"finish_reason", "stop"},
+                        {"message", {{"role", "assistant"},
+                                     {"content", R"({"PII":0.9,"NO_PII":0.1})"}}},
+                    }
+                })},
+                {"usage", {{"prompt_tokens", 12}, {"completion_tokens", 8},
+                           {"total_tokens", 20}}},
+            };
+        });
+
+    auto scores = services.run_classifier("pii-model", "my ssn is 123");
+    check("run_classifier ignores OpenAI metadata fields",
+          scores.find("created") == scores.end() &&
+          scores.find("prompt_tokens") == scores.end());
+    check("run_classifier reads scores from message content",
+          scores.size() == 2 && near(scores.at("PII"), 0.9) &&
+          near(scores.at("NO_PII"), 0.1));
+}
+
+
 static void test_model_classifier_routes_with_router_services() {
     auto services = lemon::make_classifier_services_from_router_calls(
         [](const json&) { return json::object(); },
@@ -191,6 +223,7 @@ int main() {
     test_embed_uses_router_embeddings_shape();
     test_semantic_similarity_loops_through_router_embeddings();
     test_run_classifier_uses_router_chat_completion();
+    test_run_classifier_ignores_openai_metadata();
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
 
