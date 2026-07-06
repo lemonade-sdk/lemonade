@@ -7,7 +7,7 @@ export type IconName =
   | 'sun' | 'moon' | 'paperclip' | 'mic' | 'send' | 'stop' | 'copy' | 'check'
   | 'x' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
-  | 'search' | 'search-check' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
+  | 'search' | 'search-check' | 'eye' | 'eye-off' | 'plus' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'star' | 'hugging-face'
@@ -56,6 +56,9 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'search': return <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>;
       case 'scan-eye': return <><path d="M3 7V5a2 2 0 012-2h2" /><path d="M17 3h2a2 2 0 012 2v2" /><path d="M21 17v2a2 2 0 01-2 2h-2" /><path d="M7 21H5a2 2 0 01-2-2v-2" /><circle cx="12" cy="12" r="1" /><path d="M18.944 12.33a1 1 0 000-.66 7.5 7.5 0 00-13.888 0 1 1 0 000 .66 7.5 7.5 0 0013.888 0" /></>;
       case 'search-check': return <><path d="m8 11 2 2 4-4" /><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>;
+      case 'eye': return <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>;
+      case 'eye-off': return <><path d="M3 3l18 18" /><path d="M10.6 10.6A3 3 0 0012 15a3 3 0 002.4-1.2" /><path d="M9.9 4.2A10.7 10.7 0 0112 4c6.5 0 10 8 10 8a15.4 15.4 0 01-3.1 4.1" /><path d="M6.1 6.1A15.4 15.4 0 002 12s3.5 6 10 6a10.7 10.7 0 004-.8" /></>;
+      case 'plus': return <><path d="M12 5v14" /><path d="M5 12h14" /></>;
       case 'edit': return <><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z" /><path d="M14 7l3 3" /></>;
       case 'download': return <><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></>;
       case 'play': return <path d="M8 5.5v13l11-6.5-11-6.5z" />;

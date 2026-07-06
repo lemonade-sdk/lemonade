@@ -4,7 +4,7 @@
  *
  * Part of the master-detail layout introduced in #2355 Slice 1.
  */
-import React, { useCallback, useRef, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import type { ModelInfo, LoadedModel } from '../api';
 import {
   capabilityFromModelInfo,
@@ -81,6 +81,114 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'tts', label: 'TTS', iconName: 'tts' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
 ];
+
+type TextFilterField = 'any' | 'name' | 'backend' | 'type' | 'capability' | 'label' | 'status';
+type TextFilterMode = 'include' | 'exclude';
+
+interface TextFilterRule {
+  id: string;
+  field: TextFilterField;
+  mode: TextFilterMode;
+  value: string;
+}
+
+interface FilterPopoverStyle extends React.CSSProperties {
+  left: number;
+  top: number;
+  width: number;
+  maxHeight: number;
+}
+
+const TEXT_FILTER_FIELDS: Array<{ key: TextFilterField; label: string }> = [
+  { key: 'any', label: 'All text' },
+  { key: 'name', label: 'Name' },
+  { key: 'backend', label: 'Backend' },
+  { key: 'type', label: 'Type' },
+  { key: 'capability', label: 'Capability' },
+  { key: 'label', label: 'Label' },
+  { key: 'status', label: 'Status' },
+];
+
+
+let textFilterRuleCounter = 0;
+
+function createTextFilterRule(overrides: Partial<TextFilterRule> = {}): TextFilterRule {
+  textFilterRuleCounter += 1;
+  return {
+    id: `text-filter-${textFilterRuleCounter}`,
+    field: 'any',
+    mode: 'include',
+    value: '',
+    ...overrides,
+  };
+}
+
+function normalizeFilterText(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function compactTextFilters(filters: TextFilterRule[]): TextFilterRule[] {
+  return filters.filter(rule => normalizeFilterText(rule.value).length > 0);
+}
+
+function listCapabilityLabelText(m: ModelInfo): string {
+  return modelCapabilityTags(m).map(tag => CAPABILITY_TAG_LABELS[tag]).join(' ');
+}
+
+function listModelTypeText(m: ModelInfo): string {
+  const cap = capabilityFromModelInfo(m);
+  if (cap === 'chat' || cap === 'unknown') return 'llm chat text';
+  if (cap === 'audio') return 'audio transcription speech-to-text asr stt';
+  if (cap === 'tts') return 'tts speech text-to-speech';
+  if (cap === 'image') return 'image diffusion image-generation';
+  if (cap === 'embedding') return 'embedding embed';
+  if (cap === 'reranking') return 'reranking reranker';
+  return String(cap);
+}
+
+function listModelStatusText(status: ModelStatus): string {
+  switch (status) {
+    case 'running': return 'running loaded active';
+    case 'downloaded': return 'downloaded local ready';
+    case 'downloading': return 'downloading pulling download';
+    case 'available':
+    default: return 'available remote';
+  }
+}
+
+function modelTextFilterTarget(m: ModelInfo, status: ModelStatus, field: TextFilterField): string {
+  const nameText = `${listModelName(m)} ${m.display_name || ''}`;
+  const recipe = String((m as any).recipe || '');
+  const backendText = recipe ? `${recipe} ${listRecipeBadgeText(recipe)}` : '';
+  const typeText = listModelTypeText(m);
+  const labelText = (m.labels || []).join(' ');
+  const capabilityText = `${listCapabilityLabelText(m)} ${modelCapabilityTags(m).join(' ')}`;
+  const statusText = listModelStatusText(status);
+
+  switch (field) {
+    case 'name': return nameText;
+    case 'backend': return backendText;
+    case 'type': return typeText;
+    case 'capability': return capabilityText;
+    case 'label': return labelText;
+    case 'status': return statusText;
+    case 'any':
+    default:
+      return `${nameText} ${backendText} ${typeText} ${labelText} ${capabilityText} ${statusText}`;
+  }
+}
+
+function modelMatchesTextFilters(m: ModelInfo, status: ModelStatus, filters: TextFilterRule[]): boolean {
+  for (const rule of filters) {
+    const needle = normalizeFilterText(rule.value);
+    if (!needle) continue;
+    const haystack = modelTextFilterTarget(m, status, rule.field).toLowerCase();
+    const matches = haystack.includes(needle);
+    if (rule.mode === 'include' && !matches) return false;
+    if (rule.mode === 'exclude' && matches) return false;
+  }
+  return true;
+}
 
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
@@ -226,12 +334,15 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   favoriteNames,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filterPopoverStyle, setFilterPopoverStyle] = useState<FilterPopoverStyle | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('name');
+  const [textFilters, setTextFilters] = useState<TextFilterRule[]>(() => [createTextFilterRule()]);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const defaultSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = (searchInputRef ?? defaultSearchRef) as React.RefObject<HTMLInputElement>;
+  const activeTextFilters = useMemo(() => compactTextFilters(textFilters), [textFilters]);
 
   // Build flat list filtered by search + type; sort based on sortBy
   const flatList = useMemo((): FlatModelEntry[] => {
@@ -253,12 +364,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       // Funnel: functional capability tags (multi-select). Empty = no filter.
       if (!modelMatchesCapabilityTags(m, capabilityFilter ?? new Set())) continue;
 
-      // Filter by search
-      if (q) {
-        const haystack = `${mName} ${m.display_name || ''} ${(m as any).recipe || ''} ${(m.labels || []).join(' ')}`.toLowerCase();
-        if (!haystack.includes(q)) continue;
-      }
-
       const activeDownload = activeDownloadForModel(downloadItems, mName);
       const pullPct = activeDownload?.percent ?? pulling[mName];
 
@@ -271,6 +376,15 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         status = 'downloaded';
       } else {
         status = 'available';
+      }
+
+      // Funnel: custom text rules. All active rules are combined with AND.
+      if (!modelMatchesTextFilters(m, status, activeTextFilters)) continue;
+
+      // Filter by search
+      if (q) {
+        const haystack = `${mName} ${m.display_name || ''} ${(m as any).recipe || ''} ${(m.labels || []).join(' ')}`.toLowerCase();
+        if (!haystack.includes(q)) continue;
       }
 
       result.push({ model: m, status, downloadPct: pullPct, pinned: pinnedNames?.has(mName.toLowerCase()) ?? false });
@@ -321,7 +435,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilter, tagFilter, capabilityFilter]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilter, tagFilter, capabilityFilter, activeTextFilters]);
 
   // Funnel options: the union of functional capability tags present across the
   // models, in canonical order. Derived client-side from the model labels —
@@ -336,12 +450,93 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   }, [allModels]);
 
   const capabilityFilterSize = capabilityFilter?.size ?? 0;
+  const activeFilterCount = capabilityFilterSize + activeTextFilters.length;
+
   const toggleCapability = useCallback((tag: CapabilityTag) => {
     if (!onCapabilityFilterChange) return;
     const next = new Set(capabilityFilter ?? new Set<string>());
     if (next.has(tag)) next.delete(tag); else next.add(tag);
     onCapabilityFilterChange(next);
   }, [capabilityFilter, onCapabilityFilterChange]);
+
+  const addTextFilter = useCallback(() => {
+    setTextFilters(prev => [...prev, createTextFilterRule()]);
+  }, []);
+
+  const updateTextFilter = useCallback((id: string, patch: Partial<TextFilterRule>) => {
+    setTextFilters(prev => prev.map(rule => rule.id === id ? { ...rule, ...patch } : rule));
+  }, []);
+
+  const removeTextFilter = useCallback((id: string) => {
+    setTextFilters(prev => prev.filter(rule => rule.id !== id));
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    onCapabilityFilterChange?.(new Set());
+    setTextFilters([createTextFilterRule()]);
+  }, [onCapabilityFilterChange]);
+
+  const updateFilterPopoverPosition = useCallback(() => {
+    const button = filterBtnRef.current;
+    if (!button) return;
+
+    const buttonRect = button.getBoundingClientRect();
+    const viewportPadding = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const maxUsableWidth = Math.max(320, viewportWidth - viewportPadding * 2);
+    const width = Math.min(440, maxUsableWidth);
+    const top = Math.max(viewportPadding, buttonRect.bottom + 4);
+
+    let left = buttonRect.right - width;
+    if (left < viewportPadding) left = viewportPadding;
+    if (left + width > viewportWidth - viewportPadding) {
+      left = viewportWidth - viewportPadding - width;
+    }
+
+    setFilterPopoverStyle({
+      left,
+      top,
+      width,
+      maxHeight: Math.max(220, viewportHeight - top - viewportPadding),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+
+    updateFilterPopoverPosition();
+    window.addEventListener('resize', updateFilterPopoverPosition);
+    window.addEventListener('scroll', updateFilterPopoverPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updateFilterPopoverPosition);
+      window.removeEventListener('scroll', updateFilterPopoverPosition, true);
+    };
+  }, [filterOpen, updateFilterPopoverPosition]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (filterBtnRef.current?.contains(target)) return;
+      if (filterPopoverRef.current?.contains(target)) return;
+      setFilterOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFilterOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [filterOpen]);
 
   // Keyboard navigation on the list (ArrowUp/Down/Home/End)
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -437,9 +632,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           <button
             ref={filterBtnRef}
             type="button"
-            className={`model-list-panel__filter-btn${filterOpen ? ' model-list-panel__filter-btn--open' : ''}${capabilityFilterSize > 0 ? ' model-list-panel__filter-btn--active' : ''}`}
+            className={`model-list-panel__filter-btn${filterOpen ? ' model-list-panel__filter-btn--open' : ''}${activeFilterCount > 0 ? ' model-list-panel__filter-btn--active' : ''}`}
             onClick={handleFilterBtnClick}
-            aria-label={capabilityFilterSize > 0 ? `Filter models by capability (${capabilityFilterSize} active)` : 'Filter models by capability'}
+            aria-label={activeFilterCount > 0 ? `Filter models (${activeFilterCount} active)` : 'Filter models'}
             aria-expanded={filterOpen}
             aria-haspopup="dialog"
           >
@@ -450,12 +645,13 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             <div
               ref={filterPopoverRef}
               className="model-list-panel__filter-popover"
+              style={filterPopoverStyle ?? undefined}
               role="dialog"
               aria-label="Model filters"
               aria-modal="false"
             >
               <div className="model-list-panel__filter-popover-head">
-                <span>Filter by capability</span>
+                <span>Filters</span>
                 <button
                   type="button"
                   className="model-list-panel__filter-popover-close"
@@ -465,35 +661,121 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   <Icon name="x" size={13} />
                 </button>
               </div>
-              <div className="model-list-panel__filter-options" role="group" aria-label="Model capability filter">
-                {availableCapabilityTags.length === 0 && (
-                  <span className="model-list-panel__filter-empty">No capabilities available</span>
-                )}
-                {availableCapabilityTags.map(tag => {
-                  const active = capabilityFilter?.has(tag) ?? false;
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      className={`model-list-panel__filter-option${active ? ' model-list-panel__filter-option--active' : ''}`}
-                      onClick={() => toggleCapability(tag)}
-                      aria-pressed={active}
-                    >
-                      <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
-                      {CAPABILITY_TAG_LABELS[tag]}
-                    </button>
-                  );
-                })}
-                {capabilityFilterSize > 0 && (
+
+              <div className="model-list-panel__filter-section">
+                <div className="model-list-panel__filter-section-title">Capabilities</div>
+                <div className="model-list-panel__filter-options" role="group" aria-label="Model capability filter">
+                  {availableCapabilityTags.length === 0 && (
+                    <span className="model-list-panel__filter-empty">No capabilities available</span>
+                  )}
+                  {availableCapabilityTags.map(tag => {
+                    const active = capabilityFilter?.has(tag) ?? false;
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`model-list-panel__filter-option${active ? ' model-list-panel__filter-option--active' : ''}`}
+                        onClick={() => toggleCapability(tag)}
+                        aria-pressed={active}
+                      >
+                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
+                        {CAPABILITY_TAG_LABELS[tag]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="model-list-panel__filter-section">
+                <div className="model-list-panel__filter-section-head">
+                  <span className="model-list-panel__filter-section-title">Text</span>
                   <button
                     type="button"
-                    className="model-list-panel__filter-clear"
-                    onClick={() => onCapabilityFilterChange?.(new Set())}
+                    className="model-list-panel__filter-add"
+                    onClick={addTextFilter}
                   >
-                    Clear all
+                    <Icon name="plus" size={13} aria-hidden="true" />
+                    <span>Add</span>
                   </button>
-                )}
+                </div>
+
+                <div className="model-list-panel__text-filters" role="group" aria-label="Custom text filters">
+                  {textFilters.map((rule, index) => (
+                    <div key={rule.id} className="model-list-panel__text-filter">
+                      <label className="sr-only" htmlFor={`${rule.id}-field`}>Filter field</label>
+                      <select
+                        id={`${rule.id}-field`}
+                        className="model-list-panel__text-filter-field"
+                        value={rule.field}
+                        onChange={e => updateTextFilter(rule.id, { field: e.target.value as TextFilterField })}
+                        aria-label={`Filter ${index + 1} field`}
+                      >
+                        {TEXT_FILTER_FIELDS.map(field => (
+                          <option key={field.key} value={field.key}>{field.label}</option>
+                        ))}
+                      </select>
+
+                      <div
+                        className="model-list-panel__text-filter-mode"
+                        role="group"
+                        aria-label={`Filter ${index + 1} mode`}
+                      >
+                        <button
+                          type="button"
+                          className={`model-list-panel__text-filter-mode-btn${rule.mode === 'include' ? ' model-list-panel__text-filter-mode-btn--active' : ''}`}
+                          onClick={() => updateTextFilter(rule.id, { mode: 'include' })}
+                          aria-label={`Filter ${index + 1}: include matching models`}
+                          aria-pressed={rule.mode === 'include'}
+                          title="Include matches"
+                        >
+                          <Icon name="eye" size={13} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className={`model-list-panel__text-filter-mode-btn${rule.mode === 'exclude' ? ' model-list-panel__text-filter-mode-btn--active' : ''}`}
+                          onClick={() => updateTextFilter(rule.id, { mode: 'exclude' })}
+                          aria-label={`Filter ${index + 1}: exclude matching models`}
+                          aria-pressed={rule.mode === 'exclude'}
+                          title="Exclude matches"
+                        >
+                          <Icon name="eye-off" size={13} aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <label className="sr-only" htmlFor={`${rule.id}-value`}>Filter text</label>
+                      <input
+                        id={`${rule.id}-value`}
+                        className="model-list-panel__text-filter-input"
+                        type="text"
+                        value={rule.value}
+                        onChange={e => updateTextFilter(rule.id, { value: e.target.value })}
+                        placeholder="e.g. qwen"
+                        aria-label={`Filter ${index + 1} text`}
+                        autoComplete="off"
+                      />
+
+                      <button
+                        type="button"
+                        className="model-list-panel__text-filter-remove"
+                        onClick={() => removeTextFilter(rule.id)}
+                        aria-label={`Remove filter ${index + 1}`}
+                      >
+                        <Icon name="x" size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  className="model-list-panel__filter-clear"
+                  onClick={clearAllFilters}
+                >
+                  Clear
+                </button>
+              )}
             </div>
           )}
         </div>

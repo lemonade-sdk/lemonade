@@ -1697,7 +1697,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
       const seenCustomToolNames = new Set<string>();
       const customTools = isOmniCollection
-        ? customDraft.omniCustomTools.map((tool, index) => {
+        ? customDraft.omniCustomTools.map((tool, index): CustomOmniToolDefinition | null => {
           const hasAnyValue = [tool.name, tool.description, tool.targetModel, tool.systemPrompt, tool.promptTemplate, tool.parametersJson, tool.maxTokens].some(value => String(value || '').trim());
           if (!hasAnyValue) return null;
           const name = sanitizeOmniToolName(tool.name);
@@ -1728,7 +1728,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             parameters,
             max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
           };
-        }).filter((tool): tool is CustomOmniToolDefinition => Boolean(tool))
+        }).filter((tool): tool is CustomOmniToolDefinition => tool !== null)
         : [];
       const componentRoles = {
         llm: customDraft.llmComponent,
