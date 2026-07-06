@@ -1,9 +1,46 @@
 #pragma once
 
+#include <sstream>
 #include <string>
 #include <memory>
 
 namespace lemon::utils {
+
+// Decide the tar --strip-components value from a newline-separated `tar -tf`
+// listing. Strips one level only when every entry lives under a single shared
+// top-level directory that also contains nested entries; otherwise keeps
+// root-level entries intact (strip 0).
+inline int compute_tarball_strip_components(const std::string& entries) {
+    std::string first_dir;
+    bool all_same_dir = true;
+    bool has_nested = false;
+
+    std::istringstream iss(entries);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.empty()) continue;
+        std::string entry = line;
+        if (!entry.empty() && entry.back() == '/') {
+            entry.pop_back();
+        }
+        auto pos = entry.find('/');
+        if (pos == std::string::npos) {
+            all_same_dir = false;
+        } else {
+            std::string dir = entry.substr(0, pos);
+            if (first_dir.empty()) {
+                first_dir = dir;
+            } else if (dir != first_dir) {
+                all_same_dir = false;
+            }
+            if (entry.find('/', pos + 1) != std::string::npos) {
+                has_nested = true;
+            }
+        }
+    }
+
+    return (all_same_dir && !first_dir.empty() && has_nested) ? 1 : 0;
+}
 
 // Abstract interface for platform-specific archive extraction
 class ArchivePlatform {

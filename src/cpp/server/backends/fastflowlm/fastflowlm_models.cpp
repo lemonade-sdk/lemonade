@@ -583,33 +583,31 @@ std::string flm_version() {
 
 
 std::string find_flm_executable() {
-#ifdef _WIN32
-    // On Windows, only check the Lemonade install directory (auto-installed zip).
-    // No system PATH fallback - FLM should be installed via install_backend().
-    std::string install_dir = (fs::path(lemon::utils::get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
-    if (fs::exists(install_dir)) {
-        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
-            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
-                std::string path = entry.path().string();
-                if (lemon::utils::is_safe_executable_path(path)) {
-                    return path;
-                }
-            }
-        }
+    // Single FLM resolver: config bin override, then (Linux) system PATH, then
+    // the Lemonade-managed install dir (portable asset on Linux, zip on Windows).
+    std::string override_path = BackendUtils::find_external_backend_binary("flm", "npu");
+    if (!override_path.empty()) {
+        return override_path;
     }
-    return "";
-#else
-    // PATH first (system package priority), then cached install dir (portable asset).
+
+#ifndef _WIN32
     std::string path = lemon::utils::find_executable_in_path("flm");
     if (!path.empty()) {
         return path;
     }
+#endif
+
+#ifdef _WIN32
+    const std::string binary_name = "flm.exe";
+#else
+    const std::string binary_name = "flm";
+#endif
     std::string install_dir =
         (fs::path(lemon::utils::get_downloaded_bin_dir()) / "flm" / "npu")
             .make_preferred().string();
     if (fs::exists(install_dir)) {
         for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
-            if (entry.is_regular_file() && entry.path().filename().string() == "flm") {
+            if (entry.is_regular_file() && entry.path().filename().string() == binary_name) {
                 if (lemon::utils::is_safe_executable_path(entry.path().string())) {
                     return entry.path().string();
                 }
@@ -617,7 +615,6 @@ std::string find_flm_executable() {
         }
     }
     return "";
-#endif
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {

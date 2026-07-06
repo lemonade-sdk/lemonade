@@ -1,10 +1,10 @@
 #include <lemon/utils/archive_platform.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/aixlog.hpp>
+#include <cstdio>
 #include <filesystem>
 #include <cstdlib>
 #include <memory>
-#include <sstream>
 #include <process.h>
 
 namespace fs = std::filesystem;
@@ -78,45 +78,10 @@ public:
         };
 
         std::string entries = list_output(
-            "tar -tf \"" + tarball_path + "\" 2>/dev/null || true");
-        int strip = 0;
+            get_native_tar_path() + " -tf \"" + tarball_path + "\" 2>nul");
+        int strip = compute_tarball_strip_components(entries);
 
-        std::string first_dir;
-        bool all_same_dir = true;
-        bool has_nested = false;
-
-        std::istringstream iss(entries);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (line.empty()) continue;
-            std::string entry = line;
-            if (!entry.empty() && entry.back() == '/') {
-                entry.pop_back();
-            }
-            auto pos = entry.find('/');
-            if (pos == std::string::npos) {
-                all_same_dir = false;
-            } else {
-                std::string dir = entry.substr(0, pos);
-                if (first_dir.empty()) {
-                    first_dir = dir;
-                } else if (dir != first_dir) {
-                    all_same_dir = false;
-                }
-                if (entry.find('/', pos + 1) != std::string::npos) {
-                    has_nested = true;
-                }
-            }
-        }
-
-        if (all_same_dir && !first_dir.empty() && has_nested) {
-            strip = 1;
-        }
-
-        LOG(DEBUG, backend_name) << "Tarball strip-components: " << strip
-                                 << " (top-level dir: \"" << first_dir << "\", all-same: "
-                                 << (all_same_dir ? "true" : "false") << ")"
-                                 << std::endl;
+        LOG(DEBUG, backend_name) << "Tarball strip-components: " << strip << std::endl;
 
         std::string command = get_native_tar_path() + " -xf \"" + tarball_path +
                             "\" -C \"" + dest_dir + "\" --strip-components=" +

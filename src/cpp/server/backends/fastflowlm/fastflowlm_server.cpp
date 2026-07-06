@@ -154,7 +154,15 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
-    backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
+    // A system FLM on PATH (Linux distro package) is user-managed: it must not
+    // trigger a download or fail in offline/no_fetch mode. The managed install
+    // dir still goes through install_backend so updates are applied on load.
+#ifndef _WIN32
+    if (lemon::utils::find_executable_in_path("flm").empty())
+#endif
+    {
+        backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
+    }
 
     std::string flm_path = get_flm_path();
     std::string validate_error;
@@ -416,31 +424,13 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
-#ifdef _WIN32
-    // On Windows, use the standard install directory (auto-installed zip)
-    try {
-        std::string path = BackendUtils::get_backend_binary_path(*fastflowlm::spec(), "npu");
-        LOG(INFO, "FastFlowLM") << "Found flm at: " << path << std::endl;
-        return path;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "flm not found in install dir: " << e.what() << std::endl;
-        return "";
-    }
-#else
     std::string flm_path = fastflowlm::find_flm_executable();
     if (!flm_path.empty()) {
         LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
-        return flm_path;
+    } else {
+        LOG(ERROR, "FastFlowLM") << "flm not found in PATH or install dir" << std::endl;
     }
-    try {
-        flm_path = BackendUtils::get_backend_binary_path(*fastflowlm::spec(), "npu");
-        LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
-        return flm_path;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "flm not found in PATH or install dir: " << e.what() << std::endl;
-        return "";
-    }
-#endif
+    return flm_path;
 }
 
 } // namespace backends
