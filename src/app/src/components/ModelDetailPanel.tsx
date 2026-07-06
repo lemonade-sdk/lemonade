@@ -1,6 +1,6 @@
 /**
  * ModelDetailPanel — right-side detail view for the selected model.
- * Contains: header (title, metadata, primary actions) + tablist (README / Presets / Files).
+ * Contains: header (title, metadata, primary actions) + tablist (README / Presets / Model Tuning / Files).
  *
  * Part of the master-detail layout introduced in #2355 Slice 1.
  */
@@ -16,6 +16,9 @@ import {
   effectivePresetParamPreviewLines, activePresetForModel,
   runningPresetIdForModel, setRunningPreset, clearRunningPreset,
   classifyPresetChange,
+  effectiveModelTuningForModel, modelBaseTuningForModel, loadModelTuning,
+  saveModelTuning, resetModelTuning, sanitizeRecipeOptions, sanitizeSamplingParams,
+  type RecipeOptions, type SamplingParams,
 } from '../presetStore';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 
@@ -48,6 +51,324 @@ function recipeDisplayLabel(recipe: string): string {
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
   }
+}
+
+function activeRecipeForModel(model: ModelInfo | null | undefined): string {
+  if (!model) return '';
+  const direct = String((model as any).recipe || '').trim().toLowerCase();
+  if (direct) return direct;
+  const recipes = Array.isArray((model as any).recipes) ? ((model as any).recipes as Record<string, unknown>[]) : [];
+  const first = recipes[0];
+  return String(first?.recipe || first?.name || first?.id || '').trim().toLowerCase();
+}
+
+function recipesForDisplay(model: ModelInfo | null | undefined): string[] {
+  if (!model) return [];
+  const out: string[] = [];
+  const active = activeRecipeForModel(model);
+  if (active) out.push(active);
+  const recipes = Array.isArray((model as any).recipes) ? ((model as any).recipes as Record<string, unknown>[]) : [];
+  for (const recipe of recipes) {
+    const name = String(recipe.recipe || recipe.name || recipe.id || '').trim().toLowerCase();
+    if (name && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+function tuningValue(value: unknown): string {
+  if (value === undefined || value === null || value === '') return 'auto';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'auto';
+  return String(value);
+}
+
+function optionalDisplayValue(value: unknown): string {
+  const text = String(value ?? '').trim();
+  return text && text.toLowerCase() !== 'unknown' ? text : '';
+}
+
+function fieldValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  return String(value);
+}
+
+function parseNumberOrUndefined(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
+  ctx_size: 'Context size',
+  llamacpp_backend: 'Backend',
+  llamacpp_device: 'Device',
+  llamacpp_args: 'Backend args',
+  steps: 'Steps',
+  cfg_scale: 'CFG scale',
+  width: 'Width',
+  height: 'Height',
+  sampling_method: 'Sampling method',
+  flow_shift: 'Flow shift',
+  sdcpp_args: 'Backend args',
+  whispercpp_backend: 'Backend',
+  whispercpp_args: 'Backend args',
+  moonshine_backend: 'Backend',
+  moonshine_args: 'Backend args',
+  vllm_backend: 'Backend',
+  vllm_args: 'Backend args',
+  flm_args: 'Backend args',
+  voice: 'Voice',
+  speed: 'Speed',
+  merge_args: 'Backend args behavior',
+};
+
+const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
+  ctx_size: 'Runtime context window for this exact model.',
+  llamacpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  moonshine_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  llamacpp_device: 'Optional device selector for the selected backend.',
+  llamacpp_args: 'Raw backend args for this model and selected backend only.',
+  sdcpp_args: 'Raw backend args for this image model only.',
+  whispercpp_args: 'Raw backend args for this transcription model only.',
+  moonshine_args: 'Raw backend args for this transcription model only.',
+  vllm_args: 'Raw backend args for this model only.',
+  flm_args: 'Raw backend args for this model only.',
+  merge_args: 'Choose whether backend defaults, model args, or both should be used for this model.',
+};
+
+const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
+const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args']);
+const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend']);
+const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
+const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
+const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
+  llamacpp_backend: 'llamacpp_args',
+  vllm_backend: 'vllm_args',
+  whispercpp_backend: 'whispercpp_args',
+  moonshine_backend: 'moonshine_args',
+};
+
+const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'];
+const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'];
+const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'flm_args', 'merge_args'];
+const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'merge_args'];
+const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'];
+const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args', 'merge_args'];
+const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args', 'merge_args'];
+const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed', 'merge_args'];
+
+const CONTEXT_OPTIONS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576];
+
+function formatContextSize(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return 'auto';
+  if (value >= 1024 && value % 1024 === 0) return `${Math.round(value / 1024)}K`;
+  return value.toLocaleString();
+}
+
+function contextOptionsFor(...values: Array<number | undefined>): number[] {
+  const maxInput = Math.max(0, ...values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0));
+  const max = Math.max(262144, maxInput);
+  const options = CONTEXT_OPTIONS.filter(v => v <= max || v === CONTEXT_OPTIONS[0]);
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && !options.includes(Math.round(value))) options.push(Math.round(value));
+  }
+  return [...new Set(options)].sort((a, b) => a - b);
+}
+
+function nearestOptionIndex(options: number[], value: number): number {
+  let best = 0;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  options.forEach((option, index) => {
+    const delta = Math.abs(option - value);
+    if (delta < bestDelta) { best = index; bestDelta = delta; }
+  });
+  return best;
+}
+
+function recipeKeysForRecipe(recipe: string): Array<keyof RecipeOptions> | null {
+  switch (recipe) {
+    case 'llamacpp': return LLAMACPP_RECIPE_KEYS;
+    case 'vllm': return VLLM_RECIPE_KEYS;
+    case 'flm': return FLM_RECIPE_KEYS;
+    case 'ryzenai-llm': return RYZENAI_RECIPE_KEYS;
+    case 'sd-cpp': return IMAGE_RECIPE_KEYS;
+    case 'whispercpp': return WHISPER_RECIPE_KEYS;
+    case 'moonshine': return MOONSHINE_RECIPE_KEYS;
+    case 'kokoro': return TTS_RECIPE_KEYS;
+    default: return null;
+  }
+}
+
+function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
+  const cap = capabilityFromModelInfo(model);
+  const recipes = recipesForDisplay(model);
+  const activeRecipe = activeRecipeForModel(model);
+  const set = new Set<keyof RecipeOptions>();
+  const add = (keys: Array<keyof RecipeOptions>) => keys.forEach(key => set.add(key));
+
+  const activeKeys = recipeKeysForRecipe(activeRecipe);
+  if (activeKeys) add(activeKeys);
+  else if (cap === 'chat' || cap === 'omni' || cap === 'unknown') add(LLAMACPP_RECIPE_KEYS);
+  else if (cap === 'image') add(IMAGE_RECIPE_KEYS);
+  else if (cap === 'audio') add(recipes.includes('moonshine') ? MOONSHINE_RECIPE_KEYS : WHISPER_RECIPE_KEYS);
+  else if (cap === 'tts') add(TTS_RECIPE_KEYS);
+
+  const base = modelBaseTuningForModel(model).recipe_options;
+  Object.keys(base).forEach(key => set.add(key as keyof RecipeOptions));
+  return [...set];
+}
+
+type SystemInfoLike = Record<string, unknown> | null | undefined;
+
+function systemRecipes(info: SystemInfoLike): Record<string, any> | null {
+  const recipes = (info as any)?.recipes;
+  return recipes && typeof recipes === 'object' && !Array.isArray(recipes) ? recipes as Record<string, any> : null;
+}
+
+function backendMapForRecipe(info: SystemInfoLike, recipe: string): Record<string, any> | null {
+  const recipeInfo = systemRecipes(info)?.[recipe];
+  const backends = recipeInfo?.backends;
+  return backends && typeof backends === 'object' && !Array.isArray(backends) ? backends as Record<string, any> : null;
+}
+
+function backendState(info: unknown): string {
+  return String((info as any)?.state || '').trim().toLowerCase();
+}
+
+function backendIsSelectable(recipe: string, backend: string, info: unknown): boolean {
+  if (!backend || backendState(info) === 'unsupported') return false;
+  // llama.cpp has no NPU backend; FLM/RyzenAI own the NPU paths.
+  if (recipe === 'llamacpp' && backend.toLowerCase().includes('npu')) return false;
+  return true;
+}
+
+function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): string {
+  switch (key) {
+    case 'llamacpp_backend': return 'llamacpp';
+    case 'vllm_backend': return 'vllm';
+    case 'whispercpp_backend': return 'whispercpp';
+    case 'moonshine_backend': return 'moonshine';
+    default: return activeRecipeForModel(model);
+  }
+}
+
+function fallbackBackendsForRecipe(recipe: string): string[] {
+  switch (recipe) {
+    case 'vllm': return ['cpu', 'cuda', 'rocm'];
+    case 'whispercpp': return ['cpu', 'cuda', 'vulkan', 'opencl'];
+    case 'moonshine': return ['cpu', 'cuda'];
+    case 'sd-cpp': return ['cpu', 'cuda', 'vulkan', 'rocm'];
+    case 'kokoro': return ['cpu'];
+    case 'llamacpp':
+    default:
+      // Keep fallback conservative: no Metal/NPU unless the server explicitly reports them as selectable.
+      return ['cpu', 'cuda', 'vulkan', 'opencl', 'rocm'];
+  }
+}
+
+function recipeDefaultBackend(info: SystemInfoLike, recipe: string): string {
+  return optionalDisplayValue(systemRecipes(info)?.[recipe]?.default_backend);
+}
+
+function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefined, model: ModelInfo, info: SystemInfoLike): string[] {
+  const recipe = activeRecipeForBackendKey(key, model);
+  const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
+    .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
+    .map(([backend]) => backend);
+  const rawBase = fromServer.length ? fromServer : fallbackBackendsForRecipe(recipe);
+  const base = rawBase.filter(backend => backendMatchesDetectedHardware(backend, info));
+  const safeBase = Array.from(new Set(['auto', ...(base.length ? base : ['cpu'])]));
+  const normalizedCurrent = optionalDisplayValue(current);
+  const options = normalizedCurrent && !safeBase.includes(normalizedCurrent) ? [normalizedCurrent, ...safeBase] : safeBase;
+  return Array.from(new Set(options.filter(Boolean)));
+}
+
+function activeBackendValue(key: keyof RecipeOptions, baseValue: unknown, model: ModelInfo, info: SystemInfoLike): string {
+  const fromModel = optionalDisplayValue(baseValue);
+  if (fromModel) return fromModel;
+  const recipe = activeRecipeForBackendKey(key, model);
+  return recipeDefaultBackend(info, recipe) || 'auto';
+}
+
+function availableDeviceCounts(info: SystemInfoLike): { nvidia: number; amd: number; metal: boolean; npu: boolean; cpu: boolean } {
+  const devices = (info as any)?.devices || {};
+  const asList = (value: unknown): any[] => Array.isArray(value) ? value : (value ? [value] : []);
+  const available = (device: any) => device?.available !== false;
+  const nvidia = asList(devices.nvidia_gpu).filter(available).length;
+  const amd = [...asList(devices.amd_gpu), ...asList(devices.amd_dgpu), ...asList(devices.amd_igpu)].filter(available).length;
+  return {
+    nvidia,
+    amd,
+    metal: !!devices.metal && available(devices.metal),
+    npu: !!(devices.amd_npu || devices.npu) && available(devices.amd_npu || devices.npu),
+    cpu: devices.cpu?.available !== false,
+  };
+}
+function backendMatchesDetectedHardware(backend: string, info: SystemInfoLike): boolean {
+  if (!(info as any)?.devices) return true;
+  const b = backend.toLowerCase();
+  const devices = availableDeviceCounts(info);
+  if (b.includes('metal')) return devices.metal;
+  if (b.includes('npu') || b.includes('ryzenai')) return devices.npu;
+  if (b.includes('cuda') || b.includes('nvidia')) return devices.nvidia > 0;
+  if (b.includes('rocm')) return devices.amd > 0;
+  return true;
+}
+
+
+function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
+  const n = Math.max(count, fallbackCount);
+  return Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+}
+
+function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
+  const recipe = activeRecipeForModel(model);
+  const backend = selectedBackend.toLowerCase();
+  const devices = availableDeviceCounts(info);
+  let base: string[] = [];
+
+  if (!backend || backend === 'auto') {
+    base = ['cpu'];
+    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0));
+    if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
+    if (devices.metal) base.push('metal');
+    if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
+  } else if (backend.includes('cpu')) base = ['cpu'];
+  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1);
+  else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
+  else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
+  else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
+  else if (backend.includes('metal') && devices.metal) base = ['metal'];
+  else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
+
+  const normalizedCurrent = optionalDisplayValue(current);
+  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
+  return Array.from(new Set(options.filter(Boolean)));
+}
+
+function numericSliderSpec(key: keyof RecipeOptions | keyof SamplingParams): { min: number; max: number; step: number; fallback: number; digits?: number } | null {
+  switch (key) {
+    case 'temperature': return { min: 0, max: 2, step: 0.05, fallback: 0.7, digits: 2 };
+    case 'top_p': return { min: 0, max: 1, step: 0.01, fallback: 0.9, digits: 2 };
+    case 'top_k': return { min: 1, max: 200, step: 1, fallback: 40 };
+    case 'repeat_penalty': return { min: 0.9, max: 1.5, step: 0.01, fallback: 1.05, digits: 2 };
+    case 'steps': return { min: 1, max: 100, step: 1, fallback: 20 };
+    case 'cfg_scale': return { min: 0, max: 30, step: 0.5, fallback: 7.5, digits: 1 };
+    case 'flow_shift': return { min: 0, max: 20, step: 0.1, fallback: 1, digits: 1 };
+    case 'speed': return { min: 0.5, max: 2, step: 0.05, fallback: 1, digits: 2 };
+    default: return null;
+  }
+}
+
+function sliderDisplay(value: number, digits?: number): string {
+  return digits === undefined ? String(Math.round(value)) : value.toFixed(digits);
+}
+
+function samplingAllowedForModel(model: ModelInfo): boolean {
+  const cap = capabilityFromModelInfo(model);
+  return cap === 'chat' || cap === 'omni' || cap === 'unknown';
 }
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
@@ -448,6 +769,466 @@ const ModelPresetsTab: React.FC<{
   );
 };
 
+
+/* ── Model tuning tab ────────────────────────────────────────── */
+
+const ModelTuningTab: React.FC<{
+  model: ModelInfo;
+  loadedModel: LoadedModel | null;
+  isActive: boolean;
+  serverDefaultCtxSize: number;
+  onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, onReloadModel }) => {
+  const name = mdName(model);
+  const [storeVersion, setStoreVersion] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isReloading, setIsReloading] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
+
+  useEffect(() => {
+    const handler = () => setStoreVersion(v => v + 1);
+    window.addEventListener(PRESET_STORE_EVENT, handler);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, handler);
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    let alive = true;
+    const cached = api.systemInfoData;
+    if (cached) setSystemInfo(cached);
+    api.systemInfo()
+      .then(info => { if (alive) setSystemInfo(info); })
+      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); });
+    return () => { alive = false; };
+  }, [isActive]);
+
+  const userTuning = useMemo(() => loadModelTuning(name), [name, storeVersion]);
+  const baseTuning = useMemo(() => modelBaseTuningForModel(model, serverDefaultCtxSize), [model, serverDefaultCtxSize]);
+  const effectiveTuning = useMemo(() => effectiveModelTuningForModel(name, model, serverDefaultCtxSize), [name, model, serverDefaultCtxSize, storeVersion]);
+  const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
+  const activeArgsKey = useMemo(() => recipeKeys.find(key => ARGS_TUNING_KEYS.has(key)) as keyof RecipeOptions | undefined, [recipeKeys]);
+  const allowSampling = samplingAllowedForModel(model);
+
+  const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
+  const [samplingDraft, setSamplingDraft] = useState<Record<string, string>>({});
+  const [backendArgsDrafts, setBackendArgsDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const nextUser = loadModelTuning(name);
+    const nextRecipe: Record<string, string> = {};
+    for (const [key, value] of Object.entries(nextUser?.recipe_options || {})) nextRecipe[key] = fieldValue(value);
+    const nextSampling: Record<string, string> = {};
+    for (const [key, value] of Object.entries(nextUser?.sampling || {})) nextSampling[key] = fieldValue(value);
+    const nextArgMemory: Record<string, string> = {};
+    for (const backendKey of BACKEND_TUNING_KEYS) {
+      const argsKey = BACKEND_ARGS_KEY[backendKey];
+      if (!argsKey) continue;
+      const backendValue = nextRecipe[backendKey] || '';
+      const argsValue = nextRecipe[argsKey] || '';
+      if (backendValue || argsValue) nextArgMemory[`${String(backendKey)}:${backendValue}`] = argsValue;
+    }
+    setRecipeDraft(nextRecipe);
+    setSamplingDraft(nextSampling);
+    setBackendArgsDrafts(nextArgMemory);
+    setNotice(null);
+  }, [name, storeVersion]);
+
+  if (!isActive) return null;
+
+  const recipes = recipesForDisplay(model);
+  const cap = capabilityFromModelInfo(model);
+  const linkedPreset = activePresetForModel(name);
+  const hasUserTuning = !!userTuning && (
+    Object.keys(userTuning.recipe_options).length > 0 ||
+    Object.keys(userTuning.sampling).length > 0 ||
+    !!userTuning.engine_hint
+  );
+  const hasDraftValues = Object.values(recipeDraft).some(value => value.trim()) || Object.values(samplingDraft).some(value => value.trim());
+
+  const setRecipeField = (key: keyof RecipeOptions, value: string) => {
+    if (BACKEND_TUNING_KEYS.has(key)) {
+      const argsKey = BACKEND_ARGS_KEY[key];
+      setRecipeDraft(prev => {
+        const next = { ...prev, [key]: value };
+        if (argsKey) {
+          const previousBackend = prev[key] || '';
+          const previousArgs = prev[argsKey] || '';
+          const previousMemoryKey = `${String(key)}:${previousBackend}`;
+          const nextMemoryKey = `${String(key)}:${value}`;
+          const rememberedArgs = backendArgsDrafts[nextMemoryKey];
+          setBackendArgsDrafts(mem => ({ ...mem, [previousMemoryKey]: previousArgs }));
+          next[argsKey] = rememberedArgs ?? '';
+        }
+        return next;
+      });
+      return;
+    }
+
+    setRecipeDraft(prev => ({ ...prev, [key]: value }));
+  };
+
+  const setSamplingField = (key: keyof SamplingParams, value: string) => {
+    setSamplingDraft(prev => ({ ...prev, [key]: value }));
+  };
+
+  const clearRecipeField = (key: keyof RecipeOptions) => {
+    setRecipeDraft(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const clearSamplingField = (key: keyof SamplingParams) => {
+    setSamplingDraft(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const buildRecipeOptions = (): RecipeOptions => {
+    const raw: Partial<RecipeOptions> = {};
+    for (const [key, value] of Object.entries(recipeDraft) as Array<[keyof RecipeOptions, string]>) {
+      if (!value.trim()) continue;
+      if (BOOLEAN_TUNING_KEYS.has(key)) {
+        (raw as Record<string, unknown>)[key] = value === 'true';
+      } else if (NUMERIC_TUNING_KEYS.has(key)) {
+        const n = parseNumberOrUndefined(value);
+        if (n !== undefined) (raw as Record<string, unknown>)[key] = n;
+      } else {
+        (raw as Record<string, unknown>)[key] = value.trim();
+      }
+    }
+    return sanitizeRecipeOptions(raw);
+  };
+
+  const buildSampling = (): SamplingParams => {
+    const raw: Partial<SamplingParams> = {};
+    for (const key of ['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
+      const n = parseNumberOrUndefined(samplingDraft[key] || '');
+      if (n !== undefined) raw[key] = n;
+    }
+    return sanitizeSamplingParams(raw);
+  };
+
+  const saveDraft = () => {
+    saveModelTuning(name, { recipe_options: buildRecipeOptions(), sampling: buildSampling() });
+    setNotice('Model tuning saved. Sampling applies to the next request; runtime fields apply on next load or reload.');
+  };
+
+  const resetDraft = () => {
+    resetModelTuning(name);
+    setRecipeDraft({});
+    setSamplingDraft({});
+    setBackendArgsDrafts({});
+    setNotice('Model tuning reset.');
+  };
+
+  const reloadWithTuning = async () => {
+    if (!loadedModel || !onReloadModel) return;
+    saveDraft();
+    setIsReloading(true);
+    try {
+      await onReloadModel(loadedModel);
+      setNotice('Model reloaded with current tuning.');
+    } catch {
+      setNotice('Could not reload this model with the current tuning.');
+    } finally {
+      setIsReloading(false);
+    }
+  };
+
+  const renderClearOverrideButton = (onClick: () => void, disabled: boolean) => (
+    <button type="button" className="btn btn--ghost btn--tiny detail-tuning__default-btn" onClick={onClick} disabled={disabled}>
+      Clear
+    </button>
+  );
+
+  const renderRecipeField = (key: keyof RecipeOptions) => {
+    const baseValue = baseTuning.recipe_options[key];
+    const draftValue = recipeDraft[key] || '';
+    const inputId = `tuning-${name}-${key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+    const label = TUNING_FIELD_LABELS[key] || key;
+    const hint = TUNING_FIELD_HINTS[key];
+
+    if (key === 'ctx_size') {
+      const baseNumber = parseNumberOrUndefined(fieldValue(baseValue)) || serverDefaultCtxSize || 4096;
+      const draftNumber = parseNumberOrUndefined(draftValue);
+      const currentValue = draftNumber || baseNumber;
+      const options = contextOptionsFor(baseNumber, serverDefaultCtxSize, draftNumber);
+      const sliderIndex = nearestOptionIndex(options, currentValue);
+      const sliderValue = options[sliderIndex] || currentValue;
+      return (
+        <label key={key} className="detail-tuning__field detail-tuning__field--wide" htmlFor={inputId}>
+          <span>{label}</span>
+          <div className="field__row detail-tuning__control-row">
+            <input
+              id={inputId}
+              className="slider"
+              type="range"
+              min={0}
+              max={Math.max(0, options.length - 1)}
+              step={1}
+              value={sliderIndex}
+              onChange={e => setRecipeField(key, String(options[Number(e.target.value)] || sliderValue))}
+            />
+            <span className="field__value">{formatContextSize(sliderValue)}</span>
+            {renderClearOverrideButton(() => clearRecipeField(key), !draftValue)}
+          </div>
+          <small>{draftValue ? `Override: ${Number(draftValue).toLocaleString()} tokens` : `Current: ${formatContextSize(baseNumber)}`}</small>
+        </label>
+      );
+    }
+
+    if (BACKEND_TUNING_KEYS.has(key)) {
+      const activeBackend = activeBackendValue(key, baseValue, model, systemInfo);
+      const current = draftValue || activeBackend;
+      const options = backendOptionsForKey(key, current, model, systemInfo).filter(option => option !== activeBackend);
+      return (
+        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+          <span>{label}</span>
+          <select id={inputId} className="select" value={draftValue} onChange={e => setRecipeField(key, e.target.value)}>
+            <option value="">{activeBackend}</option>
+            {options.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
+    if (DEVICE_TUNING_KEYS.has(key)) {
+      const backendKey: keyof RecipeOptions = 'llamacpp_backend';
+      const selectedBackend = recipeDraft[backendKey] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, systemInfo);
+      const activeDevice = optionalDisplayValue(baseValue) || 'auto';
+      const current = draftValue || activeDevice;
+      const options = deviceOptionsForKey(key, current, selectedBackend, model, systemInfo).filter(option => option !== activeDevice);
+      return (
+        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+          <span>{label}</span>
+          <select id={inputId} className="select" value={draftValue} onChange={e => setRecipeField(key, e.target.value)}>
+            <option value="">{activeDevice}</option>
+            {options.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
+    if (BOOLEAN_TUNING_KEYS.has(key)) {
+      const argsKey = activeArgsKey;
+      const hasModelArgs = !!(argsKey && (recipeDraft[argsKey] || fieldValue(baseTuning.recipe_options[argsKey])));
+      const activeBehavior = typeof baseValue === 'boolean'
+        ? (baseValue ? 'Merge backend + model args' : 'Use model args only')
+        : (hasModelArgs ? 'Use model args only' : 'Use backend args only');
+      const setArgsBehavior = (value: string) => {
+        if (value === '__backend_only') {
+          setRecipeDraft(prev => {
+            const next = { ...prev };
+            delete next[key];
+            if (argsKey) delete next[argsKey];
+            return next;
+          });
+          return;
+        }
+        setRecipeField(key, value);
+      };
+      return (
+        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+          <span>{label}</span>
+          <select id={inputId} className="select" value={draftValue} onChange={e => setArgsBehavior(e.target.value)}>
+            <option value="">{activeBehavior}</option>
+            <option value="__backend_only">Use backend args only</option>
+            <option value="false">Use model args only</option>
+            <option value="true">Merge backend + model args</option>
+          </select>
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
+    const sliderSpec = numericSliderSpec(key);
+    if (sliderSpec) {
+      const baseNumber = parseNumberOrUndefined(fieldValue(baseValue));
+      const currentValue = parseNumberOrUndefined(draftValue) ?? baseNumber ?? sliderSpec.fallback;
+      return (
+        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+          <span>{label}</span>
+          <div className="field__row detail-tuning__control-row">
+            <input
+              id={inputId}
+              className="slider"
+              type="range"
+              min={sliderSpec.min}
+              max={sliderSpec.max}
+              step={sliderSpec.step}
+              value={currentValue}
+              onChange={e => setRecipeField(key, e.target.value)}
+            />
+            <span className="field__value">{sliderDisplay(currentValue, sliderSpec.digits)}</span>
+            {renderClearOverrideButton(() => clearRecipeField(key), !draftValue)}
+          </div>
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
+    if (ARGS_TUNING_KEYS.has(key)) {
+      return (
+        <label key={key} className="detail-tuning__field detail-tuning__field--wide" htmlFor={inputId}>
+          <span>{label}</span>
+          <textarea
+            id={inputId}
+            className="input detail-tuning__args"
+            rows={3}
+            value={draftValue}
+            placeholder={optionalDisplayValue(baseValue) || 'Type backend args here...'}
+            onChange={e => setRecipeField(key, e.target.value)}
+          />
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
+    return (
+      <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+        <span>{label}</span>
+        <input
+          id={inputId}
+          className="input"
+          type={NUMERIC_TUNING_KEYS.has(key) ? 'number' : 'text'}
+          value={draftValue}
+          placeholder={optionalDisplayValue(baseValue) || 'Type a value here...'}
+          onChange={e => setRecipeField(key, e.target.value)}
+        />
+        {hint && <small>{hint}</small>}
+      </label>
+    );
+  };
+
+  const renderSamplingField = (key: keyof SamplingParams) => {
+    const inputId = `tuning-${name}-${key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+    const draftValue = samplingDraft[key] || '';
+    const baseValue = baseTuning.sampling[key];
+    const spec = numericSliderSpec(key)!;
+    const currentValue = parseNumberOrUndefined(draftValue) ?? (typeof baseValue === 'number' ? baseValue : undefined) ?? spec.fallback;
+    return (
+      <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+        <span>{key}</span>
+        <div className="field__row detail-tuning__control-row">
+          <input
+            id={inputId}
+            className="slider"
+            type="range"
+            min={spec.min}
+            max={spec.max}
+            step={spec.step}
+            value={currentValue}
+            onChange={e => setSamplingField(key, e.target.value)}
+          />
+          <span className="field__value">{sliderDisplay(currentValue, spec.digits)}</span>
+          {renderClearOverrideButton(() => clearSamplingField(key), !draftValue)}
+        </div>
+        <small>{draftValue ? 'Override for this model' : `Current: ${tuningValue(baseValue)}`}</small>
+      </label>
+    );
+  };
+
+  const effectiveRecipeEntries = Object.entries(effectiveTuning.recipe_options || {});
+  const effectiveSamplingEntries = Object.entries(effectiveTuning.sampling || {});
+
+  return (
+    <div className="detail-tab-content detail-tuning">
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{notice || ''}</div>
+
+      <section className="detail-tuning__intro" aria-label="Model tuning concept">
+        <h3 className="detail-tuning__title">Model Tuning</h3>
+        <p>
+          Presets describe the intent. Model Tuning is the per-model runtime layer that implements that intent using values from the built-in definition or GGUF-derived metadata, with optional local overrides for this model only.
+        </p>
+      </section>
+
+      <section className="detail-tuning__summary" aria-label="Effective runtime summary">
+        <div className="detail-tuning__summary-card">
+          <span className="detail-tuning__summary-label">Preset intent</span>
+          <strong>{linkedPreset.name}</strong>
+        </div>
+        <div className="detail-tuning__summary-card">
+          <span className="detail-tuning__summary-label">Capability</span>
+          <strong>{capabilityLabel(cap)}</strong>
+        </div>
+        <div className="detail-tuning__summary-card">
+          <span className="detail-tuning__summary-label">Recipe</span>
+          <strong>{recipes.length ? recipes.map(recipeDisplayLabel).join(' / ') : 'Auto'}</strong>
+        </div>
+        <div className="detail-tuning__summary-card">
+          <span className="detail-tuning__summary-label">Source</span>
+          <strong>{hasUserTuning ? 'Customized for this model' : 'Built-in / GGUF values'}</strong>
+        </div>
+      </section>
+
+      <section className="detail-tuning__effective" aria-label="Effective tuning values">
+        <h3 className="detail-tuning__section-title">Effective runtime</h3>
+        {effectiveRecipeEntries.length === 0 && effectiveSamplingEntries.length === 0 ? (
+          <p className="detail-tuning__empty">No local overrides are needed. Lemonade will use the current model and backend values.</p>
+        ) : (
+          <div className="detail-tuning__kv-grid">
+            {effectiveRecipeEntries.map(([key, value]) => (
+              <div className="detail-tuning__kv" key={`ro-${key}`}>
+                <span>{TUNING_FIELD_LABELS[key as keyof RecipeOptions] || key}</span>
+                <code>{tuningValue(value)}</code>
+              </div>
+            ))}
+            {effectiveSamplingEntries.map(([key, value]) => (
+              <div className="detail-tuning__kv" key={`sp-${key}`}>
+                <span>{key}</span>
+                <code>{tuningValue(value)}</code>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="detail-tuning__editor" aria-label="Customize model tuning">
+        <div className="detail-tuning__section-head">
+          <div>
+            <h3 className="detail-tuning__section-title">Customize this model</h3>
+            <p className="detail-tuning__hint">Leave a field blank to keep the current value shown in the control.</p>
+          </div>
+          {notice && <p className="detail-tuning__notice">{notice}</p>}
+        </div>
+
+        <div className="detail-tuning__field-grid">
+          {recipeKeys.map(renderRecipeField)}
+        </div>
+
+        {allowSampling && (
+          <div className="detail-tuning__sampling">
+            <h4>Sampling defaults</h4>
+            <div className="detail-tuning__field-grid">
+              {(['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>).map(renderSamplingField)}
+            </div>
+          </div>
+        )}
+
+        <div className="detail-tuning__actions">
+          <button type="button" className="btn btn--primary btn--sm" onClick={saveDraft}>Save tuning</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetDraft} disabled={!hasUserTuning && !hasDraftValues}>Reset tuning</button>
+          {loadedModel && onReloadModel && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={reloadWithTuning} disabled={isReloading} aria-busy={isReloading}>
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading…' : 'Reload with tuning'}
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+};
+
 /* ── Files tab ───────────────────────────────────────────────── */
 
 /** Human-readable byte size (B / KB / MB / GB) using binary units. */
@@ -604,11 +1385,12 @@ export interface ModelDetailPanelProps {
   noModelsAvailable?: boolean;
 }
 
-type DetailTab = 'readme' | 'presets' | 'files';
+type DetailTab = 'readme' | 'presets' | 'tuning' | 'files';
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
   { id: 'readme', label: 'README' },
   { id: 'presets', label: 'Presets' },
+  { id: 'tuning', label: 'Model Tuning' },
   { id: 'files', label: 'Files' },
 ];
 
@@ -625,6 +1407,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onPullAndLoad,
   onDelete,
   onCancelPull,
+  serverDefaultCtxSize,
   isFavorite = false,
   onToggleFavorite,
   onBack,
@@ -1076,6 +1859,15 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           )}
           {tab.id === 'presets' && (
             <ModelPresetsTab model={model} isActive={activeTab === 'presets'} />
+          )}
+          {tab.id === 'tuning' && (
+            <ModelTuningTab
+              model={model}
+              loadedModel={loadedModel}
+              isActive={activeTab === 'tuning'}
+              serverDefaultCtxSize={serverDefaultCtxSize}
+              onReloadModel={onReloadModel}
+            />
           )}
           {tab.id === 'files' && (
             <ModelFilesTab model={model} isActive={activeTab === 'files'} />
