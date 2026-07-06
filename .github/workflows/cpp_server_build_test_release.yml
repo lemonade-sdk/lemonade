@@ -1438,6 +1438,13 @@ jobs:
             extra_args: "--wrapped-server flm"
             backends: "npu"
             runner: [Linux, xdna2, lemon-prod]
+          # vLLM-Omni is Linux + gfx1151 (Strix Halo) only, so it has no Windows
+          # row. Runs on the stx-halo runner with the ROCm bundle.
+          - name: llm-vllm-omni
+            script: server_llm.py
+            extra_args: "--wrapped-server vllm-omni"
+            backends: "rocm"
+            runner: [Linux, rocm, stx-halo, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""

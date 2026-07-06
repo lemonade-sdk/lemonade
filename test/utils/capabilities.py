@@ -131,6 +131,36 @@ CAPABILITIES = {
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
+        "vllm-omni": {
+            # Omni chat model (Qwen2.5-Omni) served natively by vLLM-Omni.
+            # ROCm-only, gfx1151 (Strix Halo). Exercised via the chat path here;
+            # native voice / vision / audio-in are validated separately.
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": False,
+                "completions_streaming": False,
+                "completions_async": False,
+                "responses_api": False,
+                "responses_api_streaming": False,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": False,
+                "tool_calls_streaming": False,
+                "multi_model": False,
+                "stop_parameter": True,
+                "echo_parameter": False,
+                "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": False,
+            },
+            "test_models": {
+                "llm": "Qwen2.5-Omni-3B-vLLM-Omni",
+            },
+        },
     },
     "whisper": {
         "whispercpp": {
