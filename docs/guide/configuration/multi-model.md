@@ -106,5 +106,7 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from environment variables or server startup arguments (see [Server Configuration](./README.md))
-3. Hardcoded defaults in `lemond` (lowest priority)
+2. Per-model values from `recipe_options.json`
+3. Per-architecture defaults from `architecture_defaults.json` (shipped resource; keyed by GGUF architecture name)
+4. Values from environment variables or server startup arguments (see [Server Configuration](./README.md))
+5. Hardcoded defaults in `lemond` (lowest priority)

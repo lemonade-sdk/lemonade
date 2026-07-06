@@ -30,6 +30,7 @@ export interface ModelInfo {
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  update_available?: boolean;
   image_defaults?: ImageDefaults;
   // Per-collection system prompt template (collection.omni only). Overrides the
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
@@ -172,6 +173,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
+        update_available: model.update_available === true,
       };
 
       if (Array.isArray(model.labels)) {

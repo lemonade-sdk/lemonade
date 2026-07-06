@@ -34,6 +34,7 @@ public:
     int ctx_size() const;
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
+    bool inhibit_suspend() const;
 
     // Telemetry settings
     bool telemetry_enabled() const;

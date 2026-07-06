@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <cstdint>
 #include <string>
 #include <map>
 #include <optional>
@@ -77,6 +78,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    bool update_available = false; // Whether a newer version exists on HuggingFace
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -123,6 +125,14 @@ struct ModelInfo {
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
 
     std::string mmproj() const { return checkpoint("mmproj"); }
+};
+
+struct ModelFileInfo {
+    std::string name;
+    std::string path;
+    std::string role;
+    std::uint64_t size_bytes = 0;
+    bool exists = false;
 };
 
 class CloudProviderRegistry;
@@ -189,6 +199,9 @@ public:
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
 
+    // Get per-model file inventory for the Files tab.
+    std::vector<ModelFileInfo> list_model_files(const std::string& model_name);
+
     // Resolve a public model reference to its canonical internal name.
     std::string resolve_model_name(const std::string& model_name);
 
@@ -219,6 +232,13 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
+    // Check all downloaded models for updates on HuggingFace.
+    // Fetches the latest commit SHA for each model's repo and compares it
+    // with the cached commit (refs/main). Sets update_available on models
+    // whose upstream repo has changed.
+    // Safe to call from a background thread — locks are internal.
+    void check_for_model_updates();
+
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
     bool backend_self_manages_downloads(const std::string& recipe) const;
@@ -242,6 +262,10 @@ public:
     // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
 
+    // Per-architecture default recipe options (loaded from resources).
+    // Override global config defaults but are overridden by model-level recipe_options.
+    json get_architecture_defaults(const std::string& architecture) const;
+
     void save_model_options(const ModelInfo& info);
 
     void start_directory_watcher();
@@ -257,6 +281,7 @@ private:
                        std::set<std::string>& visited);
 
     json load_server_models();
+    json load_architecture_defaults();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
@@ -319,6 +344,7 @@ private:
     json server_models_;
     json user_models_;
     json recipe_options_;
+    json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;

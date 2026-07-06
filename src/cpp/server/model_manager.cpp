@@ -24,6 +24,7 @@
 #include <chrono>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -427,6 +428,34 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     return total;
 }
 
+
+std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
+    ModelInfo info = get_model_info(model_name);
+    std::vector<ModelFileInfo> files;
+    files.reserve(info.resolved_paths.size());
+
+    for (const auto& [role, resolved_path] : info.resolved_paths) {
+        if (resolved_path.empty()) {
+            continue;
+        }
+
+        fs::path path = path_from_utf8(resolved_path);
+        const bool path_exists = safe_exists(path);
+
+        ModelFileInfo file;
+        file.name = path_to_utf8(path.filename());
+        file.path = resolved_path;
+        file.role = role;
+        file.exists = path_exists;
+        file.size_bytes = path_exists
+            ? static_cast<std::uint64_t>(resolved_path_size_bytes(path))
+            : 0;
+        files.push_back(std::move(file));
+    }
+
+    return files;
+}
+
 static void cleanup_orphaned_blobs_under(const fs::path& path,
                                          const fs::path& models_dir) {
     if (!safe_exists(path)) {
@@ -778,6 +807,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
     recipe_options_ = load_optional_json(get_recipe_options_file());
+    architecture_defaults_ = load_architecture_defaults();
 
     // One-shot migration of recipe_options.json: older Lemonade keyed built-in
     // entries by bare name; the current spec requires a canonical "builtin."
@@ -1128,6 +1158,27 @@ json ModelManager::load_optional_json(const std::string& path) {
     }
 }
 
+json ModelManager::load_architecture_defaults() {
+    try {
+        std::string path = get_resource_path("resources/architecture_defaults.json");
+        return JsonUtils::load_from_file(path);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Could not load architecture_defaults.json: " << e.what() << std::endl;
+        return json::object();
+    }
+}
+
+json ModelManager::get_architecture_defaults(const std::string& architecture) const {
+    if (architecture.empty() || !architecture_defaults_.is_object()) {
+        return json::object();
+    }
+    if (architecture_defaults_.contains(architecture) &&
+        architecture_defaults_[architecture].is_object()) {
+        return architecture_defaults_[architecture];
+    }
+    return json::object();
+}
+
 static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
     fs::path target = path_from_utf8(save_path);
@@ -1207,6 +1258,102 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
         public_models[public_name] = std::move(public_info);
     }
     return public_models;
+}
+
+void ModelManager::check_for_model_updates() {
+    // Collect (model_name, repo_id, cached_sha) for downloaded models,
+    // deduplicated by repo_id so we only fetch HF API once per repo.
+    // All model variants sharing a repo are marked together.
+    struct RepoEntry {
+        std::vector<std::string> model_names;
+        std::string cached_sha;
+    };
+    std::unordered_map<std::string, RepoEntry> repos;
+
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        if (!cache_valid_) {
+            return;
+        }
+        for (const auto& [name, info] : models_cache_) {
+            if (!info.downloaded) continue;
+            if (is_collection_recipe(info.recipe)) continue;
+            if (info.recipe == "flm" || info.recipe == "cloud") continue;
+
+            std::string main_cp = info.checkpoint("main");
+            if (main_cp.empty()) continue;
+
+            std::string repo_id = checkpoint_to_repo_id(main_cp);
+            if (repo_id.empty()) continue;
+
+            auto& entry = repos[repo_id];
+            entry.model_names.push_back(name);
+            // Read cached SHA only on the first model we see for this repo
+            if (entry.cached_sha.empty()) {
+                fs::path cache_path = path_from_utf8(get_hf_cache_dir())
+                    / repo_id_to_cache_dir_name(repo_id);
+                entry.cached_sha = read_hf_ref_main(cache_path);
+            }
+        }
+    }
+
+    // Build headers with HF token if available
+    std::map<std::string, std::string> headers;
+    const char* hf_token = std::getenv("HF_TOKEN");
+    if (hf_token && hf_token[0]) {
+        headers["Authorization"] = "Bearer " + std::string(hf_token);
+    }
+
+    std::unordered_set<std::string> updated_models;
+
+    for (auto& [repo_id, entry] : repos) {
+        // Skip repos with no cached SHA — can't reliably compare
+        if (entry.cached_sha.empty()) continue;
+
+        try {
+            LOG(DEBUG, "ModelManager") << "Checking for updates: " << repo_id << std::endl;
+            std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+            auto response = HttpClient::get(api_url, headers, 10);
+
+            if (response.status_code != 200) {
+                LOG(DEBUG, "ModelManager") << "HF API returned " << response.status_code
+                    << " for " << repo_id << ", skipping" << std::endl;
+                continue;
+            }
+
+            auto model_info = JsonUtils::parse(response.body);
+
+            std::string latest_sha;
+            if (model_info.contains("sha") && model_info["sha"].is_string()) {
+                latest_sha = model_info["sha"].get<std::string>();
+            }
+
+            if (latest_sha.empty() || latest_sha == entry.cached_sha) continue;
+
+            LOG(INFO, "ModelManager") << "Update available for " << repo_id
+                << ": cached=" << entry.cached_sha.substr(0, 12)
+                << ", latest=" << latest_sha.substr(0, 12)
+                << " (" << entry.model_names.size() << " variant(s))" << std::endl;
+
+            for (const auto& model_name : entry.model_names) {
+                updated_models.insert(model_name);
+            }
+        } catch (const std::exception& e) {
+            LOG(WARNING, "ModelManager") << "Failed to check updates for "
+                << repo_id << ": " << e.what() << std::endl;
+        }
+    }
+
+    if (!updated_models.empty()) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        for (auto& [name, info] : models_cache_) {
+            if (updated_models.count(name)) {
+                info.update_available = true;
+            }
+        }
+        LOG(INFO, "ModelManager") << "Updates available for " << updated_models.size()
+            << " model(s)" << std::endl;
+    }
 }
 
 static void load_checkpoints(ModelInfo& info, json& model_json) {
@@ -1641,6 +1788,11 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     if (it != models_cache_.end()) {
         it->second.downloaded = downloaded;
 
+        // After a fresh download the model is up to date
+        if (downloaded) {
+            it->second.update_available = false;
+        }
+
         // Recompute resolved_path after download
         // The path changes now that files exist on disk
         if (downloaded) {
@@ -1718,6 +1870,7 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
+            it->second.update_available = false;
             LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
         }
     }

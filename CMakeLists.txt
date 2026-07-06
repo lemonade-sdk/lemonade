@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.8.1)
+project(lemon_cpp VERSION 10.9.0)
 
 include(CTest)
 
@@ -659,18 +659,21 @@ set(SOURCES_CORE
 if(WIN32)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_windows.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_stub.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_windows.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_windows.cpp)
 elseif(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_macos.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_stub.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_macos.cpp)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
 elseif(UNIX)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
 endif()
@@ -1739,7 +1742,11 @@ elseif(APPLE)
         set(EMBEDDABLE_PLATFORM "macos-x64")
     endif()
 else()
-    set(EMBEDDABLE_PLATFORM "ubuntu-x64")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(EMBEDDABLE_PLATFORM "ubuntu-arm64")
+    else()
+        set(EMBEDDABLE_PLATFORM "ubuntu-x64")
+    endif()
 endif()
 
 set(EMBEDDABLE_DIR_NAME "lemonade-embeddable-${PROJECT_VERSION}-${EMBEDDABLE_PLATFORM}")
@@ -1895,6 +1902,7 @@ set(_ROUTING_CONTRACT_TEST_SRC
 if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
     add_executable(test_routing_policy_contract
         test/cpp/test_routing_policy_contract.cpp
+        src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_policy_contract PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -1973,6 +1981,51 @@ if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
     add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
 endif()
 
+# Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
+# max_chars/has_*/metadata conditions and their leaf-factory map.
+set(_ROUTING_DETERMINISTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_deterministic.cpp"
+)
+if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
+    add_executable(test_routing_policy_deterministic
+        test/cpp/test_routing_policy_deterministic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_deterministic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_deterministic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyDeterministicTest COMMAND test_routing_policy_deterministic)
+endif()
+
+# Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
+# compilation, first-match-wins route(), default fail-open, trace opt-in,
+# on_error error paths, and concurrent route() consistency against a fake.
+set(_ROUTING_ENGINE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_engine.cpp"
+)
+if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
+    add_executable(test_routing_policy_engine
+        test/cpp/test_routing_policy_engine.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_engine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_engine PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_engine PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.
@@ -1999,6 +2052,13 @@ if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_test(NAME TelemetryHelpersTest COMMAND test_telemetry_helpers)
 endif()
 
+set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
+if(EXISTS "${_SUSPEND_INHIBITOR_TEST_SRC}")
+    add_executable(test_suspend_inhibitor test/cpp/test_suspend_inhibitor.cpp)
+    target_link_libraries(test_suspend_inhibitor PRIVATE lemonade-server-core)
+    add_test(NAME SuspendInhibitorTest COMMAND test_suspend_inhibitor)
+endif()
+
 set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
 if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_executable(test_config_migration test/cpp/test_config_migration.cpp)
@@ -2011,4 +2071,13 @@ if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_test(NAME ConfigTelemetryTest COMMAND test_config_telemetry)
+endif()
+
+# ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
+# external-ROCm detection that lets Lemonade skip the bundled TheRock download.
+set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
+if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
+    add_executable(test_rocm_root_resolution test/cpp/test_rocm_root_resolution.cpp)
+    target_link_libraries(test_rocm_root_resolution PRIVATE lemonade-server-core)
+    add_test(NAME RocmRootResolutionTest COMMAND test_rocm_root_resolution)
 endif()

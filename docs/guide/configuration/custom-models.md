@@ -494,7 +494,8 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Global configuration values, see [Server Configuration](./README.md)
+3. Per-architecture defaults from `architecture_defaults.json` (shipped resource; keyed by GGUF architecture name read from the model file)
+4. Global configuration values, see [Server Configuration](./README.md)
 
 **`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
 

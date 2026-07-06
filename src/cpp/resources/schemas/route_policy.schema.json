@@ -161,18 +161,21 @@
           "maximum": 1
         },
         "keywords_any": {
-          "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",
+          "description": "True if ANY keyword is present. Frozen v1 match: case-insensitive substring (ASCII case fold) over the input text. Token/BM25 matching is a future, separately named op, never a redefinition of this one.",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "keywords_all": {
-          "description": "True if ALL keywords are present. Frozen v1 match: case-insensitive substring over the input text.",
+          "description": "True if ALL keywords are present. Frozen v1 match: case-insensitive substring (ASCII case fold) over the input text.",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "regex": {
-          "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex). A different regex engine ships as a separately named op, never a redefinition of this one.",
-          "type": "string"
+          "description": "True if the pattern matches the input. Frozen v1 dialect: ECMAScript (std::regex), case-sensitive. A different regex engine ships as a separately named op, never a redefinition of this one. Must be non-empty (an empty pattern matches everything; express an always-match rule by omitting the condition). Patterns with a nested unbounded quantifier (such as (X+)+) — the most common catastrophic-backtracking shape — are rejected at policy load as a safeguard on untrusted input; this mitigates but does not eliminate all backtracking risk, and a 1 MiB input cap bounds the worst case at evaluation time.",
+          "type": "string",
+          "minLength": 1
         },
         "min_chars": {
           "description": "Inclusive lower bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points). Token-based length is a future min_tokens, never a redefinition of this one.",
@@ -191,13 +194,14 @@
       "additionalProperties": false
     },
     "metadata_match": {
-      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent), read verbatim from the request metadata map. Frozen v1 semantics: values are compared case-sensitively; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. Exactly one comparator (equals / any / exists) must be present. A future comparator (regex, all, ...) ships as a new key, never a redefinition of these.",
+      "description": "Deterministic leaf matching a caller-supplied OpenAI `metadata` key (e.g. task_class, consent), read verbatim from the request metadata map. Frozen v1 semantics: values are compared case-sensitively; a value is decoded into a token set by splitting on comma and trimming, so scalar and list-valued metadata match uniformly. A missing, empty, or whitespace-only value counts as absent (matches only `exists: false`). Exactly one comparator (equals / any / exists) must be present. A future comparator (regex, all, ...) ships as a new key, never a redefinition of these.",
       "type": "object",
       "required": ["key"],
       "properties": {
         "key": {
-          "description": "The metadata key to read. A missing or empty value matches only `exists: false`.",
-          "type": "string"
+          "description": "The metadata key to read. A missing, empty, or whitespace-only value matches only `exists: false`.",
+          "type": "string",
+          "minLength": 1
         },
         "equals": {
           "description": "True if the raw metadata value equals this string exactly (case-sensitive).",
@@ -206,7 +210,8 @@
         "any": {
           "description": "True if the value's comma-decoded token set intersects this list (handles both scalar and comma-encoded list-valued metadata).",
           "type": "array",
-          "items": { "type": "string" }
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         },
         "exists": {
           "description": "exists:true matches when the key is present and non-empty; exists:false matches when it is absent or empty.",

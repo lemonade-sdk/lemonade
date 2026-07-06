@@ -92,6 +92,7 @@ private:
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -135,6 +136,7 @@ private:
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_install_dry_run(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
 
     // Enrich recipes JSON with release_url, download_filename, version from BackendManager
@@ -294,6 +296,9 @@ private:
 
     // Platform-specific system metrics
     std::unique_ptr<SystemMetricsPlatform> metrics_platform_;
+
+    // Set to true after check_for_model_updates() completes at startup.
+    std::atomic<bool> update_check_done_{false};
 };
 
 } // namespace lemon

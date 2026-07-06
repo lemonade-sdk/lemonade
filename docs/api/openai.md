@@ -993,6 +993,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "max_context_window": 40960,
       "downloaded": true,
       "suggested": true,
+      "update_available": false,
       "labels": ["reasoning"]
     },
     {
@@ -1042,6 +1043,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
+  - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:

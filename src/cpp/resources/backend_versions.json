@@ -4,7 +4,7 @@
     "vulkan": "b9747",
     "rocm-stable": "b9752",
     "rocm-nightly": "b1292",
-    "cuda": "b9752",
+    "cuda": "b9851",
     "metal": "b9747",
     "cpu": "b9747"
   },
@@ -16,11 +16,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-709-92a3b73",
-    "rocm-stable": "master-709-92a3b73",
-    "vulkan": "master-709-92a3b73",
-    "cuda": "master-685-db48014",
-    "metal": "master-709-92a3b73"
+    "cpu": "master-721-8caa3f9",
+    "rocm-stable": "master-721-8caa3f9",
+    "vulkan": "master-721-8caa3f9",
+    "cuda": "master-726-db48014",
+    "metal": "master-721-8caa3f9"
   },
   "therock": {
     "version": "7.13.0",
@@ -96,6 +96,22 @@
   },
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"
+  },
+  "rocm_asset_families": {
+    "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
+    "gfx1200": "gfx120X",
+    "gfx1201": "gfx120X",
+    "gfx1100": "gfx110X",
+    "gfx1101": "gfx110X",
+    "gfx1102": "gfx110X",
+    "gfx1103": "gfx110X",
+    "gfx1030": "gfx103X",
+    "gfx1031": "gfx103X",
+    "gfx1032": "gfx103X",
+    "gfx1033": "gfx103X",
+    "gfx1034": "gfx103X",
+    "gfx1035": "gfx103X",
+    "gfx1036": "gfx103X"
   },
   "moonshine": {
     "cpu": "moonshine0.0.62"
