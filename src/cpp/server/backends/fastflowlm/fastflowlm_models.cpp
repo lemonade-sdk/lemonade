@@ -582,20 +582,27 @@ std::string flm_version() {
 }
 
 
+std::string find_flm_in_path() {
+#ifdef _WIN32
+    const std::string binary_name = "flm.exe";
+#else
+    const std::string binary_name = "flm";
+#endif
+    return lemon::utils::find_executable_in_path(binary_name);
+}
+
 std::string find_flm_executable() {
-    // Single FLM resolver: config bin override, then (Linux) system PATH, then
-    // the Lemonade-managed install dir (portable asset on Linux, zip on Windows).
+    // Single FLM resolver: config bin override, then system PATH, then the
+    // Lemonade-managed install dir (portable asset on Linux, zip on Windows).
     std::string override_path = BackendUtils::find_external_backend_binary("flm", "npu");
     if (!override_path.empty()) {
         return override_path;
     }
 
-#ifndef _WIN32
-    std::string path = lemon::utils::find_executable_in_path("flm");
+    std::string path = find_flm_in_path();
     if (!path.empty()) {
         return path;
     }
-#endif
 
 #ifdef _WIN32
     const std::string binary_name = "flm.exe";

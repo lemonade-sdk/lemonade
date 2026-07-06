@@ -154,13 +154,10 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
-    // A system FLM on PATH (Linux distro package) is user-managed: it must not
-    // trigger a download or fail in offline/no_fetch mode. The managed install
-    // dir still goes through install_backend so updates are applied on load.
-#ifndef _WIN32
-    if (lemon::utils::find_executable_in_path("flm").empty())
-#endif
-    {
+    // A user-managed FLM on the system PATH must not trigger a download or fail
+    // in offline/no_fetch mode. The managed install dir still goes through
+    // install_backend so version-pinned updates are applied on load.
+    if (fastflowlm::find_flm_in_path().empty()) {
         backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
     }
 
