@@ -13,6 +13,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/process_manager.h"
 
@@ -583,6 +584,15 @@ std::string flm_version() {
 
 
 std::string find_flm_in_path() {
+    // Only check PATH when prefer_system is enabled via config.json.
+    bool prefer_system = false;
+    if (auto* cfg = lemon::RuntimeConfig::global()) {
+        prefer_system = cfg->backend_bool("flm", "prefer_system");
+    }
+    if (!prefer_system) {
+        return "";
+    }
+
 #ifdef _WIN32
     const std::string binary_name = "flm.exe";
 #else
