@@ -3615,6 +3615,25 @@ input, textarea {
 
 .auto-run-card {
   overflow: hidden;
+  position: relative;
+}
+
+.auto-run-card__delete {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  opacity: 0;
+  color: var(--danger) !important;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 5px !important;
+  transition: opacity 0.15s;
+}
+
+.auto-run-card:hover .auto-run-card__delete,
+.auto-run-card:focus-within .auto-run-card__delete,
+.auto-run-card__delete:focus {
+  opacity: 1;
 }
 
 .auto-run-card__main {

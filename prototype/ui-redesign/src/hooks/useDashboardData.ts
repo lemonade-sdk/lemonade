@@ -303,6 +303,17 @@ export function useDashboardData(): DashboardData {
     }
   }, [computeAggregates]);
 
+  // Resume polling when the global connection is re-established
+  useEffect(() => {
+    const unsub = api.onStatusChange((s) => {
+      if (s === 'connected' && paused) {
+        failureCountRef.current = 0;
+        setPaused(false);
+      }
+    });
+    return unsub;
+  }, [paused]);
+
   useEffect(() => {
     poll();
     if (!paused) {

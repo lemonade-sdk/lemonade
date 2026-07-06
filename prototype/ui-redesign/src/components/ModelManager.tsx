@@ -1801,14 +1801,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       seen.add(name);
       merged.push(m);
     }
+    const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
     for (const m of models) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
+      // Hide models explicitly marked as not suggested, unless they are downloaded or loaded
+      if ((m as any).suggested === false && !(m as any).downloaded && !loadedNames.has(name)) continue;
       seen.add(name);
       merged.push(m);
     }
     return merged;
-  }, [customModels, models]);
+  }, [customModels, models, loadedModels]);
 
   const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
 

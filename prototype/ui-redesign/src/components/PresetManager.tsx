@@ -415,6 +415,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [applyBackendSuccess, setApplyBackendSuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
   const [selectedAutoRunId, setSelectedAutoRunId] = useState(AUTO_OPT_RUNS[0]?.id || '');
+  const [autoOptRuns, setAutoOptRuns] = useState<AutoOptRun[]>(AUTO_OPT_RUNS);
+  const [autoOptRunning, setAutoOptRunning] = useState(false);
   const slideoverRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -483,14 +485,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       engine_hint: 'auto',
       starter: false,
       auto_opt_enabled: true,
-      auto_opt_run_id: AUTO_OPT_RUNS[0]?.id || null,
+      auto_opt_run_id: autoOptRuns[0]?.id || null,
       system_prompt_id: 'general',
       system_prompts: cloneSystemPrompts(CUSTOM_PRESET_PROMPTS),
       tools_enabled: true,
     };
     setUserPresets(prev => [newPreset, ...prev]);
     openSlideover(newPreset);
-  }, [openSlideover]);
+  }, [openSlideover, autoOptRuns]);
 
   const importPresets = useCallback((raw: string) => {
     const data = JSON.parse(raw);
@@ -623,7 +625,35 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     });
   }, []);
 
-  const selectedAutoRun = AUTO_OPT_RUNS.find(run => run.id === selectedAutoRunId) || AUTO_OPT_RUNS[0];
+  const handleRunAutoOpt = useCallback(() => {
+    setAutoOptRunning(true);
+    setTimeout(() => {
+      const newRun: AutoOptRun = {
+        id: `autoopt-${Date.now()}`,
+        name: `AutoOpt #${autoOptRuns.length + 1}`,
+        date: new Date().toISOString().split('T')[0],
+        lemonadeVersion: '0.6.0-prototype',
+        summary: 'Fresh optimization based on current system hardware and loaded backends.',
+        args: '--threads auto --batch-size 512 --ubatch-size 256 --ctx-size 4096',
+        backends: [{ name: 'llama.cpp', version: 'latest', device: 'Auto-detected' }],
+      };
+      setAutoOptRuns(prev => [newRun, ...prev]);
+      setSelectedAutoRunId(newRun.id);
+      setAutoOptRunning(false);
+    }, 2000);
+  }, [autoOptRuns.length]);
+
+  const handleDeleteAutoOptRun = useCallback((runId: string) => {
+    setAutoOptRuns(prev => {
+      const next = prev.filter(r => r.id !== runId);
+      if (selectedAutoRunId === runId) {
+        setSelectedAutoRunId(next[0]?.id || '');
+      }
+      return next;
+    });
+  }, [selectedAutoRunId]);
+
+  const selectedAutoRun = autoOptRuns.find(run => run.id === selectedAutoRunId) || autoOptRuns[0];
 
   return (
     <>
@@ -638,8 +668,11 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           </div>
           <div className="context-rail__body">
             <p className="context-rail__hint">Select a safe local optimization result and attach it to editable presets. Manual args override AutoOpt.</p>
+            <button type="button" className="btn btn--primary btn--small" style={{ width: '100%', marginBottom: '0.75rem' }} onClick={handleRunAutoOpt} disabled={autoOptRunning}>
+              {autoOptRunning ? '⏳ Running…' : '▶ Run optimizer'}
+            </button>
             <div className="auto-run-list">
-              {AUTO_OPT_RUNS.map(run => (
+              {autoOptRuns.map(run => (
                 <article key={run.id} className={`auto-run-card${selectedAutoRunId === run.id ? ' is-active' : ''}`}>
                   <button type="button" className="auto-run-card__main" onClick={() => setSelectedAutoRunId(run.id)} aria-pressed={selectedAutoRunId === run.id}>
                     <span className="auto-run-card__icon">⚙️</span>
@@ -656,6 +689,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                       {run.backends.map(backend => <li key={`${run.id}-${backend.name}-${backend.version}`}>{backend.name} {backend.version} · {backend.device}</li>)}
                     </ul>
                   </details>
+                  <button type="button" className="btn btn--ghost btn--tiny auto-run-card__delete" onClick={(e) => { e.stopPropagation(); handleDeleteAutoOptRun(run.id); }} aria-label={`Delete ${run.name}`} title="Delete this run">✕</button>
                 </article>
               ))}
             </div>
@@ -842,7 +876,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onExport={handleExport}
             onDelete={handleDelete}
             onClose={closeSlideover}
-            autoRuns={AUTO_OPT_RUNS}
+            autoRuns={autoOptRuns}
           />
         )}
       </aside>
