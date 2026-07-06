@@ -100,7 +100,7 @@ interface FilterPopoverStyle extends React.CSSProperties {
 }
 
 const TEXT_FILTER_FIELDS: Array<{ key: TextFilterField; label: string }> = [
-  { key: 'any', label: 'Any text' },
+  { key: 'any', label: 'All text' },
   { key: 'name', label: 'Name' },
   { key: 'backend', label: 'Backend' },
   { key: 'type', label: 'Type' },
@@ -109,10 +109,6 @@ const TEXT_FILTER_FIELDS: Array<{ key: TextFilterField; label: string }> = [
   { key: 'status', label: 'Status' },
 ];
 
-const TEXT_FILTER_MODES: Array<{ key: TextFilterMode; label: string }> = [
-  { key: 'include', label: 'contains' },
-  { key: 'exclude', label: 'does not contain' },
-];
 
 let textFilterRuleCounter = 0;
 
@@ -489,8 +485,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const maxUsableWidth = Math.max(320, viewportWidth - viewportPadding * 2);
-    const width = Math.min(560, maxUsableWidth);
-    const top = Math.max(viewportPadding, buttonRect.bottom + 6);
+    const width = Math.min(440, maxUsableWidth);
+    const top = Math.max(viewportPadding, buttonRect.bottom + 4);
 
     let left = buttonRect.right - width;
     if (left < viewportPadding) left = viewportPadding;
@@ -655,7 +651,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               aria-modal="false"
             >
               <div className="model-list-panel__filter-popover-head">
-                <span>Model filters</span>
+                <span>Filters</span>
                 <button
                   type="button"
                   className="model-list-panel__filter-popover-close"
@@ -692,20 +688,18 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
               <div className="model-list-panel__filter-section">
                 <div className="model-list-panel__filter-section-head">
-                  <span className="model-list-panel__filter-section-title">Custom text rules</span>
+                  <span className="model-list-panel__filter-section-title">Text</span>
                   <button
                     type="button"
                     className="model-list-panel__filter-add"
                     onClick={addTextFilter}
                   >
-                    + Add
+                    <Icon name="plus" size={13} aria-hidden="true" />
+                    <span>Add</span>
                   </button>
                 </div>
 
                 <div className="model-list-panel__text-filters" role="group" aria-label="Custom text filters">
-                  {textFilters.length === 0 && (
-                    <span className="model-list-panel__filter-empty">Add a text rule, for example “does not contain qwen”.</span>
-                  )}
                   {textFilters.map((rule, index) => (
                     <div key={rule.id} className="model-list-panel__text-filter">
                       <label className="sr-only" htmlFor={`${rule.id}-field`}>Filter field</label>
@@ -721,18 +715,32 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                         ))}
                       </select>
 
-                      <label className="sr-only" htmlFor={`${rule.id}-mode`}>Filter mode</label>
-                      <select
-                        id={`${rule.id}-mode`}
+                      <div
                         className="model-list-panel__text-filter-mode"
-                        value={rule.mode}
-                        onChange={e => updateTextFilter(rule.id, { mode: e.target.value as TextFilterMode })}
+                        role="group"
                         aria-label={`Filter ${index + 1} mode`}
                       >
-                        {TEXT_FILTER_MODES.map(mode => (
-                          <option key={mode.key} value={mode.key}>{mode.label}</option>
-                        ))}
-                      </select>
+                        <button
+                          type="button"
+                          className={`model-list-panel__text-filter-mode-btn${rule.mode === 'include' ? ' model-list-panel__text-filter-mode-btn--active' : ''}`}
+                          onClick={() => updateTextFilter(rule.id, { mode: 'include' })}
+                          aria-label={`Filter ${index + 1}: include matching models`}
+                          aria-pressed={rule.mode === 'include'}
+                          title="Include matches"
+                        >
+                          <Icon name="eye" size={13} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className={`model-list-panel__text-filter-mode-btn${rule.mode === 'exclude' ? ' model-list-panel__text-filter-mode-btn--active' : ''}`}
+                          onClick={() => updateTextFilter(rule.id, { mode: 'exclude' })}
+                          aria-label={`Filter ${index + 1}: exclude matching models`}
+                          aria-pressed={rule.mode === 'exclude'}
+                          title="Exclude matches"
+                        >
+                          <Icon name="eye-off" size={13} aria-hidden="true" />
+                        </button>
+                      </div>
 
                       <label className="sr-only" htmlFor={`${rule.id}-value`}>Filter text</label>
                       <input
@@ -741,7 +749,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                         type="text"
                         value={rule.value}
                         onChange={e => updateTextFilter(rule.id, { value: e.target.value })}
-                        placeholder={rule.mode === 'exclude' ? 'e.g. qwen' : 'e.g. llama'}
+                        placeholder="e.g. qwen"
                         aria-label={`Filter ${index + 1} text`}
                         autoComplete="off"
                       />
@@ -752,14 +760,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                         onClick={() => removeTextFilter(rule.id)}
                         aria-label={`Remove filter ${index + 1}`}
                       >
-                        ×
+                        <Icon name="x" size={13} aria-hidden="true" />
                       </button>
                     </div>
                   ))}
-                </div>
-
-                <div className="model-list-panel__filter-help">
-                  Rules are combined with AND. “Does not contain qwen” hides Qwen models.
                 </div>
               </div>
 
@@ -769,7 +773,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   className="model-list-panel__filter-clear"
                   onClick={clearAllFilters}
                 >
-                  Clear all filters
+                  Clear
                 </button>
               )}
             </div>

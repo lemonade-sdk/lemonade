@@ -8290,15 +8290,11 @@ input, textarea {
 .model-list-panel__filter-popover {
   position: fixed;
   z-index: 160;
-  /* Solid, opaque surface so list content behind the popover does not bleed
-     through (the previous `--surface-overlay` token is undefined → transparent).
-     Fixed positioning lets the dialog sit above the nav rail and expand across
-     the available viewport instead of being clipped by the middle list pane. */
   background: var(--surface-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  min-width: min(360px, calc(100vw - 24px));
+  padding: var(--space-2);
+  min-width: min(320px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
   overflow: auto;
   box-shadow: 0 12px 32px rgba(0,0,0,0.38);
@@ -8308,32 +8304,41 @@ input, textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-1) var(--space-2) var(--space-2);
+  gap: var(--space-2);
+  min-height: 24px;
+  padding: 0 0 var(--space-1);
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .model-list-panel__filter-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   cursor: pointer;
-  padding: 2px;
-  display: inline-flex;
 }
 
-.model-list-panel__filter-popover-close:hover { color: var(--text-primary); }
-.model-list-panel__filter-popover-close:focus-visible { outline: 2px solid var(--accent-focus); border-radius: 2px; }
+.model-list-panel__filter-popover-close:hover { color: var(--text-primary); background: var(--surface-2); border-color: var(--border-subtle); }
+.model-list-panel__filter-popover-close:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
 
 .model-list-panel__filter-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   padding: var(--space-2) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
-.model-list-panel__filter-section:first-of-type { border-top: none; padding-top: 0; }
+.model-list-panel__filter-section:first-of-type { border-top: none; padding-top: var(--space-1); }
+.model-list-panel__filter-section:last-of-type { padding-bottom: var(--space-1); }
 
 .model-list-panel__filter-section-head {
   display: flex;
@@ -8343,16 +8348,18 @@ input, textarea {
 }
 
 .model-list-panel__filter-section-title {
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .model-list-panel__filter-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   min-height: 24px;
   padding: 0 var(--space-2);
   border: 1px solid var(--border-subtle);
@@ -8368,69 +8375,72 @@ input, textarea {
 
 .model-list-panel__filter-options {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .model-list-panel__filter-option {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
   text-align: left;
 }
 
-.model-list-panel__filter-option:hover { background: var(--surface-2); color: var(--text-primary); }
+.model-list-panel__filter-option:hover { background: var(--surface-2); color: var(--text-primary); border-color: var(--border-strong); }
 .model-list-panel__filter-option:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
-.model-list-panel__filter-option--active { color: var(--accent-fg); font-weight: 600; }
-.model-list-panel__filter-option[aria-pressed="true"] { background: var(--surface-2); }
+.model-list-panel__filter-option--active,
+.model-list-panel__filter-option[aria-pressed="true"] { color: var(--accent-fg); border-color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 12%, transparent); }
 
 .model-list-panel__filter-empty {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) 0;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
 }
 
 .model-list-panel__filter-clear {
-  margin-top: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  min-height: 24px;
+  margin-top: 0;
+  padding: 0 var(--space-2);
   background: none;
-  border: none;
-  border-top: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   color: var(--accent-fg);
   font-size: var(--text-xs);
   cursor: pointer;
-  text-align: left;
-  border-radius: var(--radius-sm);
 }
-.model-list-panel__filter-clear:hover { background: var(--surface-2); }
+.model-list-panel__filter-clear:hover { background: var(--surface-2); border-color: var(--border-strong); }
 .model-list-panel__filter-clear:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
 
 .model-list-panel__text-filters {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .model-list-panel__text-filter {
   display: grid;
-  grid-template-columns: minmax(92px, 0.9fr) minmax(118px, 1.05fr) minmax(112px, 1fr) 26px;
-  gap: var(--space-1);
+  grid-template-columns: minmax(92px, 0.75fr) 56px minmax(112px, 1fr) 24px;
+  gap: 4px;
   align-items: center;
 }
 
 .model-list-panel__text-filter-field,
-.model-list-panel__text-filter-mode,
 .model-list-panel__text-filter-input {
   width: 100%;
   min-width: 0;
-  height: 28px;
+  height: 26px;
   padding: 0 var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -8441,25 +8451,53 @@ input, textarea {
 }
 
 .model-list-panel__text-filter-field:focus,
-.model-list-panel__text-filter-mode:focus,
 .model-list-panel__text-filter-input:focus {
   outline: 2px solid var(--accent-focus);
   outline-offset: 0;
   border-color: transparent;
 }
 
+.model-list-panel__text-filter-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+}
+
+.model-list-panel__text-filter-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.model-list-panel__text-filter-mode-btn:hover { color: var(--text-primary); background: var(--surface-2); }
+.model-list-panel__text-filter-mode-btn:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
+.model-list-panel__text-filter-mode-btn--active,
+.model-list-panel__text-filter-mode-btn[aria-pressed="true"] { color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 14%, transparent); border-color: color-mix(in srgb, var(--accent-fg) 35%, transparent); }
+
 .model-list-panel__text-filter-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 16px;
   line-height: 1;
 }
 
@@ -8470,15 +8508,10 @@ input, textarea {
 }
 .model-list-panel__text-filter-remove:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
 
-.model-list-panel__filter-help {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-normal);
-}
-
-@media (max-width: 720px) {
-  .model-list-panel__text-filter { grid-template-columns: 1fr 1fr 26px; }
-  .model-list-panel__text-filter-input { grid-column: 1 / 3; }
+@media (max-width: 560px) {
+  .model-list-panel__filter-popover { padding: var(--space-2); }
+  .model-list-panel__text-filter { grid-template-columns: minmax(86px, 1fr) 56px 24px; }
+  .model-list-panel__text-filter-input { grid-column: 1 / 4; }
 }
 
 /* Capability icons on a model row — one per functional capability tag (#2424). */
