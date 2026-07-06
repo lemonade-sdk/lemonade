@@ -2,6 +2,8 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/routing_classifier_services.h"
+#include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
@@ -2207,6 +2209,54 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
+std::string Server::route_collection_request(const nlohmann::json& request_json,
+                                             const ModelInfo& collection_info) {
+    // The policy is parsed once when the models cache is built (ModelManager),
+    // so dispatch just reads it here. A missing policy means the collection
+    // failed to parse at cache-build time; fail open to the collection name so
+    // the caller leaves the request untouched.
+    if (!collection_info.route_policy) {
+        LOG(WARNING, "Server") << "Router collection '" << collection_info.model_name
+                               << "' has no parsed routing policy" << std::endl;
+        return collection_info.model_name;
+    }
+
+    // The engine owns its policy (and is rebuilt per request because its
+    // classifier services are bound to the live Router), so copy the shared,
+    // immutable policy into it.
+    RoutePolicy policy = *collection_info.route_policy;
+    ClassifierServices services = make_router_classifier_services(
+        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+
+    RouteContext ctx = build_route_context(request_json, collection_info.model_name);
+    Decision decision = engine.route(ctx, /*want_trace=*/false);
+    return decision.route_to;
+}
+
+void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return;
+    }
+    const std::string requested_model = request_json["model"].get<std::string>();
+    try {
+        if (!model_manager_->model_exists(requested_model)) {
+            return;
+        }
+        ModelInfo info = model_manager_->get_model_info(requested_model);
+        if (!is_router_collection_recipe(info.recipe)) {
+            return;
+        }
+        std::string selected = route_collection_request(request_json, info);
+        LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
+                            << selected << "'" << std::endl;
+        request_json["model"] = selected;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '"
+                               << requested_model << "': " << e.what() << std::endl;
+    }
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2238,6 +2288,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     if (is_omni_collection_recipe(info.recipe)) {
                         handle_collection_chat_completions(request_json, info, res);
                         return;
+                    }
+                    if (is_router_collection_recipe(info.recipe)) {
+                        // The recipe is the trigger (no "auto", no /v1/route): run the
+                        // routing engine and rewrite the model to the selected
+                        // candidate, then fall through to normal completion handling.
+                        std::string selected = route_collection_request(request_json, info);
+                        LOG(INFO, "Server") << "Router collection '" << requested_model
+                                            << "' -> '" << selected << "'" << std::endl;
+                        request_json["model"] = selected;
                     }
                 }
             } catch (const std::exception& e) {
@@ -2488,6 +2547,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3685,6 +3748,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3708,7 +3775,9 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = req.body;
+        // Re-serialize so any collection.router model rewrite reaches the backend
+        // (streaming forwards this body verbatim).
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {

@@ -95,6 +95,51 @@ json parse_json_text(const std::string& text) {
     return parsed.is_discarded() ? json(nullptr) : parsed;
 }
 
+// Concatenate the text of an OpenAI message `content` field (string or an array
+// of typed parts), joining multiple text parts with newlines.
+std::string collect_text_from_content(const json& content) {
+    if (content.is_string()) {
+        return content.get<std::string>();
+    }
+    std::string text;
+    if (content.is_array()) {
+        for (const auto& part : content) {
+            if (part.is_object() && part.value("type", std::string()) == "text" &&
+                part.contains("text") && part["text"].is_string()) {
+                if (!text.empty()) text += "\n";
+                text += part["text"].get<std::string>();
+            }
+        }
+    }
+    return text;
+}
+
+// True if an OpenAI message `content` array carries an image part.
+bool content_has_image(const json& content) {
+    if (!content.is_array()) return false;
+    for (const auto& part : content) {
+        if (part.is_object() && part.value("type", std::string()) == "image_url") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A non-streaming, deterministic single-turn chat request (system + user).
+json make_chat_request(const std::string& model,
+                       const std::string& system_prompt,
+                       const std::string& user_input) {
+    return json{
+        {"model", model},
+        {"stream", false},
+        {"temperature", 0.0},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", system_prompt}},
+            {{"role", "user"}, {"content", user_input}},
+        })},
+    };
+}
+
 } // namespace
 
 std::vector<float> parse_embedding_vector(const json& response) {
@@ -200,21 +245,10 @@ ClassifierServices make_classifier_services_from_router_calls(
             throw std::runtime_error("Router chat_completion call is not configured");
         }
         ensure_model(ensure_loaded, model);
-        json request = {
-            {"model", model},
-            {"stream", false},
-            {"temperature", 0.0},
-            {"messages", json::array({
-                {
-                    {"role", "system"},
-                    {"content", "Classify the user input. Return only JSON mapping label names to numeric scores."},
-                },
-                {
-                    {"role", "user"},
-                    {"content", input},
-                },
-            })},
-        };
+        json request = make_chat_request(
+            model,
+            "Classify the user input. Return only JSON mapping label names to numeric scores.",
+            input);
         return parse_classifier_scores((*chat_completion_call)(request));
     };
 
@@ -226,19 +260,84 @@ ClassifierServices make_classifier_services_from_router_calls(
             throw std::runtime_error("Router chat_completion call is not configured");
         }
         ensure_model(ensure_loaded, model);
-        json request = {
-            {"model", model},
-            {"stream", false},
-            {"temperature", 0.0},
-            {"messages", json::array({
-                {{"role", "system"}, {"content", prompt}},
-                {{"role", "user"}, {"content", input}},
-            })},
-        };
+        json request = make_chat_request(model, prompt, input);
         return extract_chat_text((*chat_completion_call)(request));
     };
 
     return services;
+}
+
+RouteContext build_route_context(const json& request_json, const std::string& model_name) {
+    RouteContext ctx;
+    ctx.params.model = model_name;
+
+    auto append_line = [&ctx](const std::string& text) {
+        if (!ctx.input.empty()) ctx.input += "\n";
+        ctx.input += text;
+    };
+
+    if (request_json.contains("tools") && request_json["tools"].is_array() &&
+        !request_json["tools"].empty()) {
+        ctx.params.has_tools = true;
+    }
+
+    if (request_json.contains("messages") && request_json["messages"].is_array()) {
+        const auto& messages = request_json["messages"];
+        for (const auto& msg : messages) {
+            if (msg.is_object() && msg.contains("content") && content_has_image(msg["content"])) {
+                ctx.params.has_images = true;
+                break;
+            }
+        }
+        for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
+            const auto& msg = messages[i];
+            if (msg.is_object() && msg.value("role", std::string()) == "user" &&
+                msg.contains("content")) {
+                ctx.input = collect_text_from_content(msg["content"]);
+                break;
+            }
+        }
+    } else if (request_json.contains("prompt")) {
+        const auto& prompt = request_json["prompt"];
+        if (prompt.is_string()) {
+            ctx.input = prompt.get<std::string>();
+        } else if (prompt.is_array()) {
+            for (const auto& part : prompt) {
+                if (part.is_string()) {
+                    append_line(part.get<std::string>());
+                }
+            }
+        }
+    } else if (request_json.contains("input")) {
+        const auto& input = request_json["input"];
+        if (input.is_string()) {
+            ctx.input = input.get<std::string>();
+        } else if (input.is_array()) {
+            for (const auto& item : input) {
+                if (item.is_string()) {
+                    append_line(item.get<std::string>());
+                } else if (item.is_object() && item.contains("content")) {
+                    std::string part_text = collect_text_from_content(item["content"]);
+                    if (!part_text.empty()) {
+                        append_line(part_text);
+                    }
+                }
+            }
+        }
+    }
+
+    ctx.params.chars = ctx.input.size();
+
+    if (request_json.contains("metadata") && request_json["metadata"].is_object()) {
+        for (auto it = request_json["metadata"].begin();
+             it != request_json["metadata"].end(); ++it) {
+            if (it.value().is_string()) {
+                ctx.metadata[it.key()] = it.value().get<std::string>();
+            }
+        }
+    }
+
+    return ctx;
 }
 
 } // namespace lemon

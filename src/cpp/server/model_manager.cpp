@@ -1675,6 +1675,39 @@ void ModelManager::build_cache() {
     rebuild_public_model_aliases_locked();
 
     cache_valid_ = true;
+
+    // Parse each collection.router model's routing policy now, while the cache
+    // and its alias map are fully built and the lock is still held. The parser's
+    // component resolver needs only alias resolution, which is a direct lookup
+    // into public_model_aliases_ here — exactly what resolve_model_name() does,
+    // minus its own build_cache()+lock. Calling resolve_model_name() here would
+    // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
+    RoutingPolicyParseOptions policy_options;
+    policy_options.resolve_component =
+        [this](const std::string& name) -> std::optional<std::string> {
+        auto it = public_model_aliases_.find(name);
+        return it != public_model_aliases_.end() ? it->second : name;
+    };
+    for (auto& [name, info] : models_cache_) {
+        if (!is_router_collection_recipe(info.recipe)) {
+            continue;
+        }
+        json doc;
+        doc["recipe"] = info.recipe;
+        doc["components"] = info.components;
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end()) {
+            doc["routing"] = routing_it->second;
+        }
+        try {
+            info.route_policy = std::make_shared<const RoutePolicy>(
+                parse_route_policy_collection(doc, policy_options));
+        } catch (const std::exception& e) {
+            LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
+                                         << name << "': " << e.what() << std::endl;
+        }
+    }
+
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }

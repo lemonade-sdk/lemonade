@@ -98,6 +98,13 @@ private:
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,
                                             httplib::Response& res);
+    // Run a collection.router model's routing engine and return the selected
+    // candidate model. Mirrors the collection.omni dispatch wiring.
+    std::string route_collection_request(const nlohmann::json& request_json,
+                                         const ModelInfo& collection_info);
+    // If request_json addresses a collection.router model, rewrite its "model"
+    // field in place to the engine-selected candidate. No-op otherwise.
+    void apply_router_collection_dispatch(nlohmann::json& request_json);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);

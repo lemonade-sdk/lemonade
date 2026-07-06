@@ -2826,6 +2826,88 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021z_router_collection_chat_dispatch(self):
+        """A collection.router model flips /chat/completions into engine mode
+        (#2385): the recipe is the trigger — no "auto", no /v1/route. The
+        routing engine selects a candidate and the request is dispatched to it,
+        returning a real completion produced by the engine-selected model."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterColl-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            # Register a collection.router whose only candidate is the test
+            # model. Both the keyword rule and the fail-open default resolve to
+            # ENDPOINT_TEST_MODEL, so any input dispatches there.
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.router",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "routing": {
+                        "candidates": [ENDPOINT_TEST_MODEL],
+                        "default_model": ENDPOINT_TEST_MODEL,
+                        "rules": [
+                            {
+                                "id": "code-to-test-model",
+                                "match": {"keywords_any": ["code", "def "]},
+                                "route_to": ENDPOINT_TEST_MODEL,
+                            }
+                        ],
+                    },
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            # Addressing the collection.router model by name must return a real
+            # completion produced by the engine-selected candidate.
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertIn("choices", body)
+            self.assertTrue(
+                body["choices"], "engine-routed completion must have choices"
+            )
+            message = body["choices"][0].get("message", {})
+            self.assertIsInstance(message.get("content"), str)
+            # The response reflects the engine-selected candidate, not the
+            # collection.router alias that was addressed.
+            self.assertNotEqual(
+                body.get("model"),
+                public_name,
+                "response model must be the routed candidate, not the router alias",
+            )
+            print(f"[OK] collection.router dispatched {public_name} -> completion")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021q_collection_repull_overwrites_components(self):
         """Re-pulling an existing collection with a new components array must
         overwrite the stored entry, not silently reuse the old components."""

@@ -29,4 +29,8 @@ std::vector<float> parse_embedding_vector(const json& response);
 std::map<std::string, double> parse_classifier_scores(const json& response);
 std::string extract_chat_text(const json& response);
 
+// Translate an inbound chat/completions, completions, or responses body into a
+// backend-agnostic RouteContext the routing engine can evaluate.
+RouteContext build_route_context(const json& request_json, const std::string& model_name);
+
 } // namespace lemon
