@@ -159,14 +159,9 @@ std::string extract_chat_text(const json& response) {
 std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw_if_error_response(response, "classifier request");
 
-    auto scores = parse_scores_payload(response);
-    if (!scores.empty()) {
-        return scores;
-    }
-
     const std::string content = extract_chat_text(response);
     json parsed = parse_json_text(content);
-    scores = parse_scores_payload(parsed);
+    auto scores = parse_scores_payload(parsed);
     if (!scores.empty()) {
         return scores;
     }
