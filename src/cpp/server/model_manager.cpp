@@ -110,7 +110,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version"};
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
@@ -1695,6 +1695,10 @@ void ModelManager::build_cache() {
         json doc;
         doc["recipe"] = info.recipe;
         doc["components"] = info.components;
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            doc["version"] = version_it->second;
+        }
         auto routing_it = info.extras.find("routing");
         if (routing_it != info.extras.end()) {
             doc["routing"] = routing_it->second;

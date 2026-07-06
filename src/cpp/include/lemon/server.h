@@ -13,6 +13,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <vector>
 #include <httplib.h>
 #include "runtime_config.h"
@@ -99,9 +100,10 @@ private:
                                             const ModelInfo& collection_info,
                                             httplib::Response& res);
     // Run a collection.router model's routing engine and return the selected
-    // candidate model. Mirrors the collection.omni dispatch wiring.
-    std::string route_collection_request(const nlohmann::json& request_json,
-                                         const ModelInfo& collection_info);
+    // candidate model. Returns std::nullopt when routing did not engage (no
+    // parsed policy), so callers leave the request's model field untouched.
+    std::optional<std::string> route_collection_request(const nlohmann::json& request_json,
+                                                        const ModelInfo& collection_info);
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate. No-op otherwise.
     void apply_router_collection_dispatch(nlohmann::json& request_json);

@@ -2209,16 +2209,16 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
-std::string Server::route_collection_request(const nlohmann::json& request_json,
+std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
                                              const ModelInfo& collection_info) {
     // The policy is parsed once when the models cache is built (ModelManager),
     // so dispatch just reads it here. A missing policy means the collection
-    // failed to parse at cache-build time; fail open to the collection name so
-    // the caller leaves the request untouched.
+    // failed to parse at cache-build time; return nullopt so the caller leaves
+    // the request's model field untouched (fail open).
     if (!collection_info.route_policy) {
         LOG(WARNING, "Server") << "Router collection '" << collection_info.model_name
                                << "' has no parsed routing policy" << std::endl;
-        return collection_info.model_name;
+        return std::nullopt;
     }
 
     // The engine owns its policy (and is rebuilt per request because its
@@ -2247,10 +2247,13 @@ void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
         if (!is_router_collection_recipe(info.recipe)) {
             return;
         }
-        std::string selected = route_collection_request(request_json, info);
+        std::optional<std::string> selected = route_collection_request(request_json, info);
+        if (!selected) {
+            return;
+        }
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
-                            << selected << "'" << std::endl;
-        request_json["model"] = selected;
+                            << *selected << "'" << std::endl;
+        request_json["model"] = *selected;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
@@ -2293,10 +2296,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // The recipe is the trigger (no "auto", no /v1/route): run the
                         // routing engine and rewrite the model to the selected
                         // candidate, then fall through to normal completion handling.
-                        std::string selected = route_collection_request(request_json, info);
-                        LOG(INFO, "Server") << "Router collection '" << requested_model
-                                            << "' -> '" << selected << "'" << std::endl;
-                        request_json["model"] = selected;
+                        std::optional<std::string> selected =
+                            route_collection_request(request_json, info);
+                        if (selected) {
+                            LOG(INFO, "Server") << "Router collection '" << requested_model
+                                                << "' -> '" << *selected << "'" << std::endl;
+                            request_json["model"] = *selected;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
@@ -4092,7 +4098,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_omni_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
@@ -4102,6 +4108,17 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else if (is_router_collection_recipe(info.recipe)) {
+            // Router collections are virtual: each request is dispatched to one
+            // candidate at request time, which lazy-loads it. There is no backend
+            // of the collection's own to bring up, and eagerly loading every
+            // candidate would thrash the model LRU. Acknowledge without loading.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},

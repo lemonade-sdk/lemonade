@@ -2842,6 +2842,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/pull",
                 json={
                     "model_name": canonical_name,
+                    "version": "1",
                     "recipe": "collection.router",
                     "components": [ENDPOINT_TEST_MODEL],
                     "routing": {
@@ -2907,6 +2908,283 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
+        """Register a collection.router whose single candidate is
+        ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull
+        payload (e.g. to drop "version" for the negative tests)."""
+        if routing is None:
+            routing = {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "code-to-test-model",
+                        "match": {"keywords_any": ["code", "def "]},
+                        "route_to": ENDPOINT_TEST_MODEL,
+                    }
+                ],
+            }
+        payload = {
+            "model_name": canonical_name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [ENDPOINT_TEST_MODEL],
+            "routing": routing,
+        }
+        if overrides is not None:
+            payload.update(overrides)
+            # Allow negative tests to remove a required key entirely.
+            for key, value in list(payload.items()):
+                if value is None:
+                    del payload[key]
+        return requests.post(
+            f"{self.base_url}/pull", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+    def _cleanup_router_collection(self, canonical_name):
+        for endpoint, body in (
+            ("/unload", {"model_name": ENDPOINT_TEST_MODEL}),
+            ("/delete", {"model_name": canonical_name}),
+        ):
+            try:
+                requests.post(
+                    f"{self.base_url}{endpoint}", json=body, timeout=TIMEOUT_DEFAULT
+                )
+            except Exception:
+                pass
+
+    def test_021za_router_collection_completions_dispatch(self):
+        """/completions dispatches a collection.router request to the
+        engine-selected candidate (#2385), same as /chat/completions."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterCompl-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            resp = requests.post(
+                f"{self.base_url}/completions",
+                json={
+                    "model": public_name,
+                    "prompt": "Please write code for me",
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertIn("choices", body)
+            self.assertTrue(
+                body["choices"], "engine-routed completion must have choices"
+            )
+            self.assertIsInstance(body["choices"][0].get("text"), str)
+            self.assertNotEqual(
+                body.get("model"),
+                public_name,
+                "response model must be the routed candidate, not the router alias",
+            )
+            print(f"[OK] collection.router /completions dispatched {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zb_router_collection_responses_dispatch(self):
+        """/responses (non-streaming) dispatches a collection.router request to
+        the engine-selected candidate (#2385)."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterResp-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            resp = requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": "Please write code for me",
+                    "max_output_tokens": 16,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertNotIn("error", body, resp.text)
+            # The response reflects the routed candidate, not the router alias.
+            if "model" in body:
+                self.assertNotEqual(body.get("model"), public_name)
+            print(f"[OK] collection.router /responses dispatched {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zc_router_collection_responses_streaming_dispatch(self):
+        """/responses with stream=true dispatches a collection.router request to
+        the engine-selected candidate and streams SSE events (#2385). Exercises
+        the request re-serialization that carries the rewritten model to the
+        backend on the streaming path."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterRespStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": "Please write code for me",
+                    "max_output_tokens": 16,
+                    "stream": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self.assertEqual(resp.status_code, 200, resp.text)
+                data_events = []
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8", errors="replace")
+                    if line.startswith("data:"):
+                        data_events.append(line[len("data:") :].strip())
+            self.assertTrue(
+                data_events,
+                "streaming /responses must emit at least one SSE data event",
+            )
+            blob = "\n".join(data_events)
+            self.assertNotIn(
+                '"error"',
+                blob,
+                f"streaming /responses must not error: {blob[:500]}",
+            )
+            print(
+                f"[OK] collection.router /responses (streaming) dispatched {public_name}"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zd_router_collection_survives_cache_rebuild(self):
+        """The parsed routing policy survives a models-cache rebuild (#2385):
+        the source-declared version and routing block are persisted and
+        re-parsed, so dispatch still works after the cache is invalidated by an
+        unrelated /pull."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_a = f"user.RouterRebuildA-{suffix}"
+        canonical_b = f"user.RouterRebuildB-{suffix}"
+        public_a = canonical_a[5:]
+        try:
+            resp_a = self._pull_router_collection(canonical_a)
+            self.assertEqual(resp_a.status_code, 200, resp_a.text)
+            # A second /pull invalidates the models cache; the next request that
+            # touches the cache rebuilds it and must re-parse collection A's
+            # policy from its persisted version + routing block.
+            resp_b = self._pull_router_collection(canonical_b)
+            self.assertEqual(resp_b.status_code, 200, resp_b.text)
+
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_a,
+                    "messages": [{"role": "user", "content": "Please write code"}],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertTrue(body.get("choices"))
+            self.assertNotEqual(
+                body.get("model"),
+                public_a,
+                "policy must still dispatch after a cache rebuild",
+            )
+            print(f"[OK] collection.router policy survived cache rebuild: {public_a}")
+        finally:
+            self._cleanup_router_collection(canonical_a)
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_b},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021ze_router_collection_invalid_policy_rejected(self):
+        """A collection.router /pull with a broken routing policy is rejected at
+        registration (#2385): the parser gate runs before the model is stored,
+        so bad policies never reach dispatch. Covers a missing schema version
+        and a default_model that is not a declared candidate."""
+        suffix = uuid.uuid4().hex[:8]
+
+        # Missing required schema version.
+        no_version = f"user.RouterNoVer-{suffix}"
+        try:
+            resp = self._pull_router_collection(no_version, overrides={"version": None})
+            self.assertNotEqual(
+                resp.status_code,
+                200,
+                f"router pull without version must be rejected: {resp.text}",
+            )
+        finally:
+            self._cleanup_router_collection(no_version)
+
+        # default_model is not one of the candidates.
+        bad_default = f"user.RouterBadDefault-{suffix}"
+        try:
+            resp = self._pull_router_collection(
+                bad_default,
+                routing={
+                    "candidates": [ENDPOINT_TEST_MODEL],
+                    "default_model": "Not-A-Candidate-Model",
+                    "rules": [],
+                },
+            )
+            self.assertNotEqual(
+                resp.status_code,
+                200,
+                f"router pull with non-candidate default_model must be rejected: {resp.text}",
+            )
+        finally:
+            self._cleanup_router_collection(bad_default)
+        print("[OK] collection.router invalid policies rejected at registration")
+
+    def test_021zf_router_collection_load_is_virtual_noop(self):
+        """/load on a collection.router acknowledges success without bringing up
+        a backend (#2385): router collections are virtual, so /load must not
+        fall through to the normal backend-load path."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterLoad-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200, load_response.text)
+            load_body = load_response.json()
+            self.assertEqual(load_body.get("status"), "success")
+            self.assertEqual(load_body.get("recipe"), "collection.router")
+
+            # The virtual collection must not appear as a loaded backend.
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded = health.get("all_models_loaded", []) or []
+            self.assertNotIn(public_name, loaded)
+            self.assertNotIn(canonical_name, loaded)
+            print(f"[OK] collection.router /load was a virtual no-op: {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def test_021q_collection_repull_overwrites_components(self):
         """Re-pulling an existing collection with a new components array must
