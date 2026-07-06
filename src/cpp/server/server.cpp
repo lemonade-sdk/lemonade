@@ -489,6 +489,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
+    telemetry::g_request_start_time = std::chrono::steady_clock::now();
+    telemetry::g_current_auth_token = "";
+    if (req.has_header("X-Client-Session-Id")) {
+        telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
+    } else {
+        telemetry::g_current_client_session_id.clear();
+    }
+
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
     // gateway (Critical Invariant #10). It is the only API route outside the
@@ -526,6 +534,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     } catch (const std::exception& e) {
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
+
+    telemetry::g_current_auth_token = auth_token;
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -1237,7 +1247,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
     });
 
     // Handle preflight OPTIONS requests
