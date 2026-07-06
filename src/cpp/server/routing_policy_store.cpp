@@ -3,7 +3,9 @@
 #include "lemon/model_types.h"
 #include "lemon/utils/aixlog.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -16,7 +18,10 @@ namespace fs = std::filesystem;
 namespace {
 
 bool is_json_file(const fs::path& path) {
-    return path.has_extension() && path.extension() == ".json";
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension == ".json";
 }
 
 json load_json_file(const fs::path& path) {

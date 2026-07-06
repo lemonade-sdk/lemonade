@@ -141,6 +141,22 @@ static void test_invalid_policy_reports_error() {
     fs::remove_all(dir);
 }
 
+static void test_uppercase_json_extension_loads_policy() {
+    fs::path dir = make_temp_dir();
+    fs::path policy_path = dir / "router.JSON";
+    json doc = load_fixture("l1_keywords.json");
+    write_json(policy_path, doc);
+
+    lemon::testing::FakeClassifierServices fake;
+    RoutingPolicyStore store(dir.string(), fake.make());
+    auto snapshot = store.reload();
+
+    check("uppercase .JSON policy file extension is accepted",
+          snapshot->engines.count("user.Router-Keywords") == 1);
+
+    fs::remove_all(dir);
+}
+
 static void test_duplicate_policy_model_names_report_errors() {
     fs::path dir = make_temp_dir();
     json doc = load_fixture("l1_keywords.json");
@@ -165,6 +181,7 @@ int main() {
     test_reload_swaps_snapshot();
     test_directory_watcher_reload();
     test_invalid_policy_reports_error();
+    test_uppercase_json_extension_loads_policy();
     test_duplicate_policy_model_names_report_errors();
 
     if (g_failures == 0) {
