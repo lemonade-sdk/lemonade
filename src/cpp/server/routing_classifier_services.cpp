@@ -1,6 +1,8 @@
 #include "lemon/routing_classifier_services.h"
 
+#include <cmath>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -95,6 +97,40 @@ json parse_json_text(const std::string& text) {
     return parsed.is_discarded() ? json(nullptr) : parsed;
 }
 
+void validate_score_range(const std::map<std::string, double>& scores) {
+    for (const auto& [label, score] : scores) {
+        if (!std::isfinite(score) || score < 0.0 || score > 1.0) {
+            throw std::runtime_error(
+                "classifier score for label '" + label + "' must be in [0, 1]");
+        }
+    }
+}
+
+std::optional<std::string> try_extract_chat_text(const json& response) {
+    if (response.is_object() && response.contains("choices") &&
+        response["choices"].is_array() && !response["choices"].empty()) {
+        const json& choice = response["choices"].front();
+        if (choice.is_object()) {
+            if (choice.contains("message") && choice["message"].is_object()) {
+                const json& message = choice["message"];
+                if (message.contains("content") && message["content"].is_string()) {
+                    return message["content"].get<std::string>();
+                }
+            }
+            if (choice.contains("text") && choice["text"].is_string()) {
+                return choice["text"].get<std::string>();
+            }
+        }
+    }
+
+    if (response.is_object() && response.contains("content") &&
+        response["content"].is_string()) {
+        return response["content"].get<std::string>();
+    }
+
+    return std::nullopt;
+}
+
 } // namespace
 
 std::vector<float> parse_embedding_vector(const json& response) {
@@ -132,25 +168,8 @@ std::vector<float> parse_embedding_vector(const json& response) {
 std::string extract_chat_text(const json& response) {
     throw_if_error_response(response, "chat completion request");
 
-    if (response.is_object() && response.contains("choices") &&
-        response["choices"].is_array() && !response["choices"].empty()) {
-        const json& choice = response["choices"].front();
-        if (choice.is_object()) {
-            if (choice.contains("message") && choice["message"].is_object()) {
-                const json& message = choice["message"];
-                if (message.contains("content") && message["content"].is_string()) {
-                    return message["content"].get<std::string>();
-                }
-            }
-            if (choice.contains("text") && choice["text"].is_string()) {
-                return choice["text"].get<std::string>();
-            }
-        }
-    }
-
-    if (response.is_object() && response.contains("content") &&
-        response["content"].is_string()) {
-        return response["content"].get<std::string>();
+    if (auto text = try_extract_chat_text(response)) {
+        return *text;
     }
 
     throw std::runtime_error("chat completion response did not contain text content");
@@ -159,10 +178,20 @@ std::string extract_chat_text(const json& response) {
 std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw_if_error_response(response, "classifier request");
 
-    const std::string content = extract_chat_text(response);
-    json parsed = parse_json_text(content);
-    auto scores = parse_scores_payload(parsed);
+    if (auto content = try_extract_chat_text(response)) {
+        json parsed = parse_json_text(*content);
+        auto scores = parse_scores_payload(parsed);
+        if (!scores.empty()) {
+            validate_score_range(scores);
+            return scores;
+        }
+        throw std::runtime_error(
+            "classifier chat content did not contain label scores");
+    }
+
+    auto scores = parse_scores_payload(response);
     if (!scores.empty()) {
+        validate_score_range(scores);
         return scores;
     }
 

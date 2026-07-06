@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -73,6 +74,17 @@ static ClassifierPtr make_model_classifier() {
         {"model", "pii-model"},
         {"labels", {"PII", "NO_PII"}},
         {"default_label", "PII"},
+    });
+}
+
+static ClassifierPtr make_fail_closed_model_classifier() {
+    return lemon::make_classifier(json{
+        {"id", "pii"},
+        {"type", "classifier"},
+        {"model", "pii-model"},
+        {"labels", {"PII", "NO_PII"}},
+        {"default_label", "PII"},
+        {"on_error", "match_true"},
     });
 }
 
@@ -177,6 +189,58 @@ static void test_run_classifier_ignores_openai_metadata() {
           near(scores.at("NO_PII"), 0.1));
 }
 
+static void test_direct_score_payload_is_supported() {
+    auto scores = lemon::parse_classifier_scores(json{
+        {"PII", 0.7},
+        {"NO_PII", 0.3},
+    });
+    check("direct classifier score maps are supported",
+          scores.size() == 2 && near(scores.at("PII"), 0.7) &&
+          near(scores.at("NO_PII"), 0.3));
+}
+
+static void test_out_of_range_scores_are_rejected() {
+    bool high_threw = false;
+    try {
+        lemon::parse_classifier_scores(json{{"PII", 999.0}});
+    } catch (const std::runtime_error&) {
+        high_threw = true;
+    }
+    check("classifier scores above 1 are rejected", high_threw);
+
+    bool negative_threw = false;
+    try {
+        lemon::parse_classifier_scores(json{{"choices", json::array({
+            json{{"message", {{"content", R"({"PII":-1.0})"}}}}
+        })}});
+    } catch (const std::runtime_error&) {
+        negative_threw = true;
+    }
+    check("classifier scores below 0 are rejected", negative_threw);
+}
+
+static void test_out_of_range_scores_drive_on_error() {
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) {
+            return json{{"choices", json::array({
+                json{{"message", {{"content", R"({"PII":999.0})"}}}}
+            })}};
+        });
+
+    RoutePolicy policy;
+    policy.candidates = {"local", "cloud"};
+    policy.default_model = "cloud";
+    policy.classifiers["pii"] = make_fail_closed_model_classifier();
+    policy.rules = {
+        rule("keep-private", leaf(json{{"classifier", "pii"}, {"min_score", 0.5}}), "local"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), services);
+    Decision decision = engine.route(route_context("my ssn is 123"), false);
+    check("out-of-range model scores become classifier failure and apply on_error",
+          decision.route_to == "local" && decision.matched_rule == "keep-private");
+}
 
 static void test_model_classifier_routes_with_router_services() {
     auto services = lemon::make_classifier_services_from_router_calls(
@@ -224,6 +288,9 @@ int main() {
     test_semantic_similarity_loops_through_router_embeddings();
     test_run_classifier_uses_router_chat_completion();
     test_run_classifier_ignores_openai_metadata();
+    test_direct_score_payload_is_supported();
+    test_out_of_range_scores_are_rejected();
+    test_out_of_range_scores_drive_on_error();
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
 
