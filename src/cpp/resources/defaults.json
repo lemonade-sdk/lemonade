@@ -15,6 +15,13 @@
   "kokoro": {
     "cpu_bin": "builtin"
   },
+  "lemon-mlx": {
+    "args": "",
+    "backend": "auto",
+    "cpu_bin": "builtin",
+    "metal_bin": "builtin",
+    "rocm_bin": "builtin"
+  },
   "llamacpp": {
     "args": "",
     "backend": "auto",
@@ -26,13 +33,6 @@
     "rocm_bin": "builtin",
     "vulkan_args": "",
     "vulkan_bin": "builtin"
-  },
-  "lemon-mlx": {
-    "args": "",
-    "backend": "auto",
-    "cpu_bin": "builtin",
-    "metal_bin": "builtin",
-    "rocm_bin": "builtin"
   },
   "log_level": "info",
   "max_loaded_models": 1,

@@ -1441,8 +1441,8 @@ jobs:
           - name: lemon-mlx
             script: server_llm.py
             extra_args: "--wrapped-server lemon-mlx"
-            backends: "cpu"
-            runner: [self-hosted, Linux, lemon-prod]
+            backends: "rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""

@@ -186,6 +186,22 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
+      <td rowspan="3"><code>lemon-mlx</code> (experimental)</td>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td><code>rocm</code></td>
+      <td>AMD Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU; ARM64 CPU (macOS)</td>
+      <td>Linux, macOS</td>
+    </tr>
+    <tr>
       <td rowspan="6"><strong>Speech-to-text</strong></td>
       <td rowspan="5"><code>whispercpp</code></td>
       <td><code>npu</code></td>

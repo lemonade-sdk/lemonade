@@ -7,6 +7,7 @@ const RECIPE_PRIORITY = [
   'flm',
   'kokoro',
   'llamacpp',
+  'lemon-mlx',
   'moonshine',
   'ryzenai-llm',
   'sd-cpp',
@@ -20,7 +21,8 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)'
+  vllm: 'vLLM ROCm (experimental)',
+  'lemon-mlx': 'MLX'
 };
 /* END GENERATED: models-js-recipes */
 

@@ -11,6 +11,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|------|--------------------|---------------|----------|
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
+| `lemon-mlx` | Lemon MLX (experimental) | yes | yes | cpu, metal, rocm |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
@@ -27,6 +28,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `kokoro` | metal | macos | metal |
+| `lemon-mlx` | metal | macos | metal |
+| `lemon-mlx` | rocm | linux | amd_gpu (gfx1151) |
+| `lemon-mlx` | cpu | linux, macos | cpu (arm64, x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -53,6 +57,14 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Recipe options
 
 <!-- BEGIN GENERATED: backend-options -->
+#### `lemon-mlx` — Lemon MLX (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `lemon-mlx_backend` | `--lemon-mlx` | BACKEND | "" | lemon-mlx backend to use |
+| `lemon-mlx_args` | `--lemon-mlx-args` | ARGS | "" | Custom arguments to pass to lemon-mlx server |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -115,6 +127,14 @@ the generator instead. Prose outside the markers is preserved. -->
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
+
+#### `lemon-mlx` — Lemon MLX (experimental) (3 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Qwen3.5-0.8B-MLX` | 1.0 | reasoning, tool-calling |
+| `Qwen3.6-27B-MLX` | 16.1 | reasoning, tool-calling |
+| `Qwen3.6-35B-A3B-MLX` | 20.4 | reasoning, tool-calling, hot |
 
 #### `llamacpp` — Llama.cpp GPU (77 models)
 
