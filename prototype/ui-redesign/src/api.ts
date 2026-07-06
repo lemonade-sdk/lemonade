@@ -1826,10 +1826,19 @@ class LemonadeAPI {
 
   async refresh(): Promise<{ health: HealthData; models: ModelsData } | null> {
     try {
-      const [health, models] = await Promise.all([
-        this.health(),
-        this.models(true),
-      ]);
+      const health = await this.health();
+      let models: ModelsData;
+      try {
+        models = await this.models(true);
+      } catch (err) {
+        // Health is the connection source of truth. Some tests and lightweight
+        // servers expose health/MCP before the model registry is available; do
+        // not flip the whole app back to disconnected merely because /models
+        // failed after /health succeeded. Keep the previous registry if present,
+        // otherwise use an empty one until the next refresh.
+        this._lastConnectionError = friendlyErrorMessage(err);
+        models = this._modelsData || { data: [] };
+      }
       return { health, models };
     } catch (err) {
       this._lastConnectionError = friendlyErrorMessage(err);

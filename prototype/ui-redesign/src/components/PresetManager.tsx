@@ -61,7 +61,7 @@ const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   kokoro: ['voice', 'speed', 'merge_args'],
 };
 
-const CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'tts'];
+const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'tts', 'embedding', 'reranking'];
 
 /* ── #2432: backend-preset assignment helpers ─────────────────────────────
  * Backend presets are OPTIONAL global runtime-argument defaults that MERGE
@@ -478,8 +478,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       name: 'New Preset',
       description: '',
       applies_to: ['chat'],
-      recipe_options: { ctx_size: 4096 },
-      sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
+      recipe_options: {},
+      sampling: {},
       engine_hint: 'auto',
       starter: false,
       auto_opt_enabled: true,
@@ -683,8 +683,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
         <div className="recipes__body">
           <p className="recipes__lede">
-            Presets are saved ways to use a model. They apply to capabilities like <strong>Chat</strong> or <strong>Image</strong>,
-            can stage recipe options for the next explicit model load, pass chat sampling defaults per request, and optionally follow an AutoOpt run.
+            Presets are saved ways to use a model. They apply to capabilities like <strong>Chat</strong> or <strong>Image</strong> and now describe reusable intent.
+            Shared recipe options and sampling remain available for legacy/custom power-user flows, but concrete runtime values should usually live in each model's Model Tuning.
           </p>
           {importError && <p className="preset-error" role="alert">⚠ {importError}</p>}
 
@@ -1168,7 +1168,7 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
           {isDefaultEmptyPreset && (
             <div className="preset-empty-overrides">
               <strong>No preset overrides</strong>
-              <span>Lemonade uses the selected model's current defaults for sampling, context and image generation.</span>
+              <span>Lemonade uses the selected model tuning and backend defaults for sampling, context and image generation.</span>
               <span className="preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
             </div>
           )}
