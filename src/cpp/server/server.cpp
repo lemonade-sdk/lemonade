@@ -1826,7 +1826,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     auto info = model_manager_->get_model_info(requested_model);
 
     // Collections have no backend of their own — load each component instead.
-    if (is_collection_recipe(info.recipe)) {
+    if (is_omni_collection_recipe(info.recipe)) {
         ensure_collection_loaded(info);
         return;
     }
@@ -2062,11 +2062,18 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
-    // Collections (Omni) additionally embed each component's full model object,
+    if (is_router_collection_recipe(info.recipe)) {
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end() && routing_it->second.is_object()) {
+            model_json["routing"] = routing_it->second;
+        }
+    }
+
+    // Collections additionally embed each component's full model object,
     // in component order, under "models". Embedding is bounded by
     // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
     // cannot recurse unboundedly.
-    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+    if (is_model_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
         nlohmann::json component_models = nlohmann::json::array();
         for (const auto& component : info.components) {
             if (!model_manager_->model_exists(component)) {
@@ -2228,7 +2235,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             try {
                 if (model_manager_->model_exists(requested_model)) {
                     ModelInfo info = model_manager_->get_model_info(requested_model);
-                    if (is_collection_recipe(info.recipe)) {
+                    if (is_omni_collection_recipe(info.recipe)) {
                         handle_collection_chat_completions(request_json, info, res);
                         return;
                     }
@@ -3828,7 +3835,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        if (is_collection_recipe(recipe)) {
+        if (is_model_collection_recipe(recipe)) {
             if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
                 bad_request(*err);
                 return;
@@ -4016,14 +4023,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_omni_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
         // Collection models: load each component instead
-        if (is_collection_recipe(info.recipe) && !info.components.empty()) {
+        if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
             nlohmann::json response = {

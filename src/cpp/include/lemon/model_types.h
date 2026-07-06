@@ -7,9 +7,18 @@
 namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+constexpr const char* COLLECTION_ROUTER_MODEL_RECIPE = "collection.router";
 
-inline bool is_collection_recipe(const std::string& recipe) {
+inline bool is_omni_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+}
+
+inline bool is_router_collection_recipe(const std::string& recipe) {
+    return recipe == COLLECTION_ROUTER_MODEL_RECIPE;
+}
+
+inline bool is_model_collection_recipe(const std::string& recipe) {
+    return is_omni_collection_recipe(recipe) || is_router_collection_recipe(recipe);
 }
 
 enum class ModelState {

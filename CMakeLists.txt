@@ -630,6 +630,8 @@ set(SOURCES_CORE
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_policy.cpp
+    src/cpp/server/routing_policy_parser.cpp
+    src/cpp/server/routing_policy_store.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
@@ -2023,6 +2025,78 @@ if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
+endif()
+
+# Routing policy parser (issue #2383): collection.router JSON -> RoutePolicy,
+# schema/parser key parity, component resolution, and validation errors.
+set(_ROUTING_PARSER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_parser.cpp"
+)
+if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
+    add_executable(test_routing_policy_parser
+        test/cpp/test_routing_policy_parser.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_parser PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_parser PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_parser PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+        ROUTING_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/schemas/route_policy.schema.json"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyParserTest COMMAND test_routing_policy_parser)
+endif()
+
+# Routing policy store (issue #2383): directory-backed policy loading and
+# DirectoryWatcher-triggered shared_ptr snapshot swaps.
+set(_ROUTING_STORE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_store.cpp"
+)
+if(EXISTS "${_ROUTING_STORE_TEST_SRC}")
+    add_executable(test_routing_policy_store
+        test/cpp/test_routing_policy_store.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+        src/cpp/server/routing_policy_store.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_routing_policy_store PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_store PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_store PRIVATE Threads::Threads)
+    target_compile_definitions(test_routing_policy_store PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyStoreTest COMMAND test_routing_policy_store)
+endif()
+
+# ModelManager collection validation for collection.router registration:
+# /pull-style validation rejects malformed routing and preserves the routing
+# block in ModelInfo::extras after user-model registration.
+set(_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_collection_validation.cpp"
+)
+if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
+    add_executable(test_model_manager_collection_validation
+        test/cpp/test_model_manager_collection_validation.cpp
+    )
+    target_link_libraries(test_model_manager_collection_validation PRIVATE lemonade-server-core)
+    add_dependencies(test_model_manager_collection_validation copy_resources)
+
+    include(CTest)
+    add_test(NAME ModelManagerCollectionValidationTest COMMAND test_model_manager_collection_validation)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.

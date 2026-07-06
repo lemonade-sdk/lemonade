@@ -181,6 +181,36 @@ defineTest('regular-model export carries no collection fields', () => {
   assert.ok(!('created' in payload));
 });
 
+defineTest('router collection export preserves routing and components', () => {
+  const routing = {
+    candidates: ['local', 'remote'],
+    default_model: 'local',
+    rules: [
+      { id: 'code', match: { keywords_any: ['def '] }, route_to: 'remote' },
+    ],
+  };
+  const raw = {
+    id: 'RouterKit', object: 'model', created: 1234567890, owned_by: 'lemonade',
+    recipe: 'collection.router',
+    checkpoint: '',
+    checkpoints: { main: '' },
+    components: ['local', 'remote'],
+    labels: [],
+    recipe_options: {},
+    routing,
+    suggested: true,
+    downloaded: true,
+  };
+
+  const { filename, payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.equal(filename, 'RouterKit.json');
+  assert.equal(payload.model_name, 'user.RouterKit');
+  assert.deepEqual(payload.components, ['local', 'remote']);
+  assert.deepEqual(payload.routing, routing);
+  assert.ok(!('downloaded' in payload));
+  assert.ok(!('suggested' in payload));
+});
+
 defineTest('DEFAULT_OMNI_SYSTEM_PROMPT is the canonical default from toolDefinitions.json', () => {
   const toolDefinitionsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'toolDefinitions.json');
   const toolDefs = JSON.parse(fs.readFileSync(toolDefinitionsPath, 'utf8'));
