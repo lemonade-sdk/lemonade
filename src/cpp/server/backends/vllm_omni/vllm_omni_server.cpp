@@ -6,6 +6,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
@@ -277,11 +278,16 @@ void VLLMOmniServer::unload() {
 }
 
 json VLLMOmniServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    // Apply the max_completion_tokens -> max_tokens compatibility alias (as the
+    // plain vLLM backend does) so OpenAI-style clients work regardless of which
+    // key vllm-omni-server honors.
+    return forward_request("/v1/chat/completions",
+                           JsonUtils::with_legacy_max_tokens_alias(request));
 }
 
 json VLLMOmniServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    return forward_request("/v1/completions",
+                           JsonUtils::with_legacy_max_tokens_alias(request));
 }
 
 json VLLMOmniServer::responses(const json& request) {

@@ -493,11 +493,24 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  // Generated assistant audio (native voice) is stored as an input_audio
+  // artifact for UI playback only. Strip it from outgoing history: re-sending
+  // the Base64 every turn is expensive and can break strict backends.
+  const stripGeneratedAudio = ({ role, content }: Message): { role: string; content: MessageContent } => {
+    if (role !== 'assistant' || !Array.isArray(content)) return { role, content };
+    const kept = content.filter(item => item.type !== 'input_audio');
+    if (kept.length === content.length) return { role, content };
+    if (kept.every(item => item.type === 'text')) {
+      return { role, content: kept.map(item => (item as TextContent).text).join('') };
+    }
+    return { role, content: kept };
+  };
+
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
-    // Strip UI-only fields (e.g. `thinking`) so strict providers like
-    // Fireworks don't 400 on unknown keys in the assistant turn.
-    messages: messageHistory.map(({ role, content }) => ({ role, content })),
+    // Strip UI-only fields (e.g. `thinking`) and generated assistant audio so
+    // strict providers don't 400 and we don't replay large audio blobs.
+    messages: messageHistory.map(stripGeneratedAudio),
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });

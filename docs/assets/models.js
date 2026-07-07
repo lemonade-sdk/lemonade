@@ -11,6 +11,7 @@ const RECIPE_PRIORITY = [
   'ryzenai-llm',
   'sd-cpp',
   'vllm',
+  'vllm-omni',
   'whispercpp'
 ];
 
@@ -20,7 +21,8 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)'
+  vllm: 'vLLM ROCm (experimental)',
+  'vllm-omni': 'vLLM-Omni ROCm (experimental)'
 };
 /* END GENERATED: models-js-recipes */
 

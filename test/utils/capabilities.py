@@ -151,7 +151,10 @@ CAPABILITIES = {
                 "tool_calls": False,
                 "tool_calls_streaming": False,
                 "multi_model": False,
-                "stop_parameter": True,
+                # The suite drives stop_parameter for both chat and completions;
+                # completions is unsupported here, so keep this off to avoid a
+                # completions-stop test against an unsupported endpoint.
+                "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": False,
                 "slots": False,
