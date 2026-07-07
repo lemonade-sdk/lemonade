@@ -1,5 +1,11 @@
+const MAX_VOICE_SAMPLE_BYTES = 10 * 1024 * 1024;
+
 export const readWavFileAsBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
+    if (file.size > MAX_VOICE_SAMPLE_BYTES) {
+      reject(new Error(`'${file.name}' is too large (max 10 MB). A few seconds of clean speech is enough.`));
+      return;
+    }
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read the selected file.'));
     reader.onload = (ev) => {

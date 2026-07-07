@@ -116,7 +116,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             <span className="settings-label-text">User Voice</span>
             <span className="settings-description">
               {voiceMode === 'clone'
-                ? 'Voice sample to clone for user messages.'
+                ? 'Voice sample to clone for user messages. Samples (max 10 MB WAV) are stored locally in the app settings; use Clear to remove them.'
                 : 'Use the selected voice for TTS conversion of user messages.'}
             </span>
           </label>
@@ -134,7 +134,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             <span className="settings-label-text">Assistant Voice</span>
             <span className="settings-description">
               {voiceMode === 'clone'
-                ? 'Voice sample to clone for assistant messages.'
+                ? 'Voice sample to clone for assistant messages. Samples (max 10 MB WAV) are stored locally in the app settings; use Clear to remove them.'
                 : 'Use the selected voice for TTS conversion of assistant messages.'}
             </span>
           </label>

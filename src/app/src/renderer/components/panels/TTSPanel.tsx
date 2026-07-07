@@ -61,7 +61,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const [ttsMessageHistory, setTTSMessageHistory] = useState<TTSClip[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
-  const [mossMode, setMossMode] = useState<'describe' | 'clone'>('describe');
+  const [mossMode, setMossMode] = useState<'plain' | 'describe' | 'clone'>('plain');
   const [voiceDescription, setVoiceDescription] = useState('');
   const [cloneWav, setCloneWav] = useState<{ b64: string; name: string } | null>(null);
   const [designingVoice, setDesigningVoice] = useState(false);
@@ -143,6 +143,8 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
         await synthAndRecord(text, voiceDesignModel, voiceDescription.trim());
       } else if (isOpenMoss && mossMode === 'clone') {
         await synthAndRecord(text, cloneModel, voiceDescription.trim(), cloneWav?.b64);
+      } else if (isOpenMoss) {
+        await synthAndRecord(text, ttsModel, voiceDescription.trim());
       } else {
         await synthAndRecord(text, ttsModel, tts.currentVoice);
       }
@@ -297,6 +299,11 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
             <div className="tts-openmoss-controls">
               <div className="tts-mode-toggle">
                 <button
+                  className={`toggle-button${mossMode === 'plain' ? ' active' : ''}`}
+                  onClick={() => setMossMode('plain')}
+                  disabled={busy}
+                >Plain</button>
+                <button
                   className={`toggle-button${mossMode === 'describe' ? ' active' : ''}`}
                   onClick={() => setMossMode('describe')}
                   disabled={busy}
@@ -307,7 +314,15 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                   disabled={busy}
                 >Clone</button>
               </div>
-              {mossMode === 'describe' ? (
+              {mossMode === 'plain' ? (
+                <input
+                  className="form-input"
+                  value={voiceDescription}
+                  onChange={(e) => setVoiceDescription(e.target.value)}
+                  placeholder="Optional style instruction (e.g. cheerful, whispering)"
+                  disabled={busy}
+                />
+              ) : mossMode === 'describe' ? (
                 <input
                   className="form-input"
                   value={voiceDescription}
@@ -355,7 +370,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
           />
           <div className="chat-controls">
             <div className="chat-controls-left">
-              <ModelSelector disabled={busy} />
+              <ModelSelector disabled={busy} filterLabel="tts" effectiveModel={ttsModel} />
             </div>
             {(tts.audioState == PLAYING) ? (
               <button className="chat-stop-button" onClick={tts.stopAudio} title="Stop audio">
