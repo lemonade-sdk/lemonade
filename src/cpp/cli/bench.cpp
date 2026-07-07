@@ -213,31 +213,35 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
 
         if (!item.contains("name") || !item["name"].is_string()) continue;
         scenario.name = item["name"].get<std::string>();
-
         scenario.category = item.value("category", "general");
-
-        if (!item.contains("messages") || !item["messages"].is_array()) continue;
-        scenario.messages = item["messages"].get<std::vector<json>>();
-
-        scenario.max_tokens = item.value("max_tokens", 128);
-        scenario.warmup_runs = item.value("warmup_runs", 0);
         scenario.measurement_runs = item.value("measurement_runs", 3);
 
-        if (item.contains("context") && item["context"].is_object()) {
-            std::string expanded = expand_context(item["context"], scenario.messages);
-            for (auto& msg : scenario.messages) {
-                if (msg.contains("role") && msg["role"] == "user") {
-                    if (msg.contains("content") && msg["content"].is_string()) {
-                        msg["content"] = expanded;
+        if (scenario.category == "embed"){
+            if (scenario.category == "embed" && item.contains("input"))
+                scenario.input = item["input"].get<json>();
+        } else {
+            if (item.contains("messages") && item["messages"].is_array()) {
+                scenario.messages = item["messages"].get<std::vector<json>>();
+            }
+
+            scenario.max_tokens = item.value("max_tokens", 128);
+            scenario.warmup_runs = item.value("warmup_runs", 0);
+
+            if (item.contains("context") && item["context"].is_object()) {
+                std::string expanded = expand_context(item["context"], scenario.messages);
+                for (auto& msg : scenario.messages) {
+                    if (msg.contains("role") && msg["role"] == "user") {
+                        if (msg.contains("content") && msg["content"].is_string()) {
+                            msg["content"] = expanded;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
 
         scenarios.push_back(scenario);
     }
-
     return scenarios;
 }
 
@@ -513,8 +517,10 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
                                 bool capture_response) {
-  return run_single_bench_textgen(client, model, scenario, memory_tracking,
-                                  capture_response);
+    if (scenario.category == "embed")
+        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response);
+    // default mode is text generation
+    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response);
 }
 
 BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
@@ -603,6 +609,92 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
         return result;  // success stays false
     }
 
+    result.success = true;
+    return result;
+}
+
+BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response) {
+    BenchRunResult result;
+    result.success = false;  // assume failure until proven otherwise
+
+    // Pre‑run memory snapshot (mirrors textgen)
+    if (memory_tracking) {
+        double _vram, _mem;
+        query_system_stats(client, _vram, _mem);
+    }
+
+    // Build request body: {"model": <model>, "input": <scenario.input>}
+    json request_body;
+    request_body["model"] = model;
+    // `scenario.input` can be a string or an array of strings.
+    // The JSON library will serialize it appropriately.
+    request_body["input"] = scenario.input;  // may be string or array
+    // Optional: encoding_format (not mandatory)
+    // if (scenario.contains("encoding_format")) request_body["encoding_format"] = scenario["encoding_format"];
+
+    std::string body = request_body.dump();
+
+    // Timing setup
+    auto start = steady_clock::now();
+
+    try {
+        // HTTP POST to the embeddings endpoint
+        std::string response = client.make_request(
+            "/api/v1/embeddings", "POST", body, "application/json",
+            300000, 300000);
+
+        auto resp_json = json::parse(response);
+
+        // Capture response text if requested
+        if (capture_response) {
+            if (resp_json.contains("data") && !resp_json["data"].empty()) {
+                result.response_text = resp_json["data"].dump();
+            } else {
+                result.response_text = "null";
+            }
+        }
+
+        // Extract timing data
+        if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
+            extract_timings_into_result(resp_json["timings"], result);
+        }
+
+        // Extract usage statistics
+        if (resp_json.contains("usage") && resp_json["usage"].is_object()) {
+            // prompt_tokens = input tokens, total_tokens = output tokens
+            result.input_tokens = resp_json["usage"]["prompt_tokens"].get<int>();
+            result.output_tokens = resp_json["usage"]["total_tokens"].get<int>();
+        }
+
+        // Populate timing fields
+        auto end = steady_clock::now();
+        result.ttft_ms = duration<double, std::milli>(end - start).count();
+
+        // Throughput calculation (tokens per second)
+        if (result.output_tokens > 0 && result.ttft_ms > 0) {
+            result.tps = (result.output_tokens * 1000.0) / result.ttft_ms;
+        } else {
+            result.tps = 0.0;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "    Embedding benchmark run failed: " << e.what() << std::endl;
+        return result;  // success stays false
+    }
+
+    // Post‑run memory tracking (if enabled)
+    if (memory_tracking) {
+        double vram_after = -1.0, mem_after = -1.0;
+        query_system_stats(client, vram_after, mem_after);
+        result.vram_gb = vram_after;
+        result.memory_gb = mem_after;
+    }
+
+    // Success flag is already true by default if we reach here
     result.success = true;
     return result;
 }

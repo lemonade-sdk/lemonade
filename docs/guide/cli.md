@@ -772,7 +772,8 @@ Scenarios are defined in JSON files. Each file contains a `scenarios` array wher
 |-------|------|-------------|
 | `name` | string | Unique scenario name (required) |
 | `category` | string | Category label for grouping (default: `"general"`) |
-| `messages` | array | Chat messages in OpenAI format (required) |
+| `messages` | array | Chat messages in OpenAI format (required for text generation) |
+| `messages` | array | Chat messages in OpenAI format (required for embedding test) |
 | `max_tokens` | int | Maximum output tokens (default: `128`) |
 | `warmup_runs` | int | Override warmup runs for this scenario (default: `0`) |
 | `measurement_runs` | int | Override measurement runs for this scenario (default: `3`) |
@@ -796,10 +797,13 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 - **Chat** — Short and long conversational turns
 - **Coding** — Code generation, explanation, and debugging
 - **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
+- **Embedding** - Not part of the default scenario set
 
 You can override these with `--scenario-file` or `--scenario-dir`.
 
 **Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
+
+Embedding are excluded by default, but can be selected with `--scenario-file /path/to/bench_scenarios_embed.json`.
 
 ### Output
 
