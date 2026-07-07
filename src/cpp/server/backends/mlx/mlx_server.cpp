@@ -794,6 +794,28 @@ bool is_small_qwen_model(const std::string& model_ref) {
             model.find("0.6b") != std::string::npos);
 }
 
+constexpr int kQwen35RocmSafeCtxSize = 4096;
+
+bool is_qwen35_model(const std::string& model_ref) {
+    const std::string model = lowercase_copy(model_ref);
+    return model.find("qwen3.5") != std::string::npos ||
+           model.find("qwen3_5") != std::string::npos;
+}
+
+int clamp_qwen35_rocm_ctx_size(int ctx_size,
+                               const std::string& model_ref,
+                               const std::string& backend) {
+    if (backend != "rocm" || ctx_size <= kQwen35RocmSafeCtxSize ||
+        !is_qwen35_model(model_ref)) {
+        return ctx_size;
+    }
+
+    LOG(WARNING, kLog) << "Clamping lemon-mlx ROCm context for Qwen3.5 from "
+                       << ctx_size << " to " << kQwen35RocmSafeCtxSize
+                       << " to avoid backend startup failure" << std::endl;
+    return kQwen35RocmSafeCtxSize;
+}
+
 bool looks_like_qwen_model(const std::string& model_ref) {
     return lowercase_copy(model_ref).find("qwen3") != std::string::npos;
 }
@@ -1211,15 +1233,17 @@ void MlxServer::load(const std::string& model_name,
     port_ = choose_port();
     const std::string executable = BackendUtils::get_backend_binary_path(*mlx::spec(), backend);
 
+    const int effective_ctx_size = clamp_qwen35_rocm_ctx_size(ctx_size, model_ref, backend);
+
     std::vector<std::string> args = {
         model_ref,
         "--host", "127.0.0.1",
         "--port", std::to_string(port_),
     };
 
-    if (ctx_size > 0) {
+    if (effective_ctx_size > 0) {
         args.push_back("--ctx-size");
-        args.push_back(std::to_string(ctx_size));
+        args.push_back(std::to_string(effective_ctx_size));
     }
 
     if (!custom_args.empty()) {

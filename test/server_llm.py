@@ -62,7 +62,7 @@ class LLMTests(ServerTestBase):
     """
 
     # Enable multi-model support (2 of each type) — translated to /internal/set
-    additional_server_args = ["--max-loaded-models", "2"]
+    additional_server_args = ["--max-loaded-models", "2", "--ctx-size", "4096"]
 
     @classmethod
     def setUpClass(cls):
