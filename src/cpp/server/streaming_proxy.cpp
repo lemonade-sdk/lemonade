@@ -224,7 +224,7 @@ void StreamingProxy::forward_byte_stream(
     // JSON error below rather than served as successful media.
     int backend_status = 200;
     std::string error_body;
-    constexpr size_t max_error_body = 64 * 1024;
+    static constexpr size_t max_error_body = 64 * 1024;
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
