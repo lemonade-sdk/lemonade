@@ -3233,6 +3233,13 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
         res.status = 500;
+        const auto& err = error_payload["error"];
+        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
+            const int status = err["status"].get<int>();
+            if (status >= 400 && status <= 599) {
+                res.status = status;
+            }
+        }
         res.set_content(error_payload.dump(), "application/json");
         return;
     }

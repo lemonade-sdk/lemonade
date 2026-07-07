@@ -178,7 +178,72 @@ class OpenMossTTSTests(ServerTestBase):
         )
         print(f"[OK] Correctly rejected request without input: {response.status_code}")
 
-    def test_006_voice_design(self):
+    def _assert_backend_error(self, payload, context, expected_status=400):
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            response.status_code,
+            expected_status,
+            f"{context}: expected {expected_status}, got {response.status_code}: "
+            f"{response.text[:1000]}",
+        )
+        self.assertIn(
+            "application/json",
+            response.headers.get("Content-Type", ""),
+            f"{context}: error must be JSON, not audio bytes",
+        )
+        self.assertIn("error", response.json(), f"{context}: missing 'error' field")
+        print(f"[OK] {context}: {response.status_code} JSON error")
+
+    def test_006_invalid_reference_wav_b64(self):
+        """A reference_wav_b64 that is not valid base64 must be a JSON error, not audio."""
+        self._assert_backend_error(
+            {
+                "model": get_test_model("tts"),
+                "input": "This should be rejected.",
+                "reference_wav_b64": "!!!not-base64!!!",
+            },
+            "Invalid base64 reference",
+        )
+
+    def test_007_non_wav_reference_data(self):
+        """Valid base64 that does not decode to a WAV must be a JSON error, not audio."""
+        self._assert_backend_error(
+            {
+                "model": get_test_model("tts"),
+                "input": "This should be rejected.",
+                "reference_wav_b64": base64.b64encode(b"definitely not a wav").decode(
+                    "ascii"
+                ),
+            },
+            "Non-WAV base64 reference",
+        )
+
+    def test_008_invalid_speed(self):
+        """A speed outside the supported range must be a JSON error, not audio."""
+        self._assert_backend_error(
+            {
+                "model": get_test_model("tts"),
+                "input": "This should be rejected.",
+                "speed": 100.0,
+            },
+            "Out-of-range speed",
+        )
+
+    def test_009_non_string_input(self):
+        """A non-string input must be a JSON error, not audio."""
+        self._assert_backend_error(
+            {
+                "model": get_test_model("tts"),
+                "input": 12345,
+            },
+            "Non-string input",
+        )
+
+    def test_010_voice_design(self):
         """Test voice design: a free-text voice description instead of a fixed voice."""
         model = get_test_model("tts_design")
         print(f"[INFO] Ensuring {model} is pulled...")
