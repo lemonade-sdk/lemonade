@@ -544,6 +544,9 @@ class LemonadeAPI {
   private _sessionApiKey = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
+  public readonly clientSessionId: string = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 
   // ── Config ──────────────────────────────────────────────────────
   // Non-secret connection settings may be persisted in browser storage.
@@ -558,7 +561,10 @@ class LemonadeAPI {
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
       const parsed = new URL(raw);
       if ((parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
-        parsed.hostname = window.location.hostname;
+        const winHost = window.location.hostname;
+        if (winHost && winHost !== 'localhost' && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
+          parsed.hostname = winHost;
+        }
       }
       return parsed.toString().replace(/\/+$/, '');
     } catch {
@@ -735,6 +741,25 @@ class LemonadeAPI {
   private _headers(extra?: Record<string, string>): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
     if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
+    h['X-Client-Session-Id'] = this.clientSessionId;
+
+    // Add current account session token or guest ID to scope model caches
+    try {
+      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id?: string };
+        if (parsed.id) {
+          h['X-Account-Session-Id'] = parsed.id;
+        } else {
+          h['X-Account-Session-Id'] = 'guest';
+        }
+      } else {
+        h['X-Account-Session-Id'] = 'guest';
+      }
+    } catch {
+      h['X-Account-Session-Id'] = 'guest';
+    }
+
     return h;
   }
 
