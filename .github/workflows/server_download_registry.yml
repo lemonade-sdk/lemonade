@@ -98,11 +98,6 @@ jobs:
         if: failure()
         run: cat "$RUNNER_TEMP/lemond-download-registry.log" || true
 
-      - name: Stop lemond
+      - name: Stop lemond and cleanup
         if: always()
-        shell: bash
-        run: |
-          if [ -f "$RUNNER_TEMP/lemond-download-registry.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/lemond-download-registry.pid")" 2>/dev/null || true
-          fi
-          pkill -f lemond 2>/dev/null || true
+        uses: ./.github/actions/cleanup-processes-linux

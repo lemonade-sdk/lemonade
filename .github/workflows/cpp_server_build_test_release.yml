@@ -435,6 +435,7 @@ jobs:
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           /usr/bin/lemond "$(pwd)" > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
           SERVER_PID=$!
+          echo "$SERVER_PID" > "$RUNNER_TEMP/lemond.pid"
           echo "Server started (PID $SERVER_PID)"
 
           for i in $(seq 1 30); do
@@ -659,6 +660,7 @@ jobs:
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
+          echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
@@ -797,6 +799,7 @@ jobs:
 
           ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
           LEMOND_PID=$!
+          echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
@@ -1718,6 +1721,7 @@ jobs:
 
           ./lemond ./ &
           LEMOND_PID=$!
+          echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
 
           # Wait for server to become healthy
           for i in $(seq 1 15); do
@@ -1814,6 +1818,7 @@ jobs:
 
           Push-Location $archiveDir
           $proc = Start-Process -FilePath ".\lemond.exe" -ArgumentList ".\" -PassThru -NoNewWindow
+          $proc.Id | Out-File -FilePath "$env:RUNNER_TEMP\lemond.pid" -Encoding utf8
 
           # Wait for server to become healthy
           $healthy = $false
@@ -1928,6 +1933,7 @@ jobs:
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
+          echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
@@ -2139,6 +2145,7 @@ jobs:
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
+          echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
           disown "$LEMOND_PID"
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then

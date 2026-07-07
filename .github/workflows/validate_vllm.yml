@@ -168,6 +168,7 @@ jobs:
             ./build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
               > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
             LEMOND_PID=$!
+            echo "$LEMOND_PID" > "$RUNNER_TEMP/lemond.pid"
             for i in $(seq 1 30); do
               if curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1; then
                 echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
@@ -231,10 +232,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          pkill -9 -f lemond 2>/dev/null || true
-          pkill -9 -f "vllm" 2>/dev/null || true
-          pkill -9 -f "resource_tracker" 2>/dev/null || true
+        uses: ./.github/actions/cleanup-processes-linux
 
   # ========================================================================
   # Create PR if validation passed (schedule or workflow_dispatch only)

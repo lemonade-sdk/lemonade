@@ -350,6 +350,7 @@ jobs:
             -PassThru
 
           Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+          $proc.Id | Out-File -FilePath "$env:RUNNER_TEMP\lemond.pid" -Encoding utf8
 
           try {
             $validationArgs = @(
