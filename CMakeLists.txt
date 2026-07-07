@@ -2189,9 +2189,6 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
 endif()
-
-# llama.cpp CDNA gating: the llamacpp descriptor support row now includes AMD
-# Instinct (gfx942); the shipped multi-arch ROCm build already carries gfx942.
 set(_LLAMACPP_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_cdna_gating.cpp")
 if(EXISTS "${_LLAMACPP_CDNA_TEST_SRC}")
     add_executable(test_llamacpp_cdna_gating test/cpp/test_llamacpp_cdna_gating.cpp)

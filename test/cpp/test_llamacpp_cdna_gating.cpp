@@ -35,6 +35,8 @@ int main() {
            "llamacpp:rocm does not support gfx906 (not in the shipped multi-arch build's targets we validate)");
     expect(!SystemInfo::backend_supports_arch("llamacpp", "rocm", "gfx90a"),
            "llamacpp:rocm does not add gfx90a here (tracked separately, e.g. upstream #2092)");
+    expect(!SystemInfo::backend_supports_arch("llamacpp", "rocm", "gfx908"),
+           "llamacpp:rocm does not add gfx908 (CDNA1, in the build's targets but tracked separately from gfx942)");
 
     if (failures != 0) {
         std::cout << failures << " assertion(s) failed" << std::endl;
