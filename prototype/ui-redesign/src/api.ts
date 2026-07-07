@@ -7,7 +7,20 @@
 import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
-const DEFAULT_BASE_URL = 'http://localhost:13305';
+function detectDefaultBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    // When served by lemond at /app, window.location.origin IS the API server.
+    // Detect this by checking for the lemond-injected window.api shim or /app path.
+    const servedByLemond = window.location.pathname.startsWith('/app')
+      || (window as any).api?.getServerPort;
+    if (servedByLemond && window.location.port) {
+      return `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
+    }
+  }
+  return 'http://localhost:13305';
+}
+
+const DEFAULT_BASE_URL = detectDefaultBaseUrl();
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
 
@@ -585,8 +598,13 @@ class LemonadeAPI {
         const settings = await hostApi.getSettings();
         const baseUrl = typedSettingString(settings, 'baseURL');
         const apiKey = typedSettingString(settings, 'apiKey');
-        if (baseUrl.trim()) {
-          this._hostBaseUrl = normalizeBaseUrl(baseUrl);
+        // Fallback: web-app mock provides apiUrl as a plain string (not typed setting)
+        const fallbackUrl = !baseUrl.trim() && isObject(settings) && typeof (settings as any).apiUrl === 'string'
+          ? (settings as any).apiUrl.trim()
+          : '';
+        const resolvedUrl = baseUrl.trim() || fallbackUrl;
+        if (resolvedUrl) {
+          this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
         this._sessionApiKey = apiKey;
