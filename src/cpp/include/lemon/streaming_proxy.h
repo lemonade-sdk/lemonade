@@ -47,7 +47,8 @@ public:
         httplib::DataSink& sink,
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        const std::atomic<bool>* cancel_flag = nullptr
     );
 
     static void forward_byte_stream(
@@ -55,7 +56,8 @@ public:
         const std::string& request_body,
         httplib::DataSink& sink,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        const std::atomic<bool>* cancel_flag = nullptr
     );
 
     static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);

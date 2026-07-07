@@ -617,7 +617,8 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     }
 }
 
-json WrappedServer::forward_request(const std::string& endpoint, const json& request, long timeout_seconds) {
+json WrappedServer::forward_request(const std::string& endpoint, const json& request, long timeout_seconds,
+                                     const std::atomic<bool>* cancel_flag) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -635,8 +636,14 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
     try {
         auto response = utils::HttpClient::post(url, request.dump(), headers,
-                                               timeout_seconds);
+                                               timeout_seconds, cancel_flag);
         note_backend_activity();
+
+        if (response.cancelled) {
+            json cancel_response;
+            cancel_response["cancelled"] = true;
+            return cancel_response;
+        }
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -731,7 +738,8 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               httplib::DataSink& sink,
                                               bool sse,
                                               long timeout_seconds,
-                                              TelemetryCallback telemetry_callback) {
+                                              TelemetryCallback telemetry_callback,
+                                              const std::atomic<bool>* cancel_flag) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -772,11 +780,13 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel_flag
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel_flag
             );
         }
     } catch (const std::exception& e) {

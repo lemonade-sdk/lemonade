@@ -361,7 +361,8 @@ public:
                                            httplib::DataSink& sink,
                                            bool sse = true,
                                            long timeout_seconds = 0,
-                                           TelemetryCallback telemetry_callback = nullptr);
+                                           TelemetryCallback telemetry_callback = nullptr,
+                                           const std::atomic<bool>* cancel_flag = nullptr);
 
     // Get the server address
     std::string get_address() const {
@@ -454,7 +455,8 @@ protected:
     void set_watchdog_health_endpoint(const std::string& endpoint);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0,
+                         const std::atomic<bool>* cancel_flag = nullptr);
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 

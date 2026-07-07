@@ -482,7 +482,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             httplib::DataSink& sink,
                                             bool sse,
                                             long timeout_seconds,
-                                            TelemetryCallback telemetry_callback) {
+                                            TelemetryCallback telemetry_callback,
+                                            const std::atomic<bool>* cancel_flag) {
     // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
     // usage block in the final pre-[DONE] chunk. We don't parse it here —
     // the Router-level streaming path delivers cleaner numbers than we can
@@ -496,6 +497,18 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             err["error"][k] = v;
         }
         return "data: " + err.dump() + "\n\n";
+    };
+
+    // Helper: emit SSE cancel event + [DONE] and invoke telemetry callback
+    auto send_sse_cancel = [&sink, &telemetry_callback](const std::string& reason) {
+        const char* cancel_event = "data: {\"error\":{\"message\":\"Request cancelled by user\",\"type\":\"request_cancelled\",\"code\":\"cancelled\"}}\n\n";
+        sink.write(cancel_event, strlen(cancel_event));
+        const char* done_marker = "data: [DONE]\n\n";
+        sink.write(done_marker, strlen(done_marker));
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(0, 0, 0.0, 0.0, reason);
+        }
     };
 
     if (!loaded_) {
@@ -602,6 +615,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 url,
                 forwarded_body,
                 [&](const char* data, size_t length) -> bool {
+                    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) return false;
                     if (length == 0) return true;
                     if (first_chunk) {
                         first_chunk = false;
@@ -632,15 +646,24 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                     return true;
                 },
                 headers,
-                timeout_seconds
+                timeout_seconds,
+                cancel_flag
             );
 
             if (result.curl_code != CURLE_OK) {
                 if (result.curl_code == CURLE_WRITE_ERROR) {
+                    // Check if this was a user cancel (write callback returned false due to cancel_flag)
+                    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+                        send_sse_cancel("Request cancelled by user");
+                        return;
+                    }
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
                         telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
                     }
+                    return;
+                } else if (result.curl_code == CURLE_ABORTED_BY_CALLBACK) {
+                    send_sse_cancel("Request cancelled by user");
                     return;
                 } else if (result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR) {
                     if (!has_done_marker) {
@@ -695,14 +718,30 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                     return sink.write(data, length);
                 },
                 headers,
-                timeout_seconds
+                timeout_seconds,
+                cancel_flag
             );
             if (result.curl_code != CURLE_OK) {
                 if (result.curl_code == CURLE_WRITE_ERROR) {
-                    LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
-                    if (telemetry_callback) {
-                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+                        LOG(INFO, "Cloud") << "Byte stream cancelled by user" << std::endl;
+                        if (telemetry_callback) {
+                            telemetry_callback(0, 0, 0.0, 0.0, "Request cancelled by user");
+                        }
+                    } else {
+                        LOG(WARNING, "Cloud") << "Client disconnected during byte stream: CURL error: " << result.curl_error << std::endl;
+                        if (telemetry_callback) {
+                            telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                        }
                     }
+                    sink.done();
+                    return;
+                } else if (result.curl_code == CURLE_ABORTED_BY_CALLBACK) {
+                    LOG(INFO, "Cloud") << "Byte stream cancelled by user (progress callback)" << std::endl;
+                    if (telemetry_callback) {
+                        telemetry_callback(0, 0, 0.0, 0.0, "Request cancelled by user");
+                    }
+                    sink.done();
                     return;
                 } else {
                     throw std::runtime_error("Request failed: CURL error: " + result.curl_error);

@@ -927,7 +927,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
 // Template method for streaming execution
 template<typename Func>
-void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
+void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span, const std::string& request_id) {
     WrappedServer* server = nullptr;
     std::string requested_model;
 
@@ -1003,8 +1003,14 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 
         InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
 
+        // Register request and obtain cancel_flag for the duration of the streaming call
+        std::string effective_request_id = request_id.empty() ? generate_request_id() : request_id;
+        auto guard = request_registry_.register_request(
+            effective_request_id, requested_model, "streaming", true, server);
+        auto cancel_flag = guard.cancel_flag();
+
         try {
-            streaming_func(server);
+            streaming_func(server, cancel_flag.get());
             const bool watchdog_reset = server->was_watchdog_triggered();
 
             if (watchdog_reset) {
@@ -1467,7 +1473,7 @@ json Router::audio_transcriptions(const json& request) {
 }
 
 void Router::audio_speech(const json& request, httplib::DataSink& sink) {
-    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server, const std::atomic<bool>* /*cancel_flag*/) {
         auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
         if (!tts_server) {
             throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
@@ -1513,7 +1519,7 @@ json Router::image_variations(const json& request) {
 }
 
 void Router::audio_generations(const json& request, httplib::DataSink& sink) {
-    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server, const std::atomic<bool>* /*cancel_flag*/) {
         auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
         if (!audio_server) {
             throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
@@ -1699,7 +1705,8 @@ void Router::update_prompt_tokens(const std::string& model_name, int prompt_toke
     record_prompt_tokens_for_model(identity, prompt_tokens);
 }
 
-void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
+void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                                    const std::string& request_id) {
     json request_json;
     try {
         request_json = json::parse(request_body);
@@ -1773,7 +1780,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     };
 
     try {
-        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server, const std::atomic<bool>* cancel_flag) {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
 
             if (span) {
@@ -1823,8 +1830,9 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                         }
                         telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output);
                     }
-                });
-        }, span);
+                },
+                cancel_flag);
+        }, span, request_id);
     } catch (const std::exception& e) {
         if (span) span->end_with_error(e.what());
         throw;
@@ -1834,7 +1842,8 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     }
 }
 
-void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink) {
+void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                               const std::string& request_id) {
     json request_json;
     try {
         request_json = json::parse(request_body);
@@ -1898,7 +1907,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     };
 
     try {
-        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server, const std::atomic<bool>* cancel_flag) {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
 
             if (span) {
@@ -1943,8 +1952,9 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                         }
                         telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
                     }
-                });
-        }, span);
+                },
+                cancel_flag);
+        }, span, request_id);
     } catch (const std::exception& e) {
         if (span) span->end_with_error(e.what());
         throw;
@@ -1954,7 +1964,8 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     }
 }
 
-void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
+void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink,
+                              const std::string& request_id) {
     json request_json;
     try {
         request_json = json::parse(request_body);
@@ -2013,7 +2024,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     };
 
     try {
-        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server, const std::atomic<bool>* cancel_flag) {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
 
             if (span) {
@@ -2058,8 +2069,9 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                         }
                         telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
                     }
-                });
-        }, span);
+                },
+                cancel_flag);
+        }, span, request_id);
     } catch (const std::exception& e) {
         if (span) span->end_with_error(e.what());
         throw;
@@ -2102,6 +2114,18 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
         throw std::runtime_error("Model not loaded: " + model_name);
     }
     server->set_pinned(pinned);
+}
+
+bool Router::cancel_request(const std::string& request_id) {
+    return request_registry_.cancel_request(request_id);
+}
+
+std::vector<ActiveRequest> Router::list_active_requests() const {
+    return request_registry_.list_active_requests();
+}
+
+int Router::cancel_all_requests() {
+    return request_registry_.cancel_all();
 }
 
 } // namespace lemon

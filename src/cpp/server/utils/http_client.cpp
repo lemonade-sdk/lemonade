@@ -407,10 +407,21 @@ HttpResponse HttpClient::get(const std::string& url,
     return response;
 }
 
+// Progress callback for request cancellation
+static int cancel_progress_callback(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/,
+                                    curl_off_t /*ultotal*/, curl_off_t /*ulnow*/) {
+    const std::atomic<bool>* cancel_flag = static_cast<const std::atomic<bool>*>(clientp);
+    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+        return 1; // Abort the transfer
+    }
+    return 0;
+}
+
 HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,
-                              long timeout_seconds) {
+                              long timeout_seconds,
+                              const std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -426,6 +437,12 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
      // Add custom headers
     bool has_content_type = false;
@@ -451,6 +468,14 @@ HttpResponse HttpClient::post(const std::string& url,
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            response.cancelled = true;
+            response.curl_code = static_cast<int>(res);
+            response.curl_error = std::string(curl_easy_strerror(res));
+            curl_slist_free_all(header_list);
+            curl_easy_cleanup(curl);
+            return response;
+        }
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
@@ -555,7 +580,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      const std::string& body,
                                      StreamCallback stream_callback,
                                      const std::map<std::string, std::string>& headers,
-                                     long timeout_seconds) {
+                                     long timeout_seconds,
+                                     const std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -597,6 +623,12 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     }
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
 
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
+
     CURLcode res = curl_easy_perform(curl);
 
     // Get response code before checking for errors
@@ -606,12 +638,16 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     response.curl_code = static_cast<int>(res);
     response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
 
+    if (res == CURLE_ABORTED_BY_CALLBACK) {
+        response.cancelled = true;
+    }
+
     // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
     // after a backend closes the connection. Do not throw here because the SSE
     // layer knows whether it saw the protocol-level [DONE] marker. It will treat
     // the same transport code as success after [DONE] and as backend failure
     // before [DONE]. Other CURL errors are still exceptional.
-    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR) {
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR && res != CURLE_ABORTED_BY_CALLBACK) {
         std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);

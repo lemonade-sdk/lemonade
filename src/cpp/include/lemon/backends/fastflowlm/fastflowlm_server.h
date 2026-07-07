@@ -52,7 +52,8 @@ public:
                                    httplib::DataSink& sink,
                                    bool sse = true,
                                    long timeout_seconds = 0,
-                                   TelemetryCallback telemetry_callback = nullptr) override;
+                                   TelemetryCallback telemetry_callback = nullptr,
+                                   const std::atomic<bool>* cancel_flag = nullptr) override;
 
 private:
     // Get the path to the flm executable from the install directory
