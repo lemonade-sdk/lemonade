@@ -17,7 +17,7 @@ function detectDefaultBaseUrl(): string {
       return `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
     }
   }
-  return 'http://localhost:13305';
+  return 'http://127.0.0.1:13305';
 }
 
 const DEFAULT_BASE_URL = detectDefaultBaseUrl();
@@ -414,7 +414,10 @@ export interface RealtimeTranscriptionHandle {
   isConnected: () => boolean;
 }
 
-export type LemonadeRequestInit = Omit<RequestInit, 'body'> & { body?: unknown };
+export type LemonadeRequestInit = Omit<RequestInit, 'body'> & {
+  body?: unknown;
+  includeSessionHeaders?: boolean;
+};
 
 export type LemonadeContextDefault = number | 'auto';
 
@@ -547,6 +550,8 @@ class LemonadeAPI {
   public readonly clientSessionId: string = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     ? crypto.randomUUID()
     : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  public sessionHeadersEnabled = false;
+  public onSessionHeadersFailed?: () => void;
 
   // ── Config ──────────────────────────────────────────────────────
   // Non-secret connection settings may be persisted in browser storage.
@@ -562,7 +567,7 @@ class LemonadeAPI {
       const parsed = new URL(raw);
       if ((parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
         const winHost = window.location.hostname;
-        if (winHost && winHost !== 'localhost' && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
+        if (winHost && winHost !== 'localhost' && winHost !== '[::1]' && winHost !== '::1') {
           parsed.hostname = winHost;
         }
       }
@@ -738,26 +743,29 @@ class LemonadeAPI {
 
   // ── Fetch wrapper ───────────────────────────────────────────────
 
-  private _headers(extra?: Record<string, string>): Record<string, string> {
+  private _headers(extra?: Record<string, string>, includeSessionHeaders?: boolean): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
     if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
-    h['X-Client-Session-Id'] = this.clientSessionId;
 
-    // Add current account session token or guest ID to scope model caches
-    try {
-      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as { id?: string };
-        if (parsed.id) {
-          h['X-Account-Session-Id'] = parsed.id;
+    if (includeSessionHeaders && this.sessionHeadersEnabled) {
+      h['X-Client-Session-Id'] = this.clientSessionId;
+
+      // Add current account session token or guest ID to scope model caches
+      try {
+        const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { id?: string };
+          if (parsed.id) {
+            h['X-Account-Session-Id'] = parsed.id;
+          } else {
+            h['X-Account-Session-Id'] = 'guest';
+          }
         } else {
           h['X-Account-Session-Id'] = 'guest';
         }
-      } else {
+      } catch {
         h['X-Account-Session-Id'] = 'guest';
       }
-    } catch {
-      h['X-Account-Session-Id'] = 'guest';
     }
 
     return h;
@@ -769,7 +777,7 @@ class LemonadeAPI {
     const extraHeaders = opts.headers instanceof Headers
       ? Object.fromEntries(opts.headers.entries())
       : (Array.isArray(opts.headers) ? Object.fromEntries(opts.headers) : (opts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders);
+    const headers = this._headers(extraHeaders, opts.includeSessionHeaders);
     const method = (opts.method || 'GET').toUpperCase();
 
     let processedOpts: LemonadeRequestInit = { ...opts };
@@ -785,11 +793,46 @@ class LemonadeAPI {
     try {
       resp = await fetch(url, { ...processedOpts, headers } as RequestInit);
     } catch (cause) {
-      const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
-      err.url = url;
-      err.endpoint = endpoint;
-      err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
-      throw err;
+      if (opts.includeSessionHeaders && this.sessionHeadersEnabled) {
+        this.sessionHeadersEnabled = false;
+        this.onSessionHeadersFailed?.();
+        try {
+          const fallbackHeaders = this._headers(extraHeaders, false);
+          if (processedOpts.body && headers['Content-Type'] === 'application/json') {
+            fallbackHeaders['Content-Type'] = 'application/json';
+          }
+          resp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
+        } catch {
+          const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
+          err.url = url;
+          err.endpoint = endpoint;
+          err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+          throw err;
+        }
+      } else {
+        const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
+        err.url = url;
+        err.endpoint = endpoint;
+        err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+        throw err;
+      }
+    }
+
+    if (!resp.ok) {
+      if (opts.includeSessionHeaders && this.sessionHeadersEnabled && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
+        this.sessionHeadersEnabled = false;
+        this.onSessionHeadersFailed?.();
+        try {
+          const fallbackHeaders = this._headers(extraHeaders, false);
+          if (processedOpts.body && headers['Content-Type'] === 'application/json') {
+            fallbackHeaders['Content-Type'] = 'application/json';
+          }
+          const retryResp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
+          if (retryResp.ok) {
+            resp = retryResp;
+          }
+        } catch {}
+      }
     }
 
     if (!resp.ok) {
@@ -823,6 +866,22 @@ class LemonadeAPI {
 
     const params = new URLSearchParams(query);
     if (this.apiKey) params.set('api_key', this.apiKey);
+    params.set('client_session_id', this.clientSessionId);
+    try {
+      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id?: string };
+        if (parsed.id) {
+          params.set('account_session_id', parsed.id);
+        } else {
+          params.set('account_session_id', 'guest');
+        }
+      } else {
+        params.set('account_session_id', 'guest');
+      }
+    } catch {
+      params.set('account_session_id', 'guest');
+    }
     url.search = params.toString();
     return url.toString();
   }
@@ -1170,6 +1229,7 @@ class LemonadeAPI {
         size: requestedSize,
         response_format: 'b64_json',
       },
+      includeSessionHeaders: true,
     });
     const items = Array.isArray(data.data) ? data.data : [];
     const images = items
@@ -1237,6 +1297,7 @@ class LemonadeAPI {
     const data = await this._json<Record<string, unknown>>('/api/v1/audio/transcriptions', {
       method: 'POST',
       body: form,
+      includeSessionHeaders: true,
     });
     const text = typeof data.text === 'string' ? data.text : '';
     if (!text) throw new Error('Transcription endpoint returned no text.');
@@ -1733,6 +1794,7 @@ class LemonadeAPI {
         method: 'POST',
         body,
         signal,
+        includeSessionHeaders: true,
       });
 
       const reader = resp.body!.getReader();
@@ -1839,6 +1901,7 @@ class LemonadeAPI {
     const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
       method: 'POST',
       body: { model, messages, stream: false, ...samplingForModel(model), ...params },
+      includeSessionHeaders: true,
     });
     if (data.error) {
       throw new Error(data.error?.message || 'Chat completion failed');
@@ -1906,6 +1969,9 @@ class LemonadeAPI {
 
 // Singleton export
 export const api = new LemonadeAPI();
+if (typeof window !== 'undefined') {
+  (window as any).apiClient = api;
+}
 export default api;
 
 /* ── HuggingFace search (standalone — external API) ────────── */

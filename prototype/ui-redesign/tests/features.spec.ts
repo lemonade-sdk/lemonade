@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-const realServerRequired = /^(06|07|08|09|10|11|21)\b/;
+const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
 
 test.beforeEach(async ({ page }, testInfo) => {
   const originalScreenshot = page.screenshot.bind(page);
@@ -116,9 +116,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.connect');
 
     // Fill in server URL (lemond should be running)
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
     await urlInput.clear();
-    await urlInput.fill('http://localhost:13305');
+    await urlInput.fill(`http://localhost:${testPort}`);
 
     // Click Connect
     await page.locator('.connect__section--server button[type="submit"]').click();
@@ -843,9 +844,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Connect to server first
     await page.locator('.titlebar__nav').getByText('Connect').click();
     await page.waitForSelector('.connect');
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
     await urlInput.clear();
-    await urlInput.fill('http://localhost:13305');
+    await urlInput.fill(`http://localhost:${testPort}`);
     await page.locator('.connect__section--server button[type="submit"]').click();
 
     // Wait for connection
@@ -910,5 +912,200 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(matrix).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
+  });
+
+  test('23 — loopback API requests resolve to IPv4 127.0.0.1 by default and respect capture setting for session headers', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'hi' } }] })
+      });
+    });
+
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requests.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.waitForTimeout(1000);
+
+    // Initial requests (capturing is OFF by default)
+    expect(requests.length).toBeGreaterThan(0);
+    for (const req of requests) {
+      expect(req.url).not.toContain('//localhost:13305');
+      expect(req.url).toContain('//127.0.0.1:13305');
+    }
+
+    // Trigger a chat completion while capturing is OFF
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    // Verify last request (chat completion) has NO session headers
+    const chatReqOff = requests.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOff).toBeDefined();
+    expect(chatReqOff!.headers['x-client-session-id']).toBeUndefined();
+    expect(chatReqOff!.headers['x-account-session-id']).toBeUndefined();
+
+    // Now toggle capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Trigger a chat completion while capturing is ON
+    const requestsAfterToggle: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requestsAfterToggle.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    const chatReqOn = requestsAfterToggle.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOn).toBeDefined();
+    expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
+    expect(chatReqOn!.headers['x-account-session-id']).toBeDefined();
+  });
+
+  test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion: reject requests with session headers, succeed without them
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      const headers = route.request().headers();
+      if (headers['x-client-session-id']) {
+        await route.abort('failed');
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] })
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Turn capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Verify sessionHeadersEnabled is true initially
+    const initialEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(initialEnabled).toBe(true);
+
+    // Call chat completion
+    const result = await page.evaluate(async () => {
+      try {
+        const resp = await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+        return resp;
+      } catch (e) {
+        return `failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    });
+
+    // Check that we got fallback success and sessionHeadersEnabled was disabled
+    expect(result).toBe('fallback-success');
+    const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(finalEnabled).toBe(false);
   });
 });
