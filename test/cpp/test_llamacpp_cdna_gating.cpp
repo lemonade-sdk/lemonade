@@ -24,6 +24,14 @@ int main() {
     expect(SystemInfo::backend_supports_arch("llamacpp", "rocm", "gfx942"),
            "llamacpp:rocm supports gfx942 (MI300X)");
 
+    // Channel-qualified backend names ("rocm-stable"/"rocm-nightly") normalize to
+    // "rocm" before the support-matrix lookup — the path install/dry-run resolution
+    // actually takes. Assert the suffix-stripping branch, not just the pre-normalized name.
+    expect(SystemInfo::backend_supports_arch("llamacpp", "rocm-stable", "gfx942"),
+           "llamacpp:rocm-stable normalizes to rocm and supports gfx942");
+    expect(SystemInfo::backend_supports_arch("llamacpp", "rocm-nightly", "gfx942"),
+           "llamacpp:rocm-nightly normalizes to rocm and supports gfx942");
+
     expect(SystemInfo::backend_supports_arch("llamacpp", "rocm", "gfx1100"),
            "llamacpp:rocm still supports gfx1100 via gfx110X wildcard");
     expect(SystemInfo::backend_supports_arch("llamacpp", "rocm", "gfx1151"),
