@@ -50,7 +50,8 @@ enum class ModelType {
     RERANKING,
     TRANSCRIPTION,
     IMAGE,
-    TTS
+    TTS,
+    AUDIO_GENERATION   // text -> audio clip (music, sound effects)
 };
 
 // Bitmask pattern for models that use multiple devices
@@ -82,6 +83,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::TRANSCRIPTION: return "transcription";
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
+        case ModelType::AUDIO_GENERATION: return "audio-generation";
         default: return "unknown";
     }
 }
@@ -143,6 +145,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         }
         if (label == "tts") {
             return ModelType::TTS;
+        }
+        if (label == "audio-generation") {
+            return ModelType::AUDIO_GENERATION;
         }
     }
     return ModelType::LLM;

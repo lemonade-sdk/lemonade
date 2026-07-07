@@ -7632,3 +7632,37 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-secondary);
     margin-top: 4px;
 }
+
+.audio-duration-label input {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 6px 8px;
+    font-size: 13px;
+    width: 64px;
+}
+
+.audio-duration-label input:focus {
+    outline: none;
+    border-color: var(--border-5);
+}
+
+.audio-duration-label input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.audio-duration-label input[type="number"] {
+    text-align: center;
+}
+
+.audio-duration-label input {
+  color-scheme: dark;
+}
+
+[data-theme="light"] .audio-duration-label input {
+  color-scheme: light;
+}

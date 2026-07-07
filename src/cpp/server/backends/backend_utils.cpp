@@ -741,6 +741,28 @@ namespace lemon::backends {
                 }
             }
 
+            // Normalize executable permissions for every regular file in the
+            // staging tree.  Archives may place binaries under bin/ or directly
+            // in the tree root (the llama.cpp Vulkan tarball does the latter),
+            // and tarballs may strip the execute bit.  Recurse over the whole
+            // tree so no layout is missed.  Fixing in staging (not post-swap)
+            // preserves rollback on chmod failure.  On Windows chmod is a no-op.
+            #ifndef _WIN32
+            {
+                for (const auto& entry : fs::recursive_directory_iterator(staging_dir)) {
+                    if (entry.is_regular_file()) {
+                        if (chmod(entry.path().c_str(), 0755) != 0) {
+                            std::error_code ec;
+                            ec.assign(errno, std::generic_category());
+                            throw std::runtime_error(
+                                "Failed to set executable permission on staged file "
+                                + entry.path().string() + ": " + ec.message());
+                        }
+                    }
+                }
+            }
+            #endif
+
             // Verify the staged tree contains the executable, then atomically
             // swap it into place. commit_staged_install keeps a recoverable .old
             // backup across the swap: it removes the staging tree and leaves
@@ -756,22 +778,6 @@ namespace lemon::backends {
             staging_guard.active = false;
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
-
-    #ifndef _WIN32
-            // Make all binaries in bin/ executable (tar may lose permissions)
-            {
-                auto bin_dir = fs::path(install_dir) / "bin";
-                if (fs::exists(bin_dir)) {
-                    for (auto& entry : fs::directory_iterator(bin_dir)) {
-                        if (entry.is_regular_file()) {
-                            chmod(entry.path().c_str(), 0755);
-                        }
-                    }
-                }
-            }
-            // Also make the found executable itself executable
-            chmod(exe_path.c_str(), 0755);
-    #endif
 
             // (The downloaded archive is removed by zip_guard on scope exit.)
 

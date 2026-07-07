@@ -43,6 +43,8 @@ private:
     ClassifierServices services_;
     RoutingPolicyParseOptions parse_options_;
     std::unique_ptr<DirectoryWatcher> watcher_;
+    // TODO(C++20): replace std::atomic_load/store free functions with a
+    // std::atomic<std::shared_ptr<const Snapshot>> member (deprecated in C++20).
     std::shared_ptr<const Snapshot> snapshot_;
 };
 

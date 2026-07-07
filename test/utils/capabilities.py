@@ -183,6 +183,26 @@ CAPABILITIES = {
             },
         },
     },
+    "audio_generation": {
+        "thinksound": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ThinkSound-SFX",
+            },
+        },
+        "acestep": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ACE-Step-Music",
+            },
+        },
+    },
     "omni": {
         # Omni "collection" models run a server-side tool-calling loop. The
         # wrapped server here is the collection's chat (planner) component,

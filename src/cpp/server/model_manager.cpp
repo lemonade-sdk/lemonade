@@ -430,6 +430,28 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
 }
 
 
+// Replace the static registry size with the aggregate on-disk size once the
+// files exist, so directory-checkpoint models (whose repos can carry more than
+// the registry estimate) report what was actually downloaded.
+static void refresh_on_disk_size(ModelInfo& info) {
+    uintmax_t total_size = 0;
+    for (auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        total_size += resolved_path_size_bytes(path_from_utf8(path));
+    }
+    if (total_size == 0) {
+        return;
+    }
+    double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+    if (file_size_gb < 1.0) {
+        info.size = std::round(file_size_gb * 1000) / 1000;
+    } else if (file_size_gb < 10.0) {
+        info.size = std::round(file_size_gb * 100) / 100;
+    } else {
+        info.size = std::round(file_size_gb * 10) / 10;
+    }
+}
+
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
     ModelInfo info = get_model_info(model_name);
     std::vector<ModelFileInfo> files;
@@ -1669,6 +1691,9 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
+        if (info.downloaded) {
+            refresh_on_disk_size(info);
+        }
         models_cache_[name] = info;
     }
 
@@ -1850,23 +1875,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
-        // Calculate size in GB
-        uintmax_t total_size = 0;
-        for (auto& [type, path] : it->second.resolved_paths) {
-            (void)type;
-            total_size += resolved_path_size_bytes(path_from_utf8(path));
-        }
-        double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
-        if (file_size_gb < 1.0)
-        {
-            it->second.size = std::round(file_size_gb * 1000) / 1000;
-        } else if (file_size_gb < 10.0)
-        {
-            it->second.size = std::round(file_size_gb * 100) / 100;
-        } else
-        {
-            it->second.size = std::round(file_size_gb * 10) / 10;
-        }
+        refresh_on_disk_size(it->second);
 
         // Recompute downloaded status for any collections that
         // depend on this model, so the collection reflects component changes
@@ -2448,6 +2457,20 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Serialize downloads per checkpoint repo. A second request for the same
+    // repo (e.g. a client that timed out and retried /pull while the first
+    // download is still running) must wait for the in-flight download instead
+    // of writing the same .partial files concurrently, which corrupts them and
+    // sends the hash verification into an endless retry-from-scratch loop.
+    std::shared_ptr<std::mutex> repo_lock;
+    {
+        std::lock_guard<std::mutex> guard(download_locks_mutex_);
+        auto& slot = download_locks_[info.checkpoint()];
+        if (!slot) slot = std::make_shared<std::mutex>();
+        repo_lock = slot;
+    }
+    std::lock_guard<std::mutex> download_lock(*repo_lock);
+
     // The backend's ops own the download (shared HF engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
     backends::BackendOpsContext octx;
@@ -3671,6 +3694,15 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     LOG(INFO, "ModelManager") << "Repository contains " << repo_files.size() << " files" << std::endl;
 
+    // Backends with a bespoke artifact layout (moonshine = a directory of
+    // files; thinksound = a curated subset that skips redundant quant
+    // variants) select their own download set. This is checked regardless of
+    // whether a GGUF variant was specified, so it also covers bare-repo
+    // checkpoints (main_variant empty) that would otherwise fall through to
+    // "download every file in the repo" below; nullopt = the default paths.
+    auto backend_files =
+        backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
+
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
         // Check if variant is a known non-GGUF file type (safetensors, pth, ckpt)
@@ -3681,11 +3713,6 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
-
-        // Backends with a bespoke artifact layout (moonshine = a directory of
-        // files) select their own download set; nullopt = the default paths.
-        auto backend_files =
-            backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3731,6 +3758,13 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
         }
+    } else if (backend_files) {
+        // Bare-repo checkpoint (no GGUF variant), but the backend still wants
+        // a curated subset instead of the entire repository.
+        files_to_download[main_repo_id] = std::move(*backend_files);
+        LOG(INFO, "ModelManager") << info.recipe << ": downloading "
+                                  << files_to_download[main_repo_id].size()
+                                  << " files (bare repo checkpoint)" << std::endl;
     } else {
         // Non-GGUF model (ONNX, etc.): Download all files in repository
         files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
