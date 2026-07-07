@@ -49,7 +49,7 @@ Vcs-Git: https://salsa.debian.org/debian/lemonade.git
 Package: lemonade-server
 Architecture: linux-any
 Multi-Arch: foreign
-Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1
+Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1, python3-venv
 Recommends: ffmpeg,
             libxrt-npu2,
 Description: Local LLM serving with GPU and NPU acceleration server

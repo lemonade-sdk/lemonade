@@ -279,6 +279,7 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
     }
 
     const std::string version = backend_versions["therock"]["version"].get<std::string>();
+    // Both tarball and wheel installs write version.txt at the per-arch dir root.
     const fs::path version_file =
         fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
 
