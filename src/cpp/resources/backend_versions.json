@@ -122,9 +122,9 @@
     "cuda": "v0.1.1"
   },
   "trellis": {
-    "vulkan": "v0.1.1",
-    "rocm-stable": "v0.1.1",
-    "cuda": "v0.1.1"
+    "vulkan": "v0.1.2",
+    "rocm-stable": "v0.1.2",
+    "cuda": "v0.1.2"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }
