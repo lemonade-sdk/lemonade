@@ -787,6 +787,25 @@ void Server::setup_routes(httplib::Server &web_server) {
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
     // The stop command now sends termination signal directly to the process
 
+    // Request cancellation endpoints (POST with request_id in path)
+    web_server.Post(R"(/api/v0/requests/(.+)/cancel)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_cancel(req, res);
+    });
+    web_server.Post(R"(/api/v1/requests/(.+)/cancel)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_cancel(req, res);
+    });
+    web_server.Post(R"(/v0/requests/(.+)/cancel)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_cancel(req, res);
+    });
+    web_server.Post(R"(/v1/requests/(.+)/cancel)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_cancel(req, res);
+    });
+
+    // Active requests list endpoints
+    register_get("requests", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_requests_list(req, res);
+    });
+
     // Internal shutdown endpoint (not part of public API)
     web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
         handle_shutdown(req, res);
@@ -1659,6 +1678,11 @@ void Server::stop() {
         running_ = false;
         shutdown_requested_ = false;  // Reset for potential future use
 
+        // Cancel any in-flight requests
+        if (router_) {
+            router_->cancel_all_requests();
+        }
+
         // Stop WebSocket server
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
@@ -2294,6 +2318,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        // Generate or accept client-provided request ID for cancellation support
+        std::string request_id;
+        auto req_id_it = req.headers.find("x-request-id");
+        if (req_id_it != req.headers.end() && !req_id_it->second.empty() && req_id_it->second.size() <= 128) {
+            request_id = req_id_it->second;
+        } else {
+            request_id = generate_request_id();
+        }
+
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods.
         // Note: request_json was already normalized at the top of this function
@@ -2320,18 +2353,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+                res.set_header("X-Request-Id", request_id);
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, request_id](size_t offset, httplib::DataSink& sink) {
                         // For chunked responses, offset tracks bytes sent so far
                         // We only want to stream once when offset is 0
                         if (offset > 0) {
                             return false; // We're done after the first call
                         }
 
-                        router_->chat_completion_stream(request_body, sink);
+                        router_->chat_completion_stream(request_body, sink, request_id);
                         return false;
                     }
                 );
@@ -2537,6 +2571,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        // Generate or accept client-provided request ID for cancellation support
+        std::string request_id;
+        auto req_id_it = req.headers.find("x-request-id");
+        if (req_id_it != req.headers.end() && !req_id_it->second.empty() && req_id_it->second.size() <= 128) {
+            request_id = req_id_it->second;
+        } else {
+            request_id = generate_request_id();
+        }
+
         // Use normalized request - model name was already normalized at the top
         std::string request_body = request_json.dump();
 
@@ -2549,16 +2592,17 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                res.set_header("X-Request-Id", request_id);
 
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, request_id](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Already sent everything
                         }
 
                         // Use unified Router path for streaming
-                        router_->completion_stream(request_body, sink);
+                        router_->completion_stream(request_body, sink, request_id);
 
                         return false;
                     }
@@ -3701,6 +3745,15 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        // Generate or accept client-provided request ID for cancellation support
+        std::string request_id;
+        auto req_id_it = req.headers.find("x-request-id");
+        if (req_id_it != req.headers.end() && !req_id_it->second.empty() && req_id_it->second.size() <= 128) {
+            request_id = req_id_it->second;
+        } else {
+            request_id = generate_request_id();
+        }
+
         std::string request_body = req.body;
 
         if (is_streaming) {
@@ -3711,17 +3764,18 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                res.set_header("X-Request-Id", request_id);
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, request_id](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
 
                         // Use unified Router path for streaming
-                        router_->responses_stream(request_body, sink);
+                        router_->responses_stream(request_body, sink, request_id);
 
                         return false;
                     }
@@ -4735,8 +4789,72 @@ void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib:
     }
 }
 
+void Server::handle_request_cancel(const httplib::Request& req, httplib::Response& res) {
+    if (!router_) {
+        res.status = 503;
+        res.set_content(R"({"error":{"message":"Server not ready","type":"server_error"}})", "application/json");
+        return;
+    }
+
+    std::string request_id;
+    if (req.matches.size() > 1) {
+        request_id = req.matches[1];
+    }
+
+    if (request_id.empty()) {
+        res.status = 400;
+        res.set_content(R"({"error":{"message":"Missing request_id in path","type":"invalid_request_error"}})", "application/json");
+        return;
+    }
+
+    bool cancelled = router_->cancel_request(request_id);
+    if (cancelled) {
+        nlohmann::json response = {{"status", "cancelled"}, {"request_id", request_id}};
+        res.set_content(response.dump(), "application/json");
+    } else {
+        res.status = 404;
+        nlohmann::json response = {{"error", {
+            {"message", "Request not found or already completed"},
+            {"type", "not_found"},
+            {"request_id", request_id}
+        }}};
+        res.set_content(response.dump(), "application/json");
+    }
+}
+
+void Server::handle_requests_list(const httplib::Request& req, httplib::Response& res) {
+    if (!router_) {
+        res.status = 503;
+        res.set_content(R"({"error":{"message":"Server not ready","type":"server_error"}})", "application/json");
+        return;
+    }
+
+    auto requests = router_->list_active_requests();
+    nlohmann::json response = nlohmann::json::array();
+    for (const auto& r : requests) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - r.start_time).count();
+        response.push_back({
+            {"request_id", r.request_id},
+            {"model_name", r.model_name},
+            {"endpoint", r.endpoint},
+            {"is_streaming", r.is_streaming},
+            {"elapsed_ms", elapsed}
+        });
+    }
+    res.set_content(response.dump(), "application/json");
+}
+
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
     LOG(INFO, "Server") << "Shutdown request received" << std::endl;
+
+    // Cancel all in-flight requests before unloading models
+    if (router_) {
+        int cancelled = router_->cancel_all_requests();
+        if (cancelled > 0) {
+            LOG(INFO, "Server") << "Cancelled " << cancelled << " in-flight request(s)" << std::endl;
+        }
+    }
 
     // Unload all models SYNCHRONOUSLY before sending the response.
     // This ensures child processes (llama-server, etc.) are terminated

@@ -24,6 +24,7 @@ struct HttpResponse {
     // backend connection that happened after HTTP headers were received.
     int curl_code = 0;
     std::string curl_error;
+    bool cancelled = false;
 };
 
 struct MultipartField {
@@ -92,7 +93,8 @@ public:
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+                            long timeout_seconds = 300,
+                            const std::atomic<bool>* cancel_flag = nullptr);
 
     // Multipart form data POST request
     static HttpResponse post_multipart(const std::string& url,
@@ -104,7 +106,8 @@ public:
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+                                   long timeout_seconds = 300,
+                                   const std::atomic<bool>* cancel_flag = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,

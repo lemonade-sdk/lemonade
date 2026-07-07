@@ -70,7 +70,8 @@ void StreamingProxy::forward_sse_stream(
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    const std::atomic<bool>* cancel_flag) {
 
     TelemetryData telemetry;
     try {
@@ -105,7 +106,12 @@ void StreamingProxy::forward_sse_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time, &on_chunk, &process_line](const char* data, size_t length) {
+         &time_to_first_token, &start_time, &on_chunk, &process_line,
+         cancel_flag](const char* data, size_t length) {
+            if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+                return false;
+            }
+
             if (on_chunk) {
                 on_chunk();
             }
@@ -131,17 +137,40 @@ void StreamingProxy::forward_sse_stream(
             return true;
         },
         {},
-        timeout_seconds
+        timeout_seconds,
+        cancel_flag
     );
 
+    const bool user_cancelled = result.cancelled ||
+        (cancel_flag && cancel_flag->load(std::memory_order_acquire));
+    const bool client_disconnect = (result.curl_code == CURLE_WRITE_ERROR) && !user_cancelled;
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
+    if (user_cancelled) {
+        const char* cancel_event = "data: {\"error\":{\"message\":\"Request cancelled by user\",\"type\":\"request_cancelled\",\"code\":\"cancelled\"}}\n\n";
+        sink.write(cancel_event, strlen(cancel_event));
+        const char* done_marker = "data: [DONE]\n\n";
+        sink.write(done_marker, strlen(done_marker));
+        sink.done();
+        telemetry.error_message = "Request cancelled by user";
+        if (on_complete) {
+            on_complete(telemetry);
+        }
+        return;
+    }
+
     if (result.curl_code != CURLE_OK) {
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (result.curl_code == CURLE_WRITE_ERROR && !user_cancelled) {
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
+        } else if (result.curl_code == CURLE_WRITE_ERROR && user_cancelled) {
+            // Cancel flag caused write callback to return false — already handled above
+            // in the user_cancelled block. This branch should not be reached because
+            // user_cancelled returns early, but handle it for safety.
+            stream_error = true;
+            telemetry.error_message = "Request cancelled by user";
         } else if (transport_interrupted) {
             if (!has_done_marker) {
                 // This is the important crash path: HTTP headers may have been sent and
@@ -215,14 +244,19 @@ void StreamingProxy::forward_byte_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    const std::atomic<bool>* cancel_flag) {
 
     bool stream_error = false;
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &on_chunk](const char* data, size_t length) {
+        [&sink, &on_chunk, cancel_flag](const char* data, size_t length) {
+            if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+                return false;
+            }
+
             if (on_chunk) {
                 on_chunk();
             }
@@ -234,16 +268,24 @@ void StreamingProxy::forward_byte_stream(
             return true;
         },
         {},
-        timeout_seconds
+        timeout_seconds,
+        cancel_flag
     );
+
+    if (result.cancelled || (cancel_flag && cancel_flag->load(std::memory_order_acquire))) {
+        sink.done();
+        return;
+    }
 
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.curl_code != CURLE_OK) {
         stream_error = true;
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (result.curl_code == CURLE_WRITE_ERROR && !(cancel_flag && cancel_flag->load(std::memory_order_acquire))) {
             LOG(WARNING, "StreamingProxy") << "Client disconnected during byte stream (CURL error: " << result.curl_error << ")" << std::endl;
+        } else if (result.curl_code == CURLE_WRITE_ERROR) {
+            // Cancel-induced write error — already handled above
         } else if (transport_interrupted) {
             // Keep byte streams consistent with SSE: an interrupted transport is a
             // backend failure, not a clean stream completion. The caller will mark

@@ -132,6 +132,8 @@ private:
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
+    void handle_request_cancel(const httplib::Request& req, httplib::Response& res);
+    void handle_requests_list(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 
     // Backend management endpoint handlers

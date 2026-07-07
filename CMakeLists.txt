@@ -627,6 +627,7 @@ set(SOURCES_CORE
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
+    src/cpp/server/request_registry.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_policy.cpp

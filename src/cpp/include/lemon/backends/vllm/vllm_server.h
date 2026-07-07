@@ -41,7 +41,8 @@ public:
                                    httplib::DataSink& sink,
                                    bool sse = true,
                                    long timeout_seconds = 0,
-                                   TelemetryCallback telemetry_callback = nullptr) override;
+                                   TelemetryCallback telemetry_callback = nullptr,
+                                   const std::atomic<bool>* cancel_flag = nullptr) override;
 
     std::map<std::string, nlohmann::json> get_additional_telemetry() override;
     std::string get_additional_telemetry_url() const override;

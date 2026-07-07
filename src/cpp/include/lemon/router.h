@@ -12,6 +12,7 @@
 #include "wrapped_server.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "request_registry.h"
 #include "runtime_config.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
@@ -120,11 +121,20 @@ public:
     json image_edits(const json& request);
     json image_variations(const json& request);
 
-    void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
-    void completion_stream(const std::string& request_body, httplib::DataSink& sink);
-    void responses_stream(const std::string& request_body, httplib::DataSink& sink);
+    void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                                const std::string& request_id = "");
+    void completion_stream(const std::string& request_body, httplib::DataSink& sink,
+                           const std::string& request_id = "");
+    void responses_stream(const std::string& request_body, httplib::DataSink& sink,
+                          const std::string& request_id = "");
 
     json get_stats() const;
+
+    // Request cancellation and listing
+    bool cancel_request(const std::string& request_id);
+    std::vector<ActiveRequest> list_active_requests() const;
+    int cancel_all_requests();
+    RequestRegistry& request_registry() { return request_registry_; }
 
     // Get loaded backend metadata and per-model telemetry for metrics rendering.
     json get_metrics_snapshot() const;
@@ -147,6 +157,8 @@ private:
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Non-owning
+
+    RequestRegistry request_registry_;
 
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
@@ -195,7 +207,9 @@ private:
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
 
     template<typename Func>
-    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);
+    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func,
+                           std::shared_ptr<telemetry::InferenceSpan> span = nullptr,
+                           const std::string& request_id = "");
 };
 
 } // namespace lemon
