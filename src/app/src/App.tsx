@@ -14,10 +14,11 @@ import BackendManager from './components/BackendManager';
 import Dashboard from './components/Dashboard';
 import LogViewer from './components/LogViewer';
 import DownloadManager from './components/DownloadManager';
+import InspectView from './components/InspectView';
 import { Icon } from './components/Icon';
 import { DownloadListItem, downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect';
+type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect' | 'inspect';
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -60,7 +61,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'];
+const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect', 'inspect'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -411,6 +412,7 @@ const App: React.FC = () => {
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
             { id: 'dashboard', label: 'Dashboard',  icon: 'gauge'              },
+            { id: 'inspect',   label: 'Inspect',   icon: 'search-check'       },
             { id: 'logs',      label: 'Logs',      icon: 'logs'               },
             { id: 'connect',   label: 'Connect',   icon: 'plug'               },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
@@ -491,6 +493,11 @@ const App: React.FC = () => {
         <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="logs">
             <LogViewer />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'inspect' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="inspect">
+            <InspectView accountSession={accountSession} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
