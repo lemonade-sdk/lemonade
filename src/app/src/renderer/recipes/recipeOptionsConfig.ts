@@ -311,7 +311,6 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     isBackendOption: true,
     backendRecipe: 'acestep',
   },
-  // Trellis 3D backend
   trellisBackend: {
     type: 'string',
     default: '',

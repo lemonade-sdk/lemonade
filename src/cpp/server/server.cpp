@@ -714,7 +714,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
     });
-    // Generative-3D endpoint: image -> textured GLB mesh
     register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_3d_generations(req, res);
     });

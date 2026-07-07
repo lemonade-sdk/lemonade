@@ -1,10 +1,6 @@
 import React from 'react';
-// Side-effect import: registers the <model-viewer> custom element. Vendored as a
-// single bundled file (three.js inlined) so it works in both the Tauri app and
-// the Debian-packaged web-app without an npm dependency (see invariant #12).
 import '../vendor/model-viewer.min.js';
 
-// <model-viewer> is a custom element, not a typed JSX intrinsic; cast to render it.
 const ModelViewer = 'model-viewer' as unknown as React.FC<any>;
 
 interface ModelViewer3DProps {

@@ -80,23 +80,14 @@ void TrellisServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    // The checkpoint is the directory of TRELLIS.2 GGUFs.
     std::vector<std::string> args = {
         "--models", model_path,
         "--host", "127.0.0.1",
         "--port", std::to_string(port_),
     };
 
-    // Run the 512 cascade (TRELLIS_512=1): it skips the _1024 flow models and uses
-    // smaller grids/meshes, so peak host RAM (~15 GB intermediates for the 1024
-    // cascade) and VRAM drop substantially. The 1024 cascade can OOM a memory-
-    // contended box; 512 is the safe default.
     std::vector<std::pair<std::string, std::string>> env_vars = {{"TRELLIS_512", "1"}};
 
-    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
-    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
-    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
-    // needs no special env.
     if (backend == "rocm" || backend == "cuda") {
         std::string therock_lib;
         if (backend == "rocm") {
@@ -105,9 +96,6 @@ void TrellisServer::load(const std::string& model_name,
         }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
-        // TheRock keeps its LLVM support DLLs (libomp140.x86_64.dll for
-        // OpenMP-enabled ggml builds) under lib/llvm/bin, a sibling of the
-        // main bin/ dir (therock_lib), not inside it.
         std::string llvm_bin = therock_lib.empty() ? ""
             : (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
         std::string path = therock_lib.empty() ? exe_dir
@@ -115,8 +103,6 @@ void TrellisServer::load(const std::string& model_name,
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
-        // builds) under lib/llvm/lib, next to the main lib dir.
         std::string ld = therock_lib.empty() ? exe_dir
             : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
@@ -156,7 +142,6 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
         return;  // handler already validated; nothing to stream
     }
     std::string b64 = request["image"].get<std::string>();
-    // Strip an optional data URL prefix ("data:image/png;base64,").
     auto comma = b64.find(',');
     if (b64.rfind("data:", 0) == 0 && comma != std::string::npos) {
         b64 = b64.substr(comma + 1);
@@ -168,22 +153,16 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
     if (request.contains("seed")) {
         fields.push_back({"seed", std::to_string(request["seed"].get<int>()), "", ""});
     }
-    // Cascade resolution (512/1024/1536); trellis-server defaults to 512 if absent.
     if (request.contains("resolution")) {
         std::string res = request["resolution"].is_string()
                               ? request["resolution"].get<std::string>()
                               : std::to_string(request["resolution"].get<int>());
         fields.push_back({"resolution", res, "", ""});
     }
-    // Background removal mode (threshold | birefnet); uploads default to birefnet
-    // on the client so an arbitrary photo's real background gets matted out.
     if (request.contains("bg_removal") && request["bg_removal"].is_string()) {
         fields.push_back({"bg_removal", request["bg_removal"].get<std::string>(), "", ""});
     }
 
-    // 3D reconstruction is slow (the 1024 cascade is minutes); allow ample time.
-    // Failures write an error payload into the sink; the endpoint handler turns
-    // it into an HTTP error instead of shipping it as a mesh.
     auto fail = [&sink](const std::string& message) {
         const std::string payload =
             json{{"error", {{"message", message}, {"type", "backend_error"}}}}.dump();
@@ -214,9 +193,6 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
 namespace backends {
 
 namespace {
-// The checkpoint is a directory of TRELLIS.2 GGUFs; trellis-server scans it
-// (--models). Resolve to the active Hugging Face snapshot directory rather than
-// the cache root, so the resolved path actually contains the downloaded files.
 class TrellisOps : public BackendOps {
 public:
     std::string resolve_checkpoint_path(const ModelInfo& info,

@@ -11,8 +11,6 @@
 namespace lemon {
 namespace backends {
 
-// TRELLIS.2 image->3D backend. Wraps the resident trellis-server; forwards the
-// /3d/generations input image as multipart and streams back the GLB mesh.
 class TrellisServer : public WrappedServer, public IModel3DServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
@@ -28,7 +26,6 @@ public:
               bool do_not_upgrade) override;
     void unload() override;
 
-    // IModel3DServer
     void model_3d_generations(const json& request, httplib::DataSink& sink) override;
 
 private:

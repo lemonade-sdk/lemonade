@@ -27,7 +27,6 @@ from utils.test_models import (
     TIMEOUT_DEFAULT,
 )
 
-# 3D reconstruction takes minutes; give it more than TIMEOUT_MODEL_OPERATION.
 TIMEOUT_3D_GENERATION = 1800
 
 

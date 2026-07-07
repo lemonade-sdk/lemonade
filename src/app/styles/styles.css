@@ -3452,7 +3452,6 @@ input::-webkit-calendar-picker-indicator {
     box-sizing: border-box;
 }
 
-/* 3D generator source toggle (From image / From text) — same segmented look. */
 .model3d-source-toggle {
     display: flex;
     gap: 4px;
@@ -3462,7 +3461,6 @@ input::-webkit-calendar-picker-indicator {
     align-self: flex-start;
 }
 
-/* Size the toggle buttons to their label (the shared .toggle-button stretches). */
 .model3d-source-toggle .toggle-button {
     flex: 0 0 auto;
     white-space: nowrap;

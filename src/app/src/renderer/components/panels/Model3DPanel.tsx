@@ -13,21 +13,14 @@ import { ImageUploadIcon } from '../Icons';
 import ModelViewer3D from '../ModelViewer3D';
 import Combobox from '../Combobox';
 
-// Cascade options shown in the picker (rough cost measured on a 16 GB GPU / 31 GB
-// host). The leading number is the value sent to the server.
 const RES_OPTIONS = [
   '512 — ~3 GB VRAM, fast',
   '1024 — ~15 GB VRAM, sharp',
   '1536 — ~16+ GB VRAM, heavy',
 ];
 
-// Background removal for uploaded images. BiRefNet (a full matte model) handles
-// arbitrary photos/backgrounds; the threshold keyer only suits clean white bgs.
 const BG_OPTIONS = ['Auto matte (BiRefNet)', 'Plain background'];
 
-// The verified text-to-3D prompt suffix (matches the 3d-generation skill): TRELLIS
-// rebuilds geometry from ONE image, so the render must show depth — a 3/4 view of a
-// single centered subject on a plain background reconstructs far better.
 const PROMPT_TAGS =
   'single subject, centered, whole object in frame, ' +
   'three-quarter view from slightly above showing the top and two sides, ' +
@@ -58,7 +51,6 @@ const Model3DPanel: React.FC<Model3DPanelProps> = ({
   const [generatingImage, setGeneratingImage] = useState(false);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
 
-  // The cascade value is the leading number of the selected label.
   const resolution = resLabel.match(/^\d+/)?.[0] ?? '512';
   const bgRemoval = bgLabel.startsWith('Auto') ? 'birefnet' : 'threshold';
   const imageModels = downloadedModels
@@ -70,7 +62,6 @@ const Model3DPanel: React.FC<Model3DPanelProps> = ({
   glbUrlRef.current = glbUrl;
 
   useEffect(() => () => { if (glbUrlRef.current) URL.revokeObjectURL(glbUrlRef.current); }, []);
-  // Default the image-gen model to the first one available.
   useEffect(() => {
     if (!imageModel && imageModels.length) setImageModel(imageModels[0]);
   }, [imageModels, imageModel]);
@@ -109,7 +100,6 @@ const Model3DPanel: React.FC<Model3DPanelProps> = ({
         await reconstruct(b64, bgRemoval);
       } else {
         if (!textPrompt.trim() || !imageModel) return;
-        // 1) render a 3D-friendly reference image with the chosen image model.
         setGeneratingImage(true);
         try {
           await ensureModelReady(imageModel, modelsData);
@@ -133,9 +123,6 @@ const Model3DPanel: React.FC<Model3DPanelProps> = ({
         const b64 = imgData.data?.[0]?.b64_json;
         if (!b64) throw new Error(imgData.error?.message || 'image generation returned no image');
         setGeneratingImage(false);
-        // 2) reconstruct it — matte the subject out (a generated scene isn't always a
-        // clean white key, e.g. a "blazing" subject glows into the background, which the
-        // threshold keyer leaves in and TRELLIS then rebuilds as a flat poster).
         await reconstruct(b64, bgRemoval);
       }
     } catch (error: any) {

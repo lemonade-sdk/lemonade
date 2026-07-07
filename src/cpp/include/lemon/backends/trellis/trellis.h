@@ -6,13 +6,11 @@ namespace lemon {
 namespace backends {
 namespace trellis {
 
-// TRELLIS.2 image->3D generation, wrapped via its resident trellis-server
-// subprocess. Serves the /3d/generations capability.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "trellis",
     /*display_name*/    "TRELLIS.2",
     /*binary*/          "trellis-server",
-    /*config_section*/  "",  // defaults to recipe
+    /*config_section*/  "",
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,

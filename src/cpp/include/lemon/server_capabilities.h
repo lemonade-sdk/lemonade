@@ -71,17 +71,13 @@ class IAudioGenerationServer : public virtual ICapability {
 public:
     virtual ~IAudioGenerationServer() = default;
     virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
-    // response_format values the backend can natively produce.
     virtual std::vector<std::string> supported_audio_formats() const { return {"wav"}; }
 };
 
-// 3D-asset generation capability (image -> textured mesh). Streams the encoded
-// model bytes (e.g. glTF-binary .glb) to the sink.
 class IModel3DServer : public virtual ICapability {
 public:
     virtual ~IModel3DServer() = default;
     virtual void model_3d_generations(const json& request, httplib::DataSink& sink) = 0;
-    // response_format values the backend can natively produce.
     virtual std::vector<std::string> supported_model_formats() const { return {"glb"}; }
 };
 
