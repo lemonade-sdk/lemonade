@@ -2069,6 +2069,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     }
 
     if (is_router_collection_recipe(info.recipe)) {
+        // The parser requires a root "version"; surface it alongside "routing"
+        // so an exported router collection can be re-imported through /pull.
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            model_json["version"] = version_it->second;
+        }
         auto routing_it = info.extras.find("routing");
         if (routing_it != info.extras.end() && routing_it->second.is_object()) {
             model_json["routing"] = routing_it->second;

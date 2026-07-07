@@ -3186,6 +3186,99 @@ class EndpointTests(ServerTestBase):
         finally:
             self._cleanup_router_collection(canonical_name)
 
+    def test_021zg_router_collection_export_roundtrip(self):
+        """A router collection exported from /models surfaces its schema
+        "version" (not just "routing") and can be re-imported through /pull
+        (#2385). Guards the import/export round-trip so the required version
+        isn't dropped on export and rejected on re-import."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterExport-{suffix}"
+        public_name = canonical_name[5:]
+        reimport_name = f"user.RouterReimport-{suffix}"
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            models = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()
+            exported = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(exported, f"{public_name} missing from /models export")
+            self.assertEqual(exported.get("recipe"), "collection.router")
+            self.assertIn("routing", exported)
+            self.assertEqual(
+                exported.get("version"),
+                "1",
+                "exported router collection must surface its schema version",
+            )
+
+            # The exported object must be re-importable verbatim (modulo name).
+            reimport_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": reimport_name,
+                    "version": exported["version"],
+                    "recipe": exported["recipe"],
+                    "components": exported["components"],
+                    "routing": exported["routing"],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(reimport_response.status_code, 200, reimport_response.text)
+            self.assertEqual(reimport_response.json().get("status"), "success")
+            print(f"[OK] collection.router export round-trip preserved version")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": reimport_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021zh_router_collection_responses_typed_input_dispatch(self):
+        """/responses dispatch works when the input uses typed content parts
+        (message with input_text parts) rather than a plain string (#2385),
+        exercising the RouteContext extraction for structured Responses input."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterTyped-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            resp = requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Please write code"}
+                            ],
+                        }
+                    ],
+                    "max_output_tokens": 16,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertNotIn("error", body, resp.text)
+            if "model" in body:
+                self.assertNotEqual(body.get("model"), public_name)
+            print(
+                f"[OK] collection.router /responses typed input dispatched {public_name}"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
     def test_021q_collection_repull_overwrites_components(self):
         """Re-pulling an existing collection with a new components array must
         overwrite the stored entry, not silently reuse the old components."""

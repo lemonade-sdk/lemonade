@@ -140,7 +140,10 @@ std::string collect_text_from_content(const json& content) {
     std::string text;
     if (content.is_array()) {
         for (const auto& part : content) {
-            if (part.is_object() && part.value("type", std::string()) == "text" &&
+            if (!part.is_object()) continue;
+            const std::string type = part.value("type", std::string());
+            // chat/completions uses "text"; the Responses API uses "input_text".
+            if ((type == "text" || type == "input_text") &&
                 part.contains("text") && part["text"].is_string()) {
                 if (!text.empty()) text += "\n";
                 text += part["text"].get<std::string>();
@@ -154,7 +157,10 @@ std::string collect_text_from_content(const json& content) {
 bool content_has_image(const json& content) {
     if (!content.is_array()) return false;
     for (const auto& part : content) {
-        if (part.is_object() && part.value("type", std::string()) == "image_url") {
+        if (!part.is_object()) continue;
+        const std::string type = part.value("type", std::string());
+        // chat/completions uses "image_url"; the Responses API uses "input_image".
+        if (type == "image_url" || type == "input_image") {
             return true;
         }
     }
@@ -349,11 +355,21 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
             for (const auto& item : input) {
                 if (item.is_string()) {
                     append_line(item.get<std::string>());
-                } else if (item.is_object() && item.contains("content")) {
-                    std::string part_text = collect_text_from_content(item["content"]);
-                    if (!part_text.empty()) {
-                        append_line(part_text);
-                    }
+                    continue;
+                }
+                if (!item.is_object()) {
+                    continue;
+                }
+                // A Responses input item is either a message carrying a typed
+                // "content" array or a bare content part; treat both uniformly.
+                const json content =
+                    item.contains("content") ? item["content"] : json::array({item});
+                if (content_has_image(content)) {
+                    ctx.params.has_images = true;
+                }
+                std::string part_text = collect_text_from_content(content);
+                if (!part_text.empty()) {
+                    append_line(part_text);
                 }
             }
         }
