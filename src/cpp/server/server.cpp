@@ -9,6 +9,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -3323,6 +3324,19 @@ void Server::handle_3d_generations(const httplib::Request& req, httplib::Respons
                     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
                     std::string::npos) {
                 return reject("'image' must be base64 data or a base64 data: URL");
+            }
+            // Sniffing needs only the first 12 bytes; base64 is block-aligned,
+            // so decoding the first 16 characters is enough and avoids decoding
+            // a multi-megabyte payload just to validate it.
+            std::string head;
+            for (char c : image) {
+                if (c != '\r' && c != '\n') {
+                    head += c;
+                    if (head.size() == 16) break;
+                }
+            }
+            if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
+                return reject("'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
             }
         }
         std::string response_format = "glb";

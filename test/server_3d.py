@@ -119,6 +119,15 @@ class Model3DTests(ServerTestBase):
             self._generation_payload(image="!!!not-base64!!!"), "Non-base64 image"
         )
 
+    def test_003a_non_image_payload_error(self):
+        """Valid base64 that does not decode to a supported image is rejected without loading anything."""
+        self._assert_rejected(
+            self._generation_payload(
+                image=base64.b64encode(b"not an image").decode("ascii")
+            ),
+            "Non-image base64 payload",
+        )
+
     def test_004_unsupported_response_format(self):
         """A response_format other than glb is rejected without loading anything."""
         self._assert_rejected(

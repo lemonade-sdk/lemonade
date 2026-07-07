@@ -206,7 +206,7 @@ const Model3DPanel: React.FC<Model3DPanelProps> = ({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/bmp,image/gif"
                       onChange={handlePickImage}
                       style={{ display: 'none' }}
                     />
