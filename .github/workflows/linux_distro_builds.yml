@@ -5,6 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     paths:
+      - "src/cpp/**"
       - "CMakeLists.txt"
       - "**/CMakeLists.txt"
       - "CMakePresets.json"
@@ -15,7 +16,7 @@ on:
       - "test/requirements.txt"
       - "test/utils/**"
       - ".github/workflows/linux_distro_builds.yml"
-      - ".github/actions/capture-server-logs/**"
+      - ".github/actions/**"
       - "!**/*.md"
   workflow_dispatch:
 
@@ -34,6 +35,9 @@ jobs:
       image: ${{ matrix.image }}
     env:
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     strategy:
       fail-fast: false
@@ -52,6 +56,38 @@ jobs:
         with:
           clean: true
           fetch-depth: 0
+
+      - name: Cache package downloads and ccache
+        uses: actions/cache@v5
+        with:
+          path: |
+            .package-cache
+            .ccache
+          key: cache-linux-distro-${{ matrix.distro }}-${{ hashFiles('CMakeLists.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            cache-linux-distro-${{ matrix.distro }}-${{ hashFiles('CMakeLists.txt') }}-
+            cache-linux-distro-${{ matrix.distro }}-
+
+      - name: Setup package cache directories
+        run: |
+          mkdir -p .package-cache/pacman .package-cache/zypp
+          if [ "${{ matrix.distro }}" = "Arch" ]; then
+            mkdir -p /var/cache/pacman
+            rm -rf /var/cache/pacman/pkg
+            ln -s "$GITHUB_WORKSPACE/.package-cache/pacman" /var/cache/pacman/pkg
+          elif [ "${{ matrix.distro }}" = "openSUSE" ]; then
+            mkdir -p /var/cache
+            rm -rf /var/cache/zypp
+            ln -s "$GITHUB_WORKSPACE/.package-cache/zypp" /var/cache/zypp
+          fi
+
+      - name: Install ccache
+        run: |
+          if [ "${{ matrix.distro }}" = "Arch" ]; then
+            pacman -Syu --needed --noconfirm ccache
+          elif [ "${{ matrix.distro }}" = "openSUSE" ]; then
+            zypper install -y ccache
+          fi
 
       - name: Run setup.sh to configure environment
         run: |
