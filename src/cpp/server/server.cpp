@@ -43,11 +43,13 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
     #include <arpa/inet.h>   // inet_pton, htons
-    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
+    #include <fcntl.h>
+    #include <netdb.h>       // Crucial for getaddrinfo and addrinfo struct
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <sys/select.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
     #include <unistd.h>
 #endif
 
@@ -1365,10 +1367,9 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
-// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
-// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
-// socket left in TIME_WAIT by a just-exited server is still bindable.
+// Probe whether host_ip:port has an active listener (i.e. another server is running).
+// Uses a connection attempt (connect) rather than binding, so that sockets in TIME_WAIT
+// or FIN_WAIT from a previously exited instance do not trigger false positives.
 static bool port_is_available(int family, const std::string& host_ip, int port) {
     socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
@@ -1382,13 +1383,13 @@ static bool port_is_available(int family, const std::string& host_ip, int port) 
 #endif
     };
 
-    int opt = 1;
-#ifdef _WIN32
-    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char*>(&opt), sizeof(opt));
-#else
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
+    // If binding to wildcard/all interfaces, probe localhost for a listener
+    std::string connect_ip = host_ip;
+    if (connect_ip == "0.0.0.0") {
+        connect_ip = "127.0.0.1";
+    } else if (connect_ip == "::") {
+        connect_ip = "::1";
+    }
 
     sockaddr_storage ss{};
     socklen_t len;
@@ -1396,19 +1397,82 @@ static bool port_is_available(int family, const std::string& host_ip, int port) 
         auto* a = reinterpret_cast<sockaddr_in*>(&ss);
         a->sin_family = AF_INET;
         a->sin_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
+        if (inet_pton(AF_INET, connect_ip.c_str(), &a->sin_addr) != 1) {
+            close_sock();
+            return true;
+        }
         len = sizeof(sockaddr_in);
     } else {
         auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
         a->sin6_family = AF_INET6;
         a->sin6_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
+        if (inet_pton(AF_INET6, connect_ip.c_str(), &a->sin6_addr) != 1) {
+            close_sock();
+            return true;
+        }
         len = sizeof(sockaddr_in6);
     }
 
-    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
+    // Set non-blocking to allow short-timeout connect
+#ifdef _WIN32
+    unsigned long mode = 1;
+    ioctlsocket(sock, FIONBIO, &mode);
+#else
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+#endif
+
+    int res = connect(sock, reinterpret_cast<sockaddr*>(&ss), len);
+    bool has_listener = false;
+
+    if (res == 0) {
+        has_listener = true;
+    } else {
+#ifdef _WIN32
+        int err = WSAGetLastError();
+        bool in_progress = (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS);
+#else
+        int err = errno;
+        bool in_progress = (err == EINPROGRESS || err == EALREADY);
+#endif
+        if (in_progress) {
+#ifndef _WIN32
+            if (sock >= FD_SETSIZE) {
+                close_sock();
+                return true;
+            }
+#endif
+            // Wait up to 100ms for connection to establish (plenty for local interfaces)
+            fd_set write_fds;
+            FD_ZERO(&write_fds);
+            FD_SET(sock, &write_fds);
+
+            timeval tv{};
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000; // 100ms timeout
+
+#ifdef _WIN32
+            int sel = select(0, nullptr, &write_fds, nullptr, &tv);
+#else
+            int sel = select(sock + 1, nullptr, &write_fds, nullptr, &tv);
+#endif
+            if (sel > 0 && FD_ISSET(sock, &write_fds)) {
+                int socket_error = 0;
+                socklen_t opt_len = sizeof(socket_error);
+#ifdef _WIN32
+                getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&socket_error), &opt_len);
+#else
+                getsockopt(sock, SOL_SOCKET, SO_ERROR, &socket_error, &opt_len);
+#endif
+                if (socket_error == 0) {
+                    has_listener = true;
+                }
+            }
+        }
+    }
+
     close_sock();
-    return available;
+    return !has_listener;
 }
 
 void Server::run() {
