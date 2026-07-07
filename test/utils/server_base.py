@@ -189,6 +189,38 @@ def _is_transient_pull_status(status_code):
     return status_code in {408, 409, 429, 500, 502, 503, 504}
 
 
+def _pull_model_streaming(model_name, port):
+    """Pull via the SSE streaming mode and block until the download completes.
+
+    Large models (10+ GB) exceed any fixed read timeout on the synchronous
+    /pull; the progress events keep the connection alive so the timeout only
+    applies between events, not to the whole download.
+    """
+    with requests.post(
+        f"http://localhost:{port}/api/v1/pull",
+        json={"model_name": model_name, "stream": True},
+        stream=True,
+        timeout=TIMEOUT_MODEL_OPERATION,
+    ) as response:
+        if response.status_code != 200:
+            return response.status_code, response.text[:1000]
+
+        event = ""
+        for raw_line in response.iter_lines(decode_unicode=True):
+            if raw_line is None:
+                continue
+            line = raw_line.strip()
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip()
+            elif line.startswith("data:") and event == "error":
+                body = line[len("data:") :].strip()[:1000]
+                status = 400 if "unknown_model" in body else 500
+                return status, body
+            elif line.startswith("data:") and event == "complete":
+                return 200, ""
+        return 500, "SSE stream ended without a 'complete' event"
+
+
 def pull_model_with_retry(model_name, attempts=3, port=PORT):
     """Pull a model with bounded retry for transient setup failures.
 
@@ -204,11 +236,7 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
             time.sleep(min(30, 2 ** (attempt - 1)))
 
         try:
-            response = requests.post(
-                f"http://localhost:{port}/api/v1/pull",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
+            status, body = _pull_model_streaming(model_name, port)
         except requests.RequestException as exc:
             last_error = exc
             if attempt < attempts:
@@ -219,16 +247,16 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
                 continue
             break
 
-        if response.status_code == 200:
-            return response
+        if status == 200:
+            return
 
-        last_status = response.status_code
-        last_body = response.text[:1000]
+        last_status = status
+        last_body = body
 
-        if _is_transient_pull_status(response.status_code) and attempt < attempts:
+        if _is_transient_pull_status(status) and attempt < attempts:
             print(
                 f"Transient /pull setup failure for {model_name}: "
-                f"status={response.status_code}, attempt={attempt}/{attempts}. "
+                f"status={status}, attempt={attempt}/{attempts}. "
                 "Retrying..."
             )
             continue
