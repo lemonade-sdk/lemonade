@@ -3,6 +3,7 @@ import { AppSettings, DEFAULT_TTS_SETTINGS } from '../utils/appSettings';
 import Combobox from '../components/Combobox';
 import { useModels } from '../hooks/useModels';
 import { getTtsVoiceMode } from '../utils/modelData';
+import { readWavFileAsBase64, WAV_FILE_ACCEPT } from '../utils/wav';
 
 interface TTSSettingsProps {
   settings: AppSettings,
@@ -43,16 +44,14 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
 
   const voiceMode = getTtsVoiceMode(modelsData?.[settings.tts.model.value]);
 
+  const [sampleError, setSampleError] = React.useState<string>('');
+
   const pickSample = (key: 'userVoiceSample' | 'assistantVoiceSample') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const comma = dataUrl.indexOf(',');
-      onValueChangeFunc(key, comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
-    };
-    reader.readAsDataURL(file);
+    readWavFileAsBase64(file)
+      .then((b64) => { setSampleError(''); onValueChangeFunc(key, b64); })
+      .catch((err) => setSampleError(err.message));
     e.target.value = '';
   };
 
@@ -61,11 +60,19 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
     ref: React.RefObject<HTMLInputElement | null>,
   ) => (
     <div className="tts-clone-row">
-      <input ref={ref} type="file" accept="audio/*" onChange={pickSample(key)} style={{ display: 'none' }} />
+      <input ref={ref} type="file" accept={WAV_FILE_ACCEPT} onChange={pickSample(key)} style={{ display: 'none' }} />
       <button type="button" className="tts-clone-upload" onClick={() => ref.current?.click()}>
         {settings.tts[key].value ? 'Change voice sample' : 'Upload voice sample'}
       </button>
-      {settings.tts[key].value && <span className="tts-clone-file">Voice sample loaded</span>}
+      {settings.tts[key].value && (
+        <>
+          <span className="tts-clone-file">Voice sample loaded</span>
+          <button type="button" className="tts-clone-upload" onClick={() => onValueChangeFunc(key, '')}>
+            Clear
+          </button>
+        </>
+      )}
+      {sampleError && <span className="tts-clone-error">{sampleError}</span>}
     </div>
   );
 

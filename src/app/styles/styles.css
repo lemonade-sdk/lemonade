@@ -3517,6 +3517,11 @@ input::-webkit-calendar-picker-indicator {
     flex: 0 1 auto;
 }
 
+.tts-clone-error {
+    font-size: 0.75rem;
+    color: var(--error-color);
+}
+
 .tts-clone-name {
     overflow: hidden;
     text-overflow: ellipsis;

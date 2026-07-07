@@ -4,6 +4,7 @@ import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { AppSettings } from '../../utils/appSettings';
 import { ensureModelReady, DownloadAbortError } from '../../utils/backendInstaller';
+import { readWavFileAsBase64, WAV_FILE_ACCEPT } from '../../utils/wav';
 import { useTTS } from '../../hooks/useTTS';
 import { voiceOptions } from '../../tabs/TTSSettings';
 import { PLAYING } from '../../AudioButton';
@@ -71,7 +72,8 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
 
-  const ttsModel = selectedModel || appSettings?.tts.model.value || '';
+  const selectedIsTts = (modelsData?.[selectedModel || '']?.labels || []).includes('tts');
+  const ttsModel = (selectedIsTts ? selectedModel : '') || appSettings?.tts.model.value || '';
   const isOpenMoss = (modelsData?.[ttsModel]?.recipe || '') === 'openmoss';
   const selectedIsVoiceDesign = (modelsData?.[ttsModel]?.labels || []).includes('voice-design');
 
@@ -102,13 +104,9 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const handlePickSample = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const comma = dataUrl.indexOf(',');
-      setCloneWav({ b64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl, name: file.name });
-    };
-    reader.readAsDataURL(file);
+    readWavFileAsBase64(file)
+      .then((b64) => setCloneWav({ b64, name: file.name }))
+      .catch((err) => showError(err.message));
     e.target.value = '';
   };
 
@@ -321,7 +319,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                 />
               ) : (
                 <div className="tts-clone-row">
-                  <input ref={sampleInputRef} type="file" accept="audio/*" onChange={handlePickSample} style={{ display: 'none' }} />
+                  <input ref={sampleInputRef} type="file" accept={WAV_FILE_ACCEPT} onChange={handlePickSample} style={{ display: 'none' }} />
                   <button className="tts-clone-upload" onClick={() => sampleInputRef.current?.click()} disabled={busy}>
                     {cloneWav ? 'Change sample' : 'Upload voice sample'}
                   </button>
