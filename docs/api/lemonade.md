@@ -729,9 +729,9 @@ curl -X POST http://localhost:13305/v1/audio/generations \
 ```
 
 ## `POST /v1/3d/generations`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-3D Generation API. You provide an input image and receive a textured 3D mesh as a glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`).
+3D Generation API. You provide an input image and receive a textured 3D mesh as a glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image must be PNG, JPEG, BMP, or GIF.
 
 This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extension.
 

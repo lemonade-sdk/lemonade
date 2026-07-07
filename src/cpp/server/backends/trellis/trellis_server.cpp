@@ -9,6 +9,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
@@ -84,9 +85,10 @@ void TrellisServer::load(const std::string& model_name,
         "--models", model_path,
         "--host", "127.0.0.1",
         "--port", std::to_string(port_),
+        "--res", "512",
     };
 
-    std::vector<std::pair<std::string, std::string>> env_vars = {{"TRELLIS_512", "1"}};
+    std::vector<std::pair<std::string, std::string>> env_vars;
 
     if (backend == "rocm" || backend == "cuda") {
         std::string therock_lib;
@@ -148,8 +150,18 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
     }
     std::string image = utils::JsonUtils::base64_decode(b64);
 
+    const auto sniffed = utils::sniff_image(image);
+    if (!sniffed.ok()) {
+        const std::string payload = json{{"error", {
+            {"message", "unsupported image format: expected PNG, JPEG, BMP, or GIF"},
+            {"type", "invalid_request_error"},
+            {"status", 400}}}}.dump();
+        sink.write(payload.data(), payload.size());
+        return;
+    }
+
     std::vector<utils::MultipartField> fields;
-    fields.push_back({"image", image, "input.png", "image/png"});
+    fields.push_back({"image", image, "input." + sniffed.extension, sniffed.mime});
     if (request.contains("seed")) {
         fields.push_back({"seed", std::to_string(request["seed"].get<int>()), "", ""});
     }

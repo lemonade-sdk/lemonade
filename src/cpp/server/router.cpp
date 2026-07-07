@@ -1539,13 +1539,6 @@ void Router::model_3d_generations(const json& request, httplib::DataSink& sink) 
     });
 }
 
-std::vector<std::string> Router::model_3d_supported_formats(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    auto model_server = dynamic_cast<IModel3DServer*>(
-        find_server_by_model_name(resolve_model_name(model_name)));
-    return model_server ? model_server->supported_model_formats() : std::vector<std::string>{};
-}
-
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     return aggregate_telemetry_.to_json();

@@ -9,6 +9,8 @@ Usage:
     python server_3d.py --wrapped-server trellis --backend rocm
 
 Note: 3D reconstruction is slow (minutes per mesh even at the 512 cascade).
+The negative tests run first and never pull the model; only the generation
+test downloads it.
 """
 
 import base64
@@ -65,12 +67,6 @@ class Model3DTests(ServerTestBase):
     _model_pulled = False
 
     @classmethod
-    def setUpClass(cls):
-        """Verify server, apply runtime config, and pre-pull the model."""
-        super().setUpClass()
-        cls._ensure_model_pulled()
-
-    @classmethod
     def _ensure_model_pulled(cls):
         if cls._model_pulled:
             return
@@ -90,8 +86,73 @@ class Model3DTests(ServerTestBase):
         payload.update(overrides)
         return payload
 
-    def test_001_basic_3d_generation(self):
+    def _assert_rejected(self, payload, context, expected_status=400):
+        response = requests.post(
+            f"{self.base_url}/3d/generations",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            expected_status,
+            f"{context}: expected {expected_status}, got {response.status_code}: "
+            f"{response.text[:1000]}",
+        )
+        self.assertIn("error", response.json(), f"{context}: missing 'error' field")
+        print(f"[OK] {context}: {response.status_code}")
+
+    def test_001_missing_model_error(self):
+        """A request without a model is rejected without loading anything."""
+        payload = self._generation_payload()
+        del payload["model"]
+        self._assert_rejected(payload, "Missing model")
+
+    def test_002_missing_image_error(self):
+        """A request without an image is rejected without loading anything."""
+        payload = self._generation_payload()
+        del payload["image"]
+        self._assert_rejected(payload, "Missing image")
+
+    def test_003_non_base64_image_error(self):
+        """An image field that is not base64 is rejected without loading anything."""
+        self._assert_rejected(
+            self._generation_payload(image="!!!not-base64!!!"), "Non-base64 image"
+        )
+
+    def test_004_unsupported_response_format(self):
+        """A response_format other than glb is rejected without loading anything."""
+        self._assert_rejected(
+            self._generation_payload(response_format="obj"),
+            "Unsupported response_format",
+        )
+
+    def test_005_invalid_resolution_error(self):
+        """A resolution outside 512/1024/1536 is rejected without loading anything."""
+        self._assert_rejected(
+            self._generation_payload(resolution=777), "Invalid resolution"
+        )
+
+    def test_006_invalid_bg_removal_error(self):
+        """An unknown bg_removal mode is rejected without loading anything."""
+        self._assert_rejected(
+            self._generation_payload(bg_removal="magic"), "Invalid bg_removal"
+        )
+
+    def test_007_non_integer_seed_error(self):
+        """A non-integer seed is rejected without loading anything."""
+        self._assert_rejected(self._generation_payload(seed="abc"), "Non-integer seed")
+
+    def test_008_invalid_model_error(self):
+        """A nonexistent model is a 404 model_not_found, not a download attempt."""
+        self._assert_rejected(
+            self._generation_payload(model="nonexistent-3d-model-xyz-123"),
+            "Invalid model",
+            expected_status=404,
+        )
+
+    def test_500_basic_3d_generation(self):
         """Test basic image-to-3D generation returns a GLB mesh."""
+        self._ensure_model_pulled()
         payload = self._generation_payload()
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
         print(f"[INFO] Using the 512 cascade for CI speed; this still takes minutes")
@@ -118,81 +179,6 @@ class Model3DTests(ServerTestBase):
         )
         self.assertGreater(len(response.content), 10000, "Mesh should be substantial")
         print(f"[OK] Generated valid GLB mesh ({len(response.content)} bytes)")
-
-    def test_002_unsupported_response_format(self):
-        """Test that a response_format the backend cannot produce is rejected."""
-        payload = self._generation_payload(response_format="obj")
-
-        response = requests.post(
-            f"{self.base_url}/3d/generations",
-            json=payload,
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            400,
-            f"Expected 400 for unsupported response_format, got {response.status_code}: "
-            f"{response.text[:1000]}",
-        )
-        self.assertIn("error", response.json(), "Response should contain 'error' field")
-        print(
-            f"[OK] Correctly rejected unsupported response_format: {response.status_code}"
-        )
-
-    def test_003_missing_image_error(self):
-        """Test error handling when image is missing."""
-        payload = self._generation_payload()
-        del payload["image"]
-
-        response = requests.post(
-            f"{self.base_url}/3d/generations",
-            json=payload,
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            400,
-            f"Expected 400 for missing image, got {response.status_code}",
-        )
-        print(f"[OK] Correctly rejected request without image: {response.status_code}")
-
-    def test_004_missing_model_error(self):
-        """Test error handling when model is missing."""
-        payload = self._generation_payload()
-        del payload["model"]
-
-        response = requests.post(
-            f"{self.base_url}/3d/generations",
-            json=payload,
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            400,
-            f"Expected 400 for missing model, got {response.status_code}",
-        )
-        print(f"[OK] Correctly rejected request without model: {response.status_code}")
-
-    def test_005_invalid_model_error(self):
-        """Test error handling with a nonexistent model."""
-        payload = self._generation_payload(model="nonexistent-3d-model-xyz-123")
-
-        response = requests.post(
-            f"{self.base_url}/3d/generations",
-            json=payload,
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertIn(
-            response.status_code,
-            [400, 404, 422, 500],
-            f"Expected error for invalid model, got {response.status_code}",
-        )
-        self.assertIn("error", response.json(), "Response should contain 'error' field")
-        print(f"[OK] Correctly rejected invalid model: {response.status_code}")
 
 
 if __name__ == "__main__":
