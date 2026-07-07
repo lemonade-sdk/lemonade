@@ -99,12 +99,15 @@ public:
                                        const std::vector<MultipartField>& fields,
                                        long timeout_seconds = 300);
 
-    // Streaming POST request (calls callback for each chunk as it arrives)
+    // Streaming POST request (calls callback for each chunk as it arrives).
+    // on_status fires once, before the first chunk is delivered, so callers can
+    // divert an error body instead of forwarding it as payload bytes.
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+                                   long timeout_seconds = 300,
+                                   std::function<void(int status_code)> on_status = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
