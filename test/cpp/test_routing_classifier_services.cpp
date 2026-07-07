@@ -337,6 +337,23 @@ static void test_build_route_context_responses_string_input_no_image() {
     check("responses string input has no image", !ctx.params.has_images);
 }
 
+static void test_build_route_context_responses_uses_last_user_message() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "assistant"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "here is some code"}},
+            })}},
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "thanks that helps"}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses uses only last user message, not earlier assistant turn",
+          ctx.input == "thanks that helps");
+}
+
 int main() {
     test_embed_uses_router_embeddings_shape();
     test_semantic_similarity_loops_through_router_embeddings();
@@ -351,6 +368,7 @@ int main() {
     test_build_route_context_responses_typed_input_message();
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
+    test_build_route_context_responses_uses_last_user_message();
 
     if (g_failures == 0) {
         std::printf("All routing classifier service tests passed.\n");

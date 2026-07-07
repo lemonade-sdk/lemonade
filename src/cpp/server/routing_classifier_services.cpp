@@ -352,24 +352,45 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
         if (input.is_string()) {
             ctx.input = input.get<std::string>();
         } else if (input.is_array()) {
+            // Detect images anywhere in the input, mirroring how the chat path
+            // scans every message.
             for (const auto& item : input) {
-                if (item.is_string()) {
-                    append_line(item.get<std::string>());
-                    continue;
-                }
-                if (!item.is_object()) {
-                    continue;
-                }
-                // A Responses input item is either a message carrying a typed
-                // "content" array or a bare content part; treat both uniformly.
+                if (!item.is_object()) continue;
                 const json content =
                     item.contains("content") ? item["content"] : json::array({item});
                 if (content_has_image(content)) {
                     ctx.params.has_images = true;
+                    break;
                 }
-                std::string part_text = collect_text_from_content(content);
-                if (!part_text.empty()) {
-                    append_line(part_text);
+            }
+            // Prefer the last user message's content, matching the chat path, so
+            // earlier assistant/developer/system turns can't skew routing.
+            bool found_user = false;
+            for (int i = static_cast<int>(input.size()) - 1; i >= 0; --i) {
+                const auto& item = input[i];
+                if (item.is_object() &&
+                    item.value("role", std::string()) == "user" &&
+                    item.contains("content")) {
+                    ctx.input = collect_text_from_content(item["content"]);
+                    found_user = true;
+                    break;
+                }
+            }
+            // Fallback for role-less inputs (plain strings or bare content
+            // parts): concatenate their text in order.
+            if (!found_user) {
+                for (const auto& item : input) {
+                    if (item.is_string()) {
+                        append_line(item.get<std::string>());
+                    } else if (item.is_object() && !item.contains("role")) {
+                        const json content = item.contains("content")
+                                                 ? item["content"]
+                                                 : json::array({item});
+                        std::string part_text = collect_text_from_content(content);
+                        if (!part_text.empty()) {
+                            append_line(part_text);
+                        }
+                    }
                 }
             }
         }
