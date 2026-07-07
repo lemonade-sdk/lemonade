@@ -3777,6 +3777,120 @@ class EndpointTests(ServerTestBase):
             _delete(b_name)
             _delete(throwaway)
 
+    def test_036_lemond_restart_with_lingering_connections_succeeds(self):
+        """A new lemond instance must be able to start on a port that has lingering
+        client connections in FIN_WAIT / TIME_WAIT states.
+
+        This test starts lemond, connects a client socket, shuts down the first
+        lemond, and attempts to start a second lemond on the same port while the
+        client socket is kept open (which creates a lingering server-side connection
+        in the TCP stack). The second lemond should start successfully.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_lingering_")
+        first_log_path = os.path.join(cache_dir, "first_lemond.log")
+        second_log_path = os.path.join(cache_dir, "second_lemond.log")
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        first = None
+        second = None
+        client_sock = None
+        try:
+            # 1. Start the first lemond
+            with open(first_log_path, "w", encoding="utf-8") as first_log:
+                first = subprocess.Popen(
+                    cmd,
+                    stdout=first_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            # Wait for it to be healthy
+            deadline = time.time() + 30
+            first_healthy = False
+            while time.time() < deadline:
+                if first.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    first_healthy = True
+                    break
+                time.sleep(1)
+
+            self.assertTrue(first_healthy, "First lemond failed to start")
+
+            # 2. Establish a TCP connection from a client socket and keep it open
+            client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_sock.connect(("127.0.0.1", port))
+            client_sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n")
+
+            # 3. Shutdown the first lemond
+            first.terminate()
+            try:
+                first.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                first.kill()
+                first.wait(timeout=10)
+
+            # 4. Attempt to start a second lemond on the SAME port while client_sock is still active.
+            # Without the fix, the second lemond would fail to start with EADDRINUSE (port already in use).
+            with open(second_log_path, "w", encoding="utf-8") as second_log:
+                second = subprocess.Popen(
+                    cmd,
+                    stdout=second_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            # Assert that the second lemond starts and becomes healthy
+            deadline = time.time() + 30
+            second_healthy = False
+            while time.time() < deadline:
+                if second.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    second_healthy = True
+                    break
+                time.sleep(1)
+
+            if not second_healthy:
+                with open(
+                    second_log_path, "r", encoding="utf-8", errors="replace"
+                ) as f:
+                    log = f.read()
+                self.fail(
+                    f"Second lemond failed to start on port {port} with lingering connection.\n"
+                    f"=== second lemond log ===\n{log}"
+                )
+
+            print(
+                f"[OK] Second lemond started successfully on port {port} with lingering connections"
+            )
+
+        finally:
+            if client_sock:
+                try:
+                    client_sock.close()
+                except Exception:
+                    pass
+            for proc in (second, first):
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")
