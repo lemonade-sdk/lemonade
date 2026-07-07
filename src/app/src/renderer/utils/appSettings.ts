@@ -33,8 +33,6 @@ export interface TTSSettings {
   model: StringSetting;
   userVoice: StringSetting;
   assistantVoice: StringSetting;
-  // Base64 WAV samples used to clone the user/assistant voice when the selected
-  // TTS model is a cloning model (e.g. OpenMOSS-TTS) instead of a fixed-voice one.
   userVoiceSample: StringSetting;
   assistantVoiceSample: StringSetting;
   enableTTS: BooleanSetting;

@@ -24,8 +24,6 @@ InstallParams OpenMossServer::get_install_params(const std::string& backend, con
     (void)version;
     InstallParams params;
     params.repo = "pwilkin/openmoss";
-    // Release-asset name keyed by OS (Linux .tar.gz / Windows .zip). ROCm channels
-    // collapse to one multi-arch "rocm" asset; the runtime comes from TheRock.
     const std::string variant = (backend.rfind("rocm", 0) == 0) ? "rocm" : backend;
 #ifdef _WIN32
     params.filename = "moss-tts-" + variant + "-windows-x64.zip";
@@ -86,10 +84,6 @@ void OpenMossServer::load(const std::string& model_name,
         "--no-webui",
     };
 
-    // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
-    // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
-    // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
-    // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
     if (backend == "rocm" || backend == "cuda") {
         std::string therock_lib;
@@ -99,9 +93,6 @@ void OpenMossServer::load(const std::string& model_name,
         }
         const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
 #ifdef _WIN32
-        // TheRock keeps its LLVM support DLLs (libomp140.x86_64.dll for
-        // OpenMP-enabled ggml builds) under lib/llvm/bin, a sibling of the
-        // main bin/ dir (therock_lib), not inside it.
         std::string llvm_bin = therock_lib.empty() ? ""
             : (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
         std::string path = therock_lib.empty() ? exe_dir
@@ -109,8 +100,6 @@ void OpenMossServer::load(const std::string& model_name,
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
-        // builds) under lib/llvm/lib, next to the main lib dir.
         std::string ld = therock_lib.empty() ? exe_dir
             : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
@@ -146,9 +135,6 @@ void OpenMossServer::unload() {
 }
 
 void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) {
-    // moss-tts-server implements the OpenAI /v1/audio/speech schema and returns
-    // audio/wav; forward the request unchanged and stream the bytes back.
-    // Generation can take a while (long lines), so allow a generous timeout.
     forward_streaming_request("/v1/audio/speech", request.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
 }
 
@@ -157,8 +143,6 @@ void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) 
 namespace backends {
 
 namespace {
-// The MOSS backbone GGUF ships with a "<stem>.extras.gguf" codec sidecar that
-// moss-tts-server auto-locates alongside it; fetch both.
 class OpenMossOps : public BackendOps {
 public:
     std::optional<std::vector<std::string>> select_checkpoint_files(

@@ -33,10 +33,6 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
   const userSampleRef = React.useRef<HTMLInputElement>(null);
   const assistantSampleRef = React.useRef<HTMLInputElement>(null);
 
-  // Installed TTS models the default can point at. Voice-design models (e.g.
-  // MOSS-VoiceGenerator) are excluded — they synthesize a voice from a free-text
-  // description per request, so they can't serve as a fixed default voice. Keep
-  // the current value listed even if it isn't installed so it stays selected.
   const ttsModelOptions = React.useMemo(() => {
     const ids = downloadedModels
       .filter(m => m.info?.labels?.includes('tts') && getTtsVoiceMode(m.info) !== 'design')
@@ -45,8 +41,6 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
     return current && !ids.includes(current) ? [current, ...ids] : ids;
   }, [downloadedModels, settings.tts.model.value]);
 
-  // The selected default model decides how voices are chosen: a fixed-voice model
-  // (Kokoro) takes a named voice; a cloning model (OpenMOSS-TTS) takes a WAV sample.
   const voiceMode = getTtsVoiceMode(modelsData?.[settings.tts.model.value]);
 
   const pickSample = (key: 'userVoiceSample' | 'assistantVoiceSample') => (e: React.ChangeEvent<HTMLInputElement>) => {

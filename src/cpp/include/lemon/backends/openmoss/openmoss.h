@@ -6,13 +6,11 @@ namespace lemon {
 namespace backends {
 namespace openmoss {
 
-// OpenMOSS (MOSS-TTS-Delay) text-to-speech, wrapped via its resident
-// moss-tts-server subprocess. Header-only `inline const` descriptor.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "openmoss",
     /*display_name*/    "OpenMOSS TTS",
     /*binary*/          "moss-tts-server",
-    /*config_section*/  "",  // defaults to recipe
+    /*config_section*/  "",
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,

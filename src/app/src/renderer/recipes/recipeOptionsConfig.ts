@@ -311,7 +311,6 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     isBackendOption: true,
     backendRecipe: 'acestep',
   },
-  // OpenMOSS TTS backend
   openmossBackend: {
     type: 'string',
     default: '',

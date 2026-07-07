@@ -49,10 +49,6 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     setAudioState(PAUSED);
   };
 
-  // Core TTS API call (no pre-flight). `opts.model` overrides the configured TTS
-  // model (the panel passes the selected model). `opts.referenceWavB64` carries a
-  // base64 WAV for OpenMOSS voice cloning; `ttsVoice` is the fixed voice for Kokoro
-  // or the free-text voice/style instruction for OpenMOSS.
   const doTextToSpeech = async (
     message: MessageContent,
     ttsVoice: string,
@@ -89,10 +85,6 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     setAudioState(PLAYING);
   };
 
-  // Generate a speech clip and return its object URL WITHOUT playing it. Panels
-  // that render their own <audio> widget use this so the clip persists and replays
-  // the exact generated audio — important for non-deterministic models like
-  // MOSS-VoiceGenerator, where regenerating yields a different voice every run.
   const synthesizeSpeech = async (
     message: MessageContent,
     ttsVoice: string,
@@ -155,8 +147,6 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     }
 
     if (role && appSettings) {
-      // A cloning model voices each role from a stored WAV sample; a fixed-voice
-      // model uses a named voice. Mirrors the TTS settings UI.
       if (getTtsVoiceMode(modelsData?.[appSettings.tts.model.value]) === 'clone') {
         referenceWavB64 = (role === 'assistant')
           ? appSettings.tts.assistantVoiceSample.value

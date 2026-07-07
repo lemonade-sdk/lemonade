@@ -3466,8 +3466,6 @@ input::-webkit-calendar-picker-indicator {
     box-sizing: border-box;
 }
 
-/* OpenMOSS TTS input: a Describe/Clone toggle plus a free-text instruction or a
-   voice-cloning sample, in place of the fixed-voice picker. */
 .tts-openmoss-controls {
     display: flex;
     align-items: center;

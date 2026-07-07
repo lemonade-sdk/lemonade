@@ -54,8 +54,6 @@ class ITextToSpeechServer : public virtual ICapability {
 public:
     virtual ~ITextToSpeechServer() = default;
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
-    // response_format values the backend natively produces; empty = the backend
-    // honors any requested format itself (e.g. Kokoro transcodes server-side).
     virtual std::vector<std::string> supported_audio_formats() const { return {}; }
 };
 

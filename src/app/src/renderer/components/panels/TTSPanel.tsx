@@ -14,9 +14,6 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import Combobox from '../Combobox';
 
-// Neutral phrase the voice-design model speaks to produce a reference clip; the
-// content is irrelevant to cloning (only the timbre is captured), so a short,
-// clean sentence is enough.
 const VOICE_DESIGN_PHRASE = 'Hello there. This is a short sample of the voice you described.';
 
 const blobUrlToBase64 = async (url: string): Promise<string> => {
@@ -51,9 +48,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const { selectedModel, modelsData, downloadedModels } = useModels();
   const tts = useTTS(appSettings, modelsData);
 
-  // Each clip keeps the audio it produced plus the context that made it, so the
-  // bubble's player replays the exact generated audio (not a fresh, different
-  // take) and editing can regenerate with the same model/voice.
   interface TTSClip {
     text: string;
     audioUrl: string;
@@ -66,12 +60,9 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const [ttsMessageHistory, setTTSMessageHistory] = useState<TTSClip[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
-  // OpenMOSS is described/cloned rather than picked from a fixed voice list.
   const [mossMode, setMossMode] = useState<'describe' | 'clone'>('describe');
   const [voiceDescription, setVoiceDescription] = useState('');
   const [cloneWav, setCloneWav] = useState<{ b64: string; name: string } | null>(null);
-  // Stage 1 of the describe cascade (voice-design) runs outside the inference
-  // state machine, so this drives its own busy state + progress label.
   const [designingVoice, setDesigningVoice] = useState(false);
 
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -80,17 +71,10 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
 
-  // The TTS model is whatever the panel's selector points at (mirrors the other
-  // panels); its recipe decides the input UI — OpenMOSS takes a voice description
-  // or a cloning sample, Kokoro & co. take a fixed voice from voiceOptions.
   const ttsModel = selectedModel || appSettings?.tts.model.value || '';
   const isOpenMoss = (modelsData?.[ttsModel]?.recipe || '') === 'openmoss';
   const selectedIsVoiceDesign = (modelsData?.[ttsModel]?.labels || []).includes('voice-design');
 
-  // OpenMOSS routing (like the text->3D cascade): Describe goes to a voice-design
-  // model (MOSS-VoiceGenerator) that creates a voice from the instruction; Clone
-  // goes to a cloning model (MOSS-TTS) that copies a reference sample. We pick the
-  // right model client-side so the user just toggles the mode.
   const voiceDesignModel = selectedIsVoiceDesign ? ttsModel
     : (downloadedModels.find(m => m.info?.labels?.includes('voice-design'))?.id || '');
   const cloneModel = (isOpenMoss && !selectedIsVoiceDesign) ? ttsModel
@@ -100,8 +84,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const cloneMissing  = isOpenMoss && mossMode === 'clone' && (!cloneWav || !cloneModel);
   const describeMissing = isOpenMoss && mossMode === 'describe' && !voiceDesignModel;
 
-  // Stage 1 of the cascade runs outside the inference state machine, so combine
-  // both for everything that should lock down while a clip is being produced.
   const busy = isBusy || designingVoice;
 
   const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
@@ -130,7 +112,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
     e.target.value = '';
   };
 
-  // Synthesize via a model that needs pre-flight, then record the clip.
   const synthAndRecord = async (
     text: string, model: string, voice: string, referenceWavB64?: string,
   ): Promise<boolean> => {
@@ -147,10 +128,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
     try {
       if (isOpenMoss && mossMode === 'describe' && cloneModel) {
-        // Cascade (like text->3D): the voice-design model designs a reference voice
-        // from the description, then the main TTS model clones it onto the text. The
-        // 8B TTS model ignores voice descriptions, so this is the only way a described
-        // voice reaches its high-quality output.
         let referenceWavB64: string;
         try {
           setDesigningVoice(true);
@@ -165,8 +142,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
         }
         await synthAndRecord(text, cloneModel, '', referenceWavB64);
       } else if (isOpenMoss && mossMode === 'describe') {
-        // No cloning model installed — fall back to the voice-design model speaking
-        // the text directly (lower quality, but functional).
         await synthAndRecord(text, voiceDesignModel, voiceDescription.trim());
       } else if (isOpenMoss && mossMode === 'clone') {
         await synthAndRecord(text, cloneModel, voiceDescription.trim(), cloneWav?.b64);

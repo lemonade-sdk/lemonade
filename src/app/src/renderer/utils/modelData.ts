@@ -46,10 +46,6 @@ export interface ModelsData {
   [key: string]: ModelInfo;
 }
 
-// How a TTS model's voice is chosen:
-//   'fixed'  — pick a named voice from a fixed list (e.g. Kokoro)
-//   'clone'  — supply a reference WAV to clone (e.g. OpenMOSS-TTS)
-//   'design' — describe the voice in free text (e.g. MOSS-VoiceGenerator)
 export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
 
 export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
