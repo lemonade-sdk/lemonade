@@ -8,6 +8,16 @@ on:
         type: boolean
         default: false
   pull_request:
+    paths:
+      - ".github/workflows/validate_llamacpp.yml"
+      - ".github/actions/**"
+      - "src/cpp/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - "setup.ps1"
+      - "test/validate_llamacpp.py"
+      - "test/requirements.txt"
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -409,6 +419,16 @@ jobs:
         with:
           clean: true
 
+      - name: Prune old persistent caches
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            C:\ci\cache
+            D:\ci\cache
+            ~\lemonade-ci\cache
+          expected-root: ''
+          prune-children-older-than-days: '7'
+
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
 
@@ -446,30 +466,110 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
-          $venvPython = ".\.venv\Scripts\python.exe"
+
+          # Persistent cache outside GITHUB_WORKSPACE for self-hosted Windows runners
+          $ciRoot = "C:\ci"
+          if (-not (Test-Path $ciRoot)) { $ciRoot = "D:\ci" }
+          if (-not (Test-Path $ciRoot)) { $ciRoot = Join-Path $env:USERPROFILE "lemonade-ci" }
+
+          # Isolate cache directory by PR/branch run key to prevent concurrent job collisions
+          $runKey = "${{ github.event.pull_request.number || github.ref_name }}"
+          $cacheDir = Join-Path (Join-Path (Join-Path $ciRoot "cache") $label) $runKey
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
+          # Cooperative locking to prevent concurrent runs of the same PR/branch from overlapping
+          $lockFile = "$cacheDir.lock"
+          $lockStream = $null
+          $lockAcquired = $false
+          $startTime = Get-Date
+          while (((Get-Date) - $startTime).TotalSeconds -lt 300) {
+              try {
+                  $lockStream = [System.IO.File]::Open($lockFile, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                  $lockAcquired = $true
+                  break
+              } catch {
+                  Write-Host "Waiting for cache lock on $lockFile (concurrent run of same PR active)..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds 5
+              }
+          }
+          if (-not $lockAcquired) {
+              Write-Error "Failed to acquire cache lock within timeout."
+              exit 1
+          }
+
+          $venvPython = ".\.venv\Scripts\python.exe"
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
-          # Start lemond (Python script handles readiness polling)
-          $proc = Start-Process `
-            -FilePath $lemondExe `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog `
-            -PassThru
+          # Deterministic port allocation with retries to resolve socket bind conflicts
+          $started = $false
+          $lemondProc = $null
+          $runId = $env:GITHUB_RUN_ID
+          if (-not $runId) { $runId = Get-Random -Minimum 10000 -Maximum 99999 }
+          $labelHash = 0
+          foreach ($char in $label.ToCharArray()) { $labelHash += [int]$char }
+          $basePort = 20000 + ($runId % 20000) + ($labelHash % 5000)
 
-          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
-          $proc.Id | Out-File -FilePath "$env:RUNNER_TEMP\lemond.pid" -Encoding utf8
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+              $port = $basePort + (($attempt - 1) * 100)
+              Write-Host "Attempt $attempt: using port $port. Starting lemond..." -ForegroundColor Cyan
+
+              $lemondProc = Start-Process `
+                -FilePath $lemondExe `
+                -ArgumentList @($cacheDir, "--port", "$port", "--host", "127.0.0.1") `
+                -RedirectStandardOutput $stdoutLog `
+                -RedirectStandardError $stderrLog `
+                -PassThru
+
+              # Wait up to 10 seconds to see if it remains running and becomes healthy
+              $healthy = $false
+              for ($i = 0; $i -lt 20; $i++) {
+                  Start-Sleep -Milliseconds 500
+                  if ($lemondProc.HasExited) { break }
+                  try {
+                      $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/v1/health" -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+                      if ($resp.StatusCode -eq 200) {
+                          $healthy = $true
+                          break
+                      }
+                  } catch {}
+              }
+
+              if ($healthy) {
+                  $started = $true
+                  Write-Host "lemond is healthy on port $port (PID $($lemondProc.Id))" -ForegroundColor Green
+                  $lemondProc.Id | Out-File -FilePath "$env:RUNNER_TEMP\lemond.pid" -Encoding utf8
+                  break
+              } else {
+                  Write-Host "lemond failed to start or exited prematurely on port $port" -ForegroundColor Yellow
+                  try {
+                      if (-not $lemondProc.HasExited) {
+                          Stop-Process -Id $lemondProc.Id -Force -ErrorAction SilentlyContinue
+                      }
+                  } catch {}
+              }
+          }
+
+          if (-not $started) {
+              if ($null -ne $lockStream) {
+                  $lockStream.Close()
+                  $lockStream.Dispose()
+              }
+              Write-Host "=== lemond stdout ===" -ForegroundColor Gray
+              if (Test-Path $stdoutLog) { Get-Content $stdoutLog }
+              Write-Host "=== lemond stderr ===" -ForegroundColor Red
+              if (Test-Path $stderrLog) { Get-Content $stderrLog }
+              Write-Error "ERROR: lemond failed to start after 5 attempts."
+              exit 1
+          }
 
           try {
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
+              "--port", "$port",
               "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
@@ -485,11 +585,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             try {
-              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
+              Invoke-WebRequest -Uri "http://127.0.0.1:$port/internal/shutdown" `
                 -Method POST -TimeoutSec 10 | Out-Null
               Start-Sleep -Seconds 2
             } catch {
               Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            }
+            if ($null -ne $lockStream) {
+              $lockStream.Close()
+              $lockStream.Dispose()
+              Write-Host "Released cache lock." -ForegroundColor Gray
             }
           }
 

@@ -8,6 +8,15 @@ on:
         type: boolean
         default: false
   pull_request:
+    paths:
+      - ".github/workflows/validate_vllm.yml"
+      - ".github/actions/**"
+      - "src/cpp/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - "test/validate_vllm.py"
+      - "test/requirements.txt"
   schedule:
     # Sunday at 6:00 PM UTC
     - cron: "0 18 * * 0"
@@ -109,6 +118,15 @@ jobs:
         with:
           clean: true
 
+      - name: Prune old persistent caches
+        uses: ./.github/actions/cleanup-ci-paths-linux
+        with:
+          paths: |
+            ~/.cache/lemonade-ci/cache
+            ${{ github.workspace }}/.home/.cache/lemonade-ci/cache
+          expected-root: ''
+          prune-children-older-than-days: '7'
+
       - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
@@ -137,9 +155,22 @@ jobs:
           mkdir -p "$HOME"
           echo "HOME=$HOME" >> "$GITHUB_ENV"
 
-          CACHE_DIR="$(pwd)/ci-cache-vllm"
+          # Persistent cache outside GITHUB_WORKSPACE for self-hosted Linux runners
+          # Isolate cache directory by PR/branch run key to prevent concurrent job collisions
+          RUN_KEY="${{ github.event.pull_request.number || github.ref_name }}"
+          CACHE_DIR="$HOME/.cache/lemonade-ci/cache/vllm/$RUN_KEY"
           LOGS_DIR="$(pwd)/server-logs-rocm"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+
+          # Cooperative locking to prevent concurrent runs of the same PR/branch from overlapping
+          LOCKFILE="$CACHE_DIR.lock"
+          echo "Acquiring cache lock on $LOCKFILE..."
+          exec 200>"$LOCKFILE"
+          if ! flock -x -w 300 200; then
+            echo "ERROR: Failed to acquire cache lock within 5 minutes"
+            exit 1
+          fi
+          echo "Cache lock acquired."
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
