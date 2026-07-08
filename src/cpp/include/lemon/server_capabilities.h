@@ -54,6 +54,7 @@ class ITextToSpeechServer : public virtual ICapability {
 public:
     virtual ~ITextToSpeechServer() = default;
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
+    virtual std::vector<std::string> supported_audio_formats() const { return {}; }
 };
 
 class IImageServer : public virtual ICapability {

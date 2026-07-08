@@ -1170,6 +1170,11 @@ jobs:
             extra_args: "--wrapped-server trellis"
             backends: "vulkan rocm"
             runner: [Windows, rocm, vulkan, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Windows, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1481,6 +1486,11 @@ jobs:
           - name: 3d-trellis
             script: server_3d.py
             extra_args: "--wrapped-server trellis"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm, lemon-prod]
     env:

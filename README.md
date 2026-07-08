@@ -159,7 +159,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942)*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -219,7 +219,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux, macOS</td>
     </tr>
     <tr>
-      <td rowspan="2"><strong>Text-to-speech</strong></td>
+      <td rowspan="5"><strong>Text-to-speech</strong></td>
       <td rowspan="2"><code>kokoro</code></td>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
@@ -229,6 +229,22 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
       <td>macOS</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><code>openmoss</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>AMD GPUs (ROCm via TheRock)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="5"><strong>Image generation</strong></td>

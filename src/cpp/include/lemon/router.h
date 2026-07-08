@@ -115,6 +115,7 @@ public:
 
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
 
     json image_generations(const json& request);
     json image_edits(const json& request);

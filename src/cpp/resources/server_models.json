@@ -147,25 +147,25 @@
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.2-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Mistral-7B-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Phi-3-mini-128k-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
@@ -1655,6 +1655,25 @@
             "3d"
         ],
         "size": 15.4
+    },
+    "OpenMOSS-TTS": {
+        "checkpoint": "ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts"
+        ],
+        "size": 12.5
+    },
+    "MOSS-VoiceGen": {
+        "checkpoint": "ilintar/moss-voicegen-gguf:moss-voicegen.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 7.3
     },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
