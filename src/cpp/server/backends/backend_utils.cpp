@@ -828,9 +828,18 @@ namespace lemon::backends {
                 return std::nullopt;
             }
 #ifdef _WIN32
+            // ROCm 5.x/6.x ship bin\amdhip64.dll; ROCm 7.x version-suffixes it
+            // (bin\amdhip64_7.dll), so match the amdhip64*.dll prefix.
             for (const char* subdir : {"bin", "lib"}) {
-                if (fs::exists(root / subdir / "amdhip64.dll", ec)) {
-                    return root;
+                const fs::path dir = root / subdir;
+                if (!fs::is_directory(dir, ec)) {
+                    continue;
+                }
+                for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+                    const std::string name = it->path().filename().string();
+                    if (name.rfind("amdhip64", 0) == 0 && it->path().extension() == ".dll") {
+                        return root;
+                    }
                 }
             }
 #else
