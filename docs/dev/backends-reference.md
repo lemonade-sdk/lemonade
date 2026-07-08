@@ -110,6 +110,12 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Models
 
 <!-- BEGIN GENERATED: backend-models -->
+#### `acestep` — acestep (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `ACE-Step-Music` | 10.5 | audio-generation |
+
 #### `collection.omni` — collection.omni (5 models)
 
 | Model | Size (GB) | Labels |
@@ -216,6 +222,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
 
+#### `openmoss` — openmoss (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `MOSS-VoiceGen` | 7.3 | tts, voice-design |
+| `OpenMOSS-TTS` | 12.5 | tts |
+
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)
 
 | Model | Size (GB) | Labels |
@@ -250,13 +263,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Meta-Llama-3-8B-NPU` | 9.23 | — |
 | `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | — |
 | `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | — |
-| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | — |
-| `Mistral-7B-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-v0.3-NPU` | 8.09 | — |
 | `Phi-3-Mini-Instruct-CPU` | 2.39 | — |
 | `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | — |
@@ -316,6 +329,18 @@ the generator instead. Prose outside the markers is preserved. -->
 | `SDXL-Base-1.0` | 6.94 | image |
 | `SDXL-Turbo` | 6.94 | image |
 | `Z-Image-Turbo` | 20.7 | image |
+
+#### `thinksound` — thinksound (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `ThinkSound-SFX` | 6.4 | audio-generation |
+
+#### `trellis` — trellis (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `TRELLIS-3D` | 15.4 | 3d |
 
 #### `vllm` — vLLM ROCm (experimental) (7 models)
 

@@ -191,6 +191,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `args` | "" | Custom arguments to pass to flm serve |
+| `prefer_system` | false | Prefer system-installed FLM (on PATH) over auto-installed portable binary |
 
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |

@@ -41,9 +41,36 @@ Each contribution needs to:
     - Reviewers: make sure to check the code *before* allowing CI to run!
 3. Sustain the overall code quality and standards of the rest of the repo.
 
+### Making Pull Requests Easy to Review
+
+Maintainers try to review contributions quickly, but review time is limited. The easiest pull requests to review are small, focused, and easy to verify.
+
+Before opening a PR, please make sure that:
+
+1. The PR solves one clear problem.
+2. The changes are limited to what is necessary.
+3. There are no unrelated local changes included.
+4. The PR description explains what changed and why.
+5. The PR describes how the change was tested, including any platforms that could not be tested locally.
+6. Larger refactoring is separated from bug fixes or feature changes.
+
+Some areas of the codebase are more sensitive than they may appear. Small changes can sometimes have large side effects, especially in recently reworked, complex, or platform-specific code. In these cases, reviewers may ask you to reduce the scope, add tests, or follow a specific implementation approach. If you need help testing on a platform you do not have access to, please mention it in the PR and ask for support in the Lemonade Discord.
+
+The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
+
 ### AI Policy
 
-Contributors are encouraged to use AI to code their project. However, please review your AI's code yourself before asking another human to review it.
+Contributors are welcome to use AI tools while working on Lemonade. However, contributors remain fully responsible for the code they submit.
+
+If you use AI-assisted coding, please make sure that you:
+
+1. Understand the generated code before submitting it.
+2. Review the full diff yourself.
+3. Remove unrelated or unnecessary changes.
+4. Test the result locally where possible.
+5. Keep the PR especially small and focused.
+
+AI can make it easy to generate large changes, but large or unfocused changes are harder for maintainers to review and are less likely to be accepted quickly.
 
 Reviewers are expected to use tools like Claude Code's `/review` to save time by analyzing code quality and edge cases. If AI tools generate PR comments, please clearly identify which comments are AI-generated and which are authored by you.
 

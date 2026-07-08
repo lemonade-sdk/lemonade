@@ -524,6 +524,9 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
 struct StreamCallbackData {
     StreamCallback* callback;
     std::string* buffer;
+    CURL* curl = nullptr;
+    std::function<void(int)>* on_status = nullptr;
+    bool status_reported = false;
 };
 
 // Static C-style callback function
@@ -535,6 +538,13 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
         if (!data || !data->callback || !*(data->callback)) {
             LOG(ERROR, "HttpClient") << "Callback data is null!" << std::endl;
             return 0;
+        }
+
+        if (!data->status_reported && data->on_status && *(data->on_status) && data->curl) {
+            long code = 0;
+            curl_easy_getinfo(data->curl, CURLINFO_RESPONSE_CODE, &code);
+            (*(data->on_status))(static_cast<int>(code));
+            data->status_reported = true;
         }
 
         if (!(*(data->callback))(ptr, total_size)) {
@@ -555,7 +565,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      const std::string& body,
                                      StreamCallback stream_callback,
                                      const std::map<std::string, std::string>& headers,
-                                     long timeout_seconds) {
+                                     long timeout_seconds,
+                                     std::function<void(int)> on_status) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -567,6 +578,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     StreamCallbackData callback_data;
     callback_data.callback = &stream_callback;
     callback_data.buffer = nullptr;
+    callback_data.curl = curl;
+    callback_data.on_status = &on_status;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());

@@ -1,6 +1,7 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
+#include <lemon/routing_policy_parser.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -109,7 +110,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "system_prompt"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version"};
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
@@ -428,6 +429,28 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     return total;
 }
 
+
+// Replace the static registry size with the aggregate on-disk size once the
+// files exist, so directory-checkpoint models (whose repos can carry more than
+// the registry estimate) report what was actually downloaded.
+static void refresh_on_disk_size(ModelInfo& info) {
+    uintmax_t total_size = 0;
+    for (auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        total_size += resolved_path_size_bytes(path_from_utf8(path));
+    }
+    if (total_size == 0) {
+        return;
+    }
+    double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+    if (file_size_gb < 1.0) {
+        info.size = std::round(file_size_gb * 1000) / 1000;
+    } else if (file_size_gb < 10.0) {
+        info.size = std::round(file_size_gb * 100) / 100;
+    } else {
+        info.size = std::round(file_size_gb * 10) / 10;
+    }
+}
 
 std::vector<ModelFileInfo> ModelManager::list_model_files(const std::string& model_name) {
     ModelInfo info = get_model_info(model_name);
@@ -1092,7 +1115,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // Collections are virtual entries with no direct checkpoint to resolve.
-    if (is_collection_recipe(info.recipe)) {
+    if (is_model_collection_recipe(info.recipe)) {
         return "";
     }
 
@@ -1277,7 +1300,7 @@ void ModelManager::check_for_model_updates() {
         }
         for (const auto& [name, info] : models_cache_) {
             if (!info.downloaded) continue;
-            if (is_collection_recipe(info.recipe)) continue;
+            if (is_model_collection_recipe(info.recipe)) continue;
             if (info.recipe == "flm" || info.recipe == "cloud") continue;
 
             std::string main_cp = info.checkpoint("main");
@@ -1504,7 +1527,7 @@ void ModelManager::build_cache() {
         // a previous version may have persisted are ignored/self-healed). A
         // pure inline collection has no checkpoint pointer; it keeps its
         // authored components and only falls back to the cache when empty.
-        if (is_collection_recipe(info.recipe) &&
+        if (is_model_collection_recipe(info.recipe) &&
             (info.components.empty() || !info.checkpoint().empty())) {
             info.components.clear();
             populate_collection_components_from_cache_locked(info);
@@ -1557,7 +1580,7 @@ void ModelManager::build_cache() {
         // so a refreshed manifest is reflected and no stale list can shadow it.
         // A pure inline user collection has no checkpoint pointer and keeps its
         // authored components, falling back to the cache only when empty.
-        if (is_collection_recipe(info.recipe) &&
+        if (is_model_collection_recipe(info.recipe) &&
             (info.components.empty() || !info.checkpoint().empty())) {
             info.components.clear();
             populate_collection_components_from_cache_locked(info);
@@ -1643,7 +1666,7 @@ void ModelManager::build_cache() {
     int downloaded_count = 0;
     // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (is_collection_recipe(info.recipe)) {
+        if (is_model_collection_recipe(info.recipe)) {
             continue;  // Handled in second pass after components are resolved
         }
         const auto* desc = backends::descriptor_for(info.recipe);
@@ -1659,7 +1682,7 @@ void ModelManager::build_cache() {
     // Second pass: determine download status for collection models
     // (must happen after components have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (!is_collection_recipe(info.recipe)) continue;
+        if (!is_model_collection_recipe(info.recipe)) continue;
         info.downloaded = check_component_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
@@ -1668,12 +1691,52 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
+        if (info.downloaded) {
+            refresh_on_disk_size(info);
+        }
         models_cache_[name] = info;
     }
 
     rebuild_public_model_aliases_locked();
 
     cache_valid_ = true;
+
+    // Parse each collection.router model's routing policy now, while the cache
+    // and its alias map are fully built and the lock is still held. The parser's
+    // component resolver needs only alias resolution, which is a direct lookup
+    // into public_model_aliases_ here — exactly what resolve_model_name() does,
+    // minus its own build_cache()+lock. Calling resolve_model_name() here would
+    // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
+    RoutingPolicyParseOptions policy_options;
+    policy_options.resolve_component =
+        [this](const std::string& name) -> std::optional<std::string> {
+        auto it = public_model_aliases_.find(name);
+        return it != public_model_aliases_.end() ? it->second : name;
+    };
+    for (auto& [name, info] : models_cache_) {
+        if (!is_router_collection_recipe(info.recipe)) {
+            continue;
+        }
+        json doc;
+        doc["recipe"] = info.recipe;
+        doc["components"] = info.components;
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            doc["version"] = version_it->second;
+        }
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end()) {
+            doc["routing"] = routing_it->second;
+        }
+        try {
+            info.route_policy = std::make_shared<const RoutePolicy>(
+                parse_route_policy_collection(doc, policy_options));
+        } catch (const std::exception& e) {
+            LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
+                                         << name << "': " << e.what() << std::endl;
+        }
+    }
+
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }
@@ -1748,7 +1811,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     // Check download status (collections aggregate their components; everyone
     // else asks its backend ops).
-    if (is_collection_recipe(info.recipe)) {
+    if (is_model_collection_recipe(info.recipe)) {
         info.downloaded = check_component_downloaded(info, models_cache_);
     } else {
         backends::BackendOpsContext octx;
@@ -1812,29 +1875,13 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
-        // Calculate size in GB
-        uintmax_t total_size = 0;
-        for (auto& [type, path] : it->second.resolved_paths) {
-            (void)type;
-            total_size += resolved_path_size_bytes(path_from_utf8(path));
-        }
-        double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
-        if (file_size_gb < 1.0)
-        {
-            it->second.size = std::round(file_size_gb * 1000) / 1000;
-        } else if (file_size_gb < 10.0)
-        {
-            it->second.size = std::round(file_size_gb * 100) / 100;
-        } else
-        {
-            it->second.size = std::round(file_size_gb * 10) / 10;
-        }
+        refresh_on_disk_size(it->second);
 
         // Recompute downloaded status for any collections that
         // depend on this model, so the collection reflects component changes
         // without requiring a full cache rebuild.
         for (auto& [name, entry] : models_cache_) {
-            if (!is_collection_recipe(entry.recipe)) continue;
+            if (!is_model_collection_recipe(entry.recipe)) continue;
             if (std::find(entry.components.begin(), entry.components.end(),
                           model_name) == entry.components.end()) {
                 continue;
@@ -2085,7 +2132,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Collections are UI-level entries that orchestrate components.
         // They should always be visible if present in the registry.
-        if (is_collection_recipe(recipe)) {
+        if (is_model_collection_recipe(recipe)) {
             filtered[name] = info;
             continue;
         }
@@ -2333,7 +2380,7 @@ void ModelManager::register_user_model(const std::string& model_name,
     // repo pointer (checkpoint). Persisting `components` here would let a stale
     // local copy shadow a refreshed manifest. A pure inline collection has no
     // checkpoint pointer and keeps its authored components.
-    if (is_collection_recipe(recipe)) {
+    if (is_model_collection_recipe(recipe)) {
         std::string pointer = model_entry.value("checkpoint", std::string());
         if (pointer.empty() && model_entry.contains("checkpoints") &&
             model_entry["checkpoints"].is_object()) {
@@ -2410,6 +2457,20 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Serialize downloads per checkpoint repo. A second request for the same
+    // repo (e.g. a client that timed out and retried /pull while the first
+    // download is still running) must wait for the in-flight download instead
+    // of writing the same .partial files concurrently, which corrupts them and
+    // sends the hash verification into an endless retry-from-scratch loop.
+    std::shared_ptr<std::mutex> repo_lock;
+    {
+        std::lock_guard<std::mutex> guard(download_locks_mutex_);
+        auto& slot = download_locks_[info.checkpoint()];
+        if (!slot) slot = std::make_shared<std::mutex>();
+        repo_lock = slot;
+    }
+    std::lock_guard<std::mutex> download_lock(*repo_lock);
+
     // The backend's ops own the download (shared HF engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
     backends::BackendOpsContext octx;
@@ -2502,7 +2563,7 @@ static json read_cached_collection_manifest(const fs::path& cache_dir) {
             continue;
         }
         if (candidate.is_object() &&
-            is_collection_recipe(JsonUtils::get_or_default<std::string>(candidate, "recipe", ""))) {
+            is_model_collection_recipe(JsonUtils::get_or_default<std::string>(candidate, "recipe", ""))) {
             return candidate;
         }
     }
@@ -2632,9 +2693,9 @@ std::vector<std::string> ModelManager::register_components(const json& component
         // Components must be regular models, not collections (backstop for the
         // HF-manifest path, which does not go through validate_collection_request).
         bool def_is_collection =
-            def.is_object() && is_collection_recipe(def.value("recipe", std::string()));
+            def.is_object() && is_model_collection_recipe(def.value("recipe", std::string()));
         if (def_is_collection ||
-            (model_exists(name) && is_collection_recipe(get_model_info(name).recipe))) {
+            (model_exists(name) && is_model_collection_recipe(get_model_info(name).recipe))) {
             throw std::runtime_error(
                 "Collection components must be regular models, not collections: '" + name + "'");
         }
@@ -2801,11 +2862,11 @@ void ModelManager::download_model(const std::string& model_name,
             );
         }
 
-        if (is_collection_recipe(actual_recipe)) {
+        if (is_model_collection_recipe(actual_recipe)) {
             if (auto err = validate_collection_request(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
-            LOG(INFO, "ModelManager") << "Registering new omni collection: " << model_name << std::endl;
+            LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
         } else {
             // Check that required arguments are provided
             if (actual_checkpoint.empty() || actual_recipe.empty()) {
@@ -2830,7 +2891,7 @@ void ModelManager::download_model(const std::string& model_name,
         // otherwise overwrite registration. Collections have no checkpoint, so
         // the "components in request" flag distinguishes a real overwrite from
         // a cascade pull that should reuse the registered components.
-        bool is_collection_overwrite = is_collection_recipe(actual_recipe) &&
+        bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
                                         model_data.contains("components");
         if (is_collection_overwrite) {
             if (auto err = validate_collection_request(model_name, model_data)) {
@@ -2862,7 +2923,7 @@ void ModelManager::download_model(const std::string& model_name,
     // Track that this call created the registration so component-resolution
     // failures can roll it back instead of leaving a broken entry behind.
     bool collection_registered_this_call = false;
-    if (is_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
+    if (is_model_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
         model_registered = true;
         collection_registered_this_call = true;
@@ -2878,7 +2939,7 @@ void ModelManager::download_model(const std::string& model_name,
     // its `checkpoint` pointer, with the component list rebuilt from the cached
     // manifest (fetched). The one exception: a fetched manifest registers its
     // components as user models so they're routable.
-    if (is_collection_recipe(actual_recipe)) {
+    if (is_model_collection_recipe(actual_recipe)) {
         // Cycle guard: re-entering the same collection on the current call
         // chain means the user registered a circular reference (e.g. user.A
         // includes user.B which includes user.A). Without this, the fan-out
@@ -3633,6 +3694,15 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     LOG(INFO, "ModelManager") << "Repository contains " << repo_files.size() << " files" << std::endl;
 
+    // Backends with a bespoke artifact layout (moonshine = a directory of
+    // files; thinksound = a curated subset that skips redundant quant
+    // variants) select their own download set. This is checked regardless of
+    // whether a GGUF variant was specified, so it also covers bare-repo
+    // checkpoints (main_variant empty) that would otherwise fall through to
+    // "download every file in the repo" below; nullopt = the default paths.
+    auto backend_files =
+        backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
+
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
         // Check if variant is a known non-GGUF file type (safetensors, pth, ckpt)
@@ -3643,11 +3713,6 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
-
-        // Backends with a bespoke artifact layout (moonshine = a directory of
-        // files) select their own download set; nullopt = the default paths.
-        auto backend_files =
-            backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, repo_files);
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3693,6 +3758,13 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
         }
+    } else if (backend_files) {
+        // Bare-repo checkpoint (no GGUF variant), but the backend still wants
+        // a curated subset instead of the entire repository.
+        files_to_download[main_repo_id] = std::move(*backend_files);
+        LOG(INFO, "ModelManager") << info.recipe << ": downloading "
+                                  << files_to_download[main_repo_id].size()
+                                  << " files (bare repo checkpoint)" << std::endl;
     } else {
         // Non-GGUF model (ONNX, etc.): Download all files in repository
         files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
@@ -4217,7 +4289,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
         if (!checkpoint_pointer.empty()) {
             return std::nullopt;  // pointer-only HF-backed collection
         }
-        return std::string("recipe='collection.omni' requires a non-empty 'components' array");
+        return std::string("Collection recipe requires a non-empty 'components' array");
     }
     // An inline collection import carries its component definitions in a `models`
     // array. Every component must be *resolvable*: either it is already
@@ -4262,8 +4334,8 @@ std::optional<std::string> ModelManager::validate_collection_request(
         const json* def = find_inline_def(bare);
         bool is_collection_component =
             (def != nullptr && def->is_object() &&
-             is_collection_recipe(def->value("recipe", std::string()))) ||
-            (model_exists(bare) && is_collection_recipe(get_model_info(bare).recipe));
+             is_model_collection_recipe(def->value("recipe", std::string()))) ||
+            (model_exists(bare) && is_model_collection_recipe(get_model_info(bare).recipe));
         if (is_collection_component) {
             return "Collection components must be regular models, not collections: '" +
                    component_name + "'";
@@ -4289,6 +4361,26 @@ std::optional<std::string> ModelManager::validate_collection_request(
         } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
+        }
+    }
+    if (is_router_collection_recipe(model_data.value("recipe", std::string()))) {
+        RoutingPolicyParseOptions options;
+        options.resolve_component = [this](const std::string& name) -> std::optional<std::string> {
+            try {
+                return resolve_model_name(name);
+            } catch (...) {
+                // Inline collection imports may reference components that are
+                // defined in the same JSON but not registered yet. Keep those
+                // names stable so parser component-role validation can still
+                // compare them against the authored components array.
+                return name;
+            }
+        };
+        try {
+            RoutePolicy policy = parse_route_policy_collection(model_data, options);
+            RoutingPolicyEngine(std::move(policy), ClassifierServices{});
+        } catch (const std::exception& e) {
+            return std::string("Invalid collection.router routing policy: ") + e.what();
         }
     }
     return std::nullopt;

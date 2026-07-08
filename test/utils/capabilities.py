@@ -216,6 +216,51 @@ CAPABILITIES = {
             },
         },
     },
+    "audio_generation": {
+        "thinksound": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ThinkSound-SFX",
+            },
+        },
+        "acestep": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ACE-Step-Music",
+            },
+        },
+    },
+    "model3d": {
+        "trellis": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "TRELLIS-3D",
+            },
+        },
+    },
+    "tts": {
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "tts": "OpenMOSS-TTS",
+                "tts_design": "MOSS-VoiceGen",
+            },
+        },
+    },
     "omni": {
         # Omni "collection" models run a server-side tool-calling loop. The
         # wrapped server here is the collection's chat (planner) component,
