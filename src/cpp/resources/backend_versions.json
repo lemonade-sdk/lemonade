@@ -92,6 +92,11 @@
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"
   },
+  "lemon-mlx": {
+    "metal": "b1045-stable",
+    "rocm": "b1045-stable",
+    "cpu": "b1045-stable"
+  },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
     "gfx1200": "gfx120X",

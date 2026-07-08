@@ -111,9 +111,9 @@ For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provid
 
 <img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
+Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, **MLX**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
-Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
+Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF, ONNX, or MLX models from Hugging Face.
 
 **[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 

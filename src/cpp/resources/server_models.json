@@ -1766,5 +1766,36 @@
             "tool-calling"
         ],
         "size": 62.47
+    },
+    "Qwen3.5-0.8B-MLX": {
+        "checkpoint": "mlx-community/Qwen3.5-0.8B-8bit",
+        "recipe": "lemon-mlx",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 1.0
+    },
+    "Qwen3.6-27B-MLX": {
+        "checkpoint": "mlx-community/Qwen3.6-27B-4bit",
+        "recipe": "lemon-mlx",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 16.1
+    },
+    "Qwen3.6-35B-A3B-MLX": {
+        "checkpoint": "mlx-community/Qwen3.6-35B-A3B-4bit",
+        "recipe": "lemon-mlx",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 20.4
     }
 }
