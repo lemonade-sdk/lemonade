@@ -1629,6 +1629,24 @@
         ],
         "size": 0.354
     },
+    "ThinkSound-SFX": {
+        "checkpoint": "ilintar/thinksound-gguf",
+        "recipe": "thinksound",
+        "suggested": true,
+        "labels": [
+            "audio-generation"
+        ],
+        "size": 6.4
+    },
+    "ACE-Step-Music": {
+        "checkpoint": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+        "recipe": "acestep",
+        "suggested": true,
+        "labels": [
+            "audio-generation"
+        ],
+        "size": 10.5
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",

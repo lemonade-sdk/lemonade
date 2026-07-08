@@ -39,7 +39,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      true,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    nlohmann::json::object(),
+    /*config_extra*/    {{"prefer_system", false}},
 };
 
 }  // namespace fastflowlm

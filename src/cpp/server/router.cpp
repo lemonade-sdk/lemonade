@@ -622,11 +622,12 @@ void Router::load_model(const std::string& model_name,
                 lock.lock();
 
                 retry_server->set_state(ModelState::READY);
+                const auto retry_duration_ms = retry_server->get_load_duration_ms();
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
@@ -1509,6 +1510,23 @@ json Router::image_variations(const json& request) {
         }
         return image_server->image_variations(request);
     });
+}
+
+void Router::audio_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+        if (!audio_server) {
+            throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
+        }
+        audio_server->audio_generations(request, sink);
+    });
+}
+
+std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
 json Router::get_stats() const {

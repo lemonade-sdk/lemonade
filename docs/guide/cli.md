@@ -376,6 +376,18 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
+
+#### ThinkSound (`thinksound` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
+
+#### ACE-Step (`acestep` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
