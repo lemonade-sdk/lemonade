@@ -56,6 +56,11 @@ struct DownloadProgress {
 // Returns bool: true = continue download, false = cancel download
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
+// Parsed collection.router routing policy (defined in routing_policy.h). Only
+// forward-declared here so this widely-included header stays light; ModelInfo
+// holds it behind a shared_ptr, which supports incomplete types.
+struct RoutePolicy;
+
 // Image generation defaults for SD models
 struct ImageDefaults {
     int steps = 20;
@@ -111,6 +116,12 @@ struct ModelInfo {
     // key not consumed by a typed field above lands here, so a new backend can read
     // custom per-model config in load() without editing this shared struct.
     std::map<std::string, json> extras;
+
+    // Parsed routing policy for collection.router models. Populated once when the
+    // models cache is built (from recipe + components + the "routing" block in
+    // extras) so request-time dispatch reads it directly instead of re-parsing.
+    // Null for every other recipe. shared_ptr keeps ModelInfo copies cheap.
+    std::shared_ptr<const RoutePolicy> route_policy;
 
     // Look up an extra field, returning a default when absent.
     template <typename T>

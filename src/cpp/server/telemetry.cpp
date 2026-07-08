@@ -1,15 +1,16 @@
 #include "telemetry.h"
+#include <mbedtls/md.h>
 #include "lemon/runtime_config.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/http_client.h"
 #include "lemon/version.h"
-#include <queue>
 #include <cctype>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
 #include <iomanip>
 #include <mutex>
+#include <queue>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -525,7 +526,7 @@ private:
                             }
                         }
                         LOG(DEBUG, "Telemetry") << "Flush requested. Exporting batch of "
-                                               << batch_spans.size() << " spans..." << std::endl;
+                                                << batch_spans.size() << " spans..." << std::endl;
                         break;
                     }
                     if (queue_.empty()) {
@@ -576,7 +577,7 @@ private:
                         }
 
                         LOG(DEBUG, "Telemetry") << "Batch target size reached or timeout elapsed. Exporting batch of "
-                                               << batch_spans.size() << " spans..." << std::endl;
+                                                << batch_spans.size() << " spans..." << std::endl;
                         break;
                     } else {
                         double remaining_s = timeout_s - elapsed_s;
@@ -859,6 +860,19 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
     } else {
         request_dump_ = truncate_string(request_json.dump(), max_len);
     }
+
+    if (g_request_start_time != std::chrono::steady_clock::time_point()) {
+        auto queue_dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - g_request_start_time
+        ).count();
+        set_attribute("lemon.queue_time_ms", queue_dur);
+    }
+    if (!g_current_auth_token.empty()) {
+        set_attribute("lemon.auth_token_hash", hash_token(g_current_auth_token));
+    }
+    if (!g_current_client_session_id.empty()) {
+        set_attribute("lemon.client_session_id", g_current_client_session_id);
+    }
 }
 
 InferenceSpan::~InferenceSpan() {
@@ -1121,8 +1135,22 @@ static std::string to_lowercase(std::string str) {
 }
 
 void InferenceSpan::submit_span(const nlohmann::json& span_details) {
+    emit_span(span_details);
+
     auto* config = RuntimeConfig::global();
     if (!config || !config->telemetry_enabled()) return;
+
+    nlohmann::json scrubbed_span_details = span_details;
+    if (scrubbed_span_details.contains("attributes") && scrubbed_span_details["attributes"].is_array()) {
+        auto& attrs = scrubbed_span_details["attributes"];
+        for (auto it = attrs.begin(); it != attrs.end(); ) {
+            if (it->is_object() && it->value("key", "") == "lemon.auth_token_hash") {
+                it = attrs.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     std::string endpoint = config->telemetry_otlp_endpoint();
     auto raw_config_headers = config->telemetry_otlp_headers();
@@ -1181,12 +1209,13 @@ void InferenceSpan::submit_span(const nlohmann::json& span_details) {
         }
     }
 
-    get_queue().push(span_details, std::move(endpoint), std::move(headers), std::move(protocol));
+    get_queue().push(std::move(scrubbed_span_details), std::move(endpoint), std::move(headers), std::move(protocol));
 }
 
 std::shared_ptr<InferenceSpan> TelemetryTracker::start_span(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json) {
     auto* config = RuntimeConfig::global();
-    if (config && config->telemetry_enabled()) {
+    bool otel_enabled = config && config->telemetry_enabled();
+    if (otel_enabled || has_span_listeners()) {
         return std::make_shared<InferenceSpan>(span_kind, name, model_name, request_json);
     }
     return nullptr;
@@ -1211,5 +1240,92 @@ void end_llm_span_async(
         span->end_with_success(usage_payload, text_output);
     }
 }
+
+namespace {
+    std::mutex g_listeners_mutex;
+    std::vector<SpanListenerCallback> g_span_listeners;
+} // namespace
+
+void register_span_listener(SpanListenerCallback callback) {
+    std::lock_guard<std::mutex> lock(g_listeners_mutex);
+    g_span_listeners.push_back(std::move(callback));
+}
+
+void unregister_span_listener() {
+    std::lock_guard<std::mutex> lock(g_listeners_mutex);
+    g_span_listeners.clear();
+}
+
+bool has_span_listeners() {
+    std::lock_guard<std::mutex> lock(g_listeners_mutex);
+    return !g_span_listeners.empty();
+}
+
+void emit_span(const nlohmann::json& span_details) {
+    std::vector<SpanListenerCallback> active_listeners;
+    {
+        std::lock_guard<std::mutex> lock(g_listeners_mutex);
+        active_listeners = g_span_listeners;
+    }
+    for (auto& cb : active_listeners) {
+        try {
+            cb(span_details);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Telemetry") << "Span listener failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Telemetry") << "Span listener failed with unknown error" << std::endl;
+        }
+    }
+}
+
+static std::string get_telemetry_salt() {
+    static std::string salt;
+    static std::once_flag salt_once;
+    std::call_once(salt_once, []() {
+        std::random_device rd;
+        std::mt19937_64 gen(rd());
+        std::uniform_int_distribution<uint64_t> dis;
+        std::stringstream ss;
+        ss << std::hex << dis(gen) << dis(gen) << dis(gen) << dis(gen);
+        salt = ss.str();
+    });
+    return salt;
+}
+
+std::string hash_token(const std::string& token) {
+    if (token.empty()) return "";
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (!md_info) return "";
+
+    std::string input = get_telemetry_salt() + token;
+    unsigned char digest[32] = {};
+    mbedtls_md_context_t ctx;
+    mbedtls_md_init(&ctx);
+
+    bool success = false;
+    if (mbedtls_md_setup(&ctx, md_info, 0) == 0) {
+        if (mbedtls_md_starts(&ctx) == 0 &&
+            mbedtls_md_update(&ctx, reinterpret_cast<const unsigned char*>(input.data()), input.size()) == 0 &&
+            mbedtls_md_finish(&ctx, digest) == 0) {
+            success = true;
+        }
+    }
+    mbedtls_md_free(&ctx);
+
+    if (!success) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (unsigned char b : digest) {
+        oss << std::setw(2) << static_cast<unsigned int>(b);
+    }
+    return oss.str();
+}
+
+thread_local std::string g_current_auth_token;
+thread_local std::chrono::steady_clock::time_point g_request_start_time;
+thread_local std::string g_current_client_session_id;
 
 } // namespace lemon::telemetry

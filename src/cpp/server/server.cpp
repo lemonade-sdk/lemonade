@@ -2,6 +2,8 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/routing_classifier_services.h"
+#include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
@@ -38,17 +40,19 @@
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/network_utils.h"
 
 #ifdef _WIN32
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
     #include <arpa/inet.h>   // inet_pton, htons
-    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
+    #include <fcntl.h>
+    #include <netdb.h>       // Crucial for getaddrinfo and addrinfo struct
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <sys/socket.h>
+    #include <sys/types.h>
     #include <unistd.h>
 #endif
 
@@ -490,6 +494,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
+    telemetry::g_request_start_time = std::chrono::steady_clock::now();
+    telemetry::g_current_auth_token = "";
+    if (req.has_header("X-Client-Session-Id")) {
+        telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
+    } else {
+        telemetry::g_current_client_session_id.clear();
+    }
+
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
     // gateway (Critical Invariant #10). It is the only API route outside the
@@ -527,6 +539,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     } catch (const std::exception& e) {
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
+
+    telemetry::g_current_auth_token = auth_token;
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -1241,7 +1255,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
     });
 
     // Handle preflight OPTIONS requests
@@ -1369,52 +1383,6 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
-// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
-// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
-// socket left in TIME_WAIT by a just-exited server is still bindable.
-static bool port_is_available(int family, const std::string& host_ip, int port) {
-    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        return true;  // Can't probe; let the real bind path report any error.
-    }
-    auto close_sock = [&]() {
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
-    };
-
-    int opt = 1;
-#ifdef _WIN32
-    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char*>(&opt), sizeof(opt));
-#else
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-    sockaddr_storage ss{};
-    socklen_t len;
-    if (family == AF_INET) {
-        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
-        a->sin_family = AF_INET;
-        a->sin_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in);
-    } else {
-        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
-        a->sin6_family = AF_INET6;
-        a->sin6_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in6);
-    }
-
-    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
-    close_sock();
-    return available;
-}
-
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1434,9 +1402,9 @@ void Server::run() {
     // it here keeps the error from being buried under later startup logs.
     {
         std::string in_use_ip;
-        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+        if (!ipv4.empty() && utils::is_tcp_listener_active(AF_INET, ipv4, port_)) {
             in_use_ip = ipv4;
-        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+        } else if (!ipv6.empty() && utils::is_tcp_listener_active(AF_INET6, ipv6, port_)) {
             in_use_ip = ipv6;
         }
         if (!in_use_ip.empty()) {
@@ -2071,6 +2039,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     }
 
     if (is_router_collection_recipe(info.recipe)) {
+        // The parser requires a root "version"; surface it alongside "routing"
+        // so an exported router collection can be re-imported through /pull.
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            model_json["version"] = version_it->second;
+        }
         auto routing_it = info.extras.find("routing");
         if (routing_it != info.extras.end() && routing_it->second.is_object()) {
             model_json["routing"] = routing_it->second;
@@ -2215,6 +2189,57 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
+std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
+                                             const ModelInfo& collection_info) {
+    // The policy is parsed once when the models cache is built (ModelManager),
+    // so dispatch just reads it here. A missing policy means the collection
+    // failed to parse at cache-build time; return nullopt so the caller leaves
+    // the request's model field untouched (fail open).
+    if (!collection_info.route_policy) {
+        LOG(WARNING, "Server") << "Router collection '" << collection_info.model_name
+                               << "' has no parsed routing policy" << std::endl;
+        return std::nullopt;
+    }
+
+    // The engine owns its policy (and is rebuilt per request because its
+    // classifier services are bound to the live Router), so copy the shared,
+    // immutable policy into it.
+    RoutePolicy policy = *collection_info.route_policy;
+    ClassifierServices services = make_router_classifier_services(
+        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+
+    RouteContext ctx = build_route_context(request_json, collection_info.model_name);
+    Decision decision = engine.route(ctx, /*want_trace=*/false);
+    return decision.route_to;
+}
+
+void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return;
+    }
+    const std::string requested_model = request_json["model"].get<std::string>();
+    try {
+        if (!model_manager_->model_exists(requested_model)) {
+            return;
+        }
+        ModelInfo info = model_manager_->get_model_info(requested_model);
+        if (!is_router_collection_recipe(info.recipe)) {
+            return;
+        }
+        std::optional<std::string> selected = route_collection_request(request_json, info);
+        if (!selected) {
+            return;
+        }
+        LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
+                            << *selected << "'" << std::endl;
+        request_json["model"] = *selected;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '"
+                               << requested_model << "': " << e.what() << std::endl;
+    }
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2246,6 +2271,18 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     if (is_omni_collection_recipe(info.recipe)) {
                         handle_collection_chat_completions(request_json, info, res);
                         return;
+                    }
+                    if (is_router_collection_recipe(info.recipe)) {
+                        // The recipe is the trigger (no "auto", no /v1/route): run the
+                        // routing engine and rewrite the model to the selected
+                        // candidate, then fall through to normal completion handling.
+                        std::optional<std::string> selected =
+                            route_collection_request(request_json, info);
+                        if (selected) {
+                            LOG(INFO, "Server") << "Router collection '" << requested_model
+                                                << "' -> '" << *selected << "'" << std::endl;
+                            request_json["model"] = *selected;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
@@ -2496,6 +2533,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3916,6 +3957,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3939,7 +3984,9 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = req.body;
+        // Re-serialize so any collection.router model rewrite reaches the backend
+        // (streaming forwards this body verbatim).
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -4254,7 +4301,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_omni_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
@@ -4264,6 +4311,17 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else if (is_router_collection_recipe(info.recipe)) {
+            // Router collections are virtual: each request is dispatched to one
+            // candidate at request time, which lazy-loads it. There is no backend
+            // of the collection's own to bring up, and eagerly loading every
+            // candidate would thrash the model LRU. Acknowledge without loading.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},

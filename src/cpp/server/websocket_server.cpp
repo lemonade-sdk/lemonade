@@ -1,10 +1,10 @@
-#include "lemon/websocket_server.h"
-
 #include "lemon/router.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/websocket_server.h"
+#include "telemetry.h"
 
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <utility>
@@ -33,11 +33,13 @@ WebSocketServer::WebSocketServer(Router* router, const std::string& host, int re
           const char* api_key_env = std::getenv("LEMONADE_API_KEY");
           return api_key_env ? std::string(api_key_env) : std::string();
       }()),
-      admin_api_key_([]() {
-          const char* api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
-          return api_key_env ? std::string(api_key_env) : std::string();
+      admin_api_key_([this]() {
+          const char* admin_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
+          if (admin_key_env) {
+              return std::string(admin_key_env);
+          }
+          return api_key_;
       }()),
-      router_(router),
       session_manager_(std::make_unique<RealtimeSessionManager>(router)) {
     LOG(INFO, "WebSocket") << "Configured port: " << port_ << std::endl;
 }
@@ -65,6 +67,65 @@ int WebSocketServer::ws_callback(struct lws* wsi,
 
     switch (reason) {
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
+            auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
+            if (origin_opt && !origin_opt->empty()) {
+                std::string origin = *origin_opt;
+                std::string origin_host = origin;
+                size_t scheme_end = origin.find("://");
+                if (scheme_end != std::string::npos) {
+                    origin_host = origin.substr(scheme_end + 3);
+                }
+                size_t port_pos = std::string::npos;
+                if (!origin_host.empty() && origin_host[0] == '[') {
+                    size_t bracket_end = origin_host.find(']');
+                    if (bracket_end != std::string::npos) {
+                        port_pos = origin_host.find(':', bracket_end);
+                    }
+                } else {
+                    port_pos = origin_host.find(':');
+                }
+                if (port_pos != std::string::npos) {
+                    origin_host = origin_host.substr(0, port_pos);
+                }
+                size_t path_pos = origin_host.find('/');
+                if (path_pos != std::string::npos) {
+                    origin_host = origin_host.substr(0, path_pos);
+                }
+
+                std::string host_header_val;
+                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
+                if (host_opt && !host_opt->empty()) {
+                    host_header_val = *host_opt;
+                }
+                std::string request_host = host_header_val;
+                size_t r_port_pos = std::string::npos;
+                if (!request_host.empty() && request_host[0] == '[') {
+                    size_t bracket_end = request_host.find(']');
+                    if (bracket_end != std::string::npos) {
+                        r_port_pos = request_host.find(':', bracket_end);
+                    }
+                } else {
+                    r_port_pos = request_host.find(':');
+                }
+                if (r_port_pos != std::string::npos) {
+                    request_host = request_host.substr(0, r_port_pos);
+                }
+                size_t r_path_pos = request_host.find('/');
+                if (r_path_pos != std::string::npos) {
+                    request_host = request_host.substr(0, r_path_pos);
+                }
+
+                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" || origin_host == "[::1]" || origin_host == "::1");
+                if (!is_allowed && !request_host.empty() && origin_host == request_host) {
+                    is_allowed = true;
+                }
+
+                if (!is_allowed) {
+                    LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
+                    return 1;
+                }
+            }
+
             const std::string path = get_request_path(wsi);
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
@@ -80,8 +141,14 @@ int WebSocketServer::ws_callback(struct lws* wsi,
 
             char ip[128] = {0};
             lws_get_peer_simple(wsi, ip, sizeof(ip));
-            LOG(INFO, "WebSocket") << "New connection from: " << ip
-                                   << " (id: " << pss->connection_id << ")" << std::endl;
+            std::string ip_str(ip);
+            if (ip_str.find("ENOTCONN") != std::string::npos || ip_str.empty()) {
+                LOG(DEBUG, "WebSocket") << "Transient connection closed before handshake (id: "
+                                       << pss->connection_id << ")" << std::endl;
+            } else {
+                LOG(INFO, "WebSocket") << "New connection from: " << ip
+                                       << " (id: " << pss->connection_id << ")" << std::endl;
+            }
 
             server->handle_connection(pss->connection_id, wsi);
             break;
@@ -179,14 +246,31 @@ void WebSocketServer::stop() {
         return;
     }
 
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        telemetry_listener_registered_ = false;
+    }
+    telemetry::unregister_span_listener();
+
     running_.store(false);
 
-    if (context_) {
-        lws_cancel_service(context_);
+    struct lws_context* ctx_to_destroy = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        if (context_) {
+            lws_cancel_service(context_);
+            ctx_to_destroy = context_;
+            context_ = nullptr;
+            vhost_ = nullptr;
+        }
     }
 
     if (service_thread_.joinable()) {
         service_thread_.join();
+    }
+
+    if (ctx_to_destroy) {
+        lws_context_destroy(ctx_to_destroy);
     }
 
     // Snapshot and clear under the lock, then close sessions outside it:
@@ -211,11 +295,7 @@ void WebSocketServer::stop() {
         }
     }
 
-    if (context_) {
-        lws_context_destroy(context_);
-        context_ = nullptr;
-        vhost_ = nullptr;
-    }
+
 
     // Close any sockets that were queued for adoption but never picked up
     {
@@ -235,15 +315,23 @@ void WebSocketServer::stop() {
 }
 
 bool WebSocketServer::adopt_socket(intptr_t fd) {
-    if (!running_.load() || !context_) {
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        if (!running_.load() || !context_) {
+            return false;
+        }
     }
     {
         std::lock_guard<std::mutex> lock(adoption_mutex_);
         pending_adoptions_.push(fd);
     }
     // Wake the service thread; adoption happens there (lws is not thread-safe)
-    lws_cancel_service(context_);
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        if (context_) {
+            lws_cancel_service(context_);
+        }
+    }
     return true;
 }
 
@@ -283,6 +371,22 @@ void WebSocketServer::service_loop() {
     }
 }
 
+std::string WebSocketServer::strip_bearer_prefix(const std::string& token) const {
+    static constexpr char bearer_prefix[] = "Bearer ";
+    if (token.compare(0, sizeof(bearer_prefix) - 1, bearer_prefix) == 0) {
+        return token.substr(sizeof(bearer_prefix) - 1);
+    }
+    return token;
+}
+
+std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
+    auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
+    if (!token) {
+        token = get_url_arg(wsi, "api_key");
+    }
+    return token ? strip_bearer_prefix(*token) : "";
+}
+
 bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     if (api_key_.empty()) {
         return true;
@@ -294,17 +398,18 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     }
 
     if (!token) {
-        LOG(WARNING, "WebSocket") << "Rejected unauthenticated websocket connection for "
-                                  << get_request_path(wsi) << std::endl;
+        std::string path = get_request_path(wsi);
+        ConnectionKind kind = classify_path(path);
+        if (kind == ConnectionKind::spans) {
+            return true;
+        }
+        LOG(WARNING, "WebSocket") << "Rejected upgrade for path: " << path << " due to missing credentials" << std::endl;
         return false;
     }
 
-    static constexpr char bearer_prefix[] = "Bearer ";
-    if (token->compare(0, sizeof(bearer_prefix) - 1, bearer_prefix) == 0) {
-        token = token->substr(sizeof(bearer_prefix) - 1);
-    }
+    std::string token_str = strip_bearer_prefix(*token);
 
-    if ((*token != api_key_) && (admin_api_key_.empty() || (*token != admin_api_key_))) {
+    if ((token_str != api_key_) && (admin_api_key_.empty() || (token_str != admin_api_key_))) {
         LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
                                   << get_request_path(wsi) << std::endl;
         return false;
@@ -317,16 +422,28 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
     const std::string path = get_request_path(wsi);
     const auto kind = classify_path(path);
 
+    std::string token_str = extract_token_from_wsi(wsi);
+    auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
+    std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
+
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
         connection_websockets_[connection_id] = wsi;
-        connection_states_[connection_id] = {kind};
+        ConnectionState state;
+        state.kind = kind;
+        state.authenticated_token = token_str;
+        state.authenticated_token_hash = telemetry::hash_token(token_str);
+        state.client_session_id = client_session_id;
+        state.authenticated = api_key_.empty() || (!token_str.empty() && (token_str == api_key_ || token_str == admin_api_key_));
+        connection_states_[connection_id] = state;
     }
 
     if (kind == ConnectionKind::realtime) {
         handle_realtime_connection(connection_id, wsi);
     }
     // Logs connections wait for a "logs.subscribe" message before streaming.
+
+    update_telemetry_listener_registration();
 }
 
 void WebSocketServer::handle_realtime_connection(
@@ -381,6 +498,7 @@ void WebSocketServer::handle_log_subscribe(const std::string& connection_id,
 void WebSocketServer::handle_message(const std::string& connection_id, const std::string& msg) {
     ConnectionKind kind;
     std::string session_id;
+    bool is_authenticated = false;
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
@@ -390,6 +508,7 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
         }
         kind = it->second.kind;
         session_id = it->second.realtime_session_id;
+        is_authenticated = it->second.authenticated;
     }
 
     json request;
@@ -404,6 +523,89 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
     }
 
     const std::string msg_type = request.value("type", "");
+
+    if (!is_authenticated) {
+        if (msg_type == "auth") {
+            std::string token = request.value("token", "");
+            if (token.empty()) {
+                token = request.value("api_key", "");
+            }
+            token = strip_bearer_prefix(token);
+
+            bool is_valid = false;
+            if (api_key_.empty()) {
+                is_valid = true;
+            } else if (token == api_key_ || (!admin_api_key_.empty() && token == admin_api_key_)) {
+                is_valid = true;
+            }
+
+            if (is_valid) {
+                {
+                    std::lock_guard<std::mutex> lock(connections_mutex_);
+                    auto state_it = connection_states_.find(connection_id);
+                    if (state_it != connection_states_.end()) {
+                        state_it->second.authenticated_token = token;
+                        state_it->second.authenticated_token_hash = telemetry::hash_token(token);
+                        state_it->second.authenticated = true;
+                        if (request.contains("client_session_id")) {
+                            state_it->second.client_session_id = request.value("client_session_id", "");
+                        }
+                    }
+                }
+                send_json(connection_id, {{"type", "auth.ok"}});
+                update_telemetry_listener_registration();
+            } else {
+                send_json(connection_id, {
+                    {"type", "error"},
+                    {"error", {{"message", "Invalid API key"}, {"type", "invalid_request_error"}}}
+                });
+            }
+        } else {
+            send_json(connection_id, {
+                {"type", "error"},
+                {"error", {{"message", "Unauthorized. Please authenticate first by sending an auth message."}, {"type", "invalid_request_error"}}},
+            });
+        }
+        return;
+    }
+
+    if (msg_type == "auth") {
+        std::string token = request.value("token", "");
+        if (token.empty()) {
+            token = request.value("api_key", "");
+        }
+        token = strip_bearer_prefix(token);
+
+        bool is_valid = false;
+        if (api_key_.empty()) {
+            is_valid = true;
+        } else if (token == api_key_ || (!admin_api_key_.empty() && token == admin_api_key_)) {
+            is_valid = true;
+        }
+
+        if (is_valid) {
+            {
+                std::lock_guard<std::mutex> lock(connections_mutex_);
+                auto state_it = connection_states_.find(connection_id);
+                if (state_it != connection_states_.end()) {
+                    state_it->second.authenticated_token = token;
+                    state_it->second.authenticated_token_hash = telemetry::hash_token(token);
+                    state_it->second.authenticated = true;
+                    if (request.contains("client_session_id")) {
+                        state_it->second.client_session_id = request.value("client_session_id", "");
+                    }
+                }
+            }
+            send_json(connection_id, {{"type", "auth.ok"}});
+            update_telemetry_listener_registration();
+        } else {
+            send_json(connection_id, {
+                {"type", "error"},
+                {"error", {{"message", "Invalid API key"}, {"type", "invalid_request_error"}}}
+            });
+        }
+        return;
+    }
 
     if (kind == ConnectionKind::logs) {
         if (msg_type == "logs.subscribe") {
@@ -462,6 +664,8 @@ void WebSocketServer::handle_close(const std::string& connection_id) {
     if (!state.log_subscriber_id.empty()) {
         LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
     }
+
+    update_telemetry_listener_registration();
 }
 
 void WebSocketServer::handle_writable(const std::string& connection_id, struct lws* wsi) {
@@ -538,6 +742,9 @@ WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string
     if (stripped == "/logs/stream") {
         return ConnectionKind::logs;
     }
+    if (stripped == "/spans/stream" || stripped == "/traces/stream") {
+        return ConnectionKind::spans;
+    }
     return ConnectionKind::invalid;
 }
 
@@ -557,8 +764,11 @@ void WebSocketServer::send_json(const std::string& connection_id, const json& ms
                      connection_id.c_str(), e.what());
     }
 
-    if (context_) {
-        lws_cancel_service(context_);
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        if (context_) {
+            lws_cancel_service(context_);
+        }
     }
 }
 
@@ -578,6 +788,131 @@ void WebSocketServer::schedule_pending_writes() {
             lws_callback_on_writable(wsi);
         }
     }
+}
+
+void WebSocketServer::update_telemetry_listener_registration() {
+    bool has_active_spans_conn = false;
+    bool should_register = false;
+    bool should_unregister = false;
+
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        for (const auto& [conn_id, state] : connection_states_) {
+            if (state.kind == ConnectionKind::spans && state.authenticated) {
+                has_active_spans_conn = true;
+                break;
+            }
+        }
+
+        if (has_active_spans_conn && !telemetry_listener_registered_) {
+            telemetry_listener_registered_ = true;
+            should_register = true;
+        } else if (!has_active_spans_conn && telemetry_listener_registered_) {
+            telemetry_listener_registered_ = false;
+            should_unregister = true;
+        }
+    }
+
+    if (should_register) {
+        telemetry::register_span_listener([this](const json& span) {
+            this->broadcast_span(span);
+        });
+    } else if (should_unregister) {
+        telemetry::unregister_span_listener();
+    }
+}
+
+void WebSocketServer::broadcast_span(const json& span) {
+    std::string target_token_hash;
+    std::string span_session_id;
+    if (span.contains("attributes") && span["attributes"].is_array()) {
+        for (const auto& attr : span["attributes"]) {
+            if (attr.is_object()) {
+                std::string key = attr.value("key", "");
+                if (key == "lemon.auth_token_hash") {
+                    if (attr.contains("value") && attr["value"].contains("stringValue")) {
+                        target_token_hash = attr["value"]["stringValue"].get<std::string>();
+                    }
+                } else if (key == "lemon.client_session_id") {
+                    if (attr.contains("value") && attr["value"].contains("stringValue")) {
+                        span_session_id = attr["value"]["stringValue"].get<std::string>();
+                    }
+                }
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    for (const auto& [conn_id, state] : connection_states_) {
+        if (state.kind == ConnectionKind::spans) {
+            if (!state.authenticated) {
+                continue;
+            }
+
+            bool is_admin = !admin_api_key_.empty() && (state.authenticated_token == admin_api_key_);
+            bool matches_token = !target_token_hash.empty() && (state.authenticated_token_hash == target_token_hash);
+            bool guest_allowed = target_token_hash.empty() && api_key_.empty();
+
+            if (is_admin || matches_token || guest_allowed) {
+                bool is_guest = !is_admin && !matches_token;
+                if (is_guest) {
+                    if (state.client_session_id.empty() || span_session_id.empty() || state.client_session_id != span_session_id) {
+                        continue;
+                    }
+                }
+
+                try {
+                    // Deep clone to strip sensitive auth token hash from broadcast
+                    json filtered_span = span;
+                    if (filtered_span.contains("attributes") && filtered_span["attributes"].is_array()) {
+                        auto& attrs = filtered_span["attributes"];
+                        for (auto it = attrs.begin(); it != attrs.end(); ) {
+                            if (it->is_object() && it->value("key", "") == "lemon.auth_token_hash") {
+                                it = attrs.erase(it);
+                            } else {
+                                ++it;
+                            }
+                        }
+                    }
+
+                    std::string payload = filtered_span.dump(-1, ' ', false, json::error_handler_t::replace);
+                    auto it = connection_websockets_.find(conn_id);
+                    if (it != connection_websockets_.end() && it->second != nullptr) {
+                        message_queues_[conn_id].push(std::move(payload));
+                        writable_dispatch_pending_.store(true);
+                    }
+                } catch (const std::exception& e) {
+                    std::fprintf(stderr, "WebSocket broadcast_span failed for %s: %s\n",
+                                 conn_id.c_str(), e.what());
+                }
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(context_mutex_);
+        if (context_) {
+            lws_cancel_service(context_);
+        }
+    }
+}
+
+bool WebSocketServer::has_span_listeners() {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    for (const auto& [conn_id, state] : connection_states_) {
+        if (state.kind == ConnectionKind::spans) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WebSocketServer::is_websocket_path(const std::string& path) {
+    return classify_path(path) != ConnectionKind::invalid;
+}
+
+bool is_websocket_endpoint(const std::string& path) {
+    return WebSocketServer::is_websocket_path(path);
 }
 
 } // namespace lemon
