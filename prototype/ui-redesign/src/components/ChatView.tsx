@@ -59,6 +59,33 @@ const ACTIVE_KEY = 'active_conversation';
 const PERSIST_KEY = 'persist_conversations';
 const STORAGE_VERSION = 3;
 
+const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
+const CHAT_LOGS_DEFAULT_WIDTH = 520;
+const CHAT_LOGS_MIN_WIDTH = 340;
+const CHAT_LOGS_MAX_WIDTH = 920;
+
+function maxChatLogsWidthForViewport(railExpanded = true): number {
+  if (typeof window === 'undefined') return CHAT_LOGS_MAX_WIDTH;
+  const railWidth = railExpanded ? 280 : 56;
+  const viewportMax = window.innerWidth - railWidth - 380;
+  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, viewportMax));
+}
+
+function clampChatLogsWidth(width: number, railExpanded = true): number {
+  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
+}
+
+function loadChatLogsWidth(scope: string): number {
+  if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
+  try {
+    const stored = Number(window.localStorage.getItem(scopedKey(scope, CHAT_LOGS_WIDTH_KEY)));
+    const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
+    return clampChatLogsWidth(width, true);
+  } catch {
+    return clampChatLogsWidth(CHAT_LOGS_DEFAULT_WIDTH, true);
+  }
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -578,6 +605,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   });
   const presetToolsSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
+  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
@@ -601,6 +629,65 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(scopedKey(storageScope, CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
+    } catch {
+      // Non-critical: inline log width persistence is best-effort only.
+    }
+  }, [chatLogsWidth, storageScope]);
+
+  const chatLayoutStyle = useMemo(() => ({
+    '--chat-logs-width': `${chatLogsWidth}px`,
+  } as React.CSSProperties), [chatLogsWidth]);
+
+  const handleChatLogsResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 980) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = chatLogsWidth;
+    const handle = event.currentTarget;
+    try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      // The handle sits on the left edge of the logs panel: dragging left makes
+      // the panel wider, dragging right makes it narrower.
+      const nextWidth = clampChatLogsWidth(startWidth - (moveEvent.clientX - startX), railExpanded);
+      setChatLogsWidth(nextWidth);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.classList.remove('is-resizing-chat-logs');
+      try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    };
+
+    document.body.classList.add('is-resizing-chat-logs');
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize, { once: true });
+    window.addEventListener('pointercancel', stopResize, { once: true });
+  }, [chatLogsWidth, railExpanded]);
+
+  const handleChatLogsResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 48 : 20;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setChatLogsWidth(width => clampChatLogsWidth(width + step, railExpanded));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setChatLogsWidth(width => clampChatLogsWidth(width - step, railExpanded));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setChatLogsWidth(CHAT_LOGS_MIN_WIDTH);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setChatLogsWidth(clampChatLogsWidth(CHAT_LOGS_MAX_WIDTH, railExpanded));
+    }
+  }, [railExpanded]);
 
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name === currentModel) || null,
@@ -1868,7 +1955,10 @@ ${finalText}`
 
   return (
     <>
-      <div className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}>
+      <div
+        className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}
+        style={showInlineLogs ? chatLayoutStyle : undefined}
+      >
       {/* Conversation rail */}
       <aside className="rail">
         <div className="rail__head">
@@ -2121,6 +2211,18 @@ ${finalText}`
 
       {showInlineLogs && (
         <aside className="chat__logs" aria-label="Lemonade logs next to chat">
+          <div
+            className="chat__logs-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize logs panel"
+            aria-valuemin={CHAT_LOGS_MIN_WIDTH}
+            aria-valuemax={CHAT_LOGS_MAX_WIDTH}
+            aria-valuenow={chatLogsWidth}
+            tabIndex={0}
+            onPointerDown={handleChatLogsResizeStart}
+            onKeyDown={handleChatLogsResizeKeyDown}
+          />
           <LogViewer />
         </aside>
       )}

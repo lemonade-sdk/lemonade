@@ -3125,6 +3125,64 @@ input, textarea {
   font-size: var(--text-xs);
 }
 
+.backends__unsupported {
+  margin: 0 var(--space-8) var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.backends__unsupported-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-base);
+  color: var(--text-secondary);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+.backends__unsupported-toggle:hover,
+.backends__unsupported-toggle:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.backends__unsupported-toggle:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -2px;
+}
+
+.backends__unsupported-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.backends__unsupported-meta {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.matrix--unsupported {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  flex: none;
+  max-width: none;
+  max-height: min(42vh, 460px);
+}
+
 /* Cell within matrix */
 .cell {
   display: flex;
@@ -3818,6 +3876,9 @@ input, textarea {
   .backends__head { padding: var(--space-5) var(--space-4) var(--space-3); }
   .backends__title { flex-direction: column; gap: var(--space-2); }
   .matrix { margin: var(--space-3) var(--space-4); }
+  .backends__unsupported { margin: 0 var(--space-4) var(--space-3); }
+  .matrix--unsupported { margin: 0; }
+  .backends__unsupported-toggle { align-items: flex-start; flex-direction: column; }
   .matrix th, .matrix td { padding: var(--space-3); }
 }
 
@@ -6225,22 +6286,62 @@ input, textarea {
 }
 
 .chat--with-logs {
-  grid-template-columns: var(--rail-collapsed) minmax(0, 1fr) minmax(340px, 34vw);
+  grid-template-columns: var(--rail-collapsed) minmax(320px, 1fr) minmax(340px, var(--chat-logs-width, 34vw));
   grid-template-areas:
     "rail main logs"
     "rail composer logs";
 }
 
 .chat--with-logs.rail-expanded {
-  grid-template-columns: var(--rail-expanded) minmax(0, 1fr) minmax(360px, 34vw);
+  grid-template-columns: var(--rail-expanded) minmax(320px, 1fr) minmax(360px, var(--chat-logs-width, 34vw));
 }
 
 .chat__logs {
   grid-area: logs;
+  position: relative;
   min-width: 0;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface-1) 90%, transparent);
   overflow: hidden;
+}
+
+.chat__logs-resizer {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.chat__logs-resizer::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.chat__logs-resizer:hover::after,
+.chat__logs-resizer:focus-visible::after,
+.is-resizing-chat-logs .chat__logs-resizer::after {
+  background: var(--accent-fg);
+}
+
+.chat__logs-resizer:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -2px;
+}
+
+.is-resizing-chat-logs {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .chat__logs .logs-view {
@@ -6392,6 +6493,29 @@ input, textarea {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  cursor: pointer;
+  border-style: solid;
+}
+
+.composer__mode-badge--interactive:hover,
+.composer__mode-badge--interactive:focus-visible,
+.composer__tools-toggle:hover,
+.composer__tools-toggle:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-fg) 18%, transparent);
+}
+
+.composer__tools-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.composer__preset-badge {
+  cursor: default;
+  opacity: 0.88;
 }
 
 .composer__bar {
@@ -6530,6 +6654,10 @@ input, textarea {
     min-height: 280px;
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
+  }
+
+  .chat__logs-resizer {
+    display: none;
   }
 
   .composer__model-button {
@@ -7351,6 +7479,21 @@ input, textarea {
   overflow: auto;
 }
 
+.logs-virtual {
+  min-width: max-content;
+}
+
+.logs-virtual > div {
+  right: auto !important;
+  min-width: 100%;
+  width: max-content;
+}
+
+.logs-line {
+  min-width: 100%;
+  width: max-content;
+}
+
 .logs-line--continuation .logs-line__time,
 .logs-line--continuation .logs-line__badge {
   opacity: 0.45;
@@ -7366,8 +7509,9 @@ input, textarea {
 .logs-line__text {
   white-space: pre;
   word-break: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
+  flex: 0 0 auto;
 }
 
 .detail__tts-playback {
@@ -7976,7 +8120,7 @@ input, textarea {
 
 .manager--detail {
   display: grid;
-  grid-template-columns: 232px 280px minmax(0, 1fr);
+  grid-template-columns: 232px var(--model-list-panel-width, 360px) minmax(0, 1fr);
   /* Override the `auto 1fr` rows inherited from `.manager` so the panes are
      constrained to the viewport height. Without this, the panes land in the
      `auto` row and grow to content height — making the left rail (categories,
@@ -7987,6 +8131,46 @@ input, textarea {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.manager__model-list-resizer {
+  position: absolute;
+  left: calc(232px + var(--model-list-panel-width, 360px) - 5px);
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 6;
+  touch-action: none;
+}
+
+.manager__model-list-resizer::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.manager__model-list-resizer:hover::after,
+.manager__model-list-resizer:focus-visible::after,
+.is-resizing-model-list .manager__model-list-resizer::after {
+  background: var(--accent-fg);
+}
+
+.manager__model-list-resizer:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -2px;
+}
+
+.is-resizing-model-list {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Responsive nav-rail toggle — hidden on wide viewports (rail always shown) */
@@ -9288,6 +9472,8 @@ input, textarea {
 
 /* ── Responsive: list-first → tap-to-detail on narrow viewports ── */
 @media (max-width: 700px) {
+  .manager__model-list-resizer { display: none; }
+
   /* Remove grid; each panel takes full width/height */
   .manager--detail {
     display: block;
@@ -11813,4 +11999,11 @@ input, textarea {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: var(--weight-bold);
+}
+
+/* Keep the optional unsupported backend matrix aligned with the main backend matrix. */
+.matrix.matrix--unsupported {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
