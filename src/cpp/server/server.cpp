@@ -6,6 +6,7 @@
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
+#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -840,6 +841,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
     });
+
+    // Server-side MCP client host foundation (admin-gated through the existing
+    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
+    // endpoints via the normal Lemonade server connection.
+    register_mcp_client_routes(web_server, cache_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
