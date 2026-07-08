@@ -100,6 +100,10 @@ int main() {
     // plain bin\amdhip64.dll used by 5.x/6.x.
     const fs::path valid_root_versioned = tmp / "valid_versioned";
     write_stub(valid_root_versioned / "bin" / "amdhip64_7.dll");
+
+    // A non-version suffix must not be mistaken for the HIP runtime.
+    const fs::path bogus_suffix_root = tmp / "bogus_suffix";
+    write_stub(bogus_suffix_root / "bin" / "amdhip64_backup.dll");
 #endif
 
     // pick_rocm_root_candidates: pure selection of absolute-path lines from
@@ -160,6 +164,16 @@ int main() {
         auto root = BackendUtils::resolve_rocm_root(&explicit_source);
         check(root.has_value() && fs::equivalent(*root, valid_root_versioned),
               "ROCM_PATH with version-suffixed amdhip64_7.dll resolves");
+        check(explicit_source,
+              "ROCM_PATH with version-suffixed amdhip64_7.dll is marked explicit");
+    }
+
+    {
+        set_rocm_path(bogus_suffix_root.string());
+        std::error_code ec;
+        auto root = BackendUtils::resolve_rocm_root(nullptr);
+        check(!root.has_value() || !fs::equivalent(*root, bogus_suffix_root, ec),
+              "ROCM_PATH with amdhip64_backup.dll does not resolve to itself");
     }
 #endif
 
