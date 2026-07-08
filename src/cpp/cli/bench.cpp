@@ -512,6 +512,13 @@ static void extract_timings_into_result(const json& timings, BenchRunResult& res
     }
 }
 
+static void extract_mem_use_into_result(lemonade::LemonadeClient& client, BenchRunResult& result) {
+        double vram_after = -1.0, mem_after = -1.0;
+        query_system_stats(client, vram_after, mem_after);
+        result.vram_gb = vram_after;
+        result.memory_gb = mem_after;
+}
+
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
@@ -593,12 +600,8 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
     }
 
     // Query memory after
-    if (memory_tracking) {
-        double vram_after = -1.0, mem_after = -1.0;
-        query_system_stats(client, vram_after, mem_after);
-        result.vram_gb = vram_after;
-        result.memory_gb = mem_after;
-    }
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
 
     // Validate: if all key metrics are zero the run failed server-side
     // (e.g. context size mismatch, model error). VRAM is excluded — it's
@@ -686,13 +689,10 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
         return result;  // success stays false
     }
 
-    // Post‑run memory tracking (if enabled)
-    if (memory_tracking) {
-        double vram_after = -1.0, mem_after = -1.0;
-        query_system_stats(client, vram_after, mem_after);
-        result.vram_gb = vram_after;
-        result.memory_gb = mem_after;
-    }
+    // Query memory after
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
+
 
     // Success flag is already true by default if we reach here
     result.success = true;
