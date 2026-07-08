@@ -286,8 +286,9 @@ jobs:
           cmake --build --preset default --target test_routing_policy_store
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_network_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -596,8 +597,9 @@ jobs:
           cmake --build --preset default --target test_routing_policy_store
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_network_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -1491,34 +1493,6 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
-      - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
-        run: |
-          set -e
-          FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
-          FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
-          FLM_TEMP_DIR="$RUNNER_TEMP/flm-extract"
-          mkdir -p "$FLM_TEMP_DIR"
-          echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
-          curl -L -o "$RUNNER_TEMP/fastflowlm.deb" "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
-          dpkg-deb -x "$RUNNER_TEMP/fastflowlm.deb" "$FLM_TEMP_DIR"
-          # FLM resolves xclbins under bin/xclbins in this CI layout, while the
-          # package stores them under share/flm/xclbins. Create a compat link.
-          if [ ! -e "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins" ] && [ -d "$FLM_TEMP_DIR/opt/fastflowlm/share/flm/xclbins" ]; then
-            mkdir -p "$FLM_TEMP_DIR/opt/fastflowlm/bin"
-            ln -s ../share/flm/xclbins "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins"
-          fi
-          # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
-          FLM_BIN=$(find "$FLM_TEMP_DIR" -name flm -type f | head -1)
-          FLM_CONFIG=$(find "$FLM_TEMP_DIR" -name "model_list.json" -type f | head -1)
-          chmod +x "$FLM_BIN"
-          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
-          echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
-          export PATH="$(dirname "$FLM_BIN"):$PATH"
-          export FLM_CONFIG_PATH="$FLM_CONFIG"
-          rm "$RUNNER_TEMP/fastflowlm.deb"
-          flm version
-
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
@@ -1527,6 +1501,13 @@ jobs:
           # network isolation), so the default port can be held by a concurrent
           # job. Use a job-unique free port to avoid the collision.
           port: auto
+
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        run: |
+          set -e
+          echo "Installing FLM backend for CI inference tests..."
+          lemonade backends install flm:npu
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv

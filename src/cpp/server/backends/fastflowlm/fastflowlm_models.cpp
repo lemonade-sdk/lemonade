@@ -13,6 +13,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/process_manager.h"
 
@@ -582,29 +583,55 @@ std::string flm_version() {
 }
 
 
-std::string find_flm_executable() {
+std::string find_flm_in_path() {
+    // Only check PATH when prefer_system is enabled via config.json.
+    bool prefer_system = false;
+    if (auto* cfg = lemon::RuntimeConfig::global()) {
+        prefer_system = cfg->backend_bool("flm", "prefer_system");
+    }
+    if (!prefer_system) {
+        return "";
+    }
+
 #ifdef _WIN32
-    // On Windows, only check the Lemonade install directory (auto-installed zip).
-    // No system PATH fallback - FLM should be installed via install_backend().
-    std::string install_dir = (fs::path(lemon::utils::get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
+    const std::string binary_name = "flm.exe";
+#else
+    const std::string binary_name = "flm";
+#endif
+    return lemon::utils::find_executable_in_path(binary_name);
+}
+
+std::string find_flm_executable() {
+    // Single FLM resolver: config bin override, then system PATH, then the
+    // Lemonade-managed install dir (portable asset on Linux, zip on Windows).
+    std::string override_path = BackendUtils::find_external_backend_binary("flm", "npu");
+    if (!override_path.empty()) {
+        return override_path;
+    }
+
+    std::string path = find_flm_in_path();
+    if (!path.empty()) {
+        return path;
+    }
+
+#ifdef _WIN32
+    const std::string binary_name = "flm.exe";
+#else
+    const std::string binary_name = "flm";
+#endif
+    std::string install_dir =
+        (fs::path(lemon::utils::get_downloaded_bin_dir()) / "flm" / "npu")
+            .make_preferred().string();
     if (fs::exists(install_dir)) {
         for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
-            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
-                std::string path = entry.path().string();
-                if (lemon::utils::is_safe_executable_path(path)) {
-                    return path;
+            if (entry.is_regular_file() && entry.path().filename().string() == binary_name) {
+                if (lemon::utils::is_safe_executable_path(entry.path().string())) {
+                    return entry.path().string();
                 }
             }
         }
     }
     return "";
-#else
-    // Walk PATH directly — minimal Fedora/openSUSE containers do not ship `which`.
-    if (!lemon::utils::find_executable_in_path("flm").empty()) {
-        return "flm";
-    }
-    return "";
-#endif
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {

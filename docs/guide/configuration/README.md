@@ -48,7 +48,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
-    "args": ""
+    "args": "",
+    "prefer_system": false
   },
   "global_timeout": 600,
   "host": "localhost",
@@ -199,6 +200,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `args` | "" | Custom arguments to pass to flm serve |
+| `prefer_system` | false | Prefer system-installed FLM (on PATH) over auto-installed portable binary |
 
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |

@@ -102,6 +102,9 @@ static void test_directory_watcher_reload() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     doc["routing"]["rules"][0]["route_to"] = "Qwen3-8B-GGUF";
+    // Delete first to trigger a directory entry change. macOS's kqueue-based
+    // DirectoryWatcher monitors the directory fd and does not detect inline writes.
+    fs::remove(policy_path);
     write_json(policy_path, doc);
 
     std::shared_ptr<const lemon::RoutingPolicyEngine> next_engine;
