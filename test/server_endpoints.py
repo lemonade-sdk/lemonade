@@ -228,6 +228,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
 
+        # telemetry should have enabled, and captures iff enabled is True
+        self.assertIn("telemetry", data)
+        telemetry = data["telemetry"]
+        self.assertIn("enabled", telemetry)
+        self.assertIsInstance(telemetry["enabled"], bool)
+        if telemetry["enabled"]:
+            self.assertIn("captures", telemetry)
+            self.assertIsInstance(telemetry["captures"], list)
+            for capture in telemetry["captures"]:
+                self.assertIn(capture, ["inputs", "outputs", "thinking"])
+        else:
+            self.assertNotIn("captures", telemetry)
+
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
@@ -2206,6 +2219,71 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021j_register_user_collection_with_system_prompt(self):
+        """A registered user collection round-trips an optional system_prompt.
+
+        Verifies the per-collection override path documented in
+        docs/dev/lemonade-omni.md: a custom omni model can ship its own
+        system_prompt template; the global default in toolDefinitions.json is
+        the fallback. The wire surface must echo the field on GET /models/{id}
+        and on /models?show_all=true so the desktop app can read it back when
+        re-opening the Omni Model editor.
+        """
+        canonical_name = f"user.PromptColl-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+        prompt_template = (
+            "You are a focused tester. Tools available:\n\n"
+            "{tool_list}\n\n"
+            "Use them sparingly.{tool_guidance}"
+        )
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "system_prompt": prompt_template,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            single = requests.get(
+                f"{self.base_url}/models/{public_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(single.status_code, 200)
+            self.assertEqual(
+                single.json().get("system_prompt"),
+                prompt_template,
+                "GET /models/{id} must echo the registered system_prompt verbatim.",
+            )
+
+            listing = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(listing.status_code, 200)
+            entry = next(
+                (m for m in listing.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.get("system_prompt"), prompt_template)
+
+            print(f"[OK] system_prompt round-tripped for {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021k_register_collection_missing_components(self):
         """Collections referencing unknown components are rejected with 400."""
         canonical_name = f"user.BadColl-{uuid.uuid4().hex[:8]}"
@@ -2747,6 +2825,459 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def test_021z_router_collection_chat_dispatch(self):
+        """A collection.router model flips /chat/completions into engine mode
+        (#2385): the recipe is the trigger — no "auto", no /v1/route. The
+        routing engine selects a candidate and the request is dispatched to it,
+        returning a real completion produced by the engine-selected model."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterColl-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            # Register a collection.router whose only candidate is the test
+            # model. Both the keyword rule and the fail-open default resolve to
+            # ENDPOINT_TEST_MODEL, so any input dispatches there.
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "version": "1",
+                    "recipe": "collection.router",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "routing": {
+                        "candidates": [ENDPOINT_TEST_MODEL],
+                        "default_model": ENDPOINT_TEST_MODEL,
+                        "rules": [
+                            {
+                                "id": "code-to-test-model",
+                                "match": {"keywords_any": ["code", "def "]},
+                                "route_to": ENDPOINT_TEST_MODEL,
+                            }
+                        ],
+                    },
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            # Addressing the collection.router model by name must return a real
+            # completion produced by the engine-selected candidate.
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertIn("choices", body)
+            self.assertTrue(
+                body["choices"], "engine-routed completion must have choices"
+            )
+            message = body["choices"][0].get("message", {})
+            self.assertIsInstance(message.get("content"), str)
+            # The response reflects the engine-selected candidate, not the
+            # collection.router alias that was addressed.
+            self.assertNotEqual(
+                body.get("model"),
+                public_name,
+                "response model must be the routed candidate, not the router alias",
+            )
+            print(f"[OK] collection.router dispatched {public_name} -> completion")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
+        """Register a collection.router whose single candidate is
+        ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull
+        payload (e.g. to drop "version" for the negative tests)."""
+        if routing is None:
+            routing = {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "code-to-test-model",
+                        "match": {"keywords_any": ["code", "def "]},
+                        "route_to": ENDPOINT_TEST_MODEL,
+                    }
+                ],
+            }
+        payload = {
+            "model_name": canonical_name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [ENDPOINT_TEST_MODEL],
+            "routing": routing,
+        }
+        if overrides is not None:
+            payload.update(overrides)
+            # Allow negative tests to remove a required key entirely.
+            for key, value in list(payload.items()):
+                if value is None:
+                    del payload[key]
+        return requests.post(
+            f"{self.base_url}/pull", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+    def _cleanup_router_collection(self, canonical_name):
+        for endpoint, body in (
+            ("/unload", {"model_name": ENDPOINT_TEST_MODEL}),
+            ("/delete", {"model_name": canonical_name}),
+        ):
+            try:
+                requests.post(
+                    f"{self.base_url}{endpoint}", json=body, timeout=TIMEOUT_DEFAULT
+                )
+            except Exception:
+                pass
+
+    def test_021za_router_collection_completions_dispatch(self):
+        """/completions dispatches a collection.router request to the
+        engine-selected candidate (#2385), same as /chat/completions."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterCompl-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            resp = requests.post(
+                f"{self.base_url}/completions",
+                json={
+                    "model": public_name,
+                    "prompt": "Please write code for me",
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertIn("choices", body)
+            self.assertTrue(
+                body["choices"], "engine-routed completion must have choices"
+            )
+            self.assertIsInstance(body["choices"][0].get("text"), str)
+            self.assertNotEqual(
+                body.get("model"),
+                public_name,
+                "response model must be the routed candidate, not the router alias",
+            )
+            print(f"[OK] collection.router /completions dispatched {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zb_router_collection_responses_dispatch(self):
+        """/responses (non-streaming) dispatches a collection.router request to
+        the engine-selected candidate (#2385)."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterResp-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            resp = requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": "Please write code for me",
+                    "max_output_tokens": 16,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertNotIn("error", body, resp.text)
+            # The response reflects the routed candidate, not the router alias.
+            if "model" in body:
+                self.assertNotEqual(body.get("model"), public_name)
+            print(f"[OK] collection.router /responses dispatched {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zc_router_collection_responses_streaming_dispatch(self):
+        """/responses with stream=true dispatches a collection.router request to
+        the engine-selected candidate and streams SSE events (#2385). Exercises
+        the request re-serialization that carries the rewritten model to the
+        backend on the streaming path."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterRespStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": "Please write code for me",
+                    "max_output_tokens": 16,
+                    "stream": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self.assertEqual(resp.status_code, 200, resp.text)
+                data_events = []
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8", errors="replace")
+                    if line.startswith("data:"):
+                        data_events.append(line[len("data:") :].strip())
+            self.assertTrue(
+                data_events,
+                "streaming /responses must emit at least one SSE data event",
+            )
+            blob = "\n".join(data_events)
+            self.assertNotIn(
+                '"error"',
+                blob,
+                f"streaming /responses must not error: {blob[:500]}",
+            )
+            print(
+                f"[OK] collection.router /responses (streaming) dispatched {public_name}"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zd_router_collection_survives_cache_rebuild(self):
+        """The parsed routing policy survives a models-cache rebuild (#2385):
+        the source-declared version and routing block are persisted and
+        re-parsed, so dispatch still works after the cache is invalidated by an
+        unrelated /pull."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_a = f"user.RouterRebuildA-{suffix}"
+        canonical_b = f"user.RouterRebuildB-{suffix}"
+        public_a = canonical_a[5:]
+        try:
+            resp_a = self._pull_router_collection(canonical_a)
+            self.assertEqual(resp_a.status_code, 200, resp_a.text)
+            # A second /pull invalidates the models cache; the next request that
+            # touches the cache rebuilds it and must re-parse collection A's
+            # policy from its persisted version + routing block.
+            resp_b = self._pull_router_collection(canonical_b)
+            self.assertEqual(resp_b.status_code, 200, resp_b.text)
+
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_a,
+                    "messages": [{"role": "user", "content": "Please write code"}],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertTrue(body.get("choices"))
+            self.assertNotEqual(
+                body.get("model"),
+                public_a,
+                "policy must still dispatch after a cache rebuild",
+            )
+            print(f"[OK] collection.router policy survived cache rebuild: {public_a}")
+        finally:
+            self._cleanup_router_collection(canonical_a)
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_b},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021ze_router_collection_invalid_policy_rejected(self):
+        """A collection.router /pull with a broken routing policy is rejected at
+        registration (#2385): the parser gate runs before the model is stored,
+        so bad policies never reach dispatch. Covers a missing schema version
+        and a default_model that is not a declared candidate."""
+        suffix = uuid.uuid4().hex[:8]
+
+        # Missing required schema version.
+        no_version = f"user.RouterNoVer-{suffix}"
+        try:
+            resp = self._pull_router_collection(no_version, overrides={"version": None})
+            self.assertNotEqual(
+                resp.status_code,
+                200,
+                f"router pull without version must be rejected: {resp.text}",
+            )
+        finally:
+            self._cleanup_router_collection(no_version)
+
+        # default_model is not one of the candidates.
+        bad_default = f"user.RouterBadDefault-{suffix}"
+        try:
+            resp = self._pull_router_collection(
+                bad_default,
+                routing={
+                    "candidates": [ENDPOINT_TEST_MODEL],
+                    "default_model": "Not-A-Candidate-Model",
+                    "rules": [],
+                },
+            )
+            self.assertNotEqual(
+                resp.status_code,
+                200,
+                f"router pull with non-candidate default_model must be rejected: {resp.text}",
+            )
+        finally:
+            self._cleanup_router_collection(bad_default)
+        print("[OK] collection.router invalid policies rejected at registration")
+
+    def test_021zf_router_collection_load_is_virtual_noop(self):
+        """/load on a collection.router acknowledges success without bringing up
+        a backend (#2385): router collections are virtual, so /load must not
+        fall through to the normal backend-load path."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterLoad-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200, load_response.text)
+            load_body = load_response.json()
+            self.assertEqual(load_body.get("status"), "success")
+            self.assertEqual(load_body.get("recipe"), "collection.router")
+
+            # The virtual collection must not appear as a loaded backend.
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded = health.get("all_models_loaded", []) or []
+            self.assertNotIn(public_name, loaded)
+            self.assertNotIn(canonical_name, loaded)
+            print(f"[OK] collection.router /load was a virtual no-op: {public_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zg_router_collection_export_roundtrip(self):
+        """A router collection exported from /models surfaces its schema
+        "version" (not just "routing") and can be re-imported through /pull
+        (#2385). Guards the import/export round-trip so the required version
+        isn't dropped on export and rejected on re-import."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterExport-{suffix}"
+        public_name = canonical_name[5:]
+        reimport_name = f"user.RouterReimport-{suffix}"
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            models = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()
+            exported = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(exported, f"{public_name} missing from /models export")
+            self.assertEqual(exported.get("recipe"), "collection.router")
+            self.assertIn("routing", exported)
+            self.assertEqual(
+                exported.get("version"),
+                "1",
+                "exported router collection must surface its schema version",
+            )
+
+            # The exported object must be re-importable verbatim (modulo name).
+            reimport_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": reimport_name,
+                    "version": exported["version"],
+                    "recipe": exported["recipe"],
+                    "components": exported["components"],
+                    "routing": exported["routing"],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(reimport_response.status_code, 200, reimport_response.text)
+            self.assertEqual(reimport_response.json().get("status"), "success")
+            print(f"[OK] collection.router export round-trip preserved version")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": reimport_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021zh_router_collection_responses_typed_input_dispatch(self):
+        """/responses dispatch works when the input uses typed content parts
+        (message with input_text parts) rather than a plain string (#2385),
+        exercising the RouteContext extraction for structured Responses input."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterTyped-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            resp = requests.post(
+                f"{self.base_url}/responses",
+                json={
+                    "model": public_name,
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Please write code"}
+                            ],
+                        }
+                    ],
+                    "max_output_tokens": 16,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            body = resp.json()
+            self.assertNotIn("error", body, resp.text)
+            if "model" in body:
+                self.assertNotEqual(body.get("model"), public_name)
+            print(
+                f"[OK] collection.router /responses typed input dispatched {public_name}"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def test_021q_collection_repull_overwrites_components(self):
         """Re-pulling an existing collection with a new components array must
@@ -3698,6 +4229,120 @@ class EndpointTests(ServerTestBase):
             _delete(a_name)
             _delete(b_name)
             _delete(throwaway)
+
+    def test_036_lemond_restart_with_lingering_connections_succeeds(self):
+        """A new lemond instance must be able to start on a port that has lingering
+        client connections in FIN_WAIT / TIME_WAIT states.
+
+        This test starts lemond, connects a client socket, shuts down the first
+        lemond, and attempts to start a second lemond on the same port while the
+        client socket is kept open (which creates a lingering server-side connection
+        in the TCP stack). The second lemond should start successfully.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_lingering_")
+        first_log_path = os.path.join(cache_dir, "first_lemond.log")
+        second_log_path = os.path.join(cache_dir, "second_lemond.log")
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        first = None
+        second = None
+        client_sock = None
+        try:
+            # 1. Start the first lemond
+            with open(first_log_path, "w", encoding="utf-8") as first_log:
+                first = subprocess.Popen(
+                    cmd,
+                    stdout=first_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            # Wait for it to be healthy
+            deadline = time.time() + 30
+            first_healthy = False
+            while time.time() < deadline:
+                if first.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    first_healthy = True
+                    break
+                time.sleep(1)
+
+            self.assertTrue(first_healthy, "First lemond failed to start")
+
+            # 2. Establish a TCP connection from a client socket and keep it open
+            client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_sock.connect(("127.0.0.1", port))
+            client_sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n")
+
+            # 3. Shutdown the first lemond
+            first.terminate()
+            try:
+                first.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                first.kill()
+                first.wait(timeout=10)
+
+            # 4. Attempt to start a second lemond on the SAME port while client_sock is still active.
+            # Without the fix, the second lemond would fail to start with EADDRINUSE (port already in use).
+            with open(second_log_path, "w", encoding="utf-8") as second_log:
+                second = subprocess.Popen(
+                    cmd,
+                    stdout=second_log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            # Assert that the second lemond starts and becomes healthy
+            deadline = time.time() + 30
+            second_healthy = False
+            while time.time() < deadline:
+                if second.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    second_healthy = True
+                    break
+                time.sleep(1)
+
+            if not second_healthy:
+                with open(
+                    second_log_path, "r", encoding="utf-8", errors="replace"
+                ) as f:
+                    log = f.read()
+                self.fail(
+                    f"Second lemond failed to start on port {port} with lingering connection.\n"
+                    f"=== second lemond log ===\n{log}"
+                )
+
+            print(
+                f"[OK] Second lemond started successfully on port {port} with lingering connections"
+            )
+
+        finally:
+            if client_sock:
+                try:
+                    client_sock.close()
+                except Exception:
+                    pass
+            for proc in (second, first):
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

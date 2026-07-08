@@ -129,16 +129,14 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
     return false;
 }
 
-static void hide_option(CLI::Option* option) {
-    if (option != nullptr) {
-        option->group("");
-    }
-}
-
-static void hide_new_options(CLI::App& app, size_t start_index) {
-    std::vector<CLI::Option*> options = app.get_options();
-    for (size_t i = start_index; i < options.size(); ++i) {
-        hide_option(options[i]);
+static void hide_all_options_except_help(CLI::App& app) {
+    for (auto* opt : app.get_options()) {
+        if (opt != nullptr) {
+            const std::string name = opt->get_name();
+            if (name != "--help" && name != "--help-all" && name != "-h") {
+                opt->group("");
+            }
+        }
     }
 }
 
@@ -178,6 +176,9 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+
+    // Telemetry toggle options
+    std::string telemetry_status;
 
     // Chat REPL options
     bool chat_cli = false;
@@ -360,7 +361,7 @@ static bool has_manual_pull_options(const CliConfig& config) {
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
-        if (lemon::is_collection_recipe(config.recipe)) {
+        if (lemon::is_omni_collection_recipe(config.recipe)) {
             if (config.components.empty()) {
                 std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
                           << std::endl;
@@ -993,17 +994,40 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::string key = arg.substr(0, eq_pos);
         std::string value = arg.substr(eq_pos + 1);
 
-        size_t dot_pos = key.find('.');
-        if (dot_pos != std::string::npos) {
-            std::string section = key.substr(0, dot_pos);
-            std::string field = normalize_key(key.substr(dot_pos + 1));
-
-            if (!updates.contains(section)) {
-                updates[section] = nlohmann::json::object();
+        std::vector<std::string> path;
+        size_t last_pos = 0;
+        while (true) {
+            size_t next_dot = key.find('.', last_pos);
+            if (next_dot == std::string::npos) {
+                std::string part = key.substr(last_pos);
+                if (!part.empty()) {
+                    path.push_back(normalize_key(part));
+                }
+                break;
             }
-            updates[section][field] = parse_typed_value(value);
-        } else {
-            updates[normalize_key(key)] = parse_typed_value(value);
+            std::string part = key.substr(last_pos, next_dot - last_pos);
+            if (!part.empty()) {
+                path.push_back(normalize_key(part));
+            }
+            last_pos = next_dot + 1;
+        }
+
+        if (path.empty()) {
+            std::cerr << "Error: empty key in '" << arg << "'" << std::endl;
+            return 1;
+        }
+
+        nlohmann::json* current = &updates;
+        for (size_t i = 0; i < path.size(); ++i) {
+            const std::string& k = path[i];
+            if (i == path.size() - 1) {
+                (*current)[k] = parse_typed_value(value);
+            } else {
+                if (!current->contains(k) || !(*current)[k].is_object()) {
+                    (*current)[k] = nlohmann::json::object();
+                }
+                current = &((*current)[k]);
+            }
         }
     }
 
@@ -1172,6 +1196,11 @@ int main(int argc, char* argv[]) {
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
 
+    CLI::App* telemetry_cmd = app.add_subcommand("telemetry", "Toggle server telemetry on or off")->group("Server");
+    telemetry_cmd->add_option("status", config.telemetry_status, "Telemetry status: 'on' or 'off'")
+        ->required()
+        ->check(CLI::IsMember({"on", "off"}));
+
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
     CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)")->group("Subcommands");
@@ -1242,7 +1271,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni, collection.router)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1324,12 +1353,9 @@ int main(int argc, char* argv[]) {
             ->default_val(config.agent_args);
     };
 
-    size_t launch_option_count = launch_cmd->get_options().size();
     add_common_launch_options(*launch_cmd);
-    hide_new_options(*launch_cmd, launch_option_count);
-    launch_option_count = launch_cmd->get_options().size();
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
-    hide_new_options(*launch_cmd, launch_option_count);
+    hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
     for (const std::string& agent_name : SUPPORTED_AGENTS) {
@@ -1512,6 +1538,23 @@ int main(int argc, char* argv[]) {
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
+    } else if (telemetry_cmd->count() > 0) {
+        bool enable = (config.telemetry_status == "on");
+        nlohmann::json body = {{"telemetry", {{"enabled", enable}}}};
+        try {
+            std::string res_str = client.make_request("/internal/set", "POST", body.dump(), "application/json");
+            auto json_res = nlohmann::json::parse(res_str);
+            if (json_res.contains("status") && json_res["status"] == "success") {
+                std::cout << "Telemetry successfully turned " << (enable ? "on" : "off") << "." << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Failed to toggle telemetry: " << res_str << std::endl;
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error toggling telemetry: " << e.what() << std::endl;
+            return 1;
+        }
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
             return handle_config_set(client, config_set_cmd->remaining());

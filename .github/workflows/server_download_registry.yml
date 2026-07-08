@@ -88,6 +88,12 @@ jobs:
           set -euo pipefail
           .venv/bin/python test/server_downloads.py --cli-binary ./build/lemonade
 
+      - name: Run GFX-topology backend-link tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python test/server_gfx_topology.py --cli-binary ./build/lemonade
+
       - name: Show lemond logs on failure
         if: failure()
         run: cat "$RUNNER_TEMP/lemond-download-registry.log" || true

@@ -16,6 +16,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
+| `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
+| `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -27,6 +29,79 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
+| `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+
+## `GET /v1/models/{id}/files`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List resolved local file metadata for a single model. This endpoint is intended for model-detail UIs such as the Files tab. It is per-model inventory, not system or drive storage accounting.
+
+The endpoint is available at:
+
+- `/v1/models/{id}/files`
+- `/api/v1/models/{id}/files`
+- `/v0/models/{id}/files`
+- `/api/v0/models/{id}/files`
+
+By default, the response does not include absolute filesystem paths. Trusted local clients that need paths for native UI actions can request them explicitly with `?include_paths=true`. Absolute paths may reveal local usernames and cache layout, so clients should only request them when that disclosure is acceptable.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/models/Qwen3-4B/files
+```
+
+### Response format
+
+```json
+{
+  "model_id": "Qwen3-4B",
+  "files": [
+    {
+      "name": "model.gguf",
+      "role": "main",
+      "size_bytes": 123456789,
+      "exists": true
+    },
+    {
+      "name": "mmproj.gguf",
+      "role": "mmproj",
+      "size_bytes": 12345678,
+      "exists": true
+    }
+  ]
+}
+```
+
+### Optional path disclosure
+
+```bash
+curl 'http://localhost:13305/v1/models/Qwen3-4B/files?include_paths=true'
+```
+
+When `include_paths=true` is supplied, each file entry also includes `path`:
+
+```json
+{
+  "name": "model.gguf",
+  "path": "/abs/path/model.gguf",
+  "role": "main",
+  "size_bytes": 123456789,
+  "exists": true
+}
+```
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `model_id` | Public model ID for the requested model. |
+| `files` | Array of resolved model files known to the registry. |
+| `files[].name` | Base filename from the resolved path. |
+| `files[].path` | Absolute resolved path on the local system. Only included when `include_paths=true`; privacy-sensitive. |
+| `files[].role` | Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role. |
+| `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
+| `files[].exists` | Whether the resolved path currently exists on disk. |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -613,6 +688,45 @@ In case of an error, the status will be `error` and the message will contain the
 
 
 
+## `POST /v1/audio/generations`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Audio Generation API. You provide a text prompt and receive a generated audio clip. The loaded model decides the kind of audio: music with ACE-Step models (e.g. `ACE-Step-Music`), sound effects with ThinkSound models (e.g. `ThinkSound-SFX`).
+
+This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover speech and transcription only), so it is a Lemonade-specific extension.
+
+> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from seconds (short sound effects) to minutes (full-length music) depending on duration and hardware.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`). |
+| `prompt` | Yes | Text description of the music or sound effect to generate. |
+| `duration` | No | Length of the clip in seconds. Defaults to the backend's native default. |
+| `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. |
+| `cfg` | No | Classifier-free guidance strength (ThinkSound only). |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `wav`); other values are rejected with `400 Bad Request`. Default: `wav`. |
+
+### Response
+
+On success the raw audio bytes are returned with the matching content type (`audio/wav`). On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ThinkSound-SFX",
+        "prompt": "glass shattering on a stone floor",
+        "duration": 5,
+        "seed": 42
+      }' \
+  --output clip.wav
+```
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -683,7 +797,11 @@ curl http://localhost:13305/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
-  }
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "update_check_done": true
 }
 ```
 
@@ -692,6 +810,7 @@ curl http://localhost:13305/v1/health
 - `status` - Server health status, always `"ok"`
 - `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
+- `update_check_done` - Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready.
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
@@ -712,6 +831,9 @@ curl http://localhost:13305/v1/health
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `telemetry` - Structured telemetry state object:
+  - `enabled` - Boolean indicating if telemetry collection is active
+  - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -881,6 +1003,12 @@ curl "http://localhost:13305/v1/system-info"
   "BIOS Version": "1.0.0",
   "CPU Max Clock": "5100 MHz",
   "Windows Power Setting": "Balanced",
+  "model_storage": {
+    "path": "/path/to/models",
+    "used_bytes": 123456789,
+    "total_bytes": 987654321,
+    "free_bytes": 864197532
+  },
   "devices": {
     "cpu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
@@ -994,6 +1122,12 @@ curl "http://localhost:13305/v1/system-info"
   - `BIOS Version` - BIOS information (Windows only)
   - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
   - `Windows Power Setting` - Current power plan (Windows only)
+
+- `model_storage` - Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.
+  - `path` - Active model storage path from server configuration
+  - `used_bytes` - Used bytes on the model-storage drive
+  - `total_bytes` - Total capacity of the model-storage drive
+  - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
@@ -1370,4 +1504,33 @@ curl http://localhost:13305/live
 
 ```json
 {"status":"ok"}
+```
+
+## Internal Endpoints
+
+Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
+
+## `POST /internal/telemetry/flush`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/telemetry/flush
+```
+
+#### Response Format
+
+Returns a JSON object indicating successful completion of the flush operation:
+
+```json
+{
+  "status": "flushed"
+}
 ```

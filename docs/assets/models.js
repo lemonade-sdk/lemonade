@@ -2,25 +2,33 @@ const GITHUB_REPO = 'lemonade-sdk/lemonade';
 const TAGS_URL = `https://api.github.com/repos/${GITHUB_REPO}/tags?per_page=100`;
 const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 
+/* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
-  'llamacpp',
-  'ryzenai-llm',
+  'acestep',
   'flm',
-  'whispercpp',
+  'kokoro',
+  'llamacpp',
+  'moonshine',
+  'openmoss',
+  'ryzenai-llm',
   'sd-cpp',
-  'oga-hybrid',
-  'oga-npu',
-  'oga-cpu',
-  'kokoro'
+  'thinksound',
+  'vllm',
+  'whispercpp'
 ];
 
 const RECIPE_DISPLAY_NAMES = {
   llamacpp: 'llama.cpp GPU',
-  'ryzenai-llm': 'Ryzen AI SW NPU',
-  flm: 'FastFlowLM NPU',
   whispercpp: 'whisper.cpp',
-  'sd-cpp': 'stable-diffusion.cpp'
+  'sd-cpp': 'stable-diffusion.cpp',
+  flm: 'FastFlowLM NPU',
+  'ryzenai-llm': 'Ryzen AI SW NPU',
+  vllm: 'vLLM ROCm (experimental)',
+  thinksound: 'ThinkSound',
+  acestep: 'ACE-Step',
+  openmoss: 'OpenMOSS TTS'
 };
+/* END GENERATED: models-js-recipes */
 
 const state = {
   tag: null,

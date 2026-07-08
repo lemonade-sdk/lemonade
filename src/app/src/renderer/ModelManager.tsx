@@ -376,6 +376,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateCheckDoneRef = useRef(false);
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -442,6 +443,13 @@ const [searchQuery, setSearchQuery] = useState('');
           loadedModelNames.forEach(modelName => newSet.delete(modelName));
           return newSet;
         });
+
+        // Once the server's background update check completes, refresh models
+        // to pick up update_available flags
+        if (data.update_check_done && !updateCheckDoneRef.current) {
+          updateCheckDoneRef.current = true;
+          refreshModels();
+        }
       } else {
         setLoadedModels(new Set());
         setPinnedModels(new Set());
@@ -974,7 +982,7 @@ const [searchQuery, setSearchQuery] = useState('');
   }, [hfModelBackends, hfSelectedQuantizations]);
 
 
-  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData, upgrade?: boolean) => {
     let downloadId: string | null = null;
 
     try {
@@ -1033,6 +1041,7 @@ const [searchQuery, setSearchQuery] = useState('');
         registrationData,
         collectionComponents,
         declaredSizeGB: modelsData[modelName]?.size,
+        upgrade,
       });
 
       await fetchCurrentLoadedModel();
@@ -1513,6 +1522,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
+    const hasUpdate = info?.update_available === true;
     const isCollection = isCollectionModel(info);
     // Cloud-recipe rows have no local artifact (Delete is meaningless and
     // dynamic discovery would re-add anyway) and no per-model knobs the
@@ -1543,6 +1553,19 @@ const [searchQuery, setSearchQuery] = useState('');
             {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
           </>
+        )}
+        {isDownloaded && hasUpdate && (
+          <button
+            className="model-action-btn update-btn"
+            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName, undefined, true); }}
+            title="Update available — click to re-download"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
         )}
         {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>

@@ -24,6 +24,10 @@ using json = nlohmann::json;
 
 class CloudProviderRegistry;
 
+namespace telemetry {
+class InferenceSpan;
+}
+
 struct ModelTelemetryIdentity {
     std::string model_name;
     std::string checkpoint;
@@ -43,6 +47,7 @@ struct ModelTelemetryRecord {
 
 class EvictionEngine;
 class GlobalVramMonitor;
+class SuspendInhibitor;
 
 class Router {
 public:
@@ -110,10 +115,14 @@ public:
 
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
     json image_variations(const json& request);
+
+    void audio_generations(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
 
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -154,6 +163,7 @@ private:
 
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;
+    std::unique_ptr<SuspendInhibitor> suspend_inhibitor_;
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
@@ -167,7 +177,7 @@ private:
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
-    WrappedServer* find_flm_server_by_type(ModelType type) const;
+    WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
@@ -189,7 +199,7 @@ private:
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
 
     template<typename Func>
-    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
+    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);
 };
 
 } // namespace lemon

@@ -2,11 +2,13 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/routing_classifier_services.h"
+#include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
-#include "lemon/backends/cloud_server.h"
-#include "lemon/backends/sd_server.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
@@ -15,6 +17,7 @@
 #include "lemon/logging_config.h"
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
+#include "telemetry.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
@@ -30,22 +33,25 @@
 #include <chrono>
 #include <mutex>
 #include <filesystem>
+#include <system_error>
 #include <algorithm>
 #include <cmath>
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/network_utils.h"
 
 #ifdef _WIN32
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
     #include <arpa/inet.h>   // inet_pton, htons
-    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
+    #include <fcntl.h>
+    #include <netdb.h>       // Crucial for getaddrinfo and addrinfo struct
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <sys/socket.h>
+    #include <sys/types.h>
     #include <unistd.h>
 #endif
 
@@ -220,6 +226,96 @@ void attach_warnings(json& response, const std::vector<std::string>& warnings) {
     response["warning"] = join_warnings(warnings);
 }
 
+nlohmann::json get_model_storage_stats(const std::string& model_storage_path) {
+    auto make_error_result = [](const fs::path& path, const std::string& error) {
+        return nlohmann::json{
+            {"path", utils::path_to_utf8(path)},
+            {"used_bytes", nullptr},
+            {"total_bytes", nullptr},
+            {"free_bytes", nullptr},
+            {"error", error}
+        };
+    };
+
+    std::error_code ec;
+    fs::path configured_path;
+
+    if (!model_storage_path.empty()) {
+        configured_path = utils::path_from_utf8(model_storage_path);
+    }
+
+    if (configured_path.empty()) {
+        configured_path = fs::current_path(ec);
+        if (ec) {
+            LOG(WARNING, "Server") << "Unable to resolve current path for model storage stats: "
+                                   << ec.message() << std::endl;
+            return make_error_result(
+                fs::path{},
+                "Unable to resolve current path: " + ec.message()
+            );
+        }
+    } else if (configured_path.is_relative()) {
+        configured_path = fs::absolute(configured_path, ec);
+        if (ec) {
+            LOG(WARNING, "Server") << "Unable to resolve model storage path "
+                                   << model_storage_path << ": " << ec.message() << std::endl;
+            return make_error_result(
+                configured_path,
+                "Unable to resolve model storage path: " + ec.message()
+            );
+        }
+    }
+
+    configured_path = configured_path.lexically_normal();
+
+    fs::path probe_path = configured_path;
+    while (!probe_path.empty()) {
+        std::error_code exists_ec;
+        if (fs::exists(probe_path, exists_ec)) {
+            break;
+        }
+
+        if (exists_ec) {
+            LOG(WARNING, "Server") << "Unable to inspect model storage path "
+                                   << utils::path_to_utf8(probe_path) << ": "
+                                   << exists_ec.message() << std::endl;
+            return make_error_result(
+                configured_path,
+                "Unable to inspect model storage path: " + exists_ec.message()
+            );
+        }
+
+        fs::path parent_path = probe_path.parent_path();
+        if (parent_path == probe_path) {
+            break;
+        }
+
+        probe_path = parent_path;
+    }
+
+    auto space_info = fs::space(probe_path, ec);
+    if (ec) {
+        LOG(WARNING, "Server") << "Unable to read model storage stats for "
+                               << utils::path_to_utf8(probe_path) << ": "
+                               << ec.message() << std::endl;
+        return make_error_result(
+            configured_path,
+            "Unable to read model storage stats: " + ec.message()
+        );
+    }
+
+    const uintmax_t total_bytes = space_info.capacity;
+    const uintmax_t free_bytes = std::min(space_info.available, space_info.capacity);
+    const uintmax_t used_bytes = total_bytes - free_bytes;
+
+    return nlohmann::json{
+        {"path", utils::path_to_utf8(configured_path)},
+        {"used_bytes", static_cast<uint64_t>(used_bytes)},
+        {"total_bytes", static_cast<uint64_t>(total_bytes)},
+        {"free_bytes", static_cast<uint64_t>(free_bytes)}
+    };
+}
+
 } // namespace
 
 
@@ -302,6 +398,17 @@ void Server::start_model_cache_warmup() {
         } catch (...) {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
+
+        try {
+            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+            model_manager_->check_for_model_updates();
+            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+        }
+        update_check_done_ = true;
     });
 }
 
@@ -386,6 +493,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
+    telemetry::g_request_start_time = std::chrono::steady_clock::now();
+    telemetry::g_current_auth_token = "";
+    if (req.has_header("X-Client-Session-Id")) {
+        telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
+    } else {
+        telemetry::g_current_client_session_id.clear();
+    }
+
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
     // gateway (Critical Invariant #10). It is the only API route outside the
@@ -423,6 +538,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     } catch (const std::exception& e) {
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
+
+    telemetry::g_current_auth_token = auth_token;
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -481,24 +598,24 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        // Also register as GET for HEAD request support (HEAD uses GET handler)
-        // Return 405 Method Not Allowed (endpoint exists but wrong method)
-        web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
-        web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-            res.status = 405;
-            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-        });
+        if (endpoint != "params") {
+            web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+            web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+                res.status = 405;
+                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+            });
+        }
     };
 
     // Health check
@@ -509,6 +626,21 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models(req, res);
+    });
+
+    // Model files endpoint for the Files tab. Register before the generic
+    // /models/(.+) route so '<model-id>/files' is not parsed as the model ID.
+    web_server.Get(R"(/api/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/api/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
+    });
+    web_server.Get(R"(/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_files(req, res);
     });
 
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
@@ -592,6 +724,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
+    // Generative-audio endpoint: text -> audio clip (music, sound effects)
+    register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_generations(req, res);
+    });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -631,9 +767,17 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_params(req, res);
     });
 
+    register_get("params", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_get(req, res);
+    });
+
     // Backend management endpoints
     register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
         handle_install(req, res);
+    });
+
+    register_post("install/dry-run", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_install_dry_run(req, res);
     });
 
     register_post("uninstall", [this](const httplib::Request& req, httplib::Response& res) {
@@ -666,6 +810,12 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_shutdown(req, res);
     });
 
+    web_server.Post("/internal/telemetry/flush", [](const httplib::Request& req, httplib::Response& res) {
+        lemon::telemetry::flush();
+        res.status = 200;
+        res.set_content(nlohmann::json{{"status", "flushed"}}.dump(), "application/json");
+    });
+
     web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pin(req, res);
     });
@@ -676,6 +826,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
+    });
+    web_server.Get("/internal/config/defaults", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_defaults_get(req, res);
     });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
@@ -1098,7 +1251,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
     });
 
     // Handle preflight OPTIONS requests
@@ -1226,52 +1379,6 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
-// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
-// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
-// socket left in TIME_WAIT by a just-exited server is still bindable.
-static bool port_is_available(int family, const std::string& host_ip, int port) {
-    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        return true;  // Can't probe; let the real bind path report any error.
-    }
-    auto close_sock = [&]() {
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
-    };
-
-    int opt = 1;
-#ifdef _WIN32
-    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char*>(&opt), sizeof(opt));
-#else
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-    sockaddr_storage ss{};
-    socklen_t len;
-    if (family == AF_INET) {
-        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
-        a->sin_family = AF_INET;
-        a->sin_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in);
-    } else {
-        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
-        a->sin6_family = AF_INET6;
-        a->sin6_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in6);
-    }
-
-    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
-    close_sock();
-    return available;
-}
-
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1291,9 +1398,9 @@ void Server::run() {
     // it here keeps the error from being buried under later startup logs.
     {
         std::string in_use_ip;
-        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+        if (!ipv4.empty() && utils::is_tcp_listener_active(AF_INET, ipv4, port_)) {
             in_use_ip = ipv4;
-        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+        } else if (!ipv6.empty() && utils::is_tcp_listener_active(AF_INET6, ipv6, port_)) {
             in_use_ip = ipv6;
         }
         if (!in_use_ip.empty()) {
@@ -1539,6 +1646,10 @@ void Server::stop() {
                 LOG(ERROR, "Server") << "Error during cleanup: " << e.what() << std::endl;
             }
         }
+
+        LOG(INFO, "Server") << "Shutting down telemetry queue..." << std::endl;
+        lemon::telemetry::shutdown();
+
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
 
@@ -1687,7 +1798,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     auto info = model_manager_->get_model_info(requested_model);
 
     // Collections have no backend of their own — load each component instead.
-    if (is_collection_recipe(info.recipe)) {
+    if (is_omni_collection_recipe(info.recipe)) {
         ensure_collection_loaded(info);
         return;
     }
@@ -1698,7 +1809,8 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     //   - If model is NOT downloaded: Download it from HuggingFace
     //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(requested_model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
@@ -1755,6 +1867,27 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add version information
     response["version"] = LEMON_VERSION_STRING;
 
+    // Add telemetry state using in-memory runtime configuration
+    if (config_) {
+        nlohmann::json telemetry_info = {
+            {"enabled", config_->telemetry_enabled()}
+        };
+        if (config_->telemetry_enabled()) {
+            std::vector<std::string> captures;
+            if (!config_->telemetry_hide_inputs()) {
+                captures.push_back("inputs");
+            }
+            if (!config_->telemetry_hide_outputs()) {
+                captures.push_back("outputs");
+            }
+            if (!config_->telemetry_hide_thinking()) {
+                captures.push_back("thinking");
+            }
+            telemetry_info["captures"] = captures;
+        }
+        response["telemetry"] = telemetry_info;
+    }
+
     // Add model loaded information like Python implementation
     std::string loaded_model = router_->get_loaded_model();
 
@@ -1773,6 +1906,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
     }
+
+    // Add update check status
+    response["update_check_done"] = update_check_done_.load();
 
     res.set_content(response.dump(), "application/json");
 }
@@ -1843,6 +1979,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
+        {"update_available", info.update_available},
         {"suggested", info.suggested},
         {"labels", info.labels},
         {"components", public_components},
@@ -1876,6 +2013,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
+    // Per-collection system prompt override (collection.omni only). Omitted on
+    // models that don't carry one so the field doesn't pollute every entry.
+    if (!info.system_prompt.empty()) {
+        model_json["system_prompt"] = info.system_prompt;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {
@@ -1891,11 +2034,24 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
-    // Collections (Omni) additionally embed each component's full model object,
+    if (is_router_collection_recipe(info.recipe)) {
+        // The parser requires a root "version"; surface it alongside "routing"
+        // so an exported router collection can be re-imported through /pull.
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            model_json["version"] = version_it->second;
+        }
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end() && routing_it->second.is_object()) {
+            model_json["routing"] = routing_it->second;
+        }
+    }
+
+    // Collections additionally embed each component's full model object,
     // in component order, under "models". Embedding is bounded by
     // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
     // cannot recurse unboundedly.
-    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+    if (is_model_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
         nlohmann::json component_models = nlohmann::json::array();
         for (const auto& component : info.components) {
             if (!model_manager_->model_exists(component)) {
@@ -1922,6 +2078,50 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
     } else {
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_model_files(const httplib::Request& req, httplib::Response& res) {
+    std::string model_id = req.matches[1];
+    const bool include_paths = req.has_param("include_paths") &&
+        req.get_param_value("include_paths") == "true";
+
+    try {
+        if (!model_manager_->model_exists(model_id)) {
+            res.status = 404;
+            auto error_response = create_model_error(model_id, "Model not found");
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
+        std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        auto files = model_manager_->list_model_files(model_id);
+
+        nlohmann::json response;
+        response["model_id"] = wire_id;
+        response["files"] = nlohmann::json::array();
+
+        for (const auto& file : files) {
+            nlohmann::json file_json = {
+                {"name", file.name},
+                {"role", file.role},
+                {"size_bytes", file.size_bytes},
+                {"exists", file.exists}
+            };
+
+            if (include_paths) {
+                file_json["path"] = file.path;
+            }
+
+            response["files"].push_back(std::move(file_json));
+        }
+
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception&) {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
@@ -1985,6 +2185,57 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
+std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
+                                             const ModelInfo& collection_info) {
+    // The policy is parsed once when the models cache is built (ModelManager),
+    // so dispatch just reads it here. A missing policy means the collection
+    // failed to parse at cache-build time; return nullopt so the caller leaves
+    // the request's model field untouched (fail open).
+    if (!collection_info.route_policy) {
+        LOG(WARNING, "Server") << "Router collection '" << collection_info.model_name
+                               << "' has no parsed routing policy" << std::endl;
+        return std::nullopt;
+    }
+
+    // The engine owns its policy (and is rebuilt per request because its
+    // classifier services are bound to the live Router), so copy the shared,
+    // immutable policy into it.
+    RoutePolicy policy = *collection_info.route_policy;
+    ClassifierServices services = make_router_classifier_services(
+        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+
+    RouteContext ctx = build_route_context(request_json, collection_info.model_name);
+    Decision decision = engine.route(ctx, /*want_trace=*/false);
+    return decision.route_to;
+}
+
+void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return;
+    }
+    const std::string requested_model = request_json["model"].get<std::string>();
+    try {
+        if (!model_manager_->model_exists(requested_model)) {
+            return;
+        }
+        ModelInfo info = model_manager_->get_model_info(requested_model);
+        if (!is_router_collection_recipe(info.recipe)) {
+            return;
+        }
+        std::optional<std::string> selected = route_collection_request(request_json, info);
+        if (!selected) {
+            return;
+        }
+        LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
+                            << *selected << "'" << std::endl;
+        request_json["model"] = *selected;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '"
+                               << requested_model << "': " << e.what() << std::endl;
+    }
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2013,9 +2264,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             try {
                 if (model_manager_->model_exists(requested_model)) {
                     ModelInfo info = model_manager_->get_model_info(requested_model);
-                    if (is_collection_recipe(info.recipe)) {
+                    if (is_omni_collection_recipe(info.recipe)) {
                         handle_collection_chat_completions(request_json, info, res);
                         return;
+                    }
+                    if (is_router_collection_recipe(info.recipe)) {
+                        // The recipe is the trigger (no "auto", no /v1/route): run the
+                        // routing engine and rewrite the model to the selected
+                        // candidate, then fall through to normal completion handling.
+                        std::optional<std::string> selected =
+                            route_collection_request(request_json, info);
+                        if (selected) {
+                            LOG(INFO, "Server") << "Router collection '" << requested_model
+                                                << "' -> '" << *selected << "'" << std::endl;
+                            request_json["model"] = *selected;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
@@ -2024,11 +2287,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             }
         }
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+
         // Handle model loading/switching
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -2036,12 +2307,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
         }
 
@@ -2051,7 +2329,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(ERROR, "Server") << "Model does not support chat completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support chat completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Check if streaming is requested
@@ -2094,9 +2379,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                             return false; // We're done after the first call
                         }
 
-                        // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
-
                         return false;
                     }
                 );
@@ -2144,29 +2427,36 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
@@ -2176,31 +2466,38 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 
@@ -2212,10 +2509,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
+
+
         }
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Chat completion failed: " << e.what() << std::endl;
+
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -2230,11 +2530,23 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
 
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
+
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -2242,12 +2554,19 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
         }
 
@@ -2257,7 +2576,14 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             LOG(ERROR, "Server") << "Model does not support completion" << std::endl;
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Check if streaming is requested
@@ -2329,29 +2655,36 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
@@ -2360,31 +2693,38 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 
@@ -2410,24 +2750,43 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("EMBEDDING", "embeddings", requested_model, request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Call router's embeddings method
@@ -2446,24 +2805,43 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("RERANKER", "reranking", requested_model, request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
             try {
                 auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
                 res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
                 return;
             }
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
             return;
+        }
+
+        if (span) {
+            span->cancel();
         }
 
         // Call router's reranking method
@@ -2772,23 +3150,44 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        std::string mime_type;
+        const auto supported_formats =
+            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
+        std::string response_format = "mp3";
         if (is_streaming) {
-            mime_type = MIME_TYPES["pcm"];
-        } else if (request_json.contains("response_format")) {
-            if (MIME_TYPES.contains(request_json["response_format"])) {
-                mime_type = MIME_TYPES[request_json["response_format"]];
-            } else {
-                nlohmann::json error = {{"error", {
-                    {"message", "Unsupported audio format requested"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        } else {
-            mime_type = MIME_TYPES["mp3"];
+            response_format = "pcm";
+        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        } else if (!supported_formats.empty()) {
+            response_format = supported_formats.front();
         }
+        if (!MIME_TYPES.contains(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported audio format requested"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const bool format_supported = supported_formats.empty() ||
+            std::find(supported_formats.begin(), supported_formats.end(),
+                      response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES[response_format];
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -2814,7 +3213,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            res.set_content_provider(mime_type, audio_source);
+            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink);
+            });
         }
 
         return;
@@ -2826,6 +3227,129 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             {"type", "internal_error"}
         }}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+// The streaming plumbing reports backend failures as a payload in the sink —
+// either an SSE-style "data: {\"error\":...}" event or the backend's own JSON
+// error body — rather than throwing. Returns the parsed error, or null.
+static nlohmann::json extract_error_payload(const std::string& buf) {
+    std::string body = buf;
+    if (body.rfind("data: ", 0) == 0) {
+        body = body.substr(6);
+    }
+    const auto start = body.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || body[start] != '{') {
+        return nullptr;
+    }
+    try {
+        auto parsed = nlohmann::json::parse(body.substr(start));
+        if (parsed.is_object() && parsed.contains("error")) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+    return nullptr;
+}
+
+void Server::serve_media_or_error(httplib::Response& res, const std::string& mime_type,
+                                  const std::function<void(httplib::DataSink&)>& generate) {
+    // Buffer the generated media so we can tell success from a silent failure. A
+    // streaming content provider commits a 200 before the backend runs, so a backend
+    // crash/OOM mid-stream would surface as a successful empty file; buffering lets us
+    // return a real error instead.
+    std::string buf;
+    httplib::DataSink sink;
+    sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+    sink.is_writable = []() { return true; };
+    sink.done = []() {};
+    generate(sink);
+    if (buf.empty()) {
+        res.status = 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", "Generation failed: the backend produced no output (it likely crashed or ran "
+                        "out of GPU memory). Check the server logs."},
+            {"type", "backend_error"}}}}.dump(), "application/json");
+        return;
+    }
+    if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+        res.status = 500;
+        const auto& err = error_payload["error"];
+        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
+            const int status = err["status"].get<int>();
+            if (status >= 400 && status <= 599) {
+                res.status = status;
+            }
+        }
+        res.set_content(error_payload.dump(), "application/json");
+        return;
+    }
+    res.set_content(buf, mime_type);
+}
+
+void Server::handle_audio_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load audio-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        std::string response_format = "wav";
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        const auto supported_formats = router_->audio_generation_supported_formats(requested_model);
+        const bool format_supported = std::find(supported_formats.begin(), supported_formats.end(),
+                                                response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!supported_formats.empty() && !format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES.contains(response_format)
+            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+
+        LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
+
+        serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+            router_->audio_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
     }
 }
 
@@ -3244,7 +3768,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         // as a separate request from generation, which lets the frontend show
         // the original and upscaled images side by side with independent timing.
         std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            lemon::backends::SDServer::SPEC, backend);
+            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
         std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
 #ifdef _WIN32
             "sd-cli.exe";
@@ -3352,6 +3876,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3375,7 +3903,9 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = req.body;
+        // Re-serialize so any collection.router model rewrite reaches the backend
+        // (streaming forwards this body verbatim).
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -3502,7 +4032,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        if (is_collection_recipe(recipe)) {
+        if (is_model_collection_recipe(recipe)) {
             if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
                 bad_request(*err);
                 return;
@@ -3545,6 +4075,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 {"message", "Model imported and registered successfully"}
             };
             res.set_content(response.dump(), "application/json");
+            return;
+        }
+
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
             return;
         }
 
@@ -3609,7 +4146,12 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-
+        if (config_->offline()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         bool not_found = false;
         nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
         if (not_found) {
@@ -3678,16 +4220,27 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
         // Collection models: load each component instead
-        if (is_collection_recipe(info.recipe) && !info.components.empty()) {
+        if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else if (is_router_collection_recipe(info.recipe)) {
+            // Router collections are virtual: each request is dispatched to one
+            // candidate at request time, which lazy-loads it. There is no backend
+            // of the collection's own to bring up, and eagerly loading every
+            // candidate would thrash the model LRU. Acknowledge without loading.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
@@ -4146,59 +4699,11 @@ void Server::resolve_and_register_local_model(
     std::string recipe = model_data.value("recipe", "");
     bool vision = model_data.value("vision", false);
 
-    std::string resolved_checkpoint;
+    // The backend's ops locate its primary artifact within the imported
+    // directory (.gguf / .bin file, genai_config.json dir, …); "" means register
+    // the directory itself.
+    std::string resolved_checkpoint = backends::ops_for(recipe)->find_imported_checkpoint(dest_path);
     std::string resolved_mmproj;
-
-    // For RyzenAI LLM models, find genai_config.json
-    if (recipe == "ryzenai-llm") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                resolved_checkpoint = entry.path().parent_path().string();
-                break;
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
-    // For llamacpp and parakeetcpp models, find the GGUF file
-    else if (recipe == "llamacpp" || recipe == "parakeetcpp") {
-        std::string gguf_file_found;
-
-        // If no variant or variant not found, search for any .gguf file (excluding mmproj)
-        if (gguf_file_found.empty()) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    std::string filename_lower = filename;
-                    std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-
-                    if (filename_lower.find(".gguf") != std::string::npos &&
-                        filename_lower.find("mmproj") == std::string::npos) {
-                        gguf_file_found = entry.path().string();
-                        break;
-                    }
-                }
-            }
-        }
-
-        resolved_checkpoint = gguf_file_found.empty() ? dest_path : gguf_file_found;
-    }
-    // For whispercpp, find .bin file
-    else if (recipe == "whispercpp") {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".bin") != std::string::npos) {
-                    resolved_checkpoint = entry.path().string();
-                    break;
-                }
-            }
-        }
-        if (resolved_checkpoint.empty()) {
-            resolved_checkpoint = dest_path;
-        }
-    }
 
     // Search for mmproj file if vision is enabled or mmproj hint provided
     if (vision || !mmproj.empty()) {
@@ -4313,6 +4818,10 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Surface runtime config flags that affect client-side install/download UX.
     if (auto* cfg = RuntimeConfig::global()) {
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
+    }
+
+    if (config_) {
+        system_info["model_storage"] = get_model_storage_stats(utils::get_hf_cache_dir());
     }
 
     // Cloud providers: per-provider {name, base_url, env_var_set,
@@ -4515,6 +5024,19 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
     }
 }
 
+void Server::handle_config_defaults_get(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        // The canonical default config (global keys + descriptor-derived per-recipe
+        // sections), independent of this host's config.json or deployment overrides.
+        res.set_content(ConfigFile::base_defaults().dump(2), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_defaults_get: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_bin_change(const std::string& section,
                                 const std::string& bin_key,
                                 const std::string& new_value) {
@@ -4525,9 +5047,8 @@ void Server::handle_bin_change(const std::string& section,
     std::string backend = bin_key.substr(0, bin_key.size() - 4);
 
     // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
-    // current install flow — find_external_backend_binary uses recipe-based
-    // section lookup and there is no recipe whose section equals "ryzenai".
-    // Skip the hot-swap rather than attempt an install that won't help.
+    // current install flow, so skip the hot-swap rather than attempt an install
+    // that won't help.
     if (backend == "server") {
         LOG(WARNING, "Server") << section << "." << bin_key
                                << " is not consumed by the install flow; "
@@ -4669,6 +5190,16 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (key == "telemetry") {
+            if (value.is_object()) {
+                if (value.contains("enabled")) {
+                    bool enabled = config_->telemetry_enabled();
+                    LOG(INFO, "Server") << "Telemetry " << (enabled ? "enabled" : "disabled") << std::endl;
+                }
+                if (value.contains("otlp") && value["otlp"].is_object() && value["otlp"].contains("endpoint")) {
+                    LOG(INFO, "Server") << "Telemetry endpoint changed to: " << config_->telemetry_otlp_endpoint() << std::endl;
+                }
+            }
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
             // Recipe defaults (e.g. default_backend) are derived from these settings, so
@@ -5350,6 +5881,72 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_install_dry_run(const httplib::Request& req, httplib::Response& res) {
+    // Resolve the backend asset URL that install_backend() would download for a
+    // given recipe/backend, optionally for a mocked GPU arch, without fetching
+    // any bytes — so a 404 from a stale target-name or version pin can be caught
+    // for any arch without that GPU present.
+    std::string requested_arch;
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        const std::string recipe = request_json.value("recipe", "");
+        const std::string backend = request_json.value("backend", "");
+        requested_arch = request_json.value("arch", "");
+
+        if (recipe.empty() || backend.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Both 'recipe' and 'backend' are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!requested_arch.empty()) {
+            SystemInfo::set_rocm_arch_override(requested_arch);
+        }
+
+        auto params = backend_manager_->get_install_params(recipe, backend);
+
+        // Clear the override as soon as resolution is done so it cannot leak to
+        // any later work on this thread.
+        SystemInfo::set_rocm_arch_override("");
+
+        const std::string url = "https://github.com/" + params.repo +
+                                "/releases/download/" + params.version + "/" +
+                                params.filename;
+
+        bool supports_split_archive = false;
+        if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {
+            supports_split_archive = spec->supports_split_archive;
+        }
+
+        bool supported = requested_arch.empty()
+            ? true
+            : SystemInfo::backend_supports_arch(recipe, backend, requested_arch);
+
+        nlohmann::json response = {
+            {"recipe", recipe},
+            {"backend", backend},
+            {"arch", requested_arch},
+            {"repo", params.repo},
+            {"version", params.version},
+            {"filename", params.filename},
+            {"url", url},
+            {"supports_split_archive", supports_split_archive},
+            {"supported", supported}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        SystemInfo::set_rocm_arch_override("");
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        if (!requested_arch.empty()) {
+            error["arch"] = requested_arch;
+        }
         res.set_content(error.dump(), "application/json");
     }
 }

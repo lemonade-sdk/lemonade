@@ -7,9 +7,18 @@
 namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+constexpr const char* COLLECTION_ROUTER_MODEL_RECIPE = "collection.router";
 
-inline bool is_collection_recipe(const std::string& recipe) {
+inline bool is_omni_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+}
+
+inline bool is_router_collection_recipe(const std::string& recipe) {
+    return recipe == COLLECTION_ROUTER_MODEL_RECIPE;
+}
+
+inline bool is_model_collection_recipe(const std::string& recipe) {
+    return is_omni_collection_recipe(recipe) || is_router_collection_recipe(recipe);
 }
 
 enum class ModelState {
@@ -41,7 +50,8 @@ enum class ModelType {
     RERANKING,
     TRANSCRIPTION,
     IMAGE,
-    TTS
+    TTS,
+    AUDIO_GENERATION   // text -> audio clip (music, sound effects)
 };
 
 // Bitmask pattern for models that use multiple devices
@@ -73,6 +83,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::TRANSCRIPTION: return "transcription";
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
+        case ModelType::AUDIO_GENERATION: return "audio-generation";
         default: return "unknown";
     }
 }
@@ -135,34 +146,17 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "tts") {
             return ModelType::TTS;
         }
+        if (label == "audio-generation") {
+            return ModelType::AUDIO_GENERATION;
+        }
     }
     return ModelType::LLM;
 }
 
-// Determine device type from recipe
-// Default device from recipe — individual backends override based on their config
+// Fallback device type for recipes with no registered backend descriptor
+// (collections and unknown recipes); the descriptor registry is authoritative.
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") {
-        return DEVICE_GPU;
-    } else if (recipe == "ryzenai-llm") {
-        return DEVICE_NPU;
-    } else if (recipe == "flm") {
-        return DEVICE_NPU;
-    } else if (recipe == "parakeetcpp") {
-        return DEVICE_CPU;
-    } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;
-    } else if (recipe == "moonshine") {
-        return DEVICE_CPU;
-    } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;
-    } else if (recipe == "kokoro") {
-        return DEVICE_CPU;
-    } else if (is_collection_recipe(recipe)) {
-        return DEVICE_NONE;
-    } else if (recipe == "cloud") {
-        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
-    }
+    (void)recipe;
     return DEVICE_NONE;
 }
 

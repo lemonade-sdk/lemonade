@@ -1,7 +1,10 @@
 #include <lemon/utils/archive_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <cstdio>
 #include <filesystem>
 #include <cstdlib>
+#include <memory>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -27,14 +30,31 @@ public:
     }
 
     bool extract_tarball(const std::string& tarball_path,
-                        const std::string& dest_dir,
-                        const std::string& backend_name) override {
+                         const std::string& dest_dir,
+                         const std::string& backend_name) override {
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 
-        // Use auto-detect form `-xf` for .tar.gz, .tar.xz, .tar.bz2, etc.
+        auto list_output = [](const std::string& cmd) -> std::string {
+            std::string result;
+            std::unique_ptr<FILE, int(*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
+            if (!pipe) return "";
+            char buf[4096];
+            while (fgets(buf, sizeof(buf), pipe.get())) {
+                result += buf;
+            }
+            return result;
+        };
+
+        std::string entries = list_output(
+            "tar -tf \"" + tarball_path + "\" 2>/dev/null || true");
+        int strip = compute_tarball_strip_components(entries);
+
+        LOG(DEBUG, backend_name) << "Tarball strip-components: " << strip << std::endl;
+
         std::string command = "tar -xf \"" + tarball_path + "\" -C \"" + dest_dir +
-                            "\" --strip-components=1 --no-same-owner";
+                            "\" --strip-components=" + std::to_string(strip) +
+                            " --no-same-owner";
 
         int result = system(command.c_str());
         if (result != 0) {

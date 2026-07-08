@@ -1,5 +1,6 @@
 #include "lemon_cli/bench.h"
 #include "lemon_cli/lemonade_client.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include <CLI/CLI.hpp>
 #include <lemon/utils/path_utils.h>
 #include <algorithm>
@@ -406,9 +407,10 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
         request_body["model_name"] = model;
         request_body["save_options"] = false;
 
-        // For llamacpp recipe, pass backend override
-        if (recipe == "llamacpp") {
-            request_body["llamacpp_backend"] = backend;
+        // For recipes that expose a selectable backend, pass the override.
+        if (const auto* desc = lemon::backends::descriptor_for(recipe);
+            desc && desc->selectable_backend) {
+            request_body[desc->effective_config_section() + "_backend"] = backend;
         }
 
         if (ctx_size > 0) {
@@ -507,6 +509,15 @@ static void extract_timings_into_result(const json& timings, BenchRunResult& res
 }
 
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response) {
+  return run_single_bench_textgen(client, model, scenario, memory_tracking,
+                                  capture_response);
+}
+
+BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,

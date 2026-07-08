@@ -359,6 +359,46 @@ static void test_round_trip() {
 // Main
 // ============================================================================
 
+static void test_telemetry_migration() {
+    std::puts("\n--- config_migrate: telemetry default merging ---");
+
+    json old_user_cfg;
+    old_user_cfg["config_version"] = 1;
+    old_user_cfg["port"] = 9999;
+
+    json defaults;
+    defaults["config_version"] = 2;
+    defaults["port"] = 13305;
+    defaults["telemetry"] = json{
+        {"enabled", false},
+        {"hide_inputs", false},
+        {"hide_outputs", false},
+        {"hide_thinking", false},
+        {"max_queue_capacity", 1000},
+        {"otlp", json{
+            {"endpoint", "http://localhost:4318/v1/traces"},
+            {"protocol", "http/protobuf"},
+            {"semantics", json::array({"openinference", "otel_genai"})},
+            {"headers", json::object()},
+            {"max_retries", 0},
+            {"retry_backoff_base_s", 5.0},
+            {"send_batch_size", 100},
+            {"batch_timeout_s", 1.0}
+        }}
+    };
+
+    json merged = deep_merge(defaults, old_user_cfg);
+    bool changed = config_migrate(merged, defaults, 1);
+
+    check(changed == true, "migration ran");
+    check(merged["telemetry"]["enabled"] == false, "telemetry.enabled defaulted to false");
+    check(merged["telemetry"]["otlp"]["endpoint"] == "http://localhost:4318/v1/traces", "telemetry.otlp.endpoint set to default");
+    check(merged["telemetry"]["otlp"]["headers"].is_object(), "telemetry.otlp.headers is object");
+    check(merged["telemetry"]["otlp"]["protocol"] == "http/protobuf", "telemetry.otlp.protocol defaulted to http/protobuf");
+    check(merged["telemetry"]["otlp"]["semantics"].is_array(), "telemetry.otlp.semantics is array");
+    check(merged["telemetry"]["otlp"]["semantics"].size() == 2, "telemetry.otlp.semantics size is 2");
+}
+
 int main() {
     std::puts("=== Config Migration Unit Tests ===\n");
 
@@ -375,6 +415,7 @@ int main() {
     test_migrate_no_version_field();
     test_migrate_no_changes_when_at_target();
     test_migrate_preserves_user_override();
+    test_telemetry_migration();
     test_round_trip();
 
     std::printf("\n%d passed, %d failures\n", passed, failures);

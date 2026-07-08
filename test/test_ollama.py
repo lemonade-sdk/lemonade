@@ -39,6 +39,7 @@ from utils.test_models import (
 )
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
+TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 
 
 class OllamaTests(ServerTestBase):
@@ -357,7 +358,13 @@ class OllamaTests(ServerTestBase):
 
             response = requests.post(
                 f"{self.base_url}/load",
-                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Keep this CI test deterministic without adding Ollama API
+                    # behavior: disable reasoning at llama-server load time.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(response.status_code, 200)
@@ -371,14 +378,19 @@ class OllamaTests(ServerTestBase):
                             {
                                 "role": "user",
                                 "content": (
-                                    "Run the calculator_calculate tool with "
-                                    "expression set to 1+1"
+                                    "Call the calculator_calculate tool exactly once "
+                                    "with expression set to 1+1. Do not answer in text."
                                 ),
                             }
                         ],
                         "tools": [SAMPLE_TOOL],
                         "stream": True,
-                        "options": {"num_predict": 64},
+                        "options": {
+                            "num_predict": 64,
+                            "temperature": 0,
+                            "top_p": 1,
+                            "seed": 42,
+                        },
                     },
                     timeout=TIMEOUT_MODEL_OPERATION,
                     stream=True,
@@ -776,7 +788,14 @@ class OllamaTests(ServerTestBase):
 
             response = requests.post(
                 f"{self.base_url}/load",
-                json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Use the same load-time llama-server configuration as the
+                    # Ollama tool-call test so both heavy CI paths avoid
+                    # reasoning before tool selection.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(response.status_code, 200)
@@ -804,6 +823,8 @@ class OllamaTests(ServerTestBase):
                 "tool_choice": {"type": "any"},
                 "max_tokens": 64,
                 "stream": False,
+                "temperature": 0,
+                "top_p": 1,
             }
 
             try:
