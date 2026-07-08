@@ -68,7 +68,7 @@ public:
 private:
     struct Runtime;
 
-    std::shared_ptr<Runtime> runtime_for_locked(const McpServerConfig& config);
+    std::shared_ptr<Runtime> get_or_create_runtime(const McpServerConfig& config);
     McpServerConfig config_for_id(const std::string& id) const;
 
     void load_config_file();

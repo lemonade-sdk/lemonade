@@ -145,6 +145,42 @@ bool valid_env_name(const std::string& name) {
     });
 }
 
+
+std::optional<std::string> env_reference_name(const std::string& value) {
+    if (value.size() < 4 || value.rfind("${", 0) != 0 || value.back() != '}') {
+        return std::nullopt;
+    }
+    std::string name = value.substr(2, value.size() - 3);
+    if (!valid_env_name(name)) return std::nullopt;
+    return name;
+}
+
+McpServerConfig resolve_env_references(McpServerConfig config) {
+    for (auto& [key, value] : config.env) {
+        auto ref = env_reference_name(value);
+        if (!ref) continue;
+        const char* env_value = std::getenv(ref->c_str());
+        value = env_value ? std::string(env_value) : std::string();
+    }
+    return config;
+}
+
+json config_to_persisted_json(const McpServerConfig& config) {
+    json out = McpClientManager::config_to_json(config, true);
+    json env = json::object();
+    for (const auto& [key, value] : config.env) {
+        if (env_reference_name(value)) {
+            env[key] = value;
+        } else {
+            // MCP env values commonly contain tokens. Do not write raw secrets to
+            // the cache file; persist an environment-variable reference instead.
+            env[key] = "${" + key + "}";
+        }
+    }
+    out["env"] = std::move(env);
+    return out;
+}
+
 int clamp_timeout_ms(int timeout_ms) {
     return std::max(kMinTimeoutMs, std::min(kMaxTimeoutMs, timeout_ms));
 }
@@ -303,17 +339,19 @@ public:
         on_stdout_line_ = std::move(on_stdout_line);
         on_stderr_line_ = std::move(on_stderr_line);
 
-        if (!config.working_dir.empty()) {
+        McpServerConfig process_config = resolve_env_references(config);
+
+        if (!process_config.working_dir.empty()) {
             std::error_code ec;
-            if (!fs::is_directory(fs::path(config.working_dir), ec) || ec) {
-                throw std::runtime_error("MCP working_dir is not a readable directory: " + config.working_dir);
+            if (!fs::is_directory(fs::path(process_config.working_dir), ec) || ec) {
+                throw std::runtime_error("MCP working_dir is not a readable directory: " + process_config.working_dir);
             }
         }
 
 #ifdef _WIN32
-        start_windows(config);
+        start_windows(process_config);
 #else
-        start_posix(config);
+        start_posix(process_config);
 #endif
         running_.store(true, std::memory_order_release);
         stdout_thread_ = std::thread([this] { read_loop_stdout(); });
@@ -401,14 +439,8 @@ public:
                 }
             }
         }
-        if (stdout_read_ >= 0) {
-            ::close(stdout_read_);
-            stdout_read_ = -1;
-        }
-        if (stderr_read_ >= 0) {
-            ::close(stderr_read_);
-            stderr_read_ = -1;
-        }
+        // Reader fds are closed after joining reader threads. Closing an fd
+        // while another thread is blocked in read() can race with fd reuse.
 #endif
 
         if (stdout_thread_.joinable()) stdout_thread_.join();
@@ -432,6 +464,14 @@ public:
             stderr_read_ = INVALID_HANDLE_VALUE;
         }
 #else
+        if (stdout_read_ >= 0) {
+            ::close(stdout_read_);
+            stdout_read_ = -1;
+        }
+        if (stderr_read_ >= 0) {
+            ::close(stderr_read_);
+            stderr_read_ = -1;
+        }
         pid_ = -1;
 #endif
         started_ = false;
@@ -1102,12 +1142,22 @@ std::string McpClientManager::make_chat_tool_name(const std::string& server_id,
 }
 
 json McpClientManager::list_servers_json() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::pair<McpServerConfig, std::shared_ptr<Runtime>>> entries;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        entries.reserve(configs_.size());
+        for (const auto& [id, cfg] : configs_) {
+            std::shared_ptr<Runtime> runtime;
+            auto it = runtimes_.find(id);
+            if (it != runtimes_.end()) runtime = it->second;
+            entries.push_back({cfg, runtime});
+        }
+    }
+
     json servers = json::array();
-    for (const auto& [id, cfg] : configs_) {
-        auto it = runtimes_.find(id);
-        if (it != runtimes_.end() && it->second) {
-            servers.push_back(it->second->snapshot(false));
+    for (const auto& [cfg, runtime] : entries) {
+        if (runtime) {
+            servers.push_back(runtime->snapshot(false));
         } else {
             json s = config_to_json(cfg, false);
             s["status"] = "disconnected";
@@ -1121,20 +1171,29 @@ json McpClientManager::list_servers_json() const {
 }
 
 json McpClientManager::list_tools_json() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::pair<McpServerConfig, std::shared_ptr<Runtime>>> entries;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        entries.reserve(runtimes_.size());
+        for (const auto& [id, runtime] : runtimes_) {
+            if (!runtime) continue;
+            auto cfg_it = configs_.find(id);
+            if (cfg_it == configs_.end()) continue;
+            entries.push_back({cfg_it->second, runtime});
+        }
+    }
+
     json tools = json::array();
-    for (const auto& [id, runtime] : runtimes_) {
-        if (!runtime) continue;
+    for (const auto& [cfg, runtime] : entries) {
         json snap = runtime->snapshot(false);
         if (!snap.value("connected", false)) continue;
-        const auto& cfg = configs_.at(id);
         for (const auto& tool : snap.value("tools", json::array())) {
             if (!tool.is_object() || !tool.contains("name") || !tool["name"].is_string()) continue;
             const std::string tool_name = tool["name"].get<std::string>();
-            tools.push_back(json{{"server_id", id},
+            tools.push_back(json{{"server_id", cfg.id},
                                  {"server_name", cfg.name},
                                  {"name", tool_name},
-                                 {"chat_name", make_chat_tool_name(id, tool_name)},
+                                 {"chat_name", make_chat_tool_name(cfg.id, tool_name)},
                                  {"title", tool.value("title", std::string())},
                                  {"description", tool.value("description", std::string())},
                                  {"inputSchema", tool.value("inputSchema", json::object())},
@@ -1188,7 +1247,7 @@ json McpClientManager::remove_server_json(const std::string& id) {
 json McpClientManager::connect_server_json(const std::string& id) {
     McpServerConfig cfg = config_for_id(id);
     if (!cfg.enabled) throw std::runtime_error("MCP server is disabled: " + id);
-    auto runtime = runtime_for_locked(cfg);
+    auto runtime = get_or_create_runtime(cfg);
     runtime->connect(cfg);
     return json{{"server", runtime->snapshot(false)}};
 }
@@ -1215,7 +1274,7 @@ json McpClientManager::disconnect_server_json(const std::string& id) {
 json McpClientManager::refresh_tools_json(const std::string& id) {
     McpServerConfig cfg = config_for_id(id);
     if (!cfg.enabled) throw std::runtime_error("MCP server is disabled: " + id);
-    auto runtime = runtime_for_locked(cfg);
+    auto runtime = get_or_create_runtime(cfg);
     runtime->connect(cfg);
     runtime->refresh_tools();
     return json{{"server", runtime->snapshot(false)}};
@@ -1227,7 +1286,7 @@ json McpClientManager::call_tool_json(const std::string& id, const json& body) {
     }
     McpServerConfig cfg = config_for_id(id);
     if (!cfg.enabled) throw std::runtime_error("MCP server is disabled: " + id);
-    auto runtime = runtime_for_locked(cfg);
+    auto runtime = get_or_create_runtime(cfg);
     runtime->connect(cfg);
 
     const std::string name = body["name"].get<std::string>();
@@ -1238,7 +1297,7 @@ json McpClientManager::call_tool_json(const std::string& id, const json& body) {
     return json{{"server_id", id}, {"tool", name}, {"result", result}};
 }
 
-std::shared_ptr<McpClientManager::Runtime> McpClientManager::runtime_for_locked(const McpServerConfig& config) {
+std::shared_ptr<McpClientManager::Runtime> McpClientManager::get_or_create_runtime(const McpServerConfig& config) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = runtimes_.find(config.id);
     if (it != runtimes_.end() && it->second) return it->second;
@@ -1283,7 +1342,7 @@ void McpClientManager::save_config_file_locked() const {
     if (ec) throw std::runtime_error("Failed to create MCP config directory: " + ec.message());
 
     json servers = json::array();
-    for (const auto& [_, cfg] : configs_) servers.push_back(config_to_json(cfg, true));
+    for (const auto& [_, cfg] : configs_) servers.push_back(config_to_persisted_json(cfg));
     json doc{{"version", 1}, {"servers", servers}};
 
     std::ofstream out(config_path_, std::ios::trunc);

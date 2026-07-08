@@ -4,6 +4,7 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -69,11 +70,21 @@ int main() {
             {"transport", "stdio"},
             {"command", std::string(LEMONADE_TEST_PYTHON)},
             {"args", json::array({std::string(LEMONADE_TEST_MCP_STDIO_SERVER)})},
+            {"env", json{{"LEMONADE_MCP_TEST_SECRET", "super-secret-value"}}},
             {"timeout_ms", 5000},
         });
 
         const std::string id = created.at("server").at("id").get<std::string>();
         assert(!id.empty());
+
+        const fs::path persisted_path = cache_dir / "mcp_servers.json";
+        std::ifstream persisted_in(persisted_path);
+        assert(persisted_in.good());
+        const std::string persisted(
+            (std::istreambuf_iterator<char>(persisted_in)),
+            std::istreambuf_iterator<char>());
+        assert(persisted.find("super-secret-value") == std::string::npos);
+        assert(persisted.find("${LEMONADE_MCP_TEST_SECRET}") != std::string::npos);
 
         const json connected = manager.connect_server_json(id);
         assert(connected.at("server").value("connected", false));
