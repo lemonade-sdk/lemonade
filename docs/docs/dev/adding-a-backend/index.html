@@ -895,6 +895,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/faq/" class="md-nav__link">
         
   
@@ -1245,6 +1273,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         What you get for free
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-new-endpoint-or-capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding a new endpoint or capability
       </span>
     </span>
   </a>
@@ -2348,6 +2398,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-new-endpoint-or-capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding a new endpoint or capability
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#escape-hatches" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2388,11 +2460,7 @@
 
 
 <h1 id="adding-a-backend">Adding a backend</h1>
-<p>Lemonade backends are <strong>self-describing</strong>. A backend declares <em>what it is</em> in a
-plain-data <strong>descriptor</strong> and implements <em>how it runs</em> in a <strong>server class</strong>, and
-both live together in the backend's own folder. A registry collects every
-descriptor, and the router, the CLI, <code>/system-info</code>, and the generated docs all
-read it — so there are no scattered <code>if (recipe == "...")</code> sites to update.</p>
+<p>Lemonade backends are <strong>self-describing</strong>. A backend declares <em>what it is</em> in a plain-data <strong>descriptor</strong> and implements <em>how it runs</em> in a <strong>server class</strong>, and both live together in the backend's own folder. A registry collects every descriptor, and the router, the CLI, <code>/system-info</code>, and the generated docs all read it — so there are no scattered <code>if (recipe == "...")</code> sites to update.</p>
 <p>Adding a backend is <strong>one folder plus three small appends</strong>:</p>
 <table>
 <thead>
@@ -2429,9 +2497,8 @@ read it — so there are no scattered <code>if (recipe == "...")</code> sites to
 </tbody>
 </table>
 <p>No router edits, no CLI edits, no doc edits, no support-matrix edits.</p>
-<p>Everything for one backend lives in <code>lemon::backends::&lt;stem&gt;</code>. The descriptor is
-header-only so it links into <strong>both</strong> the <code>lemonade</code> CLI and <code>lemond</code>; the server
-class and <code>create()</code> are server-only (compiled into <code>lemond</code>).</p>
+<p>That covers the backend's wiring. You still write an integration test (<a href="#testing">Testing</a>). If the backend introduces a new endpoint or capability instead of serving one that already exists, you also write that endpoint, its router plumbing, and its API docs (<a href="#adding-a-new-endpoint-or-capability">Adding a new endpoint or capability</a>).</p>
+<p>Everything for one backend lives in <code>lemon::backends::&lt;stem&gt;</code>. The descriptor is header-only so it links into <strong>both</strong> the <code>lemonade</code> CLI and <code>lemond</code>; the server class and <code>create()</code> are server-only (compiled into <code>lemond</code>).</p>
 <h2 id="the-descriptor-stemstemh">The descriptor — <code>&lt;stem&gt;/&lt;stem&gt;.h</code></h2>
 <p>Plain data. The single object the registry, CLI, <code>/system-info</code>, and docs all read.</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
@@ -2461,15 +2528,9 @@ class and <code>create()</code> are server-only (compiled into <code>lemond</cod
 
 <span class="p">}}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends::myrecipe</span>
 </code></pre></div>
-<p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots),
-<code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model
-type), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
+<p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots), <code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model type), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
 <h2 id="the-server-class-factory-stemstem_serverhcpp">The server class + factory — <code>&lt;stem&gt;/&lt;stem&gt;_server.{h,cpp}</code></h2>
-<p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code>, <code>unload()</code>,
-and only the capability interfaces you serve (<code>ITranscriptionServer</code>,
-<code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default
-"unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend
-does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
+<p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code>, <code>unload()</code>, and only the capability interfaces you serve (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default "unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
 <p><code>&lt;stem&gt;_server.h</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;lemon/backends/backend_registry.h&quot;</span><span class="c1">   // BackendContext</span>
@@ -2503,24 +2564,63 @@ does not stub them. Alongside it, a free <code>create()</code> builds the instan
 <span class="w">    </span><span class="s2">&quot;myrecipe|myrecipe&quot;</span><span class="w">   </span><span class="c"># &quot;&lt;recipe&gt;|&lt;stem&gt;&quot;</span>
 <span class="p">)</span>
 </code></pre></div>
-<p>The <code>foreach</code> in <code>CMakeLists.txt</code> compiles <code>&lt;stem&gt;/&lt;stem&gt;_server.cpp</code> and
-regenerates the registry headers, binding <code>&lt;stem&gt;::descriptor</code> to <code>&lt;stem&gt;::create</code>.</p>
+<p>The <code>foreach</code> in <code>CMakeLists.txt</code> compiles <code>&lt;stem&gt;/&lt;stem&gt;_server.cpp</code> and regenerates the registry headers, binding <code>&lt;stem&gt;::descriptor</code> to <code>&lt;stem&gt;::create</code>.</p>
 <h2 id="what-you-get-for-free">What you get for free</h2>
 <ul>
-<li><strong>Standard options:</strong> <code>merge_args</code>, <code>auto_evict</code>, <code>evict_idle_timeout</code>,
-  <code>downsize_idle_timeout</code>, <code>evict_weight_factor</code>, <code>pinned</code>. <code>ctx_size</code> is opt-in
-  via <code>uses_ctx_size</code>.</li>
-<li><strong>Generated CLI flags</strong> for every descriptor option with a <code>cli_flag</code>, plus
-  <code>--&lt;recipe&gt;</code> when <code>selectable_backend = true</code>.</li>
+<li><strong>Standard options:</strong> <code>merge_args</code>, <code>auto_evict</code>, <code>evict_idle_timeout</code>, <code>downsize_idle_timeout</code>, <code>evict_weight_factor</code>, <code>pinned</code>. <code>ctx_size</code> is opt-in via <code>uses_ctx_size</code>.</li>
+<li><strong>Generated CLI flags</strong> for every descriptor option with a <code>cli_flag</code>, plus <code>--&lt;recipe&gt;</code> when <code>selectable_backend = true</code>.</li>
 <li><strong>Install/download</strong> via the backend's <code>BackendSpec</code> (binary + install params).</li>
 <li><strong><code>/system-info</code></strong> <code>recipes</code> entry (display name, options schema, support matrix).</li>
-<li><strong>Generated docs</strong> — your backend appears automatically in
-  <a href="../backends-reference/"><code>backends-reference.md</code></a>, the README "Supported
-  Configurations" matrix, and the multi-model NPU-exclusivity list. A CI job
-  (<code>backend-docs-drift</code>) fails if the committed docs are stale. The descriptor's
-  <code>modality</code>, <code>experimental</code>, <code>web_display_name</code>, and each support row's
-  <code>device_summary</code> supply the editorial bits the matrix needs.</li>
+<li><strong>Generated docs</strong> — your backend appears automatically in <a href="../backends-reference/"><code>backends-reference.md</code></a>, the README "Supported Configurations" matrix, and the multi-model NPU-exclusivity list. A CI job (<code>backend-docs-drift</code>) fails if the committed docs are stale. The descriptor's <code>modality</code>, <code>experimental</code>, <code>web_display_name</code>, and each support row's <code>device_summary</code> supply the editorial bits the matrix needs.</li>
 </ul>
+<h2 id="testing">Testing</h2>
+<p>The descriptor wires your backend in, but nothing exercises it. Write an integration test in <code>test/</code>; these run against a live server. <code>test/server_sd.py</code> is the model to follow: it pulls the model, calls the endpoint on each backend variant, and asserts the response is real output (a valid <code>RIFF</code> or <code>PNG</code> header and a substantial byte count) rather than an empty body or a backend error served with a success status. Test the failure paths too: a missing required field, and an error raised by the backend.</p>
+<ul>
+<li>Existing modality: the endpoint already has a test (another image, transcription, or LLM backend). Add your recipe as a <code>--wrapped-server</code> case to that script instead of writing a new one.</li>
+<li>New modality: add <code>test/server_&lt;modality&gt;.py</code> modeled on <code>server_sd.py</code>, and a <code>test_models</code> entry under the modality in <code>test/utils/capabilities.py</code>.</li>
+</ul>
+<p>Add the test to CI in both matrices of <code>.github/workflows/cpp_server_build_test_release.yml</code>, the Windows block and the Linux block, with one row per backend variant:</p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;modality&gt;-&lt;recipe&gt;</span>
+<span class="w">  </span><span class="nt">script</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server_&lt;modality&gt;.py</span>
+<span class="w">  </span><span class="nt">extra_args</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;--wrapped-server</span><span class="nv"> </span><span class="s">&lt;recipe&gt;&quot;</span>
+<span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;vulkan</span><span class="nv"> </span><span class="s">rocm&quot;</span>
+<span class="w">  </span><span class="nt">runner</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">vulkan</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rocm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lemon-prod</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>If your backend uses ROCm via TheRock, add its recipe to <code>_THEROCK_RECIPES</code> in <code>test/utils/server_base.py</code>. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of <code>TIMEOUT_ROCM_INSTALL</code>, and the ROCm job flakes.</p>
+<h2 id="adding-a-new-endpoint-or-capability">Adding a new endpoint or capability</h2>
+<p>Serving an existing capability interface (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>) needs nothing beyond the folder above. The endpoint, router plumbing, and API docs already exist, and the endpoint's test already covers any backend that serves it.</p>
+<p>A new capability, a request type with no existing endpoint, is a larger change. The descriptor cannot generate the request path, so you also edit the router and server:</p>
+<table>
+<thead>
+<tr>
+<th>You add</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Capability interface <code>I&lt;Thing&gt;Server</code></td>
+<td><code>src/cpp/include/lemon/server_capabilities.h</code></td>
+</tr>
+<tr>
+<td>A <code>ModelType</code> value and its label mapping</td>
+<td><code>src/cpp/include/lemon/model_types.h</code>. Add it to <code>Router::get_pinned_model_counts</code> so loaded models of the new type are counted.</td>
+</tr>
+<tr>
+<td>Router method that <code>dynamic_cast</code>s to your interface and dispatches</td>
+<td><code>src/cpp/server/router.h</code>, <code>src/cpp/server/router.cpp</code></td>
+</tr>
+<tr>
+<td>Endpoint handler, registered with <code>register_post</code> or <code>register_get</code></td>
+<td><code>src/cpp/server/server.cpp</code>. One call registers all four <code>/api/v0</code>, <code>/api/v1</code>, <code>/v0</code>, <code>/v1</code> prefixes (<a href="../../../AGENTS/">invariant 1</a>).</td>
+</tr>
+<tr>
+<td>API documentation</td>
+<td><code>docs/api/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Pick the API-doc file by protocol: extend <code>docs/api/openai.md</code> for an OpenAI-compatible endpoint, add a file alongside <code>docs/api/llamacpp.md</code> when you mirror another server's standard, or use <code>docs/api/lemonade.md</code> for a Lemonade-specific endpoint. Follow the API reference structure from the <a href="../documentation/">documentation guide</a>: an H2 <code>METHOD /path</code> heading, a status badge, a one-sentence description, a parameters table, a curl example, and the response format.</p>
 <h2 id="escape-hatches">Escape hatches</h2>
 <table>
 <thead>
@@ -2561,12 +2661,9 @@ regenerates the registry headers, binding <code>&lt;stem&gt;::descriptor</code> 
 </tbody>
 </table>
 <h2 id="the-simplest-end-to-end-example">The simplest end-to-end example</h2>
-<p><strong>Moonshine</strong> is the minimal case: a single descriptor option, no backend
-selection, CPU-only, one capability interface. See
-<code>src/cpp/server/backends/moonshine/</code> and <code>include/lemon/backends/moonshine/</code>.</p>
+<p><strong>Moonshine</strong> is the minimal case: a single descriptor option, no backend selection, CPU-only, one capability interface. See <code>src/cpp/server/backends/moonshine/</code> and <code>include/lemon/backends/moonshine/</code>.</p>
 <blockquote>
-<p>Note: collections (<code>collection.omni</code>) are orchestrator-driven, not
-<code>WrappedServer</code> subprocesses, and are the one explicit exception to this model.</p>
+<p>Note: collections (<code>collection.omni</code>) are orchestrator-driven, not <code>WrappedServer</code> subprocesses, and are the one explicit exception to this model.</p>
 </blockquote>
 
 

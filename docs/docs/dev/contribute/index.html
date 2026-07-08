@@ -895,6 +895,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/faq/" class="md-nav__link">
         
   
@@ -1195,6 +1223,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Reviewer Expectation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#making-pull-requests-easy-to-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Making Pull Requests Easy to Review
       </span>
     </span>
   </a>
@@ -2471,6 +2510,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#making-pull-requests-easy-to-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Making Pull Requests Easy to Review
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ai-policy" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2599,8 +2649,30 @@
 </li>
 <li>Sustain the overall code quality and standards of the rest of the repo.</li>
 </ol>
+<h3 id="making-pull-requests-easy-to-review">Making Pull Requests Easy to Review</h3>
+<p>Maintainers try to review contributions quickly, but review time is limited. The easiest pull requests to review are small, focused, and easy to verify.</p>
+<p>Before opening a PR, please make sure that:</p>
+<ol>
+<li>The PR solves one clear problem.</li>
+<li>The changes are limited to what is necessary.</li>
+<li>There are no unrelated local changes included.</li>
+<li>The PR description explains what changed and why.</li>
+<li>The PR describes how the change was tested, including any platforms that could not be tested locally.</li>
+<li>Larger refactoring is separated from bug fixes or feature changes.</li>
+</ol>
+<p>Some areas of the codebase are more sensitive than they may appear. Small changes can sometimes have large side effects, especially in recently reworked, complex, or platform-specific code. In these cases, reviewers may ask you to reduce the scope, add tests, or follow a specific implementation approach. If you need help testing on a platform you do not have access to, please mention it in the PR and ask for support in the Lemonade Discord.</p>
+<p>The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.</p>
 <h3 id="ai-policy">AI Policy</h3>
-<p>Contributors are encouraged to use AI to code their project. However, please review your AI's code yourself before asking another human to review it.</p>
+<p>Contributors are welcome to use AI tools while working on Lemonade. However, contributors remain fully responsible for the code they submit.</p>
+<p>If you use AI-assisted coding, please make sure that you:</p>
+<ol>
+<li>Understand the generated code before submitting it.</li>
+<li>Review the full diff yourself.</li>
+<li>Remove unrelated or unnecessary changes.</li>
+<li>Test the result locally where possible.</li>
+<li>Keep the PR especially small and focused.</li>
+</ol>
+<p>AI can make it easy to generate large changes, but large or unfocused changes are harder for maintainers to review and are less likely to be accepted quickly.</p>
 <p>Reviewers are expected to use tools like Claude Code's <code>/review</code> to save time by analyzing code quality and edge cases. If AI tools generate PR comments, please clearly identify which comments are AI-generated and which are authored by you.</p>
 <p><strong>Please do not use AI to write issues</strong>. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.</p>
 <p>AI tools may be used to draft documentation, but the author is responsible for verifying accuracy before submitting. See the <a href=".././documentation/">documentation guide</a> for a pre-submission checklist and style guidance.</p>
