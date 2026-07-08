@@ -384,6 +384,30 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--vllm-omni BACKEND` | vLLM-Omni backend to use | Auto-detected |
 | `--vllm-omni-args ARGS` | Custom arguments to pass to vllm-omni-server | `""` |
+
+#### ThinkSound (`thinksound` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
+
+#### ACE-Step (`acestep` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
+
+#### TRELLIS.2 (`trellis` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+
+#### OpenMOSS TTS (`openmoss` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

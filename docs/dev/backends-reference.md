@@ -9,12 +9,16 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-overview -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
+| `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
+| `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
+| `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
 | `vllm-omni` | vLLM-Omni ROCm (experimental) | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
@@ -25,6 +29,9 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-matrix -->
 | Recipe | Backend | OS | Device families |
 |--------|---------|----|-----------------|
+| `acestep` | rocm | linux, windows | amd_gpu |
+| `acestep` | cuda | linux, windows | nvidia_gpu |
+| `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `kokoro` | metal | macos | metal |
@@ -32,17 +39,26 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
+| `openmoss` | rocm | linux, windows | amd_gpu |
+| `openmoss` | cuda | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `sd-cpp` | cuda | linux | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
 | `sd-cpp` | metal | macos | metal |
+| `thinksound` | rocm | linux, windows | amd_gpu |
+| `thinksound` | cuda | linux, windows | nvidia_gpu |
+| `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | linux, windows | amd_gpu |
+| `trellis` | cuda | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `vllm-omni` | rocm | linux | amd_gpu (gfx1151) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
@@ -55,6 +71,12 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Recipe options
 
 <!-- BEGIN GENERATED: backend-options -->
+#### `acestep` — ACE-Step
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -70,6 +92,12 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `moonshine_args` | `--moonshine-args` | ARGS | "" | Custom arguments to pass to moonshine-server |
 
+#### `openmoss` — OpenMOSS TTS
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
 #### `sd-cpp` — StableDiffusion.cpp
 
 | Option | CLI flag | Type | Default | Description |
@@ -82,6 +110,18 @@ the generator instead. Prose outside the markers is preserved. -->
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+
+#### `thinksound` — ThinkSound
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
+
+#### `trellis` — TRELLIS.2
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 
 #### `vllm` — vLLM ROCm (experimental)
 
@@ -110,7 +150,7 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Models
 
 <!-- BEGIN GENERATED: backend-models -->
-#### `acestep` — acestep (1 models)
+#### `acestep` — ACE-Step (1 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -222,7 +262,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
 
-#### `openmoss` — openmoss (2 models)
+#### `openmoss` — OpenMOSS TTS (2 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -330,13 +370,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `SDXL-Turbo` | 6.94 | image |
 | `Z-Image-Turbo` | 20.7 | image |
 
-#### `thinksound` — thinksound (1 models)
+#### `thinksound` — ThinkSound (1 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `ThinkSound-SFX` | 6.4 | audio-generation |
 
-#### `trellis` — trellis (1 models)
+#### `trellis` — TRELLIS.2 (1 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
