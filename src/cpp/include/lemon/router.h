@@ -47,6 +47,7 @@ struct ModelTelemetryRecord {
 
 class EvictionEngine;
 class GlobalVramMonitor;
+class SuspendInhibitor;
 
 class Router {
 public:
@@ -119,6 +120,9 @@ public:
     json image_edits(const json& request);
     json image_variations(const json& request);
 
+    void audio_generations(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
+
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -158,6 +162,7 @@ private:
 
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;
+    std::unique_ptr<SuspendInhibitor> suspend_inhibitor_;
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;

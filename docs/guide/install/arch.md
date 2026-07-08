@@ -3,10 +3,10 @@
 ## Step 1: Install lemonade-server
 
 ```
-yay -S lemonade-server
+pacman -S lemonade-server
 ```
 
-For package details, see [lemonade-server on the AUR](https://aur.archlinux.org/packages/lemonade-server).
+For package details, see [lemonade-server](https://archlinux.org/packages/extra/x86_64/lemonade-server).
 
 ## Step 2: Choose your frontend
 
@@ -19,7 +19,7 @@ For package details, see [lemonade-server on the AUR](https://aur.archlinux.org/
 === "Lemonade Desktop package"
 
     ```
-    yay -S lemonade-desktop
+    pacman -S lemonade-desktop
     ```
 
-    For package details, see [lemonade-desktop on the AUR](https://aur.archlinux.org/packages/lemonade-desktop).
+    For package details, see [lemonade-desktop](https://archlinux.org/packages/extra/x86_64/lemonade-desktop).

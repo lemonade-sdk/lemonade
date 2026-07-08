@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <curl/curl.h>
 #include <string_view>
 #include <utility>
 #include <lemon/utils/aixlog.hpp>
@@ -634,6 +635,22 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 timeout_seconds
             );
 
+            if (result.curl_code != CURLE_OK) {
+                if (result.curl_code == CURLE_WRITE_ERROR) {
+                    LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
+                    if (telemetry_callback) {
+                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                    }
+                    return;
+                } else if (result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR) {
+                    if (!has_done_marker) {
+                        throw std::runtime_error("backend connection failed during SSE stream before DONE: CURL error: " + result.curl_error);
+                    }
+                } else {
+                    throw std::runtime_error("SSE stream failed: CURL error: " + result.curl_error);
+                }
+            }
+
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
                                     << ", body: " << body_buffer.substr(0, 200) << std::endl;
@@ -671,7 +688,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 telemetry_callback(input_tokens, output_tokens, time_to_first_token, tokens_per_second, "");
             }
         } else {
-            auto result = utils::HttpClient::post_stream(
+            utils::HttpResponse result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
                 [&sink](const char* data, size_t length) {
@@ -680,6 +697,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 headers,
                 timeout_seconds
             );
+            if (result.curl_code != CURLE_OK) {
+                if (result.curl_code == CURLE_WRITE_ERROR) {
+                    LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
+                    if (telemetry_callback) {
+                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                    }
+                    return;
+                } else {
+                    throw std::runtime_error("Request failed: CURL error: " + result.curl_error);
+                }
+            }
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
                 if (telemetry_callback) {

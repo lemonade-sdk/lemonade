@@ -110,19 +110,26 @@ namespace lemon::backends {
         /**
          * Resolve the ROCm install root, honoring an externally-installed ROCm
          * before the bundled default. Resolution order, returning the first root
-         * that contains lib{,64}/libamdhip64.so:
+         * that contains the HIP runtime (Windows: bin\amdhip64.dll or
+         * lib\amdhip64.dll; Linux: lib{,64}/libamdhip64.so):
          *   1. ROCM_PATH environment variable
          *   2. `rocm-sdk path --root` (when rocm-sdk is on PATH)
-         *   3. /opt/rocm
+         *   3. Platform default (Windows: HIP_PATH set by the AMD HIP SDK;
+         *      Linux: /opt/rocm)
          * Returns std::nullopt when none validate. When resolved_explicitly is
          * non-null, it is set to true when the root came from ROCM_PATH or
-         * rocm-sdk (a user-selected ROCm) and false for the /opt/rocm fallback.
-         *
-         * Probes Linux HIP runtime artifacts (lib{,64}/libamdhip64.so, /opt/rocm)
-         * and is only meaningful on Linux; current callers reach it solely behind
-         * is_rocm_installed_system_wide() (Linux-gated).
+         * rocm-sdk (a user-selected ROCm) and false for the platform default.
          */
         static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
+
+        /**
+         * Trim each line and keep those that name an absolute path, preserving
+         * order. `rocm-sdk path --root`'s stdout can be interleaved with the
+         * child's stderr (warnings), so the wanted path is not necessarily the
+         * first line. Pure string logic; the caller validates each candidate.
+         */
+        static std::vector<std::string> pick_rocm_root_candidates(
+            const std::vector<std::string>& lines);
 
         /**
          * Read the ROCm version string from a resolved install root, probing the
@@ -131,9 +138,6 @@ namespace lemon::backends {
          * line of the first file found, or "" when none exist.
          */
         static std::string read_rocm_version_from_root(const fs::path& root);
-
-        /** Check if ROCm libraries are installed system-wide (Linux only) */
-        static bool is_rocm_installed_system_wide();
 
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);

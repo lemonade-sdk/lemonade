@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <cstdint>
 #include <string>
 #include <map>
 #include <optional>
@@ -126,6 +127,14 @@ struct ModelInfo {
     std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
+struct ModelFileInfo {
+    std::string name;
+    std::string path;
+    std::string role;
+    std::uint64_t size_bytes = 0;
+    bool exists = false;
+};
+
 class CloudProviderRegistry;
 
 class ModelManager {
@@ -189,6 +198,9 @@ public:
 
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
+
+    // Get per-model file inventory for the Files tab.
+    std::vector<ModelFileInfo> list_model_files(const std::string& model_name);
 
     // Resolve a public model reference to its canonical internal name.
     std::string resolve_model_name(const std::string& model_name);
@@ -339,6 +351,11 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+
+    // Serializes concurrent downloads that write into the same snapshot
+    // (keyed by checkpoint repo). See download_registered_model.
+    std::mutex download_locks_mutex_;
+    std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name

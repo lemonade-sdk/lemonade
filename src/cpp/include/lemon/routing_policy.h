@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -260,6 +261,27 @@ struct Decision {
     bool default_used = false;             // true => fell through to default_model
     json outputs = json::object();         // verbatim from the matched rule
     std::vector<TraceEntry> trace;         // populated only when trace requested
+
+    Decision() = default;
+
+    // No rule matched — fail open to default_model. This is the base
+    // constructor: it sets route_to, marks default_used, and folds in the trace
+    // (gated by want_trace) so a Decision is never built without deciding what
+    // happens to its trace. The matched constructor delegates to it.
+    Decision(std::string default_model, bool want_trace, std::vector<TraceEntry> trace)
+        : route_to(std::move(default_model)), default_used(true) {
+        if (want_trace) this->trace = std::move(trace);
+    }
+
+    // A rule matched: delegate to the default constructor for the route_to +
+    // trace plumbing, then flip default_used off and layer on the matched rule's
+    // id and outputs.
+    Decision(const Rule& rule, bool want_trace, std::vector<TraceEntry> trace)
+        : Decision(rule.route_to, want_trace, std::move(trace)) {
+        default_used = false;
+        matched_rule = rule.id;
+        outputs = rule.outputs;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -360,17 +382,22 @@ struct RoutePolicy {
     std::map<std::string, ClassifierPtr> classifiers;    // id -> classifier
 };
 
-// The routing engine. The CONSTRUCTOR SIGNATURE is frozen here; the routing
-// logic (first-match evaluation, fail-open, trace assembly) is implemented with
-// the engine assembly. `route()` is declared but intentionally NOT defined in
-// the foundation — the contract test constructs the engine but never calls it.
+// The routing engine. The CONSTRUCTOR SIGNATURE is frozen here. The constructor
+// compiles every rule's MatchExpr into an immutable Condition tree (via
+// compile_match_expr + the classifier/deterministic LeafFactory); route()
+// walks those trees first-match-wins and fails open to default_model.
+//
+// The engine is const after construction and therefore safe to share across
+// concurrent requests: all per-request mutable state lives in a local
+// EvalContext. Hot-reload (#2383) swaps the whole engine behind a shared_ptr
+// rather than mutating one in place.
 class RoutingPolicyEngine {
 public:
-    RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-        : policy_(std::move(policy)), services_(std::move(services)) {}
+    RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services);
 
     // Select a candidate for `ctx`. When `want_trace` is set, the returned
-    // Decision carries a per-condition trace.
+    // Decision carries a per-condition trace. Never throws: any unexpected
+    // failure fails open to default_model with default_used=true.
     Decision route(const RouteContext& ctx, bool want_trace) const;
 
     const RoutePolicy& policy() const { return policy_; }
@@ -378,6 +405,10 @@ public:
 private:
     RoutePolicy policy_;
     ClassifierServices services_;
+    // Compiled match tree per rule, parallel to policy_.rules. Immutable after
+    // construction; each ConditionPtr is itself a shared_ptr to const-usable
+    // state.
+    std::vector<ConditionPtr> compiled_rules_;
 };
 
 } // namespace lemon

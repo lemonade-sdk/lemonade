@@ -92,6 +92,7 @@ private:
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -205,6 +206,15 @@ private:
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
     void handle_image_upscale(const httplib::Request& req, httplib::Response& res);
+
+    // Generative-audio endpoint handler (text -> audio clip: music, SFX)
+    void handle_audio_generations(const httplib::Request& req, httplib::Response& res);
+
+    // Run a media generation into a buffer and respond: the bytes on success, or an
+    // HTTP error if the backend produced nothing (it crashed / OOM'd / failed). This
+    // avoids returning a 200 with an empty body that looks like a successful empty file.
+    void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
+                              const std::function<void(httplib::DataSink&)>& generate);
 
     // Shared helpers for image multipart handlers
     // Return true on success; on failure set res status/body and return false.

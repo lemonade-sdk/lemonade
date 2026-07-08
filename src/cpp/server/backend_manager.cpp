@@ -167,15 +167,10 @@ bool github_download_service_reachable() {
     return utils::HttpClient::is_reachable("https://github.com/", 2);
 }
 
-bool has_matching_system_rocm_runtime(const std::string& expected_runtime_version) {
-    bool resolved_explicitly = false;
-    const auto rocm_root = backends::BackendUtils::resolve_rocm_root(&resolved_explicitly);
-    if (!rocm_root) {
-        return false;
-    }
-
+bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
+                                      const std::string& expected_runtime_version) {
     const std::string system_version =
-        backends::BackendUtils::read_rocm_version_from_root(*rocm_root);
+        backends::BackendUtils::read_rocm_version_from_root(rocm_root);
 
     if (resolved_explicitly) {
         // The user deliberately installed this ROCm (via ROCM_PATH or rocm-sdk).
@@ -183,7 +178,7 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
         // major.minor match, and accept outright when no version file is present.
         if (system_version.empty()) {
             LOG(INFO, "BackendManager")
-                << "Using explicitly-selected system ROCm at " << rocm_root->string()
+                << "Using explicitly-selected system ROCm at " << rocm_root.string()
                 << " (no version file; skipping version gate)" << std::endl;
             return true;
         }
@@ -192,7 +187,7 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
             runtime_version_major_minor(system_version) ==
                 runtime_version_major_minor(expected_runtime_version);
         LOG(matches ? DEBUG : INFO, "BackendManager")
-            << "Explicitly-selected system ROCm at " << rocm_root->string()
+            << "Explicitly-selected system ROCm at " << rocm_root.string()
             << " version '" << system_version << "' vs expected '"
             << expected_runtime_version << "' -> "
             << (matches ? "match" : "mismatch") << std::endl;
@@ -202,7 +197,7 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
     const bool matches =
         runtime_version_matches_expected(system_version, expected_runtime_version);
     LOG(DEBUG, "BackendManager")
-        << "System ROCm at " << rocm_root->string() << " version '" << system_version
+        << "System ROCm at " << rocm_root.string() << " version '" << system_version
         << "' vs expected '" << expected_runtime_version << "' -> "
         << (matches ? "match" : "mismatch") << std::endl;
     return matches;
@@ -236,9 +231,12 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     std::string therock_version = backend_versions["therock"]["version"].get<std::string>();
     std::string expected_rocm_version = normalize_runtime_version(therock_version);
 
-    // Check if system ROCm matches TheRock version - if so, don't need TheRock
-    if (backends::BackendUtils::is_rocm_installed_system_wide() &&
-        has_matching_system_rocm_runtime(expected_rocm_version)) {
+    // Check if system ROCm matches TheRock version - if so, don't need TheRock.
+    // Resolve once here and thread it through, avoiding a second rocm-sdk spawn.
+    bool resolved_explicitly = false;
+    const auto rocm_root = backends::BackendUtils::resolve_rocm_root(&resolved_explicitly);
+    if (rocm_root &&
+        has_matching_system_rocm_runtime(*rocm_root, resolved_explicitly, expected_rocm_version)) {
         LOG(DEBUG, "BackendManager")
             << "System ROCm " << expected_rocm_version
             << " matches TheRock version, skipping TheRock installation" << std::endl;
