@@ -129,8 +129,15 @@ bool unload_all_models(lemonade::LemonadeClient& client);
 // Benchmark Execution
 // ============================================================
 
-// Run a single benchmark measurement
+// Dispatch a single benchmark measurement
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response);
+
+// Benchmark a single text generation
+BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,

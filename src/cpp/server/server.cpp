@@ -11,6 +11,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -727,6 +728,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Generative-audio endpoint: text -> audio clip (music, sound effects)
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
+    });
+    register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_3d_generations(req, res);
     });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
@@ -3150,23 +3154,44 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        std::string mime_type;
+        const auto supported_formats =
+            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
+        std::string response_format = "mp3";
         if (is_streaming) {
-            mime_type = MIME_TYPES["pcm"];
-        } else if (request_json.contains("response_format")) {
-            if (MIME_TYPES.contains(request_json["response_format"])) {
-                mime_type = MIME_TYPES[request_json["response_format"]];
-            } else {
-                nlohmann::json error = {{"error", {
-                    {"message", "Unsupported audio format requested"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        } else {
-            mime_type = MIME_TYPES["mp3"];
+            response_format = "pcm";
+        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        } else if (!supported_formats.empty()) {
+            response_format = supported_formats.front();
         }
+        if (!MIME_TYPES.contains(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported audio format requested"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const bool format_supported = supported_formats.empty() ||
+            std::find(supported_formats.begin(), supported_formats.end(),
+                      response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES[response_format];
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -3192,7 +3217,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            res.set_content_provider(mime_type, audio_source);
+            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink);
+            });
         }
 
         return;
@@ -3251,6 +3278,13 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
         res.status = 500;
+        const auto& err = error_payload["error"];
+        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
+            const int status = err["status"].get<int>();
+            if (status >= 400 && status <= 599) {
+                res.status = status;
+            }
+        }
         res.set_content(error_payload.dump(), "application/json");
         return;
     }
@@ -3317,6 +3351,106 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         });
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_3d_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // All cheap validation runs before auto_load_model_if_needed so a
+        // malformed request can never trigger a multi-gigabyte model load.
+        auto reject = [&res](const std::string& message) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", message},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+        };
+        if (!request_json.contains("model") || !request_json["model"].is_string()) {
+            return reject("Missing or non-string 'model' field in request");
+        }
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            return reject("Missing or non-string 'image' field in request (base64-encoded input image)");
+        }
+        {
+            std::string image = request_json["image"].get<std::string>();
+            if (image.rfind("data:", 0) == 0) {
+                const auto comma = image.find(',');
+                if (comma == std::string::npos) {
+                    return reject("'image' data URL is missing its base64 payload");
+                }
+                image = image.substr(comma + 1);
+            }
+            if (image.empty() || image.find_first_not_of(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
+                    std::string::npos) {
+                return reject("'image' must be base64 data or a base64 data: URL");
+            }
+            // Sniffing needs only the first 12 bytes; base64 is block-aligned,
+            // so decoding the first 16 characters is enough and avoids decoding
+            // a multi-megabyte payload just to validate it.
+            std::string head;
+            for (char c : image) {
+                if (c != '\r' && c != '\n') {
+                    head += c;
+                    if (head.size() == 16) break;
+                }
+            }
+            if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
+                return reject("'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
+            }
+        }
+        std::string response_format = "glb";
+        if (request_json.contains("response_format")) {
+            if (!request_json["response_format"].is_string()) {
+                return reject("'response_format' must be a string");
+            }
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        // TODO: convert from a natively supported format instead of rejecting.
+        if (response_format != "glb") {
+            return reject("response_format '" + response_format +
+                          "' is not supported (supported: glb)");
+        }
+        if (request_json.contains("resolution")) {
+            const auto& r = request_json["resolution"];
+            const std::string v = r.is_string() ? r.get<std::string>()
+                : (r.is_number_integer() ? std::to_string(r.get<int>()) : "");
+            if (v != "512" && v != "1024" && v != "1536") {
+                return reject("'resolution' must be 512, 1024, or 1536");
+            }
+        }
+        if (request_json.contains("bg_removal")) {
+            const auto& b = request_json["bg_removal"];
+            if (!b.is_string() || (b != "threshold" && b != "birefnet")) {
+                return reject("'bg_removal' must be 'threshold' or 'birefnet'");
+            }
+        }
+        if (request_json.contains("seed") && !request_json["seed"].is_number_integer()) {
+            return reject("'seed' must be an integer");
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
+
+        serve_media_or_error(res, "model/gltf-binary", [this, request_json](httplib::DataSink& sink) {
+            router_->model_3d_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << e.what() << std::endl;
         res.status = 500;
         res.set_content(nlohmann::json{{"error", {
             {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");

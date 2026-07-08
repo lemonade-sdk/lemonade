@@ -218,6 +218,7 @@ private:
 
     // Generative-audio endpoint handler (text -> audio clip: music, SFX)
     void handle_audio_generations(const httplib::Request& req, httplib::Response& res);
+    void handle_3d_generations(const httplib::Request& req, httplib::Response& res);
 
     // Run a media generation into a buffer and respond: the bytes on success, or an
     // HTTP error if the backend produced nothing (it crashed / OOM'd / failed). This

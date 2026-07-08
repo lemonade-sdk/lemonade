@@ -111,8 +111,22 @@ export interface AceStepOptions {
   saveOptions: BooleanOption;
 }
 
+export interface TrellisOptions {
+  recipe: 'trellis';
+  trellisBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface OpenMossOptions {
+  recipe: 'openmoss';
+  openmossBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions | OpenMossOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -304,6 +318,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     isBackendOption: true,
     backendRecipe: 'acestep',
   },
+  trellisBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'Trellis backend to use',
+    isBackendOption: true,
+    backendRecipe: 'trellis',
+  },
+  openmossBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'OpenMOSS TTS backend to use',
+    isBackendOption: true,
+    backendRecipe: 'openmoss',
+  },
 
   // Common option - save settings
   saveOptions: {
@@ -326,7 +356,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -342,6 +372,8 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
   'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
+  'trellis': ['trellisBackend', 'pinned', 'saveOptions'],
+  'openmoss': ['openmossBackend', 'pinned', 'saveOptions'],
 };
 
 /**
@@ -376,6 +408,8 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   sdcppBackend: 'sd-cpp_backend',
   thinksoundBackend: 'thinksound_backend',
   acestepBackend: 'acestep_backend',
+  trellisBackend: 'trellis_backend',
+  openmossBackend: 'openmoss_backend',
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',

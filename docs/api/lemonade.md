@@ -17,6 +17,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
+| `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
@@ -725,6 +726,44 @@ curl -X POST http://localhost:13305/v1/audio/generations \
         "seed": 42
       }' \
   --output clip.wav
+```
+
+## `POST /v1/3d/generations`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+3D Generation API. You provide an input image and receive a textured 3D mesh as a glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image must be PNG, JPEG, BMP, or GIF.
+
+This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extension.
+
+> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and takes on the order of minutes; higher cascade resolutions take longer.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The 3D-generation model to use (e.g., `TRELLIS-3D`). |
+| `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
+| `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
+| `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
+
+### Response
+
+On success the raw mesh bytes are returned as `model/gltf-binary`. On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/3d/generations \
+  -H "Content-Type: application/json" \
+  -d "{
+        \"model\": \"TRELLIS-3D\",
+        \"image\": \"$(base64 -w0 input.png)\",
+        \"resolution\": 512,
+        \"seed\": 42
+      }" \
+  --output model.glb
 ```
 
 ## `GET /v1/health`
