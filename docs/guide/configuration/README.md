@@ -97,6 +97,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "cfg_scale": 7.0,
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
+    "cuda_bin": "builtin",
     "height": 512,
     "rocm_args": "",
     "rocm_bin": "builtin",

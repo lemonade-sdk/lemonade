@@ -62,6 +62,8 @@
     "cfg_scale": 7.0,
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
+    "cuda_bin": "builtin",
     "height": 512,
     "rocm_args": "",
     "rocm_bin": "builtin",

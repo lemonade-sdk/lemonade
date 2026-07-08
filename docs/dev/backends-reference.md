@@ -47,7 +47,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `sd-cpp` | cuda | linux | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
 | `sd-cpp` | metal | macos | metal |
