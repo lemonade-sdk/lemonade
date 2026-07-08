@@ -1783,7 +1783,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
-        LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
+        LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
         return;
     }
 
@@ -1836,7 +1836,7 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             continue;
         }
         if (router_->is_model_loaded(component)) {
-            LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+            LOG(DEBUG, "Server") << "Component already loaded: " << component << std::endl;
             continue;
         }
         auto comp_info = model_manager_->get_model_info(component);
