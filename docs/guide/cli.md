@@ -773,7 +773,7 @@ Scenarios are defined in JSON files. Each file contains a `scenarios` array wher
 | `name` | string | Unique scenario name (required) |
 | `category` | string | Category label for grouping (default: `"general"`) |
 | `messages` | array | Chat messages in OpenAI format (required for text generation) |
-| `messages` | array | Chat messages in OpenAI format (required for embedding test) |
+| `input` | array | Chat messages in OpenAI format (required for embedding test) |
 | `max_tokens` | int | Maximum output tokens (default: `128`) |
 | `warmup_runs` | int | Override warmup runs for this scenario (default: `0`) |
 | `measurement_runs` | int | Override measurement runs for this scenario (default: `3`) |
