@@ -18,6 +18,7 @@
 #include <httplib.h>
 #include "runtime_config.h"
 #include "router.h"
+#include "routing_policy.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -30,6 +31,12 @@ namespace lemon {
 
 // Forward declaration
 class SystemMetricsPlatform;
+
+struct RouterDispatchResult {
+    std::string requested_model;
+    std::string selected_model;
+    Decision decision;
+};
 
 class Server {
 public:
@@ -100,13 +107,16 @@ private:
                                             const ModelInfo& collection_info,
                                             httplib::Response& res);
     // Run a collection.router model's routing engine and return the selected
-    // candidate model. Returns std::nullopt when routing did not engage (no
-    // parsed policy), so callers leave the request's model field untouched.
-    std::optional<std::string> route_collection_request(const nlohmann::json& request_json,
-                                                        const ModelInfo& collection_info);
+    // candidate plus the full Decision. Returns std::nullopt when routing did
+    // not engage (no parsed policy), so callers leave the request untouched.
+    std::optional<RouterDispatchResult> route_collection_request(
+        const nlohmann::json& request_json,
+        const ModelInfo& collection_info);
     // If request_json addresses a collection.router model, rewrite its "model"
-    // field in place to the engine-selected candidate. No-op otherwise.
-    void apply_router_collection_dispatch(nlohmann::json& request_json);
+    // field in place to the engine-selected candidate and return the Decision.
+    // No-op otherwise.
+    std::optional<RouterDispatchResult> apply_router_collection_dispatch(
+        nlohmann::json& request_json);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);

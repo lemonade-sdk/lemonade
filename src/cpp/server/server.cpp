@@ -188,6 +188,172 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+json route_decision_to_json(const Decision& decision) {
+    json out = {
+        {"version", "1"},
+        {"route_to", decision.route_to},
+        {"matched_rule", decision.matched_rule},
+        {"default_used", decision.default_used},
+        {"outputs", decision.outputs.is_object() ? decision.outputs : json::object()},
+    };
+    if (!decision.trace.empty()) {
+        out["trace"] = json::array();
+        for (const auto& entry : decision.trace) {
+            json trace_entry = {
+                {"condition", entry.condition},
+                {"result", entry.result},
+            };
+            if (entry.score.has_value()) {
+                trace_entry["score"] = *entry.score;
+            }
+            out["trace"].push_back(std::move(trace_entry));
+        }
+    }
+    return out;
+}
+
+void attach_route_header(httplib::Response& res, const Decision& decision) {
+    if (!decision.matched_rule.empty()) {
+        res.set_header("x-lemonade-route", decision.matched_rule);
+    }
+}
+
+void attach_route_decision(json& response, httplib::Response& res,
+                           const std::optional<RouterDispatchResult>& dispatch) {
+    if (!dispatch.has_value()) {
+        return;
+    }
+    response["x_lemonade_route"] = route_decision_to_json(dispatch->decision);
+    attach_route_header(res, dispatch->decision);
+}
+
+std::string attach_route_decision_to_sse_event(
+    const std::string& event,
+    const json& route_decision_json,
+    bool& attached) {
+    if (attached || route_decision_json.is_null()) {
+        return event;
+    }
+
+    const std::string prefix = "data:";
+    std::size_t pos = event.find(prefix);
+    if (pos == std::string::npos) {
+        return event;
+    }
+    std::size_t payload_start = pos + prefix.size();
+    while (payload_start < event.size() &&
+           (event[payload_start] == ' ' || event[payload_start] == '\t')) {
+        ++payload_start;
+    }
+    std::size_t payload_end = event.find('\n', payload_start);
+    if (payload_end == std::string::npos) {
+        payload_end = event.size();
+    }
+    while (payload_end > payload_start &&
+           (event[payload_end - 1] == '\r' || event[payload_end - 1] == ' ' ||
+            event[payload_end - 1] == '\t')) {
+        --payload_end;
+    }
+
+    std::string payload = event.substr(payload_start, payload_end - payload_start);
+    if (payload.empty() || payload == "[DONE]") {
+        return event;
+    }
+
+    json parsed = json::parse(payload, nullptr, /*allow_exceptions=*/false);
+    if (!parsed.is_object()) {
+        return event;
+    }
+    parsed["x_lemonade_route"] = route_decision_json;
+    attached = true;
+
+    std::string out = event.substr(0, payload_start);
+    out += parsed.dump();
+    out += event.substr(payload_end);
+    return out;
+}
+
+class RouteDecisionSseSink {
+public:
+    RouteDecisionSseSink(httplib::DataSink& inner, json route_decision_json)
+        : inner_(inner), route_decision_json_(std::move(route_decision_json)) {}
+
+    bool write(const char* data, size_t length) {
+        buffer_.append(data, length);
+        std::size_t event_end = std::string::npos;
+        while ((event_end = buffer_.find("\n\n")) != std::string::npos) {
+            std::string event = buffer_.substr(0, event_end + 2);
+            buffer_.erase(0, event_end + 2);
+            event = attach_route_decision_to_sse_event(
+                event, route_decision_json_, attached_);
+            if (!inner_.write(event.c_str(), event.size())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void done() {
+        flush();
+        if (inner_.done) {
+            inner_.done();
+        }
+    }
+
+    void done_with_trailer(const httplib::Headers& trailer) {
+        flush();
+        if (inner_.done_with_trailer) {
+            inner_.done_with_trailer(trailer);
+        } else if (inner_.done) {
+            inner_.done();
+        }
+    }
+
+    bool is_writable() const {
+        return !inner_.is_writable || inner_.is_writable();
+    }
+
+private:
+    void flush() {
+        if (!buffer_.empty()) {
+            std::string event = attach_route_decision_to_sse_event(
+                buffer_, route_decision_json_, attached_);
+            inner_.write(event.c_str(), event.size());
+            buffer_.clear();
+        }
+    }
+
+    httplib::DataSink& inner_;
+    json route_decision_json_;
+    bool attached_ = false;
+    std::string buffer_;
+};
+
+template <typename StreamFn>
+void stream_with_route_decision(httplib::DataSink& sink,
+                                json route_decision_json,
+                                StreamFn&& stream_fn) {
+    if (route_decision_json.is_null()) {
+        stream_fn(sink);
+        return;
+    }
+
+    RouteDecisionSseSink route_sink_wrapper(sink, std::move(route_decision_json));
+    httplib::DataSink route_sink;
+    route_sink.write = [&route_sink_wrapper](const char* data, size_t len) {
+        return route_sink_wrapper.write(data, len);
+    };
+    route_sink.done = [&route_sink_wrapper]() { route_sink_wrapper.done(); };
+    route_sink.done_with_trailer = [&route_sink_wrapper](
+        const httplib::Headers& trailer) {
+        route_sink_wrapper.done_with_trailer(trailer);
+    };
+    route_sink.is_writable = [&route_sink_wrapper]() {
+        return route_sink_wrapper.is_writable();
+    };
+    stream_fn(route_sink);
+}
+
 int get_http_status_from_error(const std::string& error_code) {
     if (error_code == "slots_pinned_error") {
         return 409;
@@ -2189,8 +2355,9 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
-std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
-                                             const ModelInfo& collection_info) {
+std::optional<RouterDispatchResult> Server::route_collection_request(
+    const nlohmann::json& request_json,
+    const ModelInfo& collection_info) {
     // The policy is parsed once when the models cache is built (ModelManager),
     // so dispatch just reads it here. A missing policy means the collection
     // failed to parse at cache-build time; return nullopt so the caller leaves
@@ -2210,34 +2377,44 @@ std::optional<std::string> Server::route_collection_request(const nlohmann::json
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
-    Decision decision = engine.route(ctx, /*want_trace=*/false);
-    return decision.route_to;
+    const bool want_trace = request_json.value("route_trace", false);
+    Decision decision = engine.route(ctx, want_trace);
+    RouterDispatchResult result;
+    result.requested_model = collection_info.model_name;
+    result.selected_model = decision.route_to;
+    result.decision = std::move(decision);
+    return result;
 }
 
-void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
+    nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
-        return;
+        return std::nullopt;
     }
     const std::string requested_model = request_json["model"].get<std::string>();
     try {
         if (!model_manager_->model_exists(requested_model)) {
-            return;
+            return std::nullopt;
         }
         ModelInfo info = model_manager_->get_model_info(requested_model);
         if (!is_router_collection_recipe(info.recipe)) {
-            return;
+            return std::nullopt;
         }
-        std::optional<std::string> selected = route_collection_request(request_json, info);
-        if (!selected) {
-            return;
+        auto dispatch = route_collection_request(request_json, info);
+        if (!dispatch) {
+            return std::nullopt;
         }
+        dispatch->requested_model = requested_model;
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
-                            << *selected << "'" << std::endl;
-        request_json["model"] = *selected;
+                            << dispatch->selected_model << "'" << std::endl;
+        request_json["model"] = dispatch->selected_model;
+        request_json.erase("route_trace");
+        return dispatch;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
     }
+    return std::nullopt;
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
@@ -2259,6 +2436,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         bool request_modified = false;
+        std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
         // plain completion. Branch before auto-load/LLM-type checks: the collection
@@ -2276,12 +2454,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // The recipe is the trigger (no "auto", no /v1/route): run the
                         // routing engine and rewrite the model to the selected
                         // candidate, then fall through to normal completion handling.
-                        std::optional<std::string> selected =
-                            route_collection_request(request_json, info);
-                        if (selected) {
+                        route_dispatch = route_collection_request(request_json, info);
+                        if (route_dispatch) {
+                            route_dispatch->requested_model = requested_model;
                             LOG(INFO, "Server") << "Router collection '" << requested_model
-                                                << "' -> '" << *selected << "'" << std::endl;
-                            request_json["model"] = *selected;
+                                                << "' -> '" << route_dispatch->selected_model << "'" << std::endl;
+                            request_json["model"] = route_dispatch->selected_model;
+                            request_json.erase("route_trace");
                         }
                     }
                 }
@@ -2372,18 +2551,29 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+                if (route_dispatch) {
+                    attach_route_header(res, route_dispatch->decision);
+                }
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
+                json route_decision_json = route_dispatch
+                    ? route_decision_to_json(route_dispatch->decision)
+                    : json(nullptr);
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
                         // For chunked responses, offset tracks bytes sent so far
                         // We only want to stream once when offset is 0
                         if (offset > 0) {
                             return false; // We're done after the first call
                         }
 
-                        router_->chat_completion_stream(request_body, sink);
+                        stream_with_route_decision(
+                            sink,
+                            route_decision_json,
+                            [this, &request_body](httplib::DataSink& route_sink) {
+                                router_->chat_completion_stream(request_body, route_sink);
+                            });
                         return false;
                     }
                 );
@@ -2404,6 +2594,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             // Debug: Check if response contains tool_calls
             if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                 auto& first_choice = response["choices"][0];
@@ -2536,7 +2727,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -2605,16 +2797,27 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                if (route_dispatch) {
+                    attach_route_header(res, route_dispatch->decision);
+                }
 
+                json route_decision_json = route_dispatch
+                    ? route_decision_to_json(route_dispatch->decision)
+                    : json(nullptr);
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Already sent everything
                         }
 
                         // Use unified Router path for streaming
-                        router_->completion_stream(request_body, sink);
+                        stream_with_route_decision(
+                            sink,
+                            route_decision_json,
+                            [this, &request_body](httplib::DataSink& route_sink) {
+                                router_->completion_stream(request_body, route_sink);
+                            });
 
                         return false;
                     }
@@ -2649,6 +2852,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             res.set_content(response.dump(), "application/json");
 
             // Print and save telemetry for non-streaming completions
@@ -3982,7 +4186,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -4019,17 +4224,28 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                if (route_dispatch) {
+                    attach_route_header(res, route_dispatch->decision);
+                }
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
+                json route_decision_json = route_dispatch
+                    ? route_decision_to_json(route_dispatch->decision)
+                    : json(nullptr);
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
 
                         // Use unified Router path for streaming
-                        router_->responses_stream(request_body, sink);
+                        stream_with_route_decision(
+                            sink,
+                            route_decision_json,
+                            [this, &request_body](httplib::DataSink& route_sink) {
+                                router_->responses_stream(request_body, route_sink);
+                            });
 
                         return false;
                     }
@@ -4050,6 +4266,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
         }
