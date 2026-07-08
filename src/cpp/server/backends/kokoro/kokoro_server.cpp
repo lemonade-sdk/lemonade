@@ -4,7 +4,9 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/model_manager.h"
+#include "lemon/platform.h"
 #include "lemon/utils/path_utils.h"
 #include <filesystem>
 #include "lemon/backend_manager.h"
@@ -42,10 +44,19 @@ std::string default_kokoro_backend() {
 
 InstallParams KokoroServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
+
+#ifdef LEMON_LINUX_MUSL
+    // musl ships only a CPU build; other backends have none (helper throws).
+    const auto musl_asset = musl::kokoro(backend, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
+    return params;
+#endif
+
     params.repo = "lemonade-sdk/Kokoros";
 
     if (backend == "cpu") {
-#ifdef _WIN32
+#if defined(_WIN32)
         params.filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
         params.filename = "kokoros-linux-x86_64.tar.gz";

@@ -30,10 +30,17 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+#ifndef LEMON_LINUX_MUSL
+        // No musl rocm build exists (glibc-only asset); omit on musl.
         {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+#else
+        // musl publishes both x86_64 and aarch64 CPU/Vulkan assets.
+        {"vulkan", {"linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64/ARM64 CPU"},
+        {"cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU"},
+#endif
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},

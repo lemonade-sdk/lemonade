@@ -1,0 +1,129 @@
+name: Alpine musl APK 🏔️
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "src/**"
+      - "packaging/alpine/**"
+      - "Dockerfile.alpine"
+      - ".github/workflows/alpine_apk_build.yml"
+      - "!**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build .apk (${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      # Needed by the release-upload step on tag pushes.
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          clean: true
+
+      # The job runs on the glibc host so the JS actions (checkout, upload,
+      # release) work; only the musl build itself runs inside Alpine via docker.
+      # The arm64 runner is native, so the arm64 alpine image needs no QEMU.
+      - name: Build APK
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest \
+            sh packaging/alpine/build-apk.sh
+
+      - name: Smoke test the package
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh -eux -c '
+            apk add --allow-untrusted ./dist/lemonade-server-*.apk
+            lemond --version
+            lemonade --version
+
+            export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+            mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+            lemond --port 13305 > /tmp/lemond.log 2>&1 &
+            for i in $(seq 1 30); do
+              if wget -q -O - http://localhost:13305/live >/dev/null 2>&1; then
+                echo "Server is up"; exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: server did not become healthy"
+            cat /tmp/lemond.log || true
+            exit 1
+          '
+
+      - name: Smoke test the OpenRC service
+        run: |
+          # Exercises the documented `rc-service lemonade-server start` path (not
+          # just a hand-exported `lemond`): the initd must export XDG_RUNTIME_DIR
+          # itself, or lemond refuses to start. --nodeps because a bare container
+          # has no running `net` service to depend on.
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh -eux -c '
+            apk add --allow-untrusted ./dist/lemonade-server-*.apk
+
+            # Minimal OpenRC bootstrap for a non-init container.
+            mkdir -p /run/openrc
+            touch /run/openrc/softlevel
+
+            rc-service --nodeps lemonade-server start
+            for i in $(seq 1 30); do
+              if wget -q -O - http://localhost:13305/live >/dev/null 2>&1; then
+                echo "Service is up"
+                rc-service --nodeps lemonade-server stop || true
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: service did not become healthy"
+            cat /var/log/lemonade/lemonade.log || true
+            rc-service --nodeps lemonade-server stop || true
+            exit 1
+          '
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-server-apk-${{ matrix.arch }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+      # abuild names both arches lemonade-server-<ver>-r<rel>.apk, so give the
+      # release asset an arch suffix to avoid overwriting the other leg's upload.
+      - name: Stage release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -eux
+          mkdir -p release-assets
+          orig=$(ls dist/lemonade-server-*.apk | head -1)
+          cp "$orig" "release-assets/$(basename "${orig%.apk}")-${{ matrix.arch }}.apk"
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.apk
+          fail_on_unmatched_files: true

@@ -4,9 +4,11 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
+#include "lemon/platform.h"
 #include <algorithm>
 #include <filesystem>
 #include <regex>
@@ -161,6 +163,14 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     if (resolved_backend == "system") {
         return params; // Return empty params for system backend
     }
+
+#ifdef LEMON_LINUX_MUSL
+    // musl ships only CPU and Vulkan; cuda/rocm have no musl build (helper throws).
+    const auto musl_asset = musl::llamacpp(resolved_backend, version, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
+    return params;
+#endif
 
     if (resolved_backend == "rocm-stable") {
         params.repo = "lemonade-sdk/llama.cpp";

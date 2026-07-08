@@ -1901,6 +1901,26 @@ if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
     add_test(NAME InstallAtomicityTest COMMAND test_install_atomicity)
 endif()
 
+# musl backend asset resolution (lemon::backends::musl::*). Header-only, pure
+# logic: asserts a musl host never resolves a glibc ("ubuntu") asset and that
+# GPU backends with no musl build throw. Arch is a parameter, so it runs on any
+# libc — no need to build under musl.
+set(_MUSL_INSTALL_PARAMS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_musl_install_params.cpp"
+)
+if(EXISTS "${_MUSL_INSTALL_PARAMS_TEST_SRC}")
+    add_executable(test_musl_install_params
+        test/cpp/test_musl_install_params.cpp
+    )
+    target_include_directories(test_musl_install_params PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME MuslInstallParamsTest COMMAND test_musl_install_params)
+endif()
+
 # Routing engine contract surface (issue #2407). Header-only foundation: the
 # shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
 # The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
