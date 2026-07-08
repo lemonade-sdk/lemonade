@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backend_manager.h"
+#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -77,8 +78,7 @@ std::string AceStepServer::resolve_binary_path(const std::string& backend) {
 void AceStepServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
-                         bool do_not_upgrade) {
-    (void)do_not_upgrade;
+                         bool /*do_not_upgrade*/) {
     LOG(INFO, "acestep-server") << "Loading model: " << model_name << std::endl;
 
     const std::string model_path = model_info.resolved_path();
@@ -89,7 +89,11 @@ void AceStepServer::load(const std::string& model_name,
     std::string backend = options.get_option("acestep_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("acestep");
-        backend = supported.backends.empty() ? "vulkan" : supported.backends[0];
+        if (supported.backends.empty()) {
+            throw UnsupportedOperationException(
+                "ACE-Step audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
+        }
+        backend = supported.backends[0];
     }
     RuntimeConfig::validate_backend_choice("acestep", backend);
     const std::string exe_path = resolve_binary_path(backend);
@@ -113,34 +117,35 @@ void AceStepServer::load(const std::string& model_name,
     // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
     // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
-    if (backend == "rocm" || backend == "cuda") {
-        std::string therock_lib;
-        if (backend == "rocm") {
-            const std::string arch = SystemInfo::get_rocm_arch();
-            therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
-        }
-        const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
+    const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
+    auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        // TheRock keeps its LLVM support DLLs (libomp140.x86_64.dll for
-        // OpenMP-enabled ggml builds) under lib/llvm/bin, a sibling of the
-        // main bin/ dir (therock_lib), not inside it.
-        std::string llvm_bin = therock_lib.empty() ? ""
-            : (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
-        std::string path = therock_lib.empty() ? exe_dir
-            : (therock_lib + ";" + llvm_bin + ";" + exe_dir);
+        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
-        // builds) under lib/llvm/lib, next to the main lib dir.
-        std::string ld = therock_lib.empty() ? exe_dir
-            : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
+        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
-        if (backend == "cuda") {
-            BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
+    };
+    if (backend == "rocm") {
+        const std::string arch = SystemInfo::get_rocm_arch();
+        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+        std::string dirs;
+        if (!therock_lib.empty()) {
+#ifdef _WIN32
+            const std::string llvm_bin =
+                (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
+            dirs = therock_lib + ";" + llvm_bin;
+#else
+            dirs = therock_lib + ":" + therock_lib + "/llvm/lib";
+#endif
         }
+        prepend_loader_path(dirs);
+    } else if (backend == "cuda") {
+        prepend_loader_path("");
+        BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
