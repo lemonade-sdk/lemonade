@@ -2890,6 +2890,38 @@ class EndpointTests(ServerTestBase):
                 public_name,
                 "response model must be the routed candidate, not the router alias",
             )
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("version"), "1")
+            self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+            self.assertEqual(route.get("default_used"), False)
+            self.assertEqual(route.get("outputs"), {})
+            self.assertNotIn("trace", route, "trace must be opt-in via route_trace")
+            self.assertEqual(
+                chat_response.headers.get("x-lemonade-route"),
+                "code-to-test-model",
+            )
+
+            default_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "Hello there"}],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(default_response.status_code, 200, default_response.text)
+            default_body = default_response.json()
+            default_route = default_body.get("x_lemonade_route")
+            self.assertIsInstance(default_route, dict)
+            self.assertEqual(default_route.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(default_route.get("matched_rule"), "")
+            self.assertEqual(default_route.get("default_used"), True)
+            self.assertEqual(default_route.get("outputs"), {})
+            self.assertNotIn("trace", default_route)
+            self.assertIsNone(default_response.headers.get("x-lemonade-route"))
             print(f"[OK] collection.router dispatched {public_name} -> completion")
         finally:
             try:
@@ -2908,6 +2940,66 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def test_021zi_router_collection_trace_and_outputs(self):
+        """route_trace=true returns the full Decision trace and copies rule
+        outputs verbatim without interpreting them (#2386)."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterTrace-{suffix}"
+        public_name = canonical_name[5:]
+        routing = {
+            "candidates": [ENDPOINT_TEST_MODEL],
+            "default_model": ENDPOINT_TEST_MODEL,
+            "rules": [
+                {
+                    "id": "code-to-test-model",
+                    "match": {"keywords_any": ["code", "def "]},
+                    "route_to": ENDPOINT_TEST_MODEL,
+                    "outputs": {"verdict": "warn"},
+                }
+            ],
+        }
+        try:
+            pull_response = self._pull_router_collection(canonical_name, routing=routing)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "route_trace": True,
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertIn("choices", body)
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("outputs"), {"verdict": "warn"})
+            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+            trace = route.get("trace")
+            self.assertIsInstance(trace, list)
+            self.assertTrue(trace)
+            self.assertTrue(
+                any(
+                    entry.get("condition") == "keywords_any"
+                    and entry.get("result") is True
+                    for entry in trace
+                ),
+                f"route trace must include the matched keywords condition: {trace}",
+            )
+            # Core must not interpret trust outputs as content-filter behavior.
+            choice = body["choices"][0]
+            self.assertNotEqual(choice.get("finish_reason"), "content_filter")
+            print(f"[OK] collection.router route_trace returned Decision trace")
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
@@ -3040,11 +3132,13 @@ class EndpointTests(ServerTestBase):
                     "input": "Please write code for me",
                     "max_output_tokens": 16,
                     "stream": True,
+                    "route_trace": True,
                 },
                 stream=True,
                 timeout=TIMEOUT_MODEL_OPERATION,
             ) as resp:
                 self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertEqual(resp.headers.get("x-lemonade-route"), "code-to-test-model")
                 data_events = []
                 for raw_line in resp.iter_lines():
                     if not raw_line:
@@ -3062,6 +3156,25 @@ class EndpointTests(ServerTestBase):
                 blob,
                 f"streaming /responses must not error: {blob[:500]}",
             )
+            route_chunks = []
+            for event in data_events:
+                if event == "[DONE]":
+                    continue
+                try:
+                    payload = json.loads(event)
+                except Exception:
+                    continue
+                route = payload.get("x_lemonade_route")
+                if route:
+                    route_chunks.append(route)
+            self.assertTrue(
+                route_chunks,
+                "streaming /responses must attach x_lemonade_route to a chunk",
+            )
+            route = route_chunks[0]
+            self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+            self.assertIsInstance(route.get("trace"), list)
             print(
                 f"[OK] collection.router /responses (streaming) dispatched {public_name}"
             )
