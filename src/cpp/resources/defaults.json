@@ -13,7 +13,8 @@
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
-    "args": ""
+    "args": "",
+    "prefer_system": false
   },
   "global_timeout": 600,
   "host": "localhost",
