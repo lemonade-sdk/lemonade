@@ -1693,7 +1693,7 @@
         "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
         "recipe": "collection.omni",
         "suggested": true,
-        "size": 9.30
+        "size": 9.3
     },
     "Ultra Collection": {
         "checkpoint": "",
@@ -2009,5 +2009,15 @@
             "classification"
         ],
         "size": 0.27
+    },
+    "DeepSeek-V4-Flash-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 81.0
     }
 }

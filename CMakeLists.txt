@@ -162,6 +162,7 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
+    "ds4|ds4"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
