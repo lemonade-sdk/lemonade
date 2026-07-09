@@ -27,10 +27,10 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to parakeet-server", "Parakeet.cpp Options"},
     },
     /*support*/ {
-        {"cpu",    {"windows", "linux"},    {{"cpu", {"x86_64"}}},                   "x86_64 CPU"},
-        {"vulkan", {"windows", "linux"},    {{"cpu", {"x86_64"}}, {"amd_gpu", {}}},  "x86_64 CPU / AMD GPU"},
-        {"cuda",   {"windows", "linux"},    {{"nvidia_gpu", {}}},                    "NVIDIA GPU"},
         {"metal",  {"macos"},               {{"metal", {}}},                         "Apple Silicon GPU"},
+        {"cuda",   {"windows", "linux"},    {{"nvidia_gpu", {}}},                    "NVIDIA GPU"},
+        {"vulkan", {"windows", "linux"},    {{"cpu", {"x86_64"}}, {"amd_gpu", {}}},  "x86_64 CPU / AMD GPU"},
+        {"cpu",    {"windows", "linux"},    {{"cpu", {"x86_64"}}},                   "x86_64 CPU"},
     },
     /*default_labels*/  {"transcription"},
     /*required_checkpoints*/ {"main"},
@@ -43,8 +43,8 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {},
-    /*bin_variants*/    {},
+    /*arg_variants*/    {"cpu", "vulkan", "cuda", "metal"},
+    /*bin_variants*/    {"cpu", "vulkan", "cuda", "metal"},
     /*config_extra*/    nlohmann::json::object(),
 };
 
