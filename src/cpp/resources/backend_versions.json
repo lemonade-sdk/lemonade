@@ -111,6 +111,9 @@
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },
+  "onnxruntime": {
+    "cpu": "0.2.0"
+  },
   "thinksound": {
     "vulkan": "v0.1.2",
     "rocm-stable": "v0.1.2",

@@ -56,6 +56,15 @@ public:
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
 };
 
+// Text-classification capability (encoder classifiers: PII, prompt-safety,
+// domain, etc.). Input text -> {label: score}. Serves the router's `classifier`
+// condition type (issue #2592).
+class IClassificationServer : public virtual ICapability {
+public:
+    virtual ~IClassificationServer() = default;
+    virtual json classify(const json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;

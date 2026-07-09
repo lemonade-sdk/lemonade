@@ -51,7 +51,8 @@ enum class ModelType {
     TRANSCRIPTION,
     IMAGE,
     TTS,
-    AUDIO_GENERATION   // text -> audio clip (music, sound effects)
+    AUDIO_GENERATION,  // text -> audio clip (music, sound effects)
+    CLASSIFICATION     // text -> {label: score} (router classifier models)
 };
 
 // Bitmask pattern for models that use multiple devices
@@ -84,6 +85,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
         case ModelType::AUDIO_GENERATION: return "audio-generation";
+        case ModelType::CLASSIFICATION: return "classification";
         default: return "unknown";
     }
 }
@@ -148,6 +150,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         }
         if (label == "audio-generation") {
             return ModelType::AUDIO_GENERATION;
+        }
+        if (label == "classification" || label == "classifier") {
+            return ModelType::CLASSIFICATION;
         }
     }
     return ModelType::LLM;

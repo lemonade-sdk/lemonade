@@ -108,6 +108,7 @@ public:
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
+    json classify(const json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);

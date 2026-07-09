@@ -677,6 +677,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_reranking(req, res);
     });
 
+    register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_classify(req, res);
+    });
+
     // Slots (llama.cpp backend information)
     register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots(req, res);
