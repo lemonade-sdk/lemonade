@@ -41,7 +41,7 @@ docker run -d \
 > docker volume rm lemonade-cache lemonade-llama lemonade-recipe
 > ```
 
-### Docker Run with a Specific Port and Version
+### Docker Run with a Specific Port
 
 ```bash
 docker run -d \
