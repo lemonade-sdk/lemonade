@@ -11,6 +11,7 @@
 #include "lemon/model_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 
 namespace lemon {
 
@@ -209,7 +210,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     // `?blobs=true` makes HF include per-file `size` in each siblings entry,
     // which we forward to the variant set so the CLI menu can show real sizes.
-    std::string url = "https://huggingface.co/api/models/" + checkpoint + "?blobs=true";
+    std::string url = lemon::utils::get_hf_endpoint() + "/api/models/" + checkpoint + "?blobs=true";
     auto response = HttpClient::get(url, headers);
     // HuggingFace returns 401 (not 404) for nonexistent public repos to mimic
     // the behavior of gated repos. Treat both as "not found" from the user's
@@ -308,7 +309,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         }
 
         std::string manifest_url =
-            "https://huggingface.co/" + checkpoint + "/resolve/main/" + manifest_filename;
+            lemon::utils::get_hf_endpoint() + "/" + checkpoint + "/resolve/main/" + manifest_filename;
         auto manifest_response = HttpClient::get(manifest_url, headers);
         if (manifest_response.status_code != 200) {
             throw std::runtime_error(

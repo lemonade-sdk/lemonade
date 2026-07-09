@@ -212,6 +212,20 @@ std::string get_runtime_dir() {
     return platform()->get_runtime_dir();
 }
 
+std::string get_hf_endpoint() {
+    static const std::string default_endpoint = "https://huggingface.co";
+    std::string env = get_environment_variable_utf8("HF_ENDPOINT");
+    if (env.empty()) {
+        return default_endpoint;
+    }
+    // Strip trailing slashes
+    while (env.size() > 1 && env.back() == '/') {
+        env.pop_back();
+    }
+    return env;
+}
+
+
 std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only

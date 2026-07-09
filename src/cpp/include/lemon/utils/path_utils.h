@@ -101,6 +101,14 @@ std::string get_hf_cache_dir();
 std::string get_runtime_dir();
 
 /**
+ * Get the Hugging Face Hub endpoint base URL.
+ * Reads the HF_ENDPOINT environment variable, falls back to
+ * https://huggingface.co when unset or empty.
+ * Trailing slashes are stripped.
+ */
+std::string get_hf_endpoint();
+
+/**
  * Get the directory where backend executables will be downloaded.
  * This is in the user's cache directory (~/.cache/lemonade/bin on all platforms)
  * to support All Users installations where the install directory may be read-only.

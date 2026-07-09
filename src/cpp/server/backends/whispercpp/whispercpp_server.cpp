@@ -189,7 +189,7 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     }
 
     try {
-        std::string hf_url = "https://huggingface.co/" + cache_repo + "/resolve/main/" + cache_filename;
+        std::string hf_url = get_hf_endpoint() + "/" + cache_repo + "/resolve/main/" + cache_filename;
 
         LOG(INFO, "WhisperServer") << "Downloading from: " << hf_url << std::endl;
 
