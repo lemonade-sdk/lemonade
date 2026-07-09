@@ -847,6 +847,25 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
 
 const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'embeddings', 'embedding', 'reranking', 'reranker']);
 
+const MODEL_LIST_WIDTH_KEY = 'model_list_panel_width';
+const MODEL_LIST_DEFAULT_WIDTH = 360;
+const MODEL_LIST_MIN_WIDTH = 300;
+const MODEL_LIST_MAX_WIDTH = 620;
+
+function clampModelListWidth(width: number): number {
+  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, Math.round(width)));
+}
+
+function loadModelListWidth(): number {
+  if (typeof window === 'undefined') return MODEL_LIST_DEFAULT_WIDTH;
+  try {
+    const stored = Number(window.localStorage.getItem(MODEL_LIST_WIDTH_KEY));
+    return Number.isFinite(stored) ? clampModelListWidth(stored) : MODEL_LIST_DEFAULT_WIDTH;
+  } catch {
+    return MODEL_LIST_DEFAULT_WIDTH;
+  }
+}
+
 function lowerLabels(m: ModelInfo): string[] {
   return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
 }
@@ -1079,6 +1098,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [backendFilter, setBackendFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [navRailOpen, setNavRailOpen] = useState(false);
+  const [modelListWidth, setModelListWidth] = useState(loadModelListWidth);
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -1115,6 +1135,70 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const hasVisibleModelsRef = useRef(false);
   const modelsSnapshotRef = useRef<string>('');
   const loadedSnapshotRef = useRef<string>('');
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODEL_LIST_WIDTH_KEY, String(modelListWidth));
+    } catch {
+      // Non-critical: width persistence is best-effort only.
+    }
+  }, [modelListWidth]);
+
+  const modelDetailLayoutStyle = useMemo(() => ({
+    '--model-list-panel-width': `${modelListWidth}px`,
+  } as React.CSSProperties), [modelListWidth]);
+
+  const handleModelListResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 700) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = modelListWidth;
+    const handle = event.currentTarget;
+    try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+
+    const maxWidthForViewport = () => {
+      // Keep a usable detail pane even on medium desktops. The fixed rail is
+      // 232px in the desktop grid; the detail pane should keep at least ~420px.
+      const viewportMax = window.innerWidth - 232 - 420;
+      return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, viewportMax));
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampModelListWidth(Math.min(maxWidthForViewport(), startWidth + moveEvent.clientX - startX));
+      setModelListWidth(nextWidth);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.classList.remove('is-resizing-model-list');
+      try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    };
+
+    document.body.classList.add('is-resizing-model-list');
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize, { once: true });
+    window.addEventListener('pointercancel', stopResize, { once: true });
+  }, [modelListWidth]);
+
+  const handleModelListResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const largeStep = event.shiftKey ? 40 : 16;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setModelListWidth(width => clampModelListWidth(width - largeStep));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setModelListWidth(width => clampModelListWidth(width + largeStep));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setModelListWidth(MODEL_LIST_MIN_WIDTH);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setModelListWidth(MODEL_LIST_MAX_WIDTH);
+    }
+  }, []);
 
 
   useEffect(() => {
@@ -2676,7 +2760,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     </section>
   );
   return (
-    <div className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${navRailOpen ? ' manager--nav-open' : ''}`}>
+    <div
+      className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${navRailOpen ? ' manager--nav-open' : ''}`}
+      style={modelDetailLayoutStyle}
+    >
       {/* Responsive: toggle the left nav rail on narrow viewports */}
       <button
         type="button"
@@ -2734,6 +2821,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
         favoriteNames={favoriteNameSet}
+      />
+
+      <div
+        className="manager__model-list-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize model list panel"
+        aria-valuemin={MODEL_LIST_MIN_WIDTH}
+        aria-valuemax={MODEL_LIST_MAX_WIDTH}
+        aria-valuenow={modelListWidth}
+        tabIndex={0}
+        onPointerDown={handleModelListResizeStart}
+        onKeyDown={handleModelListResizeKeyDown}
       />
 
       {/* Right panel: custom form overlay OR model detail */}
