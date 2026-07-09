@@ -1363,10 +1363,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     // Filter scenarios
     // When no --scenarios filter is given, exclude long-context by default
-    // (they run very long and fail on many systems).
+    // (they run very long and fail on many systems). Also exclude embeddings
+    // since they're not the usual text generation use case.
     // When --scenarios is provided, match by name, category, or "all".
     if (config.scenario_names.empty()) {
         scenarios = exclude_category(scenarios, "long-context");
+        scenarios = exclude_category(scenarios, "embed");
     } else {
         scenarios = filter_scenarios(scenarios, config.scenario_names);
     }

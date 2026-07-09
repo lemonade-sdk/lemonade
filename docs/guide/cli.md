@@ -797,13 +797,12 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 - **Chat** — Short and long conversational turns
 - **Coding** — Code generation, explanation, and debugging
 - **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
-- **Embedding** - Not part of the default scenario set
+- **Embed** - Embeddings, converting text input into a vector
 
 You can override these with `--scenario-file` or `--scenario-dir`.
 
-**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
+**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
 
-Embedding are excluded by default, but can be selected with `--scenario-file /path/to/bench_scenarios_embed.json`.
 
 ### Output
 
