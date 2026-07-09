@@ -616,6 +616,19 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
+    // Reject cross-origin requests from disallowed origins before dispatching to
+    // handlers. Without this server-side check, a malicious web page could still
+    // send a state-changing request with a safelisted content-type (text/plain +
+    // JSON body); the browser hides the response, but the server-side handler runs.
+    if (req.method != "OPTIONS" && req.has_header("Origin")) {
+        const std::string origin = req.get_header_value("Origin");
+        if (!is_origin_allowed(origin)) {
+            res.status = 403;
+            res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
     if (is_internal_route) {
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
@@ -1329,15 +1342,78 @@ window.api = {
     });
 }
 
-void Server::setup_cors(httplib::Server &web_server) {
-    // Set CORS headers for all responses
-    web_server.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
-    });
+bool Server::is_origin_allowed(const std::string& origin) const {
+    if (origin.empty()) {
+        return false;
+    }
 
-    // Handle preflight OPTIONS requests
+    // Native desktop-app origins (Tauri custom scheme / WebView2 virtual host).
+    static const std::set<std::string> app_origins = {
+        "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"
+    };
+    if (app_origins.count(origin)) {
+        return true;
+    }
+
+    // Loopback origins on any port (local browser tooling / web-app dev server).
+    // A remote attacker's page cannot forge these: the browser stamps Origin with
+    // its own host, and DNS rebinding still yields the attacker's hostname, not a
+    // loopback literal.
+    auto scheme_end = origin.find("://");
+    if (scheme_end == std::string::npos) {
+        return false;
+    }
+    const std::string scheme = origin.substr(0, scheme_end);
+    if (scheme != "http" && scheme != "https") {
+        return false;
+    }
+    std::string host = origin.substr(scheme_end + 3);
+    if (!host.empty() && host.front() == '[') {
+        // IPv6 literal: keep the bracketed host, drop any :port suffix.
+        auto close = host.find(']');
+        if (close == std::string::npos) {
+            return false;
+        }
+        host = host.substr(0, close + 1);
+    } else {
+        auto colon = host.find(':');
+        if (colon != std::string::npos) {
+            host = host.substr(0, colon);
+        }
+    }
+    if (host == "localhost" || host == "127.0.0.1" ||
+        host == "[::1]" || host == "::1") {
+        return true;
+    }
+
+    // Configured allowed origins (for non-loopback web-app access, e.g.,
+    // http://192.168.1.50:13305 when bound to --host 0.0.0.0).
+    const auto allowed_origins = config_->allowed_origins();
+    return std::find(allowed_origins.begin(), allowed_origins.end(), origin) != allowed_origins.end();
+}
+
+void Server::setup_cors(httplib::Server &web_server) {
+    // Reflect the request Origin only when it is on the allow-list. A wildcard
+    // Access-Control-Allow-Origin, combined with the no-auth default config, let
+    // any web page drive the state-changing API cross-origin (SWSPLAT-24172).
+    // Same-origin callers (the bundled web-app, served from this host:port) are
+    // not subject to CORS and keep working; non-browser clients (CLI, SDKs) never
+    // send Origin and ignore these headers entirely.
+    web_server.set_post_routing_handler(
+        [this](const httplib::Request& req, httplib::Response& res) {
+            const std::string origin = req.get_header_value("Origin");
+            if (is_origin_allowed(origin)) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+                res.set_header("Vary", "Origin");
+                res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                res.set_header("Access-Control-Allow-Headers",
+                               "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id");
+            }
+        });
+
+    // Handle preflight OPTIONS requests. The post-routing handler above attaches
+    // the CORS headers when (and only when) the Origin is allowed; a disallowed
+    // Origin gets a bare 204 and the browser blocks the follow-up request.
     web_server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.status = 204;
     });
@@ -4890,10 +4966,12 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
     try {
         auto body = nlohmann::json::parse(req.body);
 
-        // Delegate to RuntimeConfig — accepts all known recipe option keys
+        // Delegate to RuntimeConfig — accepts all known recipe option keys.
+        // allow_privileged_keys=false: this is the unauthenticated-by-default HTTP
+        // surface, so backend *_bin / args overrides are rejected (SWSPLAT-24170).
         auto result = config_->set(body, [this](const json& applied) {
             apply_config_side_effects(applied);
-        });
+        }, /*allow_privileged_keys=*/false);
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
