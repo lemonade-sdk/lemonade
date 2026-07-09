@@ -148,6 +148,7 @@ class InspectStoreClass {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private currentWsUrl: string = '';
   private autoSelectNextTrace = false;
+  private connectionGeneration = 0;
 
   constructor() {
     this.loadFromLocalStorage();
@@ -273,17 +274,23 @@ class InspectStoreClass {
       }
     }
 
-    // If capturing changed, persist to localStorage
-    if (next.capturing !== undefined && next.capturing !== prevState.capturing) {
-      safeSetLocalStorage(LOCAL_STORAGE_CAPTURING_KEY, String(next.capturing));
-      if (next.capturing) {
-        this.state.captureReady = 'connecting';
-        api.sessionHeadersEnabled = false;
+    // If capturing changed, persist to localStorage and start/stop capture.
+    // If callers set capturing=true while it is already true, still repair a missing
+    // socket. This keeps tests and recovery paths deterministic after a dropped WS.
+    if (next.capturing !== undefined) {
+      if (next.capturing !== prevState.capturing) {
+        safeSetLocalStorage(LOCAL_STORAGE_CAPTURING_KEY, String(next.capturing));
+        if (next.capturing) {
+          this.state.captureReady = 'connecting';
+          api.sessionHeadersEnabled = false;
+          this.connect();
+        } else {
+          this.state.captureReady = 'disconnected';
+          api.sessionHeadersEnabled = false;
+          this.disconnect();
+        }
+      } else if (next.capturing && !this.hasActiveSocket()) {
         this.connect();
-      } else {
-        this.state.captureReady = 'disconnected';
-        api.sessionHeadersEnabled = false;
-        this.disconnect();
       }
     }
 
@@ -344,11 +351,20 @@ class InspectStoreClass {
   }
 
   // WebSocket Connection
-  private connect() {
-    clearTimeout(this.reconnectTimeout);
+  private hasActiveSocket() {
+    return !!this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING);
+  }
+
+  private connect(force = false) {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
     if (!this.state.capturing) {
       return;
     }
+
     const baseUrl = api.baseUrl;
     const apiKey = api.apiKey;
 
@@ -358,12 +374,14 @@ class InspectStoreClass {
     params.set('client_session_id', api.clientSessionId);
     wsUrl += `?${params.toString()}`;
 
-    // Skip redundant connection attempts
-    if (this.ws && this.currentWsUrl === wsUrl && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    // Skip redundant automatic connection attempts, but allow explicit reconnect()
+    // to replace the socket even if the current socket is still open.
+    if (!force && this.ws && this.currentWsUrl === wsUrl && this.hasActiveSocket()) {
       return;
     }
 
     this.currentWsUrl = wsUrl;
+    const generation = ++this.connectionGeneration;
 
     if (this.ws) {
       try {
@@ -373,22 +391,34 @@ class InspectStoreClass {
         this.ws.onerror = null;
         this.ws.close();
       } catch {}
+      this.ws = null;
     }
 
     try {
-      this.ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
+      this.ws = socket;
 
-      this.ws.onopen = () => {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({
+      const isCurrentSocket = () => this.ws === socket && this.connectionGeneration === generation;
+
+      socket.onopen = () => {
+        if (!isCurrentSocket()) return;
+        if (socket.readyState !== WebSocket.OPEN) return;
+        try {
+          socket.send(JSON.stringify({
             type: 'auth',
             token: apiKey,
             client_session_id: api.clientSessionId
           }));
+        } catch (err) {
+          console.error('Failed to authenticate inspect WebSocket:', err);
+          try {
+            socket.close();
+          } catch {}
         }
       };
 
-      this.ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
+        if (!isCurrentSocket()) return;
         try {
           const raw = JSON.parse(event.data);
           if (raw && raw.type === 'error') {
@@ -410,31 +440,44 @@ class InspectStoreClass {
         }
       };
 
-      this.ws.onclose = () => {
+      socket.onclose = () => {
+        if (!isCurrentSocket()) return;
+        this.ws = null;
         if (!this.state.capturing) return;
         if (this.state.captureReady !== 'unsupported') {
           this.setState({ captureReady: 'connecting' });
         }
         api.sessionHeadersEnabled = false;
-        // Retry connection after 5 seconds
-        clearTimeout(this.reconnectTimeout);
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+        }
         this.reconnectTimeout = setTimeout(() => this.connect(), 5000);
       };
 
-      this.ws.onerror = () => {
-        if (this.ws) this.ws.close();
+      socket.onerror = () => {
+        if (!isCurrentSocket()) return;
+        try {
+          socket.close();
+        } catch {}
       };
     } catch (err) {
       console.error('Failed to instantiate inspect WebSocket:', err);
       if (!this.state.capturing) return;
-      clearTimeout(this.reconnectTimeout);
+      this.ws = null;
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+      }
       this.reconnectTimeout = setTimeout(() => this.connect(), 5000);
     }
   }
 
   disconnect() {
-    clearTimeout(this.reconnectTimeout);
-    this.reconnectTimeout = null;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.connectionGeneration++;
+    this.currentWsUrl = '';
     this.setState({ captureReady: 'disconnected' });
     api.sessionHeadersEnabled = false;
     if (this.ws) {
@@ -451,7 +494,7 @@ class InspectStoreClass {
 
   // Force reconnect when settings change (e.g. key changed)
   reconnect() {
-    this.connect();
+    this.connect(true);
   }
 }
 

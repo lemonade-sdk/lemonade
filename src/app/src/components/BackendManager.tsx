@@ -274,6 +274,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
+  const [showUnsupported, setShowUnsupported] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
@@ -340,15 +341,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     window.setTimeout(() => setToastMsg(null), 3500);
   }, []);
 
-  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false, skipConfirm = false) => {
+  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    if (!skipConfirm) {
-      const verb = isUpdate ? 'update' : 'install';
-      const ok = window.confirm(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend} can change local Lemonade runtime files. Continue with this ${verb}?`);
-      if (!ok) return;
-    }
     setInstalling(key);
     toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
     const downloadName = backendDownloadName(recipe, backend);
@@ -422,8 +418,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, [fetchInfo, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
-    const ok = window.confirm(`Uninstall ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This removes local backend runtime files.`);
-    if (!ok) return;
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
@@ -445,10 +439,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     if (updates.length === 0) return;
-    const ok = window.confirm(`Update ${updates.length} backend${updates.length > 1 ? 's' : ''}? This can change local Lemonade runtime files.`);
-    if (!ok) return;
     for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend, true, true);
+      await handleInstall(recipe, backend, true);
     }
   }, [sysInfo, handleInstall]);
 
@@ -476,6 +468,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        // Match GUI2: unsupported backends are not useful actions/statuses for
+        // the current system and should not take matrix space (#2568).
+        if (backendInfo.state === 'unsupported') continue;
+        for (const device of devicesForBackend(recipe, backend, backendInfo)) {
+          const key = `${device}:${cap}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key)!.push({ recipe, backend, info: backendInfo });
+        }
+      }
+    }
+    return cells;
+  }, [sysInfo]);
+
+  const unsupportedMatrixCells = useMemo(() => {
+    if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
+    const cells = new Map<string, CellEntry[]>();
+
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
+      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        // Keep unsupported backends out of the primary matrix (#2568), but retain
+        // a collapsed same-shape matrix for debugging and technical-detail reasons.
+        if (backendInfo.state !== 'unsupported') continue;
         for (const device of devicesForBackend(recipe, backend, backendInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
@@ -494,6 +509,23 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
     return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
   }, [detectedDevices, matrixCells]);
+
+  const unsupportedMatrixRows = useMemo(() => {
+    const referenced = new Set<DeviceKey>();
+    for (const key of unsupportedMatrixCells.keys()) {
+      const device = key.split(':')[0] as DeviceKey;
+      if (DEVICE_ORDER.includes(device)) referenced.add(device);
+    }
+    return DEVICE_ORDER.filter(d => referenced.has(d));
+  }, [unsupportedMatrixCells]);
+
+  const unsupportedBackendCount = useMemo(() => {
+    const keys = new Set<string>();
+    for (const entries of unsupportedMatrixCells.values()) {
+      for (const { recipe, backend } of entries) keys.add(backendKey(recipe, backend));
+    }
+    return keys.size;
+  }, [unsupportedMatrixCells]);
 
   // Keep the matrix skeleton mounted even when /system-info is unavailable.
   // This preserves navigation/test affordances while the cells truthfully show
@@ -539,6 +571,85 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       default: return '';
     }
   }, [sysInfo]);
+
+  const renderBackendCell = useCallback(({ recipe, backend, info }: CellEntry) => {
+    const badge = stateBadge(info.state);
+    const cellKey = backendKey(recipe, backend);
+    const isInstalling = installing === cellKey;
+    const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+    const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
+    const assignedPreset = assignedPresetForBackendKey(cellKey);
+
+    return (
+      <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
+        <span className="cell__name">
+          {RECIPE_LABELS[recipe] || recipe}
+          {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
+        </span>
+        <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
+        {showTech && info.version && <span className="cell__sha">{info.version}</span>}
+        {/* #2432: read-only display of an assigned backend preset. Assignment
+            happens in the global Presets view, not here. Absent when none. */}
+        {assignedPreset && (
+          <span className="cell__preset" data-cell-preset title="Backend preset assigned in the Presets view (applies globally)">
+            <PresetIcon preset={assignedPreset} /> {assignedPreset.name}
+          </span>
+        )}
+        {showTech && info.message && <span className="cell__message">{info.message}</span>}
+        <div className="cell__actions" onClick={e => e.stopPropagation()}>
+          {(info.state === 'installable') && (
+            <button
+              className="cell__swap"
+              disabled={isInstalling}
+              aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleInstall(recipe, backend)}>
+              {isInstalling ? 'Installing…' : 'Install'}
+            </button>
+          )}
+          {(info.state === 'update_required' || info.state === 'update_available') && (
+            <button
+              className="cell__swap"
+              disabled={isInstalling}
+              aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleInstall(recipe, backend, true)}>
+              {isInstalling ? 'Updating…' : 'Update'}
+            </button>
+          )}
+          {info.state === 'action_required' && info.action && (
+            <button
+              className="cell__swap"
+              aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleAction(info.action)}>
+              Setup guide ▸
+            </button>
+          )}
+          {canShowUninstall(info) && (
+            <button
+              className="cell__swap cell__swap--danger"
+              disabled={isInstalling}
+              aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleUninstall(recipe, backend)}>
+              {isInstalling ? 'Working…' : 'Uninstall'}
+            </button>
+          )}
+        </div>
+        {showBackendProgress && backendDownload && (
+          <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
+            <div className="cell__download-progress-track">
+              <div
+                className="cell__download-progress-fill"
+                style={{ width: `${backendProgressPercent(backendDownload)}%` }}
+              />
+            </div>
+            <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
+          </div>
+        )}
+        {backendDownload?.status === 'error' && backendDownload.error && (
+          <span className="cell__download-error">{backendDownload.error}</span>
+        )}
+      </div>
+    );
+  }, [assignedPresetForBackendKey, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
 
 
   /* ── Render ───────────────────────────────────────────── */
@@ -639,84 +750,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                     }
                     return (
                       <td key={cap}>
-                        {entries.map(({ recipe, backend, info }) => {
-                          const badge = stateBadge(info.state);
-                          const cellKey = backendKey(recipe, backend);
-                          const isInstalling = installing === cellKey;
-                          const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
-                          const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
-                          const assignedPreset = assignedPresetForBackendKey(cellKey);
-                          return (
-                            <div className="cell" key={`${recipe}-${backend}`}
-                              data-cell={cellKey}>
-                              <span className="cell__name">
-                                {RECIPE_LABELS[recipe] || recipe}
-                                {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
-                              </span>
-                              <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
-                              {showTech && info.version && <span className="cell__sha">{info.version}</span>}
-                              {/* #2432: read-only display of an assigned backend preset. Assignment
-                                  happens in the global Presets view, not here. Absent when none. */}
-                              {assignedPreset && (
-                                <span className="cell__preset" data-cell-preset title="Backend preset assigned in the Presets view (applies globally)">
-                                  <PresetIcon preset={assignedPreset} /> {assignedPreset.name}
-                                </span>
-                              )}
-                              {showTech && info.message && <span className="cell__message">{info.message}</span>}
-                              <div className="cell__actions" onClick={e => e.stopPropagation()}>
-                                {(info.state === 'installable') && (
-                                  <button
-                                    className="cell__swap"
-                                    disabled={isInstalling}
-                                    aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-                                    onClick={() => handleInstall(recipe, backend)}>
-                                    {isInstalling ? 'Installing…' : 'Install'}
-                                  </button>
-                                )}
-                                {(info.state === 'update_required' || info.state === 'update_available') && (
-                                  <button
-                                    className="cell__swap"
-                                    disabled={isInstalling}
-                                    aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-                                    onClick={() => handleInstall(recipe, backend, true)}>
-                                    {isInstalling ? 'Updating…' : 'Update'}
-                                  </button>
-                                )}
-                                {info.state === 'action_required' && info.action && (
-                                  <button
-                                    className="cell__swap"
-                                    aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-                                    onClick={() => handleAction(info.action)}>
-                                    Setup guide ▸
-                                  </button>
-                                )}
-                                {canShowUninstall(info) && (
-                                  <button
-                                    className="cell__swap cell__swap--danger"
-                                    disabled={isInstalling}
-                                    aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-                                    onClick={() => handleUninstall(recipe, backend)}>
-                                    {isInstalling ? 'Working…' : 'Uninstall'}
-                                  </button>
-                                )}
-                              </div>
-                              {showBackendProgress && backendDownload && (
-                                <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
-                                  <div className="cell__download-progress-track">
-                                    <div
-                                      className="cell__download-progress-fill"
-                                      style={{ width: `${backendProgressPercent(backendDownload)}%` }}
-                                    />
-                                  </div>
-                                  <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
-                                </div>
-                              )}
-                              {backendDownload?.status === 'error' && backendDownload.error && (
-                                <span className="cell__download-error">{backendDownload.error}</span>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {entries.map(renderBackendCell)}
                       </td>
                     );
                   })}
@@ -725,6 +759,68 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </tbody>
           </table>
         </div>
+
+        {unsupportedBackendCount > 0 && (
+          <section className="backends__unsupported" data-backends-unsupported>
+            <button
+              type="button"
+              className="backends__unsupported-toggle"
+              aria-expanded={showUnsupported}
+              aria-controls="backends-unsupported-matrix"
+              onClick={() => setShowUnsupported(open => !open)}>
+              <span className="backends__unsupported-title">
+                <Icon name={showUnsupported ? 'chevron-down' : 'chevron-right'} size={14} aria-hidden="true" />
+                Unsupported backends
+              </span>
+              <span className="backends__unsupported-meta">
+                {unsupportedBackendCount} hidden from the main table
+              </span>
+            </button>
+
+            {showUnsupported && (
+              <div className="matrix matrix--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Device</th>
+                      {CAPABILITY_COLS.map(c => (
+                        <th scope="col" key={c}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unsupportedMatrixRows.map(deviceKey => (
+                      <tr key={deviceKey}>
+                        <th scope="row">
+                          {DEVICE_LABELS[deviceKey]}
+                          {showTech && (
+                            <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
+                          )}
+                        </th>
+                        {CAPABILITY_COLS.map(cap => {
+                          const key = `${deviceKey}:${cap}`;
+                          const entries = unsupportedMatrixCells.get(key);
+                          if (!entries || entries.length === 0) {
+                            return (
+                              <td className="matrix__empty" key={cap}>
+                                <span aria-hidden="true">—</span>
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={cap}>
+                              {entries.map(renderBackendCell)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
       {/* #2351: always-present polite live region so NVDA announces toast messages */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
