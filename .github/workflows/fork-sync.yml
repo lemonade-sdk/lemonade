@@ -28,7 +28,13 @@ jobs:
           echo "Behind upstream by $BEHIND commits"
           echo "commits=$BEHIND" >> "$GITHUB_OUTPUT"
           if [ "$BEHIND" -gt 0 ]; then
-            git merge upstream/main -m "chore: daily fork sync from lemonade-sdk/lemonade upstream"
+            # Try fast-forward first (no local commits). If that fails (local
+            # commits like PR branches on main), fall back to a merge commit.
+            if git merge --ff-only upstream/main 2>/dev/null; then
+              echo "Fast-forward sync"
+            else
+              git merge upstream/main -m "chore: daily fork sync from lemonade-sdk/lemonade upstream"
+            fi
             git push origin main
             echo "synced=true" >> "$GITHUB_OUTPUT"
           else
