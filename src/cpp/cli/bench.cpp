@@ -513,6 +513,15 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
                                 bool capture_response) {
+  return run_single_bench_textgen(client, model, scenario, memory_tracking,
+                                  capture_response);
+}
+
+BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response) {
     BenchRunResult result;
     result.success = false;  // assume failure until proven otherwise
 

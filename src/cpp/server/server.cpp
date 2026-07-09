@@ -2,6 +2,8 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/routing_classifier_services.h"
+#include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
@@ -9,6 +11,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -37,17 +40,19 @@
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/network_utils.h"
 
 #ifdef _WIN32
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
     #include <arpa/inet.h>   // inet_pton, htons
-    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
+    #include <fcntl.h>
+    #include <netdb.h>       // Crucial for getaddrinfo and addrinfo struct
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <sys/socket.h>
+    #include <sys/types.h>
     #include <unistd.h>
 #endif
 
@@ -489,6 +494,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
+    telemetry::g_request_start_time = std::chrono::steady_clock::now();
+    telemetry::g_current_auth_token = "";
+    if (req.has_header("X-Client-Session-Id")) {
+        telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
+    } else {
+        telemetry::g_current_client_session_id.clear();
+    }
+
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
     // gateway (Critical Invariant #10). It is the only API route outside the
@@ -526,6 +539,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     } catch (const std::exception& e) {
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
+
+    telemetry::g_current_auth_token = auth_token;
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -709,6 +724,13 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
+    });
+    // Generative-audio endpoint: text -> audio clip (music, sound effects)
+    register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_generations(req, res);
+    });
+    register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_3d_generations(req, res);
     });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1233,7 +1255,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
     });
 
     // Handle preflight OPTIONS requests
@@ -1361,52 +1383,6 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
-// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
-// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
-// socket left in TIME_WAIT by a just-exited server is still bindable.
-static bool port_is_available(int family, const std::string& host_ip, int port) {
-    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        return true;  // Can't probe; let the real bind path report any error.
-    }
-    auto close_sock = [&]() {
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
-    };
-
-    int opt = 1;
-#ifdef _WIN32
-    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char*>(&opt), sizeof(opt));
-#else
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-    sockaddr_storage ss{};
-    socklen_t len;
-    if (family == AF_INET) {
-        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
-        a->sin_family = AF_INET;
-        a->sin_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in);
-    } else {
-        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
-        a->sin6_family = AF_INET6;
-        a->sin6_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
-        len = sizeof(sockaddr_in6);
-    }
-
-    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
-    close_sock();
-    return available;
-}
-
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1426,9 +1402,9 @@ void Server::run() {
     // it here keeps the error from being buried under later startup logs.
     {
         std::string in_use_ip;
-        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+        if (!ipv4.empty() && utils::is_tcp_listener_active(AF_INET, ipv4, port_)) {
             in_use_ip = ipv4;
-        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+        } else if (!ipv6.empty() && utils::is_tcp_listener_active(AF_INET6, ipv6, port_)) {
             in_use_ip = ipv6;
         }
         if (!in_use_ip.empty()) {
@@ -1826,7 +1802,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     auto info = model_manager_->get_model_info(requested_model);
 
     // Collections have no backend of their own — load each component instead.
-    if (is_collection_recipe(info.recipe)) {
+    if (is_omni_collection_recipe(info.recipe)) {
         ensure_collection_loaded(info);
         return;
     }
@@ -2062,11 +2038,24 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
-    // Collections (Omni) additionally embed each component's full model object,
+    if (is_router_collection_recipe(info.recipe)) {
+        // The parser requires a root "version"; surface it alongside "routing"
+        // so an exported router collection can be re-imported through /pull.
+        auto version_it = info.extras.find("version");
+        if (version_it != info.extras.end()) {
+            model_json["version"] = version_it->second;
+        }
+        auto routing_it = info.extras.find("routing");
+        if (routing_it != info.extras.end() && routing_it->second.is_object()) {
+            model_json["routing"] = routing_it->second;
+        }
+    }
+
+    // Collections additionally embed each component's full model object,
     // in component order, under "models". Embedding is bounded by
     // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
     // cannot recurse unboundedly.
-    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+    if (is_model_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
         nlohmann::json component_models = nlohmann::json::array();
         for (const auto& component : info.components) {
             if (!model_manager_->model_exists(component)) {
@@ -2200,6 +2189,57 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
+std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
+                                             const ModelInfo& collection_info) {
+    // The policy is parsed once when the models cache is built (ModelManager),
+    // so dispatch just reads it here. A missing policy means the collection
+    // failed to parse at cache-build time; return nullopt so the caller leaves
+    // the request's model field untouched (fail open).
+    if (!collection_info.route_policy) {
+        LOG(WARNING, "Server") << "Router collection '" << collection_info.model_name
+                               << "' has no parsed routing policy" << std::endl;
+        return std::nullopt;
+    }
+
+    // The engine owns its policy (and is rebuilt per request because its
+    // classifier services are bound to the live Router), so copy the shared,
+    // immutable policy into it.
+    RoutePolicy policy = *collection_info.route_policy;
+    ClassifierServices services = make_router_classifier_services(
+        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+
+    RouteContext ctx = build_route_context(request_json, collection_info.model_name);
+    Decision decision = engine.route(ctx, /*want_trace=*/false);
+    return decision.route_to;
+}
+
+void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return;
+    }
+    const std::string requested_model = request_json["model"].get<std::string>();
+    try {
+        if (!model_manager_->model_exists(requested_model)) {
+            return;
+        }
+        ModelInfo info = model_manager_->get_model_info(requested_model);
+        if (!is_router_collection_recipe(info.recipe)) {
+            return;
+        }
+        std::optional<std::string> selected = route_collection_request(request_json, info);
+        if (!selected) {
+            return;
+        }
+        LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
+                            << *selected << "'" << std::endl;
+        request_json["model"] = *selected;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '"
+                               << requested_model << "': " << e.what() << std::endl;
+    }
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2228,9 +2268,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             try {
                 if (model_manager_->model_exists(requested_model)) {
                     ModelInfo info = model_manager_->get_model_info(requested_model);
-                    if (is_collection_recipe(info.recipe)) {
+                    if (is_omni_collection_recipe(info.recipe)) {
                         handle_collection_chat_completions(request_json, info, res);
                         return;
+                    }
+                    if (is_router_collection_recipe(info.recipe)) {
+                        // The recipe is the trigger (no "auto", no /v1/route): run the
+                        // routing engine and rewrite the model to the selected
+                        // candidate, then fall through to normal completion handling.
+                        std::optional<std::string> selected =
+                            route_collection_request(request_json, info);
+                        if (selected) {
+                            LOG(INFO, "Server") << "Router collection '" << requested_model
+                                                << "' -> '" << *selected << "'" << std::endl;
+                            request_json["model"] = *selected;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
@@ -2379,29 +2431,36 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
@@ -2411,31 +2470,38 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 
@@ -2467,6 +2533,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -2589,29 +2659,36 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (timings.contains("prompt_n")) {
                     input_tokens = timings["prompt_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (timings.contains("predicted_n")) {
                     output_tokens = timings["predicted_n"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
                 if (timings.contains("prompt_ms")) {
                     ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (timings.contains("predicted_per_second")) {
                     tps = timings["predicted_per_second"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
@@ -2620,31 +2697,38 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 double ttft_seconds = 0.0;
                 double tps = 0.0;
 
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
                 if (usage.contains("prompt_tokens")) {
                     input_tokens = usage["prompt_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
                 }
                 if (usage.contains("completion_tokens")) {
                     output_tokens = usage["completion_tokens"].get<int>();
-                    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
                 }
 
                 // FLM format may include timing data
                 if (usage.contains("prefill_duration_ttft")) {
                     ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                    LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
-                             << ttft_seconds << std::endl;
                 }
                 if (usage.contains("decoding_speed_tps")) {
                     tps = usage["decoding_speed_tps"].get<double>();
-                    LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                             << tps << std::endl;
                 }
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+                std::string model_name = request_json.value("model", "");
+                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                                       << ", tokens=" << (input_tokens + output_tokens)
+                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
+                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
+                                       << ", tps=" << tps << std::endl;
+
+                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
+                                        << "Model:         " << model_name << "\n"
+                                        << "Input tokens:  " << input_tokens << "\n"
+                                        << "Output tokens: " << output_tokens << "\n"
+                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
+                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
+                                        << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                router_->update_telemetry(model_name, input_tokens, output_tokens,
                                           ttft_seconds, tps);
             }
 
@@ -3070,23 +3154,44 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        std::string mime_type;
+        const auto supported_formats =
+            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
+        std::string response_format = "mp3";
         if (is_streaming) {
-            mime_type = MIME_TYPES["pcm"];
-        } else if (request_json.contains("response_format")) {
-            if (MIME_TYPES.contains(request_json["response_format"])) {
-                mime_type = MIME_TYPES[request_json["response_format"]];
-            } else {
-                nlohmann::json error = {{"error", {
-                    {"message", "Unsupported audio format requested"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        } else {
-            mime_type = MIME_TYPES["mp3"];
+            response_format = "pcm";
+        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        } else if (!supported_formats.empty()) {
+            response_format = supported_formats.front();
         }
+        if (!MIME_TYPES.contains(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported audio format requested"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const bool format_supported = supported_formats.empty() ||
+            std::find(supported_formats.begin(), supported_formats.end(),
+                      response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES[response_format];
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -3112,7 +3217,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            res.set_content_provider(mime_type, audio_source);
+            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink);
+            });
         }
 
         return;
@@ -3124,6 +3231,229 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             {"type", "internal_error"}
         }}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+// The streaming plumbing reports backend failures as a payload in the sink —
+// either an SSE-style "data: {\"error\":...}" event or the backend's own JSON
+// error body — rather than throwing. Returns the parsed error, or null.
+static nlohmann::json extract_error_payload(const std::string& buf) {
+    std::string body = buf;
+    if (body.rfind("data: ", 0) == 0) {
+        body = body.substr(6);
+    }
+    const auto start = body.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || body[start] != '{') {
+        return nullptr;
+    }
+    try {
+        auto parsed = nlohmann::json::parse(body.substr(start));
+        if (parsed.is_object() && parsed.contains("error")) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+    return nullptr;
+}
+
+void Server::serve_media_or_error(httplib::Response& res, const std::string& mime_type,
+                                  const std::function<void(httplib::DataSink&)>& generate) {
+    // Buffer the generated media so we can tell success from a silent failure. A
+    // streaming content provider commits a 200 before the backend runs, so a backend
+    // crash/OOM mid-stream would surface as a successful empty file; buffering lets us
+    // return a real error instead.
+    std::string buf;
+    httplib::DataSink sink;
+    sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+    sink.is_writable = []() { return true; };
+    sink.done = []() {};
+    generate(sink);
+    if (buf.empty()) {
+        res.status = 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", "Generation failed: the backend produced no output (it likely crashed or ran "
+                        "out of GPU memory). Check the server logs."},
+            {"type", "backend_error"}}}}.dump(), "application/json");
+        return;
+    }
+    if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+        res.status = 500;
+        const auto& err = error_payload["error"];
+        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
+            const int status = err["status"].get<int>();
+            if (status >= 400 && status <= 599) {
+                res.status = status;
+            }
+        }
+        res.set_content(error_payload.dump(), "application/json");
+        return;
+    }
+    res.set_content(buf, mime_type);
+}
+
+void Server::handle_audio_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load audio-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        std::string response_format = "wav";
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        const auto supported_formats = router_->audio_generation_supported_formats(requested_model);
+        const bool format_supported = std::find(supported_formats.begin(), supported_formats.end(),
+                                                response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!supported_formats.empty() && !format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES.contains(response_format)
+            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+
+        LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
+
+        serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+            router_->audio_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_3d_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // All cheap validation runs before auto_load_model_if_needed so a
+        // malformed request can never trigger a multi-gigabyte model load.
+        auto reject = [&res](const std::string& message) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", message},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+        };
+        if (!request_json.contains("model") || !request_json["model"].is_string()) {
+            return reject("Missing or non-string 'model' field in request");
+        }
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            return reject("Missing or non-string 'image' field in request (base64-encoded input image)");
+        }
+        {
+            std::string image = request_json["image"].get<std::string>();
+            if (image.rfind("data:", 0) == 0) {
+                const auto comma = image.find(',');
+                if (comma == std::string::npos) {
+                    return reject("'image' data URL is missing its base64 payload");
+                }
+                image = image.substr(comma + 1);
+            }
+            if (image.empty() || image.find_first_not_of(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
+                    std::string::npos) {
+                return reject("'image' must be base64 data or a base64 data: URL");
+            }
+            // Sniffing needs only the first 12 bytes; base64 is block-aligned,
+            // so decoding the first 16 characters is enough and avoids decoding
+            // a multi-megabyte payload just to validate it.
+            std::string head;
+            for (char c : image) {
+                if (c != '\r' && c != '\n') {
+                    head += c;
+                    if (head.size() == 16) break;
+                }
+            }
+            if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
+                return reject("'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
+            }
+        }
+        std::string response_format = "glb";
+        if (request_json.contains("response_format")) {
+            if (!request_json["response_format"].is_string()) {
+                return reject("'response_format' must be a string");
+            }
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        // TODO: convert from a natively supported format instead of rejecting.
+        if (response_format != "glb") {
+            return reject("response_format '" + response_format +
+                          "' is not supported (supported: glb)");
+        }
+        if (request_json.contains("resolution")) {
+            const auto& r = request_json["resolution"];
+            const std::string v = r.is_string() ? r.get<std::string>()
+                : (r.is_number_integer() ? std::to_string(r.get<int>()) : "");
+            if (v != "512" && v != "1024" && v != "1536") {
+                return reject("'resolution' must be 512, 1024, or 1536");
+            }
+        }
+        if (request_json.contains("bg_removal")) {
+            const auto& b = request_json["bg_removal"];
+            if (!b.is_string() || (b != "threshold" && b != "birefnet")) {
+                return reject("'bg_removal' must be 'threshold' or 'birefnet'");
+            }
+        }
+        if (request_json.contains("seed") && !request_json["seed"].is_number_integer()) {
+            return reject("'seed' must be an integer");
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
+
+        serve_media_or_error(res, "model/gltf-binary", [this, request_json](httplib::DataSink& sink) {
+            router_->model_3d_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
     }
 }
 
@@ -3650,6 +3980,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // A collection.router model flips this endpoint into engine mode: pick a
+        // candidate and rewrite the model before the usual load/forward logic.
+        apply_router_collection_dispatch(request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3673,7 +4007,9 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = req.body;
+        // Re-serialize so any collection.router model rewrite reaches the backend
+        // (streaming forwards this body verbatim).
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -3800,7 +4136,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        if (is_collection_recipe(recipe)) {
+        if (is_model_collection_recipe(recipe)) {
             if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
                 bad_request(*err);
                 return;
@@ -3988,16 +4324,27 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
         // Collection models: load each component instead
-        if (is_collection_recipe(info.recipe) && !info.components.empty()) {
+        if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else if (is_router_collection_recipe(info.recipe)) {
+            // Router collections are virtual: each request is dispatched to one
+            // candidate at request time, which lazy-loads it. There is no backend
+            // of the collection's own to bring up, and eagerly loading every
+            // candidate would thrash the model LRU. Acknowledge without loading.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},

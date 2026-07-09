@@ -4,12 +4,16 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
+  'acestep',
   'flm',
   'kokoro',
   'llamacpp',
   'moonshine',
+  'openmoss',
   'ryzenai-llm',
   'sd-cpp',
+  'thinksound',
+  'trellis',
   'vllm',
   'whispercpp'
 ];
@@ -20,7 +24,11 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)'
+  vllm: 'vLLM ROCm (experimental)',
+  thinksound: 'ThinkSound',
+  acestep: 'ACE-Step',
+  trellis: 'TRELLIS.2',
+  openmoss: 'OpenMOSS TTS'
 };
 /* END GENERATED: models-js-recipes */
 

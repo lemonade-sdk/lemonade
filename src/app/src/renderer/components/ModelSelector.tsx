@@ -6,11 +6,13 @@ import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
   disabled: boolean;
+  filterLabel?: string;
+  effectiveModel?: string;
 }
 
 type SelectorModel = { id: string; info?: ReturnType<typeof useModels>['downloadedModels'][number]['info']; unavailable?: boolean };
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, effectiveModel }) => {
   const {
     downloadedModels,
     modelsData,
@@ -27,6 +29,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
 
   const visibleDownloadedModels = downloadedModels.filter((model) => {
     if (model.info?.labels?.includes('upscaling')) return false;
+    if (filterLabel && !model.info?.labels?.includes(filterLabel)) return false;
     if (!isCollectionModel(model.info)) {
       return true;
     }
@@ -35,7 +38,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
 
   const visibleDownloadedModelIds = new Set(visibleDownloadedModels.map((model) => model.id));
 
-  const unavailableCustomCollections: SelectorModel[] = Object.entries(modelsData)
+  const unavailableCustomCollections: SelectorModel[] = filterLabel ? [] : Object.entries(modelsData)
     .filter(([id, info]) => isCollectionModel(info) && isCustomCollectionModel(id, info) && !visibleDownloadedModelIds.has(id))
     .map(([id, info]) => ({ id, info, unavailable: true }));
 
@@ -83,7 +86,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     setIsOpen(false);
   };
 
-  const selectedModelInfo = allModels.find((model) => model.id === selectedModel)?.info;
+  const displayedModel = effectiveModel ?? selectedModel;
+  const displayedModelInfo = allModels.find((model) => model.id === displayedModel)?.info ?? modelsData[displayedModel];
 
   return (
     <div
@@ -94,9 +98,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
         className="model-selector-trigger"
         onClick={() => !disabled && setIsOpen(prev => !prev)}
         disabled={disabled}
-        title={selectedModel}
+        title={displayedModel}
       >
-        <span className="model-selector-label">{renderModelLabel(selectedModel, selectedModelInfo)}</span>
+        <span className="model-selector-label">{renderModelLabel(displayedModel, displayedModelInfo)}</span>
         <svg className="model-selector-chevron" width="10" height="10" viewBox="0 0 10 10">
           <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
@@ -108,7 +112,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
+                className={`model-selector-option${model.id === displayedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
                 onClick={() => handleSelect(model)}
                 title={model.unavailable ? `${model.id} is not available until all component models are downloaded.` : model.id}
                 aria-disabled={model.unavailable ? true : undefined}

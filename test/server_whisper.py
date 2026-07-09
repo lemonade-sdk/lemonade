@@ -381,13 +381,76 @@ class WhisperTests(ServerTestBase):
         print(f"[INFO] Split into {len(chunks)} chunks")
         return chunks
 
+    def _event_payload(self, event):
+        """Return a best-effort dict representation of an SDK realtime event."""
+        if isinstance(event, dict):
+            return event
+
+        for dump_method in ("model_dump", "dict"):
+            method = getattr(event, dump_method, None)
+            if method is None:
+                continue
+            try:
+                payload = method()
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                return payload
+
+        return {}
+
+    def _event_value(self, event, *field_names):
+        """Read a field from either an SDK event object or a plain dict."""
+        for field_name in field_names:
+            if isinstance(event, dict):
+                value = event.get(field_name)
+            else:
+                value = getattr(event, field_name, None)
+            if value is not None:
+                return value
+
+        payload = self._event_payload(event)
+        for field_name in field_names:
+            value = payload.get(field_name)
+            if value is not None:
+                return value
+
+        return None
+
+    def _event_type(self, event):
+        """Return the realtime event type for SDK event objects or dicts."""
+        return self._event_value(event, "type") or "<missing type>"
+
+    def _event_text(self, event, *field_names):
+        """Extract the first non-empty text field from a realtime event."""
+        payload = self._event_payload(event)
+
+        for field_name in field_names:
+            values = []
+            value = self._event_value(event, field_name)
+            if value is not None:
+                values.append(value)
+            if field_name in payload:
+                values.append(payload[field_name])
+
+            for value in values:
+                if isinstance(value, str):
+                    if value.strip():
+                        return value
+                elif value is not None:
+                    value = str(value)
+                    if value.strip():
+                        return value
+
+        return ""
+
     async def _drain_realtime_events(self, conn, timeout_s=0.25):
         """Collect any pending realtime events until a short timeout expires."""
         events = []
         while True:
             try:
                 event = await asyncio.wait_for(conn.recv(), timeout=timeout_s)
-                print(f"[INFO] Drained message: {event.type}")
+                print(f"[INFO] Drained message: {self._event_type(event)}")
                 events.append(event)
             except asyncio.TimeoutError:
                 break
@@ -466,28 +529,64 @@ class WhisperTests(ServerTestBase):
             print("[INFO] Committing audio buffer...")
             await conn.input_audio_buffer.commit()
 
-            # Collect messages until we get the transcription result
-            transcript = None
-            deadline = time.time() + TIMEOUT_MODEL_OPERATION
-            while time.time() < deadline:
-                try:
-                    event = await asyncio.wait_for(conn.recv(), timeout=30)
-                    print(f"[INFO] Received message: {event.type}")
+            # Collect messages until the server reports that transcription completed.
+            # Some SDK/server combinations expose interim text on delta events, while
+            # completed events may only signal completion and carry an empty transcript.
+            transcript_parts = []
+            completed_transcript = ""
+            saw_completed = False
+            received_event_types = []
+            deadline = time.monotonic() + TIMEOUT_MODEL_OPERATION
 
-                    if (
-                        event.type
-                        == "conversation.item.input_audio_transcription.completed"
-                    ):
-                        transcript = getattr(event, "transcript", "")
-                        break
+            while time.monotonic() < deadline:
+                timeout_s = max(0.1, min(30, deadline - time.monotonic()))
+                try:
+                    event = await asyncio.wait_for(conn.recv(), timeout=timeout_s)
                 except asyncio.TimeoutError:
                     break
 
-        self.assertIsNotNone(transcript, "Should receive a transcription result")
+                event_type = self._event_type(event)
+                received_event_types.append(event_type)
+                print(f"[INFO] Received message: {event_type}")
+
+                if event_type == "error":
+                    self.fail(f"Realtime transcription returned error: {event}")
+
+                if (
+                    event_type
+                    == "conversation.item.input_audio_transcription.delta"
+                ):
+                    delta = self._event_text(event, "delta", "transcript", "text")
+                    if delta:
+                        transcript_parts.append(delta)
+                    continue
+
+                if (
+                    event_type
+                    == "conversation.item.input_audio_transcription.completed"
+                ):
+                    saw_completed = True
+                    completed_transcript = self._event_text(
+                        event, "transcript", "text", "delta"
+                    )
+                    break
+
+        transcript = (completed_transcript or "".join(transcript_parts)).strip()
+
+        self.assertTrue(
+            saw_completed,
+            (
+                "Should receive a transcription completion event; "
+                f"received events: {received_event_types}"
+            ),
+        )
         self.assertGreater(
-            len(transcript.strip()),
+            len(transcript),
             0,
-            "Transcription should not be empty",
+            (
+                "Transcription should not be empty; "
+                f"received events: {received_event_types}"
+            ),
         )
         print(f"[OK] WebSocket transcription result: {transcript}")
 
@@ -527,29 +626,35 @@ class WhisperTests(ServerTestBase):
             await conn.input_audio_buffer.commit()
 
             transcript = None
-            deadline = time.time() + TIMEOUT_MODEL_OPERATION
-            while time.time() < deadline:
+            deadline = time.monotonic() + TIMEOUT_MODEL_OPERATION
+            while time.monotonic() < deadline:
+                timeout_s = max(0.1, min(30, deadline - time.monotonic()))
                 try:
-                    event = await asyncio.wait_for(conn.recv(), timeout=30)
-                    print(f"[INFO] Received message: {event.type}")
-
-                    self.assertNotIn(
-                        event.type,
-                        {
-                            "input_audio_buffer.speech_started",
-                            "input_audio_buffer.speech_stopped",
-                            "conversation.item.input_audio_transcription.delta",
-                        },
-                        "Manual commit mode should not emit VAD or interim events",
-                    )
-
-                    if (
-                        event.type
-                        == "conversation.item.input_audio_transcription.completed"
-                    ):
-                        transcript = getattr(event, "transcript", "")
-                        break
+                    event = await asyncio.wait_for(conn.recv(), timeout=timeout_s)
                 except asyncio.TimeoutError:
+                    break
+
+                event_type = self._event_type(event)
+                print(f"[INFO] Received message: {event_type}")
+
+                if event_type == "error":
+                    self.fail(f"Realtime transcription returned error: {event}")
+
+                self.assertNotIn(
+                    event_type,
+                    {
+                        "input_audio_buffer.speech_started",
+                        "input_audio_buffer.speech_stopped",
+                        "conversation.item.input_audio_transcription.delta",
+                    },
+                    "Manual commit mode should not emit VAD or interim events",
+                )
+
+                if (
+                    event_type
+                    == "conversation.item.input_audio_transcription.completed"
+                ):
+                    transcript = self._event_text(event, "transcript", "text", "delta")
                     break
 
         self.assertIsNotNone(transcript, "Should receive a transcription result")

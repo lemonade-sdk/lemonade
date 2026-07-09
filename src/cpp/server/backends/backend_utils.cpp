@@ -741,6 +741,28 @@ namespace lemon::backends {
                 }
             }
 
+            // Normalize executable permissions for every regular file in the
+            // staging tree.  Archives may place binaries under bin/ or directly
+            // in the tree root (the llama.cpp Vulkan tarball does the latter),
+            // and tarballs may strip the execute bit.  Recurse over the whole
+            // tree so no layout is missed.  Fixing in staging (not post-swap)
+            // preserves rollback on chmod failure.  On Windows chmod is a no-op.
+            #ifndef _WIN32
+            {
+                for (const auto& entry : fs::recursive_directory_iterator(staging_dir)) {
+                    if (entry.is_regular_file()) {
+                        if (chmod(entry.path().c_str(), 0755) != 0) {
+                            std::error_code ec;
+                            ec.assign(errno, std::generic_category());
+                            throw std::runtime_error(
+                                "Failed to set executable permission on staged file "
+                                + entry.path().string() + ": " + ec.message());
+                        }
+                    }
+                }
+            }
+            #endif
+
             // Verify the staged tree contains the executable, then atomically
             // swap it into place. commit_staged_install keeps a recoverable .old
             // backup across the swap: it removes the staging tree and leaves
@@ -756,22 +778,6 @@ namespace lemon::backends {
             staging_guard.active = false;
 
             LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
-
-    #ifndef _WIN32
-            // Make all binaries in bin/ executable (tar may lose permissions)
-            {
-                auto bin_dir = fs::path(install_dir) / "bin";
-                if (fs::exists(bin_dir)) {
-                    for (auto& entry : fs::directory_iterator(bin_dir)) {
-                        if (entry.is_regular_file()) {
-                            chmod(entry.path().c_str(), 0755);
-                        }
-                    }
-                }
-            }
-            // Also make the found executable itself executable
-            chmod(exe_path.c_str(), 0755);
-    #endif
 
             // (The downloaded archive is removed by zip_guard on scope exit.)
 
@@ -822,9 +828,35 @@ namespace lemon::backends {
                 return std::nullopt;
             }
 #ifdef _WIN32
+            // ROCm 5.x/6.x ship bin\amdhip64.dll; ROCm 7.x version-suffixes it
+            // (bin\amdhip64_7.dll). Accept amdhip64.dll or amdhip64_<digits>.dll,
+            // not arbitrary suffixes like amdhip64_backup.dll.
+            const auto is_hip_runtime = [](const std::string& name) {
+                if (name == "amdhip64.dll") {
+                    return true;
+                }
+                static const std::string prefix = "amdhip64_";
+                static const std::string suffix = ".dll";
+                if (name.size() <= prefix.size() + suffix.size() ||
+                    name.compare(0, prefix.size(), prefix) != 0 ||
+                    name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                    return false;
+                }
+                const auto digits = name.substr(
+                    prefix.size(), name.size() - prefix.size() - suffix.size());
+                return std::all_of(digits.begin(), digits.end(),
+                                   [](unsigned char c) { return std::isdigit(c); });
+            };
             for (const char* subdir : {"bin", "lib"}) {
-                if (fs::exists(root / subdir / "amdhip64.dll", ec)) {
-                    return root;
+                const fs::path dir = root / subdir;
+                if (!fs::is_directory(dir, ec)) {
+                    continue;
+                }
+                for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+                    if (it->is_regular_file(ec) &&
+                        is_hip_runtime(it->path().filename().string())) {
+                        return root;
+                    }
                 }
             }
 #else
