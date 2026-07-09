@@ -10,6 +10,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <lemon/utils/path_utils.h>
+
 namespace lemon_cli {
 
 namespace {
@@ -140,9 +142,15 @@ std::string normalize_user_model_name(std::string name) {
 }
 
 std::string strip_huggingface_url_prefix(const std::string& arg) {
-    static const std::string prefix = "https://huggingface.co/";
-    if (arg.rfind(prefix, 0) == 0) {
-        return arg.substr(prefix.size());
+    std::string endpoint = lemon::utils::get_hf_endpoint();
+    // Try stripping configured mirror prefix first, then known default
+    std::string endpoint_prefix = endpoint + "/";
+    if (arg.rfind(endpoint_prefix, 0) == 0) {
+        return arg.substr(endpoint_prefix.size());
+    }
+    static const std::string default_prefix = "https://huggingface.co/";
+    if (endpoint_prefix != default_prefix && arg.rfind(default_prefix, 0) == 0) {
+        return arg.substr(default_prefix.size());
     }
     return arg;
 }

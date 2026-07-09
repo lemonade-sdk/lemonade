@@ -1335,7 +1335,7 @@ void ModelManager::check_for_model_updates() {
 
         try {
             LOG(DEBUG, "ModelManager") << "Checking for updates: " << repo_id << std::endl;
-            std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+            std::string api_url = lemon::utils::get_hf_endpoint() + "/api/models/" + repo_id;
             auto response = HttpClient::get(api_url, headers, 10);
 
             if (response.status_code != 200) {
@@ -3201,7 +3201,7 @@ static std::map<std::string, HfFileMetadata> fetch_hf_file_metadata_for_ref(
     }
 
     for (const auto& subdir : subdirs_to_fetch) {
-        std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/" + ref;
+        std::string tree_url = lemon::utils::get_hf_endpoint() + "/api/models/" + repo_id + "/tree/" + ref;
         if (!subdir.empty()) {
             tree_url += "/" + subdir;
         }
@@ -3647,7 +3647,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // NOTE: This API call happens EVERY time this function is called, regardless of
     // whether files are cached. The do_not_upgrade check should happen in the caller
     // (download_model) to avoid this API call when using cached models.
-    std::string api_url = "https://huggingface.co/api/models/" + main_repo_id;
+    std::string api_url = lemon::utils::get_hf_endpoint() + "/api/models/" + main_repo_id;
 
     LOG(INFO, "ModelManager") << "Fetching repository file list from Hugging Face..." << std::endl;
     auto response = HttpClient::get(api_url, headers);
@@ -3809,7 +3809,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         if (repo_id == main_repo_id || files.empty()) continue;
 
         // Query HF API for this repo's commit hash
-        std::string other_api_url = "https://huggingface.co/api/models/" + repo_id;
+        std::string other_api_url = lemon::utils::get_hf_endpoint() + "/api/models/" + repo_id;
         auto other_response = HttpClient::get(other_api_url, headers);
 
         std::string other_hash = "main";
@@ -3892,7 +3892,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             std::string size_key = repo_id + ':' + filename;
             file_entry["name"] = filename;
             std::string repo_commit = repo_commit_hashes.count(repo_id) ? repo_commit_hashes[repo_id] : "main";
-            file_entry["url"] = "https://huggingface.co/" + repo_id + "/resolve/" + repo_commit + "/" + filename;
+            file_entry["url"] = lemon::utils::get_hf_endpoint() + "/" + repo_id + "/resolve/" + repo_commit + "/" + filename;
             file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
             file_entry["download_path"] = repo_download_paths[repo_id];
             if (file_hashes.count(size_key)) {
