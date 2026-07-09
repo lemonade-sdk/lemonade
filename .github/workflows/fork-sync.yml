@@ -1,0 +1,42 @@
+name: Fork Sync (daily)
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # 5AM UTC daily
+  workflow_dispatch:       # manual trigger too
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream into fork
+        id: sync
+        run: |
+          git remote add upstream https://github.com/lemonade-sdk/lemonade.git
+          git fetch upstream main
+          git checkout main
+          BEHIND=$(git rev-list --count main..upstream/main 2>/dev/null || echo 0)
+          echo "Behind upstream by $BEHIND commits"
+          echo "commits=$BEHIND" >> "$GITHUB_OUTPUT"
+          if [ "$BEHIND" -gt 0 ]; then
+            git merge --ff-only upstream/main
+            git push origin main
+            echo "synced=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "synced=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log result
+        run: |
+          if [ "${{ steps.sync.outputs.synced }}" = "true" ]; then
+            echo "✅ Synced ${{ steps.sync.outputs.commits }} commits from upstream"
+          else
+            echo "✅ Already up to date with upstream"
+          fi
