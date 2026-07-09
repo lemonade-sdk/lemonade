@@ -445,9 +445,16 @@ void Server::setup_http_servers() {
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
 
-    std::function<httplib::TaskQueue *(void)> task_queue_factory = [this] {
-        LOG(DEBUG, "Server") << "Creating new thread pool with 8 threads" << std::endl;
-        return new httplib::ThreadPool(8);
+    // Size the pool from the host CPU count instead of a fixed 8. cpp-httplib
+    // dedicates one worker thread per in-flight request for the connection's
+    // lifetime, so a small fixed pool lets a handful of slow-loris or long-lived
+    // streaming connections starve the management endpoints (/health, /load).
+    unsigned int hw = std::thread::hardware_concurrency();
+    size_t thread_count = std::max<size_t>(32, static_cast<size_t>(hw) * 4);
+    std::function<httplib::TaskQueue *(void)> task_queue_factory = [thread_count] {
+        LOG(DEBUG, "Server") << "Creating new thread pool with " << thread_count
+                             << " threads" << std::endl;
+        return new httplib::ThreadPool(thread_count);
     };
 
     // The fronts own the accept loops (and therefore the task queues)
@@ -455,6 +462,16 @@ void Server::setup_http_servers() {
     http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
+
+    // Bound how long a single connection can tie up a worker thread. Without a
+    // read timeout a client that opens a socket and never finishes its request
+    // (slow loris) holds its worker indefinitely. Streaming responses drive
+    // their own write cadence, so keep the write timeout generous.
+    for (RoutedHttpServer* srv : {http_server_.get(), http_server_v6_.get()}) {
+        srv->set_read_timeout(30, 0);
+        srv->set_write_timeout(300, 0);
+        srv->set_keep_alive_max_count(100);
+    }
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);

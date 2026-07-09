@@ -1,8 +1,10 @@
 #pragma once
 
-// CRITICAL: Define thread pool count BEFORE including httplib.h
+// Define thread pool count BEFORE including httplib.h. This is only the
+// fallback for httplib's default-constructed servers; the listeners are sized
+// at runtime from the host CPU count in setup_http_servers().
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+#define CPPHTTPLIB_THREAD_POOL_COUNT 64
 #endif
 
 #include <string>
