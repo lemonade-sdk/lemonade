@@ -41,6 +41,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": [],
   "auto_check_model_updates": true,
   "broadcast": true,
   "cloud_providers": [],
@@ -448,21 +449,25 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
 
-### Allowed Origins
+### CORS and Allowed Origins
 
-The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+When Lemonade Server is bound to a non-loopback address (e.g., `--host 0.0.0.0` for Docker or LAN access), the bundled web app may be accessed from origins other than `localhost`. By default, only loopback origins (`localhost`, `127.0.0.1`, `::1`) and native desktop app origins (Tauri) are permitted for cross-origin requests.
 
-> [!NOTE]
-> `LEMONADE_ALLOWED_ORIGINS` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
+To allow legitimate non-loopback web-app access (e.g., `http://192.168.1.50:13305`), configure the `allowed_origins` array:
 
-- **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
-  > [!WARNING]
-  > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
-- **Wildcard (`*`)**: Setting the variable to `*` allows any origin to connect.
-- **Security Implications of `*`**:
-  > [!WARNING]
-  > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
-- **Local/Loopback & Desktop Access**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) and custom desktop application schemes (`file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for local client connections. Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
+```bash
+lemonade config set allowed_origins='["http://192.168.1.50:13305"]'
+```
+
+Or in `config.json`:
+
+```json
+{
+  "allowed_origins": ["http://192.168.1.50:13305", "http://server.local:13305"]
+}
+```
+
+Each origin must be explicitly listed — wildcards are not supported. This protects against DNS rebinding attacks where a malicious hostname could resolve to an arbitrary IP controlled by an attacker.
 
 ## Remote Server Connection
 
