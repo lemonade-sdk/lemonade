@@ -2921,7 +2921,7 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(default_route.get("default_used"), True)
             self.assertEqual(default_route.get("outputs"), {})
             self.assertNotIn("trace", default_route)
-            self.assertIsNone(default_response.headers.get("x-lemonade-route"))
+            self.assertEqual(default_response.headers.get("x-lemonade-route"), "default")
             print(f"[OK] collection.router dispatched {public_name} -> completion")
         finally:
             try:
@@ -3046,6 +3046,112 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def _collect_sse_data_events(self, resp):
+        data_events = []
+        for raw_line in resp.iter_lines():
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8", errors="replace")
+            if line.startswith("data:"):
+                data_events.append(line[len("data:") :].strip())
+        return data_events
+
+    def _assert_stream_route_decision(self, resp, endpoint_name):
+        if resp.status_code != 200:
+            self.fail(f"streaming {endpoint_name} returned {resp.status_code}: {resp.text}")
+        self.assertEqual(resp.headers.get("x-lemonade-route"), "code-to-test-model")
+        data_events = self._collect_sse_data_events(resp)
+        self.assertTrue(
+            data_events,
+            f"streaming {endpoint_name} must emit at least one SSE data event",
+        )
+        blob = "\n".join(data_events)
+        self.assertNotIn(
+            '"error"',
+            blob,
+            f"streaming {endpoint_name} must not error: {blob[:500]}",
+        )
+        route_chunks = []
+        for event in data_events:
+            if event == "[DONE]":
+                continue
+            try:
+                payload = json.loads(event)
+            except Exception:
+                continue
+            route = payload.get("x_lemonade_route")
+            if route:
+                route_chunks.append(route)
+        self.assertTrue(
+            route_chunks,
+            f"streaming {endpoint_name} must attach x_lemonade_route to a chunk",
+        )
+        route = route_chunks[0]
+        self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
+        self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+        self.assertIsInstance(route.get("trace"), list)
+        return data_events
+
+    def test_021zj_router_collection_chat_streaming_route_decision(self):
+        """/chat/completions streaming attaches additive route metadata."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterChatStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "max_tokens": 8,
+                    "stream": True,
+                    "route_trace": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self._assert_stream_route_decision(resp, "/chat/completions")
+            print(
+                f"[OK] collection.router /chat/completions (streaming) attached route decision"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zk_router_collection_completions_streaming_route_decision(self):
+        """/completions streaming attaches additive route metadata."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterComplStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/completions",
+                json={
+                    "model": public_name,
+                    "prompt": "Please write code for me",
+                    "max_tokens": 8,
+                    "stream": True,
+                    "route_trace": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self._assert_stream_route_decision(resp, "/completions")
+            print(
+                f"[OK] collection.router /completions (streaming) attached route decision"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
     def test_021za_router_collection_completions_dispatch(self):
         """/completions dispatches a collection.router request to the
         engine-selected candidate (#2385), same as /chat/completions."""
@@ -3137,44 +3243,7 @@ class EndpointTests(ServerTestBase):
                 stream=True,
                 timeout=TIMEOUT_MODEL_OPERATION,
             ) as resp:
-                self.assertEqual(resp.status_code, 200, resp.text)
-                self.assertEqual(resp.headers.get("x-lemonade-route"), "code-to-test-model")
-                data_events = []
-                for raw_line in resp.iter_lines():
-                    if not raw_line:
-                        continue
-                    line = raw_line.decode("utf-8", errors="replace")
-                    if line.startswith("data:"):
-                        data_events.append(line[len("data:") :].strip())
-            self.assertTrue(
-                data_events,
-                "streaming /responses must emit at least one SSE data event",
-            )
-            blob = "\n".join(data_events)
-            self.assertNotIn(
-                '"error"',
-                blob,
-                f"streaming /responses must not error: {blob[:500]}",
-            )
-            route_chunks = []
-            for event in data_events:
-                if event == "[DONE]":
-                    continue
-                try:
-                    payload = json.loads(event)
-                except Exception:
-                    continue
-                route = payload.get("x_lemonade_route")
-                if route:
-                    route_chunks.append(route)
-            self.assertTrue(
-                route_chunks,
-                "streaming /responses must attach x_lemonade_route to a chunk",
-            )
-            route = route_chunks[0]
-            self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
-            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
-            self.assertIsInstance(route.get("trace"), list)
+                self._assert_stream_route_decision(resp, "/responses")
             print(
                 f"[OK] collection.router /responses (streaming) dispatched {public_name}"
             )

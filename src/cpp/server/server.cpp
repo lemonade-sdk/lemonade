@@ -2,6 +2,7 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
@@ -188,36 +189,6 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
-json route_decision_to_json(const Decision& decision) {
-    json out = {
-        {"version", "1"},
-        {"route_to", decision.route_to},
-        {"matched_rule", decision.matched_rule},
-        {"default_used", decision.default_used},
-        {"outputs", decision.outputs.is_object() ? decision.outputs : json::object()},
-    };
-    if (!decision.trace.empty()) {
-        out["trace"] = json::array();
-        for (const auto& entry : decision.trace) {
-            json trace_entry = {
-                {"condition", entry.condition},
-                {"result", entry.result},
-            };
-            if (entry.score.has_value()) {
-                trace_entry["score"] = *entry.score;
-            }
-            out["trace"].push_back(std::move(trace_entry));
-        }
-    }
-    return out;
-}
-
-void attach_route_header(httplib::Response& res, const Decision& decision) {
-    if (!decision.matched_rule.empty()) {
-        res.set_header("x-lemonade-route", decision.matched_rule);
-    }
-}
-
 void attach_route_decision(json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& dispatch) {
     if (!dispatch.has_value()) {
@@ -227,131 +198,39 @@ void attach_route_decision(json& response, httplib::Response& res,
     attach_route_header(res, dispatch->decision);
 }
 
-std::string attach_route_decision_to_sse_event(
-    const std::string& event,
-    const json& route_decision_json,
-    bool& attached) {
-    if (attached || route_decision_json.is_null()) {
-        return event;
+template <typename StreamFn>
+void set_route_decision_sse_content_provider(
+    httplib::Response& res,
+    const std::optional<RouterDispatchResult>& dispatch,
+    std::string request_body,
+    StreamFn stream_fn) {
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    if (dispatch) {
+        attach_route_header(res, dispatch->decision);
     }
 
-    const std::string prefix = "data:";
-    std::size_t pos = event.find(prefix);
-    if (pos == std::string::npos) {
-        return event;
-    }
-    std::size_t payload_start = pos + prefix.size();
-    while (payload_start < event.size() &&
-           (event[payload_start] == ' ' || event[payload_start] == '\t')) {
-        ++payload_start;
-    }
-    std::size_t payload_end = event.find('\n', payload_start);
-    if (payload_end == std::string::npos) {
-        payload_end = event.size();
-    }
-    while (payload_end > payload_start &&
-           (event[payload_end - 1] == '\r' || event[payload_end - 1] == ' ' ||
-            event[payload_end - 1] == '\t')) {
-        --payload_end;
-    }
-
-    std::string payload = event.substr(payload_start, payload_end - payload_start);
-    if (payload.empty() || payload == "[DONE]") {
-        return event;
-    }
-
-    json parsed = json::parse(payload, nullptr, /*allow_exceptions=*/false);
-    if (!parsed.is_object()) {
-        return event;
-    }
-    parsed["x_lemonade_route"] = route_decision_json;
-    attached = true;
-
-    std::string out = event.substr(0, payload_start);
-    out += parsed.dump();
-    out += event.substr(payload_end);
-    return out;
-}
-
-class RouteDecisionSseSink {
-public:
-    RouteDecisionSseSink(httplib::DataSink& inner, json route_decision_json)
-        : inner_(inner), route_decision_json_(std::move(route_decision_json)) {}
-
-    bool write(const char* data, size_t length) {
-        buffer_.append(data, length);
-        std::size_t event_end = std::string::npos;
-        while ((event_end = buffer_.find("\n\n")) != std::string::npos) {
-            std::string event = buffer_.substr(0, event_end + 2);
-            buffer_.erase(0, event_end + 2);
-            event = attach_route_decision_to_sse_event(
-                event, route_decision_json_, attached_);
-            if (!inner_.write(event.c_str(), event.size())) {
+    json route_decision_json = dispatch
+        ? route_decision_to_json(dispatch->decision)
+        : json(nullptr);
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [request_body = std::move(request_body),
+         route_decision_json = std::move(route_decision_json),
+         stream_fn = std::move(stream_fn)](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) {
                 return false;
             }
-        }
-        return true;
-    }
 
-    void done() {
-        flush();
-        if (inner_.done) {
-            inner_.done();
-        }
-    }
-
-    void done_with_trailer(const httplib::Headers& trailer) {
-        flush();
-        if (inner_.done_with_trailer) {
-            inner_.done_with_trailer(trailer);
-        } else if (inner_.done) {
-            inner_.done();
-        }
-    }
-
-    bool is_writable() const {
-        return !inner_.is_writable || inner_.is_writable();
-    }
-
-private:
-    void flush() {
-        if (!buffer_.empty()) {
-            std::string event = attach_route_decision_to_sse_event(
-                buffer_, route_decision_json_, attached_);
-            inner_.write(event.c_str(), event.size());
-            buffer_.clear();
-        }
-    }
-
-    httplib::DataSink& inner_;
-    json route_decision_json_;
-    bool attached_ = false;
-    std::string buffer_;
-};
-
-template <typename StreamFn>
-void stream_with_route_decision(httplib::DataSink& sink,
-                                json route_decision_json,
-                                StreamFn&& stream_fn) {
-    if (route_decision_json.is_null()) {
-        stream_fn(sink);
-        return;
-    }
-
-    RouteDecisionSseSink route_sink_wrapper(sink, std::move(route_decision_json));
-    httplib::DataSink route_sink;
-    route_sink.write = [&route_sink_wrapper](const char* data, size_t len) {
-        return route_sink_wrapper.write(data, len);
-    };
-    route_sink.done = [&route_sink_wrapper]() { route_sink_wrapper.done(); };
-    route_sink.done_with_trailer = [&route_sink_wrapper](
-        const httplib::Headers& trailer) {
-        route_sink_wrapper.done_with_trailer(trailer);
-    };
-    route_sink.is_writable = [&route_sink_wrapper]() {
-        return route_sink_wrapper.is_writable();
-    };
-    stream_fn(route_sink);
+            stream_with_route_decision(
+                sink,
+                route_decision_json,
+                [&request_body, &stream_fn](httplib::DataSink& route_sink) {
+                    stream_fn(request_body, route_sink);
+                });
+            return false;
+        });
 }
 
 int get_http_status_from_error(const std::string& error_code) {
@@ -2547,36 +2426,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
-                if (route_dispatch) {
-                    attach_route_header(res, route_dispatch->decision);
-                }
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                json route_decision_json = route_dispatch
-                    ? route_decision_to_json(route_dispatch->decision)
-                    : json(nullptr);
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
-                        // For chunked responses, offset tracks bytes sent so far
-                        // We only want to stream once when offset is 0
-                        if (offset > 0) {
-                            return false; // We're done after the first call
-                        }
-
-                        stream_with_route_decision(
-                            sink,
-                            route_decision_json,
-                            [this, &request_body](httplib::DataSink& route_sink) {
-                                router_->chat_completion_stream(request_body, route_sink);
-                            });
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->chat_completion_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
@@ -2793,35 +2649,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
-                // Set up SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-                if (route_dispatch) {
-                    attach_route_header(res, route_dispatch->decision);
-                }
-
-                json route_decision_json = route_dispatch
-                    ? route_decision_to_json(route_dispatch->decision)
-                    : json(nullptr);
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Already sent everything
-                        }
-
-                        // Use unified Router path for streaming
-                        stream_with_route_decision(
-                            sink,
-                            route_decision_json,
-                            [this, &request_body](httplib::DataSink& route_sink) {
-                                router_->completion_stream(request_body, route_sink);
-                            });
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->completion_stream(body, sink);
+                    });
 
                 LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
                 return;
@@ -4220,36 +4054,13 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-                if (route_dispatch) {
-                    attach_route_header(res, route_dispatch->decision);
-                }
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                json route_decision_json = route_dispatch
-                    ? route_decision_to_json(route_dispatch->decision)
-                    : json(nullptr);
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body, route_decision_json](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Only stream once
-                        }
-
-                        // Use unified Router path for streaming
-                        stream_with_route_decision(
-                            sink,
-                            route_decision_json,
-                            [this, &request_body](httplib::DataSink& route_sink) {
-                                router_->responses_stream(request_body, route_sink);
-                            });
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->responses_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
