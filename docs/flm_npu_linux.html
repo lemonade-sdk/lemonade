@@ -261,16 +261,17 @@
               <ol>
                 <li>Enable the AMD NPU COPR repository:
                   <div class="flm-code-block"><code>sudo dnf copr enable abn/amd-npu</code></div>
-                  <span class="flm-inline-note">This COPR provides pre-built XRT and FLM packages. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
+                  <span class="flm-inline-note">This COPR provides pre-built XRT and NPU driver packages. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
                 </li>
-                <li>Install the NPU stack:
-                  <div class="flm-code-block"><code>sudo dnf install xrt fastflowlm</code></div>
+                <li>Install the NPU runtime and driver:
+                  <div class="flm-code-block"><code>sudo dnf install xrt amdxdna-dkms</code></div>
                 </li>
-                <li>Install Lemonade Server:
-                  <div class="flm-code-block"><code>sudo dnf copr enable abn/lemonade<br>sudo dnf install lemonade-server</code></div>
+                <li>Reboot:
+                  <div class="flm-code-block"><code>sudo reboot</code></div>
                 </li>
-                <li>If running Lemonade as a systemd service, add a drop-in with the Linux beta flag:
-                  <div class="flm-code-block"><code>sudo mkdir -p /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
+                <li>Optionally install FLM from upstream releases:
+                  <div class="flm-code-block"><code>sudo dnf install ./&lt;flm_package.rpm&gt;</code></div>
+                  <span class="flm-inline-note">Lemonade will auto-install the portable FLM binary if not in PATH.</span>
                 </li>
                 <li>Verify the NPU stack:
                   <div class="flm-code-block"><code>flm validate</code></div>
