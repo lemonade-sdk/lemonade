@@ -341,17 +341,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     window.setTimeout(() => setToastMsg(null), 3500);
   }, []);
 
-  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false, skipConfirm = false) => {
+  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    // GUI2-style behavior for backend updates: the Update click itself is consent.
-    // Keep the install confirmation because that can add a new runtime, but do not
-    // show the alarming local-files confirmation for ordinary updates (#2569).
-    if (!skipConfirm && !isUpdate) {
-      const ok = window.confirm(`Install ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This adds local Lemonade runtime files.`);
-      if (!ok) return;
-    }
     setInstalling(key);
     toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
     const downloadName = backendDownloadName(recipe, backend);
@@ -425,8 +418,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, [fetchInfo, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
-    const ok = window.confirm(`Uninstall ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This removes local backend runtime files.`);
-    if (!ok) return;
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
@@ -449,7 +440,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
     if (updates.length === 0) return;
     for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend, true, true);
+      await handleInstall(recipe, backend, true);
     }
   }, [sysInfo, handleInstall]);
 

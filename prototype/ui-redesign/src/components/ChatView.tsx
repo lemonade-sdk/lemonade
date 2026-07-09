@@ -28,7 +28,21 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { PRESET_STORE_EVENT, activePresetForModel, systemPromptTextForPreset, systemPromptNameForPreset } from '../presetStore';
+import {
+  DEFAULT_PRESET,
+  PRESET_STORE_EVENT,
+  type Preset,
+  activePresetForModel,
+  allStoredPresets,
+  isCompatible,
+  loadApplied,
+  saveApplied,
+  classifyPresetChange,
+  runningPresetIdForModel,
+  setRunningPreset,
+  systemPromptTextForPreset,
+  systemPromptNameForPreset,
+} from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 
 interface Message {
@@ -610,10 +624,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [presetPickerQuery, setPresetPickerQuery] = useState('');
+  const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
+  const [presetPickerError, setPresetPickerError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const presetPickerRef = useRef<HTMLDivElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -754,6 +773,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
   }, [storageScope]);
 
+  const allPresets = useMemo(() => allStoredPresets(), [presetVersion]);
   const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
 
   useEffect(() => {
@@ -874,6 +894,101 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return filtered.slice(0, 80);
   }, [capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
 
+
+  const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
+  const presetPickerOptions = useMemo(() => {
+    if (!currentModel) return [];
+    const q = presetPickerQuery.trim().toLowerCase();
+    return allPresets
+      .filter(preset => isCompatible(preset, presetPickerTarget))
+      .filter(preset => {
+        if (!q) return true;
+        return [
+          preset.name,
+          preset.description,
+          preset.applies_to.join(' '),
+          systemPromptNameForPreset(preset),
+          preset.tools_enabled === false ? 'tools off' : 'tools on',
+        ].join(' ').toLowerCase().includes(q);
+      })
+      .slice(0, 80);
+  }, [allPresets, currentModel, presetPickerQuery, presetPickerTarget]);
+
+  const handlePresetPickerSelect = useCallback(async (preset: Preset) => {
+    if (!currentModel || presetPickerApplying) return;
+
+    const targetName = currentModel;
+    const previousApplied = loadApplied();
+    const previouslyLinkedPreset = currentPreset || activePresetForModel(targetName);
+    const runId = runningPresetIdForModel(targetName);
+    const runningPreset = runId
+      ? (allStoredPresets().find(p => p.id === runId) ?? previouslyLinkedPreset)
+      : previouslyLinkedPreset;
+    const changeKind = currentLoadedModel
+      ? classifyPresetChange(runningPreset, preset)
+      : 'none';
+
+    const nextApplied = { ...previousApplied };
+    if (preset.id === DEFAULT_PRESET.id) delete nextApplied[targetName];
+    else nextApplied[targetName] = preset.id;
+
+    setPresetPickerApplying(preset.id);
+    setPresetPickerError(null);
+    saveApplied(nextApplied);
+
+    const nextTools = preset.tools_enabled !== false;
+    setUseTools(nextTools);
+    try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(nextTools)); } catch { /* ignore */ }
+
+    // Choosing a preset from the Chat composer is an explicit user action, just
+    // like choosing a different model. Apply the target state immediately: live
+    // request-time changes take effect on the next request; load-time changes
+    // trigger a reload so the running backend is actually using the selected
+    // preset instead of merely linking it for later.
+    try {
+      if (currentCapability === 'image') {
+        imageSettingsTouchedRef.current = false;
+        imageSettingsCommittedRef.current = false;
+        setImageSettings(imageDefaultsForModel(
+          currentLoadedModel,
+          currentKnownModelInfo,
+          preset.recipe_options as Record<string, unknown> | undefined,
+        ));
+        setImageMode('generate');
+      }
+
+      if (currentLoadedModel && changeKind === 'reload') {
+        await api.reloadModel(
+          targetName,
+          Object.keys(preset.recipe_options || {}).length > 0
+            ? preset.recipe_options as Record<string, unknown>
+            : undefined,
+          currentKnownModelInfo || currentCustomModelInfo || null,
+        );
+        await Promise.resolve(onRefresh());
+      }
+
+      if (currentLoadedModel) setRunningPreset(targetName, preset.id);
+      setPresetPickerOpen(false);
+      setPresetPickerQuery('');
+    } catch (err) {
+      setPresetPickerOpen(true);
+      setPresetPickerError(friendlyErrorMessage(err));
+    } finally {
+      setPresetPickerApplying(null);
+    }
+  }, [
+    currentCapability,
+    currentCustomModelInfo,
+    currentKnownModelInfo,
+    currentLoadedModel,
+    currentModel,
+    currentPreset,
+    onRefresh,
+    presetPickerApplying,
+    storageScope,
+  ]);
+
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
   const modeSupportsTools = modeSupportsChatCompletions;
   const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || supportsRealtimeAudio;
@@ -918,6 +1033,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     window.addEventListener('pointerdown', onPointerDown);
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [modelPickerOpen]);
+
+  useEffect(() => {
+    if (!presetPickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = presetPickerRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setPresetPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [presetPickerOpen]);
 
   useEffect(() => {
     const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
@@ -2236,7 +2362,7 @@ ${finalText}`
               <button
                 type="button"
                 className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                onClick={() => { setModelPickerOpen(v => !v); setPresetPickerOpen(false); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
@@ -2284,18 +2410,66 @@ ${finalText}`
           <button
             type="button"
             className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)} composer__mode-badge--interactive`}
-            onClick={() => setModelPickerOpen(true)}
+            onClick={() => { setModelPickerOpen(true); setPresetPickerOpen(false); }}
             title="Mode follows the selected model. Open model search to change it."
           >
             <CapabilityIcon capability={currentCapability} size={13} /> {supportsRealtimeAudio && modeSupportsChatCompletions ? 'Chat + Audio' : capabilityLabel(currentCapability)} mode
           </button>
-          {currentPreset && (
-            <span className="composer__preset-badge" title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. Tools start ${currentPreset.tools_enabled === false ? 'OFF' : 'ON'}.`}>
-              <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
-            </span>
+          {currentPreset && currentModel && (
+            <div className="composer__preset-picker" ref={presetPickerRef}>
+              <button
+                type="button"
+                className="composer__preset-badge composer__preset-badge--interactive"
+                onClick={() => { setPresetPickerOpen(v => !v); setModelPickerOpen(false); }}
+                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. Tools start ${currentPreset.tools_enabled === false ? 'OFF' : 'ON'}. Click to change preset.`}
+                aria-haspopup="listbox"
+                aria-expanded={presetPickerOpen}
+              >
+                <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
+                <span className="composer__model-button-caret">▾</span>
+              </button>
+              {presetPickerOpen && (
+                <div className="composer__model-menu composer__preset-menu" role="dialog" aria-label="Search presets">
+                  <label className="composer__model-search">
+                    <Icon name="search" size={14} />
+                    <input
+                      autoFocus
+                      value={presetPickerQuery}
+                      placeholder="Search presets…"
+                      onChange={e => setPresetPickerQuery(e.target.value)}
+                    />
+                  </label>
+                  <div className="composer__model-results" role="listbox">
+                    {presetPickerOptions.map(preset => {
+                      const isActive = preset.id === currentPreset.id;
+                      return (
+                        <button
+                          type="button"
+                          key={preset.id}
+                          className={`composer__model-option${isActive ? ' is-active' : ''}`}
+                          onClick={() => handlePresetPickerSelect(preset)}
+                          disabled={!!presetPickerApplying}
+                          role="option"
+                          aria-selected={isActive}
+                        >
+                          <PresetIcon preset={preset} />
+                          <span className="composer__model-option-text">
+                            <strong>{preset.name}</strong>
+                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · Tools {preset.tools_enabled === false ? 'OFF' : 'ON'}</span>
+                          </span>
+                          {presetPickerApplying === preset.id && <span className="composer__model-option-loading">Applying…</span>}
+                        </button>
+                      );
+                    })}
+                    {presetPickerOptions.length === 0 && <div className="composer__model-empty">No matching presets</div>}
+                  </div>
+                  {presetPickerError && <div className="composer__model-error">{presetPickerError}</div>}
+                </div>
+              )}
+            </div>
           )}
           <button
-            className={`composer__tools-toggle ${useTools ? 'composer__tools-toggle--active' : ''}`}
+            className={`composer__tools-toggle ${useTools && modeSupportsTools ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {
               const next = !useTools;
               setUseTools(next);

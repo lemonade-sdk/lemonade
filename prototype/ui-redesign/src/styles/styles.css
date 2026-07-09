@@ -3945,7 +3945,8 @@ input, textarea {
   .composer__toolbar { max-width: 100%; }
 
   /* ── Model selector: truncate aggressively so bar doesn't overflow ── */
-  .composer__model-button {
+  .composer__model-button,
+  .composer__preset-badge {
     max-width: 40vw;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3954,6 +3955,7 @@ input, textarea {
 
   /* ── Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) ── */
   .composer__model-search input,
+  .composer__preset-menu input,
   .composer__input,
   input, textarea, select {
     font-size: 16px !important;
@@ -4053,7 +4055,8 @@ input, textarea {
   }
 
   /* ── Model selector in composer: cap width more aggressively ── */
-  .composer__model-button {
+  .composer__model-button,
+  .composer__preset-badge {
     max-width: 50vw;
   }
 
@@ -6357,7 +6360,8 @@ input, textarea {
   flex-wrap: wrap;
 }
 
-.composer__model-picker {
+.composer__model-picker,
+.composer__preset-picker {
   position: relative;
 }
 
@@ -6406,6 +6410,10 @@ input, textarea {
   box-shadow: var(--shadow-lg);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   backdrop-filter: blur(24px) saturate(160%);
+}
+
+.composer__preset-menu {
+  width: min(460px, 90vw);
 }
 
 .composer__model-search {
@@ -6499,6 +6507,9 @@ input, textarea {
 
 .composer__mode-badge--interactive:hover,
 .composer__mode-badge--interactive:focus-visible,
+.composer__preset-badge--interactive:hover,
+.composer__preset-badge--interactive:focus-visible,
+.composer__preset-badge--interactive[aria-expanded="true"],
 .composer__tools-toggle:hover,
 .composer__tools-toggle:focus-visible {
   transform: translateY(-1px);
@@ -6516,6 +6527,11 @@ input, textarea {
 .composer__preset-badge {
   cursor: default;
   opacity: 0.88;
+}
+
+.composer__preset-badge--interactive {
+  cursor: pointer;
+  opacity: 1;
 }
 
 .composer__bar {
@@ -6660,7 +6676,8 @@ input, textarea {
     display: none;
   }
 
-  .composer__model-button {
+  .composer__model-button,
+  .composer__preset-badge {
     max-width: 72vw;
   }
 }
@@ -6677,7 +6694,8 @@ input, textarea {
   }
 
   /* Composer model button: tighter on phone */
-  .composer__model-button {
+  .composer__model-button,
+  .composer__preset-badge {
     max-width: 50vw;
   }
 }
