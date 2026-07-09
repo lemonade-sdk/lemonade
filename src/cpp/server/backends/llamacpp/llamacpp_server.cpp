@@ -728,7 +728,10 @@ bool is_ggml_hip_plugin_available() {
             if (!dir.empty()) {
                 std::error_code plugin_ec;
                 fs::path bin_dir(dir);
-                if (fs::is_regular_file(bin_dir / "llama-server", plugin_ec)) {
+                fs::path llama_server = bin_dir / "llama-server";
+                if (fs::is_regular_file(llama_server, plugin_ec) &&
+                    access(llama_server.c_str(), X_OK) == 0) {
+                    plugin_ec.clear();
                     if (fs::exists(bin_dir / "libggml-hip.so", plugin_ec) ||
                         fs::exists(bin_dir.parent_path() / "lib" / "libggml-hip.so", plugin_ec)) {
                         return true;
