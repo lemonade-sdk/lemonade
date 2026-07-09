@@ -519,6 +519,12 @@ static void extract_mem_use_into_result(lemonade::LemonadeClient& client, BenchR
         result.memory_gb = mem_after;
 }
 
+static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
+    if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0) {
+        result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
+    }
+}
+
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
@@ -595,9 +601,7 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
     result.total_time_ms = duration<double, std::milli>(end - start).count();
 
     // Last resort: derive TPS from total time
-    if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0) {
-        result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
-    }
+    compute_tps_from_tokens_and_time(result);
 
     // Query memory after
     if (memory_tracking)
@@ -622,22 +626,16 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
                                 bool memory_tracking,
                                 bool capture_response) {
     BenchRunResult result;
-    result.success = false;  // assume failure until proven otherwise
+    result.success = false;
 
-    // Pre‑run memory snapshot (mirrors textgen)
     if (memory_tracking) {
         double _vram, _mem;
         query_system_stats(client, _vram, _mem);
     }
 
-    // Build request body: {"model": <model>, "input": <scenario.input>}
     json request_body;
     request_body["model"] = model;
-    // `scenario.input` can be a string or an array of strings.
-    // The JSON library will serialize it appropriately.
     request_body["input"] = scenario.input;  // may be string or array
-    // Optional: encoding_format (not mandatory)
-    // if (scenario.contains("encoding_format")) request_body["encoding_format"] = scenario["encoding_format"];
 
     std::string body = request_body.dump();
 
@@ -645,14 +643,12 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
     auto start = steady_clock::now();
 
     try {
-        // HTTP POST to the embeddings endpoint
         std::string response = client.make_request(
             "/api/v1/embeddings", "POST", body, "application/json",
             300000, 300000);
 
         auto resp_json = json::parse(response);
 
-        // Capture response text if requested
         if (capture_response) {
             if (resp_json.contains("data") && !resp_json["data"].empty()) {
                 result.response_text = resp_json["data"].dump();
@@ -661,7 +657,6 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
             }
         }
 
-        // Extract timing data
         if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
             extract_timings_into_result(resp_json["timings"], result);
         }
@@ -677,12 +672,7 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
         auto end = steady_clock::now();
         result.ttft_ms = duration<double, std::milli>(end - start).count();
 
-        // Throughput calculation (tokens per second)
-        if (result.output_tokens > 0 && result.ttft_ms > 0) {
-            result.tps = (result.output_tokens * 1000.0) / result.ttft_ms;
-        } else {
-            result.tps = 0.0;
-        }
+        compute_tps_from_tokens_and_time(result);
 
     } catch (const std::exception& e) {
         std::cerr << "    Embedding benchmark run failed: " << e.what() << std::endl;
