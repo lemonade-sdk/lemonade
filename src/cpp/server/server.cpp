@@ -450,7 +450,7 @@ void Server::setup_http_servers() {
     // lifetime, so a small fixed pool lets a handful of slow-loris or long-lived
     // streaming connections starve the management endpoints (/health, /load).
     unsigned int hw = std::thread::hardware_concurrency();
-    size_t thread_count = std::max<size_t>(32, static_cast<size_t>(hw) * 4);
+    size_t thread_count = std::clamp<size_t>(static_cast<size_t>(hw) * 4, 32, 256);
     std::function<httplib::TaskQueue *(void)> task_queue_factory = [thread_count] {
         LOG(DEBUG, "Server") << "Creating new thread pool with " << thread_count
                              << " threads" << std::endl;
@@ -466,8 +466,14 @@ void Server::setup_http_servers() {
     // Bound how long a single connection can tie up a worker thread. Without a
     // read timeout a client that opens a socket and never finishes its request
     // (slow loris) holds its worker indefinitely. Streaming responses drive
-    // their own write cadence, so keep the write timeout generous.
-    for (RoutedHttpServer* srv : {http_server_.get(), http_server_v6_.get()}) {
+    // their own write cadence, so keep the write timeout generous. The fronts
+    // need the same limits: they own accept and run the WebSocket upgrade peek
+    // before delegating, so a stalled client could otherwise hold a front
+    // worker there.
+    for (httplib::Server* srv : {static_cast<httplib::Server*>(http_front_.get()),
+                                 static_cast<httplib::Server*>(http_front_v6_.get()),
+                                 static_cast<httplib::Server*>(http_server_.get()),
+                                 static_cast<httplib::Server*>(http_server_v6_.get())}) {
         srv->set_read_timeout(30, 0);
         srv->set_write_timeout(300, 0);
         srv->set_keep_alive_max_count(100);
