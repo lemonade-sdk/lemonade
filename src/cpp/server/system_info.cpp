@@ -1147,6 +1147,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     static constexpr int kNonUnsupportedPriority = 2;
 
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
+    std::set<std::string> default_backend_installed;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
                                 const std::string& recipe,
@@ -1484,12 +1485,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
             continue;
         }
 
-        // First supported backend in RECIPE_DEFS order becomes the default when
-        // the recipe backend is auto-selected. Skip 'system' backend unless
-        // explicitly preferred via env var.
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
-        if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
-            recipes[def.recipe]["default_backend"] = def.backend;
+        if (supported && !skip_as_default) {
+            const std::string effective_state =
+                recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+            const bool locally_installed = effective_state == "installed"
+                || effective_state == "update_available"
+                || effective_state == "update_required";
+            const bool overrides_uninstalled_default =
+                locally_installed && default_backend_installed.count(def.recipe) == 0;
+            if (!recipes[def.recipe].contains("default_backend") || overrides_uninstalled_default) {
+                recipes[def.recipe]["default_backend"] = def.backend;
+                if (locally_installed) {
+                    default_backend_installed.insert(def.recipe);
+                }
+            }
         }
     }
 

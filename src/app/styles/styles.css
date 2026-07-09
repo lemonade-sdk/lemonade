@@ -3627,6 +3627,72 @@ input::-webkit-calendar-picker-indicator {
     cursor: not-allowed;
 }
 
+.lyrics-input-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    border-top: 1px solid var(--border-tertiary);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.lyrics-input {
+    overflow-y: auto;
+    max-height: 160px;
+}
+
+.lyrics-help-button {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border-secondary);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.lyrics-help-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1);
+}
+
+.lyrics-help-content {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    gap: 12px;
+}
+
+.lyrics-help-content p {
+    margin: 0;
+}
+
+.lyrics-help-content ul {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lyrics-help-content code {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+.lyrics-help-content pre {
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+}
+
 .chat-controls {
     display: flex;
     align-items: center;
