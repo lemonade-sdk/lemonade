@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lemonade-sdk.github.io/schemas/decision.schema.json",
   "title": "Lemonade route decision (x_lemonade_route)",
-  "description": "The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The scalar matched_rule is also surfaced in the `x-lemonade-route` response header.",
+  "description": "The decision object the engine emits, attached additively to the chat response body as `x_lemonade_route`. Pure model selection — no verdict/route-category/action in core; those are trust-customer concerns read off `outputs`. The `x-lemonade-route` response header carries the matched rule id, or `default` when the request routed through default_model.",
   "type": "object",
   "required": ["version", "route_to", "matched_rule", "default_used"],
   "properties": {

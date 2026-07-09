@@ -4,28 +4,53 @@
 
 > You may need additional configuration depending on your environment.
 
+> **Security note**
+>
+> The container runs `lemond` as an unprivileged user and binds `0.0.0.0`
+> *inside* the container (required for Docker port publishing to work). The
+> examples below use `-p 13305:13305`, which exposes the **unauthenticated** API
+> on every host interface. To limit exposure:
+> - Publish to host loopback only: `-p 127.0.0.1:13305:13305`.
+> - Require authentication by setting `-e LEMONADE_API_KEY=<key>`.
+
 ### Docker Run with Default Configuration
 
 ```bash
 docker run -d \
   --name lemonade-server \
   -p 13305:13305 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-recipe:/root/.cache/lemonade \
+  -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-### Docker Run with a Specific Port and Version
+> **Upgrading from an older version?**
+>
+> If you're upgrading from an image that ran as root (versions prior to v10.10.1), your existing named volumes may still be owned by root. The new image runs as UID 10001 and will fail to write to root-owned volumes. Fix ownership with helper containers:
+>
+> ```bash
+> docker run --rm -v lemonade-cache:/v ubuntu:24.04 chown -R 10001:10001 /v
+> docker run --rm -v lemonade-llama:/v ubuntu:24.04 chown -R 10001:10001 /v
+> docker run --rm -v lemonade-recipe:/v ubuntu:24.04 chown -R 10001:10001 /v
+> ```
+>
+> Alternatively, remove the old volumes and let the new container recreate them:
+>
+> ```bash
+> docker volume rm lemonade-cache lemonade-llama lemonade-recipe
+> ```
+
+### Docker Run with a Specific Port
 
 ```bash
 docker run -d \
   --name lemonade-server \
   -p 4000:5000 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-recipe:/root/.cache/lemonade \
-  ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
+  -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
+  ghcr.io/lemonade-sdk/lemonade-server:latest \
   ./lemond --host 0.0.0.0 --port 5000
 ```
 
@@ -49,9 +74,9 @@ Then run:
 docker run -d \
   --name lemonade-server \
   -p 13305:13305 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-recipe:/root/.cache/lemonade \
+  -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
@@ -73,9 +98,9 @@ Then run:
 docker run -d \
   --name lemonade-server \
   -p 13305:13305 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-recipe:/root/.cache/lemonade \
+  -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   --device=/dev/kfd \
   --device=/dev/dri \
   ghcr.io/lemonade-sdk/lemonade-server:latest
@@ -103,9 +128,9 @@ Then:
 docker run -d \
   --name lemonade-server \
   -p 13305:13305 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-recipe:/root/.cache/lemonade \
+  -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   -v /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro \
   -v /opt/rocm/lib:/opt/rocm/lib:ro \
   -e LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib \
@@ -131,11 +156,11 @@ services:
       - "13305:13305"
     volumes:
       # Persist downloaded models
-      - lemonade-cache:/root/.cache/huggingface
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
       # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
-      - lemonade-recipe:/root/.cache/lemonade
+      - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
 
 volumes:
@@ -285,8 +310,17 @@ RUN apt-get update && apt-get install -y \
     libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create application directory
+# Run as an unprivileged user; lemond never needs root at runtime.
+RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
+
+# The application directory doubles as the user's HOME so the HuggingFace and
+# lemonade caches (both derived from $HOME) resolve to writable, owned paths.
 WORKDIR /opt/lemonade
+ENV HOME=/opt/lemonade
+
+# Provide a private runtime directory so lemond can use get_runtime_dir()
+RUN mkdir -p /run/lemonade && chmod 700 /run/lemonade
+ENV XDG_RUNTIME_DIR=/run/lemonade
 
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
@@ -300,10 +334,14 @@ RUN chmod +x ./lemond ./lemonade
 # them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.
 ENV PATH="/opt/lemonade:${PATH}"
 
-# Create necessary directories
+# Create cache directories and hand the whole tree to the unprivileged user.
 RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
-    /root/.cache/huggingface
+    /opt/lemonade/.cache/huggingface \
+    /opt/lemonade/.cache/lemonade && \
+    chown -R lemonade:lemonade /opt/lemonade /run/lemonade
+
+USER lemonade
 
 # Expose default port
 EXPOSE 13305
@@ -312,7 +350,10 @@ EXPOSE 13305
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:13305/live || exit 1
 
-# Default command: start server in headless mode
+# Default command: start server in headless mode.
+# Binds 0.0.0.0 because Docker port publishing (-p) reaches the container via
+# its external interface, not loopback. Restrict exposure by publishing to
+# host loopback (-p 127.0.0.1:13305:13305) and/or setting LEMONADE_API_KEY.
 CMD ["./lemond", "--host", "0.0.0.0"]
 ```
 
@@ -331,11 +372,11 @@ services:
       - "13305:13305"
     volumes:
       # Persist downloaded models
-      - lemonade-cache:/root/.cache/huggingface
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
       # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
-      - lemonade-recipe:/root/.cache/lemonade
+      - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
 
 volumes:
@@ -460,10 +501,10 @@ docker run -d \
   --name lemonade-server \
   -p 13305:13305 \
   -p 9000:9000 \
-  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-- Model download fails: Ensure /root/.cache/huggingface volume is writable
+- Model download fails: Ensure /opt/lemonade/.cache/huggingface volume is writable
 - Vulkan errors on CPU-only machine: The server will fallback to CPU backend automatically

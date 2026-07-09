@@ -120,7 +120,7 @@ lemonade backends install llamacpp:rocm
 
 ### Reusing a System-Installed ROCm (Windows and Linux)
 
-On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
+On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` or `bin\amdhip64_<version>.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
 
 1. The `ROCM_PATH` environment variable
 2. `rocm-sdk path --root`, when `rocm-sdk` is on your `PATH` (e.g. a ROCm installed from the TheRock pip wheels)

@@ -62,6 +62,30 @@ std::string optional_string(const json& value,
     return value.at(key).get<std::string>();
 }
 
+bool is_safe_rule_id(const std::string& id) {
+    for (char ch : id) {
+        const bool ok = (ch >= 'A' && ch <= 'Z') ||
+                        (ch >= 'a' && ch <= 'z') ||
+                        (ch >= '0' && ch <= '9') ||
+                        ch == '.' || ch == '_' || ch == '-';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string required_rule_id(const json& value,
+                             const std::string& key,
+                             const std::string& path) {
+    std::string id = required_string(value, key, path);
+    if (!is_safe_rule_id(id)) {
+        throw std::invalid_argument(
+            path + "." + key + " must match [A-Za-z0-9._-]");
+    }
+    return id;
+}
+
 std::string schema_major(const std::string& version) {
     const auto dot = version.find('.');
     return dot == std::string::npos ? version : version.substr(0, dot);
@@ -443,7 +467,7 @@ std::vector<Rule> parse_rules(const json& routing,
         reject_unknown_keys(rule_json, routing_rule_keys(), path);
 
         Rule rule;
-        rule.id = required_string(rule_json, "id", path);
+        rule.id = required_rule_id(rule_json, "id", path);
         if (!ids.insert(rule.id).second) {
             throw std::invalid_argument(path + ".id duplicates rule id '" + rule.id + "'");
         }
