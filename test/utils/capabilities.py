@@ -170,6 +170,18 @@ CAPABILITIES = {
                 "audio": "Moonshine-Tiny-Streaming",
             },
         },
+        "parakeetcpp": {
+            "backends": ["cpu", "vulkan", "cuda", "metal"],
+            "supports": {
+                "transcription": True,
+                "transcription_with_language": False,
+                "rai_cache": False,
+                "realtime_websocket": False,
+            },
+            "test_models": {
+                "audio": "Parakeet-TDT-CTC-110M",
+            },
+        },
     },
     "stable_diffusion": {
         "sd-cpp": {

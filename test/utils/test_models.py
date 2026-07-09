@@ -208,6 +208,9 @@ TEST_AUDIO_URL = (
     "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
 )
 
+# Parakeet test configuration
+PARAKEET_MODEL = "Parakeet-TDT-CTC-110M"
+
 # Vision model test configuration
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
