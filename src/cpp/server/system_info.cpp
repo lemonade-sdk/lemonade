@@ -157,15 +157,12 @@ struct HsaRuntimeApi {
     hsa_status_t (*amd_memory_pool_get_info)(hsa_amd_memory_pool_t, hsa_amd_memory_pool_info_t, void*) = nullptr;
 };
 
-// Query the kernel driver through libdrm instead of inferring APU status from
-// sysfs topology. Only successful queries are cached: a temporary permission or
-// device-node failure must not permanently classify the card as discrete.
+// Query the kernel driver via libdrm for AMD GPU properties.
+// Only successful queries are cached.
 bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
     is_apu = false;
 
-    // Avoid repeatedly opening non-AMDGPU render nodes in mixed-vendor systems.
-    // This identifies the bound kernel driver only; APU vs dGPU still comes
-    // exclusively from amdgpu_query_gpu_info().
+    // Only attempt libdrm queries on amdgpu-backed devices.
     std::error_code driver_ec;
     const fs::path driver_link = card_path / "device" / "driver";
     const fs::path driver_target = fs::read_symlink(driver_link, driver_ec);
@@ -199,10 +196,6 @@ bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
         }
     }
 
-    // Render nodes avoid DRM-master/display authentication. The primary node is
-    // retained as a compatibility fallback for systems without a render node.
-    device_nodes.push_back(fs::path("/dev/dri") / card_path.filename());
-
     for (const auto& node : device_nodes) {
         const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
         if (fd < 0) {
@@ -230,14 +223,12 @@ bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
         }
 
         is_apu = (info.ids_flags & AMDGPU_IDS_FLAGS_FUSION) != 0;
-        {
-            std::lock_guard<std::mutex> lock(cache_mutex);
-            cache[cache_key] = is_apu;
-        }
-        return true;
+        break;
     }
 
-    return false;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    cache[cache_key] = is_apu;
+    return true;
 }
 
 std::string trim_copy(const std::string& value) {
