@@ -259,19 +259,20 @@
                 <span class="flm-instruction-label">For Fedora 43</span>
               </div>
               <ol>
-                <li>Enable the AMD NPU COPR repository:
+                <li>Enable the AMD NPU Copr repository:
                   <div class="flm-code-block"><code>sudo dnf copr enable abn/amd-npu</code></div>
-                  <span class="flm-inline-note">This COPR provides pre-built XRT and NPU driver packages. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
+                  <span class="flm-inline-note">This Copr repository provides the <code>xrt-plugin-amdxdna</code> package. The <code>amdxdna</code> kernel driver is already included in Fedora 43's kernel — no DKMS build needed. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
                 </li>
-                <li>Install the NPU runtime and driver:
-                  <div class="flm-code-block"><code>sudo dnf install xrt amdxdna-dkms</code></div>
+                <li>Install the FLM runtime and NPU plugin:
+                  <div class="flm-code-block"><code>sudo dnf install fastflowlm xrt-plugin-amdxdna</code></div>
+                  <span class="flm-inline-note">Lemonade will auto-install the portable FLM binary if not available.</span>
                 </li>
-                <li>Reboot:
-                  <div class="flm-code-block"><code>sudo reboot</code></div>
-                </li>
-                <li>Verify the NPU stack:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  A successful validation will show your kernel version, NPU device, firmware version, and unlimited memlock.
+                <li>Verify the NPU stack is detected:
+                  <div class="flm-code-block"><code>ls /dev/accel/accel0 && cat /sys/kernel/debug/amd-xdna/pci*/version</code></div>
+                  <span class="flm-inline-note">A successful NPU detection shows the device node and firmware version, for example:<br>
+                  <code>/dev/accel/accel0</code><br>
+                  <code>Kernel: 7.1.3-200.fc44.x86_64<br>
+                  NPU FW Version: 1.1.2.65</code></span>
                 </li>
               </ol>
             </div>
