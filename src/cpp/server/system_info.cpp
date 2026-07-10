@@ -32,7 +32,10 @@
 #include <Wbemidl.h>
 #include <intrin.h>
 #include "utils/wmi_helper.h"
+#include <dxgi1_4.h>
+#include <wrl/client.h>
 #pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "dxgi.lib")
 #endif
 
 #ifdef __APPLE__
@@ -3979,7 +3982,50 @@ bool SystemInfo::is_running_under_systemd() {
 #endif
 }
 
+#ifdef _WIN32
+double get_windows_dxgi_vram_usage() {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IDXGIFactory4> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return -1.0;
+    }
+    ComPtr<IDXGIAdapter1> adapter;
+    double highest_ratio = -1.0;
+    for (UINT adapterIndex = 0; factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
+        DXGI_ADAPTER_DESC1 desc;
+        adapter->GetDesc1(&desc);
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+            continue;
+        }
+        ComPtr<IDXGIAdapter3> adapter3;
+        if (SUCCEEDED(adapter.As(&adapter3))) {
+            DXGI_QUERY_VIDEO_MEMORY_INFO memInfo;
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &memInfo))) {
+                if (memInfo.Budget > 0) {
+                    double ratio = static_cast<double>(memInfo.CurrentUsage) / static_cast<double>(memInfo.Budget);
+                    if (ratio > highest_ratio) {
+                        highest_ratio = ratio;
+                    }
+                } else if (desc.DedicatedVideoMemory > 0) {
+                    double ratio = static_cast<double>(memInfo.CurrentUsage) / static_cast<double>(desc.DedicatedVideoMemory);
+                    if (ratio > highest_ratio) {
+                        highest_ratio = ratio;
+                    }
+                }
+            }
+        }
+    }
+    return highest_ratio;
+}
+#endif
+
 double SystemInfo::get_global_vram_usage_pct() {
+#ifdef _WIN32
+    double dxgi_ratio = get_windows_dxgi_vram_usage();
+    if (dxgi_ratio >= 0.0) {
+        return dxgi_ratio;
+    }
+#endif
     // Report *global* GPU memory pressure (all processes, not just lemonade's),
     // so the eviction engine yields VRAM when other apps (ComfyUI, games, etc.)
     // consume it. Returns used/total in [0,1], or -1.0 if no source is available.
