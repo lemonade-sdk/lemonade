@@ -633,6 +633,7 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
                     url, zip_path, http_progress_cb, {}, archive_download_opts);
@@ -689,6 +690,7 @@ namespace lemon::backends {
                     utils::DownloadOptions part_download_opts;
                     part_download_opts.expected_hash = lookup_expected_asset_hash(
                         spec.recipe, backend, expected_version, repo, part_filename);
+                    part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
                         part_url, part_path, part_http_cb, {}, part_download_opts);
