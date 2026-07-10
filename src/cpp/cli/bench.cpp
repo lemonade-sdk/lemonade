@@ -525,6 +525,7 @@ static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
     }
 }
 
+#define FIVE_MINUTES_MS 300000
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
@@ -561,7 +562,7 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
 
     try {
         std::string response = client.make_request("/api/v1/chat/completions", "POST", body, "application/json",
-                                                   300000, 300000);
+                                                   FIVE_MINUTES_MS, FIVE_MINUTES_MS);
         auto resp_json = json::parse(response);
 
         if (capture_response) {
@@ -645,7 +646,7 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
     try {
         std::string response = client.make_request(
             "/api/v1/embeddings", "POST", body, "application/json",
-            300000, 300000);
+            FIVE_MINUTES_MS, FIVE_MINUTES_MS);
 
         auto resp_json = json::parse(response);
 
