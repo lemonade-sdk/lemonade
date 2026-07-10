@@ -4010,6 +4010,20 @@ double SystemInfo::get_global_vram_usage_pct() {
     try {
         const std::string drm_path = "/sys/class/drm";
         if (fs::exists(drm_path)) {
+            auto read_sysfs_u64 = [](const std::string& path, uint64_t& value) {
+                std::ifstream file(path);
+                return file.is_open() && static_cast<bool>(file >> value);
+            };
+
+            auto usage_ratio = [](uint64_t used, uint64_t total) {
+                if (total == 0) {
+                    return -1.0;
+                }
+                return std::min(
+                    1.0,
+                    static_cast<double>(used) / static_cast<double>(total));
+            };
+
             double highest_ratio = -1.0;
             for (const auto& entry : fs::directory_iterator(drm_path)) {
                 std::string card_name = entry.path().filename().string();
@@ -4020,20 +4034,49 @@ double SystemInfo::get_global_vram_usage_pct() {
 
                 uint64_t vram_used = 0;
                 uint64_t vram_total = 0;
+                const bool have_vram =
+                    read_sysfs_u64(device_path + "/mem_info_vram_used", vram_used) &&
+                    read_sysfs_u64(device_path + "/mem_info_vram_total", vram_total) &&
+                    vram_total > 0;
+
+                std::string vendor;
                 {
-                    std::ifstream f(device_path + "/mem_info_vram_used");
-                    if (f.is_open()) f >> vram_used;
-                }
-                {
-                    std::ifstream f(device_path + "/mem_info_vram_total");
-                    if (f.is_open()) f >> vram_total;
+                    std::ifstream file(device_path + "/vendor");
+                    if (file.is_open()) {
+                        file >> vendor;
+                    }
                 }
 
-                if (vram_total > 0) {
-                    double ratio = static_cast<double>(vram_used) / static_cast<double>(vram_total);
-                    if (ratio > highest_ratio) {
-                        highest_ratio = ratio;
+                const std::string board_info_path = device_path + "/board_info";
+                const bool is_amd_apu =
+                    vendor == "0x1002" &&
+                    !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
+
+                double ratio = -1.0;
+                if (is_amd_apu) {
+                    uint64_t gtt_used = 0;
+                    uint64_t gtt_total = 0;
+                    const bool have_gtt =
+                        read_sysfs_u64(device_path + "/mem_info_gtt_used", gtt_used) &&
+                        read_sysfs_u64(device_path + "/mem_info_gtt_total", gtt_total) &&
+                        gtt_total > 0;
+
+                    // Match amdgpu's APU allocation policy: when GTT is larger
+                    // than the firmware carveout, VRAM allocations are GTT-backed.
+                    // Otherwise the carveout remains the effective VRAM pool.
+                    if (have_gtt && (!have_vram || gtt_total > vram_total)) {
+                        ratio = usage_ratio(gtt_used, gtt_total);
+                    } else if (have_vram) {
+                        ratio = usage_ratio(vram_used, vram_total);
                     }
+                } else if (have_vram) {
+                    // Preserve the existing VRAM-only behavior for AMD dGPUs and
+                    // other DRM devices. Free GTT must not hide real dGPU pressure.
+                    ratio = usage_ratio(vram_used, vram_total);
+                }
+
+                if (ratio > highest_ratio) {
+                    highest_ratio = ratio;
                 }
             }
             if (highest_ratio >= 0.0) {
