@@ -560,12 +560,13 @@ class LemonadeAPI {
 
   get baseUrl(): string {
     try {
+      const hasExplicitUrl = Boolean(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL));
       const raw = normalizeBaseUrl(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL) || DEFAULT_BASE_URL);
       // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
       // Substitute it when the configured host is localhost/127.0.0.1 so that all
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
       const parsed = new URL(raw);
-      if ((parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
+      if (!hasExplicitUrl && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
         const winHost = window.location.hostname;
         if (winHost && winHost !== 'localhost' && winHost !== '[::1]' && winHost !== '::1') {
           parsed.hostname = winHost;
