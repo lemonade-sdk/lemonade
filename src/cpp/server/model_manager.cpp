@@ -1614,7 +1614,14 @@ void ModelManager::build_cache() {
         parse_components(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
-        parse_model_source_fields(info, value);
+        try {
+            parse_model_source_fields(info, value);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping invalid built-in model '" << key
+                << "': " << e.what() << std::endl;
+            continue;
+        }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
@@ -1668,7 +1675,14 @@ void ModelManager::build_cache() {
         parse_components(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
-        parse_model_source_fields(info, value);
+        try {
+            parse_model_source_fields(info, value);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping invalid user model '" << info.model_name
+                << "': " << e.what() << std::endl;
+            continue;
+        }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");

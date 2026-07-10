@@ -113,6 +113,33 @@ std::string first_string(const json& entry,
     return "";
 }
 
+bool is_modelscope_not_found_or_access_error(const std::string& code_text,
+                                              const std::string& message) {
+    const std::string code = lower_copy(code_text);
+    if (code == "401" || code == "403" || code == "404" ||
+        code == "e3001" || code == "e3002" || code == "e3020") {
+        return true;
+    }
+
+    const std::string normalized_message = lower_copy(message);
+    for (const char* marker : {
+             "not found",
+             "does not exist",
+             "not exist",
+             "permission denied",
+             "access denied",
+             "not accessible",
+             "unauthorized",
+             "authentication failed",
+         }) {
+        if (normalized_message.find(marker) != std::string::npos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void ensure_modelscope_success(const json& body, const std::string& repo_id) {
     if (!body.is_object()) return;
 
@@ -136,9 +163,22 @@ void ensure_modelscope_success(const json& body, const std::string& repo_id) {
     if (!failed) return;
 
     std::string message = first_string(body, {"Message", "message", "Msg", "msg"});
-    if (message.empty()) message = "ModelScope API rejected the request";
-    if (!code_text.empty()) message += " (code " + code_text + ")";
-    throw std::runtime_error(message + " for " + repo_id);
+    if (message.empty()) {
+        message = "ModelScope API rejected the request";
+    }
+
+    std::string detail = message;
+    if (!code_text.empty()) {
+        detail += " (code " + code_text + ")";
+    }
+
+    if (is_modelscope_not_found_or_access_error(code_text, message)) {
+        throw RegistryNotFoundError(
+            "ModelScope repository not found or not accessible: " +
+            repo_id + " (" + detail + ")");
+    }
+
+    throw std::runtime_error(detail + " for " + repo_id);
 }
 
 class HuggingFaceRegistry final : public ModelRegistry {

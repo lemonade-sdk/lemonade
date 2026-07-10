@@ -150,6 +150,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::string model_source = "huggingface";
+    bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
     nlohmann::json recipe_options;
@@ -361,6 +362,15 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
                 checkpoint, config.model_source, &detected_source);
 
             if (auto source_from_url = explicit_registry_source_from_url(checkpoint)) {
+                if (config.model_source_explicit &&
+                    config.model_source != *source_from_url) {
+                    std::cerr
+                        << "Error: checkpoint URL uses " << *source_from_url
+                        << " but --source was set to " << config.model_source
+                        << "." << std::endl;
+                    return 1;
+                }
+
                 if (explicit_source && *explicit_source != *source_from_url) {
                     std::cerr << "Error: all checkpoints in one model must use the same "
                                  "remote registry." << std::endl;
@@ -1298,10 +1308,11 @@ int main(int argc, char* argv[]) {
         "Registered model name, registry checkpoint (owner/repo[:variant]), or model URL")
         ->required()
         ->type_name("MODEL_OR_CHECKPOINT");
-    pull_cmd->add_option("--source", config.model_source,
-        "Remote registry for checkpoint pulls: huggingface or modelscope")
-        ->type_name("SOURCE")
-        ->check(CLI::IsMember({"huggingface", "modelscope"}));
+    CLI::Option* pull_source_opt =
+        pull_cmd->add_option("--source", config.model_source,
+            "Remote registry for checkpoint pulls: huggingface or modelscope")
+            ->type_name("SOURCE")
+            ->check(CLI::IsMember({"huggingface", "modelscope"}));
     pull_cmd->add_option("--checkpoint", config.checkpoints,
         "Add a TYPE CHECKPOINT pair for a custom user.* model. Repeat for multi-file models.")
         ->group("Manual Configuration Options")
@@ -1430,6 +1441,8 @@ int main(int argc, char* argv[]) {
         }
         return app.exit(e);
     }
+
+    config.model_source_explicit = pull_source_opt->count() > 0;
 
     if (load_cmd->count() > 0) {
         if (load_cmd->count("--pinned") > 0) {
