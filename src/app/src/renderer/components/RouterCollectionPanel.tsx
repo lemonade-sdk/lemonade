@@ -11,7 +11,7 @@ import {
   routingToRouterCollectionDraft,
 } from '../utils/customCollections';
 import { isCollectionRecipe } from '../utils/recipeNames';
-import { isLeaf, isOperatorNode, validateRuleNode } from '../utils/routerTree';
+import { isLeaf, isOperatorNode, makeDefaultLeaf, SIGNAL_COLORS, validateRuleNode, type ConditionSignalType } from '../utils/routerTree';
 import RouterPipelineCanvas from './RouterPipelineCanvas';
 import { ModelCheckboxList, ModelSelect, type ModelOption } from './ModelSearchPicker';
 
@@ -57,6 +57,319 @@ function stripClassifierFromTree(
   }
   return node;
 }
+
+type QuickConditionType = 'min_chars' | 'max_chars' | 'keywords_any' | 'regex' | 'has_images' | 'has_tools';
+
+interface QCDef { type: QuickConditionType; label: string; shortLabel: string; placeholder?: string; inputType?: 'number' | 'text'; boolean?: true }
+
+const QUICK_CONDITIONS: QCDef[] = [
+  { type: 'min_chars',    label: 'Prompt is long',       shortLabel: 'Prompt is long',    inputType: 'number', placeholder: '500' },
+  { type: 'max_chars',    label: 'Prompt is short',      shortLabel: 'Prompt is short',   inputType: 'number', placeholder: '200' },
+  { type: 'keywords_any', label: 'Contains keywords',    shortLabel: 'Contains keywords', inputType: 'text',   placeholder: 'word1, word2' },
+  { type: 'regex',        label: 'Matches regex',        shortLabel: 'Matches regex',     inputType: 'text',   placeholder: 'e.g. \\d{4}' },
+  { type: 'has_images',   label: 'Has attached images',  shortLabel: 'Has images',        boolean: true },
+  { type: 'has_tools',    label: 'Has tool calls',       shortLabel: 'Has tool calls',    boolean: true },
+];
+
+interface QuickChip { conditionType: QuickConditionType; value: string; not: boolean }
+
+function getRowChips(rule: RouterRule): { op: 'AND' | 'OR'; chips: QuickChip[] } {
+  const tree = rule.conditionTree;
+  if (!tree) return { op: 'AND', chips: [{ conditionType: 'min_chars', value: '500', not: false }] };
+  if ('signalType' in tree) {
+    return { op: 'AND', chips: [{ conditionType: tree.signalType as QuickConditionType, value: tree.signalValue !== undefined ? String(tree.signalValue) : '', not: tree.not ?? false }] };
+  }
+  if ('operator' in tree && (tree.operator === 'AND' || tree.operator === 'OR')) {
+    const chips: QuickChip[] = tree.conditions
+      .filter((c): c is typeof c & { signalType: string } => 'signalType' in c)
+      .map(c => ({ conditionType: c.signalType as QuickConditionType, value: c.signalValue !== undefined ? String(c.signalValue) : '', not: c.not ?? false }));
+    return { op: tree.operator, chips: chips.length ? chips : [{ conditionType: 'min_chars', value: '500', not: false }] };
+  }
+  return { op: 'AND', chips: [{ conditionType: 'min_chars', value: '500', not: false }] };
+}
+
+function chipsToRouterRule(rule: RouterRule, op: 'AND' | 'OR', chips: QuickChip[]): RouterRule {
+  if (chips.length === 0) return { ...rule, conditionTree: null };
+  const leaves = chips.map(chip => {
+    const leaf = makeDefaultLeaf(chip.conditionType as ConditionSignalType);
+    if (chip.conditionType === 'min_chars' || chip.conditionType === 'max_chars') {
+      leaf.signalValue = chip.value ? parseInt(chip.value, 10) : undefined;
+    } else if (chip.conditionType === 'keywords_any' || chip.conditionType === 'regex') {
+      leaf.signalValue = chip.value;
+    }
+    if (chip.not) leaf.not = true;
+    return leaf;
+  });
+  const conditionTree = leaves.length === 1 ? leaves[0] : { operator: op, conditions: leaves };
+  return { ...rule, conditionTree };
+}
+
+function readableSummary(rule: RouterRule, displayName: (id: string) => string): string {
+  const { op, chips } = getRowChips(rule);
+  const parts = chips.map(c => {
+    const def = QUICK_CONDITIONS.find(d => d.type === c.conditionType);
+    const label = def?.shortLabel ?? c.conditionType;
+    const val = !def?.boolean && c.value ? ` (${c.value})` : '';
+    return (c.not ? 'not ' : '') + label.toLowerCase() + val;
+  });
+  const joined = parts.join(` ${op.toLowerCase()} `);
+  return rule.routeTo ? `${joined} → ${displayName(rule.routeTo)}` : joined;
+}
+
+
+interface CandidateOptionWithInfo { id: string; info: { model_name?: string; downloaded?: boolean; cost_input_per_million?: number; recipe?: string } }
+
+
+type PresetKey = 'cost_saver' | 'quality' | 'speed' | 'privacy';
+
+interface PresetDef { key: PresetKey; emoji: string; label: string }
+const PRESETS: PresetDef[] = [
+  { key: 'cost_saver', emoji: '💰', label: 'Cost Saver' },
+  { key: 'quality',    emoji: '✨', label: 'Quality First' },
+  { key: 'speed',      emoji: '⚡', label: 'Speed' },
+  { key: 'privacy',    emoji: '🔒', label: 'Privacy' },
+];
+
+function buildPresetRules(key: PresetKey, _opts: CandidateOptionWithInfo[], seq: { current: number }): { rules: RouterRule[] } {
+  const nextId = () => { seq.current++; return `rule-${seq.current}`; };
+
+  const leaf = (conditionType: QuickConditionType, value: string, not = false): RouterRule['conditionTree'] => {
+    const l = makeDefaultLeaf(conditionType as ConditionSignalType);
+    if (conditionType === 'min_chars' || conditionType === 'max_chars') l.signalValue = parseInt(value, 10);
+    else if (conditionType === 'keywords_any' || conditionType === 'regex') l.signalValue = value;
+    if (not) l.not = true;
+    return l;
+  };
+
+  if (key === 'cost_saver') {
+    return { rules: [
+      { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '500') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_images') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('keywords_any', 'translate, summarize, list') },
+    ]};
+  }
+  if (key === 'quality') {
+    return { rules: [
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_images') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '200') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_tools') },
+    ]};
+  }
+  if (key === 'speed') {
+    return { rules: [
+      { id: nextId(), routeTo: '', conditionTree: leaf('max_chars', '300') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '300') },
+    ]};
+  }
+  // privacy
+  return { rules: [
+    { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '1') },
+  ]};
+}
+
+
+interface QuickRuleRowProps {
+  rule: RouterRule;
+  index: number;
+  candidates: string[];
+  displayName: (id: string) => string;
+  dragIndex: number | null;
+  onDragStart: (idx: number) => void;
+  onDragOver: (idx: number) => void;
+  onDrop: () => void;
+  onChange: (rule: RouterRule) => void;
+  onRemove: () => void;
+}
+
+const QuickRuleRow: React.FC<QuickRuleRowProps> = ({
+  rule, index, candidates, displayName, dragIndex,
+  onDragStart, onDragOver, onDrop, onChange, onRemove,
+}) => {
+  const [addOpen, setAddOpen] = useState(false);
+  const { op, chips } = getRowChips(rule);
+  const isDragging = dragIndex === index;
+
+  const updateChip = (i: number, partial: Partial<QuickChip>) => {
+    const next = chips.map((c, ci) => ci === i ? { ...c, ...partial } : c);
+    onChange(chipsToRouterRule(rule, op, next));
+  };
+  const removeChip = (i: number) => {
+    const next = chips.filter((_, ci) => ci !== i);
+    if (next.length === 0) { onRemove(); return; }
+    onChange(chipsToRouterRule(rule, op, next));
+  };
+  const addChip = (type: QuickConditionType) => {
+    const def = QUICK_CONDITIONS.find(d => d.type === type)!;
+    const value = type === 'min_chars' ? '500' : type === 'max_chars' ? '200' : '';
+    const next = [...chips, { conditionType: type, value, not: false }];
+    onChange(chipsToRouterRule(rule, op, next));
+    setAddOpen(false);
+  };
+  const setOp = (newOp: 'AND' | 'OR') => onChange(chipsToRouterRule(rule, newOp, chips));
+  const setRouteTo = (id: string) => onChange({ ...rule, routeTo: id });
+
+  const summary = readableSummary(rule, displayName);
+
+  return (
+    <div
+      className={`quick-rule-row${isDragging ? ' quick-rule-row--dragging' : ''}`}
+      draggable
+      onDragStart={() => onDragStart(index)}
+      onDragOver={e => { e.preventDefault(); onDragOver(index); }}
+      onDrop={e => { e.preventDefault(); onDrop(); }}
+    >
+      <span className="quick-rule-handle" title="Drag to reorder">⠿</span>
+      <span className="quick-rule-index">{index + 1}</span>
+
+      <div className="quick-rule-body">
+        <div className="quick-rule-chips">
+          {chips.map((chip, ci) => {
+            const def = QUICK_CONDITIONS.find(d => d.type === chip.conditionType)!;
+            return (
+              <React.Fragment key={ci}>
+                {ci > 0 && (
+                  <div className="quick-rule-op-group">
+                    <button type="button" className={`quick-op-btn${op === 'AND' ? ' active' : ''}`} onClick={() => setOp('AND')}>AND</button>
+                    <button type="button" className={`quick-op-btn${op === 'OR' ? ' active' : ''}`} onClick={() => setOp('OR')}>OR</button>
+                  </div>
+                )}
+                <div className={`quick-chip${chip.not ? ' quick-chip--not' : ''}`} style={{ '--chip-color': SIGNAL_COLORS[chip.conditionType as ConditionSignalType] } as React.CSSProperties}>
+                  <button type="button" className="quick-chip-not" title={chip.not ? 'Remove NOT' : 'Negate (NOT)'} onClick={() => updateChip(ci, { not: !chip.not })}>
+                    {chip.not ? '¬' : '+'}
+                  </button>
+                  <span className="quick-chip-label">{def.shortLabel}</span>
+                  {!def.boolean && (
+                    <input
+                      className="quick-chip-input"
+                      type={def.inputType ?? 'text'}
+                      value={chip.value}
+                      placeholder={def.placeholder}
+                      min={def.inputType === 'number' ? 0 : undefined}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => updateChip(ci, { value: e.target.value })}
+                    />
+                  )}
+                  <button type="button" className="quick-chip-remove" onClick={() => removeChip(ci)}>×</button>
+                </div>
+              </React.Fragment>
+            );
+          })}
+          {/* Add condition */}
+          <div className="quick-add-condition-wrap">
+            <button type="button" className="quick-add-condition-btn" onClick={() => setAddOpen(v => !v)}>+ condition</button>
+            {addOpen && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setAddOpen(false)} />
+                <div className="quick-add-condition-menu">
+                  {QUICK_CONDITIONS.map(d => (
+                    <button key={d.type} type="button" className="quick-add-condition-item" onClick={() => addChip(d.type)}>{d.label}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="quick-rule-summary">Reads: <em>{summary}</em></div>
+      </div>
+
+      {/* Arrow + model */}
+      <span className="quick-rule-arrow">→</span>
+      <select className="form-input form-select quick-rule-model" value={rule.routeTo} onChange={e => setRouteTo(e.target.value)}>
+        <option value="">Model…</option>
+        {candidates.map(id => <option key={id} value={id}>{displayName(id)}</option>)}
+      </select>
+
+      <button type="button" className="pipeline-icon-btn quick-rule-remove" title="Remove rule" onClick={onRemove}>
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M1 1 L11 11 M11 1 L1 11"/></svg>
+      </button>
+    </div>
+  );
+};
+
+
+interface QuickRulesEditorProps {
+  rules: RouterRule[];
+  candidates: string[];
+  candidateOptions: CandidateOptionWithInfo[];
+  displayName: (id: string) => string;
+  onChangeRules: (rules: RouterRule[]) => void;
+  onChangeDraft: (p: { rules: RouterRule[]; defaultModel?: string }) => void;
+  ruleSeqRef: React.MutableRefObject<number>;
+}
+
+const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
+  rules, candidates, candidateOptions, displayName,
+  onChangeRules, onChangeDraft, ruleSeqRef,
+}) => {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  const addRow = () => {
+    ruleSeqRef.current += 1;
+    const id = `rule-${ruleSeqRef.current}`;
+    onChangeRules([...rules, { id, routeTo: '', conditionTree: makeDefaultLeaf('min_chars') }]);
+  };
+
+  const applyPreset = (key: PresetKey) => {
+    const { rules: newRules } = buildPresetRules(key, candidateOptions, ruleSeqRef);
+    onChangeDraft({ rules: newRules });
+  };
+
+  const handleDrop = () => {
+    if (dragIndex === null || dragOver === null || dragIndex === dragOver) { setDragIndex(null); setDragOver(null); return; }
+    const next = [...rules];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(dragOver, 0, moved);
+    onChangeRules(next);
+    setDragIndex(null); setDragOver(null);
+  };
+
+  return (
+    <div className="quick-rules-editor">
+      <div className="quick-presets-bar">
+        <span className="quick-presets-label">Start from</span>
+        {PRESETS.map(p => (
+          <button key={p.key} type="button" className="quick-preset-btn" onClick={() => applyPreset(p.key)}>
+            {p.emoji} {p.label}
+          </button>
+        ))}
+        <button type="button" className="quick-preset-btn quick-preset-btn--blank" onClick={() => onChangeDraft({ rules: [] })}>
+          Blank
+        </button>
+      </div>
+
+      <div className="quick-rules-header">
+        <span className="quick-rules-title">Rules</span>
+        <span className="settings-description">first match wins</span>
+      </div>
+
+      {rules.length === 0 && (
+        <div className="quick-rules-empty">No rules yet - pick a preset above or add one below.</div>
+      )}
+
+      {rules.map((rule, idx) => (
+        <QuickRuleRow
+          key={rule.id}
+          rule={rule}
+          index={idx}
+          candidates={candidates}
+          displayName={displayName}
+          dragIndex={dragIndex}
+          onDragStart={i => { setDragIndex(i); setDragOver(i); }}
+          onDragOver={i => setDragOver(i)}
+          onDrop={handleDrop}
+          onChange={updated => { const next = [...rules]; next[idx] = updated; onChangeRules(next); }}
+          onRemove={() => onChangeRules(rules.filter((_, i) => i !== idx))}
+        />
+      ))}
+
+      <div className="quick-rules-footer">
+        <button type="button" className="settings-reset-button" onClick={addRow}>+ Add rule</button>
+      </div>
+    </div>
+  );
+};
 
 const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   mode, collectionId, onClose, onSave, onExport,
@@ -200,6 +513,14 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     if (draft.routingMode === 'llm') {
       if (!draft.routerModel) { setError('Select a router LLM.'); return null; }
       if (!draft.routerPrompt?.trim()) { setError('Enter a routing prompt.'); return null; }
+    } else if (draft.routingMode === 'quick') {
+      if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
+      for (const r of draft.rules) {
+        if (!r.conditionTree) { setError('Each rule needs at least one condition.'); return null; }
+        if (!r.routeTo) { setError('Each rule needs a target model.'); return null; }
+        const errs = validateRuleNode(r.conditionTree, new Set());
+        if (errs.length) { setError(`Rule "${r.id}": ${errs[0]}`); return null; }
+      }
     } else {
       for (const c of draft.classifiers ?? []) {
         if (!c.id.trim()) { setError('Each classifier needs an id.'); return null; }
@@ -325,8 +646,12 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <span><strong>NL Router</strong><span className="settings-description" style={{ display: 'block' }}>A small LLM reads your prompt and picks the best candidate.</span></span>
             </label>
             <label className="router-mode-option">
+              <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'} onChange={() => patch({ routingMode: 'quick' })} />
+              <span><strong>Quick Rules</strong><span className="settings-description" style={{ display: 'block' }}>Simple condition-based routing - no drag-and-drop needed.</span></span>
+            </label>
+            <label className="router-mode-option">
               <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules' })} />
-              <span><strong>Rules</strong><span className="settings-description" style={{ display: 'block' }}>Visual boolean expression builder with drag-and-drop conditions.</span></span>
+              <span><strong>Advanced Rules</strong><span className="settings-description" style={{ display: 'block' }}>Visual boolean expression builder with gates and classifiers.</span></span>
             </label>
           </div>
         </div>
@@ -364,6 +689,20 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           </>
         )}
 
+        {draft.routingMode === 'quick' && (
+          <div className="form-section">
+            <QuickRulesEditor
+              rules={draft.rules ?? []}
+              candidates={draft.candidates}
+              candidateOptions={candidateOptions}
+              displayName={displayName}
+              onChangeRules={rules => patch({ rules })}
+              onChangeDraft={p => patch({ rules: p.rules, ...(p.defaultModel !== undefined ? { defaultModel: p.defaultModel } : {}) })}
+              ruleSeqRef={ruleSeqRef}
+            />
+          </div>
+        )}
+
         {draft.routingMode === 'rules' && (
           <RouterPipelineCanvas
             draft={draft}
@@ -380,6 +719,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             highlightedClassifierId={null}
             previewJson={previewJson}
             onPreviewJson={handlePreview}
+            error={error}
           />
         )}
 
