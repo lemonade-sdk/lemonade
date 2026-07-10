@@ -146,7 +146,7 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                 LOG(DEBUG, "WebSocket") << "Transient connection closed before handshake (id: "
                                        << pss->connection_id << ")" << std::endl;
             } else {
-                LOG(INFO, "WebSocket") << "New connection from: " << ip
+                LOG(DEBUG, "WebSocket") << "New connection from: " << ip
                                        << " (id: " << pss->connection_id << ")" << std::endl;
             }
 

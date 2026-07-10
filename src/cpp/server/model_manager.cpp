@@ -1284,6 +1284,11 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
 }
 
 void ModelManager::check_for_model_updates() {
+    if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
+        LOG(DEBUG, "ModelManager")
+            << "Offline mode enabled, skipping model update check" << std::endl;
+        return;
+    }
     // Collect (model_name, repo_id, cached_sha) for downloaded models,
     // deduplicated by repo_id so we only fetch HF API once per repo.
     // All model variants sharing a repo are marked together.
@@ -1633,13 +1638,27 @@ void ModelManager::build_cache() {
     // its own downloaded status. Precedence: server/user/extra models win, so we
     // emplace (don't overwrite). Failures are handled inside each backend's ops.
     {
+        const bool offline = [] {
+            auto* cfg = RuntimeConfig::global();
+            return cfg && cfg->offline();
+        }();
+
         backends::BackendOpsContext octx;
         octx.model_manager = this;
         octx.cloud_registry = cloud_registry_;
+
         for (const auto* desc : backends::all_descriptors()) {
             if (!desc->dynamic_models) {
                 continue;
             }
+
+            if (offline && desc->recipe == "cloud") {
+                LOG(DEBUG, "ModelManager")
+                    << "Offline mode enabled, skipping cloud model discovery"
+                    << std::endl;
+                continue;
+            }
+
             for (auto& m : backends::ops_for(desc->recipe)->discover_models(octx)) {
                 all_models.emplace(m.model_name, std::move(m));
             }

@@ -638,6 +638,7 @@ set(SOURCES_CORE
     src/cpp/server/routing_policy.cpp
     src/cpp/server/routing_policy_parser.cpp
     src/cpp/server/routing_policy_store.cpp
+    src/cpp/server/route_decision_response.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
@@ -2089,6 +2090,29 @@ if(EXISTS "${_ROUTING_STORE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyStoreTest COMMAND test_routing_policy_store)
+endif()
+
+set(_ROUTE_DECISION_RESPONSE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_route_decision_response.cpp"
+)
+if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
+    add_executable(test_route_decision_response
+        test/cpp/test_route_decision_response.cpp
+        src/cpp/server/route_decision_response.cpp
+    )
+    target_include_directories(test_route_decision_response PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_route_decision_response PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_route_decision_response PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_route_decision_response PRIVATE httplib::httplib)
+    endif()
+
+    include(CTest)
+    add_test(NAME RouteDecisionResponseTest COMMAND test_route_decision_response)
 endif()
 
 # ModelManager collection validation for collection.router registration:

@@ -439,7 +439,7 @@ void Router::load_model(const std::string& model_name,
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                LOG(INFO, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
+                LOG(DEBUG, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
                 existing->set_pinned(final_pinned);
                 existing->update_access_time();
                 is_loading_ = false;
