@@ -2946,6 +2946,16 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         }
 
         auto response = router_->classify(request_json);
+        if (response.contains("error") && response["error"].is_object()) {
+            const auto& err = response["error"];
+            if (err.contains("status_code") && err["status_code"].is_number_integer()) {
+                res.status = err["status_code"].get<int>();
+            } else if (err.contains("code") && err["code"].is_string()) {
+                res.status = get_http_status_from_error(err["code"].get<std::string>());
+            } else {
+                res.status = 500;
+            }
+        }
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
