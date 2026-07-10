@@ -500,6 +500,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (role !== 'assistant' || !Array.isArray(content)) return { role, content };
     const kept = content.filter(item => item.type !== 'input_audio');
     if (kept.length === content.length) return { role, content };
+    // Audio-only assistant turn: collapse to '' rather than an empty content
+    // array, which some strict OpenAI-compatible backends reject on the next turn.
+    if (kept.length === 0) return { role, content: '' };
     if (kept.every(item => item.type === 'text')) {
       return { role, content: kept.map(item => (item as TextContent).text).join('') };
     }
