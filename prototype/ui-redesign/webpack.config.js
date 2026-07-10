@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
@@ -60,6 +61,9 @@ module.exports = (env, argv) => ({
     new HtmlWebpackPlugin({
       template: './src/index.html',
       filename: 'index.html',
+    }),
+    new webpack.DefinePlugin({
+      'process.env.LEMONADE_BASE_URL': JSON.stringify(process.env.LEMONADE_BASE_URL || ''),
     }),
   ],
   devServer: {
