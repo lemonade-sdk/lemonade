@@ -627,6 +627,7 @@ set(SOURCES_CORE
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
+    src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
@@ -2129,6 +2130,20 @@ if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
 
     include(CTest)
     add_test(NAME ModelManagerCollectionValidationTest COMMAND test_model_manager_collection_validation)
+endif()
+
+# Remote model registry source parsing, cache namespaces, snapshot fingerprints,
+# and persistence of ModelScope provenance in ModelInfo.
+set(_MODEL_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_registry.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
+    add_executable(test_model_registry test/cpp/test_model_registry.cpp)
+    target_link_libraries(test_model_registry PRIVATE lemonade-server-core)
+    add_dependencies(test_model_registry copy_resources)
+
+    include(CTest)
+    add_test(NAME ModelRegistryTest COMMAND test_model_registry)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's

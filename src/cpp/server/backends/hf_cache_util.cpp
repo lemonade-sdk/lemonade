@@ -2,6 +2,8 @@
 
 #include <fstream>
 
+#include "lemon/model_registry.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -59,12 +61,10 @@ fs::path active_snapshot_path(const fs::path& model_cache_path) {
     return lemon::backends::hf_cache::exists(snapshot_path) ? snapshot_path : fs::path();
 }
 
-std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
-    std::string cache_dir_name = "models--";
-    for (char c : repo_id) {
-        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
-    }
-    return cache_dir_name;
+std::string repo_id_to_cache_dir_name(const std::string& repo_id,
+                                      const std::string& registry_source) {
+    return registry_repo_cache_dir_name(repo_id,
+        parse_remote_registry_source(registry_source));
 }
 
 } // namespace hf_cache

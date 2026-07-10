@@ -4,44 +4,59 @@ This guide explains every supported way to add a custom model to Lemonade Server
 
 ## Choose a Workflow
 
-### Pull a Hugging Face model
+### Pull from Hugging Face or ModelScope
 
-For most Hugging Face GGUFs, use the repo id directly:
+Hugging Face remains the default registry, so existing commands keep working unchanged:
 
 ```bash
 lemonade pull org/repo
-```
-
-Lemonade fetches the repo, lists the available quantizations and sharded folder variants, auto-detects `mmproj-*.gguf` files for vision models, infers labels (`vision`/`embeddings`/`reranking`) from the repo id, and presents an interactive variant menu.
-
-To skip the menu, append a variant:
-
-```bash
 lemonade pull org/repo:Q4_K_M
 ```
+
+Choose ModelScope explicitly when the model is hosted or mirrored there:
+
+```bash
+lemonade pull --source modelscope org/repo
+lemonade pull --source modelscope org/repo:Q4_K_M
+```
+
+Full model URLs are accepted and select the registry automatically:
+
+```bash
+lemonade pull https://huggingface.co/unsloth/Qwen3-8B-GGUF
+lemonade pull https://modelscope.cn/models/Qwen/Qwen3-8B-GGUF
+```
+
+For supported repository layouts, Lemonade lists GGUF quantizations and sharded variants, auto-detects `mmproj-*.gguf` files, infers common labels, and presents the same interactive variant menu for either registry.
 
 Examples:
 
 ```bash
-# Interactive GGUF variant menu
-lemonade pull unsloth/Qwen3-8B-GGUF
-
-# Specific GGUF variant
+# Hugging Face (default)
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Vision model with mmproj auto-detection
-lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
-
-# Sharded variant
-lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+# ModelScope
+lemonade pull --source modelscope Qwen/Qwen3-8B-GGUF:Q4_K_M
 ```
+
+The selected source is persisted with the model registration. Variant discovery, downloads, display links, cache lookup, deletion, and future update checks therefore continue to use the same registry. All checkpoints belonging to one model use one registry source.
+
+Private repositories can be authenticated with `HF_TOKEN` for Hugging Face or `MODELSCOPE_API_TOKEN` for ModelScope. `MODELSCOPE_ACCESS_TOKEN` is also accepted as a compatibility alias. Custom endpoints can be supplied with `HF_ENDPOINT` or `MODELSCOPE_ENDPOINT`.
+
+#### Cache and revision behavior
+
+Both registries share Lemonade's configured `models_dir`. Hugging Face keeps its established `models--org--repo` directory names. ModelScope uses the collision-free `modelscope--models--org--repo` namespace. Under either directory Lemonade uses the same `snapshots/<id>` and `refs/main` structure consumed by runtime resolution and cache cleanup.
+
+Hugging Face snapshots use the immutable commit returned by the Hub. ModelScope downloads use its branch/tag revision (normally `master`); Lemonade derives a stable local snapshot fingerprint from the normalized remote file tree so a changed ModelScope repository is detected even when the branch name stays the same.
+
+The desktop app's manual model form exposes the same source selector. The browse/search catalog remains Hugging Face-backed in this first version; ModelScope models can be added by repository ID through the manual form, CLI, or API.
 
 ### Register with explicit CLI flags
 
 Use a `user.*` name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
 
 ```bash
-lemonade pull user.NAME --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
+lemonade pull user.NAME --source SOURCE --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
 ```
 
 Examples:
@@ -70,6 +85,7 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
+| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` (default) or `modelscope`. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thinksound`, `acestep`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
@@ -116,7 +132,7 @@ If a component model is deleted later, the Omni Model entry remains registered b
 
 The editor also exposes a **System Prompt** field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a *template* — both the `{tool_list}` and `{tool_guidance}` placeholders are **required** in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via **Reset to default** — stores no override and keeps tracking whatever the global default is at runtime.
 
-### Share a collection: export, import, and Hugging Face
+### Share a collection: export, import, and model registries
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
 collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
@@ -132,10 +148,12 @@ The same file works, verbatim, in three places:
 - `lemonade import <CollectionName>.json` on the CLI (or **File > New Omni Model > From JSON** in the
   desktop app).
 - `POST /v1/pull` with the file contents as the request body.
-- Uploaded to a Hugging Face model repo **named after the collection**, so that the repo contains
-  `<RepoName>.json`. `lemonade pull <org>/<repo>` looks for the manifest named after the repo,
-  then registers and downloads everything in it. The built-in `LMX-Omni-*` collections are
-  distributed this way.
+- Uploaded to a Hugging Face or ModelScope model repo **named after the collection**, so that the
+  repo contains `<RepoName>.json`. Pull it with the corresponding source, for example
+  `lemonade pull <org>/<repo>` or `lemonade pull --source modelscope <org>/<repo>`. Lemonade
+  downloads the manifest, preserves its registry provenance, then registers and downloads every
+  component. Inline component definitions inherit the collection source unless they explicitly
+  declare their own source.
 
 On import, component names that are already registered keep their local definition (differences from
 the embedded definition are logged as warnings); unknown components are registered as `user.*` models
@@ -177,7 +195,7 @@ Example collection file:
 
 ### Register via API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` (the default) or `modelscope`; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -185,6 +203,7 @@ curl -X POST http://localhost:13305/v1/pull \
     -d '{
         "model_name": "user.MyModel",
         "recipe": "llamacpp",
+        "source": "modelscope",
         "checkpoint": "org/repo:Q4_0"
     }'
 ```
@@ -297,6 +316,7 @@ This file contains a JSON object where each key is a model name and each value d
 ```json
 {
     "MyCustomModel": {
+        "source": "modelscope",
         "checkpoint": "org/repo-name:filename.gguf",
         "recipe": "llamacpp",
         "size": 3.5
@@ -308,12 +328,13 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
+| `source` | No | String | Remote registry: `huggingface` (default) or `modelscope`. Persisted and used for variants, downloads, cache paths, links, and update checks. |
+| `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
-| `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
+| `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
@@ -428,6 +449,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 ```json
 {
     "Qwen2.5-Coder-1.5B-Instruct": {
+        "source": "huggingface",
         "checkpoint": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "recipe": "llamacpp",
         "size": 1.0
