@@ -214,6 +214,17 @@ CAPABILITIES = {
             },
         },
     },
+    "classification": {
+        "onnxruntime": {
+            "backends": ["cpu"],
+            "supports": {
+                "classify": True,
+            },
+            "test_models": {
+                "classification": "Phishing-Email-Detection-ONNX",
+            },
+        },
+    },
     "tts": {
         "openmoss": {
             "backends": ["vulkan", "rocm", "cuda"],
