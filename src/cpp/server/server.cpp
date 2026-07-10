@@ -2902,6 +2902,60 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     }
 }
 
+void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request_json);
+
+        // Handle model loading/switching using helper function
+        if (request_json.contains("model")) {
+            try {
+                auto_load_model_if_needed(requested_model);
+                if (span) {
+                    span->cancel();
+                }
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = get_http_status_from_error(error_code);
+                res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
+                return;
+            }
+        } else if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            if (span) {
+                span->cancel();
+            }
+            return;
+        }
+
+        if (span) {
+            span->cancel();
+        }
+
+        auto response = router_->classify(request_json);
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_classify: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
     try {
         // Slots endpoint doesn't require a model parameter since it queries server state
