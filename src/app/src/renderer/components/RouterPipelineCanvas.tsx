@@ -30,6 +30,7 @@ interface RouterPipelineCanvasProps {
   highlightedClassifierId: string | null;
   previewJson?: string | null;
   onPreviewJson?: () => void;
+  error?: string | null;
 }
 
 const slugify = (s: string) =>
@@ -55,7 +56,7 @@ const ClassifierCard: React.FC<{
   const modelOptions = clf.type === 'semantic_similarity' ? embeddingOptions : candidateOptions;
 
   // Compact chip summary lines
-  const modelShort = clf.model ? clf.model.split(/[/:-]/).pop() ?? clf.model : '—';
+  const modelShort = clf.model ? clf.model.split(/[/:-]/).pop() ?? clf.model : '-';
   const parsedLabels = (clf.labels ?? []).filter(Boolean);
 
   return (
@@ -165,8 +166,8 @@ const ClassifierCard: React.FC<{
                 <select className="form-input form-select pipeline-clf-select"
                   value={clf.onError ?? 'match_false'}
                   onChange={e => onPatch({ onError: e.target.value as RouterClassifier['onError'] })}>
-                  <option value="match_false">match_false — fail-open (default)</option>
-                  <option value="match_true">match_true — fail-closed (safer)</option>
+                  <option value="match_false">match_false - fail-open (default)</option>
+                  <option value="match_true">match_true - fail-closed (safer)</option>
                 </select>
               </div>
             </>
@@ -291,7 +292,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
   onPatchClassifier, onAddClassifier, onRemoveClassifier,
   onPatchRule, onAddRule, onRemoveRule,
   highlightedClassifierId,
-  previewJson, onPreviewJson,
+  previewJson, onPreviewJson, error,
 }) => {
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(
     draft.rules?.[0]?.id ?? null
@@ -326,7 +327,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
         </div>
         <div className="pipeline-clf-lane rpc-clf-lane">
           {classifiers.length === 0 && (
-            <div className="collection-role-empty">No classifiers — add one to use as a condition signal.</div>
+            <div className="collection-role-empty">No classifiers - add one to use as a condition signal.</div>
           )}
           {classifiers.map(clf => (
             <ClassifierCard key={clf.id} clf={clf}
@@ -442,6 +443,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
               isFullscreen
               previewJson={previewJson}
               onPreviewJson={onPreviewJson}
+              error={error}
             />
           </div>
         </div>,

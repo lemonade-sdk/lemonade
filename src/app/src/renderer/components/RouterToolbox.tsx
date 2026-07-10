@@ -24,7 +24,7 @@ const OPERATOR_DESC: Record<RuleOperator, string> = {
   NOT: 'Child must NOT match',
 };
 
-// Gate SVG thumbnails — shield/lens/slash shapes distinct from standard logic-gate iconography
+// Gate SVG thumbnails - shield/lens/slash shapes distinct from standard logic-gate iconography
 const GateSVG: React.FC<{ op: RuleOperator; color: string }> = ({ op, color }) => {
   const fill = color + '18';
   if (op === 'AND') return (
@@ -54,9 +54,10 @@ interface RouterToolboxProps {
   isFullscreen?: boolean;
   previewJson?: string | null;
   onPreviewJson?: () => void;
+  error?: string | null;
 }
 
-const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, onToggle, isFullscreen, previewJson, onPreviewJson }) => {
+const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, onToggle, isFullscreen, previewJson, onPreviewJson, error }) => {
   const [search, setSearch] = useState('');
   const q = search.toLowerCase();
 
@@ -183,6 +184,7 @@ const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, o
               <button type="button" className="settings-reset-button rtb-preview-btn" onClick={onPreviewJson}>
                 {previewJson != null ? 'Hide JSON' : 'Preview JSON'}
               </button>
+              {error && <div className="router-panel-error">{error}</div>}
               {previewJson != null && (
                 <div className="router-json-preview rtb-preview-panel">
                   <div className="router-json-preview-header">

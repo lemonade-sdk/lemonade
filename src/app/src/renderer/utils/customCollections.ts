@@ -219,19 +219,19 @@ export interface RouterRule {
   outputs?: Record<string, unknown>;
 }
 
-export type RouterRoutingMode = 'llm' | 'rules';
+export type RouterRoutingMode = 'llm' | 'quick' | 'rules';
 
 export interface RouterCollectionDraft {
   id?: string;
   name: string;
   createdAt?: string;
-  candidates: string[];        // routing.candidates — the LLMs that answer requests
-  defaultModel: string;        // routing.default_model — must be in candidates
+  candidates: string[];        // routing.candidates - the LLMs that answer requests
+  defaultModel: string;        // routing.default_model - must be in candidates
   routingMode: RouterRoutingMode;
-  // L0(a) fields — used when routingMode === 'llm'
-  routerModel?: string;        // routing.router.model — the small classifier LLM (not a candidate)
+  // L0(a) fields - used when routingMode === 'llm'
+  routerModel?: string;        // routing.router.model - the small classifier LLM (not a candidate)
   routerPrompt?: string;       // routing.router.prompt
-  // L1–L3 fields — used when routingMode === 'rules'
+  // L1–L3 fields - used when routingMode === 'rules'
   classifiers?: RouterClassifier[];  // L2/L3 declared classifiers
   rules?: RouterRule[];
 }
@@ -252,7 +252,7 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
   if (draft.routingMode === 'llm' && draft.routerModel) {
     componentSet.add(draft.routerModel);
   }
-  if (draft.routingMode === 'rules') {
+  if (draft.routingMode === 'rules' || draft.routingMode === 'quick') {
     for (const c of draft.classifiers ?? []) {
       if (c.model) componentSet.add(c.model);
     }
@@ -277,6 +277,7 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
     }
     routing.router = { type: 'llm', model: draft.routerModel, prompt: draft.routerPrompt.trim() };
   } else {
+    // Both 'quick' and 'rules' emit the same rules-based routing JSON
     if (!draft.rules?.length) {
       throw new Error('Rules router requires at least one rule.');
     }
@@ -329,7 +330,7 @@ export const routingToRouterCollectionDraft = (
     ? routing.default_model
     : '';
 
-  // L0(a) — routing.router sugar
+  // L0(a) - routing.router sugar
   if (routing.router && typeof routing.router === 'object') {
     const r = routing.router as Record<string, unknown>;
     return {
@@ -341,7 +342,7 @@ export const routingToRouterCollectionDraft = (
     };
   }
 
-  // Rules mode — reconstruct classifiers and rules
+  // Rules mode - reconstruct classifiers and rules
   const rawClassifiers = Array.isArray(routing.classifiers) ? routing.classifiers : [];
   const classifiers: RouterClassifier[] = (rawClassifiers as Record<string, unknown>[]).map((c) => ({
     id: typeof c.id === 'string' ? c.id : '',
@@ -369,9 +370,14 @@ export const routingToRouterCollectionDraft = (
     };
   });
 
+  // Detect quick mode: no classifiers, every rule has a single leaf condition tree
+  const isQuick = classifiers.length === 0 && rules.length > 0 && rules.every(
+    r => r.conditionTree !== null && 'signalType' in r.conditionTree && r.conditionTree.signalType !== 'classifier'
+  );
+
   return {
     id: collectionId, name, candidates, defaultModel,
-    routingMode: 'rules',
+    routingMode: isQuick ? 'quick' : 'rules',
     classifiers, rules,
   };
 };

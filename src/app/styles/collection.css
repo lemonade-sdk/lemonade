@@ -112,9 +112,6 @@
     color: var(--text-tertiary);
 }
 
-/* -------------------------------------------------------------------------
-   Hybrid Router panel — modal + shared candidate/rule/classifier styles
-   ---------------------------------------------------------------------- */
 
 .router-collection-modal {
     width: min(760px, calc(100vw - 40px));
@@ -209,6 +206,330 @@
 .router-mode-option input[type="radio"] {
     margin-top: 2px;
     flex-shrink: 0;
+}
+
+
+.quick-rules-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.quick-presets-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-primary);
+    margin-bottom: 4px;
+}
+
+.quick-presets-label {
+    font-size: 0.68rem;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+
+.quick-preset-btn {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+}
+
+.quick-preset-btn:hover {
+    background: var(--bg-alpha-1);
+    border-color: #60a5fa;
+    color: var(--text-primary);
+}
+
+.quick-preset-btn--blank {
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+/* Rules header */
+.quick-rules-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quick-rules-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.quick-rules-empty {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 6px 0;
+}
+
+.quick-rule-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 8px 8px 6px;
+    transition: border-color 0.12s;
+    cursor: grab;
+}
+
+.quick-rule-row:hover {
+    border-color: var(--border-secondary, #555);
+}
+
+.quick-rule-row--dragging {
+    opacity: 0.4;
+}
+
+.quick-rule-handle {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    cursor: grab;
+    flex-shrink: 0;
+    padding-top: 2px;
+    user-select: none;
+}
+
+.quick-rule-index {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    min-width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    padding-top: 4px;
+}
+
+.quick-rule-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.quick-rule-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.quick-rule-op-group {
+    display: flex;
+    gap: 2px;
+}
+
+.quick-op-btn {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.quick-op-btn.active {
+    background: rgba(96, 165, 250, 0.15);
+    border-color: #60a5fa;
+    color: #60a5fa;
+}
+
+.quick-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 4px 2px 2px;
+    border: 1px solid color-mix(in srgb, var(--chip-color, #60a5fa) 50%, transparent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--chip-color, #60a5fa) 10%, var(--bg-primary));
+    font-size: 0.72rem;
+    color: var(--text-primary);
+    max-width: 280px;
+}
+
+.quick-chip--not {
+    border-style: dashed;
+    opacity: 0.85;
+}
+
+.quick-chip-not {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid var(--border-primary);
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    transition: color 0.1s, background 0.1s;
+}
+
+.quick-chip-not:hover {
+    background: var(--bg-alpha-1);
+    color: var(--text-primary);
+}
+
+.quick-chip--not .quick-chip-not {
+    color: #F56565;
+    border-color: rgba(245, 101, 101, 0.4);
+}
+
+.quick-chip-label {
+    white-space: nowrap;
+    color: color-mix(in srgb, var(--chip-color, #60a5fa) 90%, var(--text-primary));
+    font-weight: 600;
+}
+
+.quick-chip-input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    width: 60px;
+    padding: 0 2px;
+    min-width: 40px;
+}
+
+.quick-chip-input[type="number"] {
+    width: 48px;
+}
+
+.quick-chip-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0 1px;
+    flex-shrink: 0;
+    transition: color 0.1s;
+}
+
+.quick-chip-remove:hover {
+    color: #f87171;
+}
+
+.quick-add-condition-wrap {
+    position: relative;
+}
+
+.quick-add-condition-btn {
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    border: 1px dashed var(--border-primary);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.1s, color 0.1s;
+}
+
+.quick-add-condition-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+}
+
+.quick-add-condition-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 10800;
+    background: var(--settings-bg, var(--bg-secondary));
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.quick-add-condition-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.quick-add-condition-item:hover {
+    background: var(--bg-alpha-1);
+}
+
+/* Summary line */
+.quick-rule-summary {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    padding-left: 2px;
+}
+
+.quick-rule-summary em {
+    font-style: normal;
+    color: var(--text-secondary);
+}
+
+/* Arrow + model */
+.quick-rule-arrow {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    padding-top: 4px;
+}
+
+.quick-rule-model {
+    width: 130px;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    height: 28px;
+    padding: 2px 20px 2px 6px;
+}
+
+.quick-rule-remove {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.quick-rule-row:hover .quick-rule-remove {
+    opacity: 1;
+}
+
+.quick-rules-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
 }
 
 .router-rule-card {
@@ -523,7 +844,7 @@
     width: 100%;
 }
 
-/* Chip header row — always visible */
+/* Chip header row - always visible */
 .pipeline-clf-chip-header {
     display: flex;
     align-items: center;
@@ -668,7 +989,6 @@
     align-self: flex-start;
 }
 
-/* Rules lane — vertical stack */
 .pipeline-rules-lane {
     display: flex;
     flex-direction: column;
@@ -801,7 +1121,7 @@
     font-style: italic;
 }
 
-/* Group wrapper — holds drag handle + group card side by side */
+/* Group wrapper - holds drag handle + group card side by side */
 .pipeline-group-wrapper {
     display: flex;
     align-items: flex-start;
@@ -1589,7 +1909,7 @@
     will-change: transform;
 }
 
-/* Zoom controls — pinned to bottom-left of rtc-canvas-root, unaffected by canvas scroll */
+/* Zoom controls - pinned to bottom-left of rtc-canvas-root, unaffected by canvas scroll */
 .rtc-zoom-controls {
     position: absolute;
     bottom: 10px;
@@ -1651,7 +1971,7 @@
     color: var(--text-primary);
 }
 
-/* Expand fullscreen — portalled to body, covers entire viewport above everything */
+/* Expand fullscreen - portalled to body, covers entire viewport above everything */
 .rpc-expand-fullscreen {
     position: fixed;
     inset: 0;
@@ -1770,7 +2090,7 @@
     font-weight: 700;
 }
 
-/* Children area — horizontal row of children connected by vertical lines */
+/* Children area - horizontal row of children connected by vertical lines */
 .rtc-children {
     display: flex;
     flex-direction: column;
@@ -1862,7 +2182,7 @@
     color: var(--error-color);
 }
 
-/* Gate remove button — inline in the gate-controls row, not absolute */
+/* Gate remove button - inline in the gate-controls row, not absolute */
 .rtc-gate-delete-btn {
     display: flex;
     align-items: center;
@@ -1893,7 +2213,7 @@
     border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* Drag states — applied to the specific element being dragged/targeted, never to a wrapper */
+/* Drag states - applied to the specific element being dragged/targeted, never to a wrapper */
 .rtc-node--dragging {
     opacity: 0.35;
     pointer-events: none;
