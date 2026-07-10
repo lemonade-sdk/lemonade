@@ -4001,13 +4001,8 @@ double get_windows_dxgi_vram_usage() {
         if (SUCCEEDED(adapter.As(&adapter3))) {
             DXGI_QUERY_VIDEO_MEMORY_INFO memInfo;
             if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &memInfo))) {
-                if (memInfo.Budget > 0) {
-                    double ratio = static_cast<double>(memInfo.CurrentUsage) / static_cast<double>(memInfo.Budget);
-                    if (ratio > highest_ratio) {
-                        highest_ratio = ratio;
-                    }
-                } else if (desc.DedicatedVideoMemory > 0) {
-                    double ratio = static_cast<double>(memInfo.CurrentUsage) / static_cast<double>(desc.DedicatedVideoMemory);
+                if (desc.DedicatedVideoMemory > 0) {
+                    double ratio = 1.0 - (static_cast<double>(memInfo.Budget) / static_cast<double>(desc.DedicatedVideoMemory));
                     if (ratio > highest_ratio) {
                         highest_ratio = ratio;
                     }
