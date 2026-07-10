@@ -25,7 +25,6 @@
 #include <mutex>
 #include <vector>
 #include <cmath>
-#include <cstddef>
 #include <cstring>
 
 #ifdef _WIN32
@@ -47,6 +46,8 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <libdrm/amdgpu.h>
+#include <libdrm/amdgpu_drm.h>
 #include "lemon/amdxdna_accel.h"
 #endif
 
@@ -156,76 +157,32 @@ struct HsaRuntimeApi {
     hsa_status_t (*amd_memory_pool_get_info)(hsa_amd_memory_pool_t, hsa_amd_memory_pool_info_t, void*) = nullptr;
 };
 
-// Minimal libdrm_amdgpu ABI surface, loaded at runtime so Lemonade does not
-// gain a build-time dependency on libdrm development headers. The public
-// amdgpu_gpu_info ABI starts with four uint32_t IDs followed by ids_flags.
-struct AmdgpuGpuInfoPrefix {
-    uint32_t asic_id;
-    uint32_t chip_rev;
-    uint32_t chip_external_rev;
-    uint32_t family_id;
-    uint64_t ids_flags;
-};
-
-static_assert(offsetof(AmdgpuGpuInfoPrefix, ids_flags) == 16,
-              "Unexpected amdgpu_gpu_info ABI layout");
-
-using AmdgpuDeviceHandle = void*;
-
-struct AmdgpuLibdrmApi {
-    void* handle = nullptr;
-    int (*device_initialize)(int, uint32_t*, uint32_t*, AmdgpuDeviceHandle*) = nullptr;
-    int (*device_deinitialize)(AmdgpuDeviceHandle) = nullptr;
-    int (*query_gpu_info)(AmdgpuDeviceHandle, void*) = nullptr;
-
-    bool available() const {
-        return handle != nullptr && device_initialize != nullptr &&
-               device_deinitialize != nullptr && query_gpu_info != nullptr;
-    }
-};
-
-const AmdgpuLibdrmApi& get_amdgpu_libdrm_api() {
-    static const AmdgpuLibdrmApi api = [] {
-        static const char* candidates[] = {
-            "libdrm_amdgpu.so.1",
-            "libdrm_amdgpu.so"
-        };
-
-        for (const char* candidate : candidates) {
-            AmdgpuLibdrmApi loaded;
-            loaded.handle = dlopen(candidate, RTLD_LAZY | RTLD_LOCAL);
-            if (!loaded.handle) {
-                continue;
-            }
-
-            loaded.device_initialize = reinterpret_cast<decltype(loaded.device_initialize)>(
-                dlsym(loaded.handle, "amdgpu_device_initialize"));
-            loaded.device_deinitialize = reinterpret_cast<decltype(loaded.device_deinitialize)>(
-                dlsym(loaded.handle, "amdgpu_device_deinitialize"));
-            loaded.query_gpu_info = reinterpret_cast<decltype(loaded.query_gpu_info)>(
-                dlsym(loaded.handle, "amdgpu_query_gpu_info"));
-
-            if (loaded.available()) {
-                // Keep the library loaded for the process lifetime because these
-                // function pointers are cached in a static object.
-                return loaded;
-            }
-
-            dlclose(loaded.handle);
-        }
-
-        return AmdgpuLibdrmApi{};
-    }();
-
-    return api;
-}
-
+// Query the kernel driver through libdrm instead of inferring APU status from
+// sysfs topology. Only successful queries are cached: a temporary permission or
+// device-node failure must not permanently classify the card as discrete.
 bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
     is_apu = false;
 
-    const auto& api = get_amdgpu_libdrm_api();
-    if (!api.available()) {
+    // Avoid repeatedly opening non-AMDGPU render nodes in mixed-vendor systems.
+    // This identifies the bound kernel driver only; APU vs dGPU still comes
+    // exclusively from amdgpu_query_gpu_info().
+    std::error_code driver_ec;
+    const fs::path driver_link = card_path / "device" / "driver";
+    const fs::path driver_target = fs::read_symlink(driver_link, driver_ec);
+    if (driver_ec || driver_target.filename() != "amdgpu") {
         return false;
+    }
+
+    static std::mutex cache_mutex;
+    static std::map<std::string, bool> cache;
+    const std::string cache_key = card_path.string();
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        const auto cached = cache.find(cache_key);
+        if (cached != cache.end()) {
+            is_apu = cached->second;
+            return true;
+        }
     }
 
     std::vector<fs::path> device_nodes;
@@ -242,8 +199,8 @@ bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
         }
     }
 
-    // Render nodes are preferred because they do not require DRM master or
-    // display authentication. Keep the primary node as a compatibility fallback.
+    // Render nodes avoid DRM-master/display authentication. The primary node is
+    // retained as a compatibility fallback for systems without a render node.
     device_nodes.push_back(fs::path("/dev/dri") / card_path.filename());
 
     for (const auto& node : device_nodes) {
@@ -254,32 +211,29 @@ bool query_amdgpu_is_apu(const fs::path& card_path, bool& is_apu) {
 
         uint32_t major_version = 0;
         uint32_t minor_version = 0;
-        AmdgpuDeviceHandle device = nullptr;
-        const int init_result = api.device_initialize(
+        amdgpu_device_handle device = nullptr;
+        const int init_result = amdgpu_device_initialize(
             fd, &major_version, &minor_version, &device);
         if (init_result != 0 || device == nullptr) {
             close(fd);
             continue;
         }
 
-        // libdrm writes its complete public amdgpu_gpu_info structure. Reserve
-        // substantially more than its current size and copy only the stable ABI
-        // prefix needed for AMDGPU_IDS_FLAGS_FUSION.
-        alignas(uint64_t) unsigned char raw_info[4096] = {};
-        const int query_result = api.query_gpu_info(device, raw_info);
+        amdgpu_gpu_info info{};
+        const int query_result = amdgpu_query_gpu_info(device, &info);
 
-        api.device_deinitialize(device);
+        amdgpu_device_deinitialize(device);
         close(fd);
 
         if (query_result != 0) {
             continue;
         }
 
-        AmdgpuGpuInfoPrefix info{};
-        std::memcpy(&info, raw_info, sizeof(info));
-
-        constexpr uint64_t kAmdgpuIdsFlagsFusion = 0x1;
-        is_apu = (info.ids_flags & kAmdgpuIdsFlagsFusion) != 0;
+        is_apu = (info.ids_flags & AMDGPU_IDS_FLAGS_FUSION) != 0;
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            cache[cache_key] = is_apu;
+        }
         return true;
     }
 
@@ -4102,15 +4056,9 @@ bool SystemInfo::is_running_under_systemd() {
 }
 
 double SystemInfo::get_global_vram_usage_pct() {
-    // Report *global* GPU memory pressure (all processes, not just lemonade's),
-    // so the eviction engine yields VRAM when other apps (ComfyUI, games, etc.)
-    // consume it. Returns the busiest per-device used/total ratio in [0,1], or
-    // -1.0 if no source is available.
-    //
-    // Reuses the same detection sources as the rest of this file: nvidia-smi for
-    // NVIDIA (Linux + Windows) and DRM sysfs for Linux. macOS/Metal is unsupported
-    // for now and falls through to -1.0.
-
+    // Report global GPU-memory pressure (all processes, not just Lemonade's).
+    // Return the busiest per-device ratio in [0,1], or -1.0 when no supported
+    // source is available.
     auto usage_ratio = [](uint64_t used, uint64_t total) {
         if (total == 0) {
             return -1.0;
@@ -4122,34 +4070,11 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     double highest_ratio = -1.0;
 
-#ifdef __linux__
-    // Vulkan can allocate across both APU VRAM and GTT, while ROCm follows the
-    // kernel's preferred pool. Detect an explicitly selected ROCm backend from
-    // the descriptor-driven config sections. Auto remains Vulkan-compatible;
-    // on AMD systems llamacpp auto-selection prefers Vulkan before ROCm.
-    bool rocm_apu_policy_active = false;
-    if (auto* cfg = RuntimeConfig::global()) {
-        std::set<std::string> checked_sections;
-        for (const auto& def : recipe_defs()) {
-            const std::string section = RuntimeConfig::recipe_to_config_section(def.recipe);
-            if (!checked_sections.insert(section).second) {
-                continue;
-            }
-
-            const std::string backend = cfg->backend_string(section, "backend");
-            if (backend == "rocm" || backend.rfind("rocm-", 0) == 0) {
-                rocm_apu_policy_active = true;
-                break;
-            }
-        }
-    }
-#endif
-
-    // NVIDIA: evaluate every GPU reported by nvidia-smi. Do not return early so
-    // mixed-vendor Linux systems are compared against their DRM devices as well.
+    // NVIDIA: evaluate every row. Continue to DRM afterwards so mixed-vendor
+    // Linux systems also report the busiest individual device.
     if (!find_executable_in_path("nvidia-smi").empty()) {
         std::string output;
-        int rc = lemon::utils::ProcessManager::run_command(
+        const int rc = lemon::utils::ProcessManager::run_command(
             "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
             output, 5);
         if (rc == 0 && !output.empty()) {
@@ -4170,20 +4095,18 @@ double SystemInfo::get_global_vram_usage_pct() {
                             std::min(1.0, used / total));
                     }
                 } catch (...) {
-                    // Ignore malformed rows and continue with remaining devices.
+                    // Ignore a malformed row and continue with the other GPUs.
                 }
             }
         }
     }
 
 #ifdef __linux__
-    // DRM GPUs: read used/total from sysfs and keep the busiest device.
-    //
-    // AMD APUs need special handling. Their VRAM carveout and GTT are limits over
-    // physically shared system memory, not independent capacities. The amdgpu
-    // driver prefers GTT-backed allocations when GTT is larger than the firmware
-    // carveout. Detect APUs through libdrm's amdgpu_query_gpu_info() FUSION flag,
-    // never through PCI-vendor or board_info heuristics.
+    // DRM: AMD APUs using Vulkan can allocate from both the firmware VRAM
+    // carveout and GTT, so measure their combined driver-accounted budget.
+    // Discrete GPUs and devices that cannot be identified through libdrm keep
+    // conservative VRAM-only pressure; free system memory must not hide dGPU
+    // VRAM exhaustion.
     try {
         const fs::path drm_path = "/sys/class/drm";
         if (fs::exists(drm_path)) {
@@ -4221,10 +4144,6 @@ double SystemInfo::get_global_vram_usage_pct() {
                         read_sysfs_u64(device_path / "mem_info_gtt_total", gtt_total) &&
                         gtt_total > 0;
 
-                    // Vulkan sees the complete APU memory budget, so combine
-                    // the two driver-accounted pools. They are not treated as
-                    // independent physical RAM here; this is the Vulkan-visible
-                    // allocation budget reported by AMDGPU.
                     uint64_t combined_used = 0;
                     uint64_t combined_total = 0;
                     if (have_vram) {
@@ -4238,10 +4157,12 @@ double SystemInfo::get_global_vram_usage_pct() {
                     const double vulkan_ratio =
                         usage_ratio(combined_used, combined_total);
 
-                    // ROCm follows amdgpu's preferred APU pool: GTT when it is
-                    // larger than the firmware carveout, otherwise VRAM. When a
-                    // ROCm backend is explicitly configured, retain both this
-                    // allocation limit and overall Vulkan-visible pressure.
+                    // The global monitor has no per-model backend context. Cover
+                    // both allocation policies without guessing configuration:
+                    // Vulkan can use the combined APU budget, while ROCm follows
+                    // amdgpu's preferred pool (the larger of GTT and carveout).
+                    // Taking the higher pressure prevents either limit from being
+                    // hidden by free capacity in the other accounting view.
                     double rocm_ratio = -1.0;
                     if (have_gtt && (!have_vram || gtt_total > vram_total)) {
                         rocm_ratio = usage_ratio(gtt_used, gtt_total);
@@ -4249,13 +4170,8 @@ double SystemInfo::get_global_vram_usage_pct() {
                         rocm_ratio = usage_ratio(vram_used, vram_total);
                     }
 
-                    ratio = rocm_apu_policy_active
-                        ? std::max(vulkan_ratio, rocm_ratio)
-                        : vulkan_ratio;
+                    ratio = std::max(vulkan_ratio, rocm_ratio);
                 } else if (have_vram) {
-                    // dGPUs, non-AMDGPU DRM devices, and systems where the optional
-                    // libdrm query is unavailable retain conservative VRAM pressure.
-                    // Free GTT must never hide real dGPU VRAM exhaustion.
                     ratio = usage_ratio(vram_used, vram_total);
                 }
 
@@ -4263,7 +4179,7 @@ double SystemInfo::get_global_vram_usage_pct() {
             }
         }
     } catch (...) {
-        // Preserve any successfully collected NVIDIA/DRM result.
+        // Preserve a successfully collected NVIDIA/DRM result.
     }
 #endif
 
