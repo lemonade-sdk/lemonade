@@ -20,7 +20,7 @@ function detectDefaultBaseUrl(): string {
   return 'http://127.0.0.1:13305';
 }
 
-const DEFAULT_BASE_URL = detectDefaultBaseUrl();
+const DEFAULT_BASE_URL = process.env.LEMONADE_BASE_URL || detectDefaultBaseUrl();
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
 
@@ -566,9 +566,10 @@ class LemonadeAPI {
       // Substitute it when the configured host is localhost/127.0.0.1 so that all
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
       const parsed = new URL(raw);
-      if (!hasExplicitUrl && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
+      const hasBuildTimeOverride = Boolean(process.env.LEMONADE_BASE_URL);
+      if (!hasExplicitUrl && !hasBuildTimeOverride && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
         const winHost = window.location.hostname;
-        if (winHost && winHost !== 'localhost' && winHost !== '[::1]' && winHost !== '::1') {
+        if (winHost && winHost !== 'localhost' && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
           parsed.hostname = winHost;
         }
       }
