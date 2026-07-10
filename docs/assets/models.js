@@ -9,6 +9,7 @@ const RECIPE_PRIORITY = [
   'kokoro',
   'llamacpp',
   'moonshine',
+  'onnxruntime',
   'openmoss',
   'ryzenai-llm',
   'sd-cpp',
@@ -27,6 +28,7 @@ const RECIPE_DISPLAY_NAMES = {
   vllm: 'vLLM ROCm (experimental)',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
+  onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS'
 };
