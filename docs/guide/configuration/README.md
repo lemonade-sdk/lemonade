@@ -42,8 +42,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "cloud_providers": [],
-  "config_version": 1,
-  "ctx_size": 4096,
+  "config_version": 2,
+  "ctx_size": -1,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
@@ -51,7 +51,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "prefer_system": false
   },
-  "global_timeout": 300,
+  "global_timeout": 600,
   "host": "localhost",
   "inhibit_suspend": true,
   "kokoro": {
@@ -87,7 +87,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "port": 13305,
-  "rocm_channel": "preview",
+  "rocm_channel": "stable",
   "ryzenai": {
     "server_bin": "builtin"
   },
