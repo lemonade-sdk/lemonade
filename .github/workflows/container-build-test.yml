@@ -122,8 +122,16 @@ jobs:
       - name: Export ARM64 image
         if: >-
           matrix.arch == 'arm64' &&
-          github.event_name == 'workflow_dispatch' &&
-          inputs.upload_arm64_artifact
+          (
+            (
+              github.event_name == 'workflow_dispatch' &&
+              inputs.upload_arm64_artifact
+            ) ||
+            (
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.number == 2637
+            )
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -135,8 +143,16 @@ jobs:
       - name: Upload ARM64 test image
         if: >-
           matrix.arch == 'arm64' &&
-          github.event_name == 'workflow_dispatch' &&
-          inputs.upload_arm64_artifact
+          (
+            (
+              github.event_name == 'workflow_dispatch' &&
+              inputs.upload_arm64_artifact
+            ) ||
+            (
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.number == 2637
+            )
+          )
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-arm64-${{ github.sha }}
