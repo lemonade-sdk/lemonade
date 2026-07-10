@@ -4017,6 +4017,11 @@ double SystemInfo::get_global_vram_usage_pct() {
     }
 #ifdef __linux__
     // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
+    // On AMD APU systems (e.g. Strix Halo) the BIOS VRAM carveout is small (2 GB) and
+    // mostly consumed by amdgpu driver/kernel overhead, while model weights live in the
+    // much larger GTT (shared system memory).  Reading VRAM alone causes false-positive
+    // evictions at ~99% when 98+ GB of GTT is free.  When GTT sysfs files exist, use the
+    // combined VRAM + GTT ratio instead.
     try {
         const std::string drm_path = "/sys/class/drm";
         if (fs::exists(drm_path)) {
@@ -4030,6 +4035,9 @@ double SystemInfo::get_global_vram_usage_pct() {
 
                 uint64_t vram_used = 0;
                 uint64_t vram_total = 0;
+                uint64_t gtt_used = 0;
+                uint64_t gtt_total = 0;
+                bool has_gtt = false;
                 {
                     std::ifstream f(device_path + "/mem_info_vram_used");
                     if (f.is_open()) f >> vram_used;
@@ -4038,9 +4046,25 @@ double SystemInfo::get_global_vram_usage_pct() {
                     std::ifstream f(device_path + "/mem_info_vram_total");
                     if (f.is_open()) f >> vram_total;
                 }
+                {
+                    std::ifstream f(device_path + "/mem_info_gtt_used");
+                    if (f.is_open()) { f >> gtt_used; has_gtt = true; }
+                }
+                {
+                    std::ifstream f(device_path + "/mem_info_gtt_total");
+                    if (f.is_open()) { f >> gtt_total; }
+                }
 
                 if (vram_total > 0) {
-                    double ratio = static_cast<double>(vram_used) / static_cast<double>(vram_total);
+                    double ratio;
+                    if (has_gtt && gtt_total > 0) {
+                        // APU: combine VRAM + GTT for true memory pressure
+                        ratio = static_cast<double>(vram_used + gtt_used)
+                              / static_cast<double>(vram_total + gtt_total);
+                    } else {
+                        // dGPU without GTT: VRAM only (existing behavior)
+                        ratio = static_cast<double>(vram_used) / static_cast<double>(vram_total);
+                    }
                     if (ratio > highest_ratio) {
                         highest_ratio = ratio;
                     }
