@@ -3,7 +3,9 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
 #include "lemon/backend_manager.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -199,8 +201,35 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<OnnxRuntimeServer>(ctx);
 }
 
+namespace {
+// ort-server models are a directory (model.onnx + tokenizer.json + manifest.json).
+// The whole repo downloads by default; resolve to the directory that holds
+// model.onnx so the subprocess is launched with --model-path <dir>.
+class OnnxRuntimeOps : public BackendOps {
+public:
+    std::string resolve_checkpoint_path(const ModelInfo&,
+                                        const CheckpointResolveContext& ctx) const override {
+        std::string found = find_imported_checkpoint(ctx.model_cache_path);
+        return found.empty() ? ctx.model_cache_path : found;
+    }
+
+    std::string find_imported_checkpoint(const std::string& import_dir) const override {
+        fs::path dir = path_from_utf8(import_dir);
+        if (hf_cache::exists(dir)) {
+            for (const auto& entry :
+                 fs::recursive_directory_iterator(dir, hf_cache::dir_options())) {
+                if (entry.is_regular_file() && entry.path().filename() == "model.onnx") {
+                    return path_to_utf8(entry.path().parent_path());
+                }
+            }
+        }
+        return "";
+    }
+};
+}  // namespace
+
 const BackendSpec* spec() { return make_spec<OnnxRuntimeServer>(descriptor); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<OnnxRuntimeOps>(); }
 
 }  // namespace onnxruntime
 }  // namespace backends
