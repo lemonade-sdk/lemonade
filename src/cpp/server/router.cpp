@@ -1517,6 +1517,13 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     });
 }
 
+std::vector<std::string> Router::audio_speech_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
@@ -1568,6 +1575,16 @@ std::vector<std::string> Router::audio_generation_supported_formats(const std::s
     auto audio_server = dynamic_cast<IAudioGenerationServer*>(
         find_server_by_model_name(resolve_model_name(model_name)));
     return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        if (!model_server) {
+            throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
+        }
+        model_server->model_3d_generations(request, sink);
+    });
 }
 
 json Router::get_stats() const {

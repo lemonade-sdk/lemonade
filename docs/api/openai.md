@@ -915,9 +915,9 @@ A typical workflow is to generate an image first, then upscale it:
 
 Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
 
-> **Note:** The model to use is called `kokoro-v1`. No other model is supported at the moment.
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description).
 >
-> **Limitations:** Only `mp3`, `wav`, `opus`, and `pcm` are supported. Streaming is supported in `audio` (`pcm`) mode.
+> **Limitations:** `kokoro-v1` supports `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS models natively produce `wav` only, and other formats are rejected with `400 Bad Request`. Streaming is supported in `audio` (`pcm`) mode on `kokoro-v1`.
 
 ### Parameters
 
@@ -927,6 +927,8 @@ Speech Generation API. You provide a text input and receive an audio file. This 
 | `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `voice` (OpenMOSS) | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 

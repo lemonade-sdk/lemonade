@@ -95,6 +95,17 @@ int main() {
     const fs::path invalid_root = tmp / "invalid";
     fs::create_directories(invalid_root / "lib");  // no HIP runtime
 
+#ifdef _WIN32
+    // ROCm 7.x version-suffixes the runtime (bin\amdhip64_7.dll) instead of the
+    // plain bin\amdhip64.dll used by 5.x/6.x.
+    const fs::path valid_root_versioned = tmp / "valid_versioned";
+    write_stub(valid_root_versioned / "bin" / "amdhip64_7.dll");
+
+    // A non-version suffix must not be mistaken for the HIP runtime.
+    const fs::path bogus_suffix_root = tmp / "bogus_suffix";
+    write_stub(bogus_suffix_root / "bin" / "amdhip64_backup.dll");
+#endif
+
     // pick_rocm_root_candidates: pure selection of absolute-path lines from
     // `rocm-sdk path --root` output, whose stdout may be interleaved with the
     // child's stderr (warnings). No filesystem access.
@@ -146,6 +157,26 @@ int main() {
         check(explicit_source, "ROCM_PATH (fallback subdir) is marked explicit");
     }
 
+#ifdef _WIN32
+    {
+        bool explicit_source = false;
+        set_rocm_path(valid_root_versioned.string());
+        auto root = BackendUtils::resolve_rocm_root(&explicit_source);
+        check(root.has_value() && fs::equivalent(*root, valid_root_versioned),
+              "ROCM_PATH with version-suffixed amdhip64_7.dll resolves");
+        check(explicit_source,
+              "ROCM_PATH with version-suffixed amdhip64_7.dll is marked explicit");
+    }
+
+    {
+        set_rocm_path(bogus_suffix_root.string());
+        std::error_code ec;
+        auto root = BackendUtils::resolve_rocm_root(nullptr);
+        check(!root.has_value() || !fs::equivalent(*root, bogus_suffix_root, ec),
+              "ROCM_PATH with amdhip64_backup.dll does not resolve to itself");
+    }
+#endif
+
     // A ROCM_PATH missing the HIP runtime must fall through, never resolve to
     // itself, and never be reported as explicit.
     {
@@ -162,9 +193,11 @@ int main() {
     // A non-existent ROCM_PATH must fall through without the fs probes throwing.
     {
         bool explicit_source = false;
-        set_rocm_path((tmp / "does-not-exist").string());
+        const fs::path missing = tmp / "does-not-exist";
+        set_rocm_path(missing.string());
         auto root = BackendUtils::resolve_rocm_root(&explicit_source);
-        check(!root.has_value() || !fs::equivalent(*root, tmp / "does-not-exist"),
+        std::error_code ec;
+        check(!root.has_value() || !fs::equivalent(*root, missing, ec),
               "non-existent ROCM_PATH falls through without throwing");
         if (!root.has_value()) {
             check(!explicit_source,

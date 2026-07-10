@@ -2,6 +2,7 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
@@ -11,6 +12,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -185,6 +187,50 @@ void set_error_response(const json& response, httplib::Response& res,
                         int default_status_code = 500) {
     res.status = get_error_status_code(response, default_status_code);
     res.set_content(response.dump(), "application/json");
+}
+
+void attach_route_decision(json& response, httplib::Response& res,
+                           const std::optional<RouterDispatchResult>& dispatch) {
+    if (!dispatch.has_value()) {
+        return;
+    }
+    response["x_lemonade_route"] = route_decision_to_json(dispatch->decision);
+    attach_route_header(res, dispatch->decision);
+}
+
+template <typename StreamFn>
+void set_route_decision_sse_content_provider(
+    httplib::Response& res,
+    const std::optional<RouterDispatchResult>& dispatch,
+    std::string request_body,
+    StreamFn stream_fn) {
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    if (dispatch) {
+        attach_route_header(res, dispatch->decision);
+    }
+
+    json route_decision_json = dispatch
+        ? route_decision_to_json(dispatch->decision)
+        : json(nullptr);
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [request_body = std::move(request_body),
+         route_decision_json = std::move(route_decision_json),
+         stream_fn = std::move(stream_fn)](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) {
+                return false;
+            }
+
+            stream_with_route_decision(
+                sink,
+                route_decision_json,
+                [&request_body, &stream_fn](httplib::DataSink& route_sink) {
+                    stream_fn(request_body, route_sink);
+                });
+            return false;
+        });
 }
 
 int get_http_status_from_error(const std::string& error_code) {
@@ -731,6 +777,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Generative-audio endpoint: text -> audio clip (music, sound effects)
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
+    });
+    register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_3d_generations(req, res);
     });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
@@ -2189,8 +2238,9 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
-std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
-                                             const ModelInfo& collection_info) {
+std::optional<RouterDispatchResult> Server::route_collection_request(
+    const nlohmann::json& request_json,
+    const ModelInfo& collection_info) {
     // The policy is parsed once when the models cache is built (ModelManager),
     // so dispatch just reads it here. A missing policy means the collection
     // failed to parse at cache-build time; return nullopt so the caller leaves
@@ -2210,34 +2260,44 @@ std::optional<std::string> Server::route_collection_request(const nlohmann::json
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
-    Decision decision = engine.route(ctx, /*want_trace=*/false);
-    return decision.route_to;
+    const bool want_trace = request_json.value("route_trace", false);
+    Decision decision = engine.route(ctx, want_trace);
+    RouterDispatchResult result;
+    result.requested_model = collection_info.model_name;
+    result.selected_model = decision.route_to;
+    result.decision = std::move(decision);
+    return result;
 }
 
-void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
+    nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
-        return;
+        return std::nullopt;
     }
     const std::string requested_model = request_json["model"].get<std::string>();
     try {
         if (!model_manager_->model_exists(requested_model)) {
-            return;
+            return std::nullopt;
         }
         ModelInfo info = model_manager_->get_model_info(requested_model);
         if (!is_router_collection_recipe(info.recipe)) {
-            return;
+            return std::nullopt;
         }
-        std::optional<std::string> selected = route_collection_request(request_json, info);
-        if (!selected) {
-            return;
+        auto dispatch = route_collection_request(request_json, info);
+        if (!dispatch) {
+            return std::nullopt;
         }
+        dispatch->requested_model = requested_model;
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
-                            << *selected << "'" << std::endl;
-        request_json["model"] = *selected;
+                            << dispatch->selected_model << "'" << std::endl;
+        request_json["model"] = dispatch->selected_model;
+        request_json.erase("route_trace");
+        return dispatch;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
     }
+    return std::nullopt;
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
@@ -2259,6 +2319,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         bool request_modified = false;
+        std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
         // plain completion. Branch before auto-load/LLM-type checks: the collection
@@ -2276,12 +2337,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // The recipe is the trigger (no "auto", no /v1/route): run the
                         // routing engine and rewrite the model to the selected
                         // candidate, then fall through to normal completion handling.
-                        std::optional<std::string> selected =
-                            route_collection_request(request_json, info);
-                        if (selected) {
+                        route_dispatch = route_collection_request(request_json, info);
+                        if (route_dispatch) {
+                            route_dispatch->requested_model = requested_model;
                             LOG(INFO, "Server") << "Router collection '" << requested_model
-                                                << "' -> '" << *selected << "'" << std::endl;
-                            request_json["model"] = *selected;
+                                                << "' -> '" << route_dispatch->selected_model << "'" << std::endl;
+                            request_json["model"] = route_dispatch->selected_model;
+                            request_json.erase("route_trace");
                         }
                     }
                 }
@@ -2368,25 +2430,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        // For chunked responses, offset tracks bytes sent so far
-                        // We only want to stream once when offset is 0
-                        if (offset > 0) {
-                            return false; // We're done after the first call
-                        }
-
-                        router_->chat_completion_stream(request_body, sink);
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->chat_completion_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
@@ -2404,6 +2454,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             // Debug: Check if response contains tool_calls
             if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                 auto& first_choice = response["choices"][0];
@@ -2536,7 +2587,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -2601,24 +2653,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
-                // Set up SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Already sent everything
-                        }
-
-                        // Use unified Router path for streaming
-                        router_->completion_stream(request_body, sink);
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->completion_stream(body, sink);
+                    });
 
                 LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
                 return;
@@ -2649,6 +2690,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             res.set_content(response.dump(), "application/json");
 
             // Print and save telemetry for non-streaming completions
@@ -3154,23 +3196,44 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        std::string mime_type;
+        const auto supported_formats =
+            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
+        std::string response_format = "mp3";
         if (is_streaming) {
-            mime_type = MIME_TYPES["pcm"];
-        } else if (request_json.contains("response_format")) {
-            if (MIME_TYPES.contains(request_json["response_format"])) {
-                mime_type = MIME_TYPES[request_json["response_format"]];
-            } else {
-                nlohmann::json error = {{"error", {
-                    {"message", "Unsupported audio format requested"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        } else {
-            mime_type = MIME_TYPES["mp3"];
+            response_format = "pcm";
+        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            response_format = request_json["response_format"].get<std::string>();
+        } else if (!supported_formats.empty()) {
+            response_format = supported_formats.front();
         }
+        if (!MIME_TYPES.contains(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported audio format requested"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const bool format_supported = supported_formats.empty() ||
+            std::find(supported_formats.begin(), supported_formats.end(),
+                      response_format) != supported_formats.end();
+        // TODO: transcode from a natively supported format instead of rejecting.
+        if (!format_supported) {
+            std::string supported_list;
+            for (const auto& f : supported_formats) {
+                supported_list += (supported_list.empty() ? "" : ", ") + f;
+            }
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "response_format '" + response_format + "' is not supported by this model "
+                            "(supported: " + supported_list + ")"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        std::string mime_type = MIME_TYPES[response_format];
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -3196,7 +3259,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use cpp-httplib's chunked content provider for streaming
             res.set_chunked_content_provider(mime_type, audio_source);
         } else {
-            res.set_content_provider(mime_type, audio_source);
+            serve_media_or_error(res, mime_type, [this, request_json](httplib::DataSink& sink) {
+                router_->audio_speech(request_json, sink);
+            });
         }
 
         return;
@@ -3255,6 +3320,13 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
         res.status = 500;
+        const auto& err = error_payload["error"];
+        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
+            const int status = err["status"].get<int>();
+            if (status >= 400 && status <= 599) {
+                res.status = status;
+            }
+        }
         res.set_content(error_payload.dump(), "application/json");
         return;
     }
@@ -3321,6 +3393,106 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         });
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_audio_generations: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_3d_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // All cheap validation runs before auto_load_model_if_needed so a
+        // malformed request can never trigger a multi-gigabyte model load.
+        auto reject = [&res](const std::string& message) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", message},
+                {"type", "invalid_request_error"}}}}.dump(), "application/json");
+        };
+        if (!request_json.contains("model") || !request_json["model"].is_string()) {
+            return reject("Missing or non-string 'model' field in request");
+        }
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            return reject("Missing or non-string 'image' field in request (base64-encoded input image)");
+        }
+        {
+            std::string image = request_json["image"].get<std::string>();
+            if (image.rfind("data:", 0) == 0) {
+                const auto comma = image.find(',');
+                if (comma == std::string::npos) {
+                    return reject("'image' data URL is missing its base64 payload");
+                }
+                image = image.substr(comma + 1);
+            }
+            if (image.empty() || image.find_first_not_of(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n") !=
+                    std::string::npos) {
+                return reject("'image' must be base64 data or a base64 data: URL");
+            }
+            // Sniffing needs only the first 12 bytes; base64 is block-aligned,
+            // so decoding the first 16 characters is enough and avoids decoding
+            // a multi-megabyte payload just to validate it.
+            std::string head;
+            for (char c : image) {
+                if (c != '\r' && c != '\n') {
+                    head += c;
+                    if (head.size() == 16) break;
+                }
+            }
+            if (!utils::sniff_image(utils::JsonUtils::base64_decode(head)).ok()) {
+                return reject("'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
+            }
+        }
+        std::string response_format = "glb";
+        if (request_json.contains("response_format")) {
+            if (!request_json["response_format"].is_string()) {
+                return reject("'response_format' must be a string");
+            }
+            response_format = request_json["response_format"].get<std::string>();
+        }
+        // TODO: convert from a natively supported format instead of rejecting.
+        if (response_format != "glb") {
+            return reject("response_format '" + response_format +
+                          "' is not supported (supported: glb)");
+        }
+        if (request_json.contains("resolution")) {
+            const auto& r = request_json["resolution"];
+            const std::string v = r.is_string() ? r.get<std::string>()
+                : (r.is_number_integer() ? std::to_string(r.get<int>()) : "");
+            if (v != "512" && v != "1024" && v != "1536") {
+                return reject("'resolution' must be 512, 1024, or 1536");
+            }
+        }
+        if (request_json.contains("bg_removal")) {
+            const auto& b = request_json["bg_removal"];
+            if (!b.is_string() || (b != "threshold" && b != "birefnet")) {
+                return reject("'bg_removal' must be 'threshold' or 'birefnet'");
+            }
+        }
+        if (request_json.contains("seed") && !request_json["seed"].is_number_integer()) {
+            return reject("'seed' must be an integer");
+        }
+
+        std::string requested_model = request_json["model"];
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
+
+        serve_media_or_error(res, "model/gltf-binary", [this, request_json](httplib::DataSink& sink) {
+            router_->model_3d_generations(request_json, sink);
+        });
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_3d_generations: " << e.what() << std::endl;
         res.status = 500;
         res.set_content(nlohmann::json{{"error", {
             {"message", e.what()}, {"type", "internal_error"}}}}.dump(), "application/json");
@@ -3852,7 +4024,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -3885,25 +4058,13 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Only stream once
-                        }
-
-                        // Use unified Router path for streaming
-                        router_->responses_stream(request_body, sink);
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->responses_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
@@ -3920,6 +4081,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
         }

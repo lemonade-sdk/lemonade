@@ -54,6 +54,7 @@ class ITextToSpeechServer : public virtual ICapability {
 public:
     virtual ~ITextToSpeechServer() = default;
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
+    virtual std::vector<std::string> supported_audio_formats() const { return {}; }
 };
 
 // Text-classification capability (encoder classifiers: PII, prompt-safety,
@@ -80,8 +81,13 @@ class IAudioGenerationServer : public virtual ICapability {
 public:
     virtual ~IAudioGenerationServer() = default;
     virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
-    // response_format values the backend can natively produce.
     virtual std::vector<std::string> supported_audio_formats() const { return {"wav"}; }
+};
+
+class IModel3DServer : public virtual ICapability {
+public:
+    virtual ~IModel3DServer() = default;
+    virtual void model_3d_generations(const json& request, httplib::DataSink& sink) = 0;
 };
 
 class ISlotsServer : public virtual ICapability {

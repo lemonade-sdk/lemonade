@@ -80,6 +80,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "openmoss": {
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
   "port": 13305,
   "rocm_channel": "stable",
   "ryzenai": {
@@ -91,6 +97,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "cfg_scale": 7.0,
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
+    "cuda_bin": "builtin",
     "height": 512,
     "rocm_args": "",
     "rocm_bin": "builtin",
@@ -120,6 +128,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
     }
   },
   "thinksound": {
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
+  "trellis": {
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
