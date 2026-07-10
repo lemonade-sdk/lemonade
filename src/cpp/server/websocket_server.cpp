@@ -130,8 +130,14 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
             }
-            if (!server->authenticate_connection(wsi)) {
+            const char* protocol = static_cast<const char*>(in);
+            if (!server->authenticate_connection(wsi, protocol)) {
                 return 1;
+            }
+            if (protocol && std::strlen(protocol) > 0) {
+                int fd = static_cast<int>(lws_get_socket_fd(wsi));
+                std::lock_guard<std::mutex> lock(server->protocols_mutex_);
+                server->pending_protocols_[fd] = std::string(protocol);
             }
             break;
         }
@@ -384,10 +390,21 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     if (!token) {
         token = get_url_arg(wsi, "api_key");
     }
+    if (!token) {
+        int fd = static_cast<int>(lws_get_socket_fd(wsi));
+        std::lock_guard<std::mutex> lock(protocols_mutex_);
+        auto it = pending_protocols_.find(fd);
+        if (it != pending_protocols_.end()) {
+            const std::string& protocol = it->second;
+            if (protocol.find("bearer.") == 0) {
+                return protocol.substr(7);
+            }
+        }
+    }
     return token ? strip_bearer_prefix(*token) : "";
 }
 
-bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
+bool WebSocketServer::authenticate_connection(struct lws* wsi, const char* protocol) const {
     if (api_key_.empty()) {
         return true;
     }
@@ -395,6 +412,12 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
     if (!token) {
         token = get_url_arg(wsi, "api_key");
+    }
+    if (!token && protocol && std::strlen(protocol) > 0) {
+        std::string protocol_str(protocol);
+        if (protocol_str.find("bearer.") == 0) {
+            token = protocol_str.substr(7);
+        }
     }
 
     if (!token) {
@@ -425,6 +448,12 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
     std::string token_str = extract_token_from_wsi(wsi);
     auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
     std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
+
+    {
+        int fd = static_cast<int>(lws_get_socket_fd(wsi));
+        std::lock_guard<std::mutex> lock(protocols_mutex_);
+        pending_protocols_.erase(fd);
+    }
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);

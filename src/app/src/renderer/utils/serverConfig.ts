@@ -163,7 +163,8 @@ class ServerConfig {
    * accepts WebSocket upgrades for /realtime and /logs/stream). Going through
    * URL rather than string concat is what makes this correct for IPv6
    * literals — URL.host preserves the brackets that hostname does not. The
-   * configured API key is appended automatically when set.
+   * API key is NOT included in the URL — the caller should pass it via
+   * Sec-WebSocket-Protocol instead (see websocketClient.ts).
    */
   buildWebSocketUrl(path: string, wsPort?: number, query?: URLSearchParams): string {
     const url = new URL(this.getServerBaseUrl());
@@ -173,12 +174,9 @@ class ServerConfig {
     }
     url.pathname = url.pathname.replace(/\/$/, '') + path;
 
-    const params = new URLSearchParams(query);
-    const apiKey = this.getAPIKey();
-    if (apiKey) {
-      params.set('api_key', apiKey);
+    if (query) {
+      url.search = query.toString();
     }
-    url.search = params.toString();
     return url.toString();
   }
 

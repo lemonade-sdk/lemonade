@@ -136,6 +136,9 @@ private:
     std::unordered_map<std::string, std::string> receive_buffers_;
     std::mutex connections_mutex_;
     bool telemetry_listener_registered_{false};
+    // Temporary map to store protocols during handshake (keyed by socket fd)
+    mutable std::unordered_map<int, std::string> pending_protocols_;
+    mutable std::mutex protocols_mutex_;
 
     // Handle new WebSocket connection
     void handle_connection(const std::string& connection_id, struct lws* wsi);
@@ -149,7 +152,7 @@ private:
     // Handle writable callback — flush message queue
     void handle_writable(const std::string& connection_id, struct lws* wsi);
 
-    bool authenticate_connection(struct lws* wsi) const;
+    bool authenticate_connection(struct lws* wsi, const char* protocol) const;
     static std::optional<std::string> get_header(struct lws* wsi, enum lws_token_indexes token);
     static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);
     static std::string get_request_path(struct lws* wsi);
