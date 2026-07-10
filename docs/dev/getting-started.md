@@ -14,7 +14,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Building Installers](#building-installers)
   - [Windows Installer (WiX/MSI)](#windows-installer-wixmsi)
   - [Linux .deb Package (Debian/Ubuntu)](#linux-deb-package-debianubuntu)
-  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-43-44)
+  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-rhel-etc)
 - [Developer IDE and Build Steps](#developer-ide-and-build-steps)
 - [Code Structure](#code-structure)
 - [Architecture Overview](#architecture-overview)
@@ -266,7 +266,7 @@ lemonade --help
 lemond --help
 ```
 
-### Linux .rpm Package (Fedora 43 & 44)
+### Linux .rpm Package (Fedora, RHEL etc)
 
 **Building:**
 
@@ -395,9 +395,9 @@ The notarization process will:
 3. Install Dev Containers extension in Visual Studio Code by using
   control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
 4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
-5. in the extensions search type ```Dev Containers``` and install it.
+5. in the extensions search type `Dev Containers` and install it.
 6. Once completed with the prior steps you may run command
-```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+`Dev Containers: Open Workspace in Container` or `Dev Containers: Open Folder in Container` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
 7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
 
 ### Build & Compile Options
@@ -439,7 +439,7 @@ The notarization process will:
 > Cmake: Delete Cache and Reconfigure
 ```
 
-2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
+2. Custom configurations for cmake are in the root directory under `.vscode/settings.json` in which you may set custom args for launching the debug in the json key `cmake.debugConfig`
 
 > **Note**
 >
