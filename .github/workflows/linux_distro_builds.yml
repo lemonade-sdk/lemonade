@@ -100,7 +100,7 @@ jobs:
           elif command -v dnf >/dev/null 2>&1; then
             dnf install -y ccache
           fi
-          ccache -z || true
+          ccache -z
 
       - name: Run setup.sh to configure environment
         run: |
@@ -153,7 +153,7 @@ jobs:
           ./build/lemonade --version
 
           echo "=== ccache statistics ==="
-          ccache -s || true
+          ccache -s
 
           echo "${{ matrix.distro }} build successful!"
 
