@@ -5,8 +5,9 @@
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
-#include <string>
 #include <filesystem>
+#include <mutex>
+#include <string>
 
 namespace lemon {
 namespace backends {
@@ -65,6 +66,7 @@ private:
 
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
+    mutable std::mutex transcription_mutex_;
 };
 
 namespace whispercpp {

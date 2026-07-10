@@ -659,6 +659,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
 
 // ITranscriptionServer implementation
 json WhisperServer::audio_transcriptions(const json& request) {
+    std::lock_guard<std::mutex> lock(transcription_mutex_);
     try {
         if (!request.contains("file_data")) {
             throw std::runtime_error("Missing 'file_data' in request");
