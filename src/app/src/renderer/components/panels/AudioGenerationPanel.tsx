@@ -46,6 +46,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
 
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
+  const [vocalLanguage, setVocalLanguage] = useState('en');
   const [showLyricsHelp, setShowLyricsHelp] = useState(false);
   const [duration, setDuration] = useState(10);
   const [clips, setClips] = useState<GeneratedClip[]>([]);
@@ -75,7 +76,9 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
           model: selectedModel,
           prompt,
           duration,
-          ...(isMusic && trimmedLyrics ? { lyrics } : {}),
+          ...(isMusic && trimmedLyrics
+            ? { lyrics, vocal_language: vocalLanguage.trim() || 'en' }
+            : {}),
         }),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -123,14 +126,26 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
         <div className="chat-input-wrapper">
           {isMusic ? (
             <>
-              <input
-                type="text"
-                className="chat-input"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Style description — genre, mood, tempo, instruments, voice..."
-              />
+              <div className="style-input-row">
+                <input
+                  type="text"
+                  className="chat-input"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Style description — genre, mood, tempo, instruments, voice..."
+                />
+                <label className="vocal-language-label" title="Vocal language (BCP-47 code, e.g. en, fr, ja)">
+                  Lang
+                  <input
+                    type="text"
+                    value={vocalLanguage}
+                    onChange={(e) => setVocalLanguage(e.target.value)}
+                    maxLength={8}
+                    disabled={isBusy}
+                  />
+                </label>
+              </div>
               <div className="lyrics-input-row">
                 <textarea
                   className="chat-input lyrics-input"

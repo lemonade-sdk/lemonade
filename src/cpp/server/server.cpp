@@ -3370,6 +3370,15 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
+        for (const auto* field : {"lyrics", "vocal_language"}) {
+            if (request_json.contains(field) && !request_json[field].is_string()) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "'" + std::string(field) + "' must be a string"},
+                    {"type", "invalid_request_error"}}}}.dump(), "application/json");
+                return;
+            }
+        }
 
         std::string requested_model = request_json["model"];
         try {

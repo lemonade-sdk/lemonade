@@ -3627,6 +3627,49 @@ input::-webkit-calendar-picker-indicator {
     cursor: not-allowed;
 }
 
+.style-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.style-input-row .chat-input {
+    flex: 1;
+    width: auto;
+}
+
+.vocal-language-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.vocal-language-label input {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 4px 6px;
+    font-size: 13px;
+    width: 40px;
+}
+
+.vocal-language-label input:focus {
+    outline: none;
+    border-color: var(--border-5);
+}
+
+.vocal-language-label input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .lyrics-input-row {
     display: flex;
     align-items: flex-start;
