@@ -258,15 +258,9 @@
               <div class="flm-instruction-header">
                 <span class="flm-instruction-label">For Fedora 43</span>
               </div>
+              <p>Fedora 43 ships with the <code>amdxdna</code> kernel driver in-tree — no extra driver or COPR repository needed.</p>
+              <p>Lemonade will auto-install the portable FLM binary (including the NPU plugin) on first use.</p>
               <ol>
-                <li>Enable the AMD NPU Copr repository:
-                  <div class="flm-code-block"><code>sudo dnf copr enable abn/amd-npu</code></div>
-                  <span class="flm-inline-note">This Copr repository provides the <code>xrt-plugin-amdxdna</code> package. The <code>amdxdna</code> kernel driver is already included in Fedora 43's kernel — no DKMS build needed. See <a href="https://copr.fedorainfracloud.org/coprs/abn/amd-npu/" target="_blank" rel="noopener">abn/amd-npu</a> for details.</span>
-                </li>
-                <li>Install the FLM runtime and NPU plugin:
-                  <div class="flm-code-block"><code>sudo dnf install fastflowlm xrt-plugin-amdxdna</code></div>
-                  <span class="flm-inline-note">Lemonade will auto-install the portable FLM binary if not available.</span>
-                </li>
                 <li>Verify the NPU stack is detected:
                   <div class="flm-code-block"><code>ls /dev/accel/accel0 && cat /sys/kernel/debug/amd-xdna/pci*/version</code></div>
                   <span class="flm-inline-note">A successful NPU detection shows the device node and firmware version, for example:<br>
