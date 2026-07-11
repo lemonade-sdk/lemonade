@@ -85,6 +85,21 @@ jobs:
             "lemonade-server:test-${{ matrix.arch }}" \
             lemonade --help
 
+      - name: Verify tar.xz extraction
+        run: |
+          docker run --rm \
+            "lemonade-server:test-${{ matrix.arch }}" \
+            sh -ec '
+              workdir="$(mktemp -d)"
+              printf "ok" > "${workdir}/payload"
+              tar -cJf "${workdir}/test.tar.xz" \
+                -C "${workdir}" payload
+              mkdir "${workdir}/out"
+              tar -xf "${workdir}/test.tar.xz" \
+                -C "${workdir}/out"
+              test "$(cat "${workdir}/out/payload")" = "ok"
+            '
+
       - name: Start server
         run: |
           docker run --detach \
@@ -122,8 +137,13 @@ jobs:
       - name: Export ARM64 image
         if: >-
           matrix.arch == 'arm64' &&
-          github.event_name == 'workflow_dispatch' &&
-          inputs.upload_arm64_artifact
+          (
+            github.event_name == 'pull_request' ||
+            (
+              github.event_name == 'workflow_dispatch' &&
+              inputs.upload_arm64_artifact
+            )
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -135,8 +155,13 @@ jobs:
       - name: Upload ARM64 test image
         if: >-
           matrix.arch == 'arm64' &&
-          github.event_name == 'workflow_dispatch' &&
-          inputs.upload_arm64_artifact
+          (
+            github.event_name == 'pull_request' ||
+            (
+              github.event_name == 'workflow_dispatch' &&
+              inputs.upload_arm64_artifact
+            )
+          )
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-arm64-${{ github.sha }}
