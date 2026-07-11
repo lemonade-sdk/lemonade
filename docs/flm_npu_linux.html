@@ -167,7 +167,7 @@
               <option value="" selected disabled>Select your distro...</option>
               <option value="arch">Arch Linux</option>
               <option value="debian-13">Debian 13</option>
-              <option value="fedora-43">Fedora 43</option>
+              <option value="fedora-43">Fedora (43+)</option>
               <option value="other">Other</option>
               <option value="ubuntu-24">Ubuntu 24.04</option>
               <option value="ubuntu-25">Ubuntu 25.10</option>
@@ -258,17 +258,9 @@
               <div class="flm-instruction-header">
                 <span class="flm-instruction-label">For Fedora 43</span>
               </div>
-              <p>Fedora 43 ships with the <code>amdxdna</code> kernel driver in-tree — no extra driver or COPR repository needed.</p>
+              <p>Fedora 43+ ships with the <code>amdxdna</code> kernel driver in-tree — no extra driver or COPR repository needed.</p>
               <p>Lemonade will auto-install the portable FLM binary (including the NPU plugin) on first use.</p>
-              <ol>
-                <li>Verify the NPU stack is detected:
-                  <div class="flm-code-block"><code>ls /dev/accel/accel0 && cat /sys/kernel/debug/amd-xdna/pci*/version</code></div>
-                  <span class="flm-inline-note">A successful NPU detection shows the device node and firmware version, for example:<br>
-                  <code>/dev/accel/accel0</code><br>
-                  <code>Kernel: 7.1.3-200.fc44.x86_64<br>
-                  NPU FW Version: 1.1.2.65</code></span>
-                </li>
-              </ol>
+              <p class="flm-inline-note">Lemonade handles FLM setup automatically — no manual driver or kernel debugfs verification needed on modern Fedora kernels.</p>
             </div>
           </div>
 
