@@ -3991,6 +3991,8 @@ double get_windows_dxgi_vram_usage() {
     }
     ComPtr<IDXGIAdapter1> adapter;
     double highest_ratio = -1.0;
+    bool found_discrete = false;
+    std::vector<std::pair<DXGI_ADAPTER_DESC1, DXGI_QUERY_VIDEO_MEMORY_INFO>> candidates;
     for (UINT adapterIndex = 0; factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
@@ -4000,13 +4002,30 @@ double get_windows_dxgi_vram_usage() {
         ComPtr<IDXGIAdapter3> adapter3;
         if (SUCCEEDED(adapter.As(&adapter3))) {
             DXGI_QUERY_VIDEO_MEMORY_INFO memInfo;
-            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &memInfo))) {
+            DXGI_MEMORY_SEGMENT_GROUP segment = (desc.DedicatedVideoMemory > 0) ? 
+                DXGI_MEMORY_SEGMENT_GROUP_LOCAL : DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL;
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, segment, &memInfo))) {
+                candidates.push_back({desc, memInfo});
                 if (desc.DedicatedVideoMemory > 0) {
-                    double ratio = 1.0 - (static_cast<double>(memInfo.Budget) / static_cast<double>(desc.DedicatedVideoMemory));
-                    if (ratio > highest_ratio) {
-                        highest_ratio = ratio;
-                    }
+                    found_discrete = true;
                 }
+            }
+        }
+    }
+    for (const auto& pair : candidates) {
+        const auto& desc = pair.first;
+        const auto& memInfo = pair.second;
+        bool is_discrete = (desc.DedicatedVideoMemory > 0);
+        if (found_discrete && !is_discrete) {
+            continue;
+        }
+        double total_mem = is_discrete ? 
+            static_cast<double>(desc.DedicatedVideoMemory) : 
+            static_cast<double>(desc.SharedSystemMemory);
+        if (total_mem > 0) {
+            double ratio = 1.0 - (static_cast<double>(memInfo.Budget) / total_mem);
+            if (ratio > highest_ratio) {
+                highest_ratio = ratio;
             }
         }
     }
@@ -4015,12 +4034,6 @@ double get_windows_dxgi_vram_usage() {
 #endif
 
 double SystemInfo::get_global_vram_usage_pct() {
-#ifdef _WIN32
-    double dxgi_ratio = get_windows_dxgi_vram_usage();
-    if (dxgi_ratio >= 0.0) {
-        return dxgi_ratio;
-    }
-#endif
     // Report *global* GPU memory pressure (all processes, not just lemonade's),
     // so the eviction engine yields VRAM when other apps (ComfyUI, games, etc.)
     // consume it. Returns used/total in [0,1], or -1.0 if no source is available.
@@ -4093,6 +4106,13 @@ double SystemInfo::get_global_vram_usage_pct() {
         }
     } catch (...) {
         // fall through
+    }
+#endif
+
+#ifdef _WIN32
+    double dxgi_ratio = get_windows_dxgi_vram_usage();
+    if (dxgi_ratio >= 0.0) {
+        return dxgi_ratio;
     }
 #endif
 
