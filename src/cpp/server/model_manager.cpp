@@ -1284,6 +1284,11 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
 }
 
 void ModelManager::check_for_model_updates() {
+    if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
+        LOG(DEBUG, "ModelManager")
+            << "Offline mode enabled, skipping model update check" << std::endl;
+        return;
+    }
     // Collect (model_name, repo_id, cached_sha) for downloaded models,
     // deduplicated by repo_id so we only fetch HF API once per repo.
     // All model variants sharing a repo are marked together.
@@ -1410,6 +1415,58 @@ static void parse_components(ModelInfo& info, const json& model_json) {
             info.components.push_back(component.get<std::string>());
         }
     }
+}
+
+static std::string join_conflict_parts(const std::vector<std::string>& parts) {
+    std::string result;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0) result += "; ";
+        result += parts[i];
+    }
+    return result;
+}
+
+static std::string describe_registration_conflict(const ModelInfo& existing,
+                                                  const json& requested) {
+    std::vector<std::string> diffs;
+
+    auto add_diff = [&diffs](const std::string& field,
+                             const std::string& current_value,
+                             const std::string& requested_value) {
+        if (!requested_value.empty() && requested_value != current_value) {
+            diffs.push_back(field + " (existing='" + current_value +
+                            "', requested='" + requested_value + "')");
+        }
+    };
+
+    std::string requested_main;
+    if (requested.contains("checkpoints") && requested["checkpoints"].is_object()) {
+        requested_main = requested["checkpoints"].value("main", std::string());
+        for (const auto& [role, value] : requested["checkpoints"].items()) {
+            if (!value.is_string()) continue;
+            add_diff("checkpoint[" + role + "]",
+                     existing.checkpoint(role),
+                     value.get<std::string>());
+        }
+    } else {
+        requested_main = requested.value("checkpoint", std::string());
+        add_diff("checkpoint", existing.checkpoint(), requested_main);
+    }
+
+    const std::string requested_recipe = requested.value("recipe", std::string());
+    add_diff("recipe", existing.recipe, requested_recipe);
+
+    const std::string requested_mmproj = requested.value("mmproj", std::string());
+    if (!requested_mmproj.empty()) {
+        const std::string main_for_mmproj = requested_main.empty()
+            ? existing.checkpoint()
+            : requested_main;
+        add_diff("mmproj",
+                 existing.checkpoint("mmproj"),
+                 legacy_mmproj_to_checkpoint(main_for_mmproj, requested_mmproj));
+    }
+
+    return join_conflict_parts(diffs);
 }
 
 // Check if all components of a collection model are downloaded.
@@ -1633,13 +1690,27 @@ void ModelManager::build_cache() {
     // its own downloaded status. Precedence: server/user/extra models win, so we
     // emplace (don't overwrite). Failures are handled inside each backend's ops.
     {
+        const bool offline = [] {
+            auto* cfg = RuntimeConfig::global();
+            return cfg && cfg->offline();
+        }();
+
         backends::BackendOpsContext octx;
         octx.model_manager = this;
         octx.cloud_registry = cloud_registry_;
+
         for (const auto* desc : backends::all_descriptors()) {
             if (!desc->dynamic_models) {
                 continue;
             }
+
+            if (offline && desc->recipe == "cloud") {
+                LOG(DEBUG, "ModelManager")
+                    << "Offline mode enabled, skipping cloud model discovery"
+                    << std::endl;
+                continue;
+            }
+
             for (auto& m : backends::ops_for(desc->recipe)->discover_models(octx)) {
                 all_models.emplace(m.model_name, std::move(m));
             }
@@ -2887,10 +2958,12 @@ void ModelManager::download_model(const std::string& model_name,
             LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
         }
     } else {
-        // Model is registered - if checkpoint not provided, look up from registry
-        // otherwise overwrite registration. Collections have no checkpoint, so
-        // the "components in request" flag distinguishes a real overwrite from
-        // a cascade pull that should reuse the registered components.
+        // Model is registered - if checkpoint not provided, look up from registry.
+        // If checkpoint/recipe are provided, allow an idempotent re-pull of the
+        // same registration but never silently replace a user model with a
+        // different HF checkpoint. Silent replacement is what made a previously
+        // installed GGUF variant disappear when another variant reused the same
+        // generated user.* name.
         bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
                                         model_data.contains("components");
         if (is_collection_overwrite) {
@@ -2905,7 +2978,20 @@ void ModelManager::download_model(const std::string& model_name,
             actual_checkpoint = info.checkpoint();
             actual_recipe = info.recipe;
         } else {
-            model_registered = false;
+            auto info = get_model_info(model_name);
+            std::string conflict = describe_registration_conflict(info, model_data);
+            if (!conflict.empty()) {
+                throw std::runtime_error(
+                    "Model '" + model_name + "' is already registered with different "
+                    "model metadata: " + conflict + ". Choose a different model name "
+                    "for this Hugging Face checkpoint."
+                );
+            }
+            if (actual_recipe.empty()) {
+                actual_recipe = info.recipe;
+            } else {
+                model_registered = false;
+            }
         }
     }
 

@@ -1,0 +1,146 @@
+# .github/workflows/container-build-test.yml
+
+name: Container Build Tests
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - CMakeLists.txt
+      - CMakePresets.json
+      - cmake/**
+      - src/cpp/**
+      - src/web-app/**
+      - .github/workflows/build-and-push-container.yml
+      - .github/workflows/container-build-test.yml
+
+  workflow_dispatch:
+    inputs:
+      upload_arm64_artifact:
+        description: Upload the ARM64 image for external testing
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke-test:
+    name: Build and smoke test (${{ matrix.arch }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: lemonade-server:test-${{ matrix.arch }}
+          cache-from: type=gha,scope=container-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=container-${{ matrix.arch }}
+
+      - name: Verify image architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual_arch="$(
+            docker image inspect \
+              "lemonade-server:test-${{ matrix.arch }}" \
+              --format '{{.Architecture}}'
+          )"
+
+          if [[ "${actual_arch}" != "${{ matrix.arch }}" ]]; then
+            echo "Expected ${{ matrix.arch }}, got ${actual_arch}"
+            exit 1
+          fi
+
+      - name: Verify CLI starts
+        run: |
+          docker run --rm \
+            "lemonade-server:test-${{ matrix.arch }}" \
+            lemonade --help
+
+      - name: Start server
+        run: |
+          docker run --detach \
+            --name lemonade-smoke \
+            --publish 127.0.0.1:13305:13305 \
+            "lemonade-server:test-${{ matrix.arch }}"
+
+      - name: Check server health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent \
+              http://127.0.0.1:13305/live \
+              > /dev/null; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Server failed to become healthy"
+          docker logs lemonade-smoke
+          exit 1
+
+      - name: Show server logs
+        if: failure()
+        run: docker logs lemonade-smoke || true
+
+      - name: Stop server
+        if: always()
+        run: docker rm --force lemonade-smoke || true
+
+      - name: Export ARM64 image
+        if: >-
+          matrix.arch == 'arm64' &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.upload_arm64_artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker save "lemonade-server:test-arm64" \
+            | gzip -1 \
+            > lemonade-server-arm64.tar.gz
+
+      - name: Upload ARM64 test image
+        if: >-
+          matrix.arch == 'arm64' &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.upload_arm64_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-server-arm64-${{ github.sha }}
+          path: lemonade-server-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

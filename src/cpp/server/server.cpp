@@ -2,6 +2,7 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
@@ -186,6 +187,50 @@ void set_error_response(const json& response, httplib::Response& res,
                         int default_status_code = 500) {
     res.status = get_error_status_code(response, default_status_code);
     res.set_content(response.dump(), "application/json");
+}
+
+void attach_route_decision(json& response, httplib::Response& res,
+                           const std::optional<RouterDispatchResult>& dispatch) {
+    if (!dispatch.has_value()) {
+        return;
+    }
+    response["x_lemonade_route"] = route_decision_to_json(dispatch->decision);
+    attach_route_header(res, dispatch->decision);
+}
+
+template <typename StreamFn>
+void set_route_decision_sse_content_provider(
+    httplib::Response& res,
+    const std::optional<RouterDispatchResult>& dispatch,
+    std::string request_body,
+    StreamFn stream_fn) {
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    if (dispatch) {
+        attach_route_header(res, dispatch->decision);
+    }
+
+    json route_decision_json = dispatch
+        ? route_decision_to_json(dispatch->decision)
+        : json(nullptr);
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [request_body = std::move(request_body),
+         route_decision_json = std::move(route_decision_json),
+         stream_fn = std::move(stream_fn)](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) {
+                return false;
+            }
+
+            stream_with_route_decision(
+                sink,
+                route_decision_json,
+                [&request_body, &stream_fn](httplib::DataSink& route_sink) {
+                    stream_fn(request_body, route_sink);
+                });
+            return false;
+        });
 }
 
 int get_http_status_from_error(const std::string& error_code) {
@@ -445,9 +490,16 @@ void Server::setup_http_servers() {
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
 
-    std::function<httplib::TaskQueue *(void)> task_queue_factory = [this] {
-        LOG(DEBUG, "Server") << "Creating new thread pool with 8 threads" << std::endl;
-        return new httplib::ThreadPool(8);
+    // Size the pool from the host CPU count instead of a fixed 8. cpp-httplib
+    // dedicates one worker thread per in-flight request for the connection's
+    // lifetime, so a small fixed pool lets a handful of slow-loris or long-lived
+    // streaming connections starve the management endpoints (/health, /load).
+    unsigned int hw = std::thread::hardware_concurrency();
+    size_t thread_count = std::clamp<size_t>(static_cast<size_t>(hw) * 4, 32, 256);
+    std::function<httplib::TaskQueue *(void)> task_queue_factory = [thread_count] {
+        LOG(DEBUG, "Server") << "Creating new thread pool with " << thread_count
+                             << " threads" << std::endl;
+        return new httplib::ThreadPool(thread_count);
     };
 
     // The fronts own the accept loops (and therefore the task queues)
@@ -455,6 +507,22 @@ void Server::setup_http_servers() {
     http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
+
+    // Bound how long a single connection can tie up a worker thread. Without a
+    // read timeout a client that opens a socket and never finishes its request
+    // (slow loris) holds its worker indefinitely. Streaming responses drive
+    // their own write cadence, so keep the write timeout generous. The fronts
+    // need the same limits: they own accept and run the WebSocket upgrade peek
+    // before delegating, so a stalled client could otherwise hold a front
+    // worker there.
+    for (httplib::Server* srv : {static_cast<httplib::Server*>(http_front_.get()),
+                                 static_cast<httplib::Server*>(http_front_v6_.get()),
+                                 static_cast<httplib::Server*>(http_server_.get()),
+                                 static_cast<httplib::Server*>(http_server_v6_.get())}) {
+        srv->set_read_timeout(30, 0);
+        srv->set_write_timeout(300, 0);
+        srv->set_keep_alive_max_count(100);
+    }
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
@@ -1787,7 +1855,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
-        LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
+        LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
         return;
     }
 
@@ -1840,7 +1908,7 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             continue;
         }
         if (router_->is_model_loaded(component)) {
-            LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+            LOG(DEBUG, "Server") << "Component already loaded: " << component << std::endl;
             continue;
         }
         auto comp_info = model_manager_->get_model_info(component);
@@ -2189,8 +2257,9 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
     res.set_content(response.dump(), "application/json");
 }
 
-std::optional<std::string> Server::route_collection_request(const nlohmann::json& request_json,
-                                             const ModelInfo& collection_info) {
+std::optional<RouterDispatchResult> Server::route_collection_request(
+    const nlohmann::json& request_json,
+    const ModelInfo& collection_info) {
     // The policy is parsed once when the models cache is built (ModelManager),
     // so dispatch just reads it here. A missing policy means the collection
     // failed to parse at cache-build time; return nullopt so the caller leaves
@@ -2210,34 +2279,44 @@ std::optional<std::string> Server::route_collection_request(const nlohmann::json
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
-    Decision decision = engine.route(ctx, /*want_trace=*/false);
-    return decision.route_to;
+    const bool want_trace = request_json.value("route_trace", false);
+    Decision decision = engine.route(ctx, want_trace);
+    RouterDispatchResult result;
+    result.requested_model = collection_info.model_name;
+    result.selected_model = decision.route_to;
+    result.decision = std::move(decision);
+    return result;
 }
 
-void Server::apply_router_collection_dispatch(nlohmann::json& request_json) {
+std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
+    nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
-        return;
+        return std::nullopt;
     }
     const std::string requested_model = request_json["model"].get<std::string>();
     try {
         if (!model_manager_->model_exists(requested_model)) {
-            return;
+            return std::nullopt;
         }
         ModelInfo info = model_manager_->get_model_info(requested_model);
         if (!is_router_collection_recipe(info.recipe)) {
-            return;
+            return std::nullopt;
         }
-        std::optional<std::string> selected = route_collection_request(request_json, info);
-        if (!selected) {
-            return;
+        auto dispatch = route_collection_request(request_json, info);
+        if (!dispatch) {
+            return std::nullopt;
         }
+        dispatch->requested_model = requested_model;
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
-                            << *selected << "'" << std::endl;
-        request_json["model"] = *selected;
+                            << dispatch->selected_model << "'" << std::endl;
+        request_json["model"] = dispatch->selected_model;
+        request_json.erase("route_trace");
+        return dispatch;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
     }
+    return std::nullopt;
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
@@ -2259,6 +2338,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         bool request_modified = false;
+        std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
         // plain completion. Branch before auto-load/LLM-type checks: the collection
@@ -2276,12 +2356,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // The recipe is the trigger (no "auto", no /v1/route): run the
                         // routing engine and rewrite the model to the selected
                         // candidate, then fall through to normal completion handling.
-                        std::optional<std::string> selected =
-                            route_collection_request(request_json, info);
-                        if (selected) {
+                        route_dispatch = route_collection_request(request_json, info);
+                        if (route_dispatch) {
+                            route_dispatch->requested_model = requested_model;
                             LOG(INFO, "Server") << "Router collection '" << requested_model
-                                                << "' -> '" << *selected << "'" << std::endl;
-                            request_json["model"] = *selected;
+                                                << "' -> '" << route_dispatch->selected_model << "'" << std::endl;
+                            request_json["model"] = route_dispatch->selected_model;
+                            request_json.erase("route_trace");
                         }
                     }
                 }
@@ -2368,25 +2449,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        // For chunked responses, offset tracks bytes sent so far
-                        // We only want to stream once when offset is 0
-                        if (offset > 0) {
-                            return false; // We're done after the first call
-                        }
-
-                        router_->chat_completion_stream(request_body, sink);
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->chat_completion_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
@@ -2404,6 +2473,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             // Debug: Check if response contains tool_calls
             if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                 auto& first_choice = response["choices"][0];
@@ -2536,7 +2606,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -2601,24 +2672,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
-                // Set up SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Already sent everything
-                        }
-
-                        // Use unified Router path for streaming
-                        router_->completion_stream(request_body, sink);
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->completion_stream(body, sink);
+                    });
 
                 LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
                 return;
@@ -2649,6 +2709,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             res.set_content(response.dump(), "application/json");
 
             // Print and save telemetry for non-streaming completions
@@ -3308,6 +3369,15 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"message", "Missing 'prompt' field in request"},
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
+        }
+        for (const auto* field : {"lyrics", "vocal_language"}) {
+            if (request_json.contains(field) && !request_json[field].is_string()) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "'" + std::string(field) + "' must be a string"},
+                    {"type", "invalid_request_error"}}}}.dump(), "application/json");
+                return;
+            }
         }
 
         std::string requested_model = request_json["model"];
@@ -3982,7 +4052,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
-        apply_router_collection_dispatch(request_json);
+        std::optional<RouterDispatchResult> route_dispatch =
+            apply_router_collection_dispatch(request_json);
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -4015,25 +4086,13 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
-                // Set up streaming response with SSE headers
-                res.set_header("Cache-Control", "no-cache");
-                res.set_header("Connection", "keep-alive");
-                res.set_header("X-Accel-Buffering", "no");
-
-                // Use cpp-httplib's chunked content provider for SSE streaming
-                res.set_chunked_content_provider(
-                    "text/event-stream",
-                    [this, request_body](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0) {
-                            return false; // Only stream once
-                        }
-
-                        // Use unified Router path for streaming
-                        router_->responses_stream(request_body, sink);
-
-                        return false;
-                    }
-                );
+                set_route_decision_sse_content_provider(
+                    res,
+                    route_dispatch,
+                    request_body,
+                    [this](const std::string& body, httplib::DataSink& sink) {
+                        router_->responses_stream(body, sink);
+                    });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
@@ -4050,6 +4109,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 return;
             }
 
+            attach_route_decision(response, res, route_dispatch);
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
         }

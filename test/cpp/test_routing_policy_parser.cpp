@@ -153,6 +153,11 @@ static void test_validation_errors_are_clear() {
     check("malformed score band rejected",
           throws_with(bad_band, "min_score greater than max_score"));
 
+    json unsafe_rule_id = fixture("l1_keywords.json");
+    unsafe_rule_id["routing"]["rules"][0]["id"] = "bad rule\r\nx-header";
+    check("unsafe rule id rejected",
+          throws_with(unsafe_rule_id, "must match [A-Za-z0-9._-]"));
+
     json router_sugar = fixture("l0a_llm_router.json");
     check("routing.router is recognized but deferred to #2405",
           throws_with(router_sugar, "routing.router desugaring"));

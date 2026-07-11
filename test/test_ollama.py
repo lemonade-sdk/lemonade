@@ -49,6 +49,7 @@ class OllamaTests(ServerTestBase):
     additional_server_args = ["--sdcpp", "cpu"]
 
     _model_pulled = False
+    _tool_calling_model_pulled = False
 
     @classmethod
     def setUpClass(cls):
@@ -88,6 +89,17 @@ class OllamaTests(ServerTestBase):
             )
             self.assertEqual(response.status_code, 200)
             OllamaTests._model_pulled = True
+
+    def ensure_tool_calling_model_pulled(self):
+        """Ensure the tool-calling model is downloaded."""
+        if not OllamaTests._tool_calling_model_pulled:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+            OllamaTests._tool_calling_model_pulled = True
 
     # ========================================================================
     # Basic endpoint tests (no model required)
@@ -349,12 +361,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn(response.status_code, (200, 404), response.text)
 
         try:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            self.ensure_tool_calling_model_pulled()
 
             response = requests.post(
                 f"{self.base_url}/load",
@@ -779,12 +786,7 @@ class OllamaTests(ServerTestBase):
             # Use a model with native tool-calling support in its chat template;
             # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
             # autoparser ignores tools even with tool_choice required.
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            self.ensure_tool_calling_model_pulled()
 
             response = requests.post(
                 f"{self.base_url}/load",

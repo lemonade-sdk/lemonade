@@ -703,12 +703,25 @@ This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover spee
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model` | Yes | The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`). |
-| `prompt` | Yes | Text description of the music or sound effect to generate. |
+| `prompt` | Yes | Text description of the music or sound effect to generate. For music, this is the style description: genre, mood, tempo, instruments, and voice. |
+| `lyrics` | No | Lyrics to sing (ACE-Step only). When present and not empty, the track is generated with vocals singing these lyrics. Omitting the field, an empty string, or the sentinel `[Instrumental]` (any case) produces an instrumental track. See [Lyrics](#lyrics) below for the expected format. |
+| `vocal_language` | No | BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Default: `en`. |
 | `duration` | No | Length of the clip in seconds. Defaults to the backend's native default. |
 | `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. |
 | `cfg` | No | Classifier-free guidance strength (ThinkSound only). |
 | `seed` | No | Random seed for reproducibility. |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `wav`); other values are rejected with `400 Bad Request`. Default: `wav`. |
+
+### Lyrics
+
+ACE-Step vocals are a two-stage pipeline inside the backend: a language model first turns the style description and lyrics into audio codes, then the diffusion synthesizer renders those codes into audio. The instrumental path skips the language-model stage entirely, which also means lyrics embedded in the `prompt` field are treated as style text — they are never sung. Vocal generations take noticeably longer than instrumental ones of the same duration because of the extra language-model pass.
+
+Format the `lyrics` value the way the ACE-Step authors recommend:
+
+- Mark each song section with a structure tag on its own line: `[verse]`, `[chorus]`, `[bridge]`, `[intro]`, `[outro]`.
+- Write one sung phrase per line and separate sections with a blank line.
+- Describe the voice ("gentle female vocals", "raspy male baritone") in `prompt`, not in the lyrics.
+- Lyrics may be in any supported language; set `vocal_language` to match.
 
 ### Response
 
@@ -726,6 +739,20 @@ curl -X POST http://localhost:13305/v1/audio/generations \
         "seed": 42
       }' \
   --output clip.wav
+```
+
+### Example request (music with vocals)
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ACE-Step-Music",
+        "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+        "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+        "duration": 60
+      }' \
+  --output song.wav
 ```
 
 ## `POST /v1/3d/generations`
