@@ -5,7 +5,13 @@ on:
     - cron: '0 2 * * *'  # Nightly at 2 AM UTC
   workflow_dispatch:
 
+# Only run in the upstream repo where GITHUB_TOKEN has write access to
+# ghcr.io/lemonade-sdk/. Forks don't have permission to push container
+# images to the upstream org's package namespace.
 jobs:
+  build-container:
+    # Skip in forks — GITHUB_TOKEN in a fork can't write to ghcr.io/lemonade-sdk/
+    if: ${{ github.repository == 'lemonade-sdk/lemonade' }}
   build-container:
     runs-on: ubuntu-latest
     strategy:
