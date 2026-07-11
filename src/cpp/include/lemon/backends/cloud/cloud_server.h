@@ -83,7 +83,8 @@ public:
     /// can continue with other providers.
     static std::vector<ModelInfo> discover_models(const std::string& provider,
                                                    const std::string& api_key,
-                                                   const std::string& base_url);
+                                                   const std::string& base_url,
+                                                   bool allow_insecure_http = false);
 
 private:
     struct ResolvedCreds {
