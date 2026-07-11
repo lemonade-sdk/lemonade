@@ -162,22 +162,45 @@ bool Router::is_watchdog_reset_response(const json& response) const {
         error["details"]["code"] == "backend_watchdog_reset") {
         return true;
     }
+
+    if (error.contains("message") && error["message"].is_string() &&
+        error.contains("type") && error["type"].is_string()) {
+        std::string message = error["message"].get<std::string>();
+        std::string type = error["type"].get<std::string>();
+        if ((message.find("Compute error.") != std::string::npos ||
+             message.find("GPU Hang") != std::string::npos) &&
+            type.find("server_error") != std::string::npos) {
+            return true;
+        }
+    }
+
     return false;
 }
 
-bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options) {
+bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options, uint64_t failed_instance_id) {
     try {
         LOG(WARNING, "Router") << "Reloading model after backend watchdog reset: "
                                 << requested_model << std::endl;
-        auto info = model_manager_->get_model_info(requested_model);
+        const std::string canonical_model_name = resolve_model_name(requested_model);
+        auto info = model_manager_->get_model_info(canonical_model_name);
         bool was_pinned = false;
         ResidencyClass was_residency_class = ResidencyClass::Standard;
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
-            auto* existing = find_server_by_model_name(requested_model);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            while (is_loading_) {
+                load_cv_.wait(lock);
+            }
+            auto* existing = find_server_by_model_name(canonical_model_name);
             if (existing) {
+                if (failed_instance_id != 0 && existing->get_instance_id() != failed_instance_id) {
+                    LOG(INFO, "Router") << "Model '" << requested_model
+                                        << "' already reloaded by another thread. Skipping reload."
+                                        << std::endl;
+                    return true;
+                }
                 was_pinned = existing->is_pinned();
                 was_residency_class = existing->get_residency_class();
+                evict_server(existing);
             }
         }
         load_model(requested_model, info, options, true, false, was_pinned,
@@ -1173,7 +1196,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
                 continue;
             }
             return ErrorResponse::create(
@@ -1187,6 +1210,11 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
         try {
             auto response = inference_func(server);
+
+            if (!server->was_watchdog_triggered() && is_watchdog_reset_response(response)) {
+                server->request_backend_reset_from_watchdog("GPU Hang / compute error detected");
+            }
+
             const bool watchdog_reset =
                 server->was_watchdog_triggered() || is_watchdog_reset_response(response);
 
@@ -1201,7 +1229,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                if (reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+                if (reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
                     continue;
                 }
             }
@@ -1282,7 +1310,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
                 continue;
             }
 
@@ -1317,7 +1345,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                reload_model_after_watchdog_reset(restart_model_name, restart_options);
+                reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id());
             }
             return;
         } catch (const BackendStreamRetryableReset& e) {
@@ -1328,7 +1356,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
                 continue;
             }
 

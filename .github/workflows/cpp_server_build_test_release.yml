@@ -2164,6 +2164,7 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+          .venv/bin/python test/test_gpu_hang_retry.py --cli-binary lemonade
 
       - name: Test jobs
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
