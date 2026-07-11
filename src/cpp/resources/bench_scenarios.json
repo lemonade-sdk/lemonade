@@ -166,6 +166,30 @@
       ],
       "warmup_runs": 0,
       "measurement_runs": 3
+    },
+    {
+      "name": "image-sd-turbo-quick",
+      "category": "imagegen",
+      "prompt": "A cartoon penguin wearing sunglasses, surfing on a lemon.",
+      "size": "256x256",
+      "steps": 4,
+      "cfg_scale": 1.0,
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 3
+    },
+    {
+      "name": "image-photoreal-outdoor",
+      "category": "imagegen",
+      "prompt": "Photorealistic sunrise over a mountain lake with light mist and pine trees, loon swimming in the foreground. Natural colors.",
+      "size": "512x512",
+      "steps": 20,
+      "cfg_scale": 2.5,
+      "seed": 123,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 3
     }
   ]
 }

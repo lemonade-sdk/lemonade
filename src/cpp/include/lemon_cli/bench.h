@@ -26,6 +26,7 @@ struct BenchScenario {
     std::string category;
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
     json input;                  // Input for non-chat scenarios (e.g., textgen, embedding)
+    json prompt;                 // Input for image generation
     int max_tokens;
     int warmup_runs = 0;
     int measurement_runs = 3;
@@ -146,6 +147,14 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
 
 // Run a single benchmark measurement with embedding
 BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response);
+
+
+// Run a single benchmark measurement of image generation
+BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,

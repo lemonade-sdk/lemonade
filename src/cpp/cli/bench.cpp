@@ -138,7 +138,8 @@ int BenchScenarioResult::output_tokens() const {
 
 std::string BenchBackendResult::label() const {
     std::string s = recipe + "/" + backend;
-    if (ctx_size > 0) s += " (ctx=" + std::to_string(ctx_size) + ")";
+    if (recipe != "sd-cpp")
+        if (ctx_size > 0) s += " (ctx=" + std::to_string(ctx_size) + ")";
     if (!backend_args.empty()) s += " args=[" + backend_args + "]";
     return s;
 }
@@ -219,6 +220,9 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         if (scenario.category == "embed"){
             if (scenario.category == "embed" && item.contains("input"))
                 scenario.input = item["input"].get<json>();
+        } else if (scenario.category == "imagegen"){
+            if (scenario.category == "imagegen" && item.contains("prompt"))
+                scenario.prompt = item["prompt"].get<json>();
         } else {
             if (item.contains("messages") && item["messages"].is_array()) {
                 scenario.messages = item["messages"].get<std::vector<json>>();
@@ -533,6 +537,8 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 bool capture_response) {
     if (scenario.category == "embed")
         return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response);
+    if (scenario.category == "imagegen")
+        return run_single_bench_imagegen(client, model, scenario, memory_tracking, capture_response);
     // default mode is text generation
     return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response);
 }
@@ -686,6 +692,65 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
 
 
     // Success flag is already true by default if we reach here
+    result.success = true;
+    return result;
+}
+
+BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response) {
+    BenchRunResult result;
+    result.success = false;
+
+    if (memory_tracking) {
+        double _vram, _mem;
+        query_system_stats(client, _vram, _mem);
+    }
+
+    json request_body;
+    request_body["model"] = model;
+    request_body["prompt"] = scenario.prompt;
+
+    std::string body = request_body.dump();
+
+    // Timing setup
+    auto start = steady_clock::now();
+
+    try {
+        std::string response = client.make_request(
+            "/api/v1/images/generations", "POST", body, "application/json",
+            FIVE_MINUTES_MS, FIVE_MINUTES_MS);
+
+        auto resp_json = json::parse(response);
+
+        if (capture_response) {
+            if (resp_json.contains("data") && !resp_json["data"].empty()) {
+                result.response_text = resp_json["data"].dump();
+            } else {
+                result.response_text = "null";
+            }
+        }
+
+        if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
+            extract_timings_into_result(resp_json["timings"], result);
+        }
+
+        // Populate timing fields
+        auto end = steady_clock::now();
+        result.ttft_ms = duration<double, std::milli>(end - start).count();
+
+    } catch (const std::exception& e) {
+        std::cerr << "    Embedding benchmark run failed: " << e.what() << std::endl;
+        return result;  // success stays false
+    }
+
+    // Query memory after
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
+
+
     result.success = true;
     return result;
 }
@@ -1257,11 +1322,13 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     std::vector<std::string> unique_models;
     std::unordered_set<std::string> seen_models;
     for (const auto& model : config.models) {
+        std::cout << "Checking model: " << model << std::endl;
         if (seen_models.find(model) == seen_models.end()) {
             unique_models.push_back(model);
             seen_models.insert(model);
         }
     }
+    std::cout << "Total models: " << config.models.size() << " (" << unique_models.size() << " unique)" << std::endl;
 
     if (unique_models.size() < config.models.size()) {
         std::cout << "Note: Removed " << (config.models.size() - unique_models.size())
@@ -1378,6 +1445,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     // 2. Execute benchmark workflow for each model
     for (const auto& model : unique_models) {
+    std::cout << "Checking model: " << model << " (" << unique_models.size() << " total)" << std::endl;
         const auto model_it = model_info_by_name.find(model);
         if (model_it == model_info_by_name.end()) {
             std::cerr << "Error: Missing preflight model info for '" << model << "'." << std::endl;
@@ -1634,7 +1702,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 CLI::App* register_bench_command(CLI::App& parent,
                                  std::string& output_file,
                                  BenchCliOptions& opts) {
-    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark a model's chat completion performance")->group("Model management");
+    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark model speed for different model types")->group("Model management");
     cmd->add_option("models", opts.models, "One or more model names to benchmark")
         ->required()
         ->type_name("MODEL")
