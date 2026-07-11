@@ -8,6 +8,7 @@ import {
   RouterRule,
   buildRouterCollectionPullRequest,
   getRouterCandidateOptions,
+  makeCollectionId,
   routingToRouterCollectionDraft,
 } from '../utils/customCollections';
 import { isCollectionRecipe } from '../utils/recipeNames';
@@ -37,6 +38,24 @@ const emptyDraft = (): RouterCollectionDraft => ({
   classifiers: [],
   rules: [],
 });
+
+// Rewrite a classifier id in all condition leaves
+function rewriteClassifierId(
+  node: RouterRule['conditionTree'],
+  oldId: string,
+  newId: string,
+): RouterRule['conditionTree'] {
+  if (!node) return null;
+  if (isLeaf(node)) {
+    return node.signalType === 'classifier' && node.classifierId === oldId
+      ? { ...node, classifierId: newId }
+      : node;
+  }
+  if (isOperatorNode(node)) {
+    return { ...node, conditions: node.conditions.map(c => rewriteClassifierId(c, oldId, newId) ?? c) };
+  }
+  return node;
+}
 
 // Remove all references to a classifier id from a conditionTree
 function stripClassifierFromTree(
@@ -73,19 +92,28 @@ const QUICK_CONDITIONS: QCDef[] = [
 
 interface QuickChip { conditionType: QuickConditionType; value: string; not: boolean }
 
+const QUICK_CONDITION_TYPES = new Set<string>(QUICK_CONDITIONS.map(c => c.type));
+
+function leafToChip(signalType: string, signalValue: unknown, not: boolean): QuickChip | null {
+  if (!QUICK_CONDITION_TYPES.has(signalType)) return null;
+  return { conditionType: signalType as QuickConditionType, value: signalValue !== undefined ? String(signalValue) : '', not };
+}
+
 function getRowChips(rule: RouterRule): { op: 'AND' | 'OR'; chips: QuickChip[] } {
   const tree = rule.conditionTree;
-  if (!tree) return { op: 'AND', chips: [{ conditionType: 'min_chars', value: '500', not: false }] };
+  if (!tree) return { op: 'AND', chips: [] };
   if ('signalType' in tree) {
-    return { op: 'AND', chips: [{ conditionType: tree.signalType as QuickConditionType, value: tree.signalValue !== undefined ? String(tree.signalValue) : '', not: tree.not ?? false }] };
+    const chip = leafToChip(tree.signalType, tree.signalValue, tree.not ?? false);
+    return { op: 'AND', chips: chip ? [chip] : [] };
   }
   if ('operator' in tree && (tree.operator === 'AND' || tree.operator === 'OR')) {
-    const chips: QuickChip[] = tree.conditions
-      .filter((c): c is typeof c & { signalType: string } => 'signalType' in c)
-      .map(c => ({ conditionType: c.signalType as QuickConditionType, value: c.signalValue !== undefined ? String(c.signalValue) : '', not: c.not ?? false }));
-    return { op: tree.operator, chips: chips.length ? chips : [{ conditionType: 'min_chars', value: '500', not: false }] };
+    const chips = tree.conditions
+      .filter(isLeaf)
+      .map(c => leafToChip(c.signalType, c.signalValue, c.not ?? false))
+      .filter((c): c is QuickChip => c !== null);
+    return { op: tree.operator, chips };
   }
-  return { op: 'AND', chips: [{ conditionType: 'min_chars', value: '500', not: false }] };
+  return { op: 'AND', chips: [] };
 }
 
 function chipsToRouterRule(rule: RouterRule, op: 'AND' | 'OR', chips: QuickChip[]): RouterRule {
@@ -125,7 +153,6 @@ type PresetKey = 'cost_saver' | 'quality' | 'speed' | 'privacy';
 interface PresetDef { key: PresetKey; emoji: string; label: string }
 const PRESETS: PresetDef[] = [
   { key: 'cost_saver', emoji: '💰', label: 'Cost Saver' },
-  { key: 'quality',    emoji: '✨', label: 'Quality First' },
   { key: 'speed',      emoji: '⚡', label: 'Speed' },
   { key: 'privacy',    emoji: '🔒', label: 'Privacy' },
 ];
@@ -144,15 +171,15 @@ function buildPresetRules(key: PresetKey, _opts: CandidateOptionWithInfo[], seq:
   if (key === 'cost_saver') {
     return { rules: [
       { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '500') },
-      { id: nextId(), routeTo: '', conditionTree: leaf('has_images') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_images', '') },
       { id: nextId(), routeTo: '', conditionTree: leaf('keywords_any', 'translate, summarize, list') },
     ]};
   }
   if (key === 'quality') {
     return { rules: [
-      { id: nextId(), routeTo: '', conditionTree: leaf('has_images') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_images', '') },
       { id: nextId(), routeTo: '', conditionTree: leaf('min_chars', '200') },
-      { id: nextId(), routeTo: '', conditionTree: leaf('has_tools') },
+      { id: nextId(), routeTo: '', conditionTree: leaf('has_tools', '') },
     ]};
   }
   if (key === 'speed') {
@@ -199,7 +226,6 @@ const QuickRuleRow: React.FC<QuickRuleRowProps> = ({
     onChange(chipsToRouterRule(rule, op, next));
   };
   const addChip = (type: QuickConditionType) => {
-    const def = QUICK_CONDITIONS.find(d => d.type === type)!;
     const value = type === 'min_chars' ? '500' : type === 'max_chars' ? '200' : '';
     const next = [...chips, { conditionType: type, value, not: false }];
     onChange(chipsToRouterRule(rule, op, next));
@@ -295,12 +321,13 @@ interface QuickRulesEditorProps {
   displayName: (id: string) => string;
   onChangeRules: (rules: RouterRule[]) => void;
   onChangeDraft: (p: { rules: RouterRule[]; defaultModel?: string }) => void;
+  onExpandToAdvanced: () => void;
   ruleSeqRef: React.MutableRefObject<number>;
 }
 
 const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
   rules, candidates, candidateOptions, displayName,
-  onChangeRules, onChangeDraft, ruleSeqRef,
+  onChangeRules, onChangeDraft, onExpandToAdvanced, ruleSeqRef,
 }) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -366,6 +393,11 @@ const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
 
       <div className="quick-rules-footer">
         <button type="button" className="settings-reset-button" onClick={addRow}>+ Add rule</button>
+        {rules.length > 0 && (
+          <button type="button" className="settings-reset-button" onClick={onExpandToAdvanced} title="Open these rules in the Advanced canvas">
+            Expand in Advanced
+          </button>
+        )}
       </div>
     </div>
   );
@@ -471,23 +503,32 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   };
 
   const patchClassifier = (id: string, p: Partial<RouterClassifier>) => {
-    setDraft(prev => ({
-      ...prev,
-      classifiers: (prev.classifiers ?? []).map(c => c.id === id ? { ...c, ...p } : c),
-    }));
+    setDraft(prev => {
+      const classifiers = (prev.classifiers ?? []).map(c => c.id === id ? { ...c, ...p } : c);
+      // If the ID changed, rewrite all classifier references in rule trees
+      const newId = p.id;
+      const rules = newId && newId !== id
+        ? (prev.rules ?? []).map(r => ({
+            ...r,
+            conditionTree: rewriteClassifierId(r.conditionTree, id, newId),
+          }))
+        : prev.rules;
+      return { ...prev, classifiers, rules };
+    });
     setError(null);
   };
 
-  const addRule = () => {
+  const addRule = (): string => {
     if (draft.candidates.length === 0) {
       setError('Select at least one candidate model before adding rules.');
-      return;
+      return '';
     }
     const id = nextRuleId();
     setDraft(prev => ({
       ...prev,
       rules: [...(prev.rules ?? []), { id, routeTo: prev.candidates[0] ?? '', conditionTree: null }],
     }));
+    return id;
   };
 
   const removeRule = (id: string) => {
@@ -601,6 +642,11 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             value={draft.name}
             onChange={e => patch({ name: e.target.value.replace(/^user\./, '') })}
             placeholder="MyHybridRouter" />
+          {draft.name.trim() && (
+            <span className="settings-description" style={{ display: 'block', marginTop: 3, fontFamily: 'monospace', fontSize: '0.7rem' }}>
+              ID: {makeCollectionId(draft.name)}
+            </span>
+          )}
         </div>
 
         <div className="form-section">
@@ -650,7 +696,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <span><strong>Quick Rules</strong><span className="settings-description" style={{ display: 'block' }}>Simple condition-based routing - no drag-and-drop needed.</span></span>
             </label>
             <label className="router-mode-option">
-              <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules' })} />
+              <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules', rules: [], classifiers: [] })} />
               <span><strong>Advanced Rules</strong><span className="settings-description" style={{ display: 'block' }}>Visual boolean expression builder with gates and classifiers.</span></span>
             </label>
           </div>
@@ -698,6 +744,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               displayName={displayName}
               onChangeRules={rules => patch({ rules })}
               onChangeDraft={p => patch({ rules: p.rules, ...(p.defaultModel !== undefined ? { defaultModel: p.defaultModel } : {}) })}
+              onExpandToAdvanced={() => patch({ routingMode: 'rules' })}
               ruleSeqRef={ruleSeqRef}
             />
           </div>

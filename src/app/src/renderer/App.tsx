@@ -321,12 +321,12 @@ const AppContent: React.FC = () => {
       document.body.style.userSelect = '';
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [
     chatWidth,
@@ -464,7 +464,12 @@ const AppContent: React.FC = () => {
       const request = buildRouterCollectionPullRequest(collection);
       await downloadModelExportFile(request.model_name);
     } catch (exportError) {
-      showError(exportError instanceof Error ? exportError.message : 'Failed to export Hybrid Router.');
+      const msg = exportError instanceof Error ? exportError.message : '';
+      if (msg.includes('404') || msg.includes('not found')) {
+        showError('Save the router first before exporting — it hasn\'t been registered with the server yet.');
+      } else {
+        showError(msg || 'Failed to export Hybrid Router.');
+      }
     }
   };
 
