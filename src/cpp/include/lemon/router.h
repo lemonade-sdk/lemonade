@@ -206,7 +206,7 @@ private:
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
     WrappedServer* get_most_recent_server() const;
     void prune_unavailable_servers_locked();
-    bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
+    bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options, uint64_t failed_instance_id = 0);
     bool is_watchdog_reset_response(const json& response) const;
     int count_servers_in_pool(ModelType type, ResidencyClass residency_class,
                               const std::string& model_name) const;

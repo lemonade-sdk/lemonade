@@ -81,7 +81,10 @@ public:
           active_request_count_(0),
           maintenance_in_progress_(false),
           load_duration_ms_(0),
-          last_backend_activity_(std::chrono::steady_clock::now()) {}
+          last_backend_activity_(std::chrono::steady_clock::now()),
+          instance_id_(next_instance_id()) {}
+
+    uint64_t get_instance_id() const { return instance_id_; }
 
     virtual ~WrappedServer();
 
@@ -312,6 +315,9 @@ public:
 
     // True once the backend watchdog force-reset the child process.
     bool was_watchdog_triggered() const { return watchdog_triggered_.load(std::memory_order_acquire); }
+
+    // Request backend reset from watchdog (stops process immediately).
+    void request_backend_reset_from_watchdog(const std::string& reason);
 
     // Human-readable state for /health and debugging endpoints.
     virtual std::string get_backend_health_state() const;
@@ -545,11 +551,16 @@ protected:
     std::atomic<bool>* load_cancel_ = nullptr;
 
 private:
+    static uint64_t next_instance_id() {
+        static std::atomic<uint64_t> counter{0};
+        return ++counter;
+    }
+    uint64_t instance_id_;
+
     void begin_backend_request(BackendRequestKind kind);
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
-    void request_backend_reset_from_watchdog(const std::string& reason);
 
     mutable std::mutex watchdog_mutex_;
     std::condition_variable watchdog_cv_;
