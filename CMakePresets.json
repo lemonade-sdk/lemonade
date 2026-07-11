@@ -5,7 +5,15 @@
   },
   "configurePresets": [
     {
+      "name": "lemonade-base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_PROJECT_TOP_LEVEL_INCLUDES": "${sourceDir}/cmake/LemonadeNexus.cmake"
+      }
+    },
+    {
       "name": "default",
+      "inherits": "lemonade-base",
       "displayName": "Default (Ninja)",
       "description": "Build with Ninja generator",
       "generator": "Ninja",
@@ -16,6 +24,7 @@
     },
     {
       "name": "windows",
+      "inherits": "lemonade-base",
       "displayName": "Windows (Visual Studio 2022)",
       "description": "Build with Visual Studio 2022 generator on Windows",
       "generator": "Visual Studio 17 2022",
@@ -24,6 +33,7 @@
     },
     {
       "name": "vs18",
+      "inherits": "lemonade-base",
       "displayName": "Windows (Visual Studio 2026)",
       "description": "Build with Visual Studio 2026 generator on Windows",
       "generator": "Visual Studio 18 2026",
@@ -32,6 +42,7 @@
     },
     {
       "name": "debug",
+      "inherits": "lemonade-base",
       "displayName": "Debug (Ninja)",
       "description": "Build with Ninja generator in Debug mode",
       "generator": "Ninja",
@@ -42,6 +53,7 @@
     },
     {
       "name": "release",
+      "inherits": "lemonade-base",
       "displayName": "Release (Ninja)",
       "description": "Build with Ninja generator in Release mode",
       "generator": "Ninja",
@@ -50,6 +62,36 @@
         "CMAKE_BUILD_TYPE": "Release"
       },
       "hidden": true
+    },
+    {
+      "name": "nexus",
+      "inherits": "default",
+      "displayName": "Default with Nexus sidecar",
+      "description": "Build Lemonade and the bundled Nexus sidecar with Ninja",
+      "binaryDir": "${sourceDir}/build-nexus",
+      "cacheVariables": {
+        "LEMONADE_BUNDLE_NEXUS": "ON"
+      }
+    },
+    {
+      "name": "nexus-windows",
+      "inherits": "windows",
+      "displayName": "Windows with Nexus sidecar",
+      "description": "Build Lemonade and the bundled Nexus sidecar with Visual Studio 2022",
+      "binaryDir": "${sourceDir}/build-nexus-windows",
+      "cacheVariables": {
+        "LEMONADE_BUNDLE_NEXUS": "ON"
+      }
+    },
+    {
+      "name": "nexus-vs18",
+      "inherits": "vs18",
+      "displayName": "Windows VS 2026 with Nexus sidecar",
+      "description": "Build Lemonade and the bundled Nexus sidecar with Visual Studio 2026",
+      "binaryDir": "${sourceDir}/build-nexus-vs18",
+      "cacheVariables": {
+        "LEMONADE_BUNDLE_NEXUS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -74,6 +116,20 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "nexus",
+      "configurePreset": "nexus"
+    },
+    {
+      "name": "nexus-windows",
+      "configurePreset": "nexus-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "nexus-vs18",
+      "configurePreset": "nexus-vs18",
+      "configuration": "Release"
     }
   ]
 }
