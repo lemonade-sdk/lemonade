@@ -127,9 +127,9 @@
     "cuda": "v0.1.5"
   },
   "openmoss": {
-    "vulkan": "v0.1.2",
-    "rocm-stable": "v0.1.2",
-    "cuda": "v0.1.2"
+    "vulkan": "v0.1.3",
+    "rocm-stable": "v0.1.3",
+    "cuda": "v0.1.3"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }
