@@ -163,11 +163,37 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
 
     json messages = json::array();
 
+    // Collect system prompt from top-level system field + inline system-role messages.
+    // Claude Code sends system instructions as role:system messages inside the messages
+    // array rather than using the top-level system field. Both sources are concatenated.
+    std::vector<std::string> system_parts;
     if (anthropic_request.contains("system")) {
         std::string system_text = join_text_blocks(anthropic_request["system"], warnings, "system");
         if (!system_text.empty()) {
-            messages.push_back({{"role", "system"}, {"content", system_text}});
+            system_parts.push_back(system_text);
         }
+    }
+
+    if (anthropic_request.contains("messages") && anthropic_request["messages"].is_array()) {
+        // First pass: collect inline system role messages
+        for (const auto& msg : anthropic_request["messages"]) {
+            if (msg.is_object() && msg.value("role", "") == "system") {
+                std::string sys_text;
+                if (msg.contains("content") && msg["content"].is_string()) {
+                    sys_text = msg["content"].get<std::string>();
+                } else if (msg.contains("content") && msg["content"].is_array()) {
+                    sys_text = join_text_blocks(msg["content"], warnings, "system (inline)");
+                }
+                if (!sys_text.empty()) {
+                    system_parts.push_back(sys_text);
+                }
+            }
+        }
+    }
+
+    // Emit the combined system message if we collected anything
+    if (!system_parts.empty()) {
+        messages.push_back({{"role", "system"}, {"content", join_strings(system_parts, "\n\n")}});
     }
 
     if (anthropic_request.contains("messages") && anthropic_request["messages"].is_array()) {
@@ -184,7 +210,8 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
             }
 
             if (role == "system") {
-                add_warning(warnings, "Ignored 'system' role in messages; use top-level system field");
+                // System role messages were already collected in the first pass above.
+                // Skip them here to avoid duplicate system messages in the output.
                 continue;
             }
 
@@ -426,7 +453,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
 
     if (anthropic_request.contains("thinking") && anthropic_request["thinking"].is_object()) {
         std::string thinking_type = anthropic_request["thinking"].value("type", "");
-        if (thinking_type == "enabled") {
+        if (thinking_type == "enabled" || thinking_type == "adaptive") {
             openai_req["enable_thinking"] = true;
         } else if (thinking_type == "disabled") {
             openai_req["enable_thinking"] = false;
