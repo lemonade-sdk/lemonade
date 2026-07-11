@@ -64,8 +64,11 @@ permissions:
   # against the underlying pull_request resource.
   pull-requests: write
 
+# Only run in the upstream repo where secrets (ANTHROPIC_API_KEY) are set.
+# Forks don't have access to org-level secrets needed for LLM classification.
 jobs:
   label:
+    if: ${{ github.repository == 'lemonade-sdk/lemonade' }}
     runs-on: ubuntu-latest
     # Skip workflow-bot comments to avoid self-triggering loops.
     if: github.event_name != 'issue_comment' || github.event.comment.user.type != 'Bot'
