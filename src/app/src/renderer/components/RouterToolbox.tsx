@@ -6,6 +6,7 @@ import {
   SIGNAL_COLORS,
   SIGNAL_LABELS,
   type ConditionSignalType,
+  type DragData,
   type RuleOperator,
 } from '../utils/routerTree';
 import { RouterClassifier } from '../utils/customCollections';
@@ -55,9 +56,10 @@ interface RouterToolboxProps {
   previewJson?: string | null;
   onPreviewJson?: () => void;
   error?: string | null;
+  onChipClick?: (data: DragData) => void;
 }
 
-const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, onToggle, isFullscreen, previewJson, onPreviewJson, error }) => {
+const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, onToggle, isFullscreen, previewJson, onPreviewJson, error, onChipClick }) => {
   const [search, setSearch] = useState('');
   const q = search.toLowerCase();
 
@@ -119,21 +121,17 @@ const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, o
           <div className="rtb-signals">
             {filteredSignals.map(t => {
               const color = SIGNAL_COLORS[t];
+              const data: DragData = { kind: 'leaf', leaf: { signalType: t, signalValue: t === 'min_chars' ? 500 : t === 'max_chars' ? 2000 : '' } };
               return (
                 <div
                   key={t}
                   className="rtb-chip"
                   style={{ '--chip-color': color } as React.CSSProperties}
                   draggable
-                  title={`${SIGNAL_LABELS[t]}\nDrag onto an AND/OR gate`}
+                  title={`${SIGNAL_LABELS[t]}\nDrag or click to add`}
+                  onClick={() => onChipClick?.(data)}
                   onDragStart={e => {
-                    e.dataTransfer.setData(DRAG_MIME, encodeDrag({
-                      kind: 'leaf',
-                      leaf: {
-                        signalType: t,
-                        signalValue: t === 'min_chars' ? 500 : t === 'max_chars' ? 2000 : '',
-                      },
-                    }));
+                    e.dataTransfer.setData(DRAG_MIME, encodeDrag(data));
                     e.dataTransfer.effectAllowed = 'copy';
                   }}
                 >
@@ -155,7 +153,8 @@ const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, o
                       className="rtb-chip rtb-chip--classifier"
                       style={{ '--chip-color': color } as React.CSSProperties}
                       draggable
-                      title={`Classifier: ${clf.id}\nDrag onto an AND/OR gate`}
+                      title={`Classifier: ${clf.id}\nDrag or click to add`}
+                      onClick={() => onChipClick?.({ kind: 'leaf', leaf: { signalType: 'classifier', classifierId: clf.id, minScore: 0.5 } })}
                       onDragStart={e => {
                         e.dataTransfer.setData(DRAG_MIME, encodeDrag({
                           kind: 'leaf',

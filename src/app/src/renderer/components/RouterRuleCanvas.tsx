@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   addChildAtPath,
@@ -20,6 +20,7 @@ import {
   SINGLETON_SIGNALS,
   validateRuleNode,
   type ConditionSignalType,
+  type DragData,
   type NodePath,
 } from '../utils/routerTree';
 import { RouterClassifier } from '../utils/customCollections';
@@ -142,14 +143,15 @@ interface TreeNodeProps {
   node: RuleNode;
   path: NodePath;
   classifiers: RouterClassifier[];
-  onDrop: (targetPath: NodePath, data: ReturnType<typeof decodeDrag>) => void;
+  onDrop: (targetPath: NodePath, data: ReturnType<typeof decodeDrag>) => string | null;
+  onReject: (reason: string) => void;
   onEdit: (path: NodePath, el: HTMLElement) => void;
   onDelete: (path: NodePath) => void;
   onChangeOp: (path: NodePath, op: RuleOperator) => void;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
-  node, path, classifiers, onDrop, onEdit, onDelete, onChangeOp,
+  node, path, classifiers, onDrop, onReject, onEdit, onDelete, onChangeOp,
 }) => {
   const elRef = useRef<HTMLDivElement>(null);
 
@@ -205,7 +207,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
       <div className="rtc-children">
         {node.conditions.length === 0 && canAddChild && (
-          <DropZone path={path} onDrop={onDrop} />
+          <DropZone path={path} onDrop={onDrop} onReject={onReject} />
         )}
         {node.conditions.map((child, i) => (
           <TreeNode
@@ -214,13 +216,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             path={[...path, i]}
             classifiers={classifiers}
             onDrop={onDrop}
+            onReject={onReject}
             onEdit={onEdit}
             onDelete={onDelete}
             onChangeOp={onChangeOp}
           />
         ))}
         {node.conditions.length > 0 && canAddChild && (
-          <DropZone path={path} onDrop={onDrop} />
+          <DropZone path={path} onDrop={onDrop} onReject={onReject} />
         )}
       </div>
     </div>
@@ -251,7 +254,7 @@ const GateShape: React.FC<{ op: RuleOperator; color: string }> = ({ op, color })
 };
 
 
-const DropZone: React.FC<{ path: NodePath; onDrop: TreeNodeProps['onDrop'] }> = ({ path, onDrop }) => {
+const DropZone: React.FC<{ path: NodePath; onDrop: TreeNodeProps['onDrop']; onReject: (reason: string) => void }> = ({ path, onDrop, onReject }) => {
   const [over, setOver] = useState(false);
   return (
     <div
@@ -262,7 +265,8 @@ const DropZone: React.FC<{ path: NodePath; onDrop: TreeNodeProps['onDrop'] }> = 
         e.preventDefault(); e.stopPropagation(); setOver(false);
         const raw = e.dataTransfer.getData(DRAG_MIME);
         if (!raw) return;
-        onDrop(path, decodeDrag(raw));
+        const reason = onDrop(path, decodeDrag(raw));
+        if (reason) onReject(reason);
       }}
     >
       drop here
@@ -280,10 +284,12 @@ interface RouterRuleCanvasProps {
   classifiers: RouterClassifier[];
   onChange: (tree: RuleNode | null) => void;
   onExpand?: () => void;
+  onChipClick?: (handler: (data: DragData) => void) => void;
 }
 
-const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, onChange, onExpand }) => {
+const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, onChange, onExpand, onChipClick }) => {
   const [editState, setEditState] = useState<{ path: NodePath; el: HTMLElement } | null>(null);
+  const [rejected, setRejected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
@@ -379,8 +385,8 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
   const classifierIds = new Set(classifiers.map(c => c.id));
   const warnings = tree ? validateRuleNode(tree, classifierIds) : [];
 
-  const handleDrop = useCallback((targetPath: NodePath, data: ReturnType<typeof decodeDrag>) => {
-    if (!data || data.kind === 'tree-node') return;
+  const handleDrop = useCallback((targetPath: NodePath, data: ReturnType<typeof decodeDrag>): string | null => {
+    if (!data || data.kind === 'tree-node') return null;
 
     let newNode: RuleNode;
     if (data.kind === 'operator') {
@@ -395,14 +401,13 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
     if (!tree) {
       push(tree);
       onChange(newNode);
-      return;
+      return null;
     }
 
     if (targetPath.length === 0) {
-      // Per-gate singleton check for the root when it's already an operator node
       if (data.kind === 'leaf' && SINGLETON_SIGNALS.has(data.leaf.signalType as ConditionSignalType) &&
           isOperatorNode(tree) && tree.conditions.some(c => isLeaf(c) && c.signalType === data.leaf.signalType)) {
-        return;
+        return `${SIGNAL_LABELS[data.leaf.signalType as ConditionSignalType]} is already in this gate`;
       }
       push(tree);
       if (isOperatorNode(tree) && tree.operator !== 'NOT') {
@@ -412,21 +417,26 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
       } else {
         onChange({ operator: 'AND', conditions: [tree, newNode] });
       }
-      return;
+      return null;
     }
 
-    // Per-gate singleton check: reject if the target gate already has this signal type as a direct child
     if (data.kind === 'leaf' && SINGLETON_SIGNALS.has(data.leaf.signalType as ConditionSignalType)) {
       const targetNode = getNodeAtPath(tree, targetPath);
       if (targetNode && isOperatorNode(targetNode) &&
           targetNode.conditions.some(c => isLeaf(c) && c.signalType === data.leaf.signalType)) {
-        return;
+        return `${SIGNAL_LABELS[data.leaf.signalType as ConditionSignalType]} is already in this gate`;
       }
     }
 
     push(tree);
     onChange(addChildAtPath(tree, targetPath, newNode));
+    return null;
   }, [tree, onChange]);
+
+  const triggerRejection = useCallback((reason: string) => {
+    setRejected(reason);
+    setTimeout(() => setRejected(null), 400);
+  }, []);
 
   const handleEdit = useCallback((path: NodePath, el: HTMLElement) => {
     setEditState({ path, el });
@@ -458,8 +468,22 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
     e.preventDefault();
     const raw = e.dataTransfer.getData(DRAG_MIME);
     if (!raw) return;
-    handleDrop([], decodeDrag(raw));
-  }, [handleDrop]);
+    const reason = handleDrop([], decodeDrag(raw));
+    if (reason) triggerRejection(reason);
+  }, [handleDrop, triggerRejection]);
+
+  // Chip click: drop onto root canvas (used by toolbox onClick)
+  const handleChipClick = useCallback((data: DragData) => {
+    const reason = handleDrop([], data);
+    if (reason) triggerRejection(reason);
+  }, [handleDrop, triggerRejection]);
+
+  // Register click handler with parent toolbox via callback prop
+  const onChipClickRef = useRef(handleChipClick);
+  onChipClickRef.current = handleChipClick;
+  useEffect(() => {
+    if (onChipClick) onChipClick((data) => onChipClickRef.current(data));
+  }, [onChipClick]);
 
   return (
     <div className="rtc-canvas-root">
@@ -491,7 +515,8 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
 
       <div
         ref={canvasRefCallback}
-        className={`rtc-canvas${panning ? ' rtc-canvas--panning' : ''}`}
+        className={`rtc-canvas${panning ? ' rtc-canvas--panning' : ''}${rejected ? ' rtc-canvas--rejected' : ''}`}
+        title={rejected || undefined}
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
         onDrop={handleCanvasDrop}
         onPointerDown={onPointerDown}
@@ -506,6 +531,7 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
               path={[]}
               classifiers={classifiers}
               onDrop={handleDrop}
+              onReject={triggerRejection}
               onEdit={handleEdit}
               onDelete={handleDelete}
               onChangeOp={handleChangeOp}

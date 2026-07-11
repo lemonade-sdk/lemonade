@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { type DragData } from '../utils/routerTree';
 import {
   RouterClassifier,
   RouterCollectionDraft,
@@ -25,7 +26,7 @@ interface RouterPipelineCanvasProps {
   onAddClassifier: () => void;
   onRemoveClassifier: (id: string) => void;
   onPatchRule: (id: string, p: Partial<RouterRule>) => void;
-  onAddRule: () => void;
+  onAddRule: () => string;
   onRemoveRule: (id: string) => void;
   highlightedClassifierId: string | null;
   previewJson?: string | null;
@@ -99,8 +100,8 @@ const ClassifierCard: React.FC<{
         <div className="pipeline-clf-expanded">
           <div className="pipeline-clf-field">
             <label className="pipeline-clf-label">ID *</label>
-            <input type="text" className="form-input pipeline-clf-input" value={clf.id}
-              onChange={e => onPatch({ id: slugify(e.target.value) })} placeholder="e.g. pii" />
+            <input type="text" className="form-input pipeline-clf-input" defaultValue={clf.id}
+              onBlur={e => onPatch({ id: slugify(e.target.value) || clf.id })} placeholder="e.g. pii" />
           </div>
 
           <div className="pipeline-clf-field">
@@ -254,8 +255,8 @@ const RuleListItem: React.FC<{
         <input
           type="text"
           className="form-input rpc-rule-id-input"
-          value={rule.id}
-          onChange={e => onPatch({ id: e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-') || rule.id })}
+          defaultValue={rule.id}
+          onBlur={e => onPatch({ id: e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-') || rule.id })}
           onClick={e => e.stopPropagation()}
           title="Rule ID"
         />
@@ -299,20 +300,17 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
   );
   const [toolboxCollapsed, setToolboxCollapsed] = useState(false);
   const [canvasExpanded, setCanvasExpanded] = useState(false);
+  // Chip click handler registered by RouterRuleCanvas so the sibling toolbox can call it
+  const chipClickRef = useRef<((data: DragData) => void) | null>(null);
+  const onChipClick = (data: DragData) => chipClickRef.current?.(data);
 
   const classifiers = draft.classifiers ?? [];
   const rules = draft.rules ?? [];
   const selectedRule = rules.find(r => r.id === selectedRuleId) ?? null;
   // When a new rule is added, auto-select it
   const handleAddRule = () => {
-    const prevCount = rules.length;
-    onAddRule();
-    Promise.resolve().then(() => {
-      const newRules = draft.rules ?? [];
-      if (newRules.length > prevCount) {
-        setSelectedRuleId(newRules[newRules.length - 1]?.id ?? null);
-      }
-    });
+    const newId = onAddRule();
+    setSelectedRuleId(newId);
   };
 
   return (
@@ -329,8 +327,8 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
           {classifiers.length === 0 && (
             <div className="collection-role-empty">No classifiers - add one to use as a condition signal.</div>
           )}
-          {classifiers.map(clf => (
-            <ClassifierCard key={clf.id} clf={clf}
+          {classifiers.map((clf, ci) => (
+            <ClassifierCard key={ci} clf={clf}
               isHighlighted={highlightedClassifierId === clf.id}
               embeddingOptions={embeddingOptions}
               candidateOptions={candidateOptions}
@@ -354,7 +352,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
           )}
           {rules.map((rule, i) => (
             <RuleListItem
-              key={rule.id}
+              key={i}
               rule={rule}
               index={i}
               isSelected={rule.id === selectedRuleId}
@@ -397,11 +395,13 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
                 classifiers={classifiers}
                 onChange={(tree: RuleNode | null) => onPatchRule(selectedRule.id, { conditionTree: tree })}
                 onExpand={() => setCanvasExpanded(true)}
+                onChipClick={handler => { chipClickRef.current = handler; }}
               />
               <RouterToolbox
                 classifiers={classifiers}
                 collapsed={toolboxCollapsed}
                 onToggle={() => setToolboxCollapsed(v => !v)}
+                onChipClick={onChipClick}
               />
             </div>
           </>
@@ -435,6 +435,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
               tree={selectedRule.conditionTree ?? null}
               classifiers={classifiers}
               onChange={(tree: RuleNode | null) => onPatchRule(selectedRule.id, { conditionTree: tree })}
+              onChipClick={handler => { chipClickRef.current = handler; }}
             />
             <RouterToolbox
               classifiers={classifiers}
@@ -444,6 +445,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
               previewJson={previewJson}
               onPreviewJson={onPreviewJson}
               error={error}
+              onChipClick={onChipClick}
             />
           </div>
         </div>,

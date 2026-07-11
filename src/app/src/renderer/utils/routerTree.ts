@@ -204,7 +204,7 @@ function leafFromExpr(expr: Record<string, unknown>, not?: boolean): RuleLeaf | 
     signalType: 'classifier',
     classifierId: expr.classifier,
     label: typeof expr.label === 'string' ? expr.label : undefined,
-    minScore: typeof expr.min_score === 'number' ? expr.min_score : 0.5,
+    minScore: typeof expr.min_score === 'number' ? expr.min_score : undefined,
     maxScore: typeof expr.max_score === 'number' ? expr.max_score : undefined,
     not,
   };
