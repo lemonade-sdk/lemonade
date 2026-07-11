@@ -14,7 +14,6 @@ endif()
 
 include(ExternalProject)
 include(FetchContent)
-include(GNUInstallDirs)
 
 if(LEMONADE_NEXUS_SOURCE_DIR)
     get_filename_component(_lemonade_nexus_source_dir
@@ -92,16 +91,22 @@ ExternalProject_Add(lemonade_nexus_external
     USES_TERMINAL_BUILD TRUE
 )
 
+if(WIN32)
+    set(_lemonade_nexus_executable_suffix ".exe")
+else()
+    set(_lemonade_nexus_executable_suffix "")
+endif()
+
 if(CMAKE_CONFIGURATION_TYPES)
     set(_lemonade_nexus_sidecar
-        "${_lemonade_nexus_binary_dir}/projects/LemonadeNexusSidecar/$<CONFIG>/lemonade-nexus-sidecar${CMAKE_EXECUTABLE_SUFFIX}")
+        "${_lemonade_nexus_binary_dir}/projects/LemonadeNexusSidecar/$<CONFIG>/lemonade-nexus-sidecar${_lemonade_nexus_executable_suffix}")
 else()
     set(_lemonade_nexus_sidecar
-        "${_lemonade_nexus_binary_dir}/projects/LemonadeNexusSidecar/lemonade-nexus-sidecar${CMAKE_EXECUTABLE_SUFFIX}")
+        "${_lemonade_nexus_binary_dir}/projects/LemonadeNexusSidecar/lemonade-nexus-sidecar${_lemonade_nexus_executable_suffix}")
 endif()
 
 install(PROGRAMS "${_lemonade_nexus_sidecar}"
-    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    DESTINATION bin
     COMPONENT Runtime)
 
 function(_lemonade_nexus_finalize_targets)
