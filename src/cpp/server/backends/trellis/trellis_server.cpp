@@ -183,6 +183,9 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
     if (request.contains("bg_removal") && request["bg_removal"].is_string()) {
         fields.push_back({"bg_removal", request["bg_removal"].get<std::string>(), "", ""});
     }
+    if (request.contains("uv") && request["uv"].is_string()) {
+        fields.push_back({"uv", request["uv"].get<std::string>(), "", ""});
+    }
 
     auto fail = [&sink](const std::string& message) {
         const std::string payload =

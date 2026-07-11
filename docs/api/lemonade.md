@@ -772,6 +772,7 @@ This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extens
 | `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
 | `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
 | `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `uv` | No | UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving every face unique atlas space — best quality, but chart computation is superlinear in face count. `box` is a faster 6-plane projection with occlusion-aware bucket assignment and depth-tested rasterization; small texture artifacts remain possible in concave regions. |
 | `seed` | No | Random seed for reproducibility. |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
 
