@@ -44,6 +44,7 @@
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
 #include "lemon/utils/network_utils.h"
+#include "lemon/utils/origin_utils.h"
 
 #ifdef _WIN32
     #include <windows.h>
@@ -663,6 +664,37 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
+
+        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
+        std::string vary = "Origin";
+        if (res.has_header("Vary")) {
+            std::string existing = res.get_header_value("Vary");
+            if (existing.find("Origin") == std::string::npos) {
+                vary = existing + ", Origin";
+            } else {
+                vary = existing;
+            }
+        }
+        res.set_header("Vary", vary);
+
+        if (req.has_header("Origin")) {
+            std::string origin = req.get_header_value("Origin");
+            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
+            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+
+            if (utils::is_origin_allowed(origin, allowed_origins)) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+                if (req.has_header("Access-Control-Request-Private-Network") &&
+                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
+                    res.set_header("Access-Control-Allow-Private-Network", "true");
+                }
+            } else {
+                res.status = 403;
+                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+
         return authenticate_request(req, res);
     });
 
@@ -1367,9 +1399,8 @@ window.api = {
 void Server::setup_cors(httplib::Server &web_server) {
     // Set CORS headers for all responses
     web_server.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version"}
     });
 
     // Handle preflight OPTIONS requests
