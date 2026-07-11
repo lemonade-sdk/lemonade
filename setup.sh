@@ -104,29 +104,33 @@ missing_packages=()
 install_commands=()
 
 # Check pre-commit
-print_info "Checking pre-commit installation..."
-if ! command_exists pre-commit; then
-    print_warning "pre-commit not found"
-    if [ "$OS" = "linux" ] && command_exists pacman; then
-        missing_packages+=("pre-commit")
-    elif [ "$OS" = "linux" ] && command_exists apt; then
-        missing_packages+=("pre-commit")
-    elif [ "$OS" = "linux" ] && is_rpm_ostree; then
-        missing_packages+=("pre-commit")
-    elif [ "$OS" = "linux" ] && command_exists dnf; then
-        missing_packages+=("pre-commit")
-    elif [ "$OS" = "linux" ] && command_exists zypper; then
-        missing_packages+=("python313-pre-commit")
-    elif [ "$OS" = "macos" ] && command_exists brew; then
-        missing_packages+=("pre-commit")
-    elif command_exists pip || command_exists pip3; then
-        missing_packages+=("pre-commit (via pip)")
-    else
-        print_error "No package manager found to install pre-commit"
-        exit 1
-    fi
+if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+    print_info "Running in CI, skipping pre-commit check."
 else
-    print_success "pre-commit is already installed"
+    print_info "Checking pre-commit installation..."
+    if ! command_exists pre-commit; then
+        print_warning "pre-commit not found"
+        if [ "$OS" = "linux" ] && command_exists pacman; then
+            missing_packages+=("pre-commit")
+        elif [ "$OS" = "linux" ] && command_exists apt; then
+            missing_packages+=("pre-commit")
+        elif [ "$OS" = "linux" ] && is_rpm_ostree; then
+            missing_packages+=("pre-commit")
+        elif [ "$OS" = "linux" ] && command_exists dnf; then
+            missing_packages+=("pre-commit")
+        elif [ "$OS" = "linux" ] && command_exists zypper; then
+            missing_packages+=("python313-pre-commit")
+        elif [ "$OS" = "macos" ] && command_exists brew; then
+            missing_packages+=("pre-commit")
+        elif command_exists pip || command_exists pip3; then
+            missing_packages+=("pre-commit (via pip)")
+        else
+            print_error "No package manager found to install pre-commit"
+            exit 1
+        fi
+    else
+        print_success "pre-commit is already installed"
+    fi
 fi
 
 # Check required build tools
@@ -424,117 +428,123 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
 fi
 
 # Check Node.js and npm
-print_info "Checking Node.js and npm installation..."
+if [ "${LEMONADE_SKIP_FRONTEND_DEPS:-}" = "1" ] || [ "${LEMONADE_SKIP_FRONTEND_DEPS:-}" = "true" ]; then
+    print_info "LEMONADE_SKIP_FRONTEND_DEPS is enabled. Skipping Node, NPM, Rust, and Tauri dependency checks."
+    tauri_linux_deps=()
+    rust_needs_install=false
+else
+    print_info "Checking Node.js and npm installation..."
 
-if ! command_exists node; then
-    print_warning "Node.js not found"
+    if ! command_exists node; then
+        print_warning "Node.js not found"
+        if [ "$OS" = "linux" ]; then
+            if command_exists apt || command_exists pacman || is_rpm_ostree || command_exists dnf || command_exists zypper; then
+                missing_packages+=("nodejs" "npm")
+            fi
+        elif [ "$OS" = "macos" ]; then
+            if command_exists brew; then
+                missing_packages+=("node")
+            else
+                print_error "Homebrew not found. Please install Homebrew first: https://brew.sh/"
+                exit 1
+            fi
+        fi
+    else
+        print_success "Node.js is already installed"
+    fi
+
+    if command_exists node && ! command_exists npm; then
+        print_warning "npm not found"
+        missing_packages+=("npm")
+    fi
+
+    # Detect Tauri desktop-app dependencies that need installation.
+    tauri_linux_deps=()
     if [ "$OS" = "linux" ]; then
-        if command_exists apt || command_exists pacman || is_rpm_ostree || command_exists dnf || command_exists zypper; then
-            missing_packages+=("nodejs" "npm")
+        print_info "Checking Tauri Linux development dependencies..."
+        if command_exists apt; then
+            tauri_dep_candidates=(
+                libwebkit2gtk-4.1-dev
+                libsoup-3.0-dev
+                libjavascriptcoregtk-4.1-dev
+                librsvg2-dev
+                libayatana-appindicator3-dev
+                wget
+                file
+            )
+            for dep in "${tauri_dep_candidates[@]}"; do
+                if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
+                    tauri_linux_deps+=("$dep")
+                fi
+            done
+        elif is_rpm_ostree; then
+            tauri_dep_candidates=(
+                webkit2gtk4.1-devel
+                libsoup3-devel
+                librsvg2-devel
+                libappindicator-gtk3-devel
+                wget
+                file
+            )
+            for dep in "${tauri_dep_candidates[@]}"; do
+                if ! rpm -q "$dep" >/dev/null 2>&1; then
+                    tauri_linux_deps+=("$dep")
+                fi
+            done
+        elif command_exists dnf; then
+            tauri_dep_candidates=(
+                webkit2gtk4.1-devel
+                libsoup3-devel
+                librsvg2-devel
+                libappindicator-gtk3-devel
+                wget
+                file
+            )
+            for dep in "${tauri_dep_candidates[@]}"; do
+                if ! rpm -q "$dep" >/dev/null 2>&1; then
+                    tauri_linux_deps+=("$dep")
+                fi
+            done
+        elif command_exists pacman; then
+            # Arch Linux. webkit2gtk-4.1 + libsoup3 + librsvg are confirmed by
+            # the official Tauri v2 prerequisites doc. javascriptcoregtk ships
+            # inside webkit2gtk-4.1 on Arch so it doesn't need a separate entry.
+            tauri_dep_candidates=(
+                webkit2gtk-4.1
+                libsoup3
+                librsvg
+                wget
+                file
+            )
+            for dep in "${tauri_dep_candidates[@]}"; do
+                if ! pacman -Qi "$dep" >/dev/null 2>&1; then
+                    tauri_linux_deps+=("$dep")
+                fi
+            done
+        elif command_exists zypper; then
+            # openSUSE package names vary, so only auto-detect the broadly stable
+            # CLI utilities here. Rust still prefers zypper before rustup.
+            for dep in wget file; do
+                if ! rpm -q "$dep" >/dev/null 2>&1; then
+                    tauri_linux_deps+=("$dep")
+                fi
+            done
         fi
-    elif [ "$OS" = "macos" ]; then
-        if command_exists brew; then
-            missing_packages+=("node")
-        else
-            print_error "Homebrew not found. Please install Homebrew first: https://brew.sh/"
-            exit 1
+    fi
+
+    rust_needs_install=false
+    if ! command_exists cargo || ! command_exists rustc; then
+        if [ -f "$HOME/.cargo/env" ]; then
+            # shellcheck source=/dev/null
+            . "$HOME/.cargo/env"
         fi
     fi
-else
-    print_success "Node.js is already installed"
-fi
-
-if command_exists node && ! command_exists npm; then
-    print_warning "npm not found"
-    missing_packages+=("npm")
-fi
-
-# Detect Tauri desktop-app dependencies that need installation.
-tauri_linux_deps=()
-if [ "$OS" = "linux" ]; then
-    print_info "Checking Tauri Linux development dependencies..."
-    if command_exists apt; then
-        tauri_dep_candidates=(
-            libwebkit2gtk-4.1-dev
-            libsoup-3.0-dev
-            libjavascriptcoregtk-4.1-dev
-            librsvg2-dev
-            libayatana-appindicator3-dev
-            wget
-            file
-        )
-        for dep in "${tauri_dep_candidates[@]}"; do
-            if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
-                tauri_linux_deps+=("$dep")
-            fi
-        done
-    elif is_rpm_ostree; then
-        tauri_dep_candidates=(
-            webkit2gtk4.1-devel
-            libsoup3-devel
-            librsvg2-devel
-            libappindicator-gtk3-devel
-            wget
-            file
-        )
-        for dep in "${tauri_dep_candidates[@]}"; do
-            if ! rpm -q "$dep" >/dev/null 2>&1; then
-                tauri_linux_deps+=("$dep")
-            fi
-        done
-    elif command_exists dnf; then
-        tauri_dep_candidates=(
-            webkit2gtk4.1-devel
-            libsoup3-devel
-            librsvg2-devel
-            libappindicator-gtk3-devel
-            wget
-            file
-        )
-        for dep in "${tauri_dep_candidates[@]}"; do
-            if ! rpm -q "$dep" >/dev/null 2>&1; then
-                tauri_linux_deps+=("$dep")
-            fi
-        done
-    elif command_exists pacman; then
-        # Arch Linux. webkit2gtk-4.1 + libsoup3 + librsvg are confirmed by
-        # the official Tauri v2 prerequisites doc. javascriptcoregtk ships
-        # inside webkit2gtk-4.1 on Arch so it doesn't need a separate entry.
-        tauri_dep_candidates=(
-            webkit2gtk-4.1
-            libsoup3
-            librsvg
-            wget
-            file
-        )
-        for dep in "${tauri_dep_candidates[@]}"; do
-            if ! pacman -Qi "$dep" >/dev/null 2>&1; then
-                tauri_linux_deps+=("$dep")
-            fi
-        done
-    elif command_exists zypper; then
-        # openSUSE package names vary, so only auto-detect the broadly stable
-        # CLI utilities here. Rust still prefers zypper before rustup.
-        for dep in wget file; do
-            if ! rpm -q "$dep" >/dev/null 2>&1; then
-                tauri_linux_deps+=("$dep")
-            fi
-        done
+    if ! command_exists cargo || ! command_exists rustc; then
+        rust_needs_install=true
+        print_info "Rust toolchain not found"
+    else
+        print_success "Rust toolchain is already installed"
     fi
-fi
-
-rust_needs_install=false
-if ! command_exists cargo || ! command_exists rustc; then
-    if [ -f "$HOME/.cargo/env" ]; then
-        # shellcheck source=/dev/null
-        . "$HOME/.cargo/env"
-    fi
-fi
-if ! command_exists cargo || ! command_exists rustc; then
-    rust_needs_install=true
-    print_info "Rust toolchain not found"
-else
-    print_success "Rust toolchain is already installed"
 fi
 
 # Check for KaTeX fonts (optional but recommended for packaging)
