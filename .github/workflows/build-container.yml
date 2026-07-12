@@ -12,7 +12,6 @@ jobs:
   build-container:
     # Skip in forks — GITHUB_TOKEN in a fork can't write to ghcr.io/lemonade-sdk/
     if: ${{ github.repository == 'lemonade-sdk/lemonade' }}
-  build-container:
     runs-on: ubuntu-latest
     strategy:
       matrix:
