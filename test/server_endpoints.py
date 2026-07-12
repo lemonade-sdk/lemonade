@@ -787,6 +787,10 @@ class EndpointTests(ServerTestBase):
                 "response_format": {"type": "json_object"},
                 "tools": [{"type": "function", "function": {"name": "test"}}],
                 "tool_choice": "required",
+                "pinned": True,
+                "llamacpp_args": "--foo-bar",
+                "auto_evict": True,
+                "evict_idle_timeout": 1,
                 "ctx_size": custom_ctx_size,
                 "max_completion_tokens": 999,
             },
@@ -845,6 +849,10 @@ class EndpointTests(ServerTestBase):
             "tool_choice",
             "max_completion_tokens",
             "model",
+            "pinned",
+            "llamacpp_args",
+            "auto_evict",
+            "evict_idle_timeout",
         ]
         for field in forbidden:
             self.assertNotIn(

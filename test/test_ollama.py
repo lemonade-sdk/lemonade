@@ -556,6 +556,10 @@ class OllamaTests(ServerTestBase):
                     "num_predict": 10,
                     "temperature": 0.7,
                     "top_p": 0.9,
+                    "pinned": True,
+                    "llamacpp_args": "--foo-bar",
+                    "auto_evict": True,
+                    "evict_idle_timeout": 1,
                 },
             },
             timeout=TIMEOUT_MODEL_OPERATION,
@@ -583,7 +587,15 @@ class OllamaTests(ServerTestBase):
             custom_ctx_size,
             "ctx_size should be present in recipe_options",
         )
-        for field in ("temperature", "top_p", "num_predict"):
+        for field in (
+            "temperature",
+            "top_p",
+            "num_predict",
+            "pinned",
+            "llamacpp_args",
+            "auto_evict",
+            "evict_idle_timeout",
+        ):
             self.assertNotIn(
                 field,
                 recipe_options,
