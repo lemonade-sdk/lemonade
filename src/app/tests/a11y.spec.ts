@@ -33,6 +33,23 @@ async function navigateToView(page: Page, label: string): Promise<void> {
   await page.waitForTimeout(300);
 }
 
+/** Open the custom-model editor through the Models heading action. */
+async function openCustomModelEditor(
+  page: Page,
+  mode: 'model' | 'omni-collection' = 'model',
+): Promise<void> {
+  await page.goto('/');
+  await navigateToView(page, 'Models');
+  await page.waitForSelector('.manager');
+
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  await page.waitForSelector('.custom-model-form');
+
+  if (mode === 'omni-collection') {
+    await page.getByRole('button', { name: 'Omni collection', exact: true }).click();
+  }
+}
+
 /** Format axe violations into a readable string for assertion failure messages. */
 function formatViolations(
   violations: Array<{ id: string; description: string; impact?: string | null }>,
@@ -1732,10 +1749,7 @@ test.describe('Accessibility — account menu dialog', () => {
 
 test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => {
   async function openOmniCollectionForm(page: Page): Promise<void> {
-    await page.goto('/');
-    await navigateToView(page, 'Models');
-    await page.waitForSelector('.manager');
-    await page.getByText('+ Omni collection').click();
+    await openCustomModelEditor(page, 'omni-collection');
     await page.waitForSelector('.omni-component-picker');
   }
 
@@ -1847,10 +1861,7 @@ test.describe('Accessibility — icon-button accessible names (#2353)', () => {
   });
 
   test('A79 — Omni picker clear button has aria-label naming target', async ({ page }) => {
-    await page.goto('/');
-    await navigateToView(page, 'Models');
-    await page.waitForSelector('.manager');
-    await page.getByText('+ Omni collection').click();
+    await openCustomModelEditor(page, 'omni-collection');
     await page.waitForSelector('.omni-component-picker');
 
     const clearBtns = page.locator('.omni-component-picker__clear');
@@ -2379,17 +2390,25 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     expect(labelledBy).toBeTruthy();
   });
 
-  // ── Custom model / Omni collection buttons ────────────────────────────────────
+  // ── Custom model management ───────────────────────────────────────────────────
 
-  test('A104 — "+ Custom model" and "+ Omni collection" buttons are visible and keyboard-accessible', async ({ page }) => {
+  test('A104 — custom-model heading action opens an accessible model-type switch', async ({ page }) => {
     await goToModels(page);
-    const customBtn = page.getByText('+ Custom model');
-    const omniBtn = page.getByText('+ Omni collection');
+
+    const openCustomModels = page.getByRole('button', { name: 'Open custom models' });
+    await expect(openCustomModels).toBeVisible();
+    await expect(openCustomModels).toHaveRole('button');
+    await openCustomModels.click();
+
+    const typeGroup = page.getByRole('group', { name: 'Custom model type' });
+    const customBtn = typeGroup.getByRole('button', { name: 'Custom model', exact: true });
+    const omniBtn = typeGroup.getByRole('button', { name: 'Omni collection', exact: true });
+    await expect(typeGroup).toBeVisible();
     await expect(customBtn).toBeVisible();
     await expect(omniBtn).toBeVisible();
-    // Both should be real buttons
     await expect(customBtn).toHaveRole('button');
     await expect(omniBtn).toHaveRole('button');
+    await expect(customBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('A105 — master-detail Models view passes WCAG 2.1 AA axe-core scan with mock data', async ({ page }) => {
@@ -3049,22 +3068,27 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect((await bar.getAttribute('aria-label')) ?? '').not.toBe('');
   });
 
-  // ── Custom-model buttons (moved to TOP) ──────────────────────────────────
+  // ── Custom-model heading action ───────────────────────────────────────────
 
-  test('A133 — custom-model buttons are a grounded group at the top and keyboard reachable', async ({ page }) => {
+  test('A133 — custom-model action is grouped with the Models heading and keyboard reachable', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const group = page.locator('.model-list-panel__add-group');
-    await expect(group).toBeVisible();
-    const customBtn = group.getByRole('button', { name: /custom model/i });
-    const omniBtn = group.getByRole('button', { name: /omni collection/i });
-    await expect(customBtn).toBeVisible();
-    await expect(omniBtn).toBeVisible();
-    await customBtn.focus();
-    await expect(customBtn).toBeFocused();
-    // The group sits above the model list in DOM order (top of the area).
-    const groupBox = await group.boundingBox();
+
+    const title = page.locator('.model-list-panel__title');
+    const heading = title.getByRole('heading', { name: 'Models' });
+    const customModelsBtn = title.getByRole('button', { name: 'Open custom models' });
+    await expect(title).toBeVisible();
+    await expect(heading).toBeVisible();
+    await expect(customModelsBtn).toBeVisible();
+
+    await customModelsBtn.focus();
+    await expect(customModelsBtn).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.custom-model-form')).toBeVisible();
+
+    // The heading action remains grounded above the model list.
+    const titleBox = await title.boundingBox();
     const listBox = await page.locator('.model-list-panel__list').boundingBox();
-    expect(groupBox && listBox && groupBox.y < listBox.y).toBeTruthy();
+    expect(titleBox && listBox && titleBox.y < listBox.y).toBeTruthy();
   });
 
   // ── Responsive nav toggle ────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import {
   type RecipeOptions, type SamplingParams,
 } from '../presetStore';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -1378,6 +1379,69 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   );
 };
 
+const COLLECTION_ROLE_LABELS: Record<string, string> = {
+  llm: 'Planner LLM',
+  vision: 'Vision',
+  image: 'Image generation',
+  edit: 'Image editing',
+  transcription: 'Transcription',
+  speech: 'Text to speech',
+};
+
+const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model: ModelInfo) => void }> = ({ model, onEdit }) => {
+  const roles = ((model as any).component_roles || {}) as Record<string, string>;
+  const components = getCollectionComponents(model);
+  const displayRoles: Record<string, string> = { ...roles, llm: roles.llm || components[0] || '' };
+  const assigned = new Set(Object.values(displayRoles).filter(Boolean));
+  const unassigned = components.filter(component => !assigned.has(component));
+  const tools = Array.isArray((model as any).custom_tools) ? (model as any).custom_tools as Array<Record<string, unknown>> : [];
+  const hasCustomPrompt = Boolean(String((model as any).system_prompt || '').trim());
+
+  return (
+    <div className="detail-tab-content custom-collection-settings">
+      <div className="custom-collection-settings__intro">
+        <div>
+          <h3>Collection settings</h3>
+          <p>Components stay editable after the collection has been saved or downloaded.</p>
+        </div>
+        {onEdit && (
+          <button type="button" className="btn btn--primary btn--sm" onClick={() => onEdit(model)}>
+            <Icon name="edit" size={13} /> Edit settings
+          </button>
+        )}
+      </div>
+
+      <section className="custom-collection-settings__section" aria-label="Collection components">
+        <h4>Components</h4>
+        <div className="custom-collection-settings__components">
+          {Object.entries(COLLECTION_ROLE_LABELS).map(([role, label]) => (
+            <div className="custom-collection-settings__component" key={role}>
+              <span>{label}</span>
+              <strong>{displayRoles[role] || 'Not set'}</strong>
+            </div>
+          ))}
+          {unassigned.map(component => (
+            <div className="custom-collection-settings__component" key={component}>
+              <span>Tool model</span>
+              <strong>{component}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="custom-collection-settings__section" aria-label="Advanced collection settings summary">
+        <h4>Advanced</h4>
+        <div className="custom-collection-settings__summary">
+          <span>System prompt</span>
+          <strong>{hasCustomPrompt ? 'Customized' : 'Default'}</strong>
+          <span>Custom LLM tools</span>
+          <strong>{tools.length}</strong>
+        </div>
+      </section>
+    </div>
+  );
+};
+
 /* ── ModelDetailPanel ────────────────────────────────────────── */
 
 export interface ModelDetailPanelProps {
@@ -1408,6 +1472,8 @@ export interface ModelDetailPanelProps {
   isFavorite?: boolean;
   /** Toggle this model's favorite/pin state. Receives the model name. */
   onToggleFavorite?: (name: string) => void;
+  /** Open the persistent settings editor for a saved custom Omni collection. */
+  onEditCustomCollection?: (model: ModelInfo) => void;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
   /** True when the registry has no models at all (empty state guidance differs
@@ -1415,12 +1481,17 @@ export interface ModelDetailPanelProps {
   noModelsAvailable?: boolean;
 }
 
-type DetailTab = 'readme' | 'presets' | 'tuning' | 'files';
+type DetailTab = 'settings' | 'readme' | 'presets' | 'tuning' | 'files';
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
   { id: 'readme', label: 'README' },
   { id: 'presets', label: 'Presets' },
   { id: 'tuning', label: 'Model Tuning' },
+  { id: 'files', label: 'Files' },
+];
+
+const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
+  { id: 'settings', label: 'Settings' },
   { id: 'files', label: 'Files' },
 ];
 
@@ -1440,6 +1511,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   serverDefaultCtxSize,
   isFavorite = false,
   onToggleFavorite,
+  onEditCustomCollection,
   onBack,
   noModelsAvailable = false,
 }) => {
@@ -1459,11 +1531,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const detailName = model ? mdName(model) : '';
   const detailLoaded = !!loadedModel;
+  const isCustomCollection = Boolean(model && (model as any).custom && isCollectionModel(model));
+  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : TABS;
 
   // Move focus to heading when model changes
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-  }, [model?.id]);
+    setActiveTab(isCustomCollection ? 'settings' : 'readme');
+  }, [detailName, isCustomCollection]);
 
   // Re-render when the preset store changes (applied/running/user presets).
   useEffect(() => {
@@ -1487,7 +1562,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   }, [detailName, detailLoaded, storeTick]);
 
   // Reset transient update feedback when the selected model changes.
-  useEffect(() => { setUpdateStatus({ phase: 'idle', msg: '' }); }, [model?.id]);
+  useEffect(() => { setUpdateStatus({ phase: 'idle', msg: '' }); }, [detailName]);
 
   // Auto-dismiss terminal update messages so the live region settles.
   useEffect(() => {
@@ -1575,14 +1650,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   // Roving tabindex: keyboard navigation across tabs
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const count = TABS.length;
+    const count = detailTabs.length;
     let next = -1;
     if (e.key === 'ArrowRight') { e.preventDefault(); next = (index + 1) % count; }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); next = (index - 1 + count) % count; }
     else if (e.key === 'Home') { e.preventDefault(); next = 0; }
     else if (e.key === 'End') { e.preventDefault(); next = count - 1; }
     if (next >= 0) {
-      setActiveTab(TABS[next].id);
+      setActiveTab(detailTabs[next].id);
       tabRefs.current[next]?.focus();
     }
   };
@@ -1856,7 +1931,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         aria-label="Model details sections"
         aria-labelledby="detail-panel-heading"
       >
-        {TABS.map((tab, i) => (
+        {detailTabs.map((tab, i) => (
           <button
             key={tab.id}
             ref={el => { tabRefs.current[i] = el; }}
@@ -1875,7 +1950,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       </div>
 
       {/* Tab panels */}
-      {TABS.map(tab => (
+      {detailTabs.map(tab => (
         <div
           key={tab.id}
           id={`detail-panel-${tab.id}`}
@@ -1884,6 +1959,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           className={`detail-tabs__panel${activeTab === tab.id ? ' detail-tabs__panel--active' : ''}`}
           hidden={activeTab !== tab.id}
         >
+          {tab.id === 'settings' && model && (
+            <CustomCollectionSettingsTab model={model} onEdit={onEditCustomCollection} />
+          )}
           {tab.id === 'readme' && (
             <ModelReadmeTab model={model} isActive={activeTab === 'readme'} />
           )}
