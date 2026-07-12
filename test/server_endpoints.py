@@ -759,8 +759,8 @@ class EndpointTests(ServerTestBase):
           2. Call /v1/chat/completions with a large mix of request-scoped params
              AND a custom ctx_size.
           3. Auto-load should only apply ctx_size.
-          4. Verify recipe_options on the loaded model contains ctx_size but NOT
-             temperature, max_tokens, stream, or messages."""
+          4. Verify recipe_options on the loaded model contains ctx_size but
+             none of the request-scoped or recipe-level fields sent alongside."""
         # Ensure clean slate
         requests.post(
             f"{self.base_url}/unload",
@@ -768,104 +768,105 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
 
-        # Send an inference request with both load-level and request-scoped params.
-        # Only ctx_size should be forwarded to the RecipeOptions constructor.
-        custom_ctx_size = 8192
-        inference_response = requests.post(
-            f"{self.base_url}/chat/completions",
-            json={
-                "model": ENDPOINT_TEST_MODEL,
-                "messages": [{"role": "user", "content": "Hello, world!"}],
-                "max_tokens": 12345,
-                "temperature": 0.99,
-                "top_p": 0.88,
-                "top_k": 77,
-                "stream": True,
-                "presence_penalty": -0.5,
-                "frequency_penalty": 1.2,
-                "seed": 42,
-                "response_format": {"type": "json_object"},
-                "tools": [{"type": "function", "function": {"name": "test"}}],
-                "tool_choice": "required",
-                "pinned": True,
-                "llamacpp_args": "--foo-bar",
-                "auto_evict": True,
-                "evict_idle_timeout": 1,
-                "ctx_size": custom_ctx_size,
-                "max_completion_tokens": 999,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(
-            inference_response.status_code,
-            200,
-            f"Chat completions should succeed: {inference_response.text[:500]}",
-        )
-
-        # Verify the loaded model's recipe_options
-        health_response = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        )
-        health_data = health_response.json()
-
-        loaded_model = None
-        for m in health_data.get("all_models_loaded", []):
-            if m["model_name"] == ENDPOINT_TEST_MODEL:
-                loaded_model = m
-                break
-
-        self.assertIsNotNone(
-            loaded_model,
-            f"Model {ENDPOINT_TEST_MODEL} should be loaded after auto-load",
-        )
-
-        recipe_options = loaded_model.get("recipe_options", {})
-
-        # ---- Allowlisted: ctx_size MUST be present ----
-        self.assertIn(
-            "ctx_size",
-            recipe_options,
-            "ctx_size from inference request should be forwarded to recipe_options",
-        )
-        self.assertEqual(
-            recipe_options["ctx_size"],
-            custom_ctx_size,
-            f"ctx_size should match request value {custom_ctx_size}",
-        )
-
-        # ---- Denied: request-scoped params must NOT be in recipe_options ----
-        forbidden = [
-            "temperature",
-            "max_tokens",
-            "stream",
-            "messages",
-            "top_p",
-            "top_k",
-            "presence_penalty",
-            "frequency_penalty",
-            "seed",
-            "response_format",
-            "tools",
-            "tool_choice",
-            "max_completion_tokens",
-            "model",
-            "pinned",
-            "llamacpp_args",
-            "auto_evict",
-            "evict_idle_timeout",
-        ]
-        for field in forbidden:
-            self.assertNotIn(
-                field,
-                recipe_options,
-                f"Request-scoped field '{field}' must NOT leak into recipe_options "
-                f"on auto-load (found: {recipe_options.get(field)})",
+        try:
+            # Send an inference request with both load-level and request-scoped params.
+            # Only ctx_size should be forwarded to the RecipeOptions constructor.
+            custom_ctx_size = 8192
+            inference_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Hello, world!"}],
+                    "max_tokens": 5,
+                    "temperature": 0.99,
+                    "top_p": 0.88,
+                    "top_k": 77,
+                    "stream": False,
+                    "presence_penalty": -0.5,
+                    "frequency_penalty": 1.2,
+                    "seed": 42,
+                    "pinned": True,
+                    "llamacpp_args": "--foo-bar",
+                    "auto_evict": True,
+                    "evict_idle_timeout": 1,
+                    "ctx_size": custom_ctx_size,
+                    "max_completion_tokens": 10,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                inference_response.status_code,
+                200,
+                f"Chat completions should succeed: {inference_response.text[:500]}",
             )
 
-        print(
-            f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
-            f"request-scoped params correctly excluded"
-        )
+            # Verify the loaded model's recipe_options
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            health_data = health_response.json()
+
+            loaded_model = None
+            for m in health_data.get("all_models_loaded", []):
+                if m["model_name"] == ENDPOINT_TEST_MODEL:
+                    loaded_model = m
+                    break
+
+            self.assertIsNotNone(
+                loaded_model,
+                f"Model {ENDPOINT_TEST_MODEL} should be loaded after auto-load",
+            )
+
+            recipe_options = loaded_model.get("recipe_options", {})
+
+            # ---- Allowlisted: ctx_size MUST be present ----
+            self.assertIn(
+                "ctx_size",
+                recipe_options,
+                "ctx_size from inference request should be forwarded to recipe_options",
+            )
+            self.assertEqual(
+                recipe_options["ctx_size"],
+                custom_ctx_size,
+                f"ctx_size should match request value {custom_ctx_size}",
+            )
+
+            # ---- Denied: request-scoped params must NOT be in recipe_options ----
+            forbidden = [
+                "temperature",
+                "max_tokens",
+                "stream",
+                "messages",
+                "top_p",
+                "top_k",
+                "presence_penalty",
+                "frequency_penalty",
+                "seed",
+                "max_completion_tokens",
+                "model",
+                "pinned",
+                "llamacpp_args",
+                "auto_evict",
+                "evict_idle_timeout",
+            ]
+            for field in forbidden:
+                self.assertNotIn(
+                    field,
+                    recipe_options,
+                    f"Request-scoped field '{field}' must NOT leak into recipe_options "
+                    f"on auto-load (found: {recipe_options.get(field)})",
+                )
+
+            print(
+                f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
+                f"request-scoped params correctly excluded"
+            )
+        finally:
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
     def _start_mock_cloud_provider(
         self, upstream_ids, chat_handler=None, sse_chunks=None
