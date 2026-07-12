@@ -46,7 +46,12 @@ int current_process_id() {
 
 InstallParams VTEServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    if (backend != "rocm") {
+    // The framework calls this with the already-normalized backend name
+    // (BackendManager::get_install_params resolves "rocm" -> "rocm-stable"
+    // via normalize_backend_name before invoking this), not the raw "rocm"
+    // a caller elsewhere in this file might pass into install_backend()/
+    // get_backend_binary_path() (both of which do their own normalization).
+    if (backend != "rocm-stable") {
         throw std::runtime_error("VTE backend '" + backend + "' is not supported. Supported: rocm");
     }
 

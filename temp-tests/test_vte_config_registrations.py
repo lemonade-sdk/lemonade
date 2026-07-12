@@ -72,7 +72,12 @@ def test_backend_versions_json_valid_and_has_vte_entry():
     # 0.2.0: a real GitHub release (kyuubyN/VTE, tag "0.2.0", no "v" prefix --
     # see the earlier 0.1.0 release, same convention) with /v1/models,
     # a generation lock, and the downloader. Validated live before publishing.
-    assert data.get("vte") == {"rocm": "0.2.0"}
+    # Key is "rocm-stable", not "rocm": llamacpp uses the same convention
+    # (backend_versions.json keys are the resolved channel, not the raw
+    # selector) -- confirmed for real on a machine with no HIP SDK installed,
+    # where a plain "rocm" key made install_backend() fail to find a pinned
+    # version for "vte:rocm-stable" after normalize_backend_name() resolved it.
+    assert data.get("vte") == {"rocm-stable": "0.2.0"}
     # Regression check: vllm stays intact.
     assert data.get("vllm") == {"rocm": "vllm0.20.1-rocm7.12.0"}
 
