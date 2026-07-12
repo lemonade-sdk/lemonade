@@ -308,8 +308,7 @@ export interface ModelListPanelProps {
   /** Active tag chip from the left rail (null = no tag filter). */
   tagFilter?: string | null;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
-  onAddCustomModel?: () => void;
-  onAddOmniCollection?: () => void;
+  onOpenCustomModels?: () => void;
   /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
   pinnedNames?: Set<string>;
   /** Toggle a model's pinned state. Receives the model name. */
@@ -337,8 +336,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   backendFilter = 'all',
   tagFilter = null,
   searchInputRef,
-  onAddCustomModel,
-  onAddOmniCollection,
+  onOpenCustomModels,
   pinnedNames,
   onTogglePin,
   favoriteNames,
@@ -584,32 +582,18 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       {/* Title */}
       <div className="model-list-panel__title manager__title">
         <h1>Models</h1>
+        {onOpenCustomModels && (
+          <button
+            type="button"
+            className="model-list-panel__custom-menu-btn"
+            onClick={onOpenCustomModels}
+            aria-label="Open custom models"
+            title="Manage custom models"
+          >
+            <Icon name="user-round-cog" size={19} aria-hidden="true" />
+          </button>
+        )}
       </div>
-
-      {/* Custom model / Omni collection actions — grounded button group at the
-          top of the list area (moved from the bottom per fl0rianr). */}
-      {(onAddCustomModel || onAddOmniCollection) && (
-        <div className="model-list-panel__add-group" role="group" aria-label="Add custom models">
-          {onAddCustomModel && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny model-list-panel__add-btn manager__custom-btn"
-              onClick={onAddCustomModel}
-            >
-              + Custom model
-            </button>
-          )}
-          {onAddOmniCollection && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny model-list-panel__add-btn manager__custom-btn manager__custom-btn--omni"
-              onClick={onAddOmniCollection}
-            >
-              + Omni collection
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Search bar */}
       <div className="model-list-panel__search-row">
