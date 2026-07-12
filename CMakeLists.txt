@@ -2217,3 +2217,12 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
 endif()
+
+# vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
+# AMD Instinct (gfx942), alongside the existing RDNA families.
+set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
+if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
+    add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
+    target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
+    add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
+endif()

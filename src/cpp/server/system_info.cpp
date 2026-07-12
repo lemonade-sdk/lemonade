@@ -794,7 +794,21 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[resolved_backend].get<std::string>();
+    std::string base_version = recipe_config[resolved_backend].get<std::string>();
+
+    // The expected version must resolve the SAME per-arch override that install used,
+    // or these GPUs report update_required forever: versions_match tolerates the
+    // "-{family}" suffix but not a different base.
+    if (recipe == "vllm" && resolved_backend == "rocm") {
+        std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        if (!asset_family.empty()) {
+            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
+            if (!override_version.empty()) {
+                return override_version;
+            }
+        }
+    }
+    return base_version;
 }
 
 // ============================================================================
@@ -859,7 +873,8 @@ json SystemInfo::get_device_dict() {
         if (amd_igpu.available) {
             json gpu_json = {
                 {"name", amd_igpu.name},
-                {"available", amd_igpu.available}
+                {"available", amd_igpu.available},
+                {"integrated", true}
             };
             if (amd_igpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = amd_igpu.vram_gb;
@@ -879,7 +894,8 @@ json SystemInfo::get_device_dict() {
             if (gpu.available) {
                 json gpu_json = {
                     {"name", gpu.name},
-                    {"available", gpu.available}
+                    {"available", gpu.available},
+                    {"integrated", false}
                 };
                 if (gpu.vram_gb > 0) {
                     gpu_json["vram_gb"] = gpu.vram_gb;
@@ -2096,9 +2112,59 @@ std::string SystemInfo::rocm_asset_family(const std::string& arch) {
     return arch;
 }
 
+std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family) {
+    static const json overrides = []() -> json {
+        try {
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            std::ifstream file(config_path);
+            if (!file.is_open()) {
+                return json::object();
+            }
+            json vllm = json::parse(file).value("vllm", json::object());
+            return vllm.value("rocm_arch_overrides", json::object());
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
+        return it->get<std::string>();
+    }
+    return "";
+}
+
+std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
+    if (!amd_gpu_devices.is_array()) {
+        return "";
+    }
+    // The device array is iGPU-first, so taking the first supported match would pick the
+    // APU on a hybrid host. Prefer a discrete GPU; fall back to integrated.
+    std::string integrated_fallback;
+    for (const auto& gpu : amd_gpu_devices) {
+        if (!gpu.value("available", false)) {
+            continue;
+        }
+        // The "family" field is identify_rocm_arch_from_name(name) captured at
+        // detection time; fall back to re-deriving from the name if it is absent.
+        std::string arch = gpu.value("family", "");
+        if (arch.empty()) {
+            arch = identify_rocm_arch_from_name(gpu.value("name", ""));
+        }
+        if (arch.empty()) {
+            continue;
+        }
+        if (gpu.value("integrated", false)) {
+            if (integrated_fallback.empty()) {
+                integrated_fallback = arch;
+            }
+            continue;
+        }
+        return arch;  // discrete GPU wins
+    }
+    return integrated_fallback;  // empty if no supported AMD GPU found
+}
+
 std::string SystemInfo::get_rocm_arch() {
-    // Returns the ROCm architecture for the best available AMD GPU on this system
-    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     if (!g_rocm_arch_override.empty()) {
         return g_rocm_arch_override;
     }
@@ -2111,20 +2177,8 @@ std::string SystemInfo::get_rocm_arch() {
         }
 
         const auto& devices = system_info["devices"];
-
-        // Check AMD GPUs
-        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
-            for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
-                        }
-                    }
-                }
-            }
+        if (devices.contains("amd_gpu")) {
+            return select_rocm_arch(devices["amd_gpu"]);
         }
     } catch (...) {
         // Detection failed
