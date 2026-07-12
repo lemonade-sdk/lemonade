@@ -117,19 +117,27 @@ void VTEServer::load(const std::string& model_name,
 
     // VTE ships its own kernels but not amdhip64.dll itself; put TheRock's
     // bin/ (installed above via rocm_channels) on the child's PATH, mirroring
-    // llamacpp_server.cpp's Windows block. Both PATH and HIP_PATH are set
-    // since vte/config.py::find_hip_dll checks HIP_PATH first.
+    // llamacpp_server.cpp's Windows block. vte-server's own DLL search
+    // (vte/bridge/dll_discovery.py) treats HIP_PATH as the SDK root and
+    // appends "bin" itself, so HIP_PATH must be therock_bin's PARENT, not
+    // therock_bin (which get_therock_lib_path already returns as the bin/
+    // dir itself) -- setting HIP_PATH to the bin/ dir directly would make it
+    // look in bin/bin/ and silently fail that lookup, falling through to the
+    // PATH-based search instead (which does work, since PATH entries are
+    // searched as-is). Both are set so the intended lookup path succeeds
+    // directly rather than by accident.
     std::string rocm_arch = SystemInfo::get_rocm_arch();
     if (!rocm_arch.empty()) {
         std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
         if (!therock_bin.empty()) {
-            std::string new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
+            fs::path therock_bin_path = fs::absolute(path_from_utf8(therock_bin));
+            std::string new_path = path_to_utf8(therock_bin_path);
             const char* existing_path = std::getenv("PATH");
             if (existing_path && strlen(existing_path) > 0) {
                 new_path += ";" + std::string(existing_path);
             }
             env_vars.push_back({"PATH", new_path});
-            env_vars.push_back({"HIP_PATH", therock_bin});
+            env_vars.push_back({"HIP_PATH", path_to_utf8(therock_bin_path.parent_path())});
             LOG(DEBUG, "VTE") << "Using TheRock runtime at " << therock_bin << std::endl;
         } else {
             LOG(WARNING, "VTE") << "TheRock runtime not found for " << rocm_arch
