@@ -228,6 +228,13 @@ void OllamaApi::auto_load_model(const std::string& model, const json& request_op
     std::string name = normalize_model_name(model);
 
     if (router_->is_model_loaded(name)) {
+        if (request_options.contains("ctx_size")) {
+            auto loaded_ctx = router_->get_model_recipe_options(name).get_option("ctx_size");
+            LOG(DEBUG, "OllamaApi")
+                << "Ignoring requested ctx_size=" << request_options["ctx_size"]
+                << " for already-loaded " << name
+                << " (loaded ctx_size=" << loaded_ctx << ")" << std::endl;
+        }
         return;
     }
 
