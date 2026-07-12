@@ -728,6 +728,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
+  const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
+  const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [presetPickerQuery, setPresetPickerQuery] = useState('');
   const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
@@ -2369,6 +2371,19 @@ ${finalText}`
     setPersistHistory(prev => !prev);
   }, []);
 
+  const handleModelPickerUnload = useCallback(async (modelName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (modelPickerUnloading) return;
+    setModelPickerUnloading(modelName);
+    try {
+      await api.unloadModel(modelName);
+      await Promise.resolve(onRefresh());
+      setUnloadAnnouncement(`${modelName} unloaded`);
+    } finally {
+      setModelPickerUnloading(null);
+    }
+  }, [modelPickerUnloading, onRefresh]);
+
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
       onModelSelect(option.name);
@@ -2745,6 +2760,7 @@ ${finalText}`
       )}
 
       {/* Composer */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">{unloadAnnouncement}</div>
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
@@ -2759,6 +2775,9 @@ ${finalText}`
               >
                 <CapabilityIcon capability={currentCapability} size={14} />
                 <span className="composer__model-button-name">{currentModel || 'Choose model'}</span>
+                {selectableModels.length > 0 && (
+                  <span className="composer__model-button-badge">({selectableModels.length})</span>
+                )}
                 <span className="composer__model-button-caret">▾</span>
               </button>
               {modelPickerOpen && (
@@ -2774,22 +2793,37 @@ ${finalText}`
                   </label>
                   <div className="composer__model-results" role="listbox">
                     {modelPickerOptions.map(option => (
-                      <button
-                        type="button"
+                      <div
                         key={option.name}
-                        className={`composer__model-option${option.name === currentModel ? ' is-active' : ''}`}
-                        onClick={() => handleModelPickerSelect(option)}
-                        disabled={!!modelPickerLoading}
-                        role="option"
-                        aria-selected={option.name === currentModel}
+                        className={`composer__model-option-row${option.name === currentModel ? ' is-active' : ''}${modelPickerUnloading === option.name ? ' is-unloading' : ''}`}
                       >
-                        <CapabilityIcon capability={option.capability} size={15} />
-                        <span className="composer__model-option-text">
-                          <strong>{option.name}</strong>
-                          <span>{capabilityLabel(option.capability)} · {option.detail}</span>
-                        </span>
-                        {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
-                      </button>
+                        <button
+                          type="button"
+                          className="composer__model-option"
+                          onClick={() => handleModelPickerSelect(option)}
+                          disabled={!!modelPickerLoading || modelPickerUnloading === option.name}
+                          role="option"
+                          aria-selected={option.name === currentModel}
+                        >
+                          <CapabilityIcon capability={option.capability} size={15} />
+                          <span className="composer__model-option-text">
+                            <strong>{option.name}</strong>
+                            <span>{capabilityLabel(option.capability)} · {option.detail}</span>
+                          </span>
+                          {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
+                        </button>
+                        {option.loaded && (
+                          <button
+                            type="button"
+                            className="composer__model-option-unload"
+                            onClick={(e) => handleModelPickerUnload(option.name, e)}
+                            disabled={!!modelPickerUnloading}
+                            aria-label={`Unload ${option.name}`}
+                          >
+                            {modelPickerUnloading === option.name ? '…' : '×'}
+                          </button>
+                        )}
+                      </div>
                     ))}
                     {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
                   </div>
