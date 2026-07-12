@@ -1283,11 +1283,13 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
-void ModelManager::check_for_model_updates() {
+std::vector<std::string> ModelManager::check_for_model_updates() {
+    std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
+
     if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
         LOG(DEBUG, "ModelManager")
             << "Offline mode enabled, skipping model update check" << std::endl;
-        return;
+        return {};
     }
     // Collect (model_name, repo_id, cached_sha) for downloaded models,
     // deduplicated by repo_id so we only fetch HF API once per repo.
@@ -1301,7 +1303,7 @@ void ModelManager::check_for_model_updates() {
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         if (!cache_valid_) {
-            return;
+            return {};
         }
         for (const auto& [name, info] : models_cache_) {
             if (!info.downloaded) continue;
@@ -1333,6 +1335,7 @@ void ModelManager::check_for_model_updates() {
     }
 
     std::unordered_set<std::string> updated_models;
+    std::unordered_set<std::string> verified_models;
 
     for (auto& [repo_id, entry] : repos) {
         // Skip repos with no cached SHA — can't reliably compare
@@ -1356,7 +1359,15 @@ void ModelManager::check_for_model_updates() {
                 latest_sha = model_info["sha"].get<std::string>();
             }
 
-            if (latest_sha.empty() || latest_sha == entry.cached_sha) continue;
+            if (latest_sha.empty()) continue;
+
+            // Only clear an existing update flag after a successful response
+            // with a usable upstream SHA. Transient failures must not hide a
+            // previously discovered update.
+            for (const auto& model_name : entry.model_names) {
+                verified_models.insert(model_name);
+            }
+            if (latest_sha == entry.cached_sha) continue;
 
             LOG(INFO, "ModelManager") << "Update available for " << repo_id
                 << ": cached=" << entry.cached_sha.substr(0, 12)
@@ -1372,16 +1383,31 @@ void ModelManager::check_for_model_updates() {
         }
     }
 
-    if (!updated_models.empty()) {
+    std::vector<std::string> public_updated_models;
+    {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         for (auto& [name, info] : models_cache_) {
-            if (updated_models.count(name)) {
-                info.update_available = true;
+            if (verified_models.count(name)) {
+                info.update_available = updated_models.count(name) != 0;
             }
         }
+
+        public_updated_models.reserve(updated_models.size());
+        for (const auto& name : updated_models) {
+            auto public_it = canonical_public_names_.find(name);
+            public_updated_models.push_back(
+                public_it != canonical_public_names_.end() ? public_it->second : name);
+        }
+    }
+
+    std::sort(public_updated_models.begin(), public_updated_models.end());
+
+    if (!public_updated_models.empty()) {
         LOG(INFO, "ModelManager") << "Updates available for " << updated_models.size()
             << " model(s)" << std::endl;
     }
+
+    return public_updated_models;
 }
 
 static void load_checkpoints(ModelInfo& info, json& model_json) {

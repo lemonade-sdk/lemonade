@@ -445,15 +445,21 @@ void Server::start_model_cache_warmup() {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
 
-        try {
-            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-            model_manager_->check_for_model_updates();
-            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
-        } catch (const std::exception& e) {
-            LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
-        } catch (...) {
-            LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+        if (config_->auto_check_model_updates()) {
+            try {
+                LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+                (void)model_manager_->check_for_model_updates();
+                LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
+            } catch (...) {
+                LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+            }
+        } else {
+            LOG(DEBUG, "Server")
+                << "Automatic model update checks are disabled" << std::endl;
         }
+
         update_check_done_ = true;
     });
 }
@@ -695,6 +701,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models(req, res);
+    });
+
+    // Explicit network action for users who disable startup update checks.
+    register_post("models/check-updates", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_update_check(req, res);
     });
 
     // Model files endpoint for the Files tab. Register before the generic
@@ -1997,6 +2008,36 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
 
     res.set_content(kLiveResponse, "application/json");
     res.status = 200;
+}
+
+void Server::handle_model_update_check(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+
+    // A manual check is intentionally independent from
+    // auto_check_model_updates, but full offline mode remains authoritative.
+    if (config_->offline()) {
+        res.status = 409;
+        res.set_content(
+            nlohmann::json{{"error", "Cannot check model updates while offline=true"}}.dump(),
+            "application/json");
+        return;
+    }
+
+    try {
+        auto updated_models = model_manager_->check_for_model_updates();
+        nlohmann::json response = {
+            {"status", "success"},
+            {"updates_available", updated_models.size()},
+            {"models", updated_models}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Manual model update check failed: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(
+            nlohmann::json{{"error", std::string("Model update check failed: ") + e.what()}}.dump(),
+            "application/json");
+    }
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {

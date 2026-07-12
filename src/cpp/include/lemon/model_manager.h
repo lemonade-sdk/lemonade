@@ -243,12 +243,14 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Check all downloaded models for updates on HuggingFace.
+    // Check all downloaded models for updates on Hugging Face.
     // Fetches the latest commit SHA for each model's repo and compares it
     // with the cached commit (refs/main). Sets update_available on models
-    // whose upstream repo has changed.
+    // whose upstream repo has changed and clears stale flags for repos that
+    // were successfully verified as current. Returns public model names with
+    // updates available.
     // Safe to call from a background thread — locks are internal.
-    void check_for_model_updates();
+    std::vector<std::string> check_for_model_updates();
 
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
@@ -367,6 +369,10 @@ private:
     // (keyed by checkpoint repo). See download_registered_model.
     std::mutex download_locks_mutex_;
     std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
+
+    // Prevent startup and manual update checks from running concurrently.
+    std::mutex update_check_mutex_;
+
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
