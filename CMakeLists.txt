@@ -1823,6 +1823,27 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # ============================================================
 # C++ Unit Tests
 # ============================================================
+
+# FastFlowLM argument validation. Keep this test independent from the server
+set(_FLM_ARG_RESOLVER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_arg_resolver.cpp"
+)
+set(_FLM_ARG_RESOLVER_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp"
+)
+if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
+    add_executable(test_flm_arg_resolver
+        test/cpp/test_flm_arg_resolver.cpp
+        src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp
+    )
+    target_include_directories(test_flm_arg_resolver PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    add_test(NAME FlmArgResolverTest COMMAND test_flm_arg_resolver)
+endif()
+
 set(_DIR_WATCHER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
 )
