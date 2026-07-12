@@ -224,7 +224,8 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 // ============================================================================
 // auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
-void OllamaApi::auto_load_model(const std::string& model) {
+void OllamaApi::auto_load_model(const std::string& model,
+                                  const nlohmann::json& request_options) {
     std::string name = normalize_model_name(model);
 
     if (router_->is_model_loaded(name)) {
@@ -247,7 +248,7 @@ void OllamaApi::auto_load_model(const std::string& model) {
         info = model_manager_->get_model_info(name);
     }
 
-    router_->load_model(name, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(name, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "OllamaApi") << "Model loaded: " << name << std::endl;
 }
 
@@ -704,7 +705,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Auto-load the model
         try {
-            auto_load_model(model);
+            auto_load_model(model, request_json);
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -836,7 +837,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, request_json);
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -1273,7 +1274,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, request_json);
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
@@ -1340,7 +1341,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, request_json);
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};

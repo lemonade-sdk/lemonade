@@ -1852,7 +1852,8 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model) {
+void Server::auto_load_model_if_needed(const std::string& requested_model,
+                                        const nlohmann::json& request_options) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
@@ -1896,7 +1897,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2381,7 +2382,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
                 if (span) {
                     span->cancel();
                 }
@@ -2618,7 +2619,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
                 if (span) {
                     span->cancel();
                 }
@@ -2824,7 +2825,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
                 if (span) {
                     span->cancel();
                 }
@@ -2879,7 +2880,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
                 if (span) {
                     span->cancel();
                 }
@@ -3122,7 +3123,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -3171,7 +3172,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -3382,7 +3383,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
 
         std::string requested_model = request_json["model"];
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, request_json);
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load audio-generation model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3505,7 +3506,7 @@ void Server::handle_3d_generations(const httplib::Request& req, httplib::Respons
 
         std::string requested_model = request_json["model"];
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, request_json);
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3557,7 +3558,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         std::string requested_model = request_json["model"];
 
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, request_json);
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3659,7 +3660,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
     }
     std::string requested_model = request_json["model"];
     try {
-        auto_load_model_if_needed(requested_model);
+        auto_load_model_if_needed(requested_model, request_json);
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
@@ -4059,7 +4060,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, request_json);
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());

@@ -249,7 +249,10 @@ private:
                                   nlohmann::json& out);
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    void auto_load_model_if_needed(const std::string& model_name);
+    // request_options: optional per-request overrides (e.g. ctx_size, llamacpp_backend)
+    // that are forwarded to RecipeOptions when loading the model.
+    void auto_load_model_if_needed(const std::string& model_name,
+                                   const nlohmann::json& request_options = nlohmann::json::object());
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
