@@ -244,6 +244,15 @@ CLI::App* register_bench_command(CLI::App& parent,
 // ============================================================
 // Output Formatting
 // ============================================================
+struct FieldWidths {
+    size_t scenario_name = 20;
+    size_t ttft = 8;
+    size_t tps = 8;
+};
+
+FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results);
+
+static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles, const FieldWidths& widths);
 
 // Print results as a comparison table to stdout
 // use_percentiles: show p50/p95 columns (true when runs >= 10); otherwise show min/max

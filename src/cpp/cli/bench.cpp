@@ -890,34 +890,54 @@ static std::string fmt_vram_change(std::optional<double> val) {
     return fmt_double(*val) + " GB";
 }
 
-static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles) {
+FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results) {
+    FieldWidths widths;
+
+    for (const auto& backend_result : results) {
+        for (const auto& scenario : backend_result.scenarios) {
+            size_t scenario_len = scenario.scenario_name.length();
+            if (scenario_len > 0) {
+                if (scenario.failed_runs > 0) {
+                    scenario_len += 2 + std::to_string(scenario.failed_runs).length() + 1;
+                }
+                if (scenario_len > widths.scenario_name) {
+                    widths.scenario_name = std::min<size_t>(scenario_len, 36)+3;
+                }
+            }
+        }
+    }
+
+    return widths;
+}
+
+static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles, const FieldWidths& widths) {
     double ttft_1 = use_percentiles ? scenario.ttft_p50_ms() : scenario.ttft_min_ms();
     double ttft_2 = use_percentiles ? scenario.ttft_p95_ms() : scenario.ttft_max_ms();
     double tps_1 = use_percentiles ? scenario.tps_p50() : scenario.tps_min();
     double tps_2 = use_percentiles ? scenario.tps_p95() : scenario.tps_max();
     std::string name = scenario.scenario_name;
     if (scenario.failed_runs > 0) {
-        name += " *" + std::to_string(scenario.failed_runs) + "f";
+        name += " *" + std::to_string(scenario.failed_runs) + "f ";
     }
     if (scenario.runs.empty()) {
         // All runs failed — show dashes
-        std::cout << std::left << std::setw(20) << name
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
+        std::cout << std::left << std::setw(widths.scenario_name) << name
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.tps) << "-"
+                  << std::setw(widths.tps) << "-"
+                  << std::setw(widths.tps) << "-"
                   << std::setw(8) << "-"
                   << std::endl;
     } else {
-        std::cout << std::left << std::setw(20) << name
-                  << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
-                  << std::setw(8) << fmt_double(ttft_1)
-                  << std::setw(8) << fmt_double(ttft_2)
-                  << std::setw(8) << fmt_double(scenario.tps_mean())
-                  << std::setw(8) << fmt_double(tps_1)
-                  << std::setw(8) << fmt_double(tps_2)
+        std::cout << std::left << std::setw(widths.scenario_name) << name
+                  << std::setw(widths.ttft) << fmt_double(scenario.ttft_mean_ms())
+                  << std::setw(widths.ttft) << fmt_double(ttft_1)
+                  << std::setw(widths.ttft) << fmt_double(ttft_2)
+                  << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
+                  << std::setw(widths.tps) << fmt_double(tps_1)
+                  << std::setw(widths.tps) << fmt_double(tps_2)
                   << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
                   << std::endl;
     }
@@ -925,6 +945,7 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
 
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
                  bool use_percentiles) {
+    FieldWidths widths = calculate_field_widths(results);
     std::cout << std::endl;
     std::cout << "Benchmark: " << model << std::endl;
     std::cout << std::string(100, '=') << std::endl;
@@ -935,18 +956,18 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
         std::cout << std::string(100, '-') << std::endl;
 
         // Header — show min/max by default, switch to p50/p95 when runs >= 10
-        std::cout << std::left << std::setw(20) << "Scenario"
-                  << std::setw(8) << "TTFT"
-                  << std::setw(8) << (use_percentiles ? "p50" : "min")
-                  << std::setw(8) << (use_percentiles ? "p95" : "max")
-                  << std::setw(8) << "TPS"
-                  << std::setw(8) << (use_percentiles ? "p50" : "min")
-                  << std::setw(8) << (use_percentiles ? "p95" : "max")
+        std::cout << std::left << std::setw(widths.scenario_name) << "Scenario"
+                  << std::setw(widths.ttft) << "TTFT"
+                  << std::setw(widths.ttft) << (use_percentiles ? "p50" : "min")
+                  << std::setw(widths.ttft) << (use_percentiles ? "p95" : "max")
+                  << std::setw(widths.tps) << "TPS"
+                  << std::setw(widths.tps) << (use_percentiles ? "p50" : "min")
+                  << std::setw(widths.tps) << (use_percentiles ? "p95" : "max")
                   << std::setw(8) << "VRAM (GB)" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         for (const auto& scenario : backend_result.scenarios) {
-            print_scenario_row(scenario, use_percentiles);
+            print_scenario_row(scenario, use_percentiles, widths);
         }
     }
 
