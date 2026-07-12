@@ -93,7 +93,18 @@
     "rocm": "vllm0.20.1-rocm7.12.0"
   },
   "vte": {
-    "rocm-stable": "0.2.0"
+    "rocm-stable": "0.3.0"
+  },
+  "checksums": {
+    "vte": {
+      "rocm-stable": {
+        "0.3.0": {
+          "vte-server-0.3.0-windows-x64.zip": {
+            "sha256": "b3100f987bbdb4f8189232bf803370932d144cb33b5e74caf9675954af1a76ab"
+          }
+        }
+      }
+    }
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

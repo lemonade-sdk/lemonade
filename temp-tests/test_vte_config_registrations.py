@@ -69,15 +69,23 @@ def test_server_models_json_no_existing_entry_modified():
 
 def test_backend_versions_json_valid_and_has_vte_entry():
     data = json.loads(BACKEND_VERSIONS.read_text(encoding="utf-8"))
-    # 0.2.0: a real GitHub release (kyuubyN/VTE, tag "0.2.0", no "v" prefix --
-    # see the earlier 0.1.0 release, same convention) with /v1/models,
-    # a generation lock, and the downloader. Validated live before publishing.
+    # 0.3.0: a real GitHub release (kyuubyN/VTE, tag "0.3.0", no "v" prefix --
+    # see the earlier 0.1.0/0.2.0 releases, same convention). Supersedes
+    # 0.2.0, which predated the usage-field/param-alias fixes and a critical
+    # AOT-kernel-loading fix (0.2.0 silently produced all-zero logits on any
+    # machine without hipcc on PATH, even with the right AOT kernels already
+    # bundled for the local GPU). Validated live before publishing, including
+    # the no-hipcc case.
     # Key is "rocm-stable", not "rocm": llamacpp uses the same convention
     # (backend_versions.json keys are the resolved channel, not the raw
     # selector) -- confirmed for real on a machine with no HIP SDK installed,
     # where a plain "rocm" key made install_backend() fail to find a pinned
     # version for "vte:rocm-stable" after normalize_backend_name() resolved it.
-    assert data.get("vte") == {"rocm-stable": "0.2.0"}
+    assert data.get("vte") == {"rocm-stable": "0.3.0"}
+    # SHA-256 pin, added once a real release existed to pin against.
+    assert data.get("checksums", {}).get("vte", {}).get("rocm-stable", {}).get("0.3.0", {}).get(
+        "vte-server-0.3.0-windows-x64.zip", {}
+    ).get("sha256") == "b3100f987bbdb4f8189232bf803370932d144cb33b5e74caf9675954af1a76ab"
     # Regression check: vllm stays intact.
     assert data.get("vllm") == {"rocm": "vllm0.20.1-rocm7.12.0"}
 

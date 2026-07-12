@@ -156,7 +156,14 @@ CAPABILITIES = {
                 "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,
-                "generation_parameters": True,
+                # False: test_014_generation_parameters requires identical
+                # params (temperature 0.7, unseeded) to produce byte-identical
+                # output across two calls. vte's sampler draws from
+                # np.random.choice with no fixed seed, same as every other
+                # backend in this catalog (all declare this False too) --
+                # true reproducibility would need a seed parameter neither
+                # the OpenAI API surface nor vte-server currently exposes.
+                "generation_parameters": False,
                 "slots": False,
                 "static_max_context_window": True,
             },

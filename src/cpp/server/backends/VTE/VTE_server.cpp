@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
@@ -197,6 +198,36 @@ json VTEServer::completion(const json& request) {
     return forward_request("/v1/completions", normalize_vte_request(request));
 }
 
+// GGUF metadata (context length, architecture) for model listings.
+// default_backend_ops() does not read GGUF files at all, so without this
+// every VTE model's max_context_window stayed 0 (omitted from /v1/models)
+// and model_info.gguf.architecture (checked in load() above) was always
+// empty -- that check was never actually gating anything.
+class VTEOps : public BackendOps {
+public:
+    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
+        const std::string gguf_path = info.resolved_path();
+        if (gguf_path.size() < 5) {
+            return;
+        }
+        std::string ext = gguf_path.substr(gguf_path.size() - 5);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext != ".gguf") {
+            return;
+        }
+        std::error_code ec;
+        if (!std::filesystem::exists(lemon::utils::path_from_utf8(gguf_path), ec)) {
+            return;
+        }
+        GgufMetadata meta;
+        if (!read_gguf_metadata(meta, gguf_path)) {
+            return;
+        }
+        info.max_context_window = meta.context_length;
+        info.gguf = std::move(meta);
+    }
+};
+
 }  // namespace backends
 }  // namespace lemon
 
@@ -209,7 +240,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() { return make_spec<VTEServer>(descriptor, /*split=*/false); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<VTEOps>(); }
 
 }  // namespace VTE
 }  // namespace backends
