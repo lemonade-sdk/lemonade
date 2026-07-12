@@ -331,6 +331,7 @@ const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
 }) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const [activePreset, setActivePreset] = useState<PresetKey | 'blank' | null>(null);
 
   const addRow = () => {
     ruleSeqRef.current += 1;
@@ -341,6 +342,7 @@ const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
   const applyPreset = (key: PresetKey) => {
     const { rules: newRules } = buildPresetRules(key, candidateOptions, ruleSeqRef);
     onChangeDraft({ rules: newRules });
+    setActivePreset(key);
   };
 
   const handleDrop = () => {
@@ -357,11 +359,11 @@ const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
       <div className="quick-presets-bar">
         <span className="quick-presets-label">Start from</span>
         {PRESETS.map(p => (
-          <button key={p.key} type="button" className="quick-preset-btn" onClick={() => applyPreset(p.key)}>
+          <button key={p.key} type="button" className={`quick-preset-btn${activePreset === p.key ? ' quick-preset-btn--active' : ''}`} onClick={() => applyPreset(p.key)}>
             {p.emoji} {p.label}
           </button>
         ))}
-        <button type="button" className="quick-preset-btn quick-preset-btn--blank" onClick={() => onChangeDraft({ rules: [] })}>
+        <button type="button" className={`quick-preset-btn quick-preset-btn--blank${activePreset === 'blank' ? ' quick-preset-btn--active' : ''}`} onClick={() => { onChangeDraft({ rules: [] }); setActivePreset('blank'); }}>
           Blank
         </button>
       </div>
@@ -687,17 +689,20 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         <div className="form-section">
           <label className="form-label">Routing Mode</label>
           <div className="router-mode-options">
-            <label className="router-mode-option">
+            <label className={`router-mode-option${draft.routingMode === 'llm' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'} onChange={() => patch({ routingMode: 'llm' })} />
-              <span><strong>NL Router</strong><span className="settings-description" style={{ display: 'block' }}>A small LLM reads your prompt and picks the best candidate.</span></span>
+              <strong>NL Router</strong>
+              <span className="settings-description">A small LLM reads your prompt and picks the best candidate.</span>
             </label>
-            <label className="router-mode-option">
+            <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'} onChange={() => patch({ routingMode: 'quick' })} />
-              <span><strong>Quick Rules</strong><span className="settings-description" style={{ display: 'block' }}>Simple condition-based routing - no drag-and-drop needed.</span></span>
+              <strong>Quick Rules</strong>
+              <span className="settings-description">Simple condition-based routing - no drag-and-drop needed.</span>
             </label>
-            <label className="router-mode-option">
+            <label className={`router-mode-option${draft.routingMode === 'rules' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules', rules: [], classifiers: [] })} />
-              <span><strong>Advanced Rules</strong><span className="settings-description" style={{ display: 'block' }}>Visual boolean expression builder with gates and classifiers.</span></span>
+              <strong>Advanced Rules</strong>
+              <span className="settings-description">Visual boolean expression builder with gates and classifiers.</span>
             </label>
           </div>
         </div>
