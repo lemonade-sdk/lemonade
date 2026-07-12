@@ -1,11 +1,11 @@
 """
-Verifica as entradas de configuracao (JSON/YAML/Python) adicionadas para o
-backend VTE: server_models.json, backend_versions.json,
-test/utils/capabilities.py e a linha nova na matriz de CI. Nao substitui
-rodar a suite de teste real (test/server_llm.py --wrapped-server vte
---backend rocm) contra um lemond compilado -- isso ainda depende de cmake.
+Verifies the configuration entries (JSON/YAML/Python) added for the VTE
+backend: server_models.json, backend_versions.json, test/utils/capabilities.py,
+and the new CI matrix row. Does not replace running the real test suite
+(test/server_llm.py --wrapped-server vte --backend rocm) against a compiled
+lemond -- that still depends on cmake.
 
-Apagar esta pasta quando a integracao estiver completa e validada.
+Delete this folder once the integration is complete and validated.
 """
 import json
 import sys
@@ -38,18 +38,18 @@ def test_server_models_json_valid_and_has_vte_entry():
 
 
 def test_server_models_json_has_granite_and_qwen35_vte_entries():
-    """Granite (Q8_0) e Qwen3.5 (Q6_K) sao as outras duas arquiteturas que o
-    VTE sabe rodar (ver vte/compiler/sanitizer.py::SUPPORTED_ARCHITECTURES) --
-    ambos os checkpoints foram baixados e carregados de verdade (VTEModel.
-    from_pretrained + generate() real, nao so lidos do Hub) antes de entrar
-    aqui, confirmando que a quantizacao de cada um funciona no VTE."""
+    """Granite (Q8_0) and Qwen3.5 (Q6_K) are the other two architectures VTE
+    knows how to run (see vte/compiler/sanitizer.py::SUPPORTED_ARCHITECTURES).
+    Both checkpoints were downloaded and loaded for real (VTEModel.
+    from_pretrained + a real generate() call, not just read from the Hub)
+    before entering here, confirming each quantization works on VTE."""
     data = json.loads(SERVER_MODELS.read_text(encoding="utf-8"))
 
     granite = data["Granite-4.1-3B-VTE"]
     assert granite["recipe"] == "vte"
     assert granite["checkpoint"] == "unsloth/granite-4.1-3b-GGUF:granite-4.1-3b-Q8_0.gguf"
     assert granite["suggested"] is True  # see comment on the Qwen2.5-VTE assertion above
-    assert granite["recipe_options"]["ctx_size"] == 8192  # mesmo fix de VRAM/tok-s do Qwen2.5-1.5B-Instruct-VTE
+    assert granite["recipe_options"]["ctx_size"] == 8192  # same VRAM/tok-s fix as Qwen2.5-1.5B-Instruct-VTE
 
     qwen35 = data["Qwen3.5-2B-VTE"]
     assert qwen35["recipe"] == "vte"
@@ -59,21 +59,21 @@ def test_server_models_json_has_granite_and_qwen35_vte_entries():
 
 
 def test_server_models_json_no_existing_entry_modified():
-    """Confirma que a unica mudanca no arquivo foi a adicao -- nao apagou
-    nem alterou nenhuma entrada existente (checagem simples de regressao:
-    alguns nomes conhecidos de outras entradas continuam presentes)."""
+    """Confirms the only change to the file was the addition -- no existing
+    entry was deleted or altered (simple regression check: a few known
+    names from other entries are still present)."""
     data = json.loads(SERVER_MODELS.read_text(encoding="utf-8"))
     for known_model in ["Qwen3-0.6B-GGUF", "Tiny-Test-Model-GGUF", "Qwen3-1.7B-GGUF"]:
-        assert known_model in data, f"Entrada existente '{known_model}' sumiu -- regressao!"
+        assert known_model in data, f"Existing entry '{known_model}' disappeared -- regression!"
 
 
 def test_backend_versions_json_valid_and_has_vte_entry():
     data = json.loads(BACKEND_VERSIONS.read_text(encoding="utf-8"))
-    # 0.2.0: release real no GitHub (kyuubyN/VTE, tag "0.2.0", sem prefixo "v"
-    # -- ver o release 0.1.0 anterior, mesma convencao) com /v1/models, lock
-    # de geracao e downloader. Validado ao vivo antes de publicar.
+    # 0.2.0: a real GitHub release (kyuubyN/VTE, tag "0.2.0", no "v" prefix --
+    # see the earlier 0.1.0 release, same convention) with /v1/models,
+    # a generation lock, and the downloader. Validated live before publishing.
     assert data.get("vte") == {"rocm": "0.2.0"}
-    # Regressao: vllm continua intacto.
+    # Regression check: vllm stays intact.
     assert data.get("vllm") == {"rocm": "vllm0.20.1-rocm7.12.0"}
 
 
@@ -87,14 +87,14 @@ def test_capabilities_py_has_vte_entry_matching_moonshine_shape():
 
     required_keys = set(capabilities.CAPABILITIES["llm"]["ryzenai"]["supports"].keys())
     assert set(vte_entry["supports"].keys()) == required_keys, (
-        "O dict 'supports' de vte precisa ter EXATAMENTE as mesmas chaves que "
-        "outro backend LLM ja existente (ryzenai) -- uma chave faltando quebra "
-        "skip_if_unsupported silenciosamente (trata como 'nao suportado')."
+        "vte's 'supports' dict needs EXACTLY the same keys as another existing "
+        "LLM backend (ryzenai) -- a missing key silently breaks "
+        "skip_if_unsupported (treats it as 'not supported')."
     )
-    # O que realmente implementamos e testamos de verdade na Fase A.
+    # What's actually implemented and tested for real so far.
     assert vte_entry["supports"]["chat_completions"] is True
     assert vte_entry["supports"]["chat_completions_streaming"] is True
-    # O que NAO implementamos ainda -- nao afirmar suporte que nao existe.
+    # What's NOT implemented yet -- don't claim support that doesn't exist.
     assert vte_entry["supports"]["completions_streaming"] is False
     assert vte_entry["supports"]["embeddings"] is False
     assert vte_entry["supports"]["reranking"] is False
@@ -105,7 +105,7 @@ def test_ci_workflow_yaml_valid_and_has_vte_row():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     matrix_include = workflow["jobs"]["test-exe-inference"]["strategy"]["matrix"]["include"]
     vte_rows = [row for row in matrix_include if row.get("name") == "vte"]
-    assert len(vte_rows) == 1, "Deveria haver exatamente uma linha 'vte' na matriz de CI"
+    assert len(vte_rows) == 1, "There should be exactly one 'vte' row in the CI matrix"
     row = vte_rows[0]
     assert row["extra_args"] == "--wrapped-server vte"
     assert row["backends"] == "rocm"
@@ -118,4 +118,4 @@ def test_ci_workflow_existing_rows_not_modified():
     matrix_include = workflow["jobs"]["test-exe-inference"]["strategy"]["matrix"]["include"]
     names = [row.get("name") for row in matrix_include]
     for known in ["llamacpp", "ryzenai", "flm", "moonshine"]:
-        assert known in names, f"Linha de CI existente '{known}' sumiu -- regressao!"
+        assert known in names, f"Existing CI row '{known}' disappeared -- regression!"
