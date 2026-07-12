@@ -99,6 +99,10 @@ def test_capabilities_py_has_vte_entry_matching_moonshine_shape():
     assert vte_entry["supports"]["embeddings"] is False
     assert vte_entry["supports"]["reranking"] is False
     assert vte_entry["supports"]["tool_calls"] is False
+    # False: vte-server's own 80%-free-VRAM preflight refuses to load
+    # alongside another already-loaded GPU model, contradicting multi_model
+    # support (flagged in the maintainer PR review).
+    assert vte_entry["supports"]["multi_model"] is False
 
 
 def test_ci_workflow_yaml_valid_and_has_vte_row():

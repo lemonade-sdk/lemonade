@@ -1,19 +1,16 @@
-// NOTE: this file has NOT been compiled in the session that wrote it (no
-// cmake/MSVC toolchain was available). It is grounded line-by-line against
-// vllm_server.cpp and moonshine_server.cpp (the closest existing precedents:
-// vLLM is the other Python-based backend, Moonshine the simplest
-// single-flavor/non-selectable one) -- build and run this against a real
-// lemond before merging.
-
 #include "lemon/backends/VTE/VTE_server.h"
 #include "lemon/backends/VTE/VTE.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/model_manager.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <cstring>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -32,12 +29,9 @@ namespace backends {
 
 namespace {
 
-// GGUF architectures VTE can actually load today (vte/compiler/sanitizer.py::
-// SUPPORTED_ARCHITECTURES, ground truth in the VTE repo). Checking this here,
-// before the subprocess is even spawned, turns an unsupported model into a
-// clear error message instead of a subprocess that starts and then fails
-// deep inside VTEModel._load() -- VTE's own sanitizer.validate() is the real
-// gate either way, this is defense in depth for a better error surface only.
+// Mirrors vte/compiler/sanitizer.py::SUPPORTED_ARCHITECTURES. Checked here
+// too (VTE's own sanitizer is the real gate) so an unsupported model fails
+// before spawning a subprocess, with a clearer error.
 const std::set<std::string> kVteSupportedArchitectures = {"qwen2", "granite", "qwen35"};
 
 int current_process_id() {
@@ -56,12 +50,9 @@ InstallParams VTEServer::get_install_params(const std::string& backend, const st
         throw std::runtime_error("VTE backend '" + backend + "' is not supported. Supported: rocm");
     }
 
-    // Hosted under the VTE project's own GitHub repo (not lemonade-sdk) --
-    // deliberate choice for the first integration, see the integration plan.
-    // One portable bundle covers all of RDNA3 (gfx1100/1101/1102): unlike
-    // vLLM, VTE ships its precompiled kernels for every supported GPU family
-    // inside the same wheel and does its own runtime device detection, so no
-    // per-GPU-arch release tag is needed here.
+    // One portable bundle covers all of RDNA3 (gfx1100/1101/1102): VTE ships
+    // precompiled kernels for every supported GPU family in the same wheel
+    // and does its own runtime device detection, so no per-arch release tag.
     params.repo = "kyuubyN/VTE";
 #ifdef _WIN32
     params.filename = "vte-server-" + version + "-windows-x64.zip";
@@ -114,23 +105,37 @@ void VTEServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
         "--host", "127.0.0.1",
         "--context-length", std::to_string(ctx_size),
-        // Watchdog for the "lemond died without calling unload() on anyone"
-        // case -- Windows' TerminateProcess (what stop_process() uses even
-        // on the NORMAL unload path, confirmed by reading process_windows.cpp)
-        // delivers no catchable signal to this subprocess at all, so this is
-        // the mechanism that actually prevents vte-server from surviving as
-        // an orphan holding VRAM if the parent vanishes uncleanly. VRAM
-        // itself is not at risk on any *normal* termination of this process
-        // (graceful or hard-killed) -- the GPU driver reclaims all VRAM tied
-        // to a process on its exit, same as it would for any other GPU
-        // application; this watchdog is purely about not leaving a live,
-        // still-serving orphan process behind.
+        // Windows' TerminateProcess delivers no catchable signal to a child,
+        // even on the normal unload path -- this lets vte-server detect a
+        // vanished parent and exit instead of surviving as an orphan.
         "--parent-pid", std::to_string(current_process_id()),
     };
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     // Prevent system/user Python packages from leaking into the bundled environment.
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
+
+    // VTE ships its own kernels but not amdhip64.dll itself; put TheRock's
+    // bin/ (installed above via rocm_channels) on the child's PATH, mirroring
+    // llamacpp_server.cpp's Windows block. Both PATH and HIP_PATH are set
+    // since vte/config.py::find_hip_dll checks HIP_PATH first.
+    std::string rocm_arch = SystemInfo::get_rocm_arch();
+    if (!rocm_arch.empty()) {
+        std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+        if (!therock_bin.empty()) {
+            std::string new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
+            const char* existing_path = std::getenv("PATH");
+            if (existing_path && strlen(existing_path) > 0) {
+                new_path += ";" + std::string(existing_path);
+            }
+            env_vars.push_back({"PATH", new_path});
+            env_vars.push_back({"HIP_PATH", therock_bin});
+            LOG(DEBUG, "VTE") << "Using TheRock runtime at " << therock_bin << std::endl;
+        } else {
+            LOG(WARNING, "VTE") << "TheRock runtime not found for " << rocm_arch
+                                 << "; vte-server will only start if a HIP SDK is already installed." << std::endl;
+        }
+    }
 
     bool inherit_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
@@ -156,12 +161,27 @@ void VTEServer::unload() {
     context_length_ = 0;
 }
 
+namespace {
+
+// vte-server itself now accepts these aliases directly too (belt and
+// suspenders); normalizing here keeps VTEServer consistent with how
+// llamacpp/vllm handle the same two fields before forward_request().
+json normalize_vte_request(const json& request) {
+    json normalized = JsonUtils::with_legacy_max_tokens_alias(request);
+    if (normalized.contains("repeat_penalty") && !normalized.contains("repetition_penalty")) {
+        normalized["repetition_penalty"] = normalized["repeat_penalty"];
+    }
+    return normalized;
+}
+
+}  // namespace
+
 json VTEServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    return forward_request("/v1/chat/completions", normalize_vte_request(request));
 }
 
 json VTEServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    return forward_request("/v1/completions", normalize_vte_request(request));
 }
 
 }  // namespace backends

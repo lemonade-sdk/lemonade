@@ -188,7 +188,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td rowspan="1"><code>vte</code> (experimental)</td>
       <td><code>rocm</code></td>
-      <td>RDNA3 native (RX 7700/7800/7900 series)</td>
+      <td>RDNA3 native, validated on RX 7600; RX 7700/7800/7900 series untested</td>
       <td>Windows</td>
     </tr>
     <tr>

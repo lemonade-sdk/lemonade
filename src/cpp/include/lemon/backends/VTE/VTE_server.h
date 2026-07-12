@@ -9,11 +9,8 @@
 namespace lemon {
 namespace backends {
 
-// Wraps a single vte-server subprocess (one VTEModel per process, exactly
-// like every other backend here -- see lemon::backends::VTE::descriptor for
-// why this integration lives under a differently-cased folder). Only
-// ICompletionServer is implemented for v1: VTE has no embeddings/reranking/
-// tokenizer capability today.
+// Wraps a single vte-server subprocess (one VTEModel per process). Only
+// ICompletionServer is implemented for v1.
 class VTEServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);

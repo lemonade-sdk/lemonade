@@ -147,7 +147,13 @@ CAPABILITIES = {
                 "reranking": False,
                 "tool_calls": False,
                 "tool_calls_streaming": False,
-                "multi_model": True,
+                # False: vte-server refuses to load if free VRAM is under 80%
+                # (its own preflight, see vte/server/http_server.py), so
+                # loading VTE alongside another already-loaded GPU model is
+                # likely to fail rather than coexist. Revisit once that
+                # preflight is integrated with Lemonade's own VRAM/eviction
+                # policy instead of running as an independent, unaware check.
+                "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": True,
