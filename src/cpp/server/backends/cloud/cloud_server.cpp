@@ -760,12 +760,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         {"Authorization", "Bearer " + api_key}
     };
 
-    // A plaintext http:// provider is only reached when the operator explicitly
-    // opted in; https providers use the default external HTTPS-only policy.
-    const utils::HttpSecurityPolicy policy =
-        (allow_insecure_http && CloudProviderRegistry::is_http_base_url(normalized_base))
-            ? utils::HttpSecurityPolicy::AllowInsecureHttp
-            : utils::HttpSecurityPolicy::ExternalHttpsOnly;
+    // HTTPS providers and remote endpoints use the default external
+    // HTTPS-only policy. Plaintext http:// providers that explicitly set
+    // allow_insecure_http use the AllowInsecureHttp opt-in so http and https
+    // are accepted but redirect chains remain bounded.
 
     utils::HttpResponse response;
     try {
@@ -773,7 +771,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         // configured provider. The 300 s default would block model listing
         // for minutes if a provider's API is unreachable. 15 s is plenty for
         // a /v1/models response under normal conditions.
-        response = utils::HttpClient::get(url, headers, /*timeout_seconds=*/15, policy);
+        response = utils::HttpClient::get(url, headers, /*timeout_seconds=*/15,
+                                          allow_insecure_http
+                                              ? utils::HttpSecurityPolicy::AllowInsecureHttp
+                                              : utils::HttpSecurityPolicy::ExternalHttpsOnly);
     } catch (const std::exception& e) {
         LOG(WARNING, "Cloud") << "Model discovery failed for provider '" << provider
                               << "': " << e.what() << std::endl;

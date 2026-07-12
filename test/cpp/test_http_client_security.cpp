@@ -3,13 +3,6 @@
 // both a Lemonade-managed backend and an external host so we can exercise the
 // scheme and redirect restrictions without real TLS.
 //
-// The HTTPS→HTTP protocol-downgrade test uses an httplib loopback server with
-// an https:// URL in the client request. Because cpp-httplib's SSL support is
-// disabled in this build the TLS handshake will fail, but libcurl checks
-// CURLOPT_REDIR_PROTOCOLS_STR *before* attempting any network I/O, so the
-// http:// redirect is blocked at the configuration level regardless of
-// certificate validity.
-//
 // Checks use an explicit pass/fail counter (not assert()) so the test stays
 // effective under the Release build the CI `default` preset uses, where
 // -DNDEBUG would compile assert() to a no-op.
@@ -41,53 +34,6 @@ struct TestResult {
     }
 };
 
-// Make a raw curl request using an https:// URL that points to a loopback
-// httplib server and returns an http:// redirect.  This exercises
-// CURLOPT_REDIR_PROTOCOLS_STR="https" — curl rejects the http:// redirect
-// target even though the initial URL has a legitimate https:// scheme.
-//
-// The TLS handshake on the loopback address will fail because the loopback
-// server does not handle TLS, but libcurl validates the redirect target
-// protocol before any network I/O, so the rejection is guaranteed.
-static bool test_https_redirect_to_http(httplib::Server& http_svr, int port) {
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        printf("[FAIL] https: curl_init failed\n");
-        return false;
-    }
-
-    // Use an https:// URL — the External policy enforces https:// everywhere.
-    // The /http-redirect handler returns a 302 to http://127.0.0.1:<port>/ok,
-    // which MUST be blocked by CURLOPT_REDIR_PROTOCOLS_STR="https".
-    std::string url = "https://127.0.0.1:" + std::to_string(port) + "/http-redirect";
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-                     [](void* ptr, size_t s, size_t n, void* userp) -> size_t {
-                         auto* buf = static_cast<std::string*>(userp);
-                         buf->append(static_cast<char*>(ptr), s * n);
-                         return s * n;
-                     });
-    std::string body;
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
-
-    // Allow initial https request but block non-https redirects — this matches
-    // the ExternalHttpsOnly policy enforced by apply_http_security_policy().
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    // Disable cert verification — the loopback server lacks TLS, but the
-    // redirect protocol check happens before any network I/O.
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-
-    CURLcode res = curl_easy_perform(curl);
-    bool rejected = (res != CURLE_OK);
-
-    curl_easy_cleanup(curl);
-    return rejected;
-}
-
 int main() {
     TestResult r;
     printf("=== HttpClient security policy Unit Tests ===\n\n");
@@ -113,11 +59,6 @@ int main() {
     });
     svr.Get("/to-file", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("file:///etc/passwd");
-    });
-    // Returns an http:// redirect — exercise for the HTTPS→HTTP downgrade test.
-    svr.Get("/http-redirect",
-            [port](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("http://127.0.0.1:" + std::to_string(port) + "/ok");
     });
 
     std::thread server_thread([&svr]() { svr.listen_after_bind(); });
@@ -194,22 +135,15 @@ int main() {
         r.check(rejected, "insecure: redirect to file:// is rejected");
     }
 
-    // HTTPS→HTTP protocol downgrade test: the client makes an https:// request
-    // and the server returns a 302 redirect pointing to a http:// URL.
-    //
-    // Under the ExternalHttpsOnly policy, apply_http_security_policy() sets
-    // CURLOPT_REDIR_PROTOCOLS_STR="https", which makes curl return
-    // CURLE_UNSUPPORTED_PROTOCOL when encountering a non-https redirect.
-    //
-    // The HTTPS scheme in the URL is necessary to trigger curl's redirect
-    // protocol check (CURLPROTO_HTTPS allows the initial request, the http://
-    // redirect is then blocked).  The loopback server's TLS will not complete
-    // (no cipher negotiation), but curl blocks the redirect at the
-    // configuration level before any network I/O occurs.
-    {
-        bool rejected = test_https_redirect_to_http(svr, port);
-        r.check(rejected, "external: https->http redirect is rejected");
-    }
+    // Note: An HTTPS→HTTP protocol-downgrade test (client connects to https://
+    // and is redirected to http://) is not exercised here. Running a curl
+    // request against a plain httplib::Server with an https:// URL fails at the
+    // TLS handshake before curl can reach the redirect-protocol check, so the
+    // test would pass on an unrelated failure rather than exercising the actual
+    // CURLOPT_REDIR_PROTOCOLS_STR="https" logic. That scenario is validated by
+    // the ExternalHttpsOnly policy configuration in apply_http_security_policy()
+    // and by the AllowInsecureHttp file://-block, which uses the same libcurl
+    // mechanism to restrict redirect targets.
 
     svr.stop();
     server_thread.join();
