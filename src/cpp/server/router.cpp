@@ -652,11 +652,9 @@ void Router::load_model(const std::string& model_name,
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
-        if (existing && !existing->is_backend_alive()) {
+        if (existing && (!existing->is_backend_alive() || existing->was_watchdog_triggered())) {
             LOG(WARNING, "Router") << "Existing backend for " << canonical_model_name
-                                    << " is unavailable (state="
-                                    << existing->get_backend_health_state()
-                                    << "), evicting before reload" << std::endl;
+                                    << " is unavailable or watchdog triggered, evicting before reload" << std::endl;
             evict_server(existing);
             existing = nullptr;
         }
@@ -1170,6 +1168,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1179,7 +1178,9 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1195,7 +1196,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
             return ErrorResponse::create(
@@ -1220,6 +1221,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (attempt == 0 && watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1228,7 +1230,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                if (reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
+                if (reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                     continue;
                 }
             }
@@ -1272,9 +1274,11 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 
     for (int attempt = 0; attempt < 2; ++attempt) {
+        WrappedServer* server = nullptr;
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1288,7 +1292,9 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 return;
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1309,7 +1315,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 
@@ -1333,6 +1339,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1344,18 +1351,20 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id());
+                reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id);
             }
             return;
         } catch (const BackendStreamRetryableReset& e) {
             restart_options = server->get_recipe_options();
             restart_model_name = server->get_model_name();
+            failed_instance_id = server->get_instance_id();
+
             server->release_inference();
 
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, server->get_instance_id())) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 
