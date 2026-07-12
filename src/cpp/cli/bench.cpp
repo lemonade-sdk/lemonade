@@ -725,11 +725,15 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
 
         auto resp_json = json::parse(response);
 
+        result.response_text = "null";
         if (capture_response) {
             if (resp_json.contains("data") && !resp_json["data"].empty()) {
-                result.response_text = resp_json["data"].dump();
-            } else {
-                result.response_text = "null";
+                const auto& data = resp_json["data"];
+                if (data.is_array() && !data.empty()) {
+                    const auto& first_item = data[0];
+                    if (first_item.contains("b64_json"))
+                        result.response_text = first_item["b64_json"].get<std::string>();
+                }
             }
         }
 
@@ -742,7 +746,7 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
         result.ttft_ms = duration<double, std::milli>(end - start).count();
 
     } catch (const std::exception& e) {
-        std::cerr << "    Embedding benchmark run failed: " << e.what() << std::endl;
+        std::cerr << "    Image generation benchmark run failed: " << e.what() << std::endl;
         return result;  // success stays false
     }
 
@@ -1343,13 +1347,11 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     std::vector<std::string> unique_models;
     std::unordered_set<std::string> seen_models;
     for (const auto& model : config.models) {
-        std::cout << "Checking model: " << model << std::endl;
         if (seen_models.find(model) == seen_models.end()) {
             unique_models.push_back(model);
             seen_models.insert(model);
         }
     }
-    std::cout << "Total models: " << config.models.size() << " (" << unique_models.size() << " unique)" << std::endl;
 
     if (unique_models.size() < config.models.size()) {
         std::cout << "Note: Removed " << (config.models.size() - unique_models.size())
@@ -1466,7 +1468,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     // 2. Execute benchmark workflow for each model
     for (const auto& model : unique_models) {
-    std::cout << "Checking model: " << model << " (" << unique_models.size() << " total)" << std::endl;
         const auto model_it = model_info_by_name.find(model);
         if (model_it == model_info_by_name.end()) {
             std::cerr << "Error: Missing preflight model info for '" << model << "'." << std::endl;
