@@ -32,7 +32,10 @@
 #include <Wbemidl.h>
 #include <intrin.h>
 #include "utils/wmi_helper.h"
+#include <dxgi1_4.h>
+#include <wrl/client.h>
 #pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "dxgi.lib")
 #endif
 
 #ifdef __APPLE__
@@ -4029,6 +4032,77 @@ bool SystemInfo::is_running_under_systemd() {
 #endif
 }
 
+#ifdef _WIN32
+double get_windows_dxgi_vram_usage() {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IDXGIFactory4> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return -1.0;
+    }
+
+    ComPtr<IDXGIAdapter1> adapter;
+    double highest_ratio = -1.0;
+    bool found_discrete = false;
+    std::vector<std::pair<DXGI_ADAPTER_DESC1, DXGI_QUERY_VIDEO_MEMORY_INFO>> candidates;
+
+    for (UINT adapterIndex = 0;
+         factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND;
+         ++adapterIndex) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc))) {
+            continue;
+        }
+
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+            continue;
+        }
+
+        ComPtr<IDXGIAdapter3> adapter3;
+        if (SUCCEEDED(adapter.As(&adapter3))) {
+            DXGI_QUERY_VIDEO_MEMORY_INFO memInfo{};
+
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
+                    0,
+                    DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                    &memInfo))) {
+                candidates.push_back({desc, memInfo});
+
+                if (desc.DedicatedVideoMemory > 0) {
+                    found_discrete = true;
+                }
+            }
+        }
+    }
+
+    for (const auto& pair : candidates) {
+        const auto& desc = pair.first;
+        const auto& memInfo = pair.second;
+
+        bool is_discrete = desc.DedicatedVideoMemory > 0;
+        if (found_discrete && !is_discrete) {
+            continue;
+        }
+
+        double total_mem = is_discrete
+            ? static_cast<double>(desc.DedicatedVideoMemory)
+            : static_cast<double>(desc.SharedSystemMemory);
+
+        if (total_mem > 0.0 && memInfo.Budget > 0) {
+            double ratio = std::clamp(
+                1.0 - static_cast<double>(memInfo.Budget) / total_mem,
+                0.0,
+                1.0);
+
+            if (ratio > highest_ratio) {
+                highest_ratio = ratio;
+            }
+        }
+    }
+
+    return highest_ratio;
+}
+#endif
+
 double SystemInfo::get_global_vram_usage_pct() {
     auto usage_ratio = [](uint64_t used, uint64_t total) {
         if (total == 0) {
@@ -4137,6 +4211,12 @@ double SystemInfo::get_global_vram_usage_pct() {
             }
         }
     } catch (...) {}
+#endif
+
+#ifdef _WIN32
+    if (highest_ratio < 0.0) {
+        highest_ratio = get_windows_dxgi_vram_usage();
+    }
 #endif
 
     return highest_ratio;
