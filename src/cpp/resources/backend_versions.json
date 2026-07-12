@@ -1,12 +1,12 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b9747",
-    "rocm-stable": "b9752",
-    "rocm-nightly": "b1292",
-    "cuda": "b9851",
-    "metal": "b9747",
-    "cpu": "b9747"
+    "vulkan": "b9976",
+    "rocm-stable": "b9976",
+    "rocm-nightly": "b1296",
+    "cuda": "b9976",
+    "metal": "b9976",
+    "cpu": "b9976"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
