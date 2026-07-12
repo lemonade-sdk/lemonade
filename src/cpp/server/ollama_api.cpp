@@ -252,17 +252,21 @@ void OllamaApi::auto_load_model(const std::string& model, const json& request_op
 }
 
 // ============================================================================
-// Extract load-level options from request body for auto-load
-// Only forwards explicit allowlist (currently only ctx_size)
+// Forward load-level options only so request-scoped fields can't leak
 // ============================================================================
 nlohmann::json OllamaApi::extract_auto_load_options(const json& request) {
     nlohmann::json result = json::object();
-    auto extract_if_present = [&request, &result](const std::string& key) {
-        if (request.contains(key)) {
-            result[key] = request[key];
-        }
-    };
-    extract_if_present("ctx_size");
+
+    if (request.contains("options") && request["options"].is_object() &&
+        request["options"].contains("num_ctx")) {
+        result["ctx_size"] = request["options"]["num_ctx"];
+    }
+
+    // Top-level wins over options.num_ctx, matching map_ollama_options precedence.
+    if (request.contains("ctx_size")) {
+        result["ctx_size"] = request["ctx_size"];
+    }
+
     return result;
 }
 

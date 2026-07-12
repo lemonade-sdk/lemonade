@@ -551,8 +551,8 @@ class OllamaTests(ServerTestBase):
                 "model": ENDPOINT_TEST_MODEL,
                 "messages": [{"role": "user", "content": "Hi"}],
                 "stream": False,
-                "ctx_size": custom_ctx_size,
                 "options": {
+                    "num_ctx": custom_ctx_size,
                     "num_predict": 10,
                     "temperature": 0.7,
                     "top_p": 0.9,
