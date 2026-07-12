@@ -1867,7 +1867,8 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx120X";
     }
 
-    if (device_lower.find("7700") != std::string::npos ||
+    if (device_lower.find("7600") != std::string::npos ||
+        device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {

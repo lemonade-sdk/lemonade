@@ -377,6 +377,12 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### VTE (RDNA3 native, experimental) (`vte` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

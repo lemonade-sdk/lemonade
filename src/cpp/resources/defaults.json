@@ -108,6 +108,9 @@
     "args": "",
     "backend": "auto"
   },
+  "vte": {
+    "rocm_bin": "builtin"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

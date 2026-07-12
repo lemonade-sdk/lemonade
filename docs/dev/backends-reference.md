@@ -20,6 +20,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `vte` | VTE (RDNA3 native, experimental) | no | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -59,6 +60,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vte` | rocm | windows | amd_gpu (gfx110X) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
@@ -383,6 +385,14 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
 | `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
+
+#### `vte` — VTE (RDNA3 native, experimental) (3 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Granite-4.1-3B-VTE` | 3.62 | — |
+| `Qwen2.5-1.5B-Instruct-VTE` | 1.12 | — |
+| `Qwen3.5-2B-VTE` | 1.57 | — |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 

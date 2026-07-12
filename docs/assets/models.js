@@ -15,6 +15,7 @@ const RECIPE_PRIORITY = [
   'thinksound',
   'trellis',
   'vllm',
+  'vte',
   'whispercpp'
 ];
 
@@ -25,6 +26,7 @@ const RECIPE_DISPLAY_NAMES = {
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
   vllm: 'vLLM ROCm (experimental)',
+  vte: 'VTE (RDNA3 native, experimental)',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   trellis: 'TRELLIS.2',

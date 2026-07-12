@@ -551,6 +551,33 @@
         "suggested": false,
         "size": 0.18
     },
+    "Qwen2.5-1.5B-Instruct-VTE": {
+        "checkpoint": "Qwen/Qwen2.5-1.5B-Instruct-GGUF:qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "recipe": "vte",
+        "suggested": true,
+        "size": 1.12,
+        "recipe_options": {
+            "ctx_size": 8192
+        }
+    },
+    "Granite-4.1-3B-VTE": {
+        "checkpoint": "unsloth/granite-4.1-3b-GGUF:granite-4.1-3b-Q8_0.gguf",
+        "recipe": "vte",
+        "suggested": true,
+        "size": 3.62,
+        "recipe_options": {
+            "ctx_size": 8192
+        }
+    },
+    "Qwen3.5-2B-VTE": {
+        "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-Q6_K.gguf",
+        "recipe": "vte",
+        "suggested": true,
+        "size": 1.57,
+        "recipe_options": {
+            "ctx_size": 8192
+        }
+    },
     "Qwen3-1.7B-GGUF": {
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
         "recipe": "llamacpp",

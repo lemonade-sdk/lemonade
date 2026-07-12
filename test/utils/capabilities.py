@@ -131,6 +131,33 @@ CAPABILITIES = {
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
+        "vte": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": False,
+                "completions_async": False,
+                "responses_api": False,
+                "responses_api_streaming": False,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": False,
+                "tool_calls_streaming": False,
+                "multi_model": True,
+                "stop_parameter": False,
+                "echo_parameter": False,
+                "generation_parameters": True,
+                "slots": False,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen2.5-1.5B-Instruct-VTE",
+            },
+        },
     },
     "whisper": {
         "whispercpp": {

@@ -143,6 +143,9 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "backend": "auto"
   },
+  "vte": {
+    "rocm_bin": "builtin"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

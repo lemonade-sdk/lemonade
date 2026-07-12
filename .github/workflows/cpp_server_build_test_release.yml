@@ -1119,6 +1119,11 @@ jobs:
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
             runner: [Windows, vulkan, rocm, lemon-prod]
+          - name: vte
+            script: server_llm.py
+            extra_args: "--wrapped-server vte"
+            backends: "rocm"
+            runner: [Windows, rocm, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
