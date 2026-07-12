@@ -116,8 +116,7 @@
 .router-collection-modal {
     width: min(760px, calc(100vw - 40px));
     max-width: 760px;
-    height: calc(100vh - 64px);
-    max-height: 820px;
+    max-height: calc(100vh - 64px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -135,6 +134,7 @@
 
 .router-collection-modal .settings-footer {
     flex-shrink: 0;
+    padding: 10px 16px;
 }
 
 .router-collection-modal .settings-header h3 {
@@ -191,21 +191,46 @@
 }
 
 .router-mode-options {
-    display: grid;
+    display: flex;
     gap: 8px;
 }
 
 .router-mode-option {
+    flex: 1;
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border-primary);
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.78rem;
+    background: var(--bg-secondary);
+    transition: border-color 0.12s, background 0.12s;
+    user-select: none;
+}
+
+.router-mode-option:hover {
+    border-color: var(--border-secondary, #555);
+    background: var(--bg-alpha-1);
+}
+
+.router-mode-option--selected {
+    border-color: #60a5fa;
+    background: rgba(96, 165, 250, 0.06);
 }
 
 .router-mode-option input[type="radio"] {
-    margin-top: 2px;
-    flex-shrink: 0;
+    display: none;
+}
+
+.router-mode-option strong {
+    font-size: 0.78rem;
+    color: var(--text-primary);
+}
+
+.router-mode-option--selected strong {
+    color: #60a5fa;
 }
 
 
@@ -253,6 +278,13 @@
 .quick-preset-btn--blank {
     border-style: dashed;
     opacity: 0.7;
+}
+
+.quick-preset-btn--active {
+    background: rgba(96, 165, 250, 0.12);
+    border-color: #60a5fa;
+    color: #60a5fa;
+    opacity: 1;
 }
 
 /* Rules header */
