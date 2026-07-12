@@ -16,6 +16,7 @@ type McpStatus = 'idle' | 'checking' | 'connected' | 'unavailable';
 
 export interface McpPanelProps {
   connectionStatus: ConnectionStatus;
+  isActive: boolean;
 }
 
 function buildMcpHeaders(
@@ -41,7 +42,7 @@ function makeSignal(staleSignal: AbortSignal, timeoutMs: number): AbortSignal {
   return staleSignal;
 }
 
-const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
+const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
   const [mcpStatus, setMcpStatus] = useState<McpStatus>('idle');
   const [tools, setTools] = useState<McpTool[]>([]);
   const [toolsError, setToolsError] = useState<string | null>(null);
@@ -143,7 +144,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
   }, [mcpUrl]);
 
   useEffect(() => {
-    if (connectionStatus === 'connected') {
+    if (isActive && connectionStatus === 'connected') {
       void fetchTools();
     } else {
       // Abort in-flight sequence and reset state.
@@ -157,7 +158,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus }) => {
       // Abort on unmount to prevent stale state updates.
       if (abortRef.current) abortRef.current.abort();
     };
-  }, [connectionStatus, fetchTools]);
+  }, [isActive, connectionStatus, fetchTools]);
 
   const handleCopy = () => {
     if (!navigator.clipboard?.writeText) {

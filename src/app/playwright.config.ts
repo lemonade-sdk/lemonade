@@ -1,7 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080';
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
+const testPort = Number(process.env.PLAYWRIGHT_PORT || '4173');
+const baseURL = externalBaseURL || `http://127.0.0.1:${testPort}`;
 const launchOptions = executablePath ? {
   executablePath,
   args: [
@@ -18,8 +20,8 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL,
-    screenshot: 'on',
-    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
   projects: [
     {
@@ -31,10 +33,16 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: 'npm run dev -- --port 8080',
-    port: 8080,
-    reuseExistingServer: true,
-    timeout: 30000,
-  },
+  // Tests use their own deterministic dev-server instance. This avoids
+  // accidentally reusing a stale/manual server on :8080 and removes HMR from
+  // the browser under test. Set PLAYWRIGHT_BASE_URL to target an external
+  // server instead.
+  ...(externalBaseURL ? {} : {
+    webServer: {
+      command: `npm run dev -- --host 127.0.0.1 --port ${testPort} --no-hot`,
+      url: baseURL,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+  }),
 });

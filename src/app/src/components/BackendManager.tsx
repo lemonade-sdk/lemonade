@@ -71,6 +71,10 @@ const RECIPE_LABELS: Record<string, string> = {
   flm:            'FastFlowLM',
   'ryzenai-llm':  'RyzenAI',
   vllm:           'vLLM',
+  acestep:         'ACE-Step',
+  thinksound:      'ThinkSound',
+  openmoss:        'OpenMOSS TTS',
+  trellis:         'TRELLIS.2',
 };
 
 /** Recipe → capability column for the matrix */
@@ -83,6 +87,10 @@ const RECIPE_CAPABILITY: Record<string, string> = {
   flm:            'LLM',
   'ryzenai-llm':  'LLM',
   vllm:           'LLM',
+  acestep:         'Audio',
+  thinksound:      'Audio',
+  openmoss:        'TTS',
+  trellis:         '3D',
 };
 
 /** Device display order */
@@ -122,7 +130,7 @@ const BACKEND_DEVICE: Record<string, DeviceKey> = {
 };
 
 /** Capability columns */
-const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS'] as const;
+const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
@@ -154,7 +162,11 @@ function backendCapabilitiesForRecipe(recipe: string): Capability[] {
     case 'sd-cpp': return ['image'];
     case 'whispercpp':
     case 'moonshine': return ['transcription'];
-    case 'kokoro': return ['tts'];
+    case 'kokoro':
+    case 'openmoss': return ['tts'];
+    case 'acestep':
+    case 'thinksound': return ['audio-generation'];
+    case 'trellis': return ['model3d'];
     case 'llamacpp':
     case 'flm':
     case 'ryzenai-llm':

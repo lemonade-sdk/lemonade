@@ -3,7 +3,7 @@ import type { ModelCapability } from '../../modelCapabilities';
 import { scopedStorageKey } from '../accounts/accountStore';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
 
-export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding' | 'reranking'>;
+export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking'>;
 
 export interface CustomModelComponentRoles {
   llm?: string;
@@ -118,7 +118,9 @@ function defaultRecipe(capability: CustomModelCapability, components?: string[])
   switch (capability) {
     case 'image': return 'sd-cpp';
     case 'audio': return 'whispercpp';
+    case 'audio-generation': return 'thinksound';
     case 'tts': return 'kokoro';
+    case 'model3d': return 'trellis';
     case 'embedding': return 'llamacpp';
     case 'reranking': return 'llamacpp';
     case 'omni': return components && components.length > 0 ? COLLECTION_OMNI_RECIPE : 'llamacpp';
@@ -133,7 +135,9 @@ function labelsFor(capability: CustomModelCapability, extra: string[] = []): str
     case 'omni': base.push('omni', 'multimodal', 'vision-language'); break;
     case 'image': base.push('image'); break;
     case 'audio': base.push('audio', 'transcription'); break;
+    case 'audio-generation': base.push('audio-generation'); break;
     case 'tts': base.push('tts'); break;
+    case 'model3d': base.push('3d', 'image-to-3d'); break;
     case 'embedding': base.push('embedding'); break;
     case 'reranking': base.push('reranking'); break;
   }
@@ -299,8 +303,10 @@ export const CUSTOM_CAPABILITIES: Array<{ value: CustomModelCapability; label: s
   { value: 'chat', label: 'Chat', hint: 'Text chat through /chat/completions' },
   { value: 'omni', label: 'Omni', hint: 'Multimodal model or Omni collection of existing text/vision/audio models' },
   { value: 'image', label: 'Image', hint: 'Image generation endpoint' },
-  { value: 'audio', label: 'Audio', hint: 'Audio transcription endpoint' },
+  { value: 'audio', label: 'Transcription', hint: 'Audio transcription endpoint' },
+  { value: 'audio-generation', label: 'Audio generation', hint: 'Music or sound effects through /audio/generations' },
   { value: 'tts', label: 'TTS', hint: 'Text-to-speech endpoint' },
+  { value: 'model3d', label: '3D', hint: 'Image-to-3D reconstruction through /3d/generations' },
   { value: 'embedding', label: 'Embedding', hint: 'Utility model; not selectable in composer' },
   { value: 'reranking', label: 'Reranking', hint: 'Utility model; not selectable in composer' },
 ];
@@ -342,6 +348,8 @@ function normalizeImportedCapability(raw: string, labels: string[]): CustomModel
   const lower = raw.toLowerCase().trim();
   const labelText = labels.join(' ').toLowerCase();
   if (['omni', 'multimodal', 'vlm', 'vision'].includes(lower) || labelText.includes('omni') || labelText.includes('vision-language')) return 'omni';
+  if (['3d', 'model3d', '3d-generation', 'image-to-3d'].includes(lower) || labelText.includes('image-to-3d') || labelText.includes('3d')) return 'model3d';
+  if (['audio-generation', 'music-generation', 'sound-generation', 'sfx'].includes(lower) || labelText.includes('audio-generation')) return 'audio-generation';
   if (['image', 'image-generation', 'diffusion'].includes(lower) || labelText.includes('image')) return 'image';
   if (['audio', 'transcription', 'asr', 'stt'].includes(lower) || labelText.includes('transcription')) return 'audio';
   if (['tts', 'speech', 'text-to-speech'].includes(lower) || labelText.includes('tts')) return 'tts';

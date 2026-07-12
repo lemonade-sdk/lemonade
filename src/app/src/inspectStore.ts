@@ -545,7 +545,7 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
   const durationMs = (endNano - startNano) / 1000000;
 
   // Extract model name
-  const model = attrs['llm.model_name'] || attrs['embedding.model_name'] || attrs['reranker.model_name'] || attrs['gen_ai.request.model'] || '';
+  const model = String(attrs['llm.model_name'] || attrs['embedding.model_name'] || attrs['reranker.model_name'] || attrs['gen_ai.request.model'] || '');
 
   // Extract inputs/messages
   const messages: Trace['messages'] = [];
@@ -605,8 +605,10 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
   const max = maxRaw !== undefined ? Number(maxRaw) : undefined;
 
   // Session & User
-  const sessionId = attrs['openinference.session.id'] || attrs['gen_ai.conversation.id'];
-  const userId = attrs['openinference.user.id'];
+  const sessionIdRaw = attrs['openinference.session.id'] || attrs['gen_ai.conversation.id'];
+  const userIdRaw = attrs['openinference.user.id'];
+  const sessionId = sessionIdRaw === undefined ? undefined : String(sessionIdRaw);
+  const userId = userIdRaw === undefined ? undefined : String(userIdRaw);
 
   // Diagnostics (if any error in status)
   let status: Trace['status'] = 'ok';
@@ -667,10 +669,18 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     output: String(output || ''),
     sessionId,
     userId,
-    recipe: attrs['llm.recipe'] || attrs['recipe'],
-    backend: attrs['llm.backend'] || attrs['backend'],
-    device: attrs['llm.device_type'] || attrs['device_type'],
-    checkpoint: attrs['llm.checkpoint'] || attrs['checkpoint'],
+    recipe: attrs['llm.recipe'] !== undefined || attrs['recipe'] !== undefined
+      ? String(attrs['llm.recipe'] ?? attrs['recipe'])
+      : undefined,
+    backend: attrs['llm.backend'] !== undefined || attrs['backend'] !== undefined
+      ? String(attrs['llm.backend'] ?? attrs['backend'])
+      : undefined,
+    device: attrs['llm.device_type'] !== undefined || attrs['device_type'] !== undefined
+      ? String(attrs['llm.device_type'] ?? attrs['device_type'])
+      : undefined,
+    checkpoint: attrs['llm.checkpoint'] !== undefined || attrs['checkpoint'] !== undefined
+      ? String(attrs['llm.checkpoint'] ?? attrs['checkpoint'])
+      : undefined,
     diag
   };
 }

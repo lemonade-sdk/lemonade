@@ -52,6 +52,8 @@ Incrementally rebuilds on file changes.
 npm test
 ```
 
+Playwright starts an isolated, non-HMR test server on **127.0.0.1:4173** by default. This intentionally avoids reusing a manual development server on port 8080. Set `PLAYWRIGHT_BASE_URL` only when you explicitly want to test an already running server.
+
 Runs all UI-safe Playwright tests headless via Chromium. Real-server smoke tests are opt-in so they fail fast instead of silently passing without a running server or loaded model:
 
 ```bash
@@ -171,10 +173,11 @@ Verify the server is running (`lemond` or `lemonade launch`), check the URL in t
 
 ### Test timeouts or failures
 
-Playwright waits up to 60 seconds by default (see `playwright.config.ts`). If tests time out:
-- Check that `npm run dev` is running on port 8080
-- Verify network connectivity (especially for real-server tests)
-- Run `npm run test:headed` to see what the browser is actually doing
+Playwright waits up to 60 seconds by default (see `playwright.config.ts`). `npm test` starts its own non-HMR server on `127.0.0.1:4173`; do not start the normal port-8080 dev server for the test run. If tests time out:
+- Check that port 4173 is free (`lsof -i :4173`) and terminate a stale test server if necessary
+- Unset an accidental `PLAYWRIGHT_BASE_URL` override unless you intentionally test an external server
+- Verify network connectivity only for opt-in real-server tests
+- Run `npm run test:headed` or `DEBUG=pw:webserver npm test` to see the browser and web-server startup diagnostics
 
 ## Design & Architecture Notes
 

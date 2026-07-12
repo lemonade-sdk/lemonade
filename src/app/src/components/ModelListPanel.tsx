@@ -47,6 +47,10 @@ export function listRecipeBadgeText(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS';
+    case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni';
     case 'collection': return 'Collection';
     default: return recipe || 'Backend';
@@ -64,13 +68,17 @@ function listRecipeColor(recipe: string): string {
     case 'whispercpp': return '#38bdf8';
     case 'moonshine': return '#22d3ee';
     case 'kokoro': return '#f472b6';
+    case 'acestep': return '#fb7185';
+    case 'thinksound': return '#f59e0b';
+    case 'openmoss': return '#ec4899';
+    case 'trellis': return '#818cf8';
     case 'collection.omni': return '#a78bfa';
     case 'collection': return '#94a3b8';
     default: return 'var(--text-tertiary)';
   }
 }
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
@@ -78,7 +86,9 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'omni', label: 'Omni', iconName: 'omni' },
   { key: 'image', label: 'Image', iconName: 'image' },
   { key: 'audio', label: 'Audio', iconName: 'audio' },
+  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
   { key: 'tts', label: 'TTS', iconName: 'tts' },
+  { key: 'model3d', label: '3D', iconName: 'box' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
 ];
 

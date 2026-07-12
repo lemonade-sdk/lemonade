@@ -43,11 +43,37 @@ const ENGINE_LABELS: Record<PresetRecipe, string> = {
   'ryzenai-llm': 'RyzenAI',
   vllm: 'vLLM',
   kokoro: 'Kokoro',
+  acestep: 'ACE-Step',
+  thinksound: 'ThinkSound',
+  openmoss: 'OpenMOSS TTS',
+  trellis: 'TRELLIS.2',
 };
 
 // Known selectable values for #2339 datalist suggestions
 const LLAMACPP_BACKENDS = ['auto', 'cpu', 'cuda', 'vulkan', 'kompute', 'metal', 'rpc', 'opencl', 'mmap'] as const;
 const LLAMACPP_DEVICES  = ['Auto', 'CPU', 'CUDA0', 'CUDA1', 'Vulkan0', 'Vulkan1', 'Metal'] as const;
+const ACCELERATOR_BACKENDS = ['cuda', 'rocm', 'vulkan'] as const;
+
+type NewRecipeBackendOverrides = {
+  acestep: string;
+  thinksound: string;
+  openmoss: string;
+  trellis: string;
+};
+
+function normalizeAcceleratorBackend(value: unknown): string {
+  const backend = String(value || '').trim();
+  return backend.toLowerCase() === 'auto' ? '' : backend;
+}
+
+function backendOverridesFromRecipeOptions(options: RecipeOptions): NewRecipeBackendOverrides {
+  return {
+    acestep: normalizeAcceleratorBackend(options.acestep_backend),
+    thinksound: normalizeAcceleratorBackend(options.thinksound_backend),
+    openmoss: normalizeAcceleratorBackend(options.openmoss_backend),
+    trellis: normalizeAcceleratorBackend(options.trellis_backend),
+  };
+}
 
 const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   auto: ['ctx_size', 'steps', 'cfg_scale'],
@@ -59,9 +85,13 @@ const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   'ryzenai-llm': ['ctx_size'],
   vllm: ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'],
   kokoro: ['voice', 'speed', 'merge_args'],
+  acestep: ['acestep_backend'],
+  thinksound: ['thinksound_backend'],
+  openmoss: ['openmoss_backend', 'voice', 'speed'],
+  trellis: ['trellis_backend'],
 };
 
-const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'tts', 'embedding', 'reranking'];
+const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
 /* ── #2432: backend-preset assignment helpers ─────────────────────────────
  * Backend presets are OPTIONAL global runtime-argument defaults that MERGE
@@ -78,6 +108,10 @@ const BACKEND_RECIPE_LABELS: Record<string, string> = {
   whispercpp: 'whisper.cpp',
   moonshine: 'Moonshine',
   kokoro: 'Kokoro',
+  acestep: 'ACE-Step',
+  thinksound: 'ThinkSound',
+  openmoss: 'OpenMOSS TTS',
+  trellis: 'TRELLIS.2',
 };
 
 interface BackendOption {
@@ -93,7 +127,11 @@ function backendCapabilitiesForRecipe(recipe: string): Capability[] {
     case 'sd-cpp': return ['image'];
     case 'whispercpp':
     case 'moonshine': return ['transcription'];
-    case 'kokoro': return ['tts'];
+    case 'kokoro':
+    case 'openmoss': return ['tts'];
+    case 'acestep':
+    case 'thinksound': return ['audio-generation'];
+    case 'trellis': return ['model3d'];
     default: return ['chat', 'code', 'vision', 'omni'];
   }
 }
@@ -981,6 +1019,7 @@ const SlideoverContent: React.FC<{
   const [llamacppDevice, setLlamacppDevice] = useState(ro.llamacpp_device ?? '');
   const [llamacppArgs, setLlamacppArgs] = useState(ro.llamacpp_args ?? '');
   const [sdcppArgs, setSdcppArgs] = useState(ro.sdcpp_args ?? '');
+  const [newRecipeBackends, setNewRecipeBackends] = useState<NewRecipeBackendOverrides>(() => backendOverridesFromRecipeOptions(ro));
   const [temperature, setTemperature] = useState(sp.temperature ?? 0.7);
   const [topP, setTopP] = useState(sp.top_p ?? 0.9);
   const [topK, setTopK] = useState(sp.top_k ?? 40);
@@ -1008,6 +1047,7 @@ const SlideoverContent: React.FC<{
     setLlamacppDevice(nextRo.llamacpp_device ?? '');
     setLlamacppArgs(nextRo.llamacpp_args ?? '');
     setSdcppArgs(nextRo.sdcpp_args ?? '');
+    setNewRecipeBackends(backendOverridesFromRecipeOptions(nextRo));
     setTemperature(nextSp.temperature ?? 0.7);
     setTopP(nextSp.top_p ?? 0.9);
     setTopK(nextSp.top_k ?? 40);
@@ -1040,7 +1080,7 @@ const SlideoverContent: React.FC<{
       description,
       applies_to: normalizedAppliesTo,
       engine_hint: engineHint,
-      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
+      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, newRecipeBackends),
       sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
       starter: false,
       auto_opt_enabled: !manualArgsActive,
@@ -1049,7 +1089,7 @@ const SlideoverContent: React.FC<{
       system_prompts: cloneSystemPrompts(systemPrompts),
       tools_enabled: supportsTools && toolsEnabled,
     };
-  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
+  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, newRecipeBackends, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
 
 const selectedModel = models.find(m => modelName(m) === applyTarget);
 const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -1078,6 +1118,7 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
+  const hasAudioGeneration = hasAll || appliesTo.includes('audio-generation');
   const hasTts = hasAll || appliesTo.includes('tts');
   const isDefaultEmptyPreset = preset.id === DEFAULT_PRESET.id;
   const selectedSystemPrompt = systemPromptId === NO_SYSTEM_PROMPT_ID ? null : (systemPrompts.find(prompt => prompt.id === systemPromptId) || null);
@@ -1232,8 +1273,9 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
               <div className="field"><label className="field__label" htmlFor="preset-field-repeat-penalty">Repeat penalty</label><div className="field__row"><input id="preset-field-repeat-penalty" type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
             </div>
           )}
-          {!isDefaultEmptyPreset && hasImage && (
-            <div data-preset-fields="image">
+          {!isDefaultEmptyPreset && (hasImage || hasAudioGeneration) && (
+            <div data-preset-fields={hasImage ? 'image' : 'audio-generation'}>
+              {hasAudioGeneration && !hasImage && <h4>Audio generation</h4>}
               <div className="field"><label className="field__label" htmlFor="preset-field-steps">Steps</label><div className="field__row"><input id="preset-field-steps" type="range" className="slider" min={1} max={100} step={1} value={steps} disabled={isReadOnly} onChange={e => setSteps(Number(e.target.value))} data-recipe-steps /><span className="field__value">{steps}</span></div></div>
               <div className="field"><label className="field__label" htmlFor="preset-field-cfg-scale">CFG scale</label><div className="field__row"><input id="preset-field-cfg-scale" type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
             </div>
@@ -1284,6 +1326,23 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
               <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" aria-label="Image width" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }} aria-hidden="true">×</span><input type="number" className="input input--narrow" aria-label="Image height" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
               <div className="field"><label className="field__label" htmlFor="preset-field-sdcpp-args">sdcpp_args</label><div className="field__row"><input id="preset-field-sdcpp-args" className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
             </>
+          )}
+          {(['acestep', 'thinksound', 'openmoss', 'trellis'] as PresetRecipe[]).includes(engineHint) && (
+            <div className="field">
+              <label className="field__label" htmlFor="preset-field-new-recipe-backend">{engineHint}_backend</label>
+              <div className="field__row">
+                <input
+                  id="preset-field-new-recipe-backend"
+                  className="input"
+                  list="preset-accelerator-backends"
+                  value={newRecipeBackends[engineHint as keyof NewRecipeBackendOverrides]}
+                  disabled={isReadOnly}
+                  placeholder="auto"
+                  onChange={e => setNewRecipeBackends(prev => ({ ...prev, [engineHint]: e.target.value }))}
+                />
+                <datalist id="preset-accelerator-backends">{ACCELERATOR_BACKENDS.map(backend => <option key={backend} value={backend} />)}</datalist>
+              </div>
+            </div>
           )}
         </details>}
 
@@ -1392,11 +1451,13 @@ function buildRecipeOptions(
   llamacppDevice: string,
   llamacppArgs: string,
   sdcppArgs: string,
+  newRecipeBackends: NewRecipeBackendOverrides,
 ): RecipeOptions {
   const opts: RecipeOptions = {};
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
+  const hasAudioGeneration = hasAll || appliesTo.includes('audio-generation');
   const hasTts = hasAll || appliesTo.includes('tts');
   if (hasChat) {
     opts.ctx_size = ctxSize;
@@ -1404,9 +1465,11 @@ function buildRecipeOptions(
     if (llamacppDevice) opts.llamacpp_device = llamacppDevice;
     if (llamacppArgs) opts.llamacpp_args = llamacppArgs;
   }
-  if (hasImage) {
+  if (hasImage || hasAudioGeneration) {
     opts.steps = steps;
     opts.cfg_scale = cfgScale;
+  }
+  if (hasImage) {
     opts.width = imgWidth;
     opts.height = imgHeight;
     if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
@@ -1414,6 +1477,10 @@ function buildRecipeOptions(
   if (hasTts) {
     opts.voice = normalizeTtsVoice(ttsVoice);
   }
+  if (normalizeAcceleratorBackend(newRecipeBackends.acestep)) opts.acestep_backend = normalizeAcceleratorBackend(newRecipeBackends.acestep);
+  if (normalizeAcceleratorBackend(newRecipeBackends.thinksound)) opts.thinksound_backend = normalizeAcceleratorBackend(newRecipeBackends.thinksound);
+  if (normalizeAcceleratorBackend(newRecipeBackends.openmoss)) opts.openmoss_backend = normalizeAcceleratorBackend(newRecipeBackends.openmoss);
+  if (normalizeAcceleratorBackend(newRecipeBackends.trellis)) opts.trellis_backend = normalizeAcceleratorBackend(newRecipeBackends.trellis);
   return opts;
 }
 

@@ -121,8 +121,10 @@ export function capabilityIconName(capability: CapabilityIconTarget): IconName {
     case 'omni': return 'omni';
     case 'image': return 'image';
     case 'audio': return 'audio';
+    case 'audio-generation': return 'audio';
     case 'transcription': return 'mic';
     case 'tts': return 'tts';
+    case 'model3d': return 'box';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
     case 'vision': return 'vision';

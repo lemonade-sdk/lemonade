@@ -233,13 +233,13 @@ const App: React.FC = () => {
       const info = findModelInfoByName(customInfos, name);
       if (!info) return false;
       const cap = capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     const infoSelectable = (name: string) => {
       const info = findModelInfoByName(knownInfos, name);
       if (!info) return false;
       const cap = capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     setLoadedModels(enriched);
     setCurrentModel(current => {
@@ -487,7 +487,7 @@ const App: React.FC = () => {
         </div>
         <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="dashboard">
-            <Dashboard />
+            <Dashboard isActive={view === 'dashboard'} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
@@ -504,6 +504,7 @@ const App: React.FC = () => {
           <ViewErrorBoundary view="connect">
             <ConnectView
               status={status}
+              isActive={view === 'connect'}
               accountSession={accountSession}
               onLocalDataReset={handleAccountDataReset}
               onSessionChange={handleAccountSessionChange}

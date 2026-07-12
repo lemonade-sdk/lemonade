@@ -89,6 +89,10 @@ function recipeBadgeText(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS';
+    case 'trellis': return 'TRELLIS';
     case 'collection.omni': return 'Omni';
     case 'collection': return 'Collection';
     default: return recipe || 'Backend';
@@ -106,6 +110,10 @@ function recipeColor(recipe: string): string {
     case 'whispercpp': return '#38bdf8';
     case 'moonshine': return '#22d3ee';
     case 'kokoro': return '#f472b6';
+    case 'acestep': return '#fb7185';
+    case 'thinksound': return '#2dd4bf';
+    case 'openmoss': return '#f9a8d4';
+    case 'trellis': return '#818cf8';
     case 'collection.omni': return '#a78bfa';
     case 'collection': return '#94a3b8';
     default: return 'var(--text-tertiary)';
@@ -137,6 +145,10 @@ function recipeLabel(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro TTS';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS TTS';
+    case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni Collection';
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
@@ -172,6 +184,9 @@ function labelDisplay(label: string): string {
     'reranker': 'Reranking',
     'reranking': 'Reranking',
     'audio': 'Audio',
+    'audio-generation': 'Audio generation',
+    'music-generation': 'Music generation',
+    'sound-generation': 'Sound generation',
     'asr': 'ASR',
     'stt': 'STT',
     'speech-to-text': 'Speech to Text',
@@ -183,6 +198,10 @@ function labelDisplay(label: string): string {
     'text-to-speech': 'Text to Speech',
     'image': 'Image',
     'image-generation': 'Image',
+    '3d': '3D',
+    '3d-generation': '3D',
+    'image-to-3d': 'Image to 3D',
+    'model3d': '3D',
     'diffusion': 'Image',
     'edit': 'Edit',
     'image-edit': 'Edit',
@@ -208,8 +227,10 @@ function iconForCapabilityLabel(label: string): CapabilityIconTarget {
   if (['vision', 'image-input', 'vlm', 'vision-language'].includes(key)) return 'vision';
   if (['coding', 'code'].includes(key)) return 'code';
   if (['image', 'image-generation', 'diffusion', 'edit', 'image-edit', 'image-editing', 'upscaling'].includes(key)) return 'image';
+  if (['audio-generation', 'music-generation', 'sound-generation', 'sfx'].includes(key)) return 'audio-generation';
   if (['audio', 'transcription', 'realtime-transcription', 'chat-transcription', 'asr', 'stt', 'speech-to-text'].includes(key)) return 'transcription';
-  if (['tts', 'speech', 'text-to-speech'].includes(key)) return 'tts';
+  if (['tts', 'speech', 'text-to-speech', 'voice-design'].includes(key)) return 'tts';
+  if (['3d', '3d-generation', 'image-to-3d', 'model3d'].includes(key)) return 'model3d';
   if (['embedding', 'embeddings'].includes(key)) return 'embedding';
   if (['reranking', 'reranker', 'rerank'].includes(key)) return 'reranking';
   return 'unknown';
@@ -221,7 +242,9 @@ function labelFromCapability(capability: ModelCapability): string | null {
     case 'omni': return 'omni';
     case 'image': return 'image';
     case 'audio': return 'transcription';
+    case 'audio-generation': return 'audio-generation';
     case 'tts': return 'tts';
+    case 'model3d': return '3d';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
     default: return null;
@@ -359,6 +382,10 @@ const RECIPE_BADGES: Record<string, string> = {
   llamacpp: 'llama.cpp',
   vllm: 'vLLM',
   moonshine: 'Moonshine',
+  acestep: 'ACE-Step',
+  thinksound: 'ThinkSound',
+  openmoss: 'OpenMOSS',
+  trellis: 'TRELLIS.2',
   'ryzenai-llm': 'RyzenAI',
   'collection.omni': 'Omni Collection',
 };
@@ -428,6 +455,22 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
     checkpoint: 'mikkoph/kokoro-onnx',
     note: 'Kokoro ONNX model repository or local model path.',
   },
+  acestep: {
+    checkpoint: 'Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf',
+    note: 'ACE-Step checkpoint for music generation.',
+  },
+  thinksound: {
+    checkpoint: 'ilintar/thinksound-gguf',
+    note: 'ThinkSound checkpoint for prompt-driven sound effects.',
+  },
+  openmoss: {
+    checkpoint: 'ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf',
+    note: 'OpenMOSS checkpoint for speech synthesis or voice design.',
+  },
+  trellis: {
+    checkpoint: 'ilintar/trellis2-gguf',
+    note: 'TRELLIS.2 checkpoint for image-to-3D reconstruction.',
+  },
 };
 
 const CheckpointExampleCard: React.FC<{ title: string; checkpoint: string; note?: string }> = ({ title, checkpoint, note }) => (
@@ -465,7 +508,15 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
     customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
   ],
-  tts: [customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend')],
+  'audio-generation': [
+    customRecipeOption('acestep', 'ACE-Step', 'Music generation backend'),
+    customRecipeOption('thinksound', 'ThinkSound', 'Sound-effect generation backend'),
+  ],
+  tts: [
+    customRecipeOption('openmoss', 'OpenMOSS TTS', 'OpenMOSS speech and voice-design backend'),
+    customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend'),
+  ],
+  model3d: [customRecipeOption('trellis', 'TRELLIS.2', 'Image-to-3D reconstruction backend')],
   embedding: [customRecipeOption('llamacpp', 'llama.cpp', 'Embedding through llama.cpp-compatible model')],
   reranking: [customRecipeOption('llamacpp', 'llama.cpp', 'Reranking through llama.cpp-compatible model')],
 };
@@ -498,21 +549,29 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   whispercpp: ['audio'],
   moonshine: ['audio'],
   kokoro: ['tts'],
+  openmoss: ['tts'],
+  acestep: ['audio-generation'],
+  thinksound: ['audio-generation'],
+  trellis: ['model3d'],
 };
 
 function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
   const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
   if (explicit) return explicit;
   const key = recipe.toLowerCase();
+  if (key.includes('trellis') || key.includes('3d')) return ['model3d'];
+  if (key.includes('acestep') || key.includes('ace-step') || key.includes('thinksound') || key.includes('sound-generation') || key.includes('music-generation')) return ['audio-generation'];
   if (key.includes('sd') || key.includes('diffusion') || key.includes('image')) return ['image'];
   if (key.includes('whisper') || key.includes('moonshine') || key.includes('transcrib') || key.includes('speech-to-text')) return ['audio'];
-  if (key.includes('kokoro') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
+  if (key.includes('kokoro') || key.includes('openmoss') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
   if (key.includes('embed')) return ['embedding'];
   if (key.includes('rerank')) return ['reranking'];
   const backendText = backendNames.join(' ').toLowerCase();
+  if (backendText.includes('trellis') || backendText.includes('3d')) return ['model3d'];
+  if (backendText.includes('acestep') || backendText.includes('thinksound')) return ['audio-generation'];
   if (backendText.includes('sd') || backendText.includes('diffusion')) return ['image'];
   if (backendText.includes('whisper') || backendText.includes('moonshine')) return ['audio'];
-  if (backendText.includes('kokoro') || backendText.includes('tts')) return ['tts'];
+  if (backendText.includes('kokoro') || backendText.includes('openmoss') || backendText.includes('tts')) return ['tts'];
   return ['chat', 'omni'];
 }
 
@@ -638,7 +697,7 @@ function saveFavoriteModels(scope: string, names: string[]): void {
 
 /* ── Filter / search types ─────────────────────────────────── */
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 type OmniCustomToolDraft = {
@@ -752,7 +811,9 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all
   { key: 'omni', label: 'Omni', icon: 'omni' },
   { key: 'image', label: 'Image', icon: 'image' },
   { key: 'audio', label: 'Audio', icon: 'audio' },
+  { key: 'audio-generation', label: 'Music & SFX', icon: 'audio-generation' },
   { key: 'tts', label: 'TTS', icon: 'tts' },
+  { key: 'model3d', label: '3D', icon: 'model3d' },
   { key: 'embedding', label: 'Embed', icon: 'embedding' },
 ];
 
@@ -2295,7 +2356,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       ? (positiveNumber(m.recipe_options?.ctx_size) ?? (info ? contextSizeForDisplay(info, undefined, serverDefaultCtxSize) : serverDefaultCtxSize))
       : undefined;
     const isActive = selectedModel === m.model_name;
-    const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
+    const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
     const activePreset = activePresetForName(m.model_name);
     const isPinned = pinnedNameSet.has(m.model_name.toLowerCase());
     return (

@@ -1,6 +1,16 @@
 import { LoadedModel, ModelInfo } from './api';
 
-export type ModelCapability = 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding' | 'reranking' | 'unknown';
+export type ModelCapability =
+  | 'chat'
+  | 'omni'
+  | 'image'
+  | 'audio'
+  | 'audio-generation'
+  | 'tts'
+  | 'model3d'
+  | 'embedding'
+  | 'reranking'
+  | 'unknown';
 
 export interface ModelSnapshot {
   name: string;
@@ -17,14 +27,18 @@ const TYPE_TO_CAPABILITY: Record<string, ModelCapability> = {
   'audio-chat': 'omni', realtime: 'omni',
   image: 'image', diffusion: 'image', 'image-generation': 'image',
   audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', asr: 'audio', stt: 'audio', 'speech-to-text': 'audio',
+  'audio-generation': 'audio-generation', 'music-generation': 'audio-generation', 'sound-generation': 'audio-generation', sfx: 'audio-generation', music: 'audio-generation',
   tts: 'tts', speech: 'tts', 'text-to-speech': 'tts',
+  '3d': 'model3d', model3d: 'model3d', '3d-generation': 'model3d', 'image-to-3d': 'model3d', mesh: 'model3d',
   embedding: 'embedding', embeddings: 'embedding', reranking: 'reranking', reranker: 'reranking',
 };
 
 const NON_CHAT_RECIPE_HINTS: Array<[string, ModelCapability]> = [
+  ['trellis', 'model3d'],
+  ['acestep', 'audio-generation'], ['ace-step', 'audio-generation'], ['thinksound', 'audio-generation'],
   ['stable-diffusion', 'image'], ['diffusion', 'image'], ['sd-cpp', 'image'],
   ['whisper', 'audio'], ['moonshine', 'audio'], ['asr', 'audio'], ['speech-to-text', 'audio'],
-  ['kokoro', 'tts'], ['text-to-speech', 'tts'], ['tts', 'tts'],
+  ['openmoss', 'tts'], ['kokoro', 'tts'], ['text-to-speech', 'tts'], ['tts', 'tts'],
   ['embedding', 'embedding'], ['rerank', 'reranking'],
 ];
 
@@ -74,6 +88,9 @@ export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
 export function capabilityFromName(name?: string | null): ModelCapability {
   const n = normalizeModelType(name);
   if (!n || n === 'unknown') return 'unknown';
+  if (n.includes('trellis') || n.includes('image-to-3d') || n.includes('model3d')) return 'model3d';
+  if (n.includes('ace-step') || n.includes('acestep') || n.includes('thinksound')) return 'audio-generation';
+  if (n.includes('openmoss') || n.includes('moss-tts') || n.includes('moss_tts') || n.includes('voicegen')) return 'tts';
   if (n.includes('embed')) return 'embedding';
   if (n.includes('rerank')) return 'reranking';
   if (EXPLICIT_OMNI_NAME_PATTERNS.some(pattern => pattern.test(n))) return 'omni';
@@ -84,9 +101,11 @@ export function capabilityFromLabels(labels?: string[]): ModelCapability {
   const lower = (labels || []).map(l => l.toLowerCase().trim()).filter(Boolean);
   const set = new Set(lower);
 
+  if (lower.some(l => ['3d', '3d-generation', 'model3d', 'image-to-3d', 'mesh-generation'].includes(l))) return 'model3d';
+  if (lower.some(l => ['audio-generation', 'music-generation', 'sound-generation', 'sfx', 'music'].includes(l))) return 'audio-generation';
   if (lower.some(l => l === 'image' || l === 'image-generation' || l === 'edit' || l === 'upscaling')) return 'image';
-  if (lower.some(l => l === 'tts' || l === 'speech' || l === 'text-to-speech')) return 'tts';
-  if (lower.some(l => l === 'transcription' || l === 'realtime-transcription' || l === 'asr' || l === 'stt' || l === 'speech-to-text')) return 'audio';
+  if (lower.some(l => l === 'tts' || l === 'speech' || l === 'text-to-speech' || l === 'voice-design')) return 'tts';
+  if (lower.some(l => l === 'audio' || l === 'transcription' || l === 'realtime-transcription' || l === 'asr' || l === 'stt' || l === 'speech-to-text')) return 'audio';
   if (lower.some(l => l === 'embeddings' || l === 'embedding')) return 'embedding';
   if (lower.some(l => l === 'reranking' || l === 'reranker')) return 'reranking';
 
@@ -139,18 +158,36 @@ export function canUseChatCompletions(model?: LoadedModel | null): boolean {
 
 export function canSelectInComposer(model?: LoadedModel | null): boolean {
   const cap = capabilityFromLoaded(model);
-  return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+  return ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
 }
 
 export function capabilityLabel(capability: ModelCapability): string {
   switch (capability) {
-    case 'chat': return 'Chat'; case 'omni': return 'Omni'; case 'image': return 'Image'; case 'audio': return 'Audio'; case 'tts': return 'TTS'; case 'embedding': return 'Embedding'; case 'reranking': return 'Reranking'; default: return 'Unknown';
+    case 'chat': return 'Chat';
+    case 'omni': return 'Omni';
+    case 'image': return 'Image';
+    case 'audio': return 'Audio';
+    case 'audio-generation': return 'Music & SFX';
+    case 'tts': return 'TTS';
+    case 'model3d': return '3D';
+    case 'embedding': return 'Embedding';
+    case 'reranking': return 'Reranking';
+    default: return 'Unknown';
   }
 }
 
 export function capabilityBadge(capability: ModelCapability): string {
   switch (capability) {
-    case 'chat': return 'chat'; case 'omni': return 'omni'; case 'image': return 'image'; case 'audio': return 'audio'; case 'tts': return 'tts'; case 'embedding': return 'embed'; case 'reranking': return 'rank'; default: return 'model';
+    case 'chat': return 'chat';
+    case 'omni': return 'omni';
+    case 'image': return 'image';
+    case 'audio': return 'audio';
+    case 'audio-generation': return 'audio-gen';
+    case 'tts': return 'tts';
+    case 'model3d': return 'model3d';
+    case 'embedding': return 'embed';
+    case 'reranking': return 'rank';
+    default: return 'model';
   }
 }
 
@@ -161,8 +198,10 @@ export function capabilityIcon(capability: ModelCapability | 'all' | 'vision' | 
     case 'omni': return 'Omni';
     case 'image': return 'Image';
     case 'audio': return 'Audio';
+    case 'audio-generation': return 'Audio';
     case 'transcription': return 'Audio';
     case 'tts': return 'TTS';
+    case 'model3d': return '3D';
     case 'embedding': return 'Emb';
     case 'reranking': return 'Rank';
     case 'vision': return 'Vision';
@@ -208,29 +247,24 @@ export function selectPreferredLoadedModel(loadedModels: LoadedModel[]): LoadedM
 export function modelDisplayName(model: ModelSnapshot | null | undefined): string { return model?.name || 'Assistant'; }
 export function modelInitial(model: ModelSnapshot | null | undefined): string { return modelDisplayName(model).charAt(0).toUpperCase(); }
 
-/* ── Functional capability tags (PR #2424 fl0rianr) ────────────────
-   A single model can expose MULTIPLE functional capabilities (tool use,
-   vision, popular, audio, …). These drive BOTH the funnel multi-select
-   filter and the capability icons shown on each middle-panel row. They are
-   derived client-side from the model's labels plus its base modality — no
-   lemond calls. */
+/* Functional capability tags drive both the model filters and row badges. */
 export type CapabilityTag =
   | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
-  | 'code' | 'audio' | 'image' | 'tts' | 'embedding' | 'reranking';
+  | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d'
+  | 'embedding' | 'reranking';
 
-/** Canonical display order for tags (funnel options + row icons). */
 export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
   'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
-  'code', 'audio', 'image', 'tts', 'embedding', 'reranking',
+  'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d', 'embedding', 'reranking',
 ];
 
 export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
   popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
   tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
-  image: 'Image', tts: 'Speech (TTS)', embedding: 'Embeddings', reranking: 'Reranking',
+  'audio-generation': 'Music & SFX', image: 'Image', tts: 'Speech (TTS)',
+  model3d: '3D', embedding: 'Embeddings', reranking: 'Reranking',
 };
 
-/** Label/tag aliases that map a model's free-form labels onto a capability. */
 const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   popular: ['popular', 'trending', 'featured', 'recommended'],
   chat: ['chat', 'llm', 'text', 'language', 'instruct', 'text-generation'],
@@ -240,18 +274,20 @@ const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   reasoning: ['reasoning', 'thinking', 'reasoner', 'mtp'],
   code: ['code', 'coding', 'coder'],
   audio: ['audio', 'transcription', 'asr', 'stt', 'speech-to-text', 'realtime-transcription'],
+  'audio-generation': ['audio-generation', 'music-generation', 'sound-generation', 'sfx', 'music'],
   image: ['image', 'image-generation', 'diffusion', 'edit', 'upscaling', 'text-to-image'],
-  tts: ['tts', 'speech', 'text-to-speech'],
+  tts: ['tts', 'speech', 'text-to-speech', 'voice-design'],
+  model3d: ['3d', '3d-generation', 'model3d', 'image-to-3d', 'mesh-generation'],
   embedding: ['embedding', 'embeddings'],
   reranking: ['reranking', 'reranker'],
 };
 
 const BASE_CAPABILITY_TAG: Partial<Record<ModelCapability, CapabilityTag>> = {
   chat: 'chat', omni: 'omni', image: 'image', audio: 'audio',
-  tts: 'tts', embedding: 'embedding', reranking: 'reranking',
+  'audio-generation': 'audio-generation', tts: 'tts', model3d: 'model3d',
+  embedding: 'embedding', reranking: 'reranking',
 };
 
-/** All functional capability tags a model exposes (always ≥1, ordered). */
 export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   const labels = (model.labels || []).map(l => String(l).toLowerCase().trim()).filter(Boolean);
   const labelSet = new Set(labels);
@@ -265,8 +301,6 @@ export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   return CAPABILITY_TAG_ORDER.filter(tag => found.has(tag));
 }
 
-/** True when the model has at least one of the selected capability tags
-    (empty selection = no capability filter applied). */
 export function modelMatchesCapabilityTags(model: ModelInfo, selected: Set<string>): boolean {
   if (!selected || selected.size === 0) return true;
   return modelCapabilityTags(model).some(tag => selected.has(tag));

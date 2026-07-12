@@ -49,7 +49,9 @@ const CATEGORY_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName 
   { key: 'omni', label: 'Omni', iconName: 'omni' },
   { key: 'image', label: 'Image', iconName: 'image' },
   { key: 'audio', label: 'Audio', iconName: 'audio' },
+  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
   { key: 'tts', label: 'TTS', iconName: 'tts' },
+  { key: 'model3d', label: '3D', iconName: 'box' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
 ];
 

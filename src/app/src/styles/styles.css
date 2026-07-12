@@ -12025,3 +12025,244 @@ input, textarea {
   max-width: 100%;
   margin: 0;
 }
+
+/* ---------- Generated audio + 3D modalities ---------- */
+.cap-badge--audio-gen { background: rgba(45, 212, 191, 0.16); color: #7dd3c7; }
+.cap-badge--model3d { background: rgba(129, 140, 248, 0.17); color: #a5b4fc; }
+.composer__mode-badge--audio-gen { color: #7dd3c7; background: rgba(45, 212, 191, 0.12); }
+.composer__mode-badge--model3d { color: #a5b4fc; background: rgba(129, 140, 248, 0.12); }
+
+.composer__capability-settings {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(92px, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+}
+
+.composer__audio-generation-settings {
+  grid-template-columns: repeat(4, minmax(92px, 0.75fr)) minmax(130px, 1fr);
+}
+
+.composer__model3d-settings {
+  grid-template-columns: minmax(150px, 1.1fr) minmax(180px, 1.5fr) repeat(3, minmax(112px, 0.8fr));
+}
+
+.composer__openmoss-settings {
+  grid-template-columns: minmax(150px, 0.8fr) minmax(260px, 2fr);
+}
+
+.composer__openmoss-description {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer__openmoss-description > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--weight-semibold);
+}
+
+.composer__openmoss-description > span small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-normal);
+}
+
+.composer__openmoss-description input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.composer__openmoss-description input:focus {
+  border-color: var(--accent-fg);
+  background: var(--surface-2);
+}
+
+.composer__openmoss-description input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.composer__openmoss-status {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.composer__openmoss-status--error { color: var(--danger); }
+
+.composer__image-setting small {
+  position: absolute;
+  align-self: flex-end;
+  margin: 28px 8px 0 0;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.composer__audio-lyrics {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer__audio-lyrics > span {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--weight-semibold);
+}
+
+.composer__audio-lyrics > span small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-normal);
+}
+
+.composer__audio-lyrics textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  outline: none;
+}
+
+.composer__audio-lyrics textarea:focus { border-color: var(--accent-fg); background: var(--surface-2); }
+.composer__audio-lyrics textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.message__model3d {
+  width: min(100%, 720px);
+  margin-top: var(--space-3);
+}
+
+.model3d-viewer {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 420px;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--surface-3) 72%, transparent), transparent 60%),
+    var(--surface-0);
+}
+
+.model3d-viewer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  cursor: grab;
+}
+
+.model3d-viewer canvas:active { cursor: grabbing; }
+
+.model3d-viewer--loading,
+.model3d-viewer--error {
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.model3d-viewer--error { color: var(--danger); }
+
+.message__model3d-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.message__model3d-actions .message__action {
+  text-decoration: none;
+}
+
+.message__action--primary {
+  color: var(--accent-fg);
+  border-color: color-mix(in srgb, var(--accent-fg) 36%, var(--border-subtle));
+  background: var(--accent-soft);
+}
+
+.message__model3d-note,
+.message__model3d-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.message__model3d-error { color: var(--danger); }
+
+@media (max-width: 1100px) {
+  .composer__capability-settings,
+  .composer__audio-generation-settings,
+  .composer__openmoss-settings,
+  .composer__model3d-settings {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .composer__capability-settings,
+  .composer__audio-generation-settings,
+  .composer__openmoss-settings,
+  .composer__model3d-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .composer__image-setting--model,
+  .composer__openmoss-description,
+  .composer__audio-lyrics { grid-column: 1 / -1; }
+  .model3d-viewer { height: 320px; min-height: 320px; }
+  .model3d-viewer canvas { min-height: 320px; }
+}
+
+.message__audio-download {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  text-decoration: none;
+}
+
+.composer__image-setting {
+  position: relative;
+}
+.cap-chip--audio-generation { --cap-color: #2dd4bf; }
+.cap-chip--model3d { --cap-color: #818cf8; }
