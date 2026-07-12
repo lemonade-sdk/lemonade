@@ -28,13 +28,14 @@ module.exports = (env, argv) => ({
   },
   output: {
     filename: '[name].bundle.js',
+    chunkFilename: '[name].chunk.js',
     path: path.resolve(__dirname, 'dist'),
+    // Derive async chunk URLs from the actual main bundle URL. This works at
+    // both / and /web-app/ and avoids document-relative chunk resolution.
+    publicPath: 'auto',
     clean: true,
   },
   optimization: {
-    // Prototype build: keep production output deterministic and fast. The full
-    // dependency graph is large enough that default Terser minification can
-    // stall local verification, while the UI is still under active review.
     minimize: false,
     splitChunks: {
       chunks: 'all',
@@ -57,6 +58,13 @@ module.exports = (env, argv) => ({
       },
     },
   },
+  // @google/model-viewer contains one optional expression-based import. It is
+  // valid in the browser and already used by GUI2; suppress only that known
+  // parser warning so webpack-dev-server never covers the app with an overlay.
+  ignoreWarnings: [
+    warning => /Critical dependency: the request of a dependency is an expression/.test(warning.message || '')
+      && /model-viewer\.min\.js/.test(warning.module?.resource || warning.moduleName || ''),
+  ],
   plugins: [
     new HtmlWebpackPlugin({
       template: './src/index.html',
@@ -72,6 +80,13 @@ module.exports = (env, argv) => ({
     hot: true,
     open: false,
     historyApiFallback: true,
+    allowedHosts: 'all',
     headers: { 'Cache-Control': 'no-store' },
+    client: {
+      overlay: { errors: true, warnings: false },
+    },
+  },
+  performance: {
+    hints: false,
   },
 });

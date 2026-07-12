@@ -50,7 +50,10 @@ function typeIcon(type: string): string {
     case 'reranking': return 'Rank';
     case 'transcription': return 'ASR';
     case 'image': return 'Image';
+    case 'audio-generation': return 'Audio';
     case 'tts': return 'TTS';
+    case '3d':
+    case 'model3d': return '3D';
     default: return 'Model';
   }
 }
@@ -193,7 +196,11 @@ const ModelRow = React.memo<{ model: LoadedModel }>(({ model }) => (
 
 const POLL_INTERVAL = 2000;
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  isActive: boolean;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   const {
     health, stats, sysStats, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
@@ -201,7 +208,7 @@ const Dashboard: React.FC = () => {
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
-  } = useDashboardData();
+  } = useDashboardData(isActive);
 
   /* ── Render ──────────────────────────────────────────────── */
 

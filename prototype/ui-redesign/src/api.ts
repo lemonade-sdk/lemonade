@@ -229,6 +229,12 @@ export interface DownloadProgressEvent {
   name?: string;
   status?: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | string;
   running?: boolean;
+  created_at?: number | string;
+  createdAt?: number | string;
+  started_at?: number | string;
+  startedAt?: number | string;
+  start_time?: number | string;
+  startTime?: number | string;
   file?: string;
   file_index?: number;
   total_files?: number;
@@ -1241,6 +1247,46 @@ class LemonadeAPI {
     return images;
   }
 
+  async audioGeneration(
+    model: string,
+    prompt: string,
+    opts: Record<string, unknown> = {},
+  ): Promise<{ url: string; blob: Blob; filename: string }> {
+    const resp = await this._fetch('/api/v1/audio/generations', {
+      method: 'POST',
+      body: {
+        ...opts,
+        model,
+        prompt,
+        response_format: 'wav',
+      },
+      includeSessionHeaders: true,
+    });
+    const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('Audio generation endpoint returned an empty file.');
+    return { blob, url: URL.createObjectURL(blob), filename: `${model}.wav` };
+  }
+
+  async model3dGeneration(
+    model: string,
+    image: string,
+    opts: Record<string, unknown> = {},
+  ): Promise<{ url: string; blob: Blob; filename: string }> {
+    const resp = await this._fetch('/api/v1/3d/generations', {
+      method: 'POST',
+      body: {
+        ...opts,
+        model,
+        image,
+        response_format: 'glb',
+      },
+      includeSessionHeaders: true,
+    });
+    const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('3D generation endpoint returned an empty model.');
+    return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
+  }
+
   async imageUpscale(model: string, imageUrl: string): Promise<string> {
     const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
     const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
@@ -1254,11 +1300,15 @@ class LemonadeAPI {
   }
 
   async textToSpeech(model: string, input: string, voice = 'alloy', opts: Record<string, unknown> = {}): Promise<{ url: string; blob: Blob }> {
+    const body: Record<string, unknown> = { ...opts, model, input };
+    if (voice.trim()) body.voice = voice.trim();
     const resp = await this._fetch('/api/v1/audio/speech', {
       method: 'POST',
-      body: { ...opts, model, input, voice },
+      body,
+      includeSessionHeaders: true,
     });
     const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('Speech endpoint returned an empty audio file.');
     return { blob, url: URL.createObjectURL(blob) };
   }
 

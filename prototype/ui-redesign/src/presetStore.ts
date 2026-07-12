@@ -10,10 +10,10 @@ import {
 } from './presetPrompts';
 export { CUSTOM_PRESET_PROMPTS, NO_SYSTEM_PROMPT_ID, newCustomSystemPrompt, type PresetSystemPrompt } from './presetPrompts';
 
-export type Capability = 'all' | 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
-export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
+export type Capability = 'all' | 'chat' | 'omni' | 'image' | 'transcription' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking' | 'vision' | 'code';
+export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'acestep' | 'thinksound' | 'openmoss' | 'trellis' | 'auto';
 
-export const KNOWN_CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'omni', 'vision', 'code', 'transcription', 'tts', 'embedding', 'reranking'];
+export const KNOWN_CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'omni', 'vision', 'code', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
 export interface RecipeOptions {
   ctx_size?: number;
@@ -31,6 +31,10 @@ export interface RecipeOptions {
   whispercpp_args?: string;
   moonshine_backend?: string;
   moonshine_args?: string;
+  acestep_backend?: string;
+  thinksound_backend?: string;
+  openmoss_backend?: string;
+  trellis_backend?: string;
   vllm_backend?: string;
   vllm_args?: string;
   flm_args?: string;
@@ -167,7 +171,9 @@ function capabilityForPresetPreview(capability: ModelCapability | null | undefin
     case 'omni': return 'omni';
     case 'image': return 'image';
     case 'audio': return 'transcription';
+    case 'audio-generation': return 'audio-generation';
     case 'tts': return 'tts';
+    case 'model3d': return 'model3d';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
     default: return null;
@@ -281,6 +287,9 @@ export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelC
   const showImage = modelCapability
     ? modelCapability === 'image'
     : caps.includes('all') || caps.includes('image');
+  const showAudioGeneration = modelCapability
+    ? modelCapability === 'audio-generation'
+    : caps.includes('all') || caps.includes('audio-generation');
   const hasImageValues = hasOwnPreviewValue(ro.steps) || hasOwnPreviewValue(ro.cfg_scale);
   const showTts = modelCapability
     ? modelCapability === 'tts'
@@ -291,10 +300,10 @@ export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelC
   if (showChat) {
     lines.push(`temp ${formatDash(sp.temperature, 2)} · ctx ${formatDash(previewContext(ro.ctx_size, fallbackCtxSize))}`);
   }
-  if (showImage && (hasImageValues || !showChat)) {
+  if ((showImage || showAudioGeneration) && (hasImageValues || !showChat)) {
     lines.push(`${formatDash(ro.steps)} steps · cfg ${formatDash(ro.cfg_scale, 1)}`);
   }
-  if (showTts && (hasTtsValues || (!showChat && !showImage))) {
+  if (showTts && (hasTtsValues || (!showChat && !showImage && !showAudioGeneration))) {
     const voice = String(ro.voice || '---');
     const speed = hasOwnPreviewValue(ro.speed) ? ` · speed ${formatDash(ro.speed, 2)}` : '';
     lines.push(`voice ${voice}${speed}`);
@@ -321,7 +330,7 @@ export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefine
     ['recipe_options', 'cfg_scale'], ['recipe_options', 'txt_cfg'], ['sample_params', 'guidance', 'txt_cfg'], ['sample_params', 'cfg_scale'], ['txt_cfg'], ['guidance'], ['cfg_scale'],
   ]);
 
-  if (capability === 'image') {
+  if (capability === 'image' || capability === 'audio-generation') {
     return [`${formatDash(steps)} steps · cfg ${formatDash(cfg, 1)}`];
   }
   if (capability === 'tts') {
@@ -352,7 +361,9 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   omni: 'Omni',
   image: 'Image',
   transcription: 'Transcription',
+  'audio-generation': 'Music & SFX',
   tts: 'TTS',
+  model3d: '3D',
   embedding: 'Embedding',
   reranking: 'Reranking',
   vision: 'Vision',
@@ -372,8 +383,16 @@ const LABEL_MAP: Record<string, Capability> = {
   'realtime-transcription': 'transcription',
   stt: 'transcription',
   'speech-to-text': 'transcription',
+  'audio-generation': 'audio-generation',
+  'music-generation': 'audio-generation',
+  'sound-generation': 'audio-generation',
+  sfx: 'audio-generation',
   tts: 'tts',
   image: 'image',
+  '3d': 'model3d',
+  '3d-generation': 'model3d',
+  'image-to-3d': 'model3d',
+  model3d: 'model3d',
   embedding: 'embedding',
   embeddings: 'embedding',
   reranking: 'reranking',
@@ -391,7 +410,9 @@ export function labelsFor(model: ModelInfo | string | null | undefined): Capabil
   const recipeText = `${recipe} ${recipes.map(r => String((r as any).recipe || '')).join(' ')}`.toLowerCase();
   const name = String(obj?.id || obj?.name || obj?.display_name || '').toLowerCase();
   if (recipeText.includes('whisper') || recipeText.includes('moonshine') || (recipeText.includes('flm') && (name.includes('whisper') || name.includes('parakeet')))) caps.push('transcription');
-  if (recipeText.includes('kokoro')) caps.push('tts');
+  if (recipeText.includes('kokoro') || recipeText.includes('openmoss')) caps.push('tts');
+  if (recipeText.includes('acestep') || recipeText.includes('ace-step') || recipeText.includes('thinksound')) caps.push('audio-generation');
+  if (recipeText.includes('trellis')) caps.push('model3d');
   if (recipeText.includes('sd-cpp')) caps.push('image');
   if (name.includes('embed')) caps.push('embedding');
   if (name.includes('rerank')) caps.push('reranking');
@@ -542,7 +563,7 @@ export function sanitizeSamplingParams(params: Partial<SamplingParams> | null | 
 export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined): ModelTuning {
   const recipe_options = sanitizeRecipeOptions(raw?.recipe_options || {});
   const sampling = sanitizeSamplingParams(raw?.sampling || {});
-  const engine_hint = raw?.engine_hint && ['auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm', 'ryzenai-llm', 'vllm', 'kokoro'].includes(String(raw.engine_hint))
+  const engine_hint = raw?.engine_hint && ['auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm', 'ryzenai-llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis'].includes(String(raw.engine_hint))
     ? raw.engine_hint
     : undefined;
   return {
@@ -692,7 +713,17 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
     }
   }
 
-  if (capability === 'tts' || recipe === 'kokoro') {
+  if (capability === 'audio-generation' || recipe === 'acestep' || recipe === 'thinksound') {
+    if (recipe === 'acestep') out.acestep_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'acestep_backend'], ['options', 'acestep_backend'], ['acestep_backend']]) ?? backend;
+    if (recipe === 'thinksound') out.thinksound_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'thinksound_backend'], ['options', 'thinksound_backend'], ['thinksound_backend']]) ?? backend;
+  }
+
+  if (capability === 'model3d' || recipe === 'trellis') {
+    out.trellis_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'trellis_backend'], ['options', 'trellis_backend'], ['trellis_backend']]) ?? backend;
+  }
+
+  if (capability === 'tts' || recipe === 'kokoro' || recipe === 'openmoss') {
+    if (recipe === 'openmoss') out.openmoss_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'openmoss_backend'], ['options', 'openmoss_backend'], ['openmoss_backend']]) ?? backend;
     out.voice = readStringFromModelOrRecipe(model, [['recipe_options', 'voice'], ['sample_params', 'voice'], ['default_voice'], ['voice']]);
     out.speed = readNumberFromModelOrRecipe(model, [['recipe_options', 'speed'], ['sample_params', 'speed'], ['default_speed'], ['speed']]);
   }
@@ -773,6 +804,10 @@ const BACKEND_FIELD_BY_RECIPE: Record<string, keyof RecipeOptions> = {
   vllm: 'vllm_backend',
   whispercpp: 'whispercpp_backend',
   moonshine: 'moonshine_backend',
+  acestep: 'acestep_backend',
+  thinksound: 'thinksound_backend',
+  openmoss: 'openmoss_backend',
+  trellis: 'trellis_backend',
 };
 
 function normalizeBackendValue(value: unknown): string | undefined {
@@ -963,8 +998,12 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
     case 'audio':
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
+    case 'audio-generation':
+      return pickRecipeOptions(options, ['acestep_backend', 'thinksound_backend', 'merge_args']);
     case 'tts':
-      return pickRecipeOptions(options, ['voice', 'speed', 'merge_args']);
+      return pickRecipeOptions(options, ['openmoss_backend', 'voice', 'speed', 'merge_args']);
+    case 'model3d':
+      return pickRecipeOptions(options, ['trellis_backend', 'merge_args']);
     case 'embedding':
     case 'reranking':
     case 'chat':

@@ -6,6 +6,7 @@ import McpPanel from './McpPanel';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
+  isActive: boolean;
   accountSession: AccountSession;
   onLocalDataReset: () => void;
   onSessionChange: (session: AccountSession) => void;
@@ -39,7 +40,7 @@ const CLOUD_QUICK_FILL = [
 
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
-const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLocalDataReset, onSessionChange }) => {
+const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSession, onLocalDataReset, onSessionChange }) => {
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
   const [canPersistApiKey, setCanPersistApiKey] = useState(api.canPersistApiKey);
@@ -118,11 +119,13 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
   }, []);
 
   useEffect(() => {
+    if (!isActive) return;
     if (status === 'connected') void loadCloudProviders();
     else setProviders([]);
-  }, [status, loadCloudProviders]);
+  }, [isActive, status, loadCloudProviders]);
 
   useEffect(() => {
+    if (!isActive || marketplaceApps.length > 0) return;
     let cancelled = false;
     setMarketplaceLoading(true);
     fetch(MARKETPLACE_URL)
@@ -139,7 +142,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
       .catch(err => { if (!cancelled) setMarketplaceError(friendlyErrorMessage(err)); })
       .finally(() => { if (!cancelled) setMarketplaceLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [isActive, marketplaceApps.length]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -497,7 +500,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
           </div>
         </section>
 
-        <McpPanel connectionStatus={status} />
+        <McpPanel connectionStatus={status} isActive={isActive} />
 
         <section className="connect__section connect__section--marketplace">
           <div className="connect__section-head">

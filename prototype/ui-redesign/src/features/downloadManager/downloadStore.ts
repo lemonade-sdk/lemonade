@@ -18,6 +18,7 @@ export interface DownloadListItem {
   percent: number;
   status: DownloadStatus;
   error?: string;
+  createdAt: number;
   startTime: number;
   bytesResumed: number;
   running?: boolean;
@@ -52,6 +53,42 @@ function finiteNumber(value: unknown, fallback = 0): number {
 function optionalNumber(value: unknown): number | undefined {
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function timestampNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric)) {
+      const parsed = Date.parse(trimmed);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    }
+    value = numeric;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  // Server timestamps may be Unix seconds or milliseconds.
+  return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+}
+
+function creationTimeFromRaw(raw: DownloadProgressEvent): number | undefined {
+  const values = [
+    raw.created_at,
+    raw.createdAt,
+    raw.started_at,
+    raw.startedAt,
+    raw.start_time,
+    raw.startTime,
+  ];
+  for (const value of values) {
+    const timestamp = timestampNumber(value);
+    if (timestamp != null) return timestamp;
+  }
+  return undefined;
 }
 
 function positiveInt(value: unknown, fallback: number): number {
@@ -355,8 +392,9 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
   const terminalAt = isDownloadTerminal({ status, running })
     ? (previous?.terminalAt || previous?.updatedAt || timestamp)
     : undefined;
+  const createdAt = previous?.createdAt ?? creationTimeFromRaw(raw) ?? timestamp;
   const startTime = previous?.startTime
-    ?? (status === 'downloading' ? timestamp : finiteNumber((raw as any).start_time ?? (raw as any).startTime, timestamp));
+    ?? (status === 'downloading' ? timestamp : finiteNumber(raw.start_time ?? raw.startTime, timestamp));
   const normalizedError = payloadErrorMessage(raw) || (typeof raw.error === 'string' ? raw.error : undefined);
   const error = normalizedError && normalizedError !== 'Download failed.'
     ? normalizedError
@@ -375,6 +413,7 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
     percent: progress.percent,
     status,
     error,
+    createdAt,
     startTime,
     bytesResumed: progress.bytesResumed,
     running,
@@ -393,15 +432,12 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
 }
 
 function sortDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
-  return [...downloads].sort((a, b) => {
-    const aActive = isDownloadActive(a);
-    const bActive = isDownloadActive(b);
-    if (aActive !== bActive) return aActive ? -1 : 1;
-    const aTerminal = isDownloadTerminal(a);
-    const bTerminal = isDownloadTerminal(b);
-    if (aTerminal !== bTerminal) return aTerminal ? 1 : -1;
-    return b.updatedAt - a.updatedAt;
-  });
+  // Match browser download managers: newest-created item first, with a stable
+  // position for the lifetime of the row. Sorting by updatedAt made concurrent
+  // downloads swap places on every progress poll; status grouping also moved a
+  // row as soon as it completed. JavaScript's stable sort preserves insertion
+  // order when two server items have the same creation timestamp.
+  return [...downloads].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function prune(downloads: DownloadListItem[], timestamp = now()): DownloadListItem[] {
@@ -413,15 +449,25 @@ function prune(downloads: DownloadListItem[], timestamp = now()): DownloadListIt
 }
 
 function coerceStoredDownload(download: DownloadListItem, timestamp = now()): DownloadListItem {
+  // Migrate rows written by older GUI3 versions. startTime was the closest
+  // available approximation before createdAt existed; once migrated, createdAt
+  // is persisted and remains independent from speed-baseline resets.
+  const createdAt = timestampNumber((download as any).createdAt)
+    ?? creationTimeFromRaw((download.raw || {}) as DownloadProgressEvent)
+    ?? timestampNumber(download.startTime)
+    ?? timestampNumber(download.updatedAt)
+    ?? timestamp;
+
   if (download.status === 'completed' || download.status === 'error' || download.status === 'cancelled') {
     return {
       ...download,
+      createdAt,
       running: false,
       speedBytesPerSecond: 0,
       terminalAt: download.terminalAt || download.updatedAt || timestamp,
     };
   }
-  return download;
+  return { ...download, createdAt };
 }
 
 function readStored(resetActiveBaselines = false): DownloadListItem[] {
@@ -589,6 +635,7 @@ class DownloadStore {
         bytesDownloaded: 0,
         bytesTotal: 0,
         percent: 0,
+        createdAt: timestamp,
         startTime: timestamp,
         bytesResumed: 0,
         updatedAt: timestamp,
@@ -651,12 +698,13 @@ class DownloadStore {
       // the other tab receives its next server poll. Do not let an older in-memory
       // 0 B active placeholder overwrite the newer terminal row. Conversely, a
       // genuinely newer active server snapshot should reopen the row.
+      const createdAt = Math.min(existing.createdAt, item.createdAt);
       if (itemTerminal !== existingTerminal) {
-        if (itemUpdated >= existingUpdated) map.set(item.id, item);
+        if (itemUpdated >= existingUpdated) map.set(item.id, { ...item, createdAt });
         return;
       }
 
-      if (itemUpdated >= existingUpdated) map.set(item.id, item);
+      if (itemUpdated >= existingUpdated) map.set(item.id, { ...item, createdAt });
     };
 
     for (const item of prune([...stored, ...this.downloads], timestamp)) {

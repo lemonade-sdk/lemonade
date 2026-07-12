@@ -28,7 +28,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
         properties: {
           query: { type: 'string', description: 'Optional case-insensitive model-name filter. Use when the user mentions a model family/name such as Flux, Gemma, Qwen, Llama, Whisper, or SD.' },
           status: { type: 'string', enum: ['local', 'loaded', 'downloaded', 'registry', 'all'], description: 'Which models to return. Default: local. Use registry/all only when the user explicitly asks what can be downloaded.' },
-          capability: { type: 'string', description: 'Optional capability filter: chat, image, audio, tts, embedding, reranking, omni.' },
+          capability: { type: 'string', description: 'Optional capability filter: chat, image, audio/transcription, audio-generation, tts, model3d, embedding, reranking, omni.' },
           limit: { type: 'number', description: 'Maximum returned items per section. Default 30.' },
         },
         required: [],
@@ -175,7 +175,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       parameters: {
         type: 'object',
         properties: {
-          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "moonshine", "sd-cpp", "kokoro", "flm", "vllm").' },
+          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "sd-cpp", "acestep", "thinksound", "openmoss", "trellis", "flm", "vllm").' },
           backend: { type: 'string', description: 'The backend to install (e.g. "vulkan", "rocm", "cpu", "metal", "npu").' },
         },
         required: ['recipe', 'backend'],
@@ -290,14 +290,28 @@ function recipeNames(model: AnyModel | null | undefined): string[] {
   return Array.from(new Set(names));
 }
 
+function normalizeCapabilityFilter(value: unknown): string {
+  const raw = asString(value).toLowerCase();
+  if (['audio/transcription', 'transcription', 'stt', 'asr', 'speech-to-text'].includes(raw)) return 'audio';
+  if (['music', 'sfx', 'music-and-sfx', 'music & sfx', 'audio_generation'].includes(raw)) return 'audio-generation';
+  if (['3d', '3d-generation', 'image-to-3d'].includes(raw)) return 'model3d';
+  if (['speech', 'text-to-speech'].includes(raw)) return 'tts';
+  return raw;
+}
+
 function capabilityForModel(model: AnyModel | null | undefined): string {
   const labels = lowerLabels(model);
   const type = asString(model?.type).toLowerCase();
-  const haystack = `${type} ${labels.join(' ')} ${asString(model?.recipe).toLowerCase()} ${modelName(model).toLowerCase()}`;
+  const recipe = asString(model?.recipe).toLowerCase();
+  const name = modelName(model).toLowerCase();
+  const haystack = `${type} ${labels.join(' ')} ${recipe} ${name}`;
+
   if (haystack.includes('omni') || haystack.includes('collection')) return 'omni';
-  if (labels.some(label => ['image', 'image-generation', 'diffusion', 'image-edit', 'upscaling'].includes(label)) || type === 'image') return 'image';
-  if (labels.some(label => ['audio', 'transcription', 'stt', 'speech-to-text', 'realtime-transcription'].includes(label)) || type === 'audio') return 'audio';
-  if (labels.some(label => ['tts', 'speech', 'text-to-speech'].includes(label)) || type === 'tts') return 'tts';
+  if (['trellis', 'image-to-3d', '3d-generation', 'model3d'].some(token => haystack.includes(token)) || type === '3d') return 'model3d';
+  if (['acestep', 'ace-step', 'thinksound', 'audio-generation', 'music-generation', 'sound-generation', 'sfx'].some(token => haystack.includes(token))) return 'audio-generation';
+  if (['openmoss', 'moss-tts', 'voicegen', 'kokoro', 'text-to-speech', 'voice-design'].some(token => haystack.includes(token)) || type === 'tts') return 'tts';
+  if (labels.some(label => ['image', 'image-generation', 'diffusion', 'image-edit', 'upscaling'].includes(label)) || type === 'image' || recipe === 'sd-cpp') return 'image';
+  if (labels.some(label => ['audio', 'transcription', 'stt', 'speech-to-text', 'realtime-transcription'].includes(label)) || type === 'audio' || ['whispercpp', 'moonshine'].includes(recipe)) return 'audio';
   if (labels.includes('embedding') || type === 'embedding') return 'embedding';
   if (labels.includes('reranking') || type === 'reranking' || type === 'rerank') return 'reranking';
   return 'chat';
@@ -594,7 +608,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const loadedNames = new Set(loaded.map(model => asString(model.model_name).toLowerCase()).filter(Boolean));
         const query = asString(args.query);
         const status = (asString(args.status) || 'local').toLowerCase();
-        const capability = asString(args.capability).toLowerCase();
+        const capability = normalizeCapabilityFilter(args.capability);
         const limit = Math.max(1, Math.min(100, Math.round(asNumber(args.limit) || 30)));
         const all = (data.data as AnyModel[]).filter(model => {
           if (!includesQuery(model, query)) return false;
@@ -757,6 +771,14 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             opts.vllm_backend = backend;
           } else if (recipe.includes('sd-cpp')) {
             opts.sd_cpp_backend = backend;
+          } else if (recipe.includes('acestep') || recipe.includes('ace-step')) {
+            opts.acestep_backend = backend;
+          } else if (recipe.includes('thinksound')) {
+            opts.thinksound_backend = backend;
+          } else if (recipe.includes('openmoss')) {
+            opts.openmoss_backend = backend;
+          } else if (recipe.includes('trellis')) {
+            opts.trellis_backend = backend;
           }
         }
         if (args.n_ctx) opts.n_ctx = args.n_ctx;

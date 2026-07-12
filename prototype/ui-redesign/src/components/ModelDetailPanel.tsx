@@ -47,6 +47,10 @@ function recipeDisplayLabel(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro TTS';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS TTS';
+    case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni Collection';
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
@@ -114,6 +118,10 @@ const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
   whispercpp_args: 'Backend args',
   moonshine_backend: 'Backend',
   moonshine_args: 'Backend args',
+  acestep_backend: 'Backend',
+  thinksound_backend: 'Backend',
+  openmoss_backend: 'Backend',
+  trellis_backend: 'Backend',
   vllm_backend: 'Backend',
   vllm_args: 'Backend args',
   flm_args: 'Backend args',
@@ -128,6 +136,10 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
   whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
   moonshine_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  acestep_backend: 'ACE-Step accelerator backend for music generation.',
+  thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
+  openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
+  trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
   llamacpp_device: 'Optional device selector for the selected backend.',
   llamacpp_args: 'Raw backend args for this model and selected backend only.',
   sdcpp_args: 'Raw backend args for this image model only.',
@@ -140,7 +152,7 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
 const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args']);
-const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend']);
+const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
 const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
 const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
@@ -158,6 +170,10 @@ const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['steps', 'cfg_scale', 'wi
 const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args', 'merge_args'];
 const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args', 'merge_args'];
 const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed', 'merge_args'];
+const ACESTEP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['acestep_backend'];
+const THINKSOUND_RECIPE_KEYS: Array<keyof RecipeOptions> = ['thinksound_backend'];
+const OPENMOSS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['openmoss_backend', 'voice', 'speed'];
+const TRELLIS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['trellis_backend'];
 
 const CONTEXT_OPTIONS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576];
 
@@ -197,6 +213,10 @@ function recipeKeysForRecipe(recipe: string): Array<keyof RecipeOptions> | null 
     case 'whispercpp': return WHISPER_RECIPE_KEYS;
     case 'moonshine': return MOONSHINE_RECIPE_KEYS;
     case 'kokoro': return TTS_RECIPE_KEYS;
+    case 'acestep': return ACESTEP_RECIPE_KEYS;
+    case 'thinksound': return THINKSOUND_RECIPE_KEYS;
+    case 'openmoss': return OPENMOSS_RECIPE_KEYS;
+    case 'trellis': return TRELLIS_RECIPE_KEYS;
     default: return null;
   }
 }
@@ -213,7 +233,9 @@ function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
   else if (cap === 'chat' || cap === 'omni' || cap === 'unknown') add(LLAMACPP_RECIPE_KEYS);
   else if (cap === 'image') add(IMAGE_RECIPE_KEYS);
   else if (cap === 'audio') add(recipes.includes('moonshine') ? MOONSHINE_RECIPE_KEYS : WHISPER_RECIPE_KEYS);
-  else if (cap === 'tts') add(TTS_RECIPE_KEYS);
+  else if (cap === 'audio-generation') add(recipes.includes('acestep') ? ACESTEP_RECIPE_KEYS : THINKSOUND_RECIPE_KEYS);
+  else if (cap === 'tts') add(recipes.includes('openmoss') ? OPENMOSS_RECIPE_KEYS : TTS_RECIPE_KEYS);
+  else if (cap === 'model3d') add(TRELLIS_RECIPE_KEYS);
 
   const base = modelBaseTuningForModel(model).recipe_options;
   Object.keys(base).forEach(key => set.add(key as keyof RecipeOptions));
@@ -250,6 +272,10 @@ function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): 
     case 'vllm_backend': return 'vllm';
     case 'whispercpp_backend': return 'whispercpp';
     case 'moonshine_backend': return 'moonshine';
+    case 'acestep_backend': return 'acestep';
+    case 'thinksound_backend': return 'thinksound';
+    case 'openmoss_backend': return 'openmoss';
+    case 'trellis_backend': return 'trellis';
     default: return activeRecipeForModel(model);
   }
 }
@@ -261,6 +287,10 @@ function fallbackBackendsForRecipe(recipe: string): string[] {
     case 'moonshine': return ['cpu', 'cuda'];
     case 'sd-cpp': return ['cpu', 'cuda', 'vulkan', 'rocm'];
     case 'kokoro': return ['cpu'];
+    case 'acestep':
+    case 'thinksound':
+    case 'openmoss':
+    case 'trellis': return ['cuda', 'rocm', 'vulkan'];
     case 'llamacpp':
     default:
       // Keep fallback conservative: no Metal/NPU unless the server explicitly reports them as selectable.
