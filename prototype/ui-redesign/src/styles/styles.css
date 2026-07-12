@@ -6489,6 +6489,69 @@ input, textarea {
   margin-left: auto;
 }
 
+.composer__model-button-badge {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.composer__model-option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-md);
+}
+
+.composer__model-option-row:hover,
+.composer__model-option-row.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.composer__model-option-row .composer__model-option {
+  flex: 1;
+  min-width: 0;
+  border-radius: 0;
+}
+
+.composer__model-option-row .composer__model-option:hover,
+.composer__model-option-row .composer__model-option.is-active {
+  background: transparent;
+}
+
+.composer__model-option-row.is-unloading .composer__model-option {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.composer__model-option-unload {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  opacity: 1;
+  transition: color 0.12s, background 0.12s;
+  margin-right: var(--space-1);
+}
+
+.composer__model-option-unload:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.composer__model-option-row.is-unloading .composer__model-option-unload {
+  opacity: 1;
+  color: var(--text-tertiary);
+  cursor: wait;
+}
+
 .composer__model-error {
   margin-top: var(--space-2);
   padding: var(--space-2);
