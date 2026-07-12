@@ -5,7 +5,6 @@ import texmath from 'markdown-it-texmath';
 import katex from 'katex';
 import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
-import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownMessageProps {
