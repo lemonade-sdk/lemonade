@@ -1866,8 +1866,8 @@ nlohmann::json Server::extract_auto_load_options(const json& request) {
     return result;
 }
 
-void Server::auto_load_model_if_needed(const std::string& requested_model,
-                                        const json& request_options) {
+void Server::auto_load_model_if_needed(
+    const std::string& requested_model, const json& request_options) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
