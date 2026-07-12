@@ -248,17 +248,10 @@ private:
                                   httplib::Response& res,
                                   nlohmann::json& out);
 
-    // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    // Optionally accepts per-request override options (e.g. ctx_size) that are applied only on
-    // the very first load.  If the model is already loaded these are silently ignored so as not
-    // to overturn options that were set by a prior explicit /v1/load call.
-    //
-    // Callers MUST extract only load-level options via extract_auto_load_options() before
-    // passing them here — never pass the raw inference request body.  This prevents
-    // request-scoped fields (temperature, max_tokens, messages, steps, etc.) from leaking
-    // into recipe options that would affect subsequent requests.  Currently only ctx_size
-    // is allowlisted; pinned, eviction settings, *_args, and image params are excluded.
-    // (They can be forwarded via /v1/load when needed.)
+    // Auto-load a model on first use. request_options are applied only on the first load;
+    // if the model is already loaded they are ignored so explicit /v1/load settings win.
+    // Callers must pass only load-level options from extract_auto_load_options() — never
+    // the raw request body — to keep request-scoped fields out of persistent recipe options.
     void auto_load_model_if_needed(const std::string& model_name,
                                    const json& request_options = json::object());
 
@@ -342,11 +335,8 @@ private:
     // Set to true after check_for_model_updates() completes at startup.
     std::atomic<bool> update_check_done_{false};
 
-    // Extract only load-level options from an inference request body.  Returns a new json
-    // containing a small, explicit allowlist of fields that are safe to forward to the
-    // RecipeOptions constructor during auto-load.  All other request-scoped fields
-    // (temperature, max_tokens, messages, steps, cfg_scale, etc.) are deliberately excluded
-    // so they cannot accidentally influence persistent model-load settings.
+    // Extract load-level options from an inference request body. Currently only ctx_size
+    // is forwarded; request-scoped fields are excluded so they cannot leak into recipe options.
     static json extract_auto_load_options(const json& request);
 };
 

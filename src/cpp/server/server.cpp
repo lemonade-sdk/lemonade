@@ -1853,14 +1853,8 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
 
-// Extract only load-level options from an inference request body.  Returns a new json
-// containing an explicit allowlist of fields that are safe to forward to the
-// RecipeOptions constructor during auto-load.  All other request-scoped fields
-// (temperature, max_tokens, messages, steps, cfg_scale, etc.) are deliberately excluded
-// so they cannot accidentally influence persistent model-load settings.
-//
-// Currently only ctx_size is allowlisted.  Other fields (pinned, eviction settings,
-// *_args) can be added here later with corresponding regression tests.
+// Load-level options that may be forwarded to RecipeOptions during auto-load.
+// Keep this an explicit allowlist so request-scoped fields don't leak into recipe options.
 nlohmann::json Server::extract_auto_load_options(const json& request) {
     nlohmann::json result = json::object();
     auto extract_if_present = [&request, &result](const std::string& key) {
