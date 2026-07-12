@@ -224,7 +224,7 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 // ============================================================================
 // auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
-void OllamaApi::auto_load_model(const std::string& model) {
+void OllamaApi::auto_load_model(const std::string& model, const json& request_options) {
     std::string name = normalize_model_name(model);
 
     if (router_->is_model_loaded(name)) {
@@ -247,8 +247,23 @@ void OllamaApi::auto_load_model(const std::string& model) {
         info = model_manager_->get_model_info(name);
     }
 
-    router_->load_model(name, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(name, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "OllamaApi") << "Model loaded: " << name << std::endl;
+}
+
+// ============================================================================
+// Extract load-level options from request body for auto-load
+// Only forwards explicit allowlist (currently only ctx_size)
+// ============================================================================
+nlohmann::json OllamaApi::extract_auto_load_options(const json& request) {
+    nlohmann::json result = json::object();
+    auto extract_if_present = [&request, &result](const std::string& key) {
+        if (request.contains(key)) {
+            result[key] = request[key];
+        }
+    };
+    extract_if_present("ctx_size");
+    return result;
 }
 
 // build Ollama model entry from ModelInfo
@@ -704,7 +719,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Auto-load the model
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -836,7 +851,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -1273,7 +1288,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
@@ -1340,7 +1355,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
