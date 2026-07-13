@@ -1840,7 +1840,8 @@ class LemonadeAPI {
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
-      const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model), ...(params || {}) };
+      const requestModelInfo = this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null;
+      const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (tools && tools.length > 0) body.tools = tools;
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
@@ -1952,7 +1953,7 @@ class LemonadeAPI {
   ): Promise<string> {
     const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
       method: 'POST',
-      body: { model, messages, stream: false, ...samplingForModel(model), ...params },
+      body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
       includeSessionHeaders: true,
     });
     if (data.error) {

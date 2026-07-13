@@ -409,7 +409,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A21 — opening preset slideover moves focus inside it (useFocusTrap activates)', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const activeIsInSlideover = await page.evaluate(() => {
@@ -420,7 +420,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A22 — Tab from last focusable inside slideover wraps back to first (never escapes)', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const count = await page.locator(
@@ -441,7 +441,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A23 — pressing Escape closes the preset slideover', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     await page.keyboard.press('Escape');
@@ -670,74 +670,62 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
   });
 });
 
-// ─── 10. Preset parameter labels — issue #2338 ───────────────────────────────
+// ─── 10. Preset intent controls — intent refactor ────────────────────────────
 
-test.describe('Accessibility — preset parameter labels (#2338)', () => {
+test.describe('Accessibility — preset intent controls', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
     await page.waitForSelector('.recipe-card');
-    // nth(1) skips DEFAULT_PRESET (which hides behavior fields); opens first STARTER (chat)
-    await page.locator('.recipe-card').nth(1).click();
+    // nth(1) skips DEFAULT_PRESET and opens the first chat starter.
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
   });
 
-  test('A35 — temperature slider linked to label via htmlFor/id', async ({ page }) => {
-    const labelText = await page.locator('[data-recipe-temp]').evaluate(el => {
-      const id = (el as HTMLElement).id;
-      if (!id) return '';
-      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
-    });
-    expect(labelText, 'Temperature slider must be labelled via htmlFor/id').toBeTruthy();
+  test('A35 — temperature intent is grouped and exposes all four levels', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="temperature"]');
+    await expect(group.locator('legend')).toContainText('Temperature');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="precise"]')).toHaveAttribute('title', /precise/i);
   });
 
-  test('A36 — context-size slider linked to label via htmlFor/id', async ({ page }) => {
-    const labelText = await page.locator('[data-recipe-ctx]').evaluate(el => {
-      const id = (el as HTMLElement).id;
-      if (!id) return '';
-      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
-    });
-    expect(labelText, 'Context size slider must be labelled via htmlFor/id').toBeTruthy();
+  test('A36 — context intent is grouped and exposes all four levels', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="context"]');
+    await expect(group.locator('legend')).toContainText('Context');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="max"]')).toBeVisible();
   });
 
-  test('A37 — top_k input linked to label via htmlFor/id', async ({ page }) => {
-    const labelText = await page.locator('[data-recipe-top-k]').evaluate(el => {
-      const id = (el as HTMLElement).id;
-      if (!id) return '';
-      return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() ?? '';
-    });
-    expect(labelText, 'top_k input must be labelled via htmlFor/id').toBeTruthy();
+  test('A37 — thinking modes expose native help and future modes are disabled', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="thinking"]');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="normal"]')).toHaveAttribute('title', 'Default model thinking');
+    await expect(group.locator('[data-intent-value="smart"]')).toBeDisabled();
+    await expect(group.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
   });
 });
 
-// ─── 11. Advanced backend/device fields discoverable — issue #2339 ────────────
+// ─── 11. Concrete runtime fields stay out of Presets ─────────────────────────
 
-test.describe('Accessibility — backend/device fields discoverable (#2339)', () => {
+test.describe('Accessibility — preset/runtime separation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
     await page.waitForSelector('.recipe-card');
-    await page.locator('.recipe-card').nth(1).click();
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
-    // Open the <details> Advanced engine options section
-    await page.locator('.preset-advanced summary').click();
-    await page.waitForTimeout(200);
   });
 
-  test('A38 — llamacpp_backend input has a datalist of known backend values', async ({ page }) => {
-    const listId = await page.locator('#preset-field-llamacpp-backend').getAttribute('list');
-    expect(listId, 'llamacpp_backend input must have list= attribute').toBeTruthy();
-    const optionCount = await page.locator(`#${listId} option`).count();
-    expect(optionCount, 'llamacpp_backend datalist must have ≥3 options').toBeGreaterThanOrEqual(3);
+  test('A38 — preset editor does not expose concrete sampling or context inputs', async ({ page }) => {
+    await expect(page.locator('[data-recipe-temp], [data-recipe-ctx], [data-recipe-top-k], .slideover .slider')).toHaveCount(0);
   });
 
-  test('A39 — llamacpp_device input has a datalist of known device values', async ({ page }) => {
-    const listId = await page.locator('#preset-field-llamacpp-device').getAttribute('list');
-    expect(listId, 'llamacpp_device input must have list= attribute').toBeTruthy();
-    const optionCount = await page.locator(`#${listId} option`).count();
-    expect(optionCount, 'llamacpp_device datalist must have ≥3 options').toBeGreaterThanOrEqual(3);
+  test('A39 — backend assignment remains collapsed and does not expose backend tuning inputs', async ({ page }) => {
+    const advanced = page.locator('.preset-advanced');
+    await expect(advanced).not.toHaveAttribute('open', '');
+    await expect(page.locator('#preset-field-llamacpp-backend, #preset-field-llamacpp-device')).toHaveCount(0);
   });
 });
 
@@ -773,7 +761,7 @@ test.describe('Accessibility — capability chip toggle-button semantics (#2350)
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
     await page.waitForSelector('.recipe-card');
-    await page.locator('.recipe-card').nth(1).click();
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
   });
 
@@ -1060,13 +1048,14 @@ test.describe('Accessibility — backend preset rail removal (#2432)', () => {
   test('A171 — Presets slideover exposes an accessible "Apply to a backend" control with global copy', async ({ page }) => {
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const section = page.locator('[data-backend-apply-section]');
     await expect(section).toBeVisible();
     // Heading communicates the affordance.
-    await expect(section.locator('h3')).toContainText('Apply to a backend');
+    await expect(section.locator('summary')).toContainText('Apply to a backend');
+    await section.locator('summary').click();
     // Global wording is present and not visually hidden.
     const note = page.locator('[data-backend-global-note]');
     await expect(note).toBeVisible();
@@ -1085,8 +1074,10 @@ test.describe('Accessibility — backend preset rail removal (#2432)', () => {
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
     // Open a chat-capable starter (compatible with the llamacpp backend).
-    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.locator('[data-recipe-id="s-balanced"] .recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    await page.locator('[data-backend-apply-section] summary').click();
 
     const select = page.locator('[data-backend-apply-target]');
     await expect(select).toBeVisible();
@@ -1122,8 +1113,10 @@ test.describe('Accessibility — backend preset rail removal (#2432)', () => {
     // Assign via the global Presets view first.
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
-    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.locator('[data-recipe-id="s-balanced"] .recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+    await page.locator('[data-backend-apply-section] summary').click();
+
     await page.locator('[data-backend-apply-target]').selectOption('llamacpp:cpu');
     await page.locator('[data-backend-apply-btn]').click();
     await expect(page.locator('[data-backend-apply-success]')).toContainText('applies globally');
@@ -1266,9 +1259,11 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
 
     // The Default card is the first card; open it.
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
     await expect(page.locator('.slideover__title, [data-recipe-name]').first()).toContainText('Default');
+
+    await page.locator('[data-backend-apply-section] summary').click();
 
     // The backend select + Assign button are programmatically disabled.
     const select = page.locator('[data-backend-apply-target]');
@@ -1301,8 +1296,10 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    await page.locator('[data-backend-apply-section] summary').click();
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -1362,8 +1359,10 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     // The load uses the vulkan backend the model preset selected.
     expect(body.llamacpp_backend).toBe('vulkan');
     expect(body.llamacpp_args).toBe('--model-vk');
-    // The cpu-bound preset's signature arg must be ABSENT (it did not merge).
-    expect(body.ctx_size).toBeUndefined();
+    // The cpu-bound preset's signature values must stay out. A semantic context
+    // fallback may still resolve independently for the active model preset.
+    expect(body.ctx_size).not.toBe(2048);
+    expect(body.llamacpp_args).not.toBe('--cpu-base');
   });
 
   test('A178 — an unsupported backend cannot receive a global backend preset (option disabled + not assignable, accessibly)', async ({ page }) => {
@@ -1381,8 +1380,10 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
 
     // Open a chat-capable starter (compatible with the llamacpp backend).
-    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.locator('[data-recipe-id="s-balanced"] .recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    await page.locator('[data-backend-apply-section] summary').click();
 
     const select = page.locator('[data-backend-apply-target]');
     await expect(select).toBeVisible();
@@ -1427,8 +1428,10 @@ test.describe('Accessibility — backend-preset merge + Default handling (#2432 
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipe-card', { timeout: 5000 });
-    await page.locator('.recipe-card', { hasText: 'Balanced' }).first().click();
+    await page.locator('[data-recipe-id="s-balanced"] .recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
+
+    await page.locator('[data-backend-apply-section] summary').click();
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])

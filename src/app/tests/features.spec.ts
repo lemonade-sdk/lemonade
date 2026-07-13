@@ -434,11 +434,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Count subtitle visible
     await expect(page.locator('.recipes__title-sub')).toContainText('starters');
 
-    // Lede paragraph mentions recipe options and sampling
+    // Lede explains the intent-to-tuning separation.
     const lede = page.locator('.recipes__lede');
     await expect(lede).toBeVisible();
-    await expect(lede).toContainText('recipe options');
-    await expect(lede).toContainText('sampling');
+    await expect(lede).toContainText('describe how you want to use a model');
+    await expect(lede).toContainText('Model Tuning');
 
     // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones)
     const recipesView = page.locator('.recipes').last();
@@ -458,10 +458,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Zone: Your presets is genuinely empty on first run
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, clone it, or save from a model');
+    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or save from a model');
 
     // Click a preset card to open slide-over
-    await starterCards.first().click();
+    await starterCards.first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
 
     // Slide-over has preset name
@@ -470,12 +470,16 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Slide-over shows capability chips
     await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
 
-    // Slide-over has primary behavior controls and closed advanced engine options
-    await expect(page.locator('.slideover h3').getByText('Behavior')).toBeVisible();
+    // Slide-over exposes semantic intent controls and no concrete runtime controls.
+    await expect(page.locator('[data-preset-intent="temperature"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="context"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="thinking"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="temperature"] [data-intent-value]')).toHaveCount(4);
+    await expect(page.locator('[data-preset-intent="context"] [data-intent-value]')).toHaveCount(4);
+    await expect(page.locator('[data-intent-value="smart"]')).toBeDisabled();
+    await expect(page.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
     await expect(page.locator('.slideover details.preset-advanced')).not.toHaveAttribute('open', '');
-
-    // Slide-over has form controls (sliders for ctx_size, etc.)
-    await expect(page.locator('.slideover .slider').first()).toBeVisible();
+    await expect(page.locator('.slideover .slider')).toHaveCount(0);
 
     // Incompatible model options are disabled with an explanation tooltip
     const imageOption = page.locator('[data-recipe-apply-target] option[value="sd-image"]');
@@ -1108,4 +1112,108 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
     expect(finalEnabled).toBe(false);
   });
+
+  test('25 — Model Tuning maps every intent level while Max context stays fixed', async ({ page }) => {
+    const modelName = 'intent-map-model';
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: {
+            default_backend: 'cpu',
+            backends: { cpu: { state: 'installed', version: 'test' } },
+          },
+        },
+      },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: modelName,
+          name: modelName,
+          labels: ['llm', 'coding'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          ctx_size: 4096,
+          max_context_window: 131072,
+        }],
+      },
+    }));
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.locator('.model-list-item').first().click();
+    await page.locator('#detail-tab-tuning').click();
+
+    const temperatureInputs = page.locator('[data-model-tuning-temperature-intent]');
+    await expect(temperatureInputs).toHaveCount(4);
+    for (const hint of ['precise', 'balanced', 'exploratory', 'creative']) {
+      await expect(page.locator(`[data-model-tuning-temperature-intent="${hint}"]`)).toBeVisible();
+    }
+
+    const contextCards = page.locator('[data-model-tuning-context-intent]');
+    await expect(contextCards).toHaveCount(4);
+    for (const hint of ['small', 'medium', 'large']) {
+      await expect(page.locator(`button[data-model-tuning-context-intent="${hint}"]`)).toBeVisible();
+    }
+    const maxContext = page.locator('[data-model-tuning-context-intent="max"]');
+    await expect(maxContext).toBeVisible();
+    await expect(maxContext.locator('input')).toHaveCount(0);
+    await expect(maxContext).toContainText('128K');
+    await expect(page.locator('.detail-tuning__runtime .detail-tuning__field', { hasText: 'Context size' })).toHaveCount(0);
+
+    await page.locator('[data-model-tuning-preset]').selectOption('s-code');
+    await page.locator('[data-model-tuning-temperature-intent="precise"]').fill('0.2');
+    await page.locator('[data-model-tuning-temperature-intent="balanced"]').fill('0.6');
+    await page.locator('[data-model-tuning-temperature-intent="exploratory"]').fill('0.8');
+    await page.locator('[data-model-tuning-temperature-intent="creative"]').fill('1.0');
+
+    await page.locator('button[data-model-tuning-context-intent="small"]').click();
+    const smallSlider = page.locator('[data-model-tuning-context-slider="small"]');
+    await expect(smallSlider).toHaveAttribute('min', '1024');
+    await page.locator('[data-model-tuning-context-number="small"]').fill('5120');
+
+    await page.locator('button[data-model-tuning-context-intent="medium"]').click();
+    const mediumSlider = page.locator('[data-model-tuning-context-slider="medium"]');
+    await expect(mediumSlider).toHaveAttribute('min', '5120');
+    await page.locator('[data-model-tuning-context-number="medium"]').fill('32768');
+
+    await page.locator('button[data-model-tuning-context-intent="large"]').click();
+    const largeSlider = page.locator('[data-model-tuning-context-slider="large"]');
+    await expect(largeSlider).toHaveAttribute('min', '32768');
+    await expect(largeSlider).toHaveAttribute('max', '131072');
+    await page.locator('[data-model-tuning-context-number="large"]').fill('65536');
+    await page.getByRole('button', { name: 'Save tuning' }).click();
+
+    const saved = await page.evaluate(({ model, preset }) => {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.includes('model_tunings')) continue;
+        try {
+          const value = JSON.parse(localStorage.getItem(key) || '{}');
+          const tuning = value[`${model}@@${preset}`];
+          if (tuning) return tuning;
+        } catch { /* keep looking */ }
+      }
+      return null;
+    }, { model: modelName, preset: 's-code' });
+
+    expect(saved?.intent_values?.temperature).toEqual({
+      precise: 0.2,
+      balanced: 0.6,
+      exploratory: 0.8,
+      creative: 1.0,
+    });
+    expect(saved?.intent_values?.context).toEqual({
+      small: 5120,
+      medium: 32768,
+      large: 65536,
+    });
+    expect(saved?.intent_values?.context?.max).toBeUndefined();
+    expect(saved?.recipe_options?.ctx_size).toBeUndefined();
+  });
+
 });

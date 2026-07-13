@@ -4,14 +4,17 @@ import {
   CAPABILITY_LABELS,
   CUSTOM_PRESET_PROMPTS,
   DEFAULT_PRESET,
-  KNOWN_CAPABILITIES,
   Capability,
   NO_SYSTEM_PROMPT_ID,
   Preset,
-  PresetRecipe,
   PresetSystemPrompt,
-  RecipeOptions,
-  SamplingParams,
+  TemperatureHint,
+  ContextHint,
+  ThinkingMode,
+  TEMPERATURE_HINT_LABELS,
+  CONTEXT_HINT_LABELS,
+  THINKING_MODE_LABELS,
+  presetSupportsChatIntent,
   STARTERS,
   isCompatible,
   labelsFor,
@@ -29,67 +32,8 @@ import {
   saveBackendApplied,
   saveUserPresets,
 } from '../presetStore';
-import { CapabilityIcon, PresetIcon } from './Icon';
+import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { DEFAULT_TTS_VOICE, TTS_VOICES, normalizeTtsVoice } from '../features/audio/ttsSettings';
-
-const ENGINE_LABELS: Record<PresetRecipe, string> = {
-  auto: 'Auto — server decides',
-  llamacpp: 'llama.cpp',
-  'sd-cpp': 'stable-diffusion.cpp',
-  whispercpp: 'whisper.cpp',
-  moonshine: 'Moonshine',
-  flm: 'FastFlowLM',
-  'ryzenai-llm': 'RyzenAI',
-  vllm: 'vLLM',
-  kokoro: 'Kokoro',
-  acestep: 'ACE-Step',
-  thinksound: 'ThinkSound',
-  openmoss: 'OpenMOSS TTS',
-  trellis: 'TRELLIS.2',
-};
-
-// Known selectable values for #2339 datalist suggestions
-const LLAMACPP_BACKENDS = ['auto', 'cpu', 'cuda', 'vulkan', 'kompute', 'metal', 'rpc', 'opencl', 'mmap'] as const;
-const LLAMACPP_DEVICES  = ['Auto', 'CPU', 'CUDA0', 'CUDA1', 'Vulkan0', 'Vulkan1', 'Metal'] as const;
-const ACCELERATOR_BACKENDS = ['cuda', 'rocm', 'vulkan'] as const;
-
-type NewRecipeBackendOverrides = {
-  acestep: string;
-  thinksound: string;
-  openmoss: string;
-  trellis: string;
-};
-
-function normalizeAcceleratorBackend(value: unknown): string {
-  const backend = String(value || '').trim();
-  return backend.toLowerCase() === 'auto' ? '' : backend;
-}
-
-function backendOverridesFromRecipeOptions(options: RecipeOptions): NewRecipeBackendOverrides {
-  return {
-    acestep: normalizeAcceleratorBackend(options.acestep_backend),
-    thinksound: normalizeAcceleratorBackend(options.thinksound_backend),
-    openmoss: normalizeAcceleratorBackend(options.openmoss_backend),
-    trellis: normalizeAcceleratorBackend(options.trellis_backend),
-  };
-}
-
-const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
-  auto: ['ctx_size', 'steps', 'cfg_scale'],
-  llamacpp: ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'],
-  'sd-cpp': ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'],
-  whispercpp: ['whispercpp_backend', 'whispercpp_args', 'merge_args'],
-  moonshine: ['moonshine_backend', 'moonshine_args', 'merge_args'],
-  flm: ['ctx_size', 'flm_args', 'merge_args'],
-  'ryzenai-llm': ['ctx_size'],
-  vllm: ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'],
-  kokoro: ['voice', 'speed', 'merge_args'],
-  acestep: ['acestep_backend'],
-  thinksound: ['thinksound_backend'],
-  openmoss: ['openmoss_backend', 'voice', 'speed'],
-  trellis: ['trellis_backend'],
-};
 
 const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
@@ -227,121 +171,6 @@ function capChipClass(cap: Capability): string {
 }
 
 
-const DEFAULT_CONTEXT_SIZE = 4096;
-const DEFAULT_CONTEXT_LIMIT = 998400;
-
-function parseContextSize(value: unknown, fallback = DEFAULT_CONTEXT_SIZE): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.max(1, Math.round(n));
-}
-
-const CONTEXT_SIZE_SLIDER_SEGMENTS = [
-  { from: 1024, to: 16 * 1024, step: 1024 },
-  { from: 20 * 1024, to: 64 * 1024, step: 4 * 1024 },
-  { from: 80 * 1024, to: 256 * 1024, step: 16 * 1024 },
-  { from: 320 * 1024, to: DEFAULT_CONTEXT_LIMIT, step: 64 * 1024 },
-];
-
-function contextSizeOptions(max: number): number[] {
-  const limit = Math.max(1, Math.round(max));
-  const values = new Set<number>();
-
-  for (const segment of CONTEXT_SIZE_SLIDER_SEGMENTS) {
-    if (segment.from > limit) continue;
-    const end = Math.min(segment.to, limit);
-    for (let value = segment.from; value <= end; value += segment.step) {
-      values.add(value);
-    }
-  }
-
-  values.add(Math.min(DEFAULT_CONTEXT_SIZE, limit));
-  values.add(limit);
-
-  return [...values]
-    .filter(value => value > 0 && value <= limit)
-    .sort((a, b) => a - b);
-}
-
-function nearestContextSize(value: unknown, options: number[], fallback = DEFAULT_CONTEXT_SIZE): number {
-  const parsed = parseContextSize(value, fallback);
-  if (!options.length) return parsed;
-
-  return options.reduce((best, candidate) => (
-    Math.abs(candidate - parsed) < Math.abs(best - parsed) ? candidate : best
-  ), options[0]);
-}
-
-function contextSizeIndex(value: unknown, options: number[]): number {
-  const nearest = nearestContextSize(value, options);
-  return Math.max(0, options.indexOf(nearest));
-}
-
-function clampContextSize(value: unknown, max: number, fallback = DEFAULT_CONTEXT_SIZE): number {
-  return Math.min(parseContextSize(value, fallback), Math.max(1, Math.round(max)));
-}
-
-function firstPositiveInt(values: unknown[]): number | null {
-  for (const value of values) {
-    const n = Number(value);
-    if (Number.isFinite(n) && n > 0) return Math.round(n);
-  }
-  return null;
-}
-
-function maxPositiveInt(values: unknown[]): number | null {
-  let max = 0;
-  for (const value of values) {
-    const n = Number(value);
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  return max > 0 ? Math.round(max) : null;
-}
-
-function contextLimitForModel(model?: ModelInfo | null): number | null {
-  if (!model) return null;
-  const direct = firstPositiveInt([
-    (model as any).max_context_window,
-    (model as any).max_ctx_size,
-    (model as any).max_ctx,
-    (model as any).context_window,
-    (model as any).context_length,
-    (model as any).max_sequence_length,
-    (model as any).n_ctx,
-    (model as any).ctx_size,
-  ]);
-  if (direct) return direct;
-
-  const recipes = Array.isArray(model.recipes) ? model.recipes : [];
-  const recipeCandidates: unknown[] = [];
-  for (const recipe of recipes) {
-    if (!recipe || typeof recipe !== 'object') continue;
-    recipeCandidates.push(
-      (recipe as any).max_context_window,
-      (recipe as any).max_ctx_size,
-      (recipe as any).max_ctx,
-      (recipe as any).context_window,
-      (recipe as any).context_length,
-      (recipe as any).max_sequence_length,
-      (recipe as any).n_ctx,
-      (recipe as any).ctx_size,
-    );
-    const options = (recipe as any).recipe_options || (recipe as any).options;
-    if (options && typeof options === 'object') {
-      recipeCandidates.push(
-        (options as any).max_context_window,
-        (options as any).max_ctx_size,
-        (options as any).max_ctx,
-        (options as any).context_window,
-        (options as any).context_length,
-        (options as any).max_sequence_length,
-        (options as any).n_ctx,
-        (options as any).ctx_size,
-      );
-    }
-  }
-  return maxPositiveInt(recipeCandidates);
-}
 
 
 async function copyTextToClipboard(text: string): Promise<void> {
@@ -382,9 +211,6 @@ const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, ti
   );
 };
 
-function primaryCap(preset: Pick<Preset, 'applies_to'>): Capability {
-  return preset.applies_to[0] || 'chat';
-}
 
 function paramsPreviewLines(preset: Preset): string[] {
   return presetParamPreviewLines(preset);
@@ -402,17 +228,6 @@ function toolsDisplayText(preset: Preset): string {
   return preset.tools_enabled === false ? 'OFF' : 'ON';
 }
 
-function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
-  const ro = preset.recipe_options || {};
-  return Boolean(
-    String(ro.llamacpp_args || '').trim()
-    || String(ro.sdcpp_args || '').trim()
-    || String(ro.vllm_args || '').trim()
-    || String(ro.flm_args || '').trim()
-    || String(ro.whispercpp_args || '').trim()
-    || String(ro.moonshine_args || '').trim()
-  );
-}
 
 const CapabilityChip: React.FC<{ cap: Capability; small?: boolean; on?: boolean; off?: boolean }> = ({ cap, small, on, off }) => (
   <span className={`cap-chip ${capChipClass(cap)}${small ? ' cap-chip--sm' : ''}${on ? ' is-on' : ''}${off ? ' is-off' : ''}`}>
@@ -518,6 +333,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       name: 'New Preset',
       description: '',
       applies_to: ['chat'],
+      temperature_hint: 'balanced',
+      context_hint: 'medium',
+      thinking_mode: 'normal',
       recipe_options: {},
       sampling: {},
       engine_hint: 'auto',
@@ -755,8 +573,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
         <div className="recipes__body">
           <p className="recipes__lede">
-            Presets are saved ways to use a model. They apply to capabilities like <strong>Chat</strong> or <strong>Image</strong> and now describe reusable intent.
-            Shared recipe options and sampling remain available for legacy/custom power-user flows, but concrete runtime values should usually live in each model's Model Tuning.
+            Presets describe how you want to use a model. Lemonade resolves the concrete runtime settings through Model Tuning for each model.
           </p>
           {importError && <p className="preset-error" role="alert">⚠ {importError}</p>}
 
@@ -805,7 +622,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             ) : (
               <div className="empty-state--inset" data-empty="yours">
                 <p className="preset-empty-title">Your presets are empty.</p>
-                <p className="preset-empty-copy">Pick a starter, clone it, or save from a model to create one.</p>
+                <p className="preset-empty-copy">Pick a starter, customize it, or save from a model to create one.</p>
                 <div className="preset-empty-actions">
                   <button className="btn btn--ghost" onClick={() => openSlideover(STARTERS[0])}>Pick a starter</button>
                   <button className="btn btn--ghost" onClick={handleNewPreset}>+ New Preset</button>
@@ -934,14 +751,13 @@ const PresetCard: React.FC<{
   const paramLines = paramsPreviewLines(preset);
   const descParts: string[] = [];
   if (preset.starter) descParts.push('Starter');
-  if (hasManualArgs(preset)) descParts.push('Manual args active');
   descParts.push(`Applies to: ${capLabels}`);
-  if (paramLines.length) descParts.push(`Parameters: ${paramLines.join('; ')}`);
+  if (paramLines.length) descParts.push(`Intent: ${paramLines.join('; ')}`);
   descParts.push(`Prompt: ${promptDisplayText(preset)}`);
   descParts.push(`Tools: ${toolsDisplayText(preset)}`);
   return (
   <article
-    className={`recipe-card${hasManualArgs(preset) ? ' recipe-card--manual' : ''}`}
+    className="recipe-card"
     data-recipe-id={preset.id}
   >
     {/* Overlay button covers the card for pointer/keyboard activation without nesting interactive roles */}
@@ -951,7 +767,7 @@ const PresetCard: React.FC<{
       aria-label={`Open Preset: ${preset.name}`}
       aria-describedby={descId}
     />
-    {/* sr-only description for #2345: exposes parameter/prompt/tools metadata to AT */}
+    {/* sr-only description for #2345: exposes intent/prompt/tools metadata to AT */}
     <span id={descId} className="sr-only">{descParts.join('. ')}.</span>
     {preset.starter && <span className="starter-badge">Starter</span>}
     <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
@@ -960,7 +776,7 @@ const PresetCard: React.FC<{
       {presetLabelsFor(preset).map(cap => <CapabilityChip key={cap} cap={cap} small />)}
     </div>
     <div className="recipe-card__params" aria-hidden="true">
-      <span className="recipe-card__param-key">params</span>
+      <span className="recipe-card__param-key">intent</span>
       <span className="recipe-card__param-val preset-param-lines">{paramsPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
     </div>
     <div className="recipe-card__behavior" aria-hidden="true">
@@ -969,7 +785,7 @@ const PresetCard: React.FC<{
     </div>
     <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
       {preset.starter ? (
-        <button className="recipe-card__action recipe-card__action--primary" onClick={onClone}>Clone</button>
+        <button className="recipe-card__action recipe-card__action--primary" onClick={onClone}>Customize</button>
       ) : (
         <>
           {onApply && <button className="recipe-card__action" onClick={onApply}>Apply</button>}
@@ -980,6 +796,27 @@ const PresetCard: React.FC<{
   </article>
   );
 };
+
+const TEMPERATURE_INTENT_OPTIONS: Array<{ value: TemperatureHint; icon: IconName; description: string }> = [
+  { value: 'precise', icon: 'crosshair', description: 'Low-variation, exact responses' },
+  { value: 'balanced', icon: 'scale', description: 'General-purpose balance' },
+  { value: 'exploratory', icon: 'compass', description: 'Broader alternatives and ideas' },
+  { value: 'creative', icon: 'lightbulb', description: 'Highest variation and imagination' },
+];
+
+const CONTEXT_INTENT_OPTIONS: Array<{ value: ContextHint; icon: IconName; description: string }> = [
+  { value: 'small', icon: 'minimize-2', description: 'About 4K tokens, capped by the model' },
+  { value: 'medium', icon: 'panel-top', description: 'About 40% of model context' },
+  { value: 'large', icon: 'expand', description: 'About 66% of model context' },
+  { value: 'max', icon: 'maximize-2', description: 'Full model-supported context' },
+];
+
+const THINKING_INTENT_OPTIONS: Array<{ value: ThinkingMode; icon: IconName; description: string; unavailable?: boolean }> = [
+  { value: 'none', icon: 'brain-off', description: 'Disable explicit model thinking where supported' },
+  { value: 'normal', icon: 'brain', description: 'Default model thinking' },
+  { value: 'smart', icon: 'brain-cog', description: 'Not yet available', unavailable: true },
+  { value: 'smart-extra', icon: 'brain-circuit', description: 'Not yet available', unavailable: true },
+];
 
 const SlideoverContent: React.FC<{
   preset: Preset;
@@ -999,130 +836,67 @@ const SlideoverContent: React.FC<{
   onDelete: (preset: Preset) => void;
   onClose: () => void;
   autoRuns: AutoOptRun[];
-}> = ({ preset, models, applyTarget, onApplyTargetChange, onApply, applySuccess, backendOptions, applyBackendTarget, onApplyBackendTargetChange, onApplyBackend, applyBackendSuccess, onSave, onClone, onExport, onDelete, onClose, autoRuns }) => {
+}> = ({ preset, models, applyTarget, onApplyTargetChange, onApply, applySuccess, backendOptions, applyBackendTarget, onApplyBackendTargetChange, onApplyBackend, applyBackendSuccess, onSave, onClone, onExport, onDelete, onClose }) => {
   const isReadOnly = preset.starter;
-  const ro = preset.recipe_options || {};
-  const sp = preset.sampling || {};
-
   const [name, setName] = useState(preset.name);
   const [description, setDescription] = useState(preset.description);
-  const [appliesTo, setAppliesTo] = useState<Capability[]>(preset.applies_to);
-  const [engineHint, setEngineHint] = useState<PresetRecipe>(preset.engine_hint || 'auto');
-  const [autoOptRunId, setAutoOptRunId] = useState(preset.auto_opt_run_id || autoRuns[0]?.id || '');
-  const [ctxSize, setCtxSize] = useState(parseContextSize(ro.ctx_size));
-  const [steps, setSteps] = useState(ro.steps ?? 20);
-  const [cfgScale, setCfgScale] = useState(ro.cfg_scale ?? 7.0);
-  const [imgWidth, setImgWidth] = useState(ro.width ?? 512);
-  const [imgHeight, setImgHeight] = useState(ro.height ?? 512);
-  const [ttsVoice, setTtsVoice] = useState(normalizeTtsVoice(ro.voice ?? DEFAULT_TTS_VOICE));
-  const [llamacppBackend, setLlamacppBackend] = useState(ro.llamacpp_backend ?? '');
-  const [llamacppDevice, setLlamacppDevice] = useState(ro.llamacpp_device ?? '');
-  const [llamacppArgs, setLlamacppArgs] = useState(ro.llamacpp_args ?? '');
-  const [sdcppArgs, setSdcppArgs] = useState(ro.sdcpp_args ?? '');
-  const [newRecipeBackends, setNewRecipeBackends] = useState<NewRecipeBackendOverrides>(() => backendOverridesFromRecipeOptions(ro));
-  const [temperature, setTemperature] = useState(sp.temperature ?? 0.7);
-  const [topP, setTopP] = useState(sp.top_p ?? 0.9);
-  const [topK, setTopK] = useState(sp.top_k ?? 40);
-  const [repeatPenalty, setRepeatPenalty] = useState(sp.repeat_penalty ?? 1.05);
+  const [appliesTo, setAppliesTo] = useState<Capability[]>(normalizePresetCapabilities(preset.id, preset.applies_to));
+  const [temperatureHint, setTemperatureHint] = useState<TemperatureHint>(preset.temperature_hint || 'balanced');
+  const [contextHint, setContextHint] = useState<ContextHint>(preset.context_hint || 'medium');
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>(preset.thinking_mode || 'normal');
   const [systemPromptId, setSystemPromptId] = useState(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
   const [systemPrompts, setSystemPrompts] = useState<PresetSystemPrompt[]>(cloneSystemPrompts(preset.system_prompts));
   const [toolsEnabled, setToolsEnabled] = useState(preset.tools_enabled !== false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const nextRo = preset.recipe_options || {};
-    const nextSp = preset.sampling || {};
     setName(preset.name);
     setDescription(preset.description);
     setAppliesTo(normalizePresetCapabilities(preset.id, preset.applies_to));
-    setEngineHint(preset.engine_hint || 'auto');
-    setAutoOptRunId(preset.auto_opt_run_id || autoRuns[0]?.id || '');
-    setCtxSize(parseContextSize(nextRo.ctx_size));
-    setSteps(nextRo.steps ?? 20);
-    setCfgScale(nextRo.cfg_scale ?? 7.0);
-    setImgWidth(nextRo.width ?? 512);
-    setImgHeight(nextRo.height ?? 512);
-    setTtsVoice(normalizeTtsVoice(nextRo.voice ?? DEFAULT_TTS_VOICE));
-    setLlamacppBackend(nextRo.llamacpp_backend ?? '');
-    setLlamacppDevice(nextRo.llamacpp_device ?? '');
-    setLlamacppArgs(nextRo.llamacpp_args ?? '');
-    setSdcppArgs(nextRo.sdcpp_args ?? '');
-    setNewRecipeBackends(backendOverridesFromRecipeOptions(nextRo));
-    setTemperature(nextSp.temperature ?? 0.7);
-    setTopP(nextSp.top_p ?? 0.9);
-    setTopK(nextSp.top_k ?? 40);
-    setRepeatPenalty(nextSp.repeat_penalty ?? 1.05);
+    setTemperatureHint(preset.temperature_hint || 'balanced');
+    setContextHint(preset.context_hint || 'medium');
+    setThinkingMode(preset.thinking_mode || 'normal');
     setSystemPromptId(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
     setSystemPrompts(cloneSystemPrompts(preset.system_prompts));
     setToolsEnabled(preset.tools_enabled !== false);
     setSaved(false);
-  }, [preset, autoRuns]);
+  }, [preset]);
 
-  const hasAllCapability = appliesTo.includes('all');
-  const manualArgsActive = Boolean(
-    ((hasAllCapability || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) && llamacppArgs.trim())
-    || ((hasAllCapability || appliesTo.includes('image')) && sdcppArgs.trim())
-  );
-  const selectedAutoRun = autoRuns.find(run => run.id === autoOptRunId) || autoRuns[0];
-
+  const normalizedAppliesTo = normalizePresetCapabilities(preset.id, appliesTo);
+  const hasChat = presetSupportsChatIntent({ id: preset.id, applies_to: normalizedAppliesTo });
   const currentPreset = useMemo<Preset>(() => {
-    if (isReadOnly) {
-      return {
-        ...preset,
-        applies_to: normalizePresetCapabilities(preset.id, preset.applies_to),
-      };
-    }
-    const normalizedAppliesTo = normalizePresetCapabilities(preset.id, appliesTo);
-    const supportsTools = normalizedAppliesTo.includes('all') || normalizedAppliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+    if (isReadOnly) return { ...preset, applies_to: normalizePresetCapabilities(preset.id, preset.applies_to) };
     return {
       ...preset,
       name,
       description,
       applies_to: normalizedAppliesTo,
-      engine_hint: engineHint,
-      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, newRecipeBackends),
-      sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
+      temperature_hint: hasChat ? temperatureHint : undefined,
+      context_hint: hasChat ? contextHint : undefined,
+      thinking_mode: hasChat ? thinkingMode : undefined,
+      // Preserve legacy payloads invisibly for import/backend compatibility.
+      // New presets start empty and the editor never creates concrete values.
+      recipe_options: preset.recipe_options || {},
+      sampling: preset.sampling || {},
+      engine_hint: preset.engine_hint || 'auto',
       starter: false,
-      auto_opt_enabled: !manualArgsActive,
-      auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
-      system_prompt_id: systemPromptId,
-      system_prompts: cloneSystemPrompts(systemPrompts),
-      tools_enabled: supportsTools && toolsEnabled,
+      system_prompt_id: hasChat ? systemPromptId : NO_SYSTEM_PROMPT_ID,
+      system_prompts: hasChat ? cloneSystemPrompts(systemPrompts) : [],
+      tools_enabled: hasChat && toolsEnabled,
     };
-  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, newRecipeBackends, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
+  }, [isReadOnly, preset, name, description, normalizedAppliesTo, hasChat, temperatureHint, contextHint, thinkingMode, systemPromptId, systemPrompts, toolsEnabled]);
 
-const selectedModel = models.find(m => modelName(m) === applyTarget);
-const selectedModelContextLimit = contextLimitForModel(selectedModel);
-const ctxSliderMax = selectedModelContextLimit || DEFAULT_CONTEXT_LIMIT;
-const ctxOptions = useMemo(() => contextSizeOptions(ctxSliderMax), [ctxSliderMax]);
-const ctxSliderIndex = useMemo(() => contextSizeIndex(ctxSize, ctxOptions), [ctxSize, ctxOptions]);
-const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
-const selectedBackendOption = backendOptions.find(b => b.key === applyBackendTarget) || null;
-// #2432 review (GAP 2): the Default preset represents the "no backend preset"
-// state, which is exactly what the Backend view shows when a backend has no chip.
-// Assigning Default as a real backend binding would create an inconsistent
-// "Applied to backends" row with no matching chip, so backend assignment is
-// disabled for Default. Users pick/clone another preset to set a backend default.
-const isDefaultBackendPreset = currentPreset.id === DEFAULT_PRESET.id;
-const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && selectedBackendOption.supported && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
-
-  useEffect(() => {
-    const nextCtxSize = nearestContextSize(
-      clampContextSize(ctxSize, ctxSliderMax, DEFAULT_CONTEXT_SIZE),
-      ctxOptions,
-    );
-
-    if (ctxSize !== nextCtxSize) setCtxSize(nextCtxSize);
-  }, [ctxSize, ctxSliderMax, ctxOptions]);
-  const validKeys = RECIPE_KEYS[engineHint] || [];
-  const hasAll = appliesTo.includes('all');
-  const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
-  const hasImage = hasAll || appliesTo.includes('image');
-  const hasAudioGeneration = hasAll || appliesTo.includes('audio-generation');
-  const hasTts = hasAll || appliesTo.includes('tts');
-  const isDefaultEmptyPreset = preset.id === DEFAULT_PRESET.id;
+  const selectedModel = models.find(model => modelName(model) === applyTarget);
+  const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
+  const selectedBackendOption = backendOptions.find(option => option.key === applyBackendTarget) || null;
+  const isDefaultBackendPreset = currentPreset.id === DEFAULT_PRESET.id;
+  const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && selectedBackendOption.supported && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
   const selectedSystemPrompt = systemPromptId === NO_SYSTEM_PROMPT_ID ? null : (systemPrompts.find(prompt => prompt.id === systemPromptId) || null);
   const selectedPromptIsCustom = selectedSystemPrompt?.built_in === false;
+
+  const toggleCap = (cap: Capability) => {
+    if (!isReadOnly) setAppliesTo([cap]);
+  };
 
   const updateSelectedSystemPrompt = (patch: Partial<PresetSystemPrompt>) => {
     if (!selectedSystemPrompt || isReadOnly || !selectedPromptIsCustom) return;
@@ -1143,16 +917,47 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
     setSystemPromptId(remaining[0]?.id || NO_SYSTEM_PROMPT_ID);
   };
 
-  const toggleCap = (cap: Capability) => {
-    if (isReadOnly) return;
-    setAppliesTo([cap]);
-  };
-
   const handleSave = () => {
     onSave(currentPreset);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
+
+  const renderIntentOptions = <T extends string,>(
+    label: string,
+    icon: IconName,
+    options: Array<{ value: T; icon: IconName; description: string; unavailable?: boolean }>,
+    value: T,
+    setValue: (next: T) => void,
+    dataAttribute: string,
+  ) => (
+    <fieldset className="preset-intent-fieldset" data-preset-intent={dataAttribute}>
+      <legend><Icon name={icon} size={15} aria-hidden="true" /> {label}</legend>
+      <div className="preset-intent-options">
+        {options.map(option => {
+          const disabled = isReadOnly || !!option.unavailable;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className="preset-intent-option"
+              aria-pressed={value === option.value}
+              disabled={disabled}
+              title={label === 'Thinking' && option.value === 'normal'
+                ? option.description
+                : `${label === 'Temperature' ? TEMPERATURE_HINT_LABELS[option.value as TemperatureHint] : label === 'Context' ? CONTEXT_HINT_LABELS[option.value as ContextHint] : THINKING_MODE_LABELS[option.value as ThinkingMode]} — ${option.description}`}
+              onClick={() => setValue(option.value)}
+              data-intent-value={option.value}
+            >
+              <Icon name={option.icon} size={16} aria-hidden="true" />
+              <span>{label === 'Temperature' ? TEMPERATURE_HINT_LABELS[option.value as TemperatureHint] : label === 'Context' ? CONTEXT_HINT_LABELS[option.value as ContextHint] : THINKING_MODE_LABELS[option.value as ThinkingMode]}</span>
+              {option.unavailable && <small>Later</small>}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
 
   return (
     <>
@@ -1162,252 +967,149 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
             <div className="slideover__title-with-icon">
               <PresetIcon preset={preset} className="preset-icon preset-icon--lg" />
               {isReadOnly ? <h2 className="slideover__title" data-recipe-name>{preset.name}</h2> : (
-                <input className="slideover__title-input" value={name} onChange={e => setName(e.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
+                <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
               )}
             </div>
           </div>
           <button className="slideover__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="slideover__meta-row">
-          {appliesTo.map(cap => <CapabilityChip key={cap} cap={cap} />)}
+          {normalizedAppliesTo.map(cap => <CapabilityChip key={cap} cap={cap} />)}
           {preset.starter && <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>Starter</span>}
         </div>
         {isReadOnly ? <p className="slideover__desc" data-recipe-desc>{preset.description}</p> : (
-          <textarea className="slideover__desc-input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
+          <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
         )}
       </div>
 
       <div className="slideover__body">
+        <p className="preset-intent-explainer">Presets describe how you want to use a model. Lemonade resolves concrete runtime settings through Model Tuning for each model.</p>
+
         <div className="slideover__section">
-          <h3>Applies to capabilities</h3>
+          <h3>Applies to</h3>
           <div className="cap-chip-list" data-preset-capabilities role="group" aria-label="Applies to capabilities">
             {CAPABILITIES.map(cap => (
-              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)} aria-pressed={appliesTo.includes(cap)}>
-                <CapabilityChip cap={cap} on={appliesTo.includes(cap)} off={!appliesTo.includes(cap)} />
+              <button key={cap} type="button" className="preset-cap-button" disabled={isReadOnly} onClick={() => toggleCap(cap)} aria-pressed={normalizedAppliesTo.includes(cap)}>
+                <CapabilityChip cap={cap} on={normalizedAppliesTo.includes(cap)} off={!normalizedAppliesTo.includes(cap)} />
               </button>
             ))}
           </div>
         </div>
 
-        <div className="slideover__section preset-system-prompt">
-          <h3>System prompt</h3>
-          <p className="preset-help">Only the selected prompt is sent with each compatible request. The full prompt list stays in the preset and does not inflate conversation context.</p>
-          <div className="field">
-            <label className="field__label">Prompt type</label>
-            <div className="field__row">
-              <select className="select" value={systemPromptId} disabled={isReadOnly} onChange={e => setSystemPromptId(e.target.value)}>
-                <option value={NO_SYSTEM_PROMPT_ID}>No system prompt</option>
-                {systemPrompts.map(prompt => <option key={prompt.id} value={prompt.id}>{prompt.name}</option>)}
-              </select>
-            </div>
+        {hasChat && (
+          <div className="slideover__section preset-intent-controls" data-preset-fields="intent">
+            {renderIntentOptions('Temperature', 'thermometer', TEMPERATURE_INTENT_OPTIONS, temperatureHint, setTemperatureHint, 'temperature')}
+            {renderIntentOptions('Context', 'scan-text', CONTEXT_INTENT_OPTIONS, contextHint, setContextHint, 'context')}
+            {renderIntentOptions('Thinking', 'brain', THINKING_INTENT_OPTIONS, thinkingMode, setThinkingMode, 'thinking')}
+
+            <fieldset className="preset-intent-fieldset" data-preset-intent="tools">
+              <legend><Icon name="wrench" size={15} aria-hidden="true" /> Tools</legend>
+              <button
+                type="button"
+                className="preset-tools-toggle"
+                aria-pressed={toolsEnabled}
+                disabled={isReadOnly}
+                onClick={() => setToolsEnabled(enabled => !enabled)}
+                title={toolsEnabled ? 'Tools enabled' : 'Tools disabled'}
+              >
+                <Icon name={toolsEnabled ? 'wrench' : 'wrench-off'} size={17} aria-hidden="true" />
+                <span>{toolsEnabled ? 'Enabled' : 'Off'}</span>
+              </button>
+            </fieldset>
           </div>
-          <details className="preset-prompt-details">
-            <summary>{selectedSystemPrompt ? `Prompt text: ${selectedSystemPrompt.name}` : 'Prompt text'}</summary>
-            {!selectedSystemPrompt ? (
-              <p className="preset-help">No behavior system prompt will be sent for this preset.</p>
-            ) : selectedPromptIsCustom && !isReadOnly ? (
-              <div className="preset-prompt-editor">
-                <div className="field">
-                  <label className="field__label">Displayed name</label>
-                  <input className="input" value={selectedSystemPrompt.name} onChange={e => updateSelectedSystemPrompt({ name: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label className="field__label">System prompt text</label>
-                  <textarea className="input preset-prompt-textarea" rows={7} value={selectedSystemPrompt.prompt} onChange={e => updateSelectedSystemPrompt({ prompt: e.target.value })} />
-                </div>
-              </div>
-            ) : (
-              <pre className="preset-prompt-preview">{selectedSystemPrompt.prompt}</pre>
-            )}
-          </details>
-          {!isReadOnly && (
-            <div className="preset-prompt-actions">
-              <button type="button" className="btn btn--ghost btn--tiny" onClick={addCustomSystemPrompt}>+ Custom prompt</button>
-              {selectedPromptIsCustom && <button type="button" className="btn btn--ghost btn--tiny" style={{ color: 'var(--danger)' }} onClick={deleteSelectedCustomPrompt}>Delete custom prompt</button>}
-            </div>
-          )}
-        </div>
+        )}
 
-        <div className="slideover__section preset-tools-default">
-          <h3>Tools start value</h3>
-          <label className="preset-toggle">
-            <input type="checkbox" checked={hasChat && toolsEnabled} disabled={isReadOnly || !hasChat} onChange={e => setToolsEnabled(e.target.checked)} />
-            <span>{hasChat ? `Start chats with Lemonade tools ${toolsEnabled ? 'enabled' : 'disabled'} for this preset.` : 'Image-only presets do not start Lemonade chat tools.'}</span>
-          </label>
-          {preset.id === 's-quick-chat' && <p className="preset-help">Quick Chat starts with tools off to minimize request context.</p>}
-          {!hasChat && <p className="preset-help">Direct image generation/edit endpoints use the prompt and image options directly; chat tools are not useful there.</p>}
-        </div>
-
-        <div className="slideover__section">
-          <h3>Behavior</h3>
-          {isDefaultEmptyPreset && (
-            <div className="preset-empty-overrides">
-              <strong>No preset overrides</strong>
-              <span>Lemonade uses the selected model tuning and backend defaults for sampling, context and image generation.</span>
-              <span className="preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
-            </div>
-          )}
-          {!isDefaultEmptyPreset && hasChat && (
-            <div data-preset-fields="chat">
-              <div className="field"><label className="field__label" htmlFor="preset-field-temperature">Creativity</label><div className="field__row"><input id="preset-field-temperature" type="range" className="slider" min={0} max={2} step={0.05} value={temperature} disabled={isReadOnly} onChange={e => setTemperature(Number(e.target.value))} data-recipe-temp /><span className="field__value">{temperature.toFixed(2)}</span></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-top-p">Precision (top_p)</label><div className="field__row"><input id="preset-field-top-p" type="range" className="slider" min={0} max={1} step={0.01} value={topP} disabled={isReadOnly} onChange={e => setTopP(Number(e.target.value))} data-recipe-top-p /><span className="field__value">{topP.toFixed(2)}</span></div></div>
-              <div className="field">
-                <label className="field__label" htmlFor="preset-field-ctx-size">Context size</label>
-                <div className="field__row">
-                  <input
-                    id="preset-field-ctx-size"
-                    type="range"
-                    className="slider"
-                    min={0}
-                    max={Math.max(0, ctxOptions.length - 1)}
-                    step={1}
-                    value={ctxSliderIndex}
-                    disabled={isReadOnly}
-                    onChange={e => setCtxSize(ctxOptions[Number(e.target.value)] ?? ctxSize)}
-                    data-recipe-ctx
-                  />
-                  <span className="field__value">{ctxSize.toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-top-k">top_k</label><div className="field__row"><input id="preset-field-top-k" type="number" className="input input--narrow" min={1} max={200} value={topK} disabled={isReadOnly} onChange={e => setTopK(Number(e.target.value))} data-recipe-top-k /></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-repeat-penalty">Repeat penalty</label><div className="field__row"><input id="preset-field-repeat-penalty" type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
-            </div>
-          )}
-          {!isDefaultEmptyPreset && (hasImage || hasAudioGeneration) && (
-            <div data-preset-fields={hasImage ? 'image' : 'audio-generation'}>
-              {hasAudioGeneration && !hasImage && <h4>Audio generation</h4>}
-              <div className="field"><label className="field__label" htmlFor="preset-field-steps">Steps</label><div className="field__row"><input id="preset-field-steps" type="range" className="slider" min={1} max={100} step={1} value={steps} disabled={isReadOnly} onChange={e => setSteps(Number(e.target.value))} data-recipe-steps /><span className="field__value">{steps}</span></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-cfg-scale">CFG scale</label><div className="field__row"><input id="preset-field-cfg-scale" type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
-            </div>
-          )}
-          {!isDefaultEmptyPreset && hasTts && (
-            <div data-preset-fields="audio" className="preset-audio-settings">
-              <h4>Audio</h4>
-              <div className="field">
-                <label className="field__label" htmlFor="preset-tts-voice">Voice</label>
-                <div className="field__row">
-                  <select
-                    id="preset-tts-voice"
-                    className="select"
-                    value={ttsVoice}
-                    disabled={isReadOnly}
-                    onChange={e => setTtsVoice(normalizeTtsVoice(e.target.value))}
-                    data-recipe-tts-voice
-                  >
-                    {TTS_VOICES.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {!isDefaultEmptyPreset && <div className="slideover__section preset-autoopt">
-          <h3>AutoOpt</h3>
-          <p className="slideover__hint">Default is AutoOpt. Entering manual raw args below disables AutoOpt for this preset until those args are cleared.</p>
-          <div className="field"><label className="field__label" htmlFor="preset-field-autoopt-result">AutoOpt result</label><div className="field__row"><select id="preset-field-autoopt-result" className="select" value={autoOptRunId} disabled={isReadOnly || manualArgsActive} onChange={e => setAutoOptRunId(e.target.value)}>{autoRuns.map(run => <option key={run.id} value={run.id}>{run.name} · {run.date} · Lemonade {run.lemonadeVersion}</option>)}</select></div></div>
-          {selectedAutoRun && <p className="preset-autoopt__args"><span>{manualArgsActive ? 'Manual override active' : 'AutoOpt active'}</span><code>{manualArgsActive ? 'Clear manual args to re-enable AutoOpt.' : selectedAutoRun.args}</code></p>}
-        </div>}
-
-        {!isDefaultEmptyPreset && <details className="slideover__section preset-advanced">
-          <summary>Advanced engine options</summary>
-          <p className="slideover__hint">Optional backend hints and raw recipe_options keys. Closed by default.</p>
-          <div className="field"><label className="field__label" htmlFor="preset-field-engine-hint">Engine hint</label><div className="field__row"><select id="preset-field-engine-hint" className="select" value={engineHint} disabled={isReadOnly} onChange={e => setEngineHint(e.target.value as PresetRecipe)}>{(Object.keys(ENGINE_LABELS) as PresetRecipe[]).map(r => <option key={r} value={r}>{ENGINE_LABELS[r]}</option>)}</select></div></div>
-          <p className="preset-valid-keys">Valid recipe_options keys: {validKeys.length ? validKeys.join(', ') : 'none'}</p>
-          {hasChat && (
-            <>
-              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-backend">llamacpp_backend</label><div className="field__row"><input id="preset-field-llamacpp-backend" className="input" list="preset-llamacpp-backends" value={llamacppBackend} disabled={isReadOnly} placeholder="auto" onChange={e => setLlamacppBackend(e.target.value)} /><datalist id="preset-llamacpp-backends">{LLAMACPP_BACKENDS.map(b => <option key={b} value={b} />)}</datalist></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-device">llamacpp_device</label><div className="field__row"><input id="preset-field-llamacpp-device" className="input" list="preset-llamacpp-devices" value={llamacppDevice} disabled={isReadOnly} placeholder="e.g. Vulkan0" onChange={e => setLlamacppDevice(e.target.value)} /><datalist id="preset-llamacpp-devices">{LLAMACPP_DEVICES.map(d => <option key={d} value={d} />)}</datalist></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-llamacpp-args">llamacpp_args</label><div className="field__row"><input id="preset-field-llamacpp-args" className="input" value={llamacppArgs} disabled={isReadOnly} placeholder="e.g. --n-gpu-layers 99" onChange={e => setLlamacppArgs(e.target.value)} /></div></div>
-            </>
-          )}
-          {hasImage && (
-            <>
-              <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" aria-label="Image width" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }} aria-hidden="true">×</span><input type="number" className="input input--narrow" aria-label="Image height" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
-              <div className="field"><label className="field__label" htmlFor="preset-field-sdcpp-args">sdcpp_args</label><div className="field__row"><input id="preset-field-sdcpp-args" className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
-            </>
-          )}
-          {(['acestep', 'thinksound', 'openmoss', 'trellis'] as PresetRecipe[]).includes(engineHint) && (
+        {hasChat && (
+          <div className="slideover__section preset-system-prompt">
+            <h3>System Prompt</h3>
             <div className="field">
-              <label className="field__label" htmlFor="preset-field-new-recipe-backend">{engineHint}_backend</label>
+              <label className="field__label" htmlFor="preset-system-prompt-type">Prompt</label>
               <div className="field__row">
-                <input
-                  id="preset-field-new-recipe-backend"
-                  className="input"
-                  list="preset-accelerator-backends"
-                  value={newRecipeBackends[engineHint as keyof NewRecipeBackendOverrides]}
-                  disabled={isReadOnly}
-                  placeholder="auto"
-                  onChange={e => setNewRecipeBackends(prev => ({ ...prev, [engineHint]: e.target.value }))}
-                />
-                <datalist id="preset-accelerator-backends">{ACCELERATOR_BACKENDS.map(backend => <option key={backend} value={backend} />)}</datalist>
+                <select id="preset-system-prompt-type" className="select" value={systemPromptId} disabled={isReadOnly} onChange={event => setSystemPromptId(event.target.value)}>
+                  <option value={NO_SYSTEM_PROMPT_ID}>No system prompt</option>
+                  {systemPrompts.map(prompt => <option key={prompt.id} value={prompt.id}>{prompt.name}</option>)}
+                </select>
               </div>
             </div>
-          )}
-        </details>}
+            <details className="preset-prompt-details">
+              <summary>{selectedSystemPrompt ? `Prompt text: ${selectedSystemPrompt.name}` : 'Prompt text'}</summary>
+              {!selectedSystemPrompt ? (
+                <p className="preset-help">No system prompt is sent for this preset.</p>
+              ) : selectedPromptIsCustom && !isReadOnly ? (
+                <div className="preset-prompt-editor">
+                  <div className="field">
+                    <label className="field__label">Displayed name</label>
+                    <input className="input" value={selectedSystemPrompt.name} onChange={event => updateSelectedSystemPrompt({ name: event.target.value })} />
+                  </div>
+                  <div className="field">
+                    <label className="field__label">System prompt text</label>
+                    <textarea className="input preset-prompt-textarea" rows={7} value={selectedSystemPrompt.prompt} onChange={event => updateSelectedSystemPrompt({ prompt: event.target.value })} />
+                  </div>
+                  <div className="preset-prompt-actions">
+                    <button type="button" className="btn btn--ghost btn--tiny" onClick={deleteSelectedCustomPrompt}>Delete custom prompt</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="preset-prompt-preview">{selectedSystemPrompt.prompt}</p>
+              )}
+            </details>
+            {!isReadOnly && <button type="button" className="btn btn--ghost btn--tiny" onClick={addCustomSystemPrompt}>+ Custom prompt</button>}
+          </div>
+        )}
 
         <div className="slideover__section">
           <h3>Apply to a model</h3>
-          <p className="preset-help">Stores a local binding only. Recipe options apply the next time you explicitly load that model.</p>
+          <p className="preset-help">The intent is linked now. Concrete values resolve through Model Tuning for this model × preset.</p>
           <div className="field__row">
-            <select className="select" value={applyTarget} onChange={e => onApplyTargetChange(e.target.value)} data-recipe-apply-target>
+            <select className="select" value={applyTarget} onChange={event => onApplyTargetChange(event.target.value)} data-recipe-apply-target>
               <option value="">— pick a model —</option>
-              {models.map(m => {
-                const nameForModel = modelName(m);
-                const caps = labelsFor(m);
-                const compatible = isCompatible(currentPreset, m);
-                const reason = compatible ? `${caps.map(c => CAPABILITY_LABELS[c]).join(', ')}` : `Incompatible: needs ${currentPreset.applies_to.map(c => CAPABILITY_LABELS[c]).join(' or ')}; this model exposes ${caps.map(c => CAPABILITY_LABELS[c]).join(', ')}`;
-                return <option key={nameForModel} value={nameForModel} disabled={!compatible} title={reason}>{nameForModel} · {caps.map(c => CAPABILITY_LABELS[c]).join(', ')}</option>;
+              {models.map(model => {
+                const nameForModel = modelName(model);
+                const caps = labelsFor(model);
+                const compatible = isCompatible(currentPreset, model);
+                const reason = compatible ? `${caps.map(cap => CAPABILITY_LABELS[cap]).join(', ')}` : `Incompatible: needs ${currentPreset.applies_to.map(cap => CAPABILITY_LABELS[cap]).join(' or ')}; this model exposes ${caps.map(cap => CAPABILITY_LABELS[cap]).join(', ')}`;
+                return <option key={nameForModel} value={nameForModel} disabled={!compatible} title={reason}>{nameForModel} · {caps.map(cap => CAPABILITY_LABELS[cap]).join(', ')}</option>;
               })}
             </select>
-            <button className="btn btn--primary" disabled={!canApply} onClick={() => selectedModel && onApply(preset.id, selectedModel)}>Apply</button>
+            <button className="btn btn--primary" disabled={!canApply} onClick={() => selectedModel && onApply(currentPreset.id, selectedModel)}>Apply</button>
           </div>
           {selectedModel && !canApply && <p className="preset-error" role="tooltip">Incompatible preset for this model.</p>}
           {applySuccess && <p className="preset-success">✓ {applySuccess}</p>}
         </div>
 
-        {/* #2432: assign this preset to a BACKEND. Global backend/runtime default
-            that merges with model presets — it does NOT replace them. */}
-        <div className="slideover__section" data-backend-apply-section>
-          <h3 id="preset-backend-apply-heading">Apply to a backend</h3>
+        <details className="slideover__section preset-advanced" data-backend-apply-section>
+          <summary id="preset-backend-apply-heading">Apply to a backend</summary>
           <p className="preset-help" id="preset-backend-global-note" data-backend-global-note>
-            This preset applies globally to all models using this backend. Backend presets are optional
-            runtime defaults that merge with each model&rsquo;s own preset — they do not replace it.
+            A backend preset applies globally to all models using this backend. It remains a lower-priority tuning layer and keeps the existing merge behavior.
           </p>
           {isDefaultBackendPreset && (
             <p className="preset-help" id="preset-backend-default-note" data-backend-apply-default-note>
-              The Default preset <em>is</em> the “no backend preset” state — every backend already falls back
-              to it. To set a global backend default, pick or clone a different preset first.
+              Default uses no backend preset. Choose another preset for an existing backend binding.
             </p>
           )}
           <div className="field__row">
             <select
               className="select"
               value={applyBackendTarget}
-              onChange={e => onApplyBackendTargetChange(e.target.value)}
+              onChange={event => onApplyBackendTargetChange(event.target.value)}
               aria-label="Backend to apply this preset to globally"
               aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
               disabled={isDefaultBackendPreset}
               data-backend-apply-target
             >
               <option value="">— pick a backend —</option>
-              {backendOptions.map(b => {
-                const compatible = presetCompatibleWithBackend(currentPreset, b.key);
-                const assignable = b.supported && compatible;
-                const reason = !b.supported
-                  ? `Unsupported: this server reports ${b.label} as unavailable on this hardware, so a preset cannot be assigned to it.`
-                  : compatible
-                    ? `${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}`
-                    : `Incompatible: this backend handles ${b.caps.map(c => CAPABILITY_LABELS[c] || c).join(', ')}; preset needs ${currentPreset.applies_to.map(c => CAPABILITY_LABELS[c] || c).join(' or ')}`;
-                const optionLabel = b.supported ? b.label : `${b.label} (unsupported)`;
-                return <option key={b.key} value={b.key} disabled={!assignable} title={reason} data-backend-option-unsupported={b.supported ? undefined : 'true'}>{optionLabel}</option>;
+              {backendOptions.map(option => {
+                const compatible = presetCompatibleWithBackend(currentPreset, option.key);
+                const assignable = option.supported && compatible;
+                const optionLabel = option.supported ? option.label : `${option.label} (unsupported)`;
+                return <option key={option.key} value={option.key} disabled={!assignable} title={!option.supported ? `${option.label} is unsupported on this server.` : (!compatible ? `${option.label} is incompatible with this preset.` : undefined)} data-backend-option-unsupported={option.supported ? undefined : 'true'}>{optionLabel}</option>;
               })}
             </select>
             <button
               className="btn btn--primary"
               disabled={!canApplyBackend}
+              onClick={() => selectedBackendOption && onApplyBackend(currentPreset.id, selectedBackendOption.key)}
               aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
-              onClick={() => selectedBackendOption && onApplyBackend(preset.id, selectedBackendOption.key)}
               data-backend-apply-btn
             >
               Assign globally
@@ -1415,20 +1117,16 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
           </div>
           {backendOptions.length === 0 && <p className="preset-help" data-backend-apply-empty>No backends reported by this server yet.</p>}
           {!isDefaultBackendPreset && selectedBackendOption && !selectedBackendOption.supported && (
-            <p className="preset-error" role="status" aria-live="polite" id="preset-backend-unsupported-note" data-backend-apply-unsupported-note>
-              {selectedBackendOption.label} is unsupported on this server&rsquo;s hardware, so a preset cannot be assigned to it.
-            </p>
+            <p className="preset-error" role="status" aria-live="polite" data-backend-apply-unsupported-note>{selectedBackendOption.label} is unsupported on this server.</p>
           )}
           {!isDefaultBackendPreset && selectedBackendOption && selectedBackendOption.supported && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
-          <p className="preset-backend-success" role="status" aria-live="polite" aria-atomic="true" data-backend-apply-success>
-            {applyBackendSuccess ? `✓ ${applyBackendSuccess}` : ''}
-          </p>
-        </div>
+          <p className="preset-backend-success" role="status" aria-live="polite" aria-atomic="true" data-backend-apply-success>{applyBackendSuccess ? `✓ ${applyBackendSuccess}` : ''}</p>
+        </details>
       </div>
 
       <div className="slideover__foot">
         <button className="btn btn--ghost" onClick={() => onExport(currentPreset)}>Export</button>
-        {preset.starter ? <button className="btn btn--primary" onClick={() => onClone(preset)} data-recipe-clone>Clone</button> : (
+        {preset.starter ? <button className="btn btn--primary" onClick={() => onClone(preset)} data-recipe-clone>Customize</button> : (
           <>
             <button className="btn btn--ghost" style={{ color: 'var(--danger)' }} onClick={() => onDelete(preset)} data-recipe-delete>Delete</button>
             <button className={`btn btn--primary${saved ? ' btn--saved' : ''}`} onClick={handleSave}>{saved ? '✓ Saved' : 'Save'}</button>
@@ -1438,55 +1136,5 @@ const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && se
     </>
   );
 };
-
-function buildRecipeOptions(
-  appliesTo: Capability[],
-  ctxSize: number,
-  steps: number,
-  cfgScale: number,
-  imgWidth: number,
-  imgHeight: number,
-  ttsVoice: string,
-  llamacppBackend: string,
-  llamacppDevice: string,
-  llamacppArgs: string,
-  sdcppArgs: string,
-  newRecipeBackends: NewRecipeBackendOverrides,
-): RecipeOptions {
-  const opts: RecipeOptions = {};
-  const hasAll = appliesTo.includes('all');
-  const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
-  const hasImage = hasAll || appliesTo.includes('image');
-  const hasAudioGeneration = hasAll || appliesTo.includes('audio-generation');
-  const hasTts = hasAll || appliesTo.includes('tts');
-  if (hasChat) {
-    opts.ctx_size = ctxSize;
-    if (llamacppBackend) opts.llamacpp_backend = llamacppBackend;
-    if (llamacppDevice) opts.llamacpp_device = llamacppDevice;
-    if (llamacppArgs) opts.llamacpp_args = llamacppArgs;
-  }
-  if (hasImage || hasAudioGeneration) {
-    opts.steps = steps;
-    opts.cfg_scale = cfgScale;
-  }
-  if (hasImage) {
-    opts.width = imgWidth;
-    opts.height = imgHeight;
-    if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
-  }
-  if (hasTts) {
-    opts.voice = normalizeTtsVoice(ttsVoice);
-  }
-  if (normalizeAcceleratorBackend(newRecipeBackends.acestep)) opts.acestep_backend = normalizeAcceleratorBackend(newRecipeBackends.acestep);
-  if (normalizeAcceleratorBackend(newRecipeBackends.thinksound)) opts.thinksound_backend = normalizeAcceleratorBackend(newRecipeBackends.thinksound);
-  if (normalizeAcceleratorBackend(newRecipeBackends.openmoss)) opts.openmoss_backend = normalizeAcceleratorBackend(newRecipeBackends.openmoss);
-  if (normalizeAcceleratorBackend(newRecipeBackends.trellis)) opts.trellis_backend = normalizeAcceleratorBackend(newRecipeBackends.trellis);
-  return opts;
-}
-
-function buildSampling(appliesTo: Capability[], temperature: number, topP: number, topK: number, repeatPenalty: number): SamplingParams {
-  if (!appliesTo.includes('all') && !appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) return {};
-  return { temperature, top_p: topP, top_k: topK, repeat_penalty: repeatPenalty };
-}
 
 export default PresetManager;

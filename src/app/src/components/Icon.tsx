@@ -11,7 +11,9 @@ export type IconName =
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'star' | 'hugging-face' | 'user-round-cog'
-  | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info';
+  | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
+  | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
+  | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off';
 
 interface IconProps {
   name: IconName;
@@ -96,6 +98,19 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'github': return <><path d="M9 19c-4.5 1.4-4.5-2.2-6-2.7" /><path d="M15 22v-3.9a3.4 3.4 0 00-.9-2.6c3-.3 6.1-1.5 6.1-6.7a5.2 5.2 0 00-1.4-3.6 4.8 4.8 0 00-.1-3.6s-1.1-.4-3.7 1.4a12.8 12.8 0 00-6.7 0C5.7.2 4.6.6 4.6.6a4.8 4.8 0 00-.1 3.6A5.2 5.2 0 003.1 7.8c0 5.2 3.1 6.4 6.1 6.7a3 3 0 00-.8 1.8V22" /></>;
       case 'discord': return <><path d="M8.6 7.5a11 11 0 016.8 0" /><path d="M7.2 18.5c-1.5-.4-2.8-1.1-4-2.2.4-4.2 1.5-7.5 3.4-10a12.9 12.9 0 013.5-1.1l.4.8a11.8 11.8 0 013 0l.4-.8a12.9 12.9 0 013.5 1.1c1.9 2.5 3 5.8 3.4 10a10.2 10.2 0 01-4 2.2l-.9-1.4a9.5 9.5 0 01-7.8 0z" /><circle cx="9.5" cy="12.5" r="1" /><circle cx="14.5" cy="12.5" r="1" /></>;
       case 'funnel': return <path d="M3 4h18l-7 9v6l-4-2V13L3 4z" />;
+      case 'thermometer': return <><path d="M14 4a2 2 0 00-4 0v9.2a4 4 0 104 0V4z" /><path d="M12 9v7" /></>;
+      case 'crosshair': return <><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>;
+      case 'compass': return <><circle cx="12" cy="12" r="9" /><path d="M16 8l-2.5 5.5L8 16l2.5-5.5L16 8z" /></>;
+      case 'lightbulb': return <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M8.5 15.5A6 6 0 1115.5 15.5c-.9.7-1.5 1.5-1.5 2.5h-4c0-1-.6-1.8-1.5-2.5z" /></>;
+      case 'scan-text': return <><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" /><path d="M7 9h10M7 13h10M7 17h6" /></>;
+      case 'minimize-2': return <><path d="M9 3v6H3M15 21v-6h6" /><path d="M3 9l6-6M21 15l-6 6" /></>;
+      case 'panel-top': return <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /></>;
+      case 'expand': return <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /><path d="M3 8l5-5M21 8l-5-5M3 16l5 5M21 16l-5 5" /></>;
+      case 'maximize-2': return <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></>;
+      case 'brain-off': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3M15 4a3 3 0 013 3v.4a3.5 3.5 0 012.5 3.6 3.5 3.5 0 01-1.2 2.6" /><path d="M9 4v5M15 4v11M3 3l18 18" /></>;
+      case 'brain-cog': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3M15 4a3 3 0 013 3v3" /><path d="M9 4v16M15 4v6" /><circle cx="17" cy="17" r="3" /><path d="M17 12.5v1.5M17 20v1.5M12.5 17H14M20 17h1.5" /></>;
+      case 'brain-circuit': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3M15 4a3 3 0 013 3v.4a3.5 3.5 0 012.5 3.6 3.5 3.5 0 01-2.5 3.4V17a3 3 0 01-3 3" /><path d="M9 4v16M15 4v16M9 9h3l2-2M9 15h3l2 2" /><circle cx="12" cy="9" r="1" /><circle cx="12" cy="15" r="1" /></>;
+      case 'wrench-off': return <><path d="M14.7 6.3a4 4 0 01-2.2 5.6L7.5 17a2.1 2.1 0 01-3 3" /><path d="M15.2 11.8a4 4 0 002.5-5.5l-2.5 2.5-3-3 2.5-2.5" /><path d="M3 3l18 18" /></>;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();

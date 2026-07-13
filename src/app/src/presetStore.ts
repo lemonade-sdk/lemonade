@@ -12,6 +12,11 @@ export { CUSTOM_PRESET_PROMPTS, NO_SYSTEM_PROMPT_ID, newCustomSystemPrompt, type
 
 export type Capability = 'all' | 'chat' | 'omni' | 'image' | 'transcription' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking' | 'vision' | 'code';
 export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'acestep' | 'thinksound' | 'openmoss' | 'trellis' | 'auto';
+export type TemperatureHint = 'precise' | 'balanced' | 'exploratory' | 'creative';
+export type ContextHint = 'small' | 'medium' | 'large' | 'max';
+export type EditableContextHint = Exclude<ContextHint, 'max'>;
+export type ThinkingMode = 'none' | 'normal' | 'smart' | 'smart-extra';
+export type TuningValueSource = 'custom' | 'built-in' | 'generic' | 'optimized';
 
 export const KNOWN_CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'omni', 'vision', 'code', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
@@ -55,6 +60,11 @@ export interface Preset {
   name: string;
   description: string;
   applies_to: Capability[];
+  /** Semantic intent only. Concrete values are resolved in Model Tuning. */
+  temperature_hint?: TemperatureHint;
+  context_hint?: ContextHint;
+  thinking_mode?: ThinkingMode;
+  /** Legacy/backward-compatible data. New Presets never write these fields. */
   recipe_options: RecipeOptions;
   sampling: SamplingParams;
   engine_hint?: PresetRecipe;
@@ -66,16 +76,43 @@ export interface Preset {
   tools_enabled?: boolean;
 }
 
+export interface IntentTuningValues {
+  temperature?: Partial<Record<TemperatureHint, number>>;
+  context?: Partial<Record<EditableContextHint, number>>;
+}
+
 export interface ModelTuning {
-  /** Load-time runtime options for this concrete model. */
+  /** Per-intent translations for this concrete model and preset. Max context is always the model maximum. */
+  intent_values?: IntentTuningValues;
+  /** Load-time runtime options for this concrete model and preset. */
   recipe_options: RecipeOptions;
-  /** Request-time sampling defaults for this concrete model. */
+  /** Request-time sampling defaults for this concrete model and preset. */
   sampling: SamplingParams;
   /** Optional runtime hint kept separate from shared Preset intent. */
   engine_hint?: PresetRecipe;
   /** 'model' means discovered from model metadata/GGUF; 'user' means locally customized. */
   source?: 'model' | 'user';
   updated_at?: string;
+}
+
+export interface ResolvedModelTuning {
+  tuning: ModelTuning;
+  preset_id: string;
+  max_context: number;
+  thinking_mode: ThinkingMode;
+  intent_values: {
+    temperature: Record<TemperatureHint, number>;
+    context: Record<ContextHint, number>;
+  };
+  intent_sources: {
+    temperature: Record<TemperatureHint, TuningValueSource>;
+    context: Record<ContextHint, TuningValueSource>;
+  };
+  sources: {
+    recipe_options: Partial<Record<keyof RecipeOptions, TuningValueSource>>;
+    sampling: Partial<Record<keyof SamplingParams, TuningValueSource>>;
+    thinking_mode: TuningValueSource;
+  };
 }
 
 export const LS_USER_PRESETS = 'user_presets';
@@ -108,8 +145,11 @@ function emitPresetStoreEvent(): void {
 export const DEFAULT_PRESET: Preset = {
   id: 's-default',
   name: 'Default',
-  description: 'Use current model settings and automatic backend selection.',
+  description: 'Neutral everyday intent. Lemonade keeps model and backend defaults unless you tune this model.',
   applies_to: ['all'],
+  temperature_hint: 'balanced',
+  context_hint: 'medium',
+  thinking_mode: 'normal',
   recipe_options: {},
   sampling: {},
   engine_hint: 'auto',
@@ -136,12 +176,12 @@ export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to
 }
 
 const STARTER_BASE: Preset[] = [
-  { id: 's-balanced', name: 'Balanced', description: 'Everyday chat intent. Concrete runtime values come from this model tuning.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-quick-chat', name: 'Quick Chat', description: 'Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-creative', name: 'Creative', description: 'Brainstorming, dialog, and divergent writing intent.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-code', name: 'Code', description: 'Coding, refactoring, and technical review intent.', applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-balanced', name: 'Balanced', description: 'Everyday chat with a balanced level of variation and context.', applies_to: ['chat'], temperature_hint: 'balanced', context_hint: 'medium', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], temperature_hint: 'precise', context_hint: 'large', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-quick-chat', name: 'Quick Chat', description: 'Snappy responses for short interactions and lightweight tasks.', applies_to: ['chat'], temperature_hint: 'precise', context_hint: 'small', thinking_mode: 'none', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-creative', name: 'Creative', description: 'Brainstorming, dialog, and divergent writing intent.', applies_to: ['chat'], temperature_hint: 'creative', context_hint: 'medium', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], temperature_hint: 'balanced', context_hint: 'max', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-code', name: 'Code', description: 'Coding, refactoring, and technical review intent.', applies_to: ['chat'], temperature_hint: 'precise', context_hint: 'large', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-quality', name: 'Quality', description: 'Crisp, deliberate image generation intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-preview', name: 'Preview', description: 'Fast image drafts and iteration intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-turbo', name: 'Turbo', description: 'Fastest image draft intent for rapid iteration.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
@@ -153,6 +193,89 @@ export const STARTERS: Preset[] = STARTER_BASE.map(preset => ({
   system_prompts: starterSystemPromptsForPreset(preset.id),
   tools_enabled: defaultToolsEnabledForPreset(preset.id),
 }));
+
+export const TEMPERATURE_HINT_VALUES: Record<TemperatureHint, number> = {
+  precise: 0.40,
+  balanced: 0.70,
+  exploratory: 0.90,
+  creative: 1.10,
+};
+
+export const TEMPERATURE_HINT_LABELS: Record<TemperatureHint, string> = {
+  precise: 'Precise',
+  balanced: 'Balanced',
+  exploratory: 'Exploratory',
+  creative: 'Creative',
+};
+
+export const CONTEXT_HINT_LABELS: Record<ContextHint, string> = {
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  max: 'Max',
+};
+
+export const THINKING_MODE_LABELS: Record<ThinkingMode, string> = {
+  none: 'None',
+  normal: 'Normal',
+  smart: 'Smart',
+  'smart-extra': 'Smart Extra',
+};
+
+export const TEMPERATURE_HINTS = Object.keys(TEMPERATURE_HINT_VALUES) as TemperatureHint[];
+export const CONTEXT_HINTS = Object.keys(CONTEXT_HINT_LABELS) as ContextHint[];
+export const EDITABLE_CONTEXT_HINTS: EditableContextHint[] = ['small', 'medium', 'large'];
+const THINKING_MODES = Object.keys(THINKING_MODE_LABELS) as ThinkingMode[];
+
+export function presetSupportsChatIntent(preset: Pick<Preset, 'id' | 'applies_to'>): boolean {
+  const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
+  return caps.includes('all') || caps.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+}
+
+export function temperatureHintFromValue(value: unknown): TemperatureHint {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'balanced';
+  if (n < 0.55) return 'precise';
+  if (n < 0.80) return 'balanced';
+  if (n < 1.00) return 'exploratory';
+  return 'creative';
+}
+
+export function contextHintFromValue(value: unknown, modelMaximum?: unknown): ContextHint {
+  const n = Number(value);
+  const max = Number(modelMaximum);
+  if (!Number.isFinite(n) || n <= 0) return 'medium';
+  if (Number.isFinite(max) && max > 0) {
+    const targets: Record<ContextHint, number> = {
+      small: Math.min(4096, max),
+      medium: max * 0.40,
+      large: max * 0.66,
+      max,
+    };
+    return CONTEXT_HINTS.reduce((best, hint) =>
+      Math.abs(targets[hint] - n) < Math.abs(targets[best] - n) ? hint : best, 'small' as ContextHint);
+  }
+  if (n <= 6144) return 'small';
+  if (n <= 49152) return 'medium';
+  if (n <= 196608) return 'large';
+  return 'max';
+}
+
+function normalizeTemperatureHint(value: unknown, legacyTemperature?: unknown): TemperatureHint {
+  return TEMPERATURE_HINTS.includes(value as TemperatureHint)
+    ? value as TemperatureHint
+    : temperatureHintFromValue(legacyTemperature);
+}
+
+function normalizeContextHint(value: unknown, legacyContext?: unknown): ContextHint {
+  return CONTEXT_HINTS.includes(value as ContextHint)
+    ? value as ContextHint
+    : contextHintFromValue(legacyContext);
+}
+
+function normalizeThinkingMode(value: unknown): ThinkingMode {
+  return THINKING_MODES.includes(value as ThinkingMode) ? value as ThinkingMode : 'normal';
+}
 
 
 function formatDash(value: unknown, digits?: number): string {
@@ -205,14 +328,16 @@ function readNumberFrom(value: unknown, paths: string[][]): number | undefined {
   return undefined;
 }
 
-const CONTEXT_PATHS = [
-  ['recipe_options', 'ctx_size'], ['options', 'ctx_size'], ['ctx_size'], ['n_ctx'],
+const MAX_CONTEXT_PATHS = [
   ['max_context_window'], ['max_ctx_size'], ['max_ctx'], ['context_window'], ['context_length'], ['max_sequence_length'],
+  ['metadata', 'max_context_window'], ['metadata', 'context_length'],
+  ['recipe_options', 'max_context_window'], ['recipe_options', 'max_ctx_size'], ['recipe_options', 'max_ctx'],
+  ['options', 'max_context_window'], ['options', 'max_ctx_size'], ['options', 'max_ctx'],
 ];
 
-function contextFromRecipe(recipe: unknown): number | undefined {
-  return readNumberFrom(recipe, CONTEXT_PATHS);
-}
+const DEFAULT_CONTEXT_PATHS = [
+  ['recipe_options', 'ctx_size'], ['options', 'ctx_size'], ['ctx_size'], ['n_ctx'],
+];
 
 function recipesForModel(model: ModelInfo | null | undefined): unknown[] {
   return Array.isArray(model?.recipes) ? model!.recipes : [];
@@ -249,13 +374,20 @@ function readNumberFromModelOrRecipe(model: ModelInfo | null | undefined, paths:
 }
 
 export function modelContextSize(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): number {
-  const fromModel = readNumberFrom(model, CONTEXT_PATHS);
-  if (fromModel) return Math.round(fromModel);
+  const declaredMaximum = readNumberFromModelOrRecipe(model, MAX_CONTEXT_PATHS);
+  if (declaredMaximum) return Math.round(declaredMaximum);
 
-  const fromRecipe = readNumberFromActiveRecipe(model, CONTEXT_PATHS);
-  if (fromRecipe) return Math.round(fromRecipe);
+  const configuredDefault = readNumberFromModelOrRecipe(model, DEFAULT_CONTEXT_PATHS);
+  if (configuredDefault) return Math.round(configuredDefault);
 
   return previewContext(undefined, fallbackCtxSize);
+}
+
+export function modelDefaultContextSize(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): number {
+  const configuredDefault = readNumberFromModelOrRecipe(model, DEFAULT_CONTEXT_PATHS);
+  const maximum = modelContextSize(model, fallbackCtxSize);
+  if (configuredDefault) return Math.min(Math.round(configuredDefault), maximum);
+  return Math.min(previewContext(undefined, fallbackCtxSize), maximum);
 }
 
 export function presetHasOverrides(preset: Pick<Preset, 'recipe_options' | 'sampling'>): boolean {
@@ -274,41 +406,19 @@ export function presetHasApplicablePreviewOverrides(preset: Pick<Preset, 'recipe
     || Object.values(sampling).some(hasOwnPreviewValue);
 }
 
-export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelCapability | null, fallbackCtxSize?: unknown): string[] {
+export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelCapability | null, _fallbackCtxSize?: unknown): string[] {
   const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
-  const ro = preset.recipe_options || {};
-  const sp = preset.sampling || {};
   const targetCap = capabilityForPresetPreview(modelCapability);
   if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
-
-  const showChat = modelCapability
-    ? isChatPreviewCapability(modelCapability)
-    : caps.includes('all') || caps.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
-  const showImage = modelCapability
-    ? modelCapability === 'image'
-    : caps.includes('all') || caps.includes('image');
-  const showAudioGeneration = modelCapability
-    ? modelCapability === 'audio-generation'
-    : caps.includes('all') || caps.includes('audio-generation');
-  const hasImageValues = hasOwnPreviewValue(ro.steps) || hasOwnPreviewValue(ro.cfg_scale);
-  const showTts = modelCapability
-    ? modelCapability === 'tts'
-    : caps.includes('all') || caps.includes('tts');
-  const hasTtsValues = hasOwnPreviewValue(ro.voice) || hasOwnPreviewValue(ro.speed);
-  const lines: string[] = [];
-
-  if (showChat) {
-    lines.push(`temp ${formatDash(sp.temperature, 2)} · ctx ${formatDash(previewContext(ro.ctx_size, fallbackCtxSize))}`);
+  const chatIntent = presetSupportsChatIntent(preset) && (!modelCapability || isChatPreviewCapability(modelCapability));
+  if (chatIntent) {
+    const temperature = TEMPERATURE_HINT_LABELS[preset.temperature_hint || 'balanced'];
+    const context = CONTEXT_HINT_LABELS[preset.context_hint || 'medium'];
+    const thinking = THINKING_MODE_LABELS[preset.thinking_mode || 'normal'];
+    return [`${temperature} · ${context} context`, `${thinking} thinking`];
   }
-  if ((showImage || showAudioGeneration) && (hasImageValues || !showChat)) {
-    lines.push(`${formatDash(ro.steps)} steps · cfg ${formatDash(ro.cfg_scale, 1)}`);
-  }
-  if (showTts && (hasTtsValues || (!showChat && !showImage && !showAudioGeneration))) {
-    const voice = String(ro.voice || '---');
-    const speed = hasOwnPreviewValue(ro.speed) ? ` · speed ${formatDash(ro.speed, 2)}` : '';
-    lines.push(`voice ${voice}${speed}`);
-  }
-  return lines.length ? lines : ['---'];
+  const firstCap = caps[0] || 'all';
+  return [`${CAPABILITY_LABELS[firstCap]} intent`];
 }
 
 export function presetParamPreview(preset: Preset): string {
@@ -319,7 +429,7 @@ export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefine
   if (!model) return [`temp --- · ctx ${formatDash(previewContext(undefined, fallbackCtxSize))}`];
   const capability = capabilityFromModelInfo(model);
   const candidate = model as Record<string, unknown>;
-  const ctx = modelContextSize(model, fallbackCtxSize);
+  const ctx = modelDefaultContextSize(model, fallbackCtxSize);
   const temperature = readNumberFrom(candidate, [
     ['sampling', 'temperature'], ['sample_params', 'temperature'], ['recipe_options', 'temperature'], ['temperature'],
   ]);
@@ -344,15 +454,17 @@ export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefine
 }
 
 export function effectivePresetParamPreviewLines(preset: Preset, model?: ModelInfo | null, fallbackCtxSize?: unknown): string[] {
-  const ctxFallback = model ? modelContextSize(model, fallbackCtxSize) : fallbackCtxSize;
-  const capability = model ? capabilityFromModelInfo(model) : undefined;
+  if (!model) return presetParamPreviewLines(preset, undefined, fallbackCtxSize);
+  const capability = capabilityFromModelInfo(model);
   const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
   const targetCap = capabilityForPresetPreview(capability);
   if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
-  if (model && !presetHasApplicablePreviewOverrides(preset, capability)) {
-    return modelDefaultParamPreviewLines(model, ctxFallback);
+  if (preset.id === DEFAULT_PRESET.id || !isChatPreviewCapability(capability)) {
+    return modelDefaultParamPreviewLines(model, fallbackCtxSize);
   }
-  return presetParamPreviewLines(preset, capability, ctxFallback);
+  const modelName = String((model as Record<string, unknown>).model_name || model.name || model.id || '');
+  const resolved = resolvedModelTuningForPreset(modelName, model, preset, fallbackCtxSize).tuning;
+  return [`temp ${formatDash(resolved.sampling.temperature, 2)} · ctx ${formatDash(resolved.recipe_options.ctx_size)}`];
 }
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
@@ -438,27 +550,34 @@ export function sanitizePreset(p: Partial<Preset>): Preset | null {
   const id = p.id || `u-${Date.now()}`;
   const isDefault = id === DEFAULT_PRESET.id;
   const normalizedAppliesTo = normalizePresetCapabilities(id, p.applies_to);
-  const supportsTools = normalizedAppliesTo.includes('all') || normalizedAppliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+  const supportsChatIntent = normalizedAppliesTo.includes('all') || normalizedAppliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const systemPrompts = isDefault ? [] : sanitizeSystemPrompts(p.system_prompts, id);
   const requestedPromptId = typeof p.system_prompt_id === 'string' ? p.system_prompt_id : defaultSystemPromptIdForPreset(id);
   const hasRequestedPrompt = systemPrompts.some(prompt => prompt.id === requestedPromptId);
   const systemPromptId = isDefault
     ? NO_SYSTEM_PROMPT_ID
     : (requestedPromptId === NO_SYSTEM_PROMPT_ID ? NO_SYSTEM_PROMPT_ID : (hasRequestedPrompt ? requestedPromptId : (systemPrompts[0]?.id || NO_SYSTEM_PROMPT_ID)));
+  const recipeOptions = sanitizeRecipeOptions(p.recipe_options || {});
+  const sampling = sanitizeSamplingParams(p.sampling || {});
   return {
     id,
     name: p.name || 'Untitled',
     description: p.description || '',
     applies_to: normalizedAppliesTo,
-    recipe_options: p.recipe_options || {},
-    sampling: p.sampling || {},
+    temperature_hint: supportsChatIntent ? normalizeTemperatureHint(p.temperature_hint, sampling.temperature) : undefined,
+    context_hint: supportsChatIntent ? normalizeContextHint(p.context_hint, recipeOptions.ctx_size) : undefined,
+    thinking_mode: supportsChatIntent ? normalizeThinkingMode(p.thinking_mode) : undefined,
+    // Kept only so old exports and backend assignments remain readable. The
+    // active model-preset path no longer consumes these fields directly.
+    recipe_options: recipeOptions,
+    sampling,
     engine_hint: p.engine_hint || 'auto',
     starter: p.starter ?? false,
     auto_opt_run_id: p.auto_opt_run_id ?? null,
     auto_opt_enabled: p.auto_opt_enabled ?? true,
     system_prompt_id: systemPromptId,
     system_prompts: systemPrompts,
-    tools_enabled: supportsTools && (typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id)),
+    tools_enabled: supportsChatIntent && (typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id)),
   };
 }
 
@@ -493,6 +612,10 @@ export function saveUserPresets(presets: Preset[]): void {
 
 export function saveApplied(applied: Record<string, string>): void {
   localStorage.setItem(scopedPresetKey(LS_APPLIED_PRESETS), JSON.stringify(applied));
+  try {
+    const migrated = migrateLegacyPresetBindingsToTunings(applied, loadModelTunings());
+    localStorage.setItem(scopedPresetKey(LS_MODEL_TUNINGS), JSON.stringify(migrated));
+  } catch {}
   emitPresetStoreEvent();
 }
 
@@ -560,13 +683,34 @@ export function sanitizeSamplingParams(params: Partial<SamplingParams> | null | 
   return out;
 }
 
+export function sanitizeIntentTuningValues(raw: IntentTuningValues | null | undefined): IntentTuningValues {
+  const temperature: Partial<Record<TemperatureHint, number>> = {};
+  const context: Partial<Record<EditableContextHint, number>> = {};
+  const rawTemperature = raw?.temperature && typeof raw.temperature === 'object' ? raw.temperature : {};
+  const rawContext = raw?.context && typeof raw.context === 'object' ? raw.context : {};
+  for (const hint of TEMPERATURE_HINTS) {
+    const value = optionalNumberValue(rawTemperature[hint]);
+    if (value !== undefined && value >= 0) temperature[hint] = value;
+  }
+  for (const hint of EDITABLE_CONTEXT_HINTS) {
+    const value = positiveNumberValue(rawContext[hint]);
+    if (value !== undefined) context[hint] = Math.round(value);
+  }
+  return {
+    ...(Object.keys(temperature).length ? { temperature } : {}),
+    ...(Object.keys(context).length ? { context } : {}),
+  };
+}
+
 export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined): ModelTuning {
+  const intent_values = sanitizeIntentTuningValues(raw?.intent_values);
   const recipe_options = sanitizeRecipeOptions(raw?.recipe_options || {});
   const sampling = sanitizeSamplingParams(raw?.sampling || {});
   const engine_hint = raw?.engine_hint && ['auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm', 'ryzenai-llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis'].includes(String(raw.engine_hint))
     ? raw.engine_hint
     : undefined;
   return {
+    ...(Object.keys(intent_values).length ? { intent_values } : {}),
     recipe_options,
     sampling,
     ...(engine_hint ? { engine_hint } : {}),
@@ -575,12 +719,110 @@ export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined
   };
 }
 
+const MODEL_PRESET_TUNING_SEPARATOR = '@@';
+
+export function modelPresetTuningKey(modelName: string, presetId: string): string {
+  return `${modelName}${MODEL_PRESET_TUNING_SEPARATOR}${presetId || DEFAULT_PRESET.id}`;
+}
+
+function activePresetIdForModelName(modelName: string): string {
+  return loadApplied()[modelName] || DEFAULT_PRESET.id;
+}
+
+function splitModelPresetTuningKey(key: string): { modelName: string; presetId: string } | null {
+  const at = key.lastIndexOf(MODEL_PRESET_TUNING_SEPARATOR);
+  if (at <= 0) return null;
+  return { modelName: key.slice(0, at), presetId: key.slice(at + MODEL_PRESET_TUNING_SEPARATOR.length) || DEFAULT_PRESET.id };
+}
+
+function hasConcreteTuning(tuning: ModelTuning | null | undefined): boolean {
+  return !!tuning && (
+    Object.keys(tuning.intent_values?.temperature || {}).length > 0 ||
+    Object.keys(tuning.intent_values?.context || {}).length > 0 ||
+    Object.keys(tuning.recipe_options || {}).length > 0 ||
+    Object.keys(tuning.sampling || {}).length > 0 ||
+    !!tuning.engine_hint
+  );
+}
+
+function presetForTuningId(presetId: string): Preset {
+  return [DEFAULT_PRESET, ...STARTERS, ...loadUserPresets()].find(preset => preset.id === presetId) || DEFAULT_PRESET;
+}
+
+function migrateLegacyConcreteIntentValues(tuning: Partial<ModelTuning>, presetId: string): ModelTuning {
+  const sanitized = sanitizeModelTuning(tuning);
+  const preset = presetForTuningId(presetId);
+  if (!presetSupportsChatIntent(preset)) return sanitized;
+
+  const intentValues = sanitizeIntentTuningValues(sanitized.intent_values);
+  const temperature = { ...(intentValues.temperature || {}) };
+  const context = { ...(intentValues.context || {}) };
+  const recipeOptions = { ...sanitized.recipe_options };
+  const sampling = { ...sanitized.sampling };
+  const temperatureHint = preset.temperature_hint || 'balanced';
+  const contextHint = preset.context_hint || 'medium';
+
+  if (sampling.temperature !== undefined && temperature[temperatureHint] === undefined) {
+    temperature[temperatureHint] = sampling.temperature;
+    delete sampling.temperature;
+  }
+  if (recipeOptions.ctx_size !== undefined && contextHint !== 'max' && context[contextHint] === undefined) {
+    context[contextHint] = Math.round(recipeOptions.ctx_size);
+    delete recipeOptions.ctx_size;
+  }
+
+  return sanitizeModelTuning({
+    ...sanitized,
+    intent_values: { temperature, context },
+    recipe_options: recipeOptions,
+    sampling,
+  });
+}
+
+function migrateLegacyPresetBindingsToTunings(
+  applied: Record<string, string>,
+  existing?: Record<string, ModelTuning>,
+): Record<string, ModelTuning> {
+  const next = { ...(existing || {}) };
+  const presets = [DEFAULT_PRESET, ...STARTERS, ...loadUserPresets()];
+  for (const [modelName, presetId] of Object.entries(applied)) {
+    const key = modelPresetTuningKey(modelName, presetId);
+    if (hasConcreteTuning(next[key])) continue;
+    const preset = presets.find(candidate => candidate.id === presetId);
+    if (!preset) continue;
+    const legacy = migrateLegacyConcreteIntentValues({
+      recipe_options: preset.recipe_options || {},
+      sampling: preset.sampling || {},
+      engine_hint: preset.engine_hint && preset.engine_hint !== 'auto' ? preset.engine_hint : undefined,
+      source: 'user',
+    }, presetId);
+    if (hasConcreteTuning(legacy)) next[key] = legacy;
+  }
+  return next;
+}
+
 export function loadModelTunings(): Record<string, ModelTuning> {
   try {
     const raw = localStorage.getItem(scopedPresetKey(LS_MODEL_TUNINGS));
     const parsed = raw ? JSON.parse(raw) : {};
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return Object.fromEntries(Object.entries(parsed).map(([name, tuning]) => [name, sanitizeModelTuning(tuning as Partial<ModelTuning>)]));
+    const applied = loadApplied();
+    let changed = false;
+    const normalized: Record<string, ModelTuning> = {};
+    for (const [storedKey, tuning] of Object.entries(parsed)) {
+      const scoped = splitModelPresetTuningKey(storedKey);
+      const key = scoped
+        ? modelPresetTuningKey(scoped.modelName, scoped.presetId)
+        : modelPresetTuningKey(storedKey, applied[storedKey] || DEFAULT_PRESET.id);
+      if (key !== storedKey) changed = true;
+      const migratedTuning = migrateLegacyConcreteIntentValues(tuning as Partial<ModelTuning>, scoped?.presetId || applied[storedKey] || DEFAULT_PRESET.id);
+      normalized[key] = migratedTuning;
+      if (JSON.stringify(migratedTuning) !== JSON.stringify(sanitizeModelTuning(tuning as Partial<ModelTuning>))) changed = true;
+    }
+    const migrated = migrateLegacyPresetBindingsToTunings(applied, normalized);
+    if (Object.keys(migrated).length !== Object.keys(normalized).length) changed = true;
+    if (changed) localStorage.setItem(scopedPresetKey(LS_MODEL_TUNINGS), JSON.stringify(migrated));
+    return migrated;
   } catch {}
   return {};
 }
@@ -590,31 +832,33 @@ export function saveModelTunings(tunings: Record<string, ModelTuning>): void {
   emitPresetStoreEvent();
 }
 
-export function loadModelTuning(modelName: string): ModelTuning | null {
+export function loadModelTuning(modelName: string, presetId?: string): ModelTuning | null {
   if (!modelName) return null;
-  return loadModelTunings()[modelName] || null;
+  const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
+  return loadModelTunings()[modelPresetTuningKey(modelName, resolvedPresetId)] || null;
 }
 
-export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>): void {
+export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>, presetId?: string): void {
   if (!modelName) return;
-  const sanitized = sanitizeModelTuning({ ...tuning, source: 'user', updated_at: new Date().toISOString() });
-  const hasValues = Object.keys(sanitized.recipe_options).length > 0 || Object.keys(sanitized.sampling).length > 0 || !!sanitized.engine_hint;
+  const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
+  const sanitized = migrateLegacyConcreteIntentValues({ ...tuning, source: 'user', updated_at: new Date().toISOString() }, resolvedPresetId);
   const next = { ...loadModelTunings() };
-  if (hasValues) next[modelName] = sanitized;
-  else delete next[modelName];
+  const key = modelPresetTuningKey(modelName, resolvedPresetId);
+  if (hasConcreteTuning(sanitized)) next[key] = sanitized;
+  else delete next[key];
   saveModelTunings(next);
 }
 
-export function resetModelTuning(modelName: string): void {
+export function resetModelTuning(modelName: string, presetId?: string): void {
   if (!modelName) return;
+  const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
   const next = { ...loadModelTunings() };
-  delete next[modelName];
+  delete next[modelPresetTuningKey(modelName, resolvedPresetId)];
   saveModelTunings(next);
 }
 
-export function hasModelTuning(modelName: string): boolean {
-  const tuning = loadModelTuning(modelName);
-  return !!tuning && (Object.keys(tuning.recipe_options).length > 0 || Object.keys(tuning.sampling).length > 0 || !!tuning.engine_hint);
+export function hasModelTuning(modelName: string, presetId?: string): boolean {
+  return hasConcreteTuning(loadModelTuning(modelName, presetId));
 }
 
 function readStringFrom(value: unknown, paths: string[][]): string | undefined {
@@ -664,7 +908,7 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
   const recipe = activeRecipeName(model);
   const capability = capabilityFromModelInfo(model);
   const out: RecipeOptions = {};
-  const ctx = modelContextSize(model, fallbackCtxSize);
+  const ctx = modelDefaultContextSize(model, fallbackCtxSize);
 
   if (capability === 'chat' || capability === 'omni' || capability === 'unknown') {
     if (ctx) out.ctx_size = ctx;
@@ -741,26 +985,280 @@ export function modelDefaultSampling(model: ModelInfo | null | undefined): Sampl
   });
 }
 
-export function modelBaseTuningForModel(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): ModelTuning {
-  return {
-    recipe_options: modelDefaultRecipeOptions(model, fallbackCtxSize),
-    sampling: modelDefaultSampling(model),
-    engine_hint: (activeRecipeName(model) as PresetRecipe) || 'auto',
-    source: 'model',
+function practicalContextSize(value: number, maximum: number): number {
+  if (!Number.isFinite(maximum) || maximum <= 0) return DEFAULT_CONTEXT_SIZE;
+  const capped = Math.min(Math.max(1, value), maximum);
+  if (capped >= 1024 && maximum >= 1024) {
+    const rounded = Math.max(1024, Math.round(capped / 1024) * 1024);
+    return Math.min(rounded, maximum);
+  }
+  return Math.max(1, Math.round(capped));
+}
+
+export function contextSizeForHint(hint: ContextHint, modelMaximum: number): number {
+  const max = Math.max(1, Math.round(modelMaximum || DEFAULT_CONTEXT_SIZE));
+  const small = Math.min(4096, max);
+  if (hint === 'small') return practicalContextSize(small, max);
+  if (hint === 'max') return max;
+  const medium = Math.max(small, practicalContextSize(max * 0.40, max));
+  if (hint === 'medium') return medium;
+  return Math.max(medium, practicalContextSize(max * 0.66, max));
+}
+
+export function temperatureForHint(hint: TemperatureHint): number {
+  return TEMPERATURE_HINT_VALUES[hint];
+}
+
+function modelPresetTuningCandidate(model: ModelInfo | null | undefined, preset: Preset): Partial<ModelTuning> | null {
+  if (!model) return null;
+  const aliases = [preset.id, preset.name, preset.name.toLowerCase(), preset.id.replace(/^s-/, '')];
+  const roots: unknown[] = [
+    (model as Record<string, unknown>).preset_tunings,
+    (model as Record<string, unknown>).preset_tuning,
+    (model as Record<string, unknown>).model_tunings,
+  ];
+  for (const recipe of recipesForModel(model)) {
+    if (recipe && typeof recipe === 'object') {
+      const record = recipe as Record<string, unknown>;
+      roots.push(record.preset_tunings, record.preset_tuning, record.model_tunings);
+    }
+  }
+  for (const root of roots) {
+    if (!root || typeof root !== 'object' || Array.isArray(root)) continue;
+    const map = root as Record<string, unknown>;
+    let candidate: unknown;
+    for (const alias of aliases) {
+      candidate = map[alias];
+      if (candidate) break;
+    }
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const record = candidate as Record<string, unknown>;
+    const recipe_options = sanitizeRecipeOptions(
+      (record.recipe_options as Partial<RecipeOptions> | undefined) ||
+      (record.options as Partial<RecipeOptions> | undefined) ||
+      { ctx_size: record.ctx_size as number | undefined },
+    );
+    const sampling = sanitizeSamplingParams(
+      (record.sampling as Partial<SamplingParams> | undefined) ||
+      (record.sample_params as Partial<SamplingParams> | undefined) ||
+      { temperature: record.temperature as number | undefined },
+    );
+    const intent_values = sanitizeIntentTuningValues(
+      (record.intent_values as IntentTuningValues | undefined) || {
+        temperature: (record.temperature_hints || record.temperature_values) as Partial<Record<TemperatureHint, number>> | undefined,
+        context: (record.context_hints || record.context_values) as Partial<Record<EditableContextHint, number>> | undefined,
+      },
+    );
+    return sanitizeModelTuning({
+      intent_values,
+      recipe_options,
+      sampling,
+      engine_hint: record.engine_hint as PresetRecipe | undefined,
+      source: 'model',
+    });
+  }
+  return null;
+}
+
+function sourceMapForRecipe(options: RecipeOptions, source: TuningValueSource): Partial<Record<keyof RecipeOptions, TuningValueSource>> {
+  return Object.fromEntries(Object.keys(options).map(key => [key, source])) as Partial<Record<keyof RecipeOptions, TuningValueSource>>;
+}
+
+function sourceMapForSampling(params: SamplingParams, source: TuningValueSource): Partial<Record<keyof SamplingParams, TuningValueSource>> {
+  return Object.fromEntries(Object.keys(params).map(key => [key, source])) as Partial<Record<keyof SamplingParams, TuningValueSource>>;
+}
+
+function tuningContextCeiling(tuning: Partial<ModelTuning> | null | undefined): number {
+  if (!tuning) return 0;
+  const values = [
+    tuning.recipe_options?.ctx_size,
+    ...Object.values(tuning.intent_values?.context || {}),
+  ].map(Number).filter(value => Number.isFinite(value) && value > 0);
+  return values.length ? Math.max(...values) : 0;
+}
+
+function resolvedMaximumContext(
+  model: ModelInfo | null | undefined,
+  fallbackCtxSize: unknown,
+  ...tunings: Array<Partial<ModelTuning> | null | undefined>
+): number {
+  const modelMaximum = modelContextSize(model, fallbackCtxSize);
+  const declaredMaximum = readNumberFromModelOrRecipe(model, MAX_CONTEXT_PATHS);
+  if (declaredMaximum) return modelMaximum;
+  return Math.max(modelMaximum, ...tunings.map(tuningContextCeiling));
+}
+
+interface ResolvedIntentTranslations {
+  values: {
+    temperature: Record<TemperatureHint, number>;
+    context: Record<ContextHint, number>;
+  };
+  sources: {
+    temperature: Record<TemperatureHint, TuningValueSource>;
+    context: Record<ContextHint, TuningValueSource>;
   };
 }
 
-export function effectiveModelTuningForModel(modelName: string, model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): ModelTuning {
-  const base = modelBaseTuningForModel(model, fallbackCtxSize);
-  const user = loadModelTuning(modelName);
-  if (!user) return base;
-  return {
-    recipe_options: { ...base.recipe_options, ...user.recipe_options },
-    sampling: { ...base.sampling, ...user.sampling },
-    engine_hint: user.engine_hint || base.engine_hint,
-    source: user.source || 'user',
-    updated_at: user.updated_at,
+function resolveIntentTranslations(
+  maxContext: number,
+  preset: Preset,
+  builtIn: Partial<ModelTuning> | null,
+  user: ModelTuning | null,
+): ResolvedIntentTranslations {
+  const temperature = Object.fromEntries(TEMPERATURE_HINTS.map(hint => [hint, temperatureForHint(hint)])) as Record<TemperatureHint, number>;
+  const context = Object.fromEntries(CONTEXT_HINTS.map(hint => [hint, contextSizeForHint(hint, maxContext)])) as Record<ContextHint, number>;
+  const temperatureSources = Object.fromEntries(TEMPERATURE_HINTS.map(hint => [hint, 'generic'])) as Record<TemperatureHint, TuningValueSource>;
+  const contextSources = Object.fromEntries(CONTEXT_HINTS.map(hint => [hint, 'generic'])) as Record<ContextHint, TuningValueSource>;
+  const activeTemperatureHint = preset.temperature_hint || 'balanced';
+  const activeContextHint = preset.context_hint || 'medium';
+
+  const apply = (tuning: Partial<ModelTuning> | null, source: TuningValueSource) => {
+    if (!tuning) return;
+    const intentValues = sanitizeIntentTuningValues(tuning.intent_values);
+    for (const hint of TEMPERATURE_HINTS) {
+      const value = intentValues.temperature?.[hint];
+      if (value === undefined) continue;
+      temperature[hint] = Math.min(2, Math.max(0, value));
+      temperatureSources[hint] = source;
+    }
+    for (const hint of EDITABLE_CONTEXT_HINTS) {
+      const value = intentValues.context?.[hint];
+      if (value === undefined) continue;
+      context[hint] = practicalContextSize(value, maxContext);
+      contextSources[hint] = source;
+    }
+
+    const legacyTemperature = tuning.sampling?.temperature;
+    if (legacyTemperature !== undefined && intentValues.temperature?.[activeTemperatureHint] === undefined) {
+      temperature[activeTemperatureHint] = Math.min(2, Math.max(0, legacyTemperature));
+      temperatureSources[activeTemperatureHint] = source;
+    }
+    const legacyContext = tuning.recipe_options?.ctx_size;
+    if (legacyContext !== undefined && activeContextHint !== 'max' && intentValues.context?.[activeContextHint] === undefined) {
+      context[activeContextHint] = practicalContextSize(legacyContext, maxContext);
+      contextSources[activeContextHint] = source;
+    }
   };
+
+  apply(builtIn, 'built-in');
+  apply(user, 'custom');
+  context.small = Math.min(maxContext, Math.max(1, context.small));
+  if (context.medium < context.small) {
+    context.medium = context.small;
+    contextSources.medium = contextSources.small;
+  }
+  context.medium = Math.min(maxContext, context.medium);
+  if (context.large < context.medium) {
+    context.large = context.medium;
+    contextSources.large = contextSources.medium;
+  }
+  context.large = Math.min(maxContext, context.large);
+  context.max = Math.max(1, Math.round(maxContext));
+  contextSources.max = 'generic';
+
+  return {
+    values: { temperature, context },
+    sources: { temperature: temperatureSources, context: contextSources },
+  };
+}
+
+function resolveModelTuning(
+  modelName: string,
+  model: ModelInfo | null | undefined,
+  preset: Preset,
+  fallbackCtxSize?: unknown,
+  includeUser = true,
+): ResolvedModelTuning {
+  const capability = model ? capabilityFromModelInfo(model) : 'unknown';
+  const supportsIntent = presetSupportsChatIntent(preset) && isChatPreviewCapability(capability);
+  const builtIn = modelPresetTuningCandidate(model, preset);
+  const user = includeUser ? loadModelTuning(modelName, preset.id) : null;
+  const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, user);
+  const modelRecipe = modelDefaultRecipeOptions(model, fallbackCtxSize);
+  const modelSampling = modelDefaultSampling(model);
+  const recipe_options: RecipeOptions = { ...modelRecipe };
+  const sampling: SamplingParams = { ...modelSampling };
+  const recipeSources = sourceMapForRecipe(recipe_options, 'built-in');
+  const samplingSources = sourceMapForSampling(sampling, 'built-in');
+  const translations = resolveIntentTranslations(maxContext, preset, builtIn, user);
+
+  const applyConcrete = (tuning: Partial<ModelTuning> | null, source: TuningValueSource) => {
+    if (!tuning) return;
+    const concreteRecipe = { ...(tuning.recipe_options || {}) };
+    const concreteSampling = { ...(tuning.sampling || {}) };
+    delete concreteRecipe.ctx_size;
+    delete concreteSampling.temperature;
+    Object.assign(recipe_options, concreteRecipe);
+    Object.assign(sampling, concreteSampling);
+    Object.assign(recipeSources, sourceMapForRecipe(concreteRecipe, source));
+    Object.assign(samplingSources, sourceMapForSampling(concreteSampling, source));
+  };
+
+  applyConcrete(builtIn, 'built-in');
+  applyConcrete(user, 'custom');
+
+  if (supportsIntent) {
+    const contextHint = preset.context_hint || 'medium';
+    const temperatureHint = preset.temperature_hint || 'balanced';
+    const contextSource = translations.sources.context[contextHint];
+    const temperatureSource = translations.sources.temperature[temperatureHint];
+    if (preset.id !== DEFAULT_PRESET.id || contextSource !== 'generic') {
+      recipe_options.ctx_size = translations.values.context[contextHint];
+      recipeSources.ctx_size = contextSource;
+    }
+    if (preset.id !== DEFAULT_PRESET.id || temperatureSource !== 'generic') {
+      sampling.temperature = translations.values.temperature[temperatureHint];
+      samplingSources.temperature = temperatureSource;
+    }
+  }
+
+  return {
+    tuning: {
+      recipe_options: sanitizeRecipeOptions(recipe_options),
+      sampling: sanitizeSamplingParams(sampling),
+      engine_hint: user?.engine_hint || builtIn?.engine_hint || (activeRecipeName(model) as PresetRecipe) || 'auto',
+      source: user ? 'user' : 'model',
+      updated_at: user?.updated_at,
+    },
+    preset_id: preset.id,
+    max_context: maxContext,
+    thinking_mode: supportsIntent ? normalizeThinkingMode(preset.thinking_mode) : 'normal',
+    intent_values: translations.values,
+    intent_sources: translations.sources,
+    sources: {
+      recipe_options: recipeSources,
+      sampling: samplingSources,
+      thinking_mode: 'generic',
+    },
+  };
+}
+
+export function modelBaseTuningForModel(
+  model: ModelInfo | null | undefined,
+  fallbackCtxSize?: unknown,
+  preset: Preset = DEFAULT_PRESET,
+): ModelTuning {
+  const modelName = String((model as Record<string, unknown> | null | undefined)?.model_name
+    || model?.name || model?.id || '');
+  return resolveModelTuning(modelName, model, preset, fallbackCtxSize, false).tuning;
+}
+
+export function resolvedModelTuningForPreset(
+  modelName: string,
+  model: ModelInfo | null | undefined,
+  preset: Preset,
+  fallbackCtxSize?: unknown,
+): ResolvedModelTuning {
+  return resolveModelTuning(modelName, model, preset, fallbackCtxSize, true);
+}
+
+export function effectiveModelTuningForModel(
+  modelName: string,
+  model: ModelInfo | null | undefined,
+  fallbackCtxSize?: unknown,
+  preset?: Preset,
+): ModelTuning {
+  return resolveModelTuning(modelName, model, preset || activePresetForModel(modelName), fallbackCtxSize, true).tuning;
 }
 
 export function allStoredPresets(): Preset[] {
@@ -951,9 +1449,9 @@ export function clearRunningPreset(modelName: string): void {
 export type PresetChangeKind = 'none' | 'live' | 'reload';
 
 /** Fields that the backend/runtime binds at load time → require a reload. */
-const RELOAD_FIELDS: Array<keyof Preset> = ['recipe_options', 'engine_hint'];
+const RELOAD_FIELDS: Array<keyof Preset> = ['context_hint', 'recipe_options', 'engine_hint'];
 /** Fields applied per request at generation time → can be updated live. */
-const LIVE_FIELDS: Array<keyof Preset> = ['sampling', 'system_prompt_id', 'system_prompts', 'tools_enabled'];
+const LIVE_FIELDS: Array<keyof Preset> = ['temperature_hint', 'thinking_mode', 'sampling', 'system_prompt_id', 'system_prompts', 'tools_enabled'];
 
 function stableEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -1017,6 +1515,51 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
   }
 }
 
+function concretePresetTuningForRequest(
+  modelName: string,
+  model: ModelInfo | null | undefined,
+  preset: Preset,
+  fallbackCtxSize?: unknown,
+): ModelTuning {
+  const builtIn = modelPresetTuningCandidate(model, preset);
+  const user = loadModelTuning(modelName, preset.id);
+  const capability = model ? capabilityFromModelInfo(model) : 'unknown';
+  const supportsIntent = presetSupportsChatIntent(preset) && isChatPreviewCapability(capability);
+  const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, user);
+  const translations = resolveIntentTranslations(maxContext, preset, builtIn, user);
+  const recipe_options: RecipeOptions = {
+    ...(builtIn?.recipe_options || {}),
+    ...(user?.recipe_options || {}),
+  };
+  const sampling: SamplingParams = {
+    ...(builtIn?.sampling || {}),
+    ...(user?.sampling || {}),
+  };
+  delete recipe_options.ctx_size;
+  delete sampling.temperature;
+
+  if (supportsIntent) {
+    const contextHint = preset.context_hint || 'medium';
+    const temperatureHint = preset.temperature_hint || 'balanced';
+    const contextSource = translations.sources.context[contextHint];
+    const temperatureSource = translations.sources.temperature[temperatureHint];
+    if (preset.id !== DEFAULT_PRESET.id || contextSource !== 'generic') {
+      recipe_options.ctx_size = translations.values.context[contextHint];
+    }
+    if (preset.id !== DEFAULT_PRESET.id || temperatureSource !== 'generic') {
+      sampling.temperature = translations.values.temperature[temperatureHint];
+    }
+  }
+
+  return sanitizeModelTuning({
+    recipe_options,
+    sampling,
+    engine_hint: user?.engine_hint || builtIn?.engine_hint,
+    source: user ? 'user' : 'model',
+    updated_at: user?.updated_at,
+  });
+}
+
 export function recipeOptionsForModel(
   modelName: string,
   model?: ModelInfo | null,
@@ -1024,46 +1567,43 @@ export function recipeOptionsForModel(
   systemInfo?: Record<string, unknown> | null,
 ): RecipeOptions | undefined {
   const capability = model ? capabilityFromModelInfo(model) : undefined;
-
-  // Shared Preset = user intent. It may still carry legacy/custom recipe_options,
-  // but concrete per-model values now belong to Model Tuning and win below.
   const preset = activePresetForModel(modelName);
-  const presetOptionsRaw = preset.recipe_options || {};
-  const presetOptions = model
-    ? recipeOptionsForCapability(presetOptionsRaw, capability!)
-    : presetOptionsRaw;
-
-  // Model Tuning = per-model user override layer. The UI still displays
-  // built-in/GGUF-derived model defaults through effectiveModelTuningForModel(),
-  // but load options should only send explicit overrides. Otherwise a UI fallback
-  // such as ctx_size=4096 would accidentally override preset/backend defaults.
-  const modelTuningOptionsRaw = loadModelTuning(modelName)?.recipe_options || {};
+  const concreteTuning = concretePresetTuningForRequest(modelName, model, preset);
   const modelTuningOptions = model
-    ? recipeOptionsForCapability(modelTuningOptionsRaw, capability!)
-    : modelTuningOptionsRaw;
+    ? recipeOptionsForCapability(concreteTuning.recipe_options || {}, capability!)
+    : (concreteTuning.recipe_options || {});
 
-  // Backend preset = GLOBAL backend/runtime defaults (#2432). It only applies
-  // when the CONCRETE backend this load resolves to matches its exact
-  // `recipe:backend` binding. The backend preset is a base layer; preset intent
-  // and model tuning are more specific.
+  // Backend tuning stays the least-specific layer. Exact backend matching and
+  // the established precedence remain unchanged.
   const backendPreset = activePresetForModelBackend(model, {
     explicitOptions,
-    modelPresetOptions: { ...presetOptions, ...modelTuningOptions },
+    modelPresetOptions: modelTuningOptions,
     systemInfo,
   });
   const backendOptions = backendPreset && model
     ? recipeOptionsForCapability(backendPreset.recipe_options || {}, capability!)
     : (backendPreset ? (backendPreset.recipe_options || {}) : {});
 
-  const merged: RecipeOptions = { ...backendOptions, ...presetOptions, ...modelTuningOptions };
-  return Object.keys(merged || {}).length > 0 ? merged : undefined;
+  const merged: RecipeOptions = { ...backendOptions, ...modelTuningOptions };
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-export function samplingForModel(modelName: string, model?: ModelInfo | null): SamplingParams {
-  const presetSampling = activePresetForModel(modelName).sampling || {};
-  const modelSampling = loadModelTuning(modelName)?.sampling || {};
-  const merged = { ...presetSampling, ...modelSampling };
-  return Object.keys(merged).length > 0 ? merged : {};
+export interface ChatRequestPresetOptions extends SamplingParams {
+  enable_thinking?: boolean;
+}
+
+function modelSupportsExplicitThinking(model: ModelInfo | null | undefined): boolean {
+  if (!model) return false;
+  const labels = Array.isArray(model.labels) ? model.labels.map(label => String(label).toLowerCase()) : [];
+  return labels.some(label => label === 'reasoning' || label === 'thinking' || label === 'reasoner');
+}
+
+export function samplingForModel(modelName: string, model?: ModelInfo | null): ChatRequestPresetOptions {
+  const preset = activePresetForModel(modelName);
+  const concreteTuning = concretePresetTuningForRequest(modelName, model, preset);
+  const merged: ChatRequestPresetOptions = { ...concreteTuning.sampling };
+  if (preset.thinking_mode === 'none' && modelSupportsExplicitThinking(model)) merged.enable_thinking = false;
+  return merged;
 }
 
 export type PresetIconName =
