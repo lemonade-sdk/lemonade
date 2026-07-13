@@ -324,9 +324,12 @@ def render_models_js(recipes: dict) -> str:
 
 
 def render_config_example(config: dict) -> str:
-    # The canonical config.json, straight from a fresh lemond's /internal/config.
-    # `port` is the only environment-dependent field (it reflects the launch port);
-    # normalize it to the documented default.
+    # The canonical config.json, mirrored from /internal/config/defaults (the same
+    # source as resources/defaults.json) so the example matches the committed
+    # defaults exactly. A fresh lemond's /internal/config still carries the
+    # pre-migration global values (config_version 1, ctx_size 4096, ...), which
+    # do not match the current defaults. `port` is the only environment-dependent
+    # field; normalize it to the documented default.
     cfg = dict(config)
     cfg["port"] = 13305
     return "```json\n" + json.dumps(cfg, indent=2) + "\n```"
@@ -584,7 +587,7 @@ def main() -> int:
         / "guide"
         / "configuration"
         / "README.md": {
-            "sections": {"config-example": render_config_example(config)},
+            "sections": {"config-example": render_config_example(json.loads(defaults_text))},
         },
         REPO_ROOT
         / "docs"

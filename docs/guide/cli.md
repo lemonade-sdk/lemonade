@@ -377,6 +377,14 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### vLLM-Omni ROCm (experimental) (`vllm-omni` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--vllm-omni BACKEND` | vLLM-Omni backend to use | Auto-detected |
+| `--vllm-omni-args ARGS` | Custom arguments to pass to vllm-omni-server | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

@@ -63,6 +63,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "vllm-omni|vllm_omni"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -817,6 +818,12 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
     add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
+endif()
+
+set(CUSTOM_ARGS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp")
+if(BUILD_TESTING AND EXISTS "${CUSTOM_ARGS_TEST_SOURCE}")
+    add_executable(test_custom_args ${CUSTOM_ARGS_TEST_SOURCE})
+    add_test(NAME custom_args COMMAND test_custom_args)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server

@@ -20,6 +20,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `vllm-omni` | vLLM-Omni ROCm (experimental) | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -59,6 +60,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vllm-omni` | rocm | linux | amd_gpu (gfx1151) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
@@ -128,6 +130,14 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `vllm_backend` | `--vllm` | BACKEND | "" | vLLM backend to use |
 | `vllm_args` | `--vllm-args` | ARGS | "" | Custom arguments to pass to vllm-server |
+
+#### `vllm-omni` — vLLM-Omni ROCm (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `vllm-omni_backend` | `--vllm-omni` | BACKEND | "" | vLLM-Omni backend to use |
+| `vllm_omni_args` | `--vllm-omni-args` | ARGS | "" | Custom arguments to pass to vllm-omni-server |
 
 #### `whispercpp` — Whisper.cpp
 
@@ -387,6 +397,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
 | `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+
+#### `vllm-omni` — vLLM-Omni ROCm (experimental) (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Qwen2.5-Omni-3B-vLLM-Omni` | 7.0 | vision, chat-transcription, chat-speech, omni |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 

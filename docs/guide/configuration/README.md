@@ -144,6 +144,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "backend": "auto"
   },
+  "vllm-omni": {
+    "args": "",
+    "backend": "auto"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

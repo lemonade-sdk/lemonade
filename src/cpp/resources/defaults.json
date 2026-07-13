@@ -109,6 +109,10 @@
     "args": "",
     "backend": "auto"
   },
+  "vllm-omni": {
+    "args": "",
+    "backend": "auto"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

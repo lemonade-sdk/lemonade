@@ -142,6 +142,7 @@ interface LLMChatPanelProps {
   appSettings: AppSettings | null;
   isVision: boolean;
   isAudioChat?: boolean;
+  isAudioOutput?: boolean;
   collectionMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
@@ -152,7 +153,7 @@ interface LLMChatPanelProps {
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, isAudioChat = false, collectionMode = false, currentLoadedModel, setCurrentLoadedModel,
+  isVision, isAudioChat = false, isAudioOutput = false, collectionMode = false, currentLoadedModel, setCurrentLoadedModel,
   onNewChat, onUnloadCollection,
 }) => {
   const { selectedModel, modelsData } = useModels();
@@ -165,6 +166,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
+  // Native audio (voice) output for omni chat models. Opt-in: generating speech
+  // is slow/expensive, so it defaults off even when the model supports it.
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState('Chelsie');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
@@ -488,11 +493,27 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  // Generated assistant audio (native voice) is stored as an input_audio
+  // artifact for UI playback only. Strip it from outgoing history: re-sending
+  // the Base64 every turn is expensive and can break strict backends.
+  const stripGeneratedAudio = ({ role, content }: Message): { role: string; content: MessageContent } => {
+    if (role !== 'assistant' || !Array.isArray(content)) return { role, content };
+    const kept = content.filter(item => item.type !== 'input_audio');
+    if (kept.length === content.length) return { role, content };
+    // Audio-only assistant turn: collapse to '' rather than an empty content
+    // array, which some strict OpenAI-compatible backends reject on the next turn.
+    if (kept.length === 0) return { role, content: '' };
+    if (kept.every(item => item.type === 'text')) {
+      return { role, content: kept.map(item => (item as TextContent).text).join('') };
+    }
+    return { role, content: kept };
+  };
+
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
-    // Strip UI-only fields (e.g. `thinking`) so strict providers like
-    // Fireworks don't 400 on unknown keys in the assistant turn.
-    messages: messageHistory.map(({ role, content }) => ({ role, content })),
+    // Strip UI-only fields (e.g. `thinking`) and generated assistant audio so
+    // strict providers don't 400 and we don't replay large audio blobs.
+    messages: messageHistory.map(stripGeneratedAudio),
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });
@@ -901,6 +922,64 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!accumulatedContent) throw new Error('No content received from stream');
   };
 
+  /**
+   * Non-streaming chat for omni models with native voice output. The audio
+   * comes back as `message.audio` in the response — vLLM-Omni splits text and
+   * audio across separate choices; OpenAI puts audio on the same choice, so we
+   * scan all choices. Rendered via buildFinalContent -> the MessageAudio player.
+   * Streaming is disabled here because the SSE path only assembles text deltas.
+   */
+  const handleAudioChat = async (messageHistory: Message[]): Promise<void> => {
+    const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const requestBody = {
+      ...buildChatRequestBody(messageHistory),
+      stream: false,
+      modalities: ['text', 'audio'],
+      voice: selectedVoice,                           // vLLM-Omni reads top-level voice
+      audio: { voice: selectedVoice, format: 'wav' }, // OpenAI-standard (ignored if unsupported)
+    };
+
+    const response = await serverFetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: abortControllerRef.current?.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message || 'LLM returned error');
+    if (!data.choices?.length) throw new Error('LLM returned empty response');
+
+    setCurrentLoadedModel(chatModelName);
+    if (isNewModelLoad) {
+      window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
+    }
+
+    let text = '';
+    let audio: { data?: string; format?: string } | undefined;
+    for (const choice of data.choices) {
+      const msg = choice.message || {};
+      if (!text && typeof msg.content === 'string' && msg.content) text = msg.content;
+      if (!audio && msg.audio?.data) audio = msg.audio;
+    }
+
+    const { content: cleanText, thinking } = extractThinking(text);
+    const artifacts: Artifact[] = [];
+    if (audio?.data) {
+      artifacts.push({ type: 'audio', data: audio.data, mime: mimeForFormat(audio.format || 'wav') });
+    }
+    const finalContent = buildFinalContent(cleanText, artifacts);
+    setMessages(prev => {
+      const newMessages = [...prev];
+      newMessages[newMessages.length - 1] = {
+        role: 'assistant',
+        content: finalContent,
+        thinking: thinking || undefined,
+      };
+      return newMessages;
+    });
+  };
+
   const sendMessage = async (textOverride?: string) => {
     const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
     // When called from voice auto-submit, `isBusy` may still be stale-true
@@ -952,6 +1031,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     try {
       if (collectionMode && lemonadeTools) {
         await handleCollectionChat(messageHistory);
+      } else if (isAudioOutput && voiceEnabled) {
+        await handleAudioChat(messageHistory);
       } else {
         await handleStreamingResponse(messageHistory);
       }
@@ -1031,6 +1112,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     try {
       if (collectionMode && lemonadeTools) {
         await handleCollectionChat(messageHistory);
+      } else if (isAudioOutput && voiceEnabled) {
+        await handleAudioChat(messageHistory);
       } else {
         await handleStreamingResponse(messageHistory);
       }
@@ -1437,15 +1520,48 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0}
             modelSelector={<ModelSelector disabled={isBusy} />}
             rightControls={
-              <RecordButton
-                disabled={isBusy}
-                inputValue={inputValue}
-                setInputValue={setInputValue}
-                textareaRef={inputTextareaRef}
-                onError={showError}
-                runPreFlight={runPreFlight}
-                reset={reset}
-              />
+              <>
+                {/* In collection mode the send path always routes through
+                    handleCollectionChat, so the native-voice branch is never
+                    reached — hide the control to avoid a no-op toggle. */}
+                {isAudioOutput && !collectionMode && (
+                  <div className="voice-output-controls" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button
+                      type="button"
+                      className="voice-toggle-button"
+                      onClick={() => setVoiceEnabled(v => !v)}
+                      disabled={isBusy}
+                      title={voiceEnabled
+                        ? 'Voice output on — click to disable'
+                        : 'Voice output off — click to enable (generates speech; slower)'}
+                      aria-pressed={voiceEnabled}
+                    >
+                      {voiceEnabled ? '🔊' : '🔈'}
+                    </button>
+                    {voiceEnabled && (
+                      <select
+                        className="voice-select"
+                        value={selectedVoice}
+                        onChange={(e) => setSelectedVoice(e.target.value)}
+                        disabled={isBusy}
+                        title="Voice"
+                      >
+                        <option value="Chelsie">Chelsie</option>
+                        <option value="Ethan">Ethan</option>
+                      </select>
+                    )}
+                  </div>
+                )}
+                <RecordButton
+                  disabled={isBusy}
+                  inputValue={inputValue}
+                  setInputValue={setInputValue}
+                  textareaRef={inputTextareaRef}
+                  onError={showError}
+                  runPreFlight={runPreFlight}
+                  reset={reset}
+                />
+              </>
             }
             leftControls={
               <>
