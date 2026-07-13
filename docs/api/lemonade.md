@@ -18,6 +18,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
+| `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
@@ -31,6 +32,48 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+
+## `POST /v1/models/check-updates`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Explicitly checks downloaded Hugging Face-backed models for newer upstream
+commits. This is the manual counterpart to the startup update check and works
+even when `auto_check_model_updates=false`.
+
+Full offline mode remains authoritative: when `offline=true`, this endpoint
+returns HTTP 409 and does not make network requests.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/models/check-updates
+```
+
+The same action is available from the CLI:
+
+```bash
+lemonade check-updates
+```
+
+### Response format
+
+```json
+{
+  "status": "success",
+  "updates_available": 2,
+  "models": [
+    "Qwen3-4B-GGUF",
+    "Whisper-Tiny"
+  ]
+}
+```
+
+The endpoint is available at:
+
+- `/v1/models/check-updates`
+- `/api/v1/models/check-updates`
+- `/v0/models/check-updates`
+- `/api/v0/models/check-updates`
 
 ## `GET /v1/models/{id}/files`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

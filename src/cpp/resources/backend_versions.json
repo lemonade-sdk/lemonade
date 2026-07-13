@@ -83,14 +83,18 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v0.9.44"
+    "npu": "v0.9.45"
   },
   "kokoro": {
     "cpu": "b17",
     "metal": "b17"
   },
   "vllm": {
-    "rocm": "vllm0.20.1-rocm7.12.0"
+    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942) shares no release tag with the RDNA line, so it pins its own version. Review each override at release time - feature/fix parity across arch lines lags until bumped.",
+    "rocm": "vllm0.20.1-rocm7.12.0",
+    "rocm_arch_overrides": {
+      "gfx942": "vllm0.19.1-rocm7.13.0"
+    }
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
@@ -127,9 +131,9 @@
     "cuda": "v0.1.5"
   },
   "openmoss": {
-    "vulkan": "v0.1.2",
-    "rocm-stable": "v0.1.2",
-    "cuda": "v0.1.2"
+    "vulkan": "v0.1.3",
+    "rocm-stable": "v0.1.3",
+    "cuda": "v0.1.3"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

@@ -1315,11 +1315,13 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
-void ModelManager::check_for_model_updates() {
+std::vector<std::string> ModelManager::check_for_model_updates() {
+    std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
+
     if (auto* cfg = RuntimeConfig::global(); cfg && cfg->offline()) {
         LOG(DEBUG, "ModelManager")
             << "Offline mode enabled, skipping model update check" << std::endl;
-        return;
+        return {};
     }
 
     struct RepoEntry {
@@ -1328,71 +1330,161 @@ void ModelManager::check_for_model_updates() {
         std::string repo_id;
         std::string registry_source;
     };
+
     std::unordered_map<std::string, RepoEntry> repos;
 
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        if (!cache_valid_) return;
+
+        if (!cache_valid_) {
+            return {};
+        }
 
         for (const auto& [name, info] : models_cache_) {
-            if (!info.downloaded) continue;
-            if (info.recipe == "flm" || info.recipe == "cloud") continue;
-            if (!info.source.empty()) continue;  // local_path/local_upload/extra
+            if (!info.downloaded) {
+                continue;
+            }
+
+            // FLM and cloud models are managed by their own backends.
+            if (info.recipe == "flm" || info.recipe == "cloud") {
+                continue;
+            }
+
+            // Local-path, local-upload and extra-directory models have no
+            // remote registry to check.
+            if (!info.source.empty()) {
+                continue;
+            }
 
             const std::string main_cp = info.checkpoint("main");
-            if (main_cp.empty()) continue;
+            if (main_cp.empty()) {
+                continue;
+            }
+
             const std::string repo_id = checkpoint_to_repo_id(main_cp);
-            if (repo_id.empty()) continue;
+            if (repo_id.empty()) {
+                continue;
+            }
 
             const std::string source = effective_registry_source(info);
             const std::string key = source + ":" + repo_id;
+
             auto& entry = repos[key];
             entry.repo_id = repo_id;
             entry.registry_source = source;
             entry.model_names.push_back(name);
+
             if (entry.cached_snapshot.empty()) {
-                fs::path cache_path = path_from_utf8(get_hf_cache_dir()) /
+                const fs::path cache_path =
+                    path_from_utf8(get_hf_cache_dir()) /
                     repo_id_to_cache_dir_name(repo_id, source);
+
                 entry.cached_snapshot = read_hf_ref_main(cache_path);
             }
         }
     }
 
     std::unordered_set<std::string> updated_models;
+    std::unordered_set<std::string> verified_models;
+
     for (auto& [key, entry] : repos) {
         (void)key;
-        if (entry.cached_snapshot.empty()) continue;
-        try {
-            const auto source = parse_remote_registry_source(entry.registry_source);
-            const auto& registry = model_registry(source);
-            LOG(DEBUG, "ModelManager") << "Checking for updates on "
-                << remote_registry_display_name(source) << ": " << entry.repo_id << std::endl;
-            const RegistryRepository latest = registry.fetch_repository(entry.repo_id);
-            if (latest.snapshot_id.empty() || latest.snapshot_id == entry.cached_snapshot) continue;
 
-            LOG(INFO, "ModelManager") << "Update available for " << entry.repo_id
+        // Without a local snapshot reference, there is nothing reliable to
+        // compare against.
+        if (entry.cached_snapshot.empty()) {
+            continue;
+        }
+
+        try {
+            const auto source =
+                parse_remote_registry_source(entry.registry_source);
+            const auto& registry = model_registry(source);
+
+            LOG(DEBUG, "ModelManager")
+                << "Checking for updates on "
+                << remote_registry_display_name(source)
+                << ": " << entry.repo_id << std::endl;
+
+            const RegistryRepository latest =
+                registry.fetch_repository(entry.repo_id);
+
+            if (latest.snapshot_id.empty()) {
+                continue;
+            }
+
+            // Only a successful registry response with a usable snapshot may
+            // clear an update flag discovered by an earlier check.
+            verified_models.insert(
+                entry.model_names.begin(),
+                entry.model_names.end());
+
+            if (latest.snapshot_id == entry.cached_snapshot) {
+                continue;
+            }
+
+            LOG(INFO, "ModelManager")
+                << "Update available for " << entry.repo_id
                 << " on " << remote_registry_display_name(source)
                 << ": cached=" << entry.cached_snapshot.substr(0, 18)
                 << ", latest=" << latest.snapshot_id.substr(0, 18)
-                << " (" << entry.model_names.size() << " variant(s))" << std::endl;
-            updated_models.insert(entry.model_names.begin(), entry.model_names.end());
+                << " (" << entry.model_names.size()
+                << " variant(s))" << std::endl;
+
+            updated_models.insert(
+                entry.model_names.begin(),
+                entry.model_names.end());
+
         } catch (const RegistryNotFoundError& e) {
-            LOG(DEBUG, "ModelManager") << e.what() << ", skipping update check" << std::endl;
+            LOG(DEBUG, "ModelManager")
+                << e.what() << ", skipping update check" << std::endl;
+
         } catch (const std::exception& e) {
-            LOG(WARNING, "ModelManager") << "Failed to check updates for "
-                << entry.repo_id << " on " << entry.registry_source << ": "
-                << e.what() << std::endl;
+            LOG(WARNING, "ModelManager")
+                << "Failed to check updates for "
+                << entry.repo_id
+                << " on " << entry.registry_source
+                << ": " << e.what() << std::endl;
         }
     }
 
-    if (!updated_models.empty()) {
+    std::vector<std::string> public_updated_models;
+
+    {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
         for (auto& [name, info] : models_cache_) {
-            if (updated_models.count(name)) info.update_available = true;
+            if (verified_models.count(name)) {
+                info.update_available =
+                    updated_models.count(name) != 0;
+            }
         }
-        LOG(INFO, "ModelManager") << "Updates available for " << updated_models.size()
+
+        public_updated_models.reserve(updated_models.size());
+
+        for (const auto& name : updated_models) {
+            const auto public_it =
+                canonical_public_names_.find(name);
+
+            public_updated_models.push_back(
+                public_it != canonical_public_names_.end()
+                    ? public_it->second
+                    : name);
+        }
+    }
+
+    std::sort(
+        public_updated_models.begin(),
+        public_updated_models.end());
+
+    if (!public_updated_models.empty()) {
+        LOG(INFO, "ModelManager")
+            << "Updates available for "
+            << public_updated_models.size()
             << " model(s)" << std::endl;
     }
+
+    return public_updated_models;
 }
 
 static void load_checkpoints(ModelInfo& info, json& model_json) {

@@ -446,15 +446,21 @@ void Server::start_model_cache_warmup() {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
 
-        try {
-            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-            model_manager_->check_for_model_updates();
-            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
-        } catch (const std::exception& e) {
-            LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
-        } catch (...) {
-            LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+        if (config_->auto_check_model_updates()) {
+            try {
+                LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+                (void)model_manager_->check_for_model_updates();
+                LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
+            } catch (...) {
+                LOG(WARNING, "Server") << "Model update check failed with unknown error" << std::endl;
+            }
+        } else {
+            LOG(DEBUG, "Server")
+                << "Automatic model update checks are disabled" << std::endl;
         }
+
         update_check_done_ = true;
     });
 }
@@ -696,6 +702,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models(req, res);
+    });
+
+    // Explicit network action for users who disable startup update checks.
+    register_post("models/check-updates", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_update_check(req, res);
     });
 
     // Model files endpoint for the Files tab. Register before the generic
@@ -1852,13 +1863,44 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 // Behavior:
 //   1. If model is already loaded: Return immediately (no-op)
 //   2. If model is not downloaded: Download it (first-time use)
-//   3. If model is downloaded: Use cached version (don't check the remote registry for updates)
+//   3. If model is downloaded: Use cached version
+//      (do not check the remote registry for updates)
 //
-// Note: Only the /pull endpoint checks the recorded registry for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model) {
+// Note: Only the /pull endpoint checks the model's recorded registry for
+// updates (do_not_upgrade=false).
+
+// Load-level options that may be forwarded to RecipeOptions during auto-load.
+// Keep this an explicit allowlist so request-scoped fields do not leak into
+// recipe options.
+nlohmann::json Server::extract_auto_load_options(const json& request) {
+    nlohmann::json result = json::object();
+
+    auto extract_if_present =
+        [&request, &result](const std::string& key) {
+            if (request.contains(key)) {
+                result[key] = request[key];
+            }
+        };
+
+    extract_if_present("ctx_size");
+
+    return result;
+}
+
+void Server::auto_load_model_if_needed(
+    const std::string& requested_model,
+    const json& request_options) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
+        if (request_options.contains("ctx_size")) {
+            auto loaded_ctx = router_->get_model_recipe_options(requested_model)
+                                  .get_option("ctx_size");
+            LOG(DEBUG, "Server")
+                << "Ignoring requested ctx_size=" << request_options["ctx_size"]
+                << " for already-loaded " << requested_model
+                << " (loaded ctx_size=" << loaded_ctx << ")" << std::endl;
+        }
         return;
     }
 
@@ -1899,10 +1941,10 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
         info = model_manager_->get_model_info(requested_model);
     }
 
-    // Load model with do_not_upgrade=true
+    // Load model with do_not_upgrade=true, applying per-request options on first load.
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2003,6 +2045,36 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
 
     res.set_content(kLiveResponse, "application/json");
     res.status = 200;
+}
+
+void Server::handle_model_update_check(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+
+    // A manual check is intentionally independent from
+    // auto_check_model_updates, but full offline mode remains authoritative.
+    if (config_->offline()) {
+        res.status = 409;
+        res.set_content(
+            nlohmann::json{{"error", "Cannot check model updates while offline=true"}}.dump(),
+            "application/json");
+        return;
+    }
+
+    try {
+        auto updated_models = model_manager_->check_for_model_updates();
+        nlohmann::json response = {
+            {"status", "success"},
+            {"updates_available", updated_models.size()},
+            {"models", updated_models}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Manual model update check failed: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(
+            nlohmann::json{{"error", std::string("Model update check failed: ") + e.what()}}.dump(),
+            "application/json");
+    }
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
@@ -2389,7 +2461,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
                 if (span) {
                     span->cancel();
                 }
@@ -2626,7 +2698,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
                 if (span) {
                     span->cancel();
                 }
@@ -2832,7 +2904,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
                 if (span) {
                     span->cancel();
                 }
@@ -2887,7 +2959,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
                 if (span) {
                     span->cancel();
                 }
@@ -3130,7 +3202,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -3179,7 +3251,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
@@ -3390,7 +3462,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
 
         std::string requested_model = request_json["model"];
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load audio-generation model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3513,7 +3585,7 @@ void Server::handle_3d_generations(const httplib::Request& req, httplib::Respons
 
         std::string requested_model = request_json["model"];
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load 3D-generation model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3565,7 +3637,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         std::string requested_model = request_json["model"];
 
         try {
-            auto_load_model_if_needed(requested_model);
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
@@ -3667,7 +3739,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
     }
     std::string requested_model = request_json["model"];
     try {
-        auto_load_model_if_needed(requested_model);
+        auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
@@ -4067,7 +4139,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
