@@ -455,7 +455,8 @@ public:
         OutputLineCallback on_line,
         const std::string& working_dir,
         int timeout_seconds,
-        bool capture_stderr = true) override {
+        bool capture_stderr = true,
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {}) override {
 
         std::string cmdline = escape_windows_arg(executable);
         for (const auto& arg : args) {
@@ -488,6 +489,11 @@ public:
         si.hStdError = capture_stderr ? stdout_write : GetStdHandle(STD_ERROR_HANDLE);
         ZeroMemory(&pi, sizeof(pi));
 
+        std::vector<char> environment_block;
+        if (!env_vars.empty()) {
+            environment_block = build_windows_environment_block(env_vars);
+        }
+
         BOOL success = CreateProcessA(
             nullptr,
             const_cast<char*>(cmdline.c_str()),
@@ -495,7 +501,7 @@ public:
             nullptr,
             TRUE,  // Inherit handles
             CREATE_NO_WINDOW,
-            nullptr,
+            environment_block.empty() ? nullptr : environment_block.data(),
             working_dir.empty() ? nullptr : working_dir.c_str(),
             &si,
             &pi

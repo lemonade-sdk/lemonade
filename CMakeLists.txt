@@ -2195,6 +2195,22 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_test(NAME AutoTuneTest COMMAND test_auto_tune)
 endif()
 
+# llama.cpp tool-output parsers (llama-fit-params / llama-bench, header-only).
+set(_LLAMACPP_TOOLS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_tools.cpp"
+)
+if(EXISTS "${_LLAMACPP_TOOLS_TEST_SRC}")
+    add_executable(test_llamacpp_tools
+        test/cpp/test_llamacpp_tools.cpp
+    )
+    target_include_directories(test_llamacpp_tools PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_llamacpp_tools PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME LlamaCppToolsTest COMMAND test_llamacpp_tools)
+endif()
+
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
 if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)

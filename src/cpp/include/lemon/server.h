@@ -151,6 +151,8 @@ private:
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
+    void handle_llamacpp_fit_params(const httplib::Request& req, httplib::Response& res);
+    void handle_llamacpp_bench(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
@@ -309,6 +311,10 @@ private:
 
     std::mutex downloads_mutex_;
     std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;
+
+    // Serializes llama-fit-params / llama-bench tool queries: concurrent GPU
+    // measurements would contend for memory and corrupt each other's numbers.
+    std::atomic<bool> llamacpp_tool_busy_{false};
 
     bool running_;
     bool startup_failed_ = false;

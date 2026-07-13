@@ -9,6 +9,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_tools.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
@@ -831,6 +832,15 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
         handle_download_control(req, res);
+    });
+
+    register_post("backends/llamacpp/fit-params",
+                  [this](const httplib::Request& req, httplib::Response& res) {
+        handle_llamacpp_fit_params(req, res);
+    });
+    register_post("backends/llamacpp/bench",
+                  [this](const httplib::Request& req, httplib::Response& res) {
+        handle_llamacpp_bench(req, res);
     });
 
 
@@ -2121,6 +2131,27 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
     };
+
+    // GGUF facts read at cache-build time; present only for models whose
+    // checkpoint metadata has been parsed (local llamacpp GGUFs).
+    if (!info.gguf.architecture.empty()) {
+        nlohmann::json meta = {
+            {"architecture", info.gguf.architecture},
+            {"context_length", info.gguf.context_length},
+            {"block_count", info.gguf.block_count},
+            {"expert_count", info.gguf.expert_count},
+            {"full_attention_interval", info.gguf.full_attention_interval},
+            {"swa_layer_count", info.gguf.swa_layer_count},
+            {"kv_bytes_per_token", compute_weighted_kv_cache_bytes_per_token(info.gguf)},
+        };
+        if (!info.gguf.base_model_repo.empty()) {
+            meta["base_model_repo"] = info.gguf.base_model_repo;
+        }
+        if (!info.gguf.base_model_name.empty()) {
+            meta["base_model_name"] = info.gguf.base_model_name;
+        }
+        model_json["metadata"] = meta;
+    }
 
     // Surface the cloud provider on cloud entries so the Model Manager can
     // bucket each provider into its own sub-heading. Omitted on local models
@@ -5764,6 +5795,153 @@ void Server::stream_download_operation(
 }
 
 
+
+namespace {
+
+// Validates a llamacpp tool query body ({"model", "backend", ...}) against the
+// registry: the model must be a downloaded llamacpp GGUF. Returns false after
+// writing the error response.
+bool resolve_llamacpp_tool_target(ModelManager& mm, const nlohmann::json& body,
+                                  httplib::Response& res, std::string& backend_out,
+                                  std::string& gguf_path_out) {
+    const std::string model = body.value("model", "");
+    backend_out = body.value("backend", "");
+    if (model.empty() || backend_out.empty()) {
+        res.status = 400;
+        res.set_content(R"({"error":"'model' and 'backend' are required"})", "application/json");
+        return false;
+    }
+    if (!mm.model_exists(model)) {
+        res.status = 404;
+        res.set_content(R"({"error":"unknown model"})", "application/json");
+        return false;
+    }
+    ModelInfo info = mm.get_model_info(model);
+    if (info.recipe != "llamacpp") {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", "model recipe is not llamacpp"},
+                                       {"recipe", info.recipe}}.dump(),
+                        "application/json");
+        return false;
+    }
+    gguf_path_out = info.resolved_path();
+    if (!info.downloaded || gguf_path_out.empty()) {
+        res.status = 400;
+        res.set_content(R"({"error":"model has no local GGUF; download it first"})",
+                        "application/json");
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+void Server::handle_llamacpp_fit_params(const httplib::Request& req, httplib::Response& res) {
+    namespace llt = lemon::backends::llamacpp;
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        std::string backend, gguf_path;
+        if (!resolve_llamacpp_tool_target(*model_manager_, body, res, backend, gguf_path)) {
+            return;
+        }
+        std::vector<std::string> extra_args;
+        if (body.contains("args")) {
+            if (body["args"].is_string()) {
+                std::istringstream in(body["args"].get<std::string>());
+                for (std::string tok; in >> tok;) extra_args.push_back(tok);
+            } else if (body["args"].is_array()) {
+                for (const auto& a : body["args"])
+                    if (a.is_string()) extra_args.push_back(a.get<std::string>());
+            }
+        }
+        const int fit_target = body.value("fit_target_mib", 1024);
+
+        bool expected = false;
+        if (!llamacpp_tool_busy_.compare_exchange_strong(expected, true)) {
+            res.status = 409;
+            res.set_content(R"({"error":"another fit/bench query is already running"})",
+                            "application/json");
+            return;
+        }
+        llt::CancelFlag cancel{false};
+        llt::FitEstimate fit;
+        try {
+            fit = llt::run_fit_params(backend, gguf_path, extra_args, fit_target, cancel);
+        } catch (...) {
+            llamacpp_tool_busy_ = false;
+            throw;
+        }
+        llamacpp_tool_busy_ = false;
+        res.set_content(fit.to_json().dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_llamacpp_bench(const httplib::Request& req, httplib::Response& res) {
+    namespace llt = lemon::backends::llamacpp;
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+        return;
+    }
+    std::string backend, gguf_path;
+    if (!resolve_llamacpp_tool_target(*model_manager_, body, res, backend, gguf_path)) {
+        return;
+    }
+    llt::json params = llt::json::object();
+    for (const char* key : {"d", "b", "ub", "ctk", "ctv"}) {
+        if (body.contains(key)) params[key] = body[key];
+    }
+
+    bool expected = false;
+    if (!llamacpp_tool_busy_.compare_exchange_strong(expected, true)) {
+        res.status = 409;
+        res.set_content(R"({"error":"another fit/bench query is already running"})",
+                        "application/json");
+        return;
+    }
+    // The chunked provider runs after this handler returns; the busy flag is
+    // released when the provider lambda is destroyed.
+    auto busy_guard = std::shared_ptr<void>(
+        nullptr, [this](void*) { llamacpp_tool_busy_ = false; });
+
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [busy_guard, backend, gguf_path, params](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) return false;
+            auto write_event = [&sink](const char* event, const nlohmann::json& data) {
+                const std::string s =
+                    "event: " + std::string(event) + "\ndata: " + data.dump() + "\n\n";
+                return sink.write(s.c_str(), s.size());
+            };
+            llt::CancelFlag cancel{false};
+            auto points = llt::run_llama_bench(
+                backend, gguf_path, params, cancel, [&](const std::string& line) {
+                    if (!write_event("progress", {{"detail", line}})) {
+                        LOG(INFO, "Server") << "Client disconnected, cancelling llama-bench"
+                                            << std::endl;
+                        cancel = true;
+                        return false;
+                    }
+                    return true;
+                });
+            if (!cancel.load()) {
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& p : points) arr.push_back(nlohmann::json::parse(p.to_json().dump()));
+                write_event("complete", {{"points", arr}});
+            }
+            sink.done();
+            return false;
+        });
+}
 
 void Server::handle_downloads(const httplib::Request&, httplib::Response& res) {
     nlohmann::json response = nlohmann::json::array();
