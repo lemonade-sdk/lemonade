@@ -105,7 +105,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir,
-        int timeout_seconds) override;
+        int timeout_seconds,
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {}) override;
 
     int find_free_port(int start_port) override;
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override;
@@ -483,7 +484,8 @@ int UnixProcessPlatform::run_with_output(
     const std::vector<std::string>& args,
     OutputLineCallback on_line,
     const std::string& working_dir,
-    int timeout_seconds) {
+    int timeout_seconds,
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
 
     int stdout_pipe[2];
 
@@ -512,6 +514,10 @@ int UnixProcessPlatform::run_with_output(
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
+        }
+
+        for (const auto& [key, value] : env_vars) {
+            setenv(key.c_str(), value.c_str(), 1);
         }
 
 #ifdef HAVE_LIBCAP

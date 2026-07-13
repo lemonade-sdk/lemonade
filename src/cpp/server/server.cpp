@@ -405,6 +405,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
 
+    autoopt_manager_ = std::make_unique<lemon::autoopt::AutoOptManager>(
+        router_.get(), model_manager_.get(), lemon::utils::get_cache_dir());
+
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
@@ -821,6 +824,29 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
         handle_download_control(req, res);
     });
+
+    register_post("autoopt/start", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_autoopt_start(req, res);
+    });
+    register_get("autoopt/runs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_autoopt_runs(req, res);
+    });
+    register_post("autoopt/cancel", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_autoopt_cancel(req, res);
+    });
+    register_post("autoopt/apply", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_autoopt_apply(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Get(std::string(prefix) + R"(/autoopt/runs/(.+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+                           handle_autoopt_run_get(req, res);
+                       });
+        web_server.Delete(std::string(prefix) + R"(/autoopt/runs/(.+))",
+                          [this](const httplib::Request& req, httplib::Response& res) {
+                              handle_autoopt_delete(req, res);
+                          });
+    }
 
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
@@ -5700,6 +5726,108 @@ void Server::stream_download_operation(
 }
 
 
+
+namespace {
+
+void autoopt_error(httplib::Response& res, const lemon::autoopt::AutoOptError& e) {
+    res.status = e.status;
+    res.set_content(e.body.dump(), "application/json");
+}
+
+std::string autoopt_run_id_from_path(const httplib::Request& req) {
+    return req.matches.size() > 1 ? std::string(req.matches[1]) : std::string();
+}
+
+}  // namespace
+
+void Server::handle_autoopt_start(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        const std::string model = body.value("model", "");
+        if (model.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error":"'model' is required"})", "application/json");
+            return;
+        }
+        const auto budget = lemon::autoopt::budget_from_string(body.value("budget", "quick"));
+        if (!budget) {
+            res.status = 400;
+            res.set_content(R"({"error":"budget must be quick|standard|thorough"})",
+                            "application/json");
+            return;
+        }
+        auto answers = lemon::autoopt::WizardAnswers::from_json(
+            body.contains("answers") ? body["answers"] : nlohmann::json::object());
+        const bool allow_unload = body.value("allow_unload", false);
+        const std::string id = autoopt_manager_->start(model, *budget, std::move(answers),
+                                                       allow_unload);
+        res.status = 202;
+        res.set_content(nlohmann::json{{"id", id}}.dump(), "application/json");
+    } catch (const lemon::autoopt::AutoOptError& e) {
+        autoopt_error(res, e);
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_autoopt_runs(const httplib::Request&, httplib::Response& res) {
+    res.set_content(nlohmann::json{{"runs", autoopt_manager_->list_runs()}}.dump(),
+                    "application/json");
+}
+
+void Server::handle_autoopt_run_get(const httplib::Request& req, httplib::Response& res) {
+    const auto run = autoopt_manager_->get_run(autoopt_run_id_from_path(req));
+    if (!run) {
+        res.status = 404;
+        res.set_content(R"({"error":"unknown run"})", "application/json");
+        return;
+    }
+    res.set_content(run->dump(), "application/json");
+}
+
+void Server::handle_autoopt_cancel(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        const std::string id = body.value("id", "");
+        if (!autoopt_manager_->cancel(id)) {
+            res.status = 404;
+            res.set_content(R"({"error":"unknown run"})", "application/json");
+            return;
+        }
+        res.set_content(R"({"status":"cancelling"})", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_autoopt_delete(const httplib::Request& req, httplib::Response& res) {
+    bool active = false;
+    if (!autoopt_manager_->delete_run(autoopt_run_id_from_path(req), active)) {
+        res.status = active ? 409 : 404;
+        res.set_content(active ? R"({"error":"run is active; cancel it first"})"
+                               : R"({"error":"unknown run"})",
+                        "application/json");
+        return;
+    }
+    res.set_content(R"({"status":"deleted"})", "application/json");
+}
+
+void Server::handle_autoopt_apply(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        const auto saved = autoopt_manager_->apply(body.value("id", ""),
+                                                   body.value("preset_index", 0));
+        res.set_content(nlohmann::json{{"status", "saved"}, {"options", saved}}.dump(),
+                        "application/json");
+    } catch (const lemon::autoopt::AutoOptError& e) {
+        autoopt_error(res, e);
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
 
 void Server::handle_downloads(const httplib::Request&, httplib::Response& res) {
     nlohmann::json response = nlohmann::json::array();

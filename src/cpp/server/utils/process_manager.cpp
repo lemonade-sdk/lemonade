@@ -52,10 +52,11 @@ int ProcessManager::run_process_with_output(
     const std::vector<std::string>& args,
     OutputLineCallback on_line,
     const std::string& working_dir,
-    int timeout_seconds) {
+    int timeout_seconds,
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
 
     auto platform = create_process_platform();
-    return platform->run_with_output(executable, args, on_line, working_dir, timeout_seconds);
+    return platform->run_with_output(executable, args, on_line, working_dir, timeout_seconds, env_vars);
 }
 
 void ProcessManager::kill_process(ProcessHandle handle) {

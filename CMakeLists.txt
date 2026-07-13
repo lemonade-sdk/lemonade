@@ -638,6 +638,8 @@ set(SOURCES_CORE
     src/cpp/server/routing_policy_parser.cpp
     src/cpp/server/routing_policy_store.cpp
     src/cpp/server/route_decision_response.cpp
+    src/cpp/server/auto_opt_manager.cpp
+    src/cpp/server/auto_opt_probes.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
@@ -2172,6 +2174,22 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME AutoTuneTest COMMAND test_auto_tune)
+endif()
+
+# AutoOpt engine: probe-output parsers + 12-lever preset synthesis (pure, header-only).
+set(_AUTO_OPT_ENGINE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_opt_engine.cpp"
+)
+if(EXISTS "${_AUTO_OPT_ENGINE_TEST_SRC}")
+    add_executable(test_auto_opt_engine
+        test/cpp/test_auto_opt_engine.cpp
+    )
+    target_include_directories(test_auto_opt_engine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_auto_opt_engine PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME AutoOptEngineTest COMMAND test_auto_opt_engine)
 endif()
 
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")

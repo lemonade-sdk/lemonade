@@ -26,6 +26,7 @@
 #include "cloud_provider_registry.h"
 #include "upgradable_http_server.h"
 #include "websocket_server.h"
+#include "lemon/auto_opt_manager.h"
 #include "lemon/utils/network_beacon.h"
 #include "lemon/system_metrics_platform.h"
 
@@ -150,6 +151,12 @@ private:
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_start(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_runs(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_run_get(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_cancel(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_delete(const httplib::Request& req, httplib::Response& res);
+    void handle_autoopt_apply(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
@@ -298,6 +305,7 @@ private:
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
+    std::unique_ptr<lemon::autoopt::AutoOptManager> autoopt_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
     std::unique_ptr<WebSocketServer> websocket_server_;
