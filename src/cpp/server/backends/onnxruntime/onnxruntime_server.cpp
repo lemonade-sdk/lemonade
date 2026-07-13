@@ -9,6 +9,7 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
+#include <algorithm>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -31,7 +32,10 @@ InstallParams OnnxRuntimeServer::get_install_params(const std::string& backend,
     (void)backend;  // CPU-only for v1
     InstallParams params;
     params.repo = "lemonade-sdk/ort-server";
-#ifdef _WIN32
+#if defined(_WIN32) && (defined(_M_ARM64) || defined(__aarch64__))
+    throw std::runtime_error(
+        "The onnxruntime backend has no Windows-on-ARM64 build of ort-server yet");
+#elif defined(_WIN32)
     params.filename = "ort-server-" + version + "-windows-x64.zip";
 #elif defined(__APPLE__)
     params.filename = "ort-server-" + version + "-macos-arm64.tar.gz";
@@ -94,12 +98,9 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    env_vars.push_back({"PYTHONNOUSERSITE", "1"});
-
     bool inherit_output = (log_level_ == "info") || is_debug();
     ProcessHandle started_handle = utils::ProcessManager::start_process(
-        executable, args, "", inherit_output, false, env_vars);
+        executable, args, "", inherit_output, false, {});
     set_process_handle(started_handle);
 
     if (!has_process_handle(started_handle)) {
@@ -111,6 +112,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         unload();
         throw std::runtime_error("ort-server failed to start or become ready");
     }
+    start_backend_watchdog("/health");
     LOG(INFO, "OnnxRuntimeServer") << "Server is ready!" << std::endl;
 }
 
@@ -126,68 +128,26 @@ void OnnxRuntimeServer::unload() {
 json OnnxRuntimeServer::forward_classify(const std::string& text, const json& params) {
     json body = {{"text", text}};
     if (params.contains("top_k")) body["top_k"] = params["top_k"];
-
-    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/classify";
-    auto res = utils::HttpClient::post(url, body.dump(), {{"Content-Type", "application/json"}}, 0);
-
-    if (res.status_code != 200) {
-        std::string err_msg = res.body;
-        try {
-            json error_json = json::parse(res.body);
-            if (error_json.contains("error")) {
-                if (error_json["error"].is_string()) {
-                    err_msg = error_json["error"].get<std::string>();
-                } else if (error_json["error"].is_object() && error_json["error"].contains("message")) {
-                    err_msg = error_json["error"]["message"].get<std::string>();
-                }
-            }
-        } catch (...) {
-            // keep raw body
-        }
-        int status_code = (res.status_code == 400) ? 400 : 500;
-        return json{
-            {"error", {
-                {"message", "Classification failed: " + err_msg},
-                {"type", status_code == 400 ? "invalid_request_error" : "classification_error"},
-                {"status_code", status_code},
-            }}
-        };
-    }
-
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error& e) {
-        return json{
-            {"error", {
-                {"message", std::string("ort-server returned invalid JSON: ") + e.what()},
-                {"type", "classification_error"},
-                {"status_code", 500},
-            }}
-        };
-    }
+    return forward_request("/classify", body, 120);
 }
 
 json OnnxRuntimeServer::classify(const json& request) {
-    try {
-        // Accept either OpenAI-style "input" or plain "text".
-        std::string text;
-        if (request.contains("text") && request["text"].is_string()) {
-            text = request["text"].get<std::string>();
-        } else if (request.contains("input") && request["input"].is_string()) {
-            text = request["input"].get<std::string>();
-        } else {
-            throw std::runtime_error("Missing 'input' (or 'text') string in classify request");
-        }
-        return forward_classify(text, request);
-    } catch (const std::exception& e) {
+    // Accept either OpenAI-style "input" or plain "text".
+    std::string text;
+    if (request.contains("text") && request["text"].is_string()) {
+        text = request["text"].get<std::string>();
+    } else if (request.contains("input") && request["input"].is_string()) {
+        text = request["input"].get<std::string>();
+    } else {
         return json{
             {"error", {
-                {"message", std::string("Classification failed: ") + e.what()},
+                {"message", "Missing 'input' (or 'text') string in classify request"},
                 {"type", "invalid_request_error"},
                 {"status_code", 400},
             }}
         };
     }
+    return forward_classify(text, request);
 }
 
 }  // namespace backends
@@ -215,15 +175,39 @@ public:
 
     std::string find_imported_checkpoint(const std::string& import_dir) const override {
         fs::path dir = path_from_utf8(import_dir);
-        if (hf_cache::exists(dir)) {
-            for (const auto& entry :
-                 fs::recursive_directory_iterator(dir, hf_cache::dir_options())) {
-                if (entry.is_regular_file() && entry.path().filename() == "model.onnx") {
-                    return path_to_utf8(entry.path().parent_path());
-                }
+        if (!hf_cache::exists(dir)) {
+            return "";
+        }
+        std::vector<fs::path> candidates;
+        for (const auto& entry :
+             fs::recursive_directory_iterator(dir, hf_cache::dir_options())) {
+            if (entry.is_regular_file() && entry.path().filename() == "model.onnx") {
+                candidates.push_back(entry.path().parent_path());
             }
         }
-        return "";
+        if (candidates.empty()) {
+            return "";
+        }
+        // Directory-iteration order is unspecified and HF repos may carry
+        // several graphs; pick deterministically: a dir satisfying the
+        // ort-server contract (manifest.json alongside) wins, then the
+        // shallowest path, then lexicographic order.
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const fs::path& a, const fs::path& b) {
+                      bool ma = fs::exists(a / "manifest.json");
+                      bool mb = fs::exists(b / "manifest.json");
+                      if (ma != mb) return ma;
+                      auto da = std::distance(a.begin(), a.end());
+                      auto db = std::distance(b.begin(), b.end());
+                      if (da != db) return da < db;
+                      return a < b;
+                  });
+        if (candidates.size() > 1) {
+            LOG(WARNING, "OnnxRuntimeServer")
+                << "Multiple model.onnx candidates under " << import_dir << "; using "
+                << path_to_utf8(candidates.front()) << std::endl;
+        }
+        return path_to_utf8(candidates.front());
     }
 };
 }  // namespace
