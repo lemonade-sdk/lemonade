@@ -94,6 +94,12 @@ class ClassifyTests(ServerTestBase):
             f"classify failed with status {response.status_code}: {response.text[:1000]}",
         )
         body = response.json()
+        self.assertEqual(
+            body.get("object"), "classification", "Response must have object=classification"
+        )
+        self.assertEqual(
+            body.get("model"), payload["model"], "Response must echo the model id"
+        )
         self.assertIn("labels", body, "Response must contain a 'labels' object")
         labels = body["labels"]
         self.assertIsInstance(labels, dict, "'labels' must be an object")

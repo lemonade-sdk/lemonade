@@ -2904,7 +2904,43 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
 void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
     try {
-        auto request_json = nlohmann::json::parse(req.body);
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const nlohmann::json::parse_error& e) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", std::string("Invalid JSON in request body: ") + e.what()},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Reject malformed requests before any model gets loaded.
+        std::string validation_error;
+        bool has_text = request_json.contains("text");
+        bool has_input = request_json.contains("input");
+        if (request_json.contains("model") && !request_json["model"].is_string()) {
+            validation_error = "'model' must be a string";
+        } else if (!has_text && !has_input) {
+            validation_error = "Missing 'input' (or 'text') string in classify request";
+        } else if (has_text && !request_json["text"].is_string()) {
+            validation_error = "'text' must be a string";
+        } else if (has_input && !request_json["input"].is_string()) {
+            validation_error = "'input' must be a string";
+        } else if (request_json.contains("top_k") &&
+                   (!request_json["top_k"].is_number_integer() ||
+                    request_json["top_k"].get<int>() < 1)) {
+            validation_error = "'top_k' must be a positive integer";
+        }
+        if (!validation_error.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", validation_error},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -2955,8 +2991,26 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             } else {
                 res.status = 500;
             }
+            res.set_content(response.dump(), "application/json");
+            return;
         }
-        res.set_content(response.dump(), "application/json");
+
+        // Envelope pins the public API shape; the backend subprocess's raw
+        // output is not the contract.
+        if (!response.contains("labels") || !response["labels"].is_object()) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "Classification backend returned an unexpected response"},
+                {"type", "classification_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        nlohmann::json enveloped = {
+            {"object", "classification"},
+            {"model", requested_model.empty() ? router_->get_loaded_model() : requested_model},
+            {"labels", response["labels"]},
+        };
+        res.set_content(enveloped.dump(), "application/json");
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_classify: " << e.what() << std::endl;
