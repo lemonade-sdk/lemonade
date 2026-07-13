@@ -40,6 +40,9 @@ struct GgufMetadata {
     int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
+    int64_t expert_count = 0;        // MoE expert count (0 = dense)
+    std::string base_model_repo;     // general.base_model.0.repo_url (quant repos point at the source model)
+    std::string base_model_name;     // general.base_model.0.name
     GgufCapabilities caps;
 
     // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
@@ -227,6 +230,15 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             continue;
         }
 
+        if (key == "general.base_model.0.repo_url" && type == 8) {
+            if (!read_gguf_string(in, out.base_model_repo)) return false;
+            continue;
+        }
+        if (key == "general.base_model.0.name" && type == 8) {
+            if (!read_gguf_string(in, out.base_model_name)) return false;
+            continue;
+        }
+
         // Context length
         const bool context_key = !out.architecture.empty()
                                  && key == out.architecture + ".context_length";
@@ -296,6 +308,12 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.full_attention_interval = value;
+                continue;
+            }
+            if (key == out.architecture + ".expert_count") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.expert_count = value;
                 continue;
             }
         }
