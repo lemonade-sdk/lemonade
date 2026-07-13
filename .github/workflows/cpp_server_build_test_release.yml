@@ -716,6 +716,9 @@ jobs:
           echo "Running WebSocket idle test (31s regression)..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       - name: Run web-app path traversal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -2077,6 +2080,9 @@ jobs:
           echo "Running WebSocket idle test..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
@@ -2205,6 +2211,9 @@ jobs:
             echo "Running WebSocket idle test..."
             $VENV_PYTHON test/test_websocket_idle.py
             echo "WebSocket idle test PASSED!"
+            echo "Running WebSocket auth tests..."
+            $VENV_PYTHON test/server_websocket_auth.py
+            echo "WebSocket auth tests PASSED!"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
             echo "Running Ollama API tests..."
             $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"

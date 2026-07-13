@@ -55,8 +55,9 @@ class WebSocketAuthTests(unittest.TestCase):
     def setUpClass(cls):
         cls.lemond_bin = get_default_lemond_binary()
         if not os.path.exists(cls.lemond_bin):
-            raise RuntimeError(
-                f"lemond binary not found at {cls.lemond_bin}. Build it first."
+            raise unittest.SkipTest(
+                f"lemond binary not found at {cls.lemond_bin}; "
+                "skipping (source-build only)"
             )
         cls.temp_dir = tempfile.mkdtemp(prefix="lemond_ws_auth_")
         cls.port = find_free_port()
