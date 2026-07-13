@@ -140,6 +140,11 @@ class LlamaCppToolsEndpointTests(ServerTestBase):
         self.assertIn("expert_count", meta)
         self.assertIn("kv_bytes_per_token", meta)
 
+    def test_006_health_advertises_llamacpp_tools(self):
+        resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("llamacpp-tools", resp.json().get("features", []))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

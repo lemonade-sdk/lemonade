@@ -1983,6 +1983,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add version information
     response["version"] = LEMON_VERSION_STRING;
 
+    // Optional capabilities clients can rely on without probing endpoints.
+    response["features"] = nlohmann::json::array({"llamacpp-tools"});
+
     // Add telemetry state using in-memory runtime configuration
     if (config_) {
         nlohmann::json telemetry_info = {
