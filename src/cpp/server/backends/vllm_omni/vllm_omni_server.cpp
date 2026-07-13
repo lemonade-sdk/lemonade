@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <set>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -217,6 +218,18 @@ void VLLMOmniServer::load(const std::string& model_name,
     args.push_back(std::to_string(ctx_size));
 
     if (!omni_args.empty()) {
+        // Reject user overrides of the launch args Lemonade manages: overriding
+        // e.g. --port would start the backend where Lemonade isn't polling, and
+        // --deploy-config would bypass the required single-GPU configuration.
+        static const std::set<std::string> reserved_flags = {
+            "--host", "--port", "--served-model-name", "--max-model-len",
+            "--deploy-config"};
+        std::string validation_error = validate_custom_args(omni_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom vllm-omni-server arguments:\n" + validation_error);
+        }
+
         LOG(DEBUG, "vLLM-Omni") << "Adding user arguments: " << omni_args << std::endl;
         // Quote-aware parsing (shared with the other backends) so values like
         // --some-option "value with spaces" survive as a single argument.

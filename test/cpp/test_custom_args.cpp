@@ -6,10 +6,12 @@
 #include "lemon/utils/custom_args.h"
 
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
 using lemon::utils::parse_custom_args;
+using lemon::utils::validate_custom_args;
 
 static bool expect_tokens(const char* name,
                           const std::string& input,
@@ -25,6 +27,20 @@ static bool expect_tokens(const char* name,
     } else {
         std::printf("ok: %s\n", name);
     }
+    return ok;
+}
+
+// Mirrors the flags vLLM-Omni manages on the launch command line.
+static const std::set<std::string> kReserved = {
+    "--host", "--port", "--served-model-name", "--max-model-len", "--deploy-config"};
+
+static bool expect_reserved(const char* name,
+                            const std::string& input,
+                            bool should_reject) {
+    bool rejected = !validate_custom_args(input, kReserved).empty();
+    bool ok = rejected == should_reject;
+    std::printf("%s: %s (%s)\n", ok ? "ok" : "FAIL", name,
+                rejected ? "rejected" : "allowed");
     return ok;
 }
 
@@ -65,6 +81,20 @@ int main() {
         "unquoted backslash is literal; quoting is the escape mechanism",
         "a\\ b",
         {"a\\", "b"});
+
+    // Reserved-flag validation: managed launch args must be rejected in both
+    // the "--flag value" and "--flag=value" forms.
+    failures += !expect_reserved("--port <value> is rejected", "--port 9999", true);
+    failures += !expect_reserved("--port=<value> is rejected", "--port=9999", true);
+    failures += !expect_reserved("--deploy-config is rejected", "--deploy-config /tmp/x.yaml", true);
+    failures += !expect_reserved("--served-model-name=<v> is rejected", "--served-model-name=foo", true);
+    failures += !expect_reserved("--host is rejected", "--host 0.0.0.0", true);
+    failures += !expect_reserved("--max-model-len=<v> is rejected", "--max-model-len=8192", true);
+    failures += !expect_reserved("reserved flag among allowed ones is rejected",
+                                 "--gpu-memory-utilization 0.8 --port 1234", true);
+    failures += !expect_reserved("non-reserved flags are allowed",
+                                 "--gpu-memory-utilization 0.8 --enforce-eager", false);
+    failures += !expect_reserved("empty args are allowed", "", false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
