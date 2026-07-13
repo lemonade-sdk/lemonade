@@ -252,8 +252,6 @@ struct FieldWidths {
 
 FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results);
 
-static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles, const FieldWidths& widths);
-
 // Print results as a comparison table to stdout
 // use_percentiles: show p50/p95 columns (true when runs >= 10); otherwise show min/max
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
