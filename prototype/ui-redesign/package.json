@@ -9,7 +9,8 @@
     "watch": "webpack --watch --mode development",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
-    "test:a11y": "npx playwright test tests/a11y.spec.ts"
+    "test:a11y": "npx playwright test tests/a11y.spec.ts",
+    "test:preset-intent": "node tests/preset-intent.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

@@ -16,11 +16,12 @@ import {
   effectivePresetParamPreviewLines, activePresetForModel,
   runningPresetIdForModel, setRunningPreset, clearRunningPreset,
   classifyPresetChange,
-  effectiveModelTuningForModel, modelBaseTuningForModel, loadModelTuning,
+  effectiveModelTuningForModel, modelBaseTuningForModel, resolvedModelTuningForPreset, loadModelTuning,
   saveModelTuning, resetModelTuning, sanitizeRecipeOptions, sanitizeSamplingParams,
-  type RecipeOptions, type SamplingParams,
+  TEMPERATURE_HINTS, EDITABLE_CONTEXT_HINTS, TEMPERATURE_HINT_LABELS, CONTEXT_HINT_LABELS,
+  type RecipeOptions, type SamplingParams, type TuningValueSource, type TemperatureHint, type ContextHint, type EditableContextHint,
 } from '../presetStore';
-import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+import { Icon, CapabilityIcon, PresetIcon, type IconName } from './Icon';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
@@ -151,7 +152,7 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   merge_args: 'Choose whether backend defaults, model args, or both should be used for this model.',
 };
 
-const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
+const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
 const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args']);
 const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
@@ -163,10 +164,10 @@ const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>
   moonshine_backend: 'moonshine_args',
 };
 
-const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'];
-const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'];
-const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'flm_args', 'merge_args'];
-const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['ctx_size', 'merge_args'];
+const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'];
+const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args', 'merge_args'];
+const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args', 'merge_args'];
+const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['merge_args'];
 const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'];
 const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args', 'merge_args'];
 const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args', 'merge_args'];
@@ -176,32 +177,25 @@ const THINKSOUND_RECIPE_KEYS: Array<keyof RecipeOptions> = ['thinksound_backend'
 const OPENMOSS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['openmoss_backend', 'voice', 'speed'];
 const TRELLIS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['trellis_backend'];
 
-const CONTEXT_OPTIONS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576];
+
+const TEMPERATURE_INTENT_ICONS: Record<TemperatureHint, IconName> = {
+  precise: 'crosshair',
+  balanced: 'scale',
+  exploratory: 'compass',
+  creative: 'lightbulb',
+};
+
+const CONTEXT_INTENT_ICONS: Record<ContextHint, IconName> = {
+  small: 'minimize-2',
+  medium: 'panel-top',
+  large: 'expand',
+  max: 'maximize-2',
+};
 
 function formatContextSize(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return 'auto';
   if (value >= 1024 && value % 1024 === 0) return `${Math.round(value / 1024)}K`;
   return value.toLocaleString();
-}
-
-function contextOptionsFor(...values: Array<number | undefined>): number[] {
-  const maxInput = Math.max(0, ...values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0));
-  const max = Math.max(262144, maxInput);
-  const options = CONTEXT_OPTIONS.filter(v => v <= max || v === CONTEXT_OPTIONS[0]);
-  for (const value of values) {
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && !options.includes(Math.round(value))) options.push(Math.round(value));
-  }
-  return [...new Set(options)].sort((a, b) => a - b);
-}
-
-function nearestOptionIndex(options: number[], value: number): number {
-  let best = 0;
-  let bestDelta = Number.POSITIVE_INFINITY;
-  options.forEach((option, index) => {
-    const delta = Math.abs(option - value);
-    if (delta < bestDelta) { best = index; bestDelta = delta; }
-  });
-  return best;
 }
 
 function recipeKeysForRecipe(recipe: string): Array<keyof RecipeOptions> | null {
@@ -239,7 +233,10 @@ function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
   else if (cap === 'model3d') add(TRELLIS_RECIPE_KEYS);
 
   const base = modelBaseTuningForModel(model).recipe_options;
-  Object.keys(base).forEach(key => set.add(key as keyof RecipeOptions));
+  Object.keys(base).forEach(key => {
+    if (key !== 'ctx_size') set.add(key as keyof RecipeOptions);
+  });
+  set.delete('ctx_size');
   return [...set];
 }
 
@@ -803,6 +800,15 @@ const ModelPresetsTab: React.FC<{
 
 /* ── Model tuning tab ────────────────────────────────────────── */
 
+function tuningSourceLabel(source: TuningValueSource | undefined): string {
+  switch (source) {
+    case 'custom': return 'Custom tuning';
+    case 'built-in': return 'Built-in tuning';
+    case 'optimized': return 'Optimized';
+    default: return 'Generic fallback';
+  }
+}
+
 const ModelTuningTab: React.FC<{
   model: ModelInfo;
   loadedModel: LoadedModel | null;
@@ -833,21 +839,64 @@ const ModelTuningTab: React.FC<{
     return () => { alive = false; };
   }, [isActive]);
 
-  const userTuning = useMemo(() => loadModelTuning(name), [name, storeVersion]);
-  const baseTuning = useMemo(() => modelBaseTuningForModel(model, serverDefaultCtxSize), [model, serverDefaultCtxSize]);
-  const effectiveTuning = useMemo(() => effectiveModelTuningForModel(name, model, serverDefaultCtxSize), [name, model, serverDefaultCtxSize, storeVersion]);
+  const linkedPreset = activePresetForModel(name);
+  const compatiblePresets = useMemo(
+    () => allStoredPresets().filter(preset => isCompatible(preset, model)),
+    [model, storeVersion],
+  );
+  const [selectedPresetId, setSelectedPresetId] = useState(linkedPreset.id);
+
+  useEffect(() => {
+    if (!compatiblePresets.some(preset => preset.id === selectedPresetId)) {
+      setSelectedPresetId(linkedPreset.id);
+    }
+  }, [compatiblePresets, linkedPreset.id, selectedPresetId]);
+
+  const selectedPreset = compatiblePresets.find(preset => preset.id === selectedPresetId) || linkedPreset;
+  const selectedPresetIsLinked = selectedPreset.id === linkedPreset.id;
+  const userTuning = useMemo(
+    () => loadModelTuning(name, selectedPreset.id),
+    [name, selectedPreset.id, storeVersion],
+  );
+  const baseTuning = useMemo(
+    () => modelBaseTuningForModel(model, serverDefaultCtxSize, selectedPreset),
+    [model, serverDefaultCtxSize, selectedPreset],
+  );
+  const resolvedTuning = useMemo(
+    () => resolvedModelTuningForPreset(name, model, selectedPreset, serverDefaultCtxSize),
+    [name, model, selectedPreset, serverDefaultCtxSize, storeVersion],
+  );
+  const effectiveTuning = resolvedTuning.tuning;
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
   const activeArgsKey = useMemo(() => recipeKeys.find(key => ARGS_TUNING_KEYS.has(key)) as keyof RecipeOptions | undefined, [recipeKeys]);
   const allowSampling = samplingAllowedForModel(model);
 
+  const [temperatureIntentDraft, setTemperatureIntentDraft] = useState<Partial<Record<TemperatureHint, string>>>({});
+  const [contextIntentDraft, setContextIntentDraft] = useState<Partial<Record<EditableContextHint, string>>>({});
+  const [selectedContextIntent, setSelectedContextIntent] = useState<EditableContextHint>(() => {
+    const hint = selectedPreset.context_hint || 'medium';
+    return hint === 'max' ? 'large' : hint;
+  });
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [samplingDraft, setSamplingDraft] = useState<Record<string, string>>({});
   const [backendArgsDrafts, setBackendArgsDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const nextUser = loadModelTuning(name);
+    const nextUser = loadModelTuning(name, selectedPreset.id);
+    const nextTemperatureIntent: Partial<Record<TemperatureHint, string>> = {};
+    for (const hint of TEMPERATURE_HINTS) {
+      const value = nextUser?.intent_values?.temperature?.[hint];
+      if (value !== undefined) nextTemperatureIntent[hint] = fieldValue(value);
+    }
+    const nextContextIntent: Partial<Record<EditableContextHint, string>> = {};
+    for (const hint of EDITABLE_CONTEXT_HINTS) {
+      const value = nextUser?.intent_values?.context?.[hint];
+      if (value !== undefined) nextContextIntent[hint] = fieldValue(value);
+    }
     const nextRecipe: Record<string, string> = {};
-    for (const [key, value] of Object.entries(nextUser?.recipe_options || {})) nextRecipe[key] = fieldValue(value);
+    for (const [key, value] of Object.entries(nextUser?.recipe_options || {})) {
+      if (key !== 'ctx_size') nextRecipe[key] = fieldValue(value);
+    }
     const nextSampling: Record<string, string> = {};
     for (const [key, value] of Object.entries(nextUser?.sampling || {})) nextSampling[key] = fieldValue(value);
     const nextArgMemory: Record<string, string> = {};
@@ -858,23 +907,34 @@ const ModelTuningTab: React.FC<{
       const argsValue = nextRecipe[argsKey] || '';
       if (backendValue || argsValue) nextArgMemory[`${String(backendKey)}:${backendValue}`] = argsValue;
     }
+    setTemperatureIntentDraft(nextTemperatureIntent);
+    setContextIntentDraft(nextContextIntent);
     setRecipeDraft(nextRecipe);
     setSamplingDraft(nextSampling);
     setBackendArgsDrafts(nextArgMemory);
     setNotice(null);
-  }, [name, storeVersion]);
+  }, [name, selectedPreset.id, storeVersion]);
+
+  useEffect(() => {
+    const hint = selectedPreset.context_hint || 'medium';
+    setSelectedContextIntent(hint === 'max' ? 'large' : hint);
+  }, [name, selectedPreset.id, selectedPreset.context_hint]);
 
   if (!isActive) return null;
 
   const recipes = recipesForDisplay(model);
   const cap = capabilityFromModelInfo(model);
-  const linkedPreset = activePresetForModel(name);
   const hasUserTuning = !!userTuning && (
+    Object.keys(userTuning.intent_values?.temperature || {}).length > 0 ||
+    Object.keys(userTuning.intent_values?.context || {}).length > 0 ||
     Object.keys(userTuning.recipe_options).length > 0 ||
     Object.keys(userTuning.sampling).length > 0 ||
     !!userTuning.engine_hint
   );
-  const hasDraftValues = Object.values(recipeDraft).some(value => value.trim()) || Object.values(samplingDraft).some(value => value.trim());
+  const hasDraftValues = Object.values(temperatureIntentDraft).some(value => value?.trim())
+    || Object.values(contextIntentDraft).some(value => value?.trim())
+    || Object.values(recipeDraft).some(value => value.trim())
+    || Object.values(samplingDraft).some(value => value.trim());
 
   const setRecipeField = (key: keyof RecipeOptions, value: string) => {
     if (BACKEND_TUNING_KEYS.has(key)) {
@@ -902,6 +962,30 @@ const ModelTuningTab: React.FC<{
     setSamplingDraft(prev => ({ ...prev, [key]: value }));
   };
 
+  const setTemperatureIntentField = (hint: TemperatureHint, value: string) => {
+    setTemperatureIntentDraft(prev => ({ ...prev, [hint]: value }));
+  };
+
+  const setContextIntentField = (hint: EditableContextHint, value: string) => {
+    setContextIntentDraft(prev => ({ ...prev, [hint]: value }));
+  };
+
+  const clearTemperatureIntentField = (hint: TemperatureHint) => {
+    setTemperatureIntentDraft(prev => {
+      const next = { ...prev };
+      delete next[hint];
+      return next;
+    });
+  };
+
+  const clearContextIntentField = (hint: EditableContextHint) => {
+    setContextIntentDraft(prev => {
+      const next = { ...prev };
+      delete next[hint];
+      return next;
+    });
+  };
+
   const clearRecipeField = (key: keyof RecipeOptions) => {
     setRecipeDraft(prev => {
       const next = { ...prev };
@@ -921,7 +1005,7 @@ const ModelTuningTab: React.FC<{
   const buildRecipeOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
     for (const [key, value] of Object.entries(recipeDraft) as Array<[keyof RecipeOptions, string]>) {
-      if (!value.trim()) continue;
+      if (key === 'ctx_size' || !value.trim()) continue;
       if (BOOLEAN_TUNING_KEYS.has(key)) {
         (raw as Record<string, unknown>)[key] = value === 'true';
       } else if (NUMERIC_TUNING_KEYS.has(key)) {
@@ -934,9 +1018,23 @@ const ModelTuningTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
+  const buildIntentValues = () => {
+    const temperature: Partial<Record<TemperatureHint, number>> = {};
+    const context: Partial<Record<EditableContextHint, number>> = {};
+    for (const hint of TEMPERATURE_HINTS) {
+      const value = parseNumberOrUndefined(temperatureIntentDraft[hint] || '');
+      if (value !== undefined) temperature[hint] = value;
+    }
+    for (const hint of EDITABLE_CONTEXT_HINTS) {
+      const value = parseNumberOrUndefined(contextIntentDraft[hint] || '');
+      if (value !== undefined) context[hint] = Math.min(resolvedTuning.max_context, Math.max(1, Math.round(value)));
+    }
+    return { temperature, context };
+  };
+
   const buildSampling = (): SamplingParams => {
     const raw: Partial<SamplingParams> = {};
-    for (const key of ['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
+    for (const key of ['top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
       const n = parseNumberOrUndefined(samplingDraft[key] || '');
       if (n !== undefined) raw[key] = n;
     }
@@ -944,16 +1042,18 @@ const ModelTuningTab: React.FC<{
   };
 
   const saveDraft = () => {
-    saveModelTuning(name, { recipe_options: buildRecipeOptions(), sampling: buildSampling() });
-    setNotice('Model tuning saved. Sampling applies to the next request; runtime fields apply on next load or reload.');
+    saveModelTuning(name, { intent_values: buildIntentValues(), recipe_options: buildRecipeOptions(), sampling: buildSampling() }, selectedPreset.id);
+    setNotice(`Model tuning saved for ${selectedPreset.name}. Temperature intent applies to the next request; context and runtime fields apply on the next load.`);
   };
 
   const resetDraft = () => {
-    resetModelTuning(name);
+    resetModelTuning(name, selectedPreset.id);
+    setTemperatureIntentDraft({});
+    setContextIntentDraft({});
     setRecipeDraft({});
     setSamplingDraft({});
     setBackendArgsDrafts({});
-    setNotice('Model tuning reset.');
+    setNotice(`Model tuning for ${selectedPreset.name} restored to its resolved built-in and generic values.`);
   };
 
   const reloadWithTuning = async () => {
@@ -976,41 +1076,115 @@ const ModelTuningTab: React.FC<{
     </button>
   );
 
+  const renderTemperatureIntentField = (hint: TemperatureHint) => {
+    const override = temperatureIntentDraft[hint];
+    const resolved = resolvedTuning.intent_values.temperature[hint];
+    const value = override ?? String(resolved);
+    const active = (selectedPreset.temperature_hint || 'balanced') === hint;
+    return (
+      <label key={hint} className={`detail-tuning__intent-card${active ? ' is-active' : ''}`}>
+        <span className="detail-tuning__intent-name">
+          <Icon name={TEMPERATURE_INTENT_ICONS[hint]} size={14} aria-hidden="true" />
+          {TEMPERATURE_HINT_LABELS[hint]}
+          {active && <span className="detail-tuning__active-chip">Active</span>}
+        </span>
+        <div className="detail-tuning__intent-control">
+          <input
+            className="input detail-tuning__intent-input"
+            type="number"
+            min={0}
+            max={2}
+            step={0.05}
+            value={value}
+            onChange={event => setTemperatureIntentField(hint, event.target.value)}
+            aria-label={`${TEMPERATURE_HINT_LABELS[hint]} temperature value`}
+            data-model-tuning-temperature-intent={hint}
+          />
+          {renderClearOverrideButton(() => clearTemperatureIntentField(hint), override === undefined)}
+        </div>
+        <small>{tuningSourceLabel(resolvedTuning.intent_sources.temperature[hint])}</small>
+      </label>
+    );
+  };
+
+  const contextIntentValue = (hint: EditableContextHint): number => {
+    const override = parseNumberOrUndefined(contextIntentDraft[hint] || '');
+    return override ?? resolvedTuning.intent_values.context[hint];
+  };
+
+  const contextIntentBounds = (hint: EditableContextHint): { min: number; max: number; step: number } => {
+    const modelMaximum = Math.max(1, resolvedTuning.max_context);
+    const step = modelMaximum >= 1024 ? 1024 : 1;
+    const minimum = hint === 'small'
+      ? Math.min(step, modelMaximum)
+      : contextIntentValue(hint === 'medium' ? 'small' : 'medium');
+    const maximum = hint === 'large'
+      ? modelMaximum
+      : contextIntentValue(hint === 'small' ? 'medium' : 'large');
+    return {
+      min: Math.min(minimum, maximum),
+      max: Math.max(minimum, maximum),
+      step,
+    };
+  };
+
+  const setBoundedContextIntent = (hint: EditableContextHint, value: number) => {
+    const bounds = contextIntentBounds(hint);
+    const rounded = bounds.step > 1 ? Math.round(value / bounds.step) * bounds.step : Math.round(value);
+    const bounded = Math.min(bounds.max, Math.max(bounds.min, rounded));
+    setContextIntentField(hint, String(bounded));
+  };
+
+  const renderContextIntentField = (hint: ContextHint) => {
+    const active = (selectedPreset.context_hint || 'medium') === hint;
+    if (hint === 'max') {
+      return (
+        <div key={hint} className={`detail-tuning__intent-card detail-tuning__intent-card--fixed${active ? ' is-active' : ''}`} data-model-tuning-context-intent="max">
+          <span className="detail-tuning__intent-name">
+            <Icon name={CONTEXT_INTENT_ICONS[hint]} size={14} aria-hidden="true" />
+            {CONTEXT_HINT_LABELS[hint]}
+            {active && <span className="detail-tuning__active-chip">Active</span>}
+          </span>
+          <output className="detail-tuning__intent-output">{formatContextSize(resolvedTuning.max_context)}</output>
+          <small>Model maximum</small>
+        </div>
+      );
+    }
+
+    const editableHint = hint as EditableContextHint;
+    const selected = selectedContextIntent === editableHint;
+    const value = contextIntentValue(editableHint);
+    return (
+      <button
+        key={hint}
+        type="button"
+        className={`detail-tuning__intent-card detail-tuning__intent-card--selectable${active ? ' is-active' : ''}${selected ? ' is-selected' : ''}`}
+        onClick={() => setSelectedContextIntent(editableHint)}
+        aria-pressed={selected}
+        data-model-tuning-context-intent={hint}
+      >
+        <span className="detail-tuning__intent-name">
+          <Icon name={CONTEXT_INTENT_ICONS[hint]} size={14} aria-hidden="true" />
+          {CONTEXT_HINT_LABELS[hint]}
+          {active && <span className="detail-tuning__active-chip">Active</span>}
+        </span>
+        <output className="detail-tuning__intent-output">{formatContextSize(value)}</output>
+        <small>{tuningSourceLabel(resolvedTuning.intent_sources.context[hint])}{selected ? ' · Editing' : ''}</small>
+      </button>
+    );
+  };
+
+  const selectedContextBounds = contextIntentBounds(selectedContextIntent);
+  const selectedContextRawValue = contextIntentValue(selectedContextIntent);
+  const selectedContextValue = Math.min(selectedContextBounds.max, Math.max(selectedContextBounds.min, selectedContextRawValue));
+  const selectedContextOverride = contextIntentDraft[selectedContextIntent];
+
   const renderRecipeField = (key: keyof RecipeOptions) => {
     const baseValue = baseTuning.recipe_options[key];
     const draftValue = recipeDraft[key] || '';
     const inputId = `tuning-${name}-${key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
     const label = TUNING_FIELD_LABELS[key] || key;
     const hint = TUNING_FIELD_HINTS[key];
-
-    if (key === 'ctx_size') {
-      const baseNumber = parseNumberOrUndefined(fieldValue(baseValue)) || serverDefaultCtxSize || 4096;
-      const draftNumber = parseNumberOrUndefined(draftValue);
-      const currentValue = draftNumber || baseNumber;
-      const options = contextOptionsFor(baseNumber, serverDefaultCtxSize, draftNumber);
-      const sliderIndex = nearestOptionIndex(options, currentValue);
-      const sliderValue = options[sliderIndex] || currentValue;
-      return (
-        <label key={key} className="detail-tuning__field detail-tuning__field--wide" htmlFor={inputId}>
-          <span>{label}</span>
-          <div className="field__row detail-tuning__control-row">
-            <input
-              id={inputId}
-              className="slider"
-              type="range"
-              min={0}
-              max={Math.max(0, options.length - 1)}
-              step={1}
-              value={sliderIndex}
-              onChange={e => setRecipeField(key, String(options[Number(e.target.value)] || sliderValue))}
-            />
-            <span className="field__value">{formatContextSize(sliderValue)}</span>
-            {renderClearOverrideButton(() => clearRecipeField(key), !draftValue)}
-          </div>
-          <small>{draftValue ? `Override: ${Number(draftValue).toLocaleString()} tokens` : `Current: ${formatContextSize(baseNumber)}`}</small>
-        </label>
-      );
-    }
 
     if (BACKEND_TUNING_KEYS.has(key)) {
       const activeBackend = activeBackendValue(key, baseValue, model, systemInfo);
@@ -1179,15 +1353,30 @@ const ModelTuningTab: React.FC<{
       <section className="detail-tuning__intro" aria-label="Model tuning concept">
         <h3 className="detail-tuning__title">Model Tuning</h3>
         <p>
-          Presets describe the intent. Model Tuning is the per-model runtime layer that implements that intent using values from the built-in definition or GGUF-derived metadata, with optional local overrides for this model only.
+          Presets describe intent. Model Tuning stores the concrete implementation separately for every model × preset combination.
         </p>
       </section>
 
       <section className="detail-tuning__summary" aria-label="Effective runtime summary">
-        <div className="detail-tuning__summary-card">
-          <span className="detail-tuning__summary-label">Preset intent</span>
-          <strong>{linkedPreset.name}</strong>
-        </div>
+        <label className="detail-tuning__summary-card detail-tuning__preset-select">
+          <span className="detail-tuning__summary-label">Selected preset</span>
+          <select
+            className="select"
+            value={selectedPreset.id}
+            onChange={event => {
+              const nextId = event.target.value;
+              const nextPreset = compatiblePresets.find(preset => preset.id === nextId);
+              const nextHint = nextPreset?.context_hint || 'medium';
+              setSelectedContextIntent(nextHint === 'max' ? 'large' : nextHint);
+              setSelectedPresetId(nextId);
+            }}
+            data-model-tuning-preset
+          >
+            {compatiblePresets.map(preset => (
+              <option key={preset.id} value={preset.id}>{preset.name}{preset.id === linkedPreset.id ? ' (linked)' : ''}</option>
+            ))}
+          </select>
+        </label>
         <div className="detail-tuning__summary-card">
           <span className="detail-tuning__summary-label">Capability</span>
           <strong>{capabilityLabel(cap)}</strong>
@@ -1197,8 +1386,8 @@ const ModelTuningTab: React.FC<{
           <strong>{recipes.length ? recipes.map(recipeDisplayLabel).join(' / ') : 'Auto'}</strong>
         </div>
         <div className="detail-tuning__summary-card">
-          <span className="detail-tuning__summary-label">Source</span>
-          <strong>{hasUserTuning ? 'Customized for this model' : 'Built-in / GGUF values'}</strong>
+          <span className="detail-tuning__summary-label">Pair source</span>
+          <strong>{hasUserTuning ? 'Custom tuning' : 'Resolved defaults'}</strong>
         </div>
       </section>
 
@@ -1212,14 +1401,23 @@ const ModelTuningTab: React.FC<{
               <div className="detail-tuning__kv" key={`ro-${key}`}>
                 <span>{TUNING_FIELD_LABELS[key as keyof RecipeOptions] || key}</span>
                 <code>{tuningValue(value)}</code>
+                <small>{tuningSourceLabel(resolvedTuning.sources.recipe_options[key as keyof RecipeOptions])}</small>
               </div>
             ))}
             {effectiveSamplingEntries.map(([key, value]) => (
               <div className="detail-tuning__kv" key={`sp-${key}`}>
                 <span>{key}</span>
                 <code>{tuningValue(value)}</code>
+                <small>{tuningSourceLabel(resolvedTuning.sources.sampling[key as keyof SamplingParams])}</small>
               </div>
             ))}
+            {allowSampling && (
+              <div className="detail-tuning__kv" key="thinking-mode">
+                <span>Thinking</span>
+                <code>{resolvedTuning.thinking_mode}</code>
+                <small>{tuningSourceLabel(resolvedTuning.sources.thinking_mode)}</small>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -1227,21 +1425,83 @@ const ModelTuningTab: React.FC<{
       <section className="detail-tuning__editor" aria-label="Customize model tuning">
         <div className="detail-tuning__section-head">
           <div>
-            <h3 className="detail-tuning__section-title">Customize this model</h3>
-            <p className="detail-tuning__hint">Leave a field blank to keep the current value shown in the control.</p>
+            <h3 className="detail-tuning__section-title">Customize {selectedPreset.name}</h3>
+            <p className="detail-tuning__hint">Overrides apply only to {name} × {selectedPreset.name}. Leave a field blank to use the resolved value.</p>
           </div>
           {notice && <p className="detail-tuning__notice">{notice}</p>}
         </div>
 
-        <div className="detail-tuning__field-grid">
-          {recipeKeys.map(renderRecipeField)}
-        </div>
+        {allowSampling && (
+          <div className="detail-tuning__intent-map" aria-label="Intent translation values">
+            <div className="detail-tuning__intent-group">
+              <div className="detail-tuning__intent-head">
+                <h4><Icon name="thermometer" size={15} aria-hidden="true" /> Temperature intent</h4>
+                <span>Concrete value used for every temperature level</span>
+              </div>
+              <div className="detail-tuning__intent-grid">
+                {TEMPERATURE_HINTS.map(renderTemperatureIntentField)}
+              </div>
+            </div>
+            <div className="detail-tuning__intent-group">
+              <div className="detail-tuning__intent-head">
+                <h4><Icon name="scan-text" size={15} aria-hidden="true" /> Context intent</h4>
+                <span>Max always follows the model-supported maximum</span>
+              </div>
+              <div className="detail-tuning__intent-grid">
+                {(['small', 'medium', 'large', 'max'] as ContextHint[]).map(renderContextIntentField)}
+              </div>
+              <div className="detail-tuning__context-slider">
+                <span className="detail-tuning__context-slider-head">
+                  <strong>{CONTEXT_HINT_LABELS[selectedContextIntent]} context</strong>
+                  <output>{formatContextSize(selectedContextValue)} · {selectedContextValue.toLocaleString()} tokens</output>
+                </span>
+                <div className="detail-tuning__context-slider-row">
+                  <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.min)}</span>
+                  <input
+                    className="slider"
+                    type="range"
+                    min={selectedContextBounds.min}
+                    max={selectedContextBounds.max}
+                    step={selectedContextBounds.step}
+                    value={selectedContextValue}
+                    onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
+                    aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context size`}
+                    data-model-tuning-context-slider={selectedContextIntent}
+                  />
+                  <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.max)}</span>
+                  <input
+                    className="input detail-tuning__context-number"
+                    type="number"
+                    min={selectedContextBounds.min}
+                    max={selectedContextBounds.max}
+                    step={selectedContextBounds.step}
+                    value={selectedContextValue}
+                    onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
+                    aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context tokens`}
+                    data-model-tuning-context-number={selectedContextIntent}
+                  />
+                  {renderClearOverrideButton(() => clearContextIntentField(selectedContextIntent), selectedContextOverride === undefined)}
+                </div>
+                <small>Range is constrained by the neighboring context intents. Max remains fixed to the model maximum.</small>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {recipeKeys.length > 0 && (
+          <div className="detail-tuning__runtime">
+            <h4>Load-specific settings</h4>
+            <div className="detail-tuning__field-grid">
+              {recipeKeys.map(renderRecipeField)}
+            </div>
+          </div>
+        )}
 
         {allowSampling && (
           <div className="detail-tuning__sampling">
-            <h4>Sampling defaults</h4>
+            <h4>Advanced sampling</h4>
             <div className="detail-tuning__field-grid">
-              {(['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>).map(renderSamplingField)}
+              {(['top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>).map(renderSamplingField)}
             </div>
           </div>
         )}
@@ -1250,7 +1510,14 @@ const ModelTuningTab: React.FC<{
           <button type="button" className="btn btn--primary btn--sm" onClick={saveDraft}>Save tuning</button>
           <button type="button" className="btn btn--ghost btn--sm" onClick={resetDraft} disabled={!hasUserTuning && !hasDraftValues}>Reset tuning</button>
           {loadedModel && onReloadModel && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={reloadWithTuning} disabled={isReloading} aria-busy={isReloading}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={reloadWithTuning}
+              disabled={isReloading || !selectedPresetIsLinked}
+              aria-busy={isReloading}
+              title={selectedPresetIsLinked ? 'Reload the model with this tuning' : 'Link this preset before reloading with its tuning'}
+            >
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading…' : 'Reload with tuning'}
             </button>
           )}
