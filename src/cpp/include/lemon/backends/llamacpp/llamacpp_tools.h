@@ -6,7 +6,9 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <cctype>
 #include <functional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -166,6 +168,116 @@ inline std::vector<BenchPoint> parse_llama_bench_json(const std::string& output,
         p.ok = p.pp_avg_ts > 0 || p.tg_avg_ts > 0;
     }
     return points;
+}
+
+// ── Request validation ─────────────────────────────────────────────────
+//
+// Both tool endpoints take a small, closed parameter set; requests are
+// validated exhaustively (unknown keys, types, ranges) before anything
+// reaches a subprocess command line. Validators return "" when the body is
+// valid, else a client-facing error message.
+
+namespace tools_detail {
+
+inline const std::set<std::string>& kv_cache_types() {
+    static const std::set<std::string> types = {"f32",  "f16",  "bf16", "q8_0",   "q5_1",
+                                                "q5_0", "q4_1", "q4_0", "iq4_nl"};
+    return types;
+}
+
+inline bool valid_backend_name(const std::string& name) {
+    if (name.empty() || name.size() > 64) return false;
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') return false;
+    }
+    return true;
+}
+
+inline std::string check_common(const json& body, const std::set<std::string>& allowed) {
+    if (!body.is_object()) return "request body must be a JSON object";
+    for (const auto& [key, value] : body.items()) {
+        (void)value;
+        if (!allowed.count(key)) {
+            std::string keys;
+            for (const auto& k : allowed) keys += (keys.empty() ? "" : ", ") + k;
+            return "unexpected field '" + key + "'; allowed fields: " + keys;
+        }
+    }
+    if (!body.contains("model") || !body["model"].is_string()
+        || body["model"].get<std::string>().empty()) {
+        return "'model' is required and must be a non-empty string";
+    }
+    if (!body.contains("backend") || !body["backend"].is_string()
+        || !valid_backend_name(body["backend"].get<std::string>())) {
+        return "'backend' is required and must be an installed llamacpp backend name";
+    }
+    return "";
+}
+
+inline bool int_in_range(const json& v, long long lo, long long hi) {
+    if (!v.is_number_integer()) return false;
+    const long long n = v.get<long long>();
+    return n >= lo && n <= hi;
+}
+
+}  // namespace tools_detail
+
+inline std::string validate_fit_params_request(const json& body) {
+    static const std::set<std::string> allowed = {"model", "backend", "args", "fit_target_mib"};
+    std::string err = tools_detail::check_common(body, allowed);
+    if (!err.empty()) return err;
+    if (body.contains("args")) {
+        const auto& args = body["args"];
+        if (args.is_array()) {
+            for (const auto& a : args)
+                if (!a.is_string()) return "'args' array entries must be strings";
+        } else if (!args.is_string()) {
+            return "'args' must be a string or an array of strings";
+        }
+    }
+    if (body.contains("fit_target_mib")
+        && !tools_detail::int_in_range(body["fit_target_mib"], 0, 10000000)) {
+        return "'fit_target_mib' must be an integer between 0 and 10000000";
+    }
+    return "";
+}
+
+inline std::string validate_bench_request(const json& body) {
+    static const std::set<std::string> allowed = {"model", "backend", "d", "b", "ub",
+                                                  "ctk",   "ctv"};
+    std::string err = tools_detail::check_common(body, allowed);
+    if (!err.empty()) return err;
+    if (body.contains("d")) {
+        const auto& d = body["d"];
+        if (d.is_array()) {
+            if (d.empty()) return "'d' array must not be empty";
+            for (const auto& v : d)
+                if (!tools_detail::int_in_range(v, 0, 4194304))
+                    return "'d' entries must be integers between 0 and 4194304";
+        } else if (!tools_detail::int_in_range(d, 0, 4194304)) {
+            return "'d' must be an integer between 0 and 4194304 or an array of such";
+        }
+    }
+    for (const char* key : {"b", "ub"}) {
+        if (body.contains(key) && !tools_detail::int_in_range(body[key], 1, 65536))
+            return std::string("'") + key + "' must be an integer between 1 and 65536";
+    }
+    if (body.contains("ub") && !body.contains("b")) {
+        return "'ub' requires 'b'";
+    }
+    for (const char* key : {"ctk", "ctv"}) {
+        if (!body.contains(key)) continue;
+        if (!body[key].is_string() || !tools_detail::kv_cache_types().count(body[key].get<std::string>())) {
+            std::string types;
+            for (const auto& t : tools_detail::kv_cache_types())
+                types += (types.empty() ? "" : ", ") + t;
+            return std::string("'") + key + "' must be one of: " + types;
+        }
+    }
+    if (body.contains("ctv") && !body.contains("ctk")) {
+        return "'ctv' requires 'ctk'";
+    }
+    return "";
 }
 
 // Runs llama-fit-params for `backend` against a local GGUF. Soft-fails into

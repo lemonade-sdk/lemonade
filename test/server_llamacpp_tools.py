@@ -140,6 +140,77 @@ class LlamaCppToolsEndpointTests(ServerTestBase):
         self.assertIn("expert_count", meta)
         self.assertIn("kv_bytes_per_token", meta)
 
+    def test_005a_schema_validation(self):
+        cases = [
+            ({"model": "m", "backend": "vulkan", "bogus": 1}, "unexpected field"),
+            ({"model": "m"}, "backend"),
+            ({"backend": "vulkan"}, "model"),
+            ({"model": "m", "backend": "../etc"}, "backend"),
+            (
+                {"model": "m", "backend": "vulkan", "fit_target_mib": -5},
+                "fit_target_mib",
+            ),
+            ({"model": "m", "backend": "vulkan", "args": 42}, "args"),
+        ]
+        for body, needle in cases:
+            resp = requests.post(
+                f"{self.base_url}/backends/llamacpp/fit-params",
+                json=body,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, (body, resp.text))
+            self.assertIn(needle, resp.json().get("error", ""), body)
+
+        bench_cases = [
+            ({"model": "m", "backend": "vulkan", "depth": 0}, "unexpected field"),
+            ({"model": "m", "backend": "vulkan", "d": -1}, "'d'"),
+            ({"model": "m", "backend": "vulkan", "b": 0}, "'b'"),
+            ({"model": "m", "backend": "vulkan", "ub": 512}, "'ub' requires"),
+            ({"model": "m", "backend": "vulkan", "ctk": "q9_9"}, "'ctk'"),
+            ({"model": "m", "backend": "vulkan", "ctv": "q8_0"}, "'ctv' requires"),
+        ]
+        for body, needle in bench_cases:
+            resp = requests.post(
+                f"{self.base_url}/backends/llamacpp/bench",
+                json=body,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, (body, resp.text))
+            self.assertIn(needle, resp.json().get("error", ""), body)
+
+        resp = requests.get(
+            f"{self.base_url}/backends/llamacpp/bench", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(resp.status_code, 405)
+
+    def test_005b_busy_returns_409(self):
+        backend = self._installed_backend()
+        if backend is None:
+            self.skipTest("no llamacpp backend installed")
+        self._pull_test_model()
+
+        bench = requests.post(
+            f"{self.base_url}/backends/llamacpp/bench",
+            json={"model": ENDPOINT_TEST_MODEL, "backend": backend, "d": 0},
+            stream=True,
+            timeout=600,
+        )
+        self.assertEqual(bench.status_code, 200)
+        try:
+            got_409 = False
+            for _ in range(20):
+                resp = requests.post(
+                    f"{self.base_url}/backends/llamacpp/fit-params",
+                    json={"model": ENDPOINT_TEST_MODEL, "backend": backend},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                if resp.status_code == 409:
+                    got_409 = True
+                    break
+            self.assertTrue(got_409, "no 409 while bench stream was active")
+        finally:
+            bench.close()
+
     def test_006_health_advertises_llamacpp_tools(self):
         resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(resp.status_code, 200)

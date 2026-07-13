@@ -5804,16 +5804,12 @@ namespace {
 // Validates a llamacpp tool query body ({"model", "backend", ...}) against the
 // registry: the model must be a downloaded llamacpp GGUF. Returns false after
 // writing the error response.
-bool resolve_llamacpp_tool_target(ModelManager& mm, const nlohmann::json& body,
+bool resolve_llamacpp_tool_target(ModelManager& mm,
+                                  const lemon::backends::llamacpp::json& body,
                                   httplib::Response& res, std::string& backend_out,
                                   std::string& gguf_path_out) {
     const std::string model = body.value("model", "");
     backend_out = body.value("backend", "");
-    if (model.empty() || backend_out.empty()) {
-        res.status = 400;
-        res.set_content(R"({"error":"'model' and 'backend' are required"})", "application/json");
-        return false;
-    }
     if (!mm.model_exists(model)) {
         res.status = 404;
         res.set_content(R"({"error":"unknown model"})", "application/json");
@@ -5842,7 +5838,13 @@ bool resolve_llamacpp_tool_target(ModelManager& mm, const nlohmann::json& body,
 void Server::handle_llamacpp_fit_params(const httplib::Request& req, httplib::Response& res) {
     namespace llt = lemon::backends::llamacpp;
     try {
-        const auto body = nlohmann::json::parse(req.body);
+        const auto body = llt::json::parse(req.body);
+        const std::string invalid = llt::validate_fit_params_request(body);
+        if (!invalid.empty()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
+            return;
+        }
         std::string backend, gguf_path;
         if (!resolve_llamacpp_tool_target(*model_manager_, body, res, backend, gguf_path)) {
             return;
@@ -5884,12 +5886,18 @@ void Server::handle_llamacpp_fit_params(const httplib::Request& req, httplib::Re
 
 void Server::handle_llamacpp_bench(const httplib::Request& req, httplib::Response& res) {
     namespace llt = lemon::backends::llamacpp;
-    nlohmann::json body;
+    llt::json body;
     try {
-        body = nlohmann::json::parse(req.body);
+        body = llt::json::parse(req.body);
     } catch (const std::exception& e) {
         res.status = 400;
         res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+        return;
+    }
+    const std::string invalid = llt::validate_bench_request(body);
+    if (!invalid.empty()) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
         return;
     }
     std::string backend, gguf_path;
