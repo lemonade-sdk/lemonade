@@ -156,6 +156,24 @@ namespace lemon::backends {
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
 
+        /**
+         * Path to a sibling tool shipped in the same install dir as the backend's
+         * main binary (e.g. llama-bench / llama-fit-params next to llama-server).
+         * Empty string when the tool is not present.
+         */
+        static std::string get_backend_tool_path(const BackendSpec& spec, const std::string& backend,
+                                                 const std::string& tool);
+
+        /**
+         * Platform environment (LD_LIBRARY_PATH / PATH / OCL_SET_SVM_SIZE) needed to
+         * launch any binary from a llama.cpp backend install dir — ROCm needs its
+         * bundled/TheRock libraries resolvable, CUDA its bundled runtime. Device
+         * selection env (CUDA_VISIBLE_DEVICES etc.) is NOT included; callers that
+         * need it use apply_cuda_env_vars.
+         */
+        static std::vector<std::pair<std::string, std::string>> get_backend_env(
+            const std::string& llamacpp_backend, const std::string& executable);
+
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);
 

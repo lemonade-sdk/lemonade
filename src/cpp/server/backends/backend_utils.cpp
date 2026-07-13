@@ -1255,4 +1255,110 @@ namespace lemon::backends {
         }
 #endif
     }
+
+    std::string BackendUtils::get_backend_tool_path(const BackendSpec& spec, const std::string& backend,
+                                                    const std::string& tool) {
+        std::string server_bin;
+        try {
+            server_bin = get_backend_binary_path(spec, backend);
+        } catch (const std::exception&) {
+            return "";
+        }
+        fs::path tool_path = fs::path(server_bin).parent_path() / tool;
+#ifdef _WIN32
+        tool_path += ".exe";
+#endif
+        std::error_code ec;
+        if (!fs::exists(tool_path, ec)) return "";
+        return lemon::utils::path_to_utf8(tool_path);
+    }
+
+    std::vector<std::pair<std::string, std::string>> BackendUtils::get_backend_env(
+            const std::string& llamacpp_backend, const std::string& executable) {
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        const bool is_rocm = llamacpp_backend == "rocm-stable" || llamacpp_backend == "rocm-nightly";
+        const bool is_cuda = llamacpp_backend == "cuda";
+#ifndef _WIN32
+        if (is_rocm) {
+            fs::path exe_dir = fs::path(executable).parent_path();
+            std::string lib_path = exe_dir.string();
+
+            if (llamacpp_backend == "rocm-stable") {
+                std::string rocm_arch = SystemInfo::get_rocm_arch();
+                if (!rocm_arch.empty()) {
+                    std::string therock_lib = get_therock_lib_path(rocm_arch);
+                    if (!therock_lib.empty()) {
+                        lib_path = therock_lib + ":" + lib_path;
+                    }
+                }
+            }
+
+            const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+            if (existing_ld_path && strlen(existing_ld_path) > 0) {
+                lib_path = lib_path + ":" + std::string(existing_ld_path);
+            }
+
+            env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+            LOG(DEBUG, "BackendUtils") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+        } else if (is_cuda) {
+            // llama.cpp Linux tarballs ship the bundled CUDA runtime (libcudart.so,
+            // libcublas.so, ...) alongside the binaries.
+            fs::path exe_dir = fs::path(executable).parent_path();
+            std::string lib_path = exe_dir.string();
+
+            const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+            if (existing_ld_path && strlen(existing_ld_path) > 0) {
+                lib_path = lib_path + ":" + std::string(existing_ld_path);
+            }
+
+            env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+            LOG(DEBUG, "BackendUtils") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+        }
+#else
+        if (is_rocm) {
+            std::string new_path;
+
+            if (llamacpp_backend == "rocm-stable") {
+                std::string rocm_arch = SystemInfo::get_rocm_arch();
+                if (!rocm_arch.empty()) {
+                    std::string therock_bin = get_therock_lib_path(rocm_arch);
+                    if (!therock_bin.empty()) {
+                        new_path = lemon::utils::path_to_utf8(
+                            fs::absolute(lemon::utils::path_from_utf8(therock_bin)));
+                    }
+                }
+            }
+
+            if (!new_path.empty()) {
+                const char* existing_path = std::getenv("PATH");
+                if (existing_path && strlen(existing_path) > 0) {
+                    new_path += ";" + std::string(existing_path);
+                }
+                env_vars.push_back({"PATH", new_path});
+            }
+
+            std::string arch = lemon::SystemInfo::get_rocm_arch();
+            if ((arch == "gfx1151") || (arch == "gfx1152")) {
+                // Patch to enable loading larger models on these APUs.
+                env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
+                LOG(DEBUG, "BackendUtils") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152" << std::endl;
+            }
+        } else if (is_cuda) {
+            // CUDA Windows builds bundle cudart64_*.dll etc. next to the binaries;
+            // prepend the executable directory so the loader resolves them first.
+            fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
+            std::string new_path = lemon::utils::path_to_utf8(exe_dir);
+
+            const char* existing_path = std::getenv("PATH");
+            if (existing_path && strlen(existing_path) > 0) {
+                new_path += ";" + std::string(existing_path);
+            }
+            env_vars.push_back({"PATH", new_path});
+            LOG(DEBUG, "BackendUtils") << "Prepending CUDA exe dir to PATH: "
+                                       << lemon::utils::path_to_utf8(exe_dir) << std::endl;
+        }
+#endif
+        return env_vars;
+    }
+
 } // namespace lemon::backends
