@@ -1521,7 +1521,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             modelSelector={<ModelSelector disabled={isBusy} />}
             rightControls={
               <>
-                {isAudioOutput && (
+                {/* In collection mode the send path always routes through
+                    handleCollectionChat, so the native-voice branch is never
+                    reached — hide the control to avoid a no-op toggle. */}
+                {isAudioOutput && !collectionMode && (
                   <div className="voice-output-controls" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <button
                       type="button"
