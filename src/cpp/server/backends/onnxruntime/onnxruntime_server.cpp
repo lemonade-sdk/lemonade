@@ -26,16 +26,21 @@ namespace {
 // A directory ort-server can actually serve: the graph, the HF tokenizer, and
 // an output contract (explicit manifest.json, or config.json to infer from).
 bool is_complete_model_dir(const fs::path& dir) {
-    return fs::exists(dir / "model.onnx") && fs::exists(dir / "tokenizer.json") &&
-           (fs::exists(dir / "manifest.json") || fs::exists(dir / "config.json"));
+    std::error_code ec;
+    return fs::exists(dir / "model.onnx", ec) && fs::exists(dir / "tokenizer.json", ec) &&
+           (fs::exists(dir / "manifest.json", ec) || fs::exists(dir / "config.json", ec));
 }
 
 std::vector<fs::path> find_complete_model_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
-    for (const auto& entry : fs::recursive_directory_iterator(root, hf_cache::dir_options())) {
-        if (entry.is_regular_file() && entry.path().filename() == "model.onnx" &&
-            is_complete_model_dir(entry.path().parent_path())) {
-            dirs.push_back(entry.path().parent_path());
+    std::error_code ec;
+    fs::recursive_directory_iterator it(root, hf_cache::dir_options(), ec);
+    if (ec) return dirs;
+    for (auto end = fs::recursive_directory_iterator(); it != end; it.increment(ec)) {
+        if (ec) break;
+        if (it->is_regular_file(ec) && !ec && it->path().filename() == "model.onnx" &&
+            is_complete_model_dir(it->path().parent_path())) {
+            dirs.push_back(it->path().parent_path());
         }
     }
     std::sort(dirs.begin(), dirs.end());

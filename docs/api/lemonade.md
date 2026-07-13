@@ -52,7 +52,7 @@ The endpoint is available at:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `model` | string | yes | Classifier model id (a model with the `onnxruntime` recipe). |
+| `model` | string | yes* | Classifier model id (a model with the `onnxruntime` recipe). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
 | `input` | string | yes | Text to classify. `text` is accepted as an alias. |
 | `top_k` | integer | no | Return only the highest-scoring `k` labels. |
 
@@ -77,7 +77,7 @@ curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/
 }
 ```
 
-Label names come from the model's `manifest.json` (`id2label`); some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
+Label names come from the model's `id2label` (in `manifest.json`, or `config.json` for a manifest-less export); some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
 
 Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
 

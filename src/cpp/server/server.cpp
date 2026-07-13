@@ -3007,6 +3007,8 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         std::string validation_error;
         bool has_text = request_json.contains("text");
         bool has_input = request_json.contains("input");
+        const auto& input_field = has_text ? request_json["text"]
+                                 : has_input ? request_json["input"] : request_json;
         if (request_json.contains("model") && !request_json["model"].is_string()) {
             validation_error = "'model' must be a string";
         } else if (!has_text && !has_input) {
@@ -3015,9 +3017,13 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             validation_error = "'text' must be a string";
         } else if (has_input && !request_json["input"].is_string()) {
             validation_error = "'input' must be a string";
+        } else if (input_field.get<std::string>().find_first_not_of(" \t\r\n") ==
+                   std::string::npos) {
+            validation_error = "input text must not be empty";
         } else if (request_json.contains("top_k") &&
                    (!request_json["top_k"].is_number_integer() ||
-                    request_json["top_k"].get<int>() < 1)) {
+                    request_json["top_k"].get<long long>() < 1 ||
+                    request_json["top_k"].get<long long>() > 1000000)) {
             validation_error = "'top_k' must be a positive integer";
         }
         if (!validation_error.empty()) {
@@ -3038,7 +3044,7 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model);
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
                 if (span) {
                     span->cancel();
                 }
@@ -3057,7 +3063,10 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
         } else if (!router_->is_model_loaded()) {
             LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
             res.status = 400;
-            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            nlohmann::json error = {{"error", {
+                {"message", "No model loaded and no model specified in request"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
             if (span) {
                 span->cancel();
             }
@@ -3075,6 +3084,17 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
                 res.status = err["status_code"].get<int>();
             } else if (err.contains("code") && err["code"].is_string()) {
                 res.status = get_http_status_from_error(err["code"].get<std::string>());
+            } else if (err.contains("type") && err["type"].is_string()) {
+                // LemonException::to_json carries only {message, type}.
+                const std::string type = err["type"].get<std::string>();
+                if (type == "invalid_request" || type == "invalid_request_error" ||
+                    type == "unsupported_operation") {
+                    res.status = 400;
+                } else if (type == "model_not_loaded") {
+                    res.status = 404;
+                } else {
+                    res.status = 500;
+                }
             } else {
                 res.status = 500;
             }
