@@ -124,11 +124,15 @@ def md_escape(text: str) -> str:
     return str(text).replace("|", "\\|")
 
 
+# Preferred README ordering, not an allow-list. Modalities not listed here are
+# appended deterministically so future backends cannot be silently omitted.
 MODALITY_ORDER = [
     "Text generation",
     "Speech-to-text",
     "Text-to-speech",
+    "Audio generation",
     "Image generation",
+    "3D generation",
 ]
 OS_LABEL = {"windows": "Windows", "linux": "Linux", "macos": "macOS"}
 OS_ORDER = ["windows", "linux", "macos"]
@@ -150,17 +154,31 @@ def _ordered(recipes: dict) -> list:
     return sorted(recipes.items(), key=lambda kv: kv[1].get("order", 999))
 
 
+def _ordered_modalities(by_mod: dict[str, list]) -> list[str]:
+    """Return known modalities first, then future modalities deterministically."""
+    preferred = [mod for mod in MODALITY_ORDER if mod in by_mod]
+    additional = sorted(set(by_mod) - set(MODALITY_ORDER))
+    return preferred + additional
+
+
 def render_readme_matrix(recipes: dict) -> str:
     # Group descriptor-backed recipes by modality, in descriptor registry order.
-    by_mod: dict[str, list] = {m: [] for m in MODALITY_ORDER}
+    # MODALITY_ORDER controls presentation only; it must never filter recipes.
+    by_mod: dict[str, list] = {}
     for recipe, info in _ordered(recipes):
-        mod = info.get("modality")
-        if not mod or mod not in by_mod:
+        support_rows = info.get("support", [])
+        if not support_rows:
             continue
+        mod = info.get("modality")
+        if not mod:
+            sys.exit(
+                f"Backend '{recipe}' has support rows but no documentation modality"
+            )
+
         # Merge support rows sharing a (backend, device summary); union their OS.
         merged: list[dict] = []
         seen: dict[tuple, dict] = {}
-        for row in info.get("support", []):
+        for row in support_rows:
             key = (row["backend"], row.get("device_summary", ""))
             if key in seen:
                 seen[key]["os"] |= set(row.get("os", []))
@@ -173,7 +191,7 @@ def render_readme_matrix(recipes: dict) -> str:
                 seen[key] = d
                 merged.append(d)
         if merged:
-            by_mod[mod].append((recipe, info, merged))
+            by_mod.setdefault(mod, []).append((recipe, info, merged))
 
     out = [
         "<table>",
@@ -188,11 +206,9 @@ def render_readme_matrix(recipes: dict) -> str:
         "  </thead>",
         "  <tbody>",
     ]
-    for mod in MODALITY_ORDER:
+    for mod in _ordered_modalities(by_mod):
         recipes_in = by_mod[mod]
-        if not recipes_in:
-            continue
-        mod_span = sum(len(m) for _, _, m in recipes_in)
+        mod_span = sum(len(merged) for _, _, merged in recipes_in)
         first_mod = True
         for recipe, info, merged in recipes_in:
             engine = f"<code>{recipe}</code>" + (

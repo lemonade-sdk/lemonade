@@ -260,6 +260,44 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
     throw std::runtime_error("Streaming only supports POST method");
 }
 
+int LemonadeClient::check_model_updates() const {
+    try {
+        std::string response = make_request(
+            "/api/v1/models/check-updates",
+            "POST",
+            "{}",
+            "application/json",
+            DEFAULT_CONNECTION_TIMEOUT_MS,
+            LONG_TIMEOUT_MS);
+        auto result = json::parse(response);
+
+        const auto& models = result.at("models");
+        if (!models.is_array()) {
+            throw std::runtime_error("Server returned an invalid model update response");
+        }
+
+        if (models.empty()) {
+            std::cout << "All downloaded models are up to date." << std::endl;
+            return 0;
+        }
+
+        std::cout << "Updates available for " << models.size() << " model(s):" << std::endl;
+        for (const auto& model : models) {
+            if (model.is_string()) {
+                std::cout << "  - " << model.get<std::string>() << std::endl;
+            }
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error checking model updates: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error checking model updates: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 int LemonadeClient::status(int display_port) const {
     try {
         std::string response = make_request("/api/v1/health", "GET", "", "", 500, 500);

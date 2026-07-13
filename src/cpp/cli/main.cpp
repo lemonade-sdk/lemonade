@@ -1209,6 +1209,8 @@ int main(int argc, char* argv[]) {
 
     // Model commands
     CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
+    CLI::App* check_updates_cmd = app.add_subcommand(
+        "check-updates", "Check downloaded models for upstream updates")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1455,6 +1457,8 @@ int main(int argc, char* argv[]) {
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded, config.list_filter);
+    } else if (check_updates_cmd->count() > 0) {
+        return client.check_model_updates();
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;

@@ -230,7 +230,7 @@ if(APPLE)
     # brotli (MIT License) - required by httplib for compression on macOS
     FetchContent_Declare(brotli
         GIT_REPOSITORY https://github.com/google/brotli.git
-        GIT_TAG v1.1.0
+        GIT_TAG ed738e842d2fbdf2d6459e39267a633c4a9b2f5d  # v1.1.0
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
@@ -240,7 +240,7 @@ endif()
 if(NOT USE_SYSTEM_JSON)
     FetchContent_Declare(json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v${MIN_NLOHMANN_JSON_VERSION}
+        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03  # v3.11.3
         GIT_SHALLOW TRUE
     )
     set(JSON_BuildTests OFF CACHE INTERNAL "")
@@ -252,7 +252,7 @@ endif()
 if(NOT USE_SYSTEM_CLI11)
     FetchContent_Declare(CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-        GIT_TAG v${MIN_CLI11_VERSION}
+        GIT_TAG 6c7b07a878ad834957b98d0f9ce1dbe0cb204fc9  # v2.4.2
         GIT_SHALLOW TRUE
     )
     set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
@@ -262,10 +262,9 @@ endif()
 
 # === curl ===
 if(NOT USE_SYSTEM_CURL)
-    string(REPLACE "." "_" CURL_TAG_VERSION "${MIN_CURL_VERSION}")
     FetchContent_Declare(curl
         GIT_REPOSITORY https://github.com/curl/curl.git
-        GIT_TAG curl-${CURL_TAG_VERSION}
+        GIT_TAG 55b5fafb094ebe07ca8a5d4f79813c8b40670795  # curl-8_5_0
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
@@ -290,7 +289,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
+        GIT_TAG ac66b19e6bd6b83238bf008eecc1298105298532  # v1.5.7
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
@@ -344,7 +343,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG v${MIN_HTTPLIB_VERSION}
+        GIT_TAG 89c932f313c6437c38f2982869beacc89c2f2246  # v0.26.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -393,7 +392,7 @@ if(NOT USE_SYSTEM_LWS)
     unset(LWS_LIBRARIES CACHE)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
-        GIT_TAG v${MIN_LWS_VERSION}
+        GIT_TAG 4415e84c095857629863804e941b9e1c2e9347ef  # v4.3.3
         GIT_SHALLOW TRUE
     )
     # Build as static library, disable features we don't need
@@ -878,7 +877,10 @@ elseif(UNIX)
 
     # Link libcap for capability management on Linux
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_link_libraries(lemonade-server-core PRIVATE ${CMAKE_DL_LIBS})
+        target_link_libraries(lemonade-server-core PRIVATE
+            ${CMAKE_DL_LIBS}
+            drm_amdgpu
+        )
 
         if(PkgConfig_FOUND)
             pkg_check_modules(LIBCAP QUIET libcap)
@@ -2221,4 +2223,13 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
+endif()
+
+# vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
+# AMD Instinct (gfx942), alongside the existing RDNA families.
+set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
+if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
+    add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
+    target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
+    add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
 endif()

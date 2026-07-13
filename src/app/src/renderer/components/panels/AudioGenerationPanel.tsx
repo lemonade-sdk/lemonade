@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
@@ -24,12 +25,29 @@ interface GeneratedClip {
   prompt: string;
 }
 
+const LYRICS_EXAMPLE = `[verse]
+Moonlight spills across the floor
+Shadows dancing by the door
+
+[chorus]
+We sing until the morning light
+Carried on the wind tonight
+
+[bridge]
+Hold the note and let it soar
+
+[outro]
+Fading softly, nothing more`;
+
 const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality, runPreFlight, reset, showError,
 }) => {
   const { selectedModel, modelsData } = useModels();
 
   const [prompt, setPrompt] = useState('');
+  const [lyrics, setLyrics] = useState('');
+  const [vocalLanguage, setVocalLanguage] = useState('en');
+  const [showLyricsHelp, setShowLyricsHelp] = useState(false);
   const [duration, setDuration] = useState(10);
   const [clips, setClips] = useState<GeneratedClip[]>([]);
   const clipsRef = useRef<GeneratedClip[]>([]);
@@ -37,11 +55,10 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
 
   useEffect(() => () => { clipsRef.current.forEach(c => URL.revokeObjectURL(c.url)); }, []);
 
-  // Music (ACE-Step) is long-form, so default to a full clip; SFX (ThinkSound)
-  // stays short. Resets to the model's default when the selected model changes.
   const audioRecipe = modelsData?.[selectedModel]?.recipe || '';
+  const isMusic = audioRecipe === 'acestep';
   useEffect(() => {
-    setDuration(audioRecipe === 'acestep' ? 150 : 10);
+    setDuration(isMusic ? 150 : 10);
   }, [audioRecipe]);
 
   const handleGenerate = async () => {
@@ -51,10 +68,18 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
     if (!ready) return;
 
     try {
+      const trimmedLyrics = lyrics.trim();
       const response = await serverFetch('/audio/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel, prompt, duration }),
+        body: JSON.stringify({
+          model: selectedModel,
+          prompt,
+          duration,
+          ...(isMusic && trimmedLyrics
+            ? { lyrics, vocal_language: vocalLanguage.trim() || 'en' }
+            : {}),
+        }),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const blob = await response.blob();
@@ -99,14 +124,53 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
 
       <div className="chat-input-container">
         <div className="chat-input-wrapper">
-          <textarea
-            className="chat-input"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe the music or sound effect to generate..."
-            rows={1}
-          />
+          {isMusic ? (
+            <>
+              <div className="style-input-row">
+                <input
+                  type="text"
+                  className="chat-input"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Style description — genre, mood, tempo, instruments, voice..."
+                />
+                <label className="vocal-language-label" title="Vocal language (BCP-47 code, e.g. en, fr, ja)">
+                  Lang
+                  <input
+                    type="text"
+                    value={vocalLanguage}
+                    onChange={(e) => setVocalLanguage(e.target.value)}
+                    maxLength={8}
+                    disabled={isBusy}
+                  />
+                </label>
+              </div>
+              <div className="lyrics-input-row">
+                <textarea
+                  className="chat-input lyrics-input"
+                  value={lyrics}
+                  onChange={(e) => setLyrics(e.target.value)}
+                  placeholder="Lyrics (optional) — leave empty for an instrumental track"
+                  rows={4}
+                />
+                <button
+                  className="lyrics-help-button"
+                  title="Lyrics syntax guide"
+                  onClick={() => setShowLyricsHelp(true)}
+                >?</button>
+              </div>
+            </>
+          ) : (
+            <textarea
+              className="chat-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe the music or sound effect to generate..."
+              rows={1}
+            />
+          )}
           <InferenceControls
             isBusy={isBusy}
             isInferring={isInferring}
@@ -131,6 +195,40 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
           />
         </div>
       </div>
+
+      {showLyricsHelp && createPortal(
+        <div
+          className="settings-overlay"
+          onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) setShowLyricsHelp(false); }}
+        >
+          <div className="settings-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <div className="settings-header">
+              <h3>Lyrics syntax</h3>
+              <button className="settings-close-button" onClick={() => setShowLyricsHelp(false)} title="Close">
+                <svg width="14" height="14" viewBox="0 0 14 14">
+                  <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="settings-content lyrics-help-content">
+              <p>
+                Mark each song section with a structure tag on its own line:{' '}
+                <code>[verse]</code>, <code>[chorus]</code>, <code>[bridge]</code>,{' '}
+                <code>[intro]</code>, <code>[outro]</code>.
+              </p>
+              <ul>
+                <li>Write one sung phrase per line and separate sections with a blank line.</li>
+                <li>Leave the lyrics field empty (or write <code>[instrumental]</code>) for a track without vocals.</li>
+                <li>Describe the voice in the style field (e.g. &quot;gentle female vocals&quot;, &quot;raspy male baritone&quot;), not in the lyrics.</li>
+                <li>Lyrics don&apos;t have to be English; write them in the language they should be sung in.</li>
+              </ul>
+              <p>Example:</p>
+              <pre>{LYRICS_EXAMPLE}</pre>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 };
