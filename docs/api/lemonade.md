@@ -37,7 +37,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. This serves the router's `classifier` condition type; the target model must use the `onnxruntime` recipe. Both sequence-classification (one label set) and token-classification (aggregated span labels) models are supported.
+Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Both sequence-classification (one label set) and token-classification (aggregated span labels) models are supported; a stock `optimum-cli export onnx` directory works as-is (an optional `manifest.json` can override the inferred contract).
+
+This endpoint provides the classification capability that the router's `classifier` condition type will consume; the live routing-policy wiring is tracked in [#2384](https://github.com/lemonade-sdk/lemonade/issues/2384).
 
 The endpoint is available at:
 

@@ -95,7 +95,9 @@ class ClassifyTests(ServerTestBase):
         )
         body = response.json()
         self.assertEqual(
-            body.get("object"), "classification", "Response must have object=classification"
+            body.get("object"),
+            "classification",
+            "Response must have object=classification",
         )
         self.assertEqual(
             body.get("model"), payload["model"], "Response must echo the model id"
@@ -106,10 +108,25 @@ class ClassifyTests(ServerTestBase):
         self.assertTrue(labels, "'labels' must be non-empty")
         for label, score in labels.items():
             self.assertIsInstance(label, str, f"label key must be a string: {label!r}")
-            self.assertIsInstance(score, (int, float), f"score for {label} must be numeric")
+            self.assertIsInstance(
+                score, (int, float), f"score for {label} must be numeric"
+            )
             self.assertGreaterEqual(score, 0.0, f"score for {label} below 0")
             self.assertLessEqual(score, 1.0, f"score for {label} above 1")
         print(f"[OK] classify returned {len(labels)} labels: {labels}")
+
+    def test_003_wrong_type_input_error(self):
+        """Non-string input is rejected 400 before any model is loaded."""
+        self._assert_rejected(
+            self._payload(input=12345), "Non-string input", expected_status=400
+        )
+
+    def test_004_wrong_type_top_k_error(self):
+        """Non-positive / non-integer top_k is rejected 400 before any model is loaded."""
+        self._assert_rejected(
+            self._payload(top_k="two"), "Non-integer top_k", expected_status=400
+        )
+        self._assert_rejected(self._payload(top_k=0), "Zero top_k", expected_status=400)
 
     def test_501_missing_input_error(self):
         """A request with a valid model but no input text is a 400 error."""
@@ -117,6 +134,18 @@ class ClassifyTests(ServerTestBase):
         payload = self._payload()
         del payload["input"]
         self._assert_rejected(payload, "Missing input", expected_status=400)
+
+    def test_502_top_k_limits_labels(self):
+        """top_k=1 returns exactly one label through the whole stack."""
+        self._ensure_model_pulled()
+        response = requests.post(
+            f"{self.base_url}/classify",
+            json=self._payload(top_k=1),
+            timeout=TIMEOUT_CLASSIFY,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:500])
+        labels = response.json().get("labels", {})
+        self.assertEqual(len(labels), 1, f"expected 1 label with top_k=1: {labels}")
 
 
 if __name__ == "__main__":

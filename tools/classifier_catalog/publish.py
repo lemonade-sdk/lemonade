@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -95,9 +96,12 @@ def benchmark(model_dir: Path):
     import onnxruntime as ort
     from transformers import AutoTokenizer
 
-    sess = ort.InferenceSession(
-        str(next(model_dir.glob("*.onnx"))), providers=["CPUExecutionProvider"]
-    )
+    onnx_files = sorted(model_dir.glob("*.onnx"))
+    if len(onnx_files) != 1:
+        sys.exit(
+            f"REFUSING to publish: expected exactly one .onnx in {model_dir}, found {onnx_files}"
+        )
+    sess = ort.InferenceSession(str(onnx_files[0]), providers=["CPUExecutionProvider"])
     tok = AutoTokenizer.from_pretrained(model_dir)
     in_names = {i.name for i in sess.get_inputs()}
     enc = tok(
@@ -118,15 +122,35 @@ def benchmark(model_dir: Path):
 
 
 def write_manifest_from_config(model_dir: Path, task: str):
+    """Manifest for mirrored (onnx_only) repos, honoring HF problem_type semantics."""
     cfg = json.loads((model_dir / "config.json").read_text())
+    problem_type = cfg.get("problem_type")
     id2label = {int(k): v for k, v in cfg["id2label"].items()}
+    if problem_type == "regression" or len(id2label) < 2:
+        sys.exit(
+            f"REFUSING to publish: unsupported head (problem_type={problem_type!r}, "
+            f"labels={len(id2label)}) — no label scores in [0,1]"
+        )
+    normalization = (
+        "sigmoid"
+        if task == "text-classification"
+        and problem_type == "multi_label_classification"
+        else "softmax"
+    )
+    max_length = 512
+    tok_cfg_path = model_dir / "tokenizer_config.json"
+    if tok_cfg_path.exists():
+        n = json.loads(tok_cfg_path.read_text()).get("model_max_length")
+        if isinstance(n, int) and 2 <= n <= 1_000_000:
+            max_length = n
     (model_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "task": task,
                 "id2label": id2label,
-                "score_normalization": "softmax",
+                "score_normalization": normalization,
                 "token_aggregation": None if task == "text-classification" else "max",
+                "max_length": max_length,
             },
             indent=2,
         )
@@ -249,7 +273,9 @@ def main() -> None:
             )
 
         d = STAGING / m["repo"]
-        d.mkdir(parents=True, exist_ok=True)
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
         parity = {}
 
         if m.get("onnx_only"):

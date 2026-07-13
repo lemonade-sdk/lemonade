@@ -22,6 +22,27 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
+namespace {
+// A directory ort-server can actually serve: the graph, the HF tokenizer, and
+// an output contract (explicit manifest.json, or config.json to infer from).
+bool is_complete_model_dir(const fs::path& dir) {
+    return fs::exists(dir / "model.onnx") && fs::exists(dir / "tokenizer.json") &&
+           (fs::exists(dir / "manifest.json") || fs::exists(dir / "config.json"));
+}
+
+std::vector<fs::path> find_complete_model_dirs(const fs::path& root) {
+    std::vector<fs::path> dirs;
+    for (const auto& entry : fs::recursive_directory_iterator(root, hf_cache::dir_options())) {
+        if (entry.is_regular_file() && entry.path().filename() == "model.onnx" &&
+            is_complete_model_dir(entry.path().parent_path())) {
+            dirs.push_back(entry.path().parent_path());
+        }
+    }
+    std::sort(dirs.begin(), dirs.end());
+    return dirs;
+}
+}  // namespace
+
 // The ort-server subprocess speaks a tiny HTTP contract:
 //   GET  /health             -> 200 when the model is loaded and ready
 //   POST /classify {text}    -> 200 {"labels": {"<label>": <score in [0,1]>, ...}}
@@ -72,6 +93,20 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     std::string model_path = model_info.resolved_path();
     if (model_path.empty() || !fs::exists(model_path)) {
         throw std::runtime_error("Model directory not found for checkpoint: " + model_info.checkpoint());
+    }
+    if (!is_complete_model_dir(path_from_utf8(model_path))) {
+        auto candidates = find_complete_model_dirs(path_from_utf8(model_path));
+        if (candidates.empty()) {
+            throw std::runtime_error(
+                "No servable model directory under '" + model_path +
+                "': need model.onnx + tokenizer.json + (manifest.json or config.json)");
+        }
+        std::string listing;
+        for (const auto& c : candidates) listing += "\n  " + path_to_utf8(c);
+        throw std::runtime_error(
+            "Ambiguous model layout under '" + model_path + "': " +
+            std::to_string(candidates.size()) +
+            " complete model directories found — keep exactly one:" + listing);
     }
     LOG(INFO, "OnnxRuntimeServer") << "Using model: " << model_path << std::endl;
 
@@ -173,39 +208,22 @@ public:
         return found.empty() ? ctx.model_cache_path : found;
     }
 
+    // Resolve only when the layout is unambiguous: exactly one complete model
+    // directory. Anything else returns "" and load() reports a precise error;
+    // resolution runs during bulk model listing, so it must never throw.
     std::string find_imported_checkpoint(const std::string& import_dir) const override {
         fs::path dir = path_from_utf8(import_dir);
         if (!hf_cache::exists(dir)) {
             return "";
         }
-        std::vector<fs::path> candidates;
-        for (const auto& entry :
-             fs::recursive_directory_iterator(dir, hf_cache::dir_options())) {
-            if (entry.is_regular_file() && entry.path().filename() == "model.onnx") {
-                candidates.push_back(entry.path().parent_path());
+        auto candidates = find_complete_model_dirs(dir);
+        if (candidates.size() != 1) {
+            if (candidates.size() > 1) {
+                LOG(WARNING, "OnnxRuntimeServer")
+                    << candidates.size() << " complete model directories under "
+                    << import_dir << "; refusing to pick one" << std::endl;
             }
-        }
-        if (candidates.empty()) {
             return "";
-        }
-        // Directory-iteration order is unspecified and HF repos may carry
-        // several graphs; pick deterministically: a dir satisfying the
-        // ort-server contract (manifest.json alongside) wins, then the
-        // shallowest path, then lexicographic order.
-        std::sort(candidates.begin(), candidates.end(),
-                  [](const fs::path& a, const fs::path& b) {
-                      bool ma = fs::exists(a / "manifest.json");
-                      bool mb = fs::exists(b / "manifest.json");
-                      if (ma != mb) return ma;
-                      auto da = std::distance(a.begin(), a.end());
-                      auto db = std::distance(b.begin(), b.end());
-                      if (da != db) return da < db;
-                      return a < b;
-                  });
-        if (candidates.size() > 1) {
-            LOG(WARNING, "OnnxRuntimeServer")
-                << "Multiple model.onnx candidates under " << import_dir << "; using "
-                << path_to_utf8(candidates.front()) << std::endl;
         }
         return path_to_utf8(candidates.front());
     }

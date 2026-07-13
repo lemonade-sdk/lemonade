@@ -40,12 +40,12 @@ GENERIC_NEG = "What time does the library open on Saturday?"
 @dataclass
 class ModelSpec:
     key: str
-    hf_id: str                     # source of truth (weights + tokenizer)
-    task: str                      # "seq" | "token"
-    onnx_repo: str | None = None   # existing published ONNX, if any (reference)
+    hf_id: str  # source of truth (weights + tokenizer)
+    task: str  # "seq" | "token"
+    onnx_repo: str | None = None  # existing published ONNX, if any (reference)
     gated: bool = False
     trust_remote_code: bool = False
-    onnx_only: bool = False         # source repo ships ONNX but no torch weights
+    onnx_only: bool = False  # source repo ships ONNX but no torch weights
     fixtures: list[str] = field(default_factory=lambda: [GENERIC_POS, GENERIC_NEG])
     notes: str = ""
 
@@ -120,7 +120,34 @@ def _softmax(x: np.ndarray) -> np.ndarray:
     return e / e.sum(axis=-1, keepdims=True)
 
 
-def reference_scores(spec: ModelSpec, tokenizer, torch_model):
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _infer_normalization(config, task: str) -> str:
+    """ort-server manifest contract from HF problem_type semantics; rejects heads
+    that have no label scores in [0,1]."""
+    problem_type = getattr(config, "problem_type", None)
+    if problem_type == "regression" or getattr(config, "num_labels", 2) < 2:
+        raise ValueError(
+            f"unsupported head: problem_type={problem_type!r}, "
+            f"num_labels={getattr(config, 'num_labels', None)}"
+        )
+    if task == "seq" and problem_type == "multi_label_classification":
+        return "sigmoid"
+    return "softmax"
+
+
+def _resolve_max_length(tokenizer, config) -> int:
+    n = getattr(tokenizer, "model_max_length", None)
+    if not isinstance(n, int) or n < 2 or n > 1_000_000:
+        n = getattr(config, "max_position_embeddings", None)
+    if not isinstance(n, int) or n < 2 or n > 1_000_000:
+        n = 512
+    return n
+
+
+def reference_scores(spec: ModelSpec, tokenizer, torch_model, normalize=_softmax):
     """HF/PyTorch reference: list of {label: score} per fixture (seq) or per-token
     label argmax sequences (token)."""
     import torch
@@ -132,7 +159,7 @@ def reference_scores(spec: ModelSpec, tokenizer, torch_model):
             enc = tokenizer(text, return_tensors="pt", truncation=True)
             logits = torch_model(**enc).logits[0].cpu().numpy()
             if spec.task == "seq":
-                probs = _softmax(logits)
+                probs = normalize(logits)
                 out.append({id2label[i]: float(probs[i]) for i in range(len(probs))})
             else:
                 # token-cls: argmax label id per token
@@ -148,7 +175,7 @@ def onnx_session(onnx_path: Path):
     return ort.InferenceSession(str(onnx_path), so, providers=["CPUExecutionProvider"])
 
 
-def onnx_scores(spec: ModelSpec, tokenizer, sess, id2label):
+def onnx_scores(spec: ModelSpec, tokenizer, sess, id2label, normalize=_softmax):
     input_names = {i.name for i in sess.get_inputs()}
     out = []
     for text in spec.fixtures:
@@ -156,7 +183,7 @@ def onnx_scores(spec: ModelSpec, tokenizer, sess, id2label):
         feeds = {k: v for k, v in enc.items() if k in input_names}
         logits = sess.run(None, feeds)[0][0]
         if spec.task == "seq":
-            probs = _softmax(logits)
+            probs = normalize(logits)
             out.append({id2label[i]: float(probs[i]) for i in range(len(probs))})
         else:
             out.append([int(i) for i in logits.argmax(-1)])
@@ -173,7 +200,10 @@ def parity(spec: ModelSpec, ref, got) -> dict:
                 max_delta = max(max_delta, abs(r.get(k, 0.0) - g.get(k, 0.0)))
             if max(r, key=r.get) != max(g, key=g.get):
                 label_match = False
-        return {"argmax_label_match": label_match, "max_score_delta": round(max_delta, 6)}
+        return {
+            "argmax_label_match": label_match,
+            "max_score_delta": round(max_delta, 6),
+        }
     # token-cls: fraction of tokens whose argmax label matches
     total = matched = 0
     for r, g in zip(ref, got):
@@ -215,9 +245,16 @@ def process(spec: ModelSpec, runs: int, from_source: bool) -> dict:
     from transformers import AutoModelForSequenceClassification  # noqa: F401
     from transformers import AutoModelForTokenClassification, AutoTokenizer
 
-    result = {"key": spec.key, "hf_id": spec.hf_id, "task": spec.task, "notes": spec.notes}
+    result = {
+        "key": spec.key,
+        "hf_id": spec.hf_id,
+        "task": spec.task,
+        "notes": spec.notes,
+    }
 
-    if spec.gated and not (os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")):
+    if spec.gated and not (
+        os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    ):
         result["status"] = "skipped_gated"
         result["reason"] = "gated repo; set HF_TOKEN with accepted license"
         return result
@@ -229,7 +266,8 @@ def process(spec: ModelSpec, runs: int, from_source: bool) -> dict:
     try:
         tokenizer = AutoTokenizer.from_pretrained(spec.hf_id, trust_remote_code=trc)
         ORTCls = (
-            ORTModelForSequenceClassification if spec.task == "seq"
+            ORTModelForSequenceClassification
+            if spec.task == "seq"
             else ORTModelForTokenClassification
         )
 
@@ -240,31 +278,47 @@ def process(spec: ModelSpec, runs: int, from_source: bool) -> dict:
             ort_model.save_pretrained(out_dir)
             tokenizer.save_pretrained(out_dir)
             id2label = ort_model.config.id2label
+            normalization = _infer_normalization(ort_model.config, spec.task)
+            normalize = _sigmoid if normalization == "sigmoid" else _softmax
             sess = onnx_session(next(iter(out_dir.glob("*.onnx"))))
-            got = onnx_scores(spec, tokenizer, sess, id2label)
-            smoke_ok = all(isinstance(g, dict) and g for g in got) if spec.task == "seq" else True
-            result["parity"] = {"note": "onnx-only source, no HF torch reference", "smoke_ok": smoke_ok}
+            got = onnx_scores(spec, tokenizer, sess, id2label, normalize)
+            smoke_ok = (
+                all(isinstance(g, dict) and g for g in got)
+                if spec.task == "seq"
+                else True
+            )
+            result["parity"] = {
+                "note": "onnx-only source, no HF torch reference",
+                "smoke_ok": smoke_ok,
+            }
             result["onnx_source"] = f"reused:{spec.hf_id}"
         else:
             # Reference (PyTorch)
             RefCls = (
-                AutoModelForSequenceClassification if spec.task == "seq"
+                AutoModelForSequenceClassification
+                if spec.task == "seq"
                 else AutoModelForTokenClassification
             )
             torch_model = RefCls.from_pretrained(spec.hf_id, trust_remote_code=trc)
             torch_model.eval()
-            ref, id2label = reference_scores(spec, tokenizer, torch_model)
+            normalization = _infer_normalization(torch_model.config, spec.task)
+            normalize = _sigmoid if normalization == "sigmoid" else _softmax
+            ref, id2label = reference_scores(spec, tokenizer, torch_model, normalize)
 
             # ONNX: export from source (provenance) or reuse published ONNX repo
             src = spec.hf_id if (from_source or not spec.onnx_repo) else spec.onnx_repo
             export = from_source or not spec.onnx_repo
-            ort_model = ORTCls.from_pretrained(src, export=export, trust_remote_code=trc)
+            ort_model = ORTCls.from_pretrained(
+                src, export=export, trust_remote_code=trc
+            )
             ort_model.save_pretrained(out_dir)
             tokenizer.save_pretrained(out_dir)
             sess = onnx_session(next(iter(out_dir.glob("*.onnx"))))
-            got = onnx_scores(spec, tokenizer, sess, id2label)
+            got = onnx_scores(spec, tokenizer, sess, id2label, normalize)
             result["parity"] = parity(spec, ref, got)
-            result["onnx_source"] = "exported_from_source" if export else f"reused:{src}"
+            result["onnx_source"] = (
+                "exported_from_source" if export else f"reused:{src}"
+            )
 
         result["perf_cpu_ep"] = benchmark(spec, tokenizer, sess, runs)
         result["onnx_file"] = next(iter(out_dir.glob("*.onnx"))).name
@@ -272,11 +326,14 @@ def process(spec: ModelSpec, runs: int, from_source: bool) -> dict:
         manifest = {
             "key": spec.key,
             "hf_id": spec.hf_id,
-            "task": "text-classification" if spec.task == "seq" else "token-classification",
+            "task": (
+                "text-classification" if spec.task == "seq" else "token-classification"
+            ),
             "tokenizer": type(tokenizer).__name__,
             "id2label": {int(k): v for k, v in id2label.items()},
-            "score_normalization": "softmax",
-            "token_aggregation": None if spec.task == "seq" else "first-subword",
+            "score_normalization": normalization,
+            "token_aggregation": None if spec.task == "seq" else "max",
+            "max_length": _resolve_max_length(tokenizer, ort_model.config),
             "onnx_source": result["onnx_source"],
             "parity": result["parity"],
         }
@@ -292,8 +349,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*", help="subset of catalog keys")
     ap.add_argument("--runs", type=int, default=50, help="timed benchmark iterations")
-    ap.add_argument("--from-source", action="store_true",
-                    help="always export from the source repo (provenance) instead of reusing published ONNX")
+    ap.add_argument(
+        "--from-source",
+        action="store_true",
+        help="always export from the source repo (provenance) instead of reusing published ONNX",
+    )
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
 
@@ -310,7 +370,10 @@ def main() -> None:
     for s in specs:
         print(f"\n=== {s.key} ({s.hf_id}) ===", flush=True)
         r = process(s, args.runs, args.from_source)
-        print(json.dumps({k: v for k, v in r.items() if k != "notes"}, indent=2), flush=True)
+        print(
+            json.dumps({k: v for k, v in r.items() if k != "notes"}, indent=2),
+            flush=True,
+        )
         results.append(r)
 
     summary = ARTIFACTS / "summary.json"
