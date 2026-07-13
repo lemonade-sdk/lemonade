@@ -287,8 +287,9 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_custom_args
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|custom_args"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -598,8 +599,9 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_custom_args
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|custom_args"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
