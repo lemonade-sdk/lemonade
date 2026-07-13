@@ -727,10 +727,26 @@ void AutoOptManager::worker_main(std::string run_id) {
 
     if (with_bench) {
         run_stage("load_validation", [&] {
+            // llama-fit-params only understands memory-relevant llama flags;
+            // host-side flags (--cache-ram, --spec-*, --direct-io) make it
+            // exit with a usage error, so validate with the memory subset.
+            static const std::set<std::string> kMemFlags = {
+                "-c", "-ctk", "-ctv", "-np", "-kvu", "-no-kvu", "-b", "-ub",
+                "--cpu-moe", "--n-cpu-moe", "-ngl", "--split-mode", "-sm"};
             std::vector<std::string> tokens = {"-c", std::to_string(result.primary.ctx_size)};
             std::istringstream args(result.primary.llamacpp_args);
-            std::string tok;
-            while (args >> tok) tokens.push_back(tok);
+            bool take_value = false;
+            for (std::string cur; args >> cur;) {
+                if (take_value) {
+                    tokens.push_back(cur);
+                    take_value = false;
+                    continue;
+                }
+                if (kMemFlags.count(cur)) {
+                    tokens.push_back(cur);
+                    take_value = cur != "-kvu" && cur != "-no-kvu" && cur != "--cpu-moe";
+                }
+            }
             set_progress(run_id, "validating recommended flags with llama-fit-params");
             FitEstimate v = provider_->fit_params(result.primary.llamacpp_backend,
                                                   facts.gguf_path, tokens, 1024,

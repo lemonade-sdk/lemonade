@@ -256,8 +256,10 @@ std::optional<json> RealMeasurementProvider::fetch_generation_config(const std::
 std::string resolve_base_model_repo(const std::string& gguf_base_model_repo,
                                     const std::string& checkpoint) {
     if (!gguf_base_model_repo.empty()) return repo_id_from_url(gguf_base_model_repo);
-    if (checkpoint.empty() || checkpoint.find('/') == std::string::npos) return "";
-    const std::string url = "https://huggingface.co/api/models/" + checkpoint;
+    // checkpoints may carry a ":variant" suffix (repo:quant)
+    std::string repo = checkpoint.substr(0, checkpoint.find(':'));
+    if (repo.empty() || repo.find('/') == std::string::npos) return "";
+    const std::string url = "https://huggingface.co/api/models/" + repo;
     auto r = HttpClient::get(url, hf_headers(), 20);
     if (r.status_code != 200) return "";
     try {
