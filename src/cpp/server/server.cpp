@@ -3060,17 +3060,24 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
                 }
                 return;
             }
-        } else if (!router_->is_model_loaded()) {
-            LOG(ERROR, "Server") << "No model loaded and no model specified in request" << std::endl;
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "No model loaded and no model specified in request"},
-                {"type", "invalid_request_error"}}}};
-            res.set_content(error.dump(), "application/json");
-            if (span) {
-                span->cancel();
+        } else {
+            // "model" may be omitted only when exactly one classifier is loaded.
+            // The router requires a model on every request, so resolve it here
+            // and put it in the request rather than letting it fail downstream.
+            requested_model = router_->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
+            if (requested_model.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "No 'model' specified and no single classification model "
+                                "is loaded (load one, or name it in the request)"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                if (span) {
+                    span->cancel();
+                }
+                return;
             }
-            return;
+            request_json["model"] = requested_model;
         }
 
         if (span) {

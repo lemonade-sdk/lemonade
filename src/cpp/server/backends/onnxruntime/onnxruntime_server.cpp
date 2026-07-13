@@ -99,13 +99,18 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     if (model_path.empty() || !fs::exists(model_path)) {
         throw std::runtime_error("Model directory not found for checkpoint: " + model_info.checkpoint());
     }
-    if (!is_complete_model_dir(path_from_utf8(model_path))) {
-        auto candidates = find_complete_model_dirs(path_from_utf8(model_path));
-        if (candidates.empty()) {
-            throw std::runtime_error(
-                "No servable model directory under '" + model_path +
-                "': need model.onnx + tokenizer.json + (manifest.json or config.json)");
-        }
+
+    // load() is the sole arbiter of ambiguity: resolve_checkpoint_path falls back
+    // to the cache root when resolution is ambiguous, so a complete root that also
+    // contains a nested complete model must still be rejected here — never assume
+    // the resolved path is the only candidate.
+    auto candidates = find_complete_model_dirs(path_from_utf8(model_path));
+    if (candidates.empty()) {
+        throw std::runtime_error(
+            "No servable model directory under '" + model_path +
+            "': need model.onnx + tokenizer.json + (manifest.json or config.json)");
+    }
+    if (candidates.size() > 1) {
         std::string listing;
         for (const auto& c : candidates) listing += "\n  " + path_to_utf8(c);
         throw std::runtime_error(
@@ -113,6 +118,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
             std::to_string(candidates.size()) +
             " complete model directories found — keep exactly one:" + listing);
     }
+    model_path = path_to_utf8(candidates.front());
     LOG(INFO, "OnnxRuntimeServer") << "Using model: " << model_path << std::endl;
 
     std::string executable = BackendUtils::get_backend_binary_path(*onnxruntime::spec(), "cpu");

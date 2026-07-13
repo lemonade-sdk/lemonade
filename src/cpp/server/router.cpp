@@ -705,6 +705,20 @@ std::string Router::get_loaded_recipe() const {
     return server->get_recipe_options().get_recipe();
 }
 
+std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* match = nullptr;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() || server->get_model_type() != type) {
+            continue;
+        }
+        if (match) return "";  // ambiguous: caller must name the model
+        match = server.get();
+    }
+    return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
+}
+
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 

@@ -79,6 +79,11 @@ public:
     std::string get_loaded_model() const;
     std::string get_loaded_recipe() const;
 
+    // The single live model of this type, or "" when none or more than one is
+    // loaded. Endpoints that let the caller omit "model" use this so an
+    // ambiguous choice is refused rather than silently resolved.
+    std::string get_sole_loaded_model_of_type(ModelType type) const;
+
     json get_all_loaded_models() const;
 
     json get_max_model_limits() const;
