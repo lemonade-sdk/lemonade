@@ -207,7 +207,7 @@ class ServerConfig {
 
   private setUpdatedAPIKey(apiKey: string) {
     if (this.apiKey != apiKey) {
-      console.log(`API Key updated: ${this.apiKey} -> ${apiKey}`);
+      console.log('API Key updated');
       this.apiKey = apiKey;
       this.notifyPortListeners();
       this.notifyUrlListeners();

@@ -32,8 +32,22 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-backend-docs-${{ github.ref }}
       cancel-in-progress: true
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v5
+      - name: Install ccache
+        run: sudo apt-get update && sudo apt-get install -y ccache
+      - name: Cache compiler objects
+        uses: actions/cache@v5
+        with:
+          path: .ccache
+          key: ccache-backend-drift-${{ hashFiles('CMakeLists.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-backend-drift-${{ hashFiles('CMakeLists.txt') }}-
+            ccache-backend-drift-
       - name: Configure and install build dependencies
         run: ./setup.sh
       - name: Build lemond
@@ -57,9 +71,6 @@ jobs:
       - name: Check Markdown links
         shell: bash
         run: |
-          # To run this manually on Windows, run:
-          #   npm install -g markdown-link-check
-          #   Get-ChildItem -Recurse -Filter *.md | ForEach-Object { markdown-link-check $_.FullName -c .\.github\workflows\mlc_config.json }
           set -euo pipefail
-          find . -type f -name "*.md" -not -path "./node_modules/*" \
-            -exec markdown-link-check -c .github/workflows/mlc_config.json {} \;
+          find . -type f -name "*.md" -not -path "./node_modules/*" -print0 | \
+            xargs -0 -P 4 -n 1 markdown-link-check -c .github/workflows/mlc_config.json

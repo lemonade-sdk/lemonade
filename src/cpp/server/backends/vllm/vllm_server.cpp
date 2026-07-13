@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <regex>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -280,9 +281,32 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             );
         }
 #ifdef __linux__
-        // One release per GPU target since 0.19.1: release tag is
-        // {version}-{target_arch}, e.g. vllm0.20.1-rocm7.12.0-gfx1151.
-        std::string release_tag = version + "-" + target_arch;
+        // The per-arch override replaces ONLY the builtin default base, so an explicit
+        // vllm.rocm_bin pin is not silently clobbered on an MI300X host.
+        std::string arch_override = SystemInfo::vllm_rocm_version_override(target_arch);
+        std::string default_pin = BackendUtils::get_backend_version("vllm", "rocm");
+        const bool on_builtin_default = version.empty() || version == default_pin;
+        const std::string& effective_version =
+            (!arch_override.empty() && on_builtin_default) ? arch_override : version;
+        // One release per GPU target since 0.19.1 (vllm0.20.1-rocm7.12.0-gfx1151): a bare
+        // base gets the detected suffix appended. An already-suffixed pin is rejected
+        // unless it matches, so a cross-arch pin cannot install against the wrong line.
+        static const std::regex arch_suffix_re("-(gfx[0-9a-fA-FxX]+)$");
+        std::smatch arch_suffix_match;
+        std::string release_tag;
+        if (std::regex_search(effective_version, arch_suffix_match, arch_suffix_re)) {
+            const std::string pinned_arch = arch_suffix_match[1].str();
+            if (pinned_arch != target_arch) {
+                throw std::runtime_error(
+                    "vLLM ROCm pin '" + effective_version + "' targets " + pinned_arch +
+                    " but this host is " + target_arch +
+                    "; pin a " + target_arch +
+                    " release (vllm.rocm_bin) or unset it to use the default.");
+            }
+            release_tag = effective_version;
+        } else {
+            release_tag = effective_version + "-" + target_arch;
+        }
         params.version_override = release_tag;
         params.filename = release_tag + "-x64.tar.gz";
 #else
@@ -348,7 +372,13 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--served-model-name");
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
-    args.push_back("--enforce-eager");
+    // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
+    const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
+        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+        resolved_vllm_args.has_enforce_eager);
+    if (launch_policy.enforce_eager) {
+        args.push_back("--enforce-eager");
+    }
     // Pass ctx_size through to vllm-server's --max-model-len. Trust the
     // user's value verbatim; the global default lives in defaults.json
     // (same as llamacpp). Larger values raise KV-cache memory and Triton
@@ -361,7 +391,7 @@ void VLLMServer::load(const std::string& model_name,
     // For AWQ specifically we force the 'awq' kernel because vLLM's default
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
     std::string quant_method = detect_quant_method(model_id);
-    if (quant_method == "awq") {
+    if (quant_method == "awq" && launch_policy.force_awq_kernel) {
         if (!resolved_vllm_args.has_quantization_arg) {
             LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
             args.push_back("--quantization");
@@ -391,9 +421,19 @@ void VLLMServer::load(const std::string& model_name,
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
     // Keep this overridable through vllm_args for users that want another limit.
-    if (!resolved_vllm_args.has_memory_budget_arg) {
+    // Discrete-HBM GPUs get vLLM's native budgeting instead of a fixed cap.
+    if (launch_policy.cap_kv_cache) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
+    }
+
+    // Emitted as its own argv element, never through vllm_args: that tokenizer strips quotes
+    // and would corrupt the JSON.
+    if (!resolved_vllm_args.speculative_config.empty()) {
+        LOG(DEBUG, "vLLM") << "Enabling speculative decoding: "
+                           << resolved_vllm_args.speculative_config << std::endl;
+        args.push_back("--speculative-config");
+        args.push_back(resolved_vllm_args.speculative_config);
     }
 
     if (!resolved_vllm_args.args.empty()) {

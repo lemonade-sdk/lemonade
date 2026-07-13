@@ -20,9 +20,10 @@ struct ParsedArg {
 constexpr const char* MEMORY_BUDGET_CONFLICT_KEY = "memory_budget";
 
 const std::set<std::string>& protected_flags() {
+    // --enforce-eager is deliberately absent: it must reach the resolver, which manages
+    // it (see resolve_vllm_args), rather than being rejected here as a process-shape flag.
     static const std::set<std::string> flags = {
         "--enable-prefix-caching",
-        "--enforce-eager",
         "--host",
         "--max-model-len",
         "--model",
@@ -238,6 +239,11 @@ bool has_dtype_arg(const std::vector<ParsedArg>& args) {
                        [](const ParsedArg& arg) { return arg.flag == "--dtype"; });
 }
 
+bool has_enforce_eager_arg(const std::vector<ParsedArg>& args) {
+    return std::any_of(args.begin(), args.end(),
+                       [](const ParsedArg& arg) { return arg.flag == "--enforce-eager"; });
+}
+
 const ParsedArg* find_arg(const std::vector<ParsedArg>& args, const std::string& flag) {
     auto it = std::find_if(args.begin(), args.end(),
                            [&](const ParsedArg& arg) { return arg.flag == flag; });
@@ -288,17 +294,65 @@ VLLMArgResolution resolve_vllm_args(const std::string& model_name,
 
     merge_layer(resolved, parse_args(user_vllm_args, "vllm_args"));
 
+    // Managed, not passthrough: load() re-emits --enforce-eager from the device-class
+    // launch policy, so detect it here and strip it to avoid a duplicate on the vLLM
+    // command line. Detection lets an explicit request override the graph default.
+    const bool has_enforce_eager = has_enforce_eager_arg(resolved);
+    resolved.erase(std::remove_if(resolved.begin(), resolved.end(),
+                                  [](const ParsedArg& arg) {
+                                      return arg.flag == "--enforce-eager";
+                                  }),
+                   resolved.end());
+
     const ParsedArg* quantization_arg = find_arg(resolved, "--quantization");
     std::string quantization_value = quantization_arg && !quantization_arg->values.empty()
         ? quantization_arg->values.front()
         : "";
 
+    // A structured JSON knob (e.g. MTP) that cannot ride the args string, so it is read
+    // as an object (family first, model wins) and re-serialized for the backend. A
+    // scalar/array is rejected loudly rather than dumped as something vLLM cannot parse.
+    std::string speculative_config;
+    auto take_speculative_config = [&speculative_config](const nlohmann::json* src,
+                                                         const char* scope) {
+        if (!src || !src->contains("speculative_config")) {
+            return;
+        }
+        const nlohmann::json& sc = (*src)["speculative_config"];
+        if (!sc.is_object()) {
+            throw std::runtime_error(std::string("speculative_config in the ") + scope +
+                                     " entry must be a JSON object, got " + sc.type_name());
+        }
+        speculative_config = sc.dump();
+    };
+    take_speculative_config(family, "family");
+    take_speculative_config(model_entry, "model");
+
     return {
         flatten_args(resolved),
         has_memory_budget_arg(resolved),
         has_dtype_arg(resolved),
+        has_enforce_eager,
         quantization_arg != nullptr,
-        quantization_value
+        quantization_value,
+        speculative_config
+    };
+}
+
+bool is_discrete_hbm_arch(const std::string& arch) {
+    // gfx9* covers every CDNA generation plus Vega20 — all HBM discrete parts, no RDNA
+    // (gfx10xx-gfx12xx). Vega20's inclusion is inert: the support gate rejects it first.
+    return arch.rfind("gfx9", 0) == 0;
+}
+
+DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
+                                                   bool has_memory_budget_arg,
+                                                   bool has_enforce_eager) {
+    const bool discrete_hbm = is_discrete_hbm_arch(arch);
+    return {
+        /*enforce_eager*/    !discrete_hbm || has_enforce_eager,
+        /*force_awq_kernel*/ !discrete_hbm,
+        /*cap_kv_cache*/     !discrete_hbm && !has_memory_budget_arg,
     };
 }
 

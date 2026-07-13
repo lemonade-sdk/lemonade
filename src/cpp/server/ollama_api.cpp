@@ -224,10 +224,17 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 // ============================================================================
 // auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
-void OllamaApi::auto_load_model(const std::string& model) {
+void OllamaApi::auto_load_model(const std::string& model, const json& request_options) {
     std::string name = normalize_model_name(model);
 
     if (router_->is_model_loaded(name)) {
+        if (request_options.contains("ctx_size")) {
+            auto loaded_ctx = router_->get_model_recipe_options(name).get_option("ctx_size");
+            LOG(DEBUG, "OllamaApi")
+                << "Ignoring requested ctx_size=" << request_options["ctx_size"]
+                << " for already-loaded " << name
+                << " (loaded ctx_size=" << loaded_ctx << ")" << std::endl;
+        }
         return;
     }
 
@@ -247,8 +254,27 @@ void OllamaApi::auto_load_model(const std::string& model) {
         info = model_manager_->get_model_info(name);
     }
 
-    router_->load_model(name, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(name, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "OllamaApi") << "Model loaded: " << name << std::endl;
+}
+
+// ============================================================================
+// Forward load-level options only so request-scoped fields can't leak
+// ============================================================================
+nlohmann::json OllamaApi::extract_auto_load_options(const json& request) {
+    nlohmann::json result = json::object();
+
+    if (request.contains("options") && request["options"].is_object() &&
+        request["options"].contains("num_ctx")) {
+        result["ctx_size"] = request["options"]["num_ctx"];
+    }
+
+    // Top-level wins over options.num_ctx, matching map_ollama_options precedence.
+    if (request.contains("ctx_size")) {
+        result["ctx_size"] = request["ctx_size"];
+    }
+
+    return result;
 }
 
 // build Ollama model entry from ModelInfo
@@ -704,7 +730,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Auto-load the model
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -836,7 +862,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -1273,7 +1299,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
@@ -1340,7 +1366,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};

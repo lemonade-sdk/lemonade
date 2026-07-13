@@ -6,6 +6,7 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "auto_check_model_updates": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
