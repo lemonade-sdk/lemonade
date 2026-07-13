@@ -323,6 +323,13 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
+    <tr>
+      <td rowspan="1"><strong>Omni (text, audio, vision)</strong></td>
+      <td rowspan="1"><code>vllm-omni</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
   </tbody>
 </table>
 <!-- END GENERATED: backends-matrix -->
