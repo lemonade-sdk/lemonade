@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -130,14 +131,8 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
             }
-            const char* protocol = static_cast<const char*>(in);
-            if (!server->authenticate_connection(wsi, protocol)) {
+            if (!server->authenticate_connection(wsi)) {
                 return 1;
-            }
-            if (protocol && std::strlen(protocol) > 0) {
-                int fd = static_cast<int>(lws_get_socket_fd(wsi));
-                std::lock_guard<std::mutex> lock(server->protocols_mutex_);
-                server->pending_protocols_[fd] = std::string(protocol);
             }
             break;
         }
@@ -391,20 +386,12 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
         token = get_url_arg(wsi, "api_key");
     }
     if (!token) {
-        int fd = static_cast<int>(lws_get_socket_fd(wsi));
-        std::lock_guard<std::mutex> lock(protocols_mutex_);
-        auto it = pending_protocols_.find(fd);
-        if (it != pending_protocols_.end()) {
-            const std::string& protocol = it->second;
-            if (protocol.find("bearer.") == 0) {
-                return protocol.substr(7);
-            }
-        }
+        token = get_protocol_credential(wsi);
     }
     return token ? strip_bearer_prefix(*token) : "";
 }
 
-bool WebSocketServer::authenticate_connection(struct lws* wsi, const char* protocol) const {
+bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     if (api_key_.empty()) {
         return true;
     }
@@ -413,11 +400,8 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi, const char* proto
     if (!token) {
         token = get_url_arg(wsi, "api_key");
     }
-    if (!token && protocol && std::strlen(protocol) > 0) {
-        std::string protocol_str(protocol);
-        if (protocol_str.find("bearer.") == 0) {
-            token = protocol_str.substr(7);
-        }
+    if (!token) {
+        token = get_protocol_credential(wsi);
     }
 
     if (!token) {
@@ -448,12 +432,6 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
     std::string token_str = extract_token_from_wsi(wsi);
     auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
     std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
-
-    {
-        int fd = static_cast<int>(lws_get_socket_fd(wsi));
-        std::lock_guard<std::mutex> lock(protocols_mutex_);
-        pending_protocols_.erase(fd);
-    }
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
@@ -734,6 +712,38 @@ std::optional<std::string> WebSocketServer::get_header(struct lws* wsi, enum lws
     }
 
     return std::string(buffer, static_cast<size_t>(copied));
+}
+
+std::optional<std::string> WebSocketServer::get_protocol_credential(struct lws* wsi) {
+    static constexpr char credential_prefix[] = "bearer.";
+    static constexpr size_t prefix_len = sizeof(credential_prefix) - 1;
+
+    auto header = get_header(wsi, WSI_TOKEN_PROTOCOL);
+    if (!header) {
+        return std::nullopt;
+    }
+
+    // The credential rides in Sec-WebSocket-Protocol alongside the registered
+    // application protocol. The encoding is base64url, so the value contains
+    // only token characters and ends at the next list separator.
+    const std::string& value = *header;
+    size_t pos = value.find(credential_prefix);
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    size_t begin = pos + prefix_len;
+    size_t end = value.find_first_of(", \t", begin);
+    std::string encoded = value.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+
+    // Translate base64url back to standard base64 before decoding.
+    for (char& c : encoded) {
+        if (c == '-') {
+            c = '+';
+        } else if (c == '_') {
+            c = '/';
+        }
+    }
+    return utils::JsonUtils::base64_decode(encoded);
 }
 
 std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {
