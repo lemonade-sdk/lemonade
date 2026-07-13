@@ -31,6 +31,38 @@ bool is_complete_model_dir(const fs::path& dir) {
            (fs::exists(dir / "manifest.json", ec) || fs::exists(dir / "config.json", ec));
 }
 
+// Relaunch ort-server just long enough to read the error it prints before
+// exiting. It refuses a model (unsupported architecture, bad manifest, corrupt
+// tokenizer) by writing one "ort-server: ..." line to stderr and exiting.
+std::string capture_startup_error(const std::string& executable,
+                                  const std::vector<std::string>& args) {
+    std::string captured;
+    try {
+        utils::ProcessManager::run_process_with_output(
+            executable, args,
+            [&captured](const std::string& line) {
+                if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
+                    return true;  // skip blank lines
+                }
+                // Keep everything the child says — its own "ort-server: ..."
+                // errors, but also crashes it cannot report itself (a Rust panic
+                // from the tokenizer FFI, a missing DLL).
+                if (!captured.empty()) captured += " | ";
+                captured += line;
+                return captured.size() < 400;  // enough to diagnose; stop there
+            },
+            "", /*timeout_seconds=*/20);
+    } catch (const std::exception&) {
+    }
+    // Trim, and keep the message bounded — it is going into an HTTP error body.
+    const size_t start = captured.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    captured = captured.substr(start);
+    captured.erase(captured.find_last_not_of(" \t\r\n") + 1);
+    if (captured.size() > 400) captured = captured.substr(0, 400) + "...";
+    return captured;
+}
+
 std::vector<fs::path> find_complete_model_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
@@ -156,7 +188,12 @@ void OnnxRuntimeServer::load(const std::string& model_name,
 
     if (!wait_for_ready("/health")) {
         unload();
-        throw std::runtime_error("ort-server failed to start or become ready");
+        // The subprocess's stderr is invisible when lemond runs windowless (CI,
+        // tray), so a startup failure would otherwise surface only as "not
+        // ready". Re-run it briefly to capture the reason it refused the model.
+        std::string details = capture_startup_error(executable, args);
+        throw std::runtime_error("ort-server failed to start or become ready" +
+                                 (details.empty() ? "" : ": " + details));
     }
     start_backend_watchdog("/health");
     LOG(INFO, "OnnxRuntimeServer") << "Server is ready!" << std::endl;
