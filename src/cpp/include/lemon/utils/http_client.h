@@ -45,6 +45,7 @@ struct DownloadResult {
     size_t total_bytes = 0;           // Total file size (if known)
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
+    bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
 };
 
 // Progress callback returns bool: true = continue, false = cancel download

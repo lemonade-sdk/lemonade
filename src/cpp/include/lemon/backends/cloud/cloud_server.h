@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 
 #include "lemon/model_manager.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
 #include <string>
 #include <vector>
@@ -85,6 +86,13 @@ public:
                                                    const std::string& api_key,
                                                    const std::string& base_url,
                                                    bool allow_insecure_http = false);
+
+    /// Trust boundary for a discovery request. The AllowInsecureHttp opt-in
+    /// only applies to plaintext http:// providers; an https:// provider stays
+    /// HTTPS-only even if allow_insecure_http is stale or accidentally set, so
+    /// a redirect can never downgrade the Bearer-carrying request to http.
+    static utils::HttpSecurityPolicy discovery_policy(const std::string& base_url,
+                                                      bool allow_insecure_http);
 
 private:
     struct ResolvedCreds {

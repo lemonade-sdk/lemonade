@@ -815,6 +815,15 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             case CURLE_SSL_CONNECT_ERROR:
                 retryable = true;
                 break;
+            // A rejected scheme (e.g. an https-only policy hit on an http URL or
+            // a disallowed redirect target) and a malformed URL can never
+            // succeed on retry. Fail permanently so the outer loop stops
+            // immediately and preserves any existing partial file.
+            case CURLE_UNSUPPORTED_PROTOCOL:
+            case CURLE_URL_MALFORMAT:
+                result.permanent = true;
+                retryable = false;
+                break;
             case CURLE_WRITE_ERROR: {
                 // CURLE_WRITE_ERROR (23) typically means disk full.
                 // Check available disk space to confirm.
@@ -1117,6 +1126,14 @@ DownloadResult HttpClient::download_file(const std::string& url,
                 final_result.error_message = "Download succeeded but failed to rename file: " + ec.message();
             }
             return final_result;
+        }
+
+        // A permanent transport failure (unsupported protocol, malformed URL)
+        // can never succeed on retry. Stop immediately and leave any partial
+        // file in place rather than removing it on each doomed attempt.
+        if (final_result.permanent) {
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
+            break;
         }
 
         // Don't retry permanent HTTP failures (4xx client errors).

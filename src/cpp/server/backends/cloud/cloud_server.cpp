@@ -735,6 +735,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     }
 }
 
+utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
+                                                        bool allow_insecure_http) {
+    // The AllowInsecureHttp opt-in only applies to plaintext http:// providers.
+    // An https:// provider stays HTTPS-only even if allow_insecure_http is stale
+    // or accidentally set, so a redirect can never downgrade the
+    // Bearer-carrying request to http.
+    return allow_insecure_http && CloudProviderRegistry::is_http_base_url(base_url)
+               ? utils::HttpSecurityPolicy::AllowInsecureHttp
+               : utils::HttpSecurityPolicy::ExternalHttpsOnly;
+}
+
 std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
@@ -760,10 +771,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         {"Authorization", "Bearer " + api_key}
     };
 
-    // HTTPS providers and remote endpoints use the default external
-    // HTTPS-only policy. Plaintext http:// providers that explicitly set
-    // allow_insecure_http use the AllowInsecureHttp opt-in so http and https
-    // are accepted but redirect chains remain bounded.
+    const auto policy = discovery_policy(normalized_base, allow_insecure_http);
 
     utils::HttpResponse response;
     try {
@@ -771,10 +779,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         // configured provider. The 300 s default would block model listing
         // for minutes if a provider's API is unreachable. 15 s is plenty for
         // a /v1/models response under normal conditions.
-        response = utils::HttpClient::get(url, headers, /*timeout_seconds=*/15,
-                                          allow_insecure_http
-                                              ? utils::HttpSecurityPolicy::AllowInsecureHttp
-                                              : utils::HttpSecurityPolicy::ExternalHttpsOnly);
+        response = utils::HttpClient::get(url, headers, /*timeout_seconds=*/15, policy);
     } catch (const std::exception& e) {
         LOG(WARNING, "Cloud") << "Model discovery failed for provider '" << provider
                               << "': " << e.what() << std::endl;
