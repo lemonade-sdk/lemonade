@@ -26,7 +26,7 @@ struct BenchScenario {
     std::string category;
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
     json input;                  // Input for non-chat scenarios (e.g., textgen, embedding)
-    json prompt;                 // Input for image generation
+    json imgconfig;              // Input for image generation
     int max_tokens;
     int warmup_runs = 0;
     int measurement_runs = 3;

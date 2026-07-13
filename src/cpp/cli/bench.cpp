@@ -222,7 +222,7 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
                 scenario.input = item["input"].get<json>();
         } else if (scenario.category == "imagegen"){
             if (scenario.category == "imagegen" && item.contains("prompt"))
-                scenario.prompt = item["prompt"].get<json>();
+                scenario.imgconfig = item.get<json>();
         } else {
             if (item.contains("messages") && item["messages"].is_array()) {
                 scenario.messages = item["messages"].get<std::vector<json>>();
@@ -711,7 +711,11 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
 
     json request_body;
     request_body["model"] = model;
-    request_body["prompt"] = scenario.prompt;
+    request_body["prompt"] = scenario.imgconfig.value("prompt", "");
+    request_body["size"] = scenario.imgconfig.value("size", "256x256");
+    request_body["steps"] = scenario.imgconfig.value("steps", 4);
+    request_body["cfg_scale"] = scenario.imgconfig.value("cfg_scale", 1.0);
+    request_body["seed"] = scenario.imgconfig.value("seed", 42);
 
     std::string body = request_body.dump();
 
