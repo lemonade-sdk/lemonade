@@ -29,6 +29,8 @@ inline const BackendDescriptor descriptor = {
          "Comma-separated list of accelerator devices to use (e.g. Vulkan0)", "Llama.cpp Backend Options"},
         {"llamacpp_args", "--llamacpp-args", "", "ARGS",
          "Custom arguments to pass to llama-server", "Llama.cpp Backend Options"},
+        {"mmproj_enabled", "--mmproj-enabled", true, "BOOL",
+         "Load the multimodal projector of vision models (false frees its memory for context)", "Llama.cpp Backend Options"},
     },
     /*support*/ {
         {"system", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},
