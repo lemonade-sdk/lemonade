@@ -37,7 +37,21 @@ public:
     json completion(const json& request) override;
     json responses(const json& request) override;
 
+    // Streaming path: apply the same request normalization as the non-streaming
+    // methods before delegating to the base streaming forwarder.
+    void forward_streaming_request(const std::string& endpoint,
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink,
+                                   bool sse = true,
+                                   long timeout_seconds = 0,
+                                   TelemetryCallback telemetry_callback = nullptr) override;
+
 private:
+    // Shared OpenAI-compat normalization for every request path (chat/completion,
+    // streaming and non-streaming): map the legacy max_completion_tokens alias so
+    // clients work regardless of which key vllm-omni-server honors.
+    static json prepare_request(const json& request);
+
     std::filesystem::path rocm_shim_dir_;
     int64_t max_model_len_ = 0;
 };

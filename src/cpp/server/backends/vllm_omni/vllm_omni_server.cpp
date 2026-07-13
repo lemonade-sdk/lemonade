@@ -5,6 +5,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -123,17 +124,6 @@ static void configure_omni_rocm_env(
     env_vars.push_back({"PYTHONPATH", with_prepended_pythonpath(shim_dir)});
 }
 
-// Split a free-form user args string on whitespace. MVP: does not honor quotes.
-static std::vector<std::string> split_user_args(const std::string& args) {
-    std::vector<std::string> out;
-    std::istringstream stream(args);
-    std::string token;
-    while (stream >> token) {
-        out.push_back(token);
-    }
-    return out;
-}
-
 // ----------------------------------------------------------------------------
 
 InstallParams VLLMOmniServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -228,7 +218,9 @@ void VLLMOmniServer::load(const std::string& model_name,
 
     if (!omni_args.empty()) {
         LOG(DEBUG, "vLLM-Omni") << "Adding user arguments: " << omni_args << std::endl;
-        for (const auto& tok : split_user_args(omni_args)) {
+        // Quote-aware parsing (shared with the other backends) so values like
+        // --some-option "value with spaces" survive as a single argument.
+        for (const auto& tok : parse_custom_args(omni_args)) {
             args.push_back(tok);
         }
     }
@@ -277,21 +269,41 @@ void VLLMOmniServer::unload() {
     max_model_len_ = 0;
 }
 
+// Apply the max_completion_tokens -> max_tokens compatibility alias (as the
+// plain vLLM backend does) so OpenAI-style clients work regardless of which key
+// vllm-omni-server honors. Shared by the streaming and non-streaming paths.
+json VLLMOmniServer::prepare_request(const json& request) {
+    return JsonUtils::with_legacy_max_tokens_alias(request);
+}
+
 json VLLMOmniServer::chat_completion(const json& request) {
-    // Apply the max_completion_tokens -> max_tokens compatibility alias (as the
-    // plain vLLM backend does) so OpenAI-style clients work regardless of which
-    // key vllm-omni-server honors.
-    return forward_request("/v1/chat/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return forward_request("/v1/chat/completions", prepare_request(request));
 }
 
 json VLLMOmniServer::completion(const json& request) {
-    return forward_request("/v1/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return forward_request("/v1/completions", prepare_request(request));
 }
 
 json VLLMOmniServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
+}
+
+void VLLMOmniServer::forward_streaming_request(const std::string& endpoint,
+                                               const std::string& request_body,
+                                               httplib::DataSink& sink,
+                                               bool sse,
+                                               long timeout_seconds,
+                                               TelemetryCallback telemetry_callback) {
+    std::string body = request_body;
+    if (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions") {
+        try {
+            body = prepare_request(json::parse(request_body)).dump();
+        } catch (...) {
+            // Forward the original request if it cannot be parsed.
+        }
+    }
+    WrappedServer::forward_streaming_request(endpoint, body, sink, sse,
+                                             timeout_seconds, telemetry_callback);
 }
 
 }  // namespace backends
