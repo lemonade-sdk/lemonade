@@ -10,7 +10,8 @@
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:a11y": "npx playwright test tests/a11y.spec.ts",
-    "test:preset-intent": "node tests/preset-intent.runtime.cjs"
+    "test:preset-intent": "node tests/preset-intent.runtime.cjs",
+    "test:autoopt-glue": "node tests/autoopt-glue.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
