@@ -55,6 +55,33 @@ jobs:
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
 
+  pre-commit:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-pre-commit-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install pre-commit
+      - name: Run pre-commit on the changed files
+        # Scoped to what the change touches; running repo-wide would fail on drift that
+        # predates it and is not the contributor's to fix. The base comes from the merge
+        # base rather than github.base_ref, which only exists on pull_request -- keying on
+        # that skipped the job entirely in the merge queue, where main is actually
+        # defended. On a push to the default branch the merge base is HEAD, so nothing is
+        # checked and the run is a no-op.
+        run: |
+          BASE=$(git merge-base "origin/${{ github.event.repository.default_branch }}" HEAD)
+          pre-commit run \
+            --from-ref "$BASE" \
+            --to-ref HEAD \
+            --show-diff-on-failure
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
