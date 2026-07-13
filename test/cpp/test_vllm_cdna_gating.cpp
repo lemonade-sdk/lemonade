@@ -62,6 +62,8 @@ int main() {
     // release line from the RDNA default, since no single tag carries both.
     expect(SystemInfo::vllm_rocm_version_override("gfx942") == "vllm0.19.1-rocm7.13.0",
            "vllm gfx942 overrides to its own dcgpu release line");
+    expect(SystemInfo::vllm_rocm_version_override("gfx950") == "vllm0.19.1-rocm7.13.0",
+           "vllm gfx950 (CDNA4) rides the same CDNA release line as gfx942");
     expect(SystemInfo::vllm_rocm_version_override("gfx110X").empty(),
            "vllm RDNA families use the default pin (no override)");
     expect(SystemInfo::vllm_rocm_version_override("gfx1151").empty(),

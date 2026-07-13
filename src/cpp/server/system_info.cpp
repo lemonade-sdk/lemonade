@@ -506,6 +506,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
     {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
+    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
