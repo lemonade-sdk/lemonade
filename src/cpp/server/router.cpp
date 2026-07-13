@@ -1362,7 +1362,8 @@ json Router::classify(const json& request) {
                 }
                 span->end_with_error(error_msg);
             } else {
-                span->end_with_success(nlohmann::json::object(), response.dump());
+                // Label scores classify user content; keep them out of telemetry.
+                span->end_with_success(nlohmann::json::object(), "");
             }
         }
         return response;
