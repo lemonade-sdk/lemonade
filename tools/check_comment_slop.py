@@ -17,10 +17,12 @@ Usage:
 
 import argparse
 import ast
+import io
 import os
 import re
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass, field
 
 # A concept re-explained at N sites is the dominant failure: the model restates it at
@@ -366,16 +368,30 @@ def _changed_entries(from_ref, to_ref):
 # into the AST or the stripped code, so compare them separately rather than certify a
 # change to one as "comments only".
 DIRECTIVE_RE = re.compile(
-    r"#\s*(type:\s*ignore|noqa|pylint:|mypy:|fmt:\s*(on|off)|pragma:)"
-    r"|#.*coding[:=]"  # PEP 263 writes it as `# -*- coding: utf-8 -*-`
+    r"#\s*(type:\s*\S|noqa|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
+    r"|fmt:\s*(on|off)|pragma:)"
     r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
     r"|/\*\s*(NOLINT|clang-format\s+(on|off))",
     re.IGNORECASE,
 )
 
+# PEP 263 honours an encoding cookie only on the first two lines, so matching it anywhere
+# turns a comment that merely DISCUSSES encoding into a directive and reports a genuine
+# comment edit as an offender.
+CODING_RE = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*[-_.a-zA-Z0-9]+")
+
 
 def _directives_of(text):
-    return [line.strip() for line in text.splitlines() if DIRECTIVE_RE.search(line)]
+    """The comments the toolchain OBEYS.
+
+    `# type: int` is read by a type checker but is absent from both the tree and the
+    token stream, so it can only be compared here.
+    """
+    out = []
+    for i, line in enumerate(text.splitlines()):
+        if DIRECTIVE_RE.search(line) or (i < 2 and CODING_RE.match(line)):
+            out.append(line.strip())
+    return out
 
 
 def _code_of(text, path=""):
@@ -393,18 +409,27 @@ def _code_of(text, path=""):
 
 
 def _code_of_python(text):
-    """The parsed program, as a tree.
+    """The program as BOTH a tree and a token stream, because each is blind where the
+    other sees.
 
-    A token stream cannot carry a security claim: dropping INDENT and DEDENT makes
-    `bar()` inside an `if` and `bar()` after it compare equal, so a change that moves a
-    statement between scopes passes as comments-only. The tree is what the interpreter
-    runs, and comments are absent from it by construction.
+    The tree alone loses a literal's written form -- 0x100000 and 1048576 dump the same
+    -- so a rewrite would be certified as no change. The tokens alone lose the block
+    structure -- INDENT and DEDENT dropped, `bar()` inside an `if` and after it compare
+    equal -- so moving a statement between scopes would be certified as no change.
+    Requiring both to match means an edit has to survive two representations that fail
+    in different directions.
     """
     try:
-        return ast.dump(ast.parse(text))
-    except (SyntaxError, ValueError) as e:
+        tree = ast.dump(ast.parse(text))
+        toks = [
+            t.string
+            for t in tokenize.generate_tokens(io.StringIO(text).readline)
+            if t.type not in (tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE)
+        ]
+    except (SyntaxError, ValueError, tokenize.TokenError, IndentationError) as e:
         # Refuse to certify what we could not parse.
         raise GitError(f"cannot parse Python source: {e}") from e
+    return [tree, *toks]
 
 
 def _code_of_cish(text):
