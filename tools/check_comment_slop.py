@@ -12,13 +12,17 @@ mechanisable.
 Usage:
     python tools/check_comment_slop.py                    # staged diff (pre-commit)
     python tools/check_comment_slop.py --from-ref origin/main --to-ref HEAD
+    python tools/check_comment_slop.py --assert-comments-only --from-ref A --to-ref B
 """
 
 import argparse
+import ast
+import io
 import os
 import re
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass, field
 
 # A concept re-explained at N sites is the dominant failure: the model restates it at
@@ -346,6 +350,243 @@ def find_duplicates(blocks):
     return [(g, sorted(terms)) for g, terms in groups if len(g) >= MIN_SITES]
 
 
+def comments_only(from_ref, to_ref):
+    """True when the two revisions differ ONLY in comments and blank lines.
+
+    A change that claims to be a comment cleanup should prove it rather than ask a
+    reviewer to take it on faith.
+    """
+    offenders = []
+    for path, old_mode, new_mode, status in _changed_entries(from_ref, to_ref):
+        # The mode is part of the tree, so `chmod +x` changes the change even though
+        # every byte of content is identical. Only a modified, same-mode source file can
+        # possibly be a comment edit; everything else is reported rather than reasoned
+        # about (added, deleted, renamed, retyped, or any non-source path).
+        if old_mode != new_mode:
+            offenders.append(f"{path} (mode {old_mode} -> {new_mode})")
+            continue
+        if status[:1] != "M" or not path.endswith(SOURCE_SUFFIXES):
+            offenders.append(path)
+            continue
+
+        before = run(["git", "show", f"{from_ref}:{path}"], allow_missing=True)
+        after = run(["git", "show", f"{to_ref}:{path}"], allow_missing=True)
+        if before is None or after is None:
+            offenders.append(path)
+        elif _directives_of(before) != _directives_of(after):
+            offenders.append(path)
+        elif _code_of(before, path) != _code_of(after, path):
+            offenders.append(path)
+    return offenders
+
+
+def _changed_entries(from_ref, to_ref):
+    """(path, old_mode, new_mode, status) per changed path.
+
+    --raw carries the file modes, which --name-only does not; -z keeps a path holding a
+    space or a quote in one piece.
+    """
+    fields = run(["git", "diff", "--raw", "-z", f"{from_ref}..{to_ref}"]).split("\0")
+    entries, i = [], 0
+    while i < len(fields):
+        meta = fields[i]
+        if not meta.startswith(":"):
+            i += 1
+            continue
+        old_mode, new_mode, _, _, status = meta[1:].split()
+        n = 2 if status[:1] in ("R", "C") else 1  # rename and copy carry src and dst
+        paths = fields[i + 1 : i + 1 + n]
+        if paths:
+            entries.append((paths[-1], old_mode, new_mode, status))
+        i += 1 + n
+    return entries
+
+
+# A comment the toolchain reads is not decoration: dropping `# type: ignore` changes what
+# mypy accepts, and an encoding cookie changes how the file is decoded. Neither survives
+# into the AST or the stripped code, so compare them separately rather than certify a
+# change to one as "comments only".
+DIRECTIVE_RE = re.compile(
+    r"#\s*(type:\s*\S|noqa|nosec|bandit:|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
+    r"|fmt:\s*(on|off|skip)|pragma:)"
+    r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
+    r"|/\*\s*(NOLINT|clang-format\s+(on|off)|IWYU)",
+    re.IGNORECASE,
+)
+
+# PEP 263 honours an encoding cookie only on the first two lines, so matching it anywhere
+# turns a comment that merely DISCUSSES encoding into a directive and reports a genuine
+# comment edit as an offender.
+CODING_RE = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*[-_.a-zA-Z0-9]+")
+
+
+def _directives_of(text):
+    """The comments the toolchain OBEYS.
+
+    `# type: int` is read by a type checker, and a first-line `#!` shebang by the kernel
+    when the file is executed directly -- `python3` -> `python3 -O` silently disables
+    every assert. Both are `#` comments, absent from the tree and the token stream, so a
+    change to one would otherwise be certified as no-code-change; compare them here.
+    """
+    out = []
+    for i, line in enumerate(text.splitlines()):
+        if (
+            DIRECTIVE_RE.search(line)
+            or (i == 0 and line.startswith("#!"))
+            or (i < 2 and CODING_RE.match(line))
+        ):
+            out.append(line.strip())
+    return out
+
+
+def _code_of(text, path=""):
+    """The code of a file, with comments and blank lines removed.
+
+    String literals are tracked, because a regex that strips `//` anywhere would eat
+    the rest of the line from inside "https://..." -- and two lines that differ only
+    AFTER such a URL would then compare equal. That is a false PASS in the one place
+    it must never happen: it would let a change advertised as a comment cleanup
+    smuggle code past --assert-comments-only.
+    """
+    if path.endswith((".py", ".pyi")):
+        return _code_of_python(text)
+    # C replaces trigraphs in phase 1, before line splicing and comment removal, so `??/`
+    # is a backslash that can continue a // comment over the next line. C++17 removed
+    # them, so only .c is treated as trigraph-live; a .h here is a C++ header, where
+    # detrigraphing would instead flag a literal `??/` in a comment as a code change.
+    if path.endswith(".c"):
+        text = _detrigraph(text)
+    return _code_of_cish(text)
+
+
+TRIGRAPHS = {
+    "=": "#",
+    "/": "\\",
+    "'": "^",
+    "(": "[",
+    ")": "]",
+    "!": "|",
+    "<": "{",
+    ">": "}",
+    "-": "~",
+}
+TRIGRAPH_RE = re.compile(r"\?\?([=/'()!<>-])")
+
+
+def _detrigraph(text):
+    return TRIGRAPH_RE.sub(lambda m: TRIGRAPHS[m.group(1)], text)
+
+
+def _code_of_python(text):
+    """The program as BOTH a tree and a token stream, because each is blind where the
+    other sees.
+
+    The tree alone loses a literal's written form -- 0x100000 and 1048576 dump the same
+    -- so a rewrite would be certified as no change. The tokens alone lose the block
+    structure -- INDENT and DEDENT dropped, `bar()` inside an `if` and after it compare
+    equal -- so moving a statement between scopes would be certified as no change.
+    Requiring both to match means an edit has to survive two representations that fail
+    in different directions.
+    """
+    try:
+        tree = ast.dump(ast.parse(text))
+        toks = [
+            t.string
+            for t in tokenize.generate_tokens(io.StringIO(text).readline)
+            if t.type not in (tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE)
+        ]
+    except (SyntaxError, ValueError, tokenize.TokenError, IndentationError) as e:
+        # Refuse to certify what we could not parse.
+        raise GitError(f"cannot parse Python source: {e}") from e
+    return [tree, *toks]
+
+
+def _after_splices(text, i):
+    """Index of the first character at or after i that survives phase-2 line splicing."""
+    while text[i : i + 2] == "\\\n":
+        i += 2
+    return i
+
+
+def _code_of_cish(text):
+    # Phase 1: normalise line endings to \n, as the compiler does before splicing and
+    # comment removal. Without this the splice below only matches `\`+`\n`, so on a CRLF
+    # file deleting the `\` from a `// warn \` (which is `\`+`\r\n`) fails to splice and
+    # the revived code compares equal. A line-ending change carries no code meaning (a
+    # raw newline inside a "..." literal is ill-formed C), so normalising hides nothing.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    out = []
+    i, n = 0, len(text)
+    in_str = in_chr = in_line = in_block = False
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+
+        # Phase 2: a backslash-newline joins two lines, and it happens BEFORE comments are
+        # removed in phase 3 -- so deleting the backslash from a `// warn \` promotes the
+        # line below it from dead code to live. It is spliced HERE rather than in a pass
+        # over the whole text because C++ exempts raw string literals ([lex.phases]/2),
+        # and a global splice would edit their CONTENTS: two raw strings differing by a
+        # backslash-newline would then compare equal. The loop never steps inside a raw
+        # string, because _raw_string_at consumes each one whole.
+        if ch == "\\" and nxt == "\n":
+            i += 2
+            continue
+
+        if in_line:
+            if ch == "\n":
+                in_line = False
+                out.append(ch)
+        elif in_block:
+            # Phase 2 splices EVERY `\<LF>` before comments are removed, so `*`, any run of
+            # them, then `/` is a `*/` that closes the comment. Splice to a fixed point
+            # rather than matching one: a lone `*\<LF>/` check misses `*\<LF>\<LF>/`, and the
+            # comment then swallows the rest of the file, comparing two revisions equal.
+            if ch == "*":
+                j = _after_splices(text, i + 1)
+                if text[j : j + 1] == "/":
+                    in_block = False
+                    i = j + 1
+                    continue
+            if ch == "\n":
+                out.append(ch)
+        elif in_str or in_chr:
+            out.append(ch)
+            if ch == "\\" and nxt:
+                out.append(nxt)
+                i += 1
+            elif (in_str and ch == '"') or (in_chr and ch == "'"):
+                in_str = in_chr = False
+        elif ch == "/" and text[(j := _after_splices(text, i + 1)) : j + 1] in (
+            "/",
+            "*",
+        ):
+            # An opener is spliceable too (`/\<LF>/`, `/\<LF>*`), for the same reason.
+            in_line = text[j] == "/"
+            in_block = not in_line
+            i = j
+        else:
+            raw = _raw_string_at(text, i)
+            if raw:
+                out.append(raw)
+                i += len(raw)
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "'":
+                in_chr = True
+            out.append(ch)
+        i += 1
+    if in_block:
+        # An unterminated `/*` is not valid C, and swallowing it would certify two
+        # differing revisions as equal. Refuse, as the Python path refuses to parse.
+        raise GitError("unterminated /* block comment in C/C++ source")
+    # Split on \n and strip only spaces/tabs, NOT \r: a `\r` inside a string literal is
+    # content (a CRLF HTTP template differs from an LF one), and splitlines()/strip()
+    # would erase it, certifying a CRLF->LF change of string content as comments-only.
+    return [ln.strip(" \t") for ln in "".join(out).split("\n") if ln.strip(" \t")]
+
+
 def _raw_string_at(text, i):
     """The raw string literal starting at i, or None.
 
@@ -371,8 +612,30 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--from-ref")
     p.add_argument("--to-ref", default="HEAD")
+    p.add_argument(
+        "--assert-comments-only",
+        action="store_true",
+        help="fail unless the change touches comments and blank lines only",
+    )
     p.add_argument("filenames", nargs="*", help="ignored; pre-commit passes these")
     args = p.parse_args()
+
+    if args.assert_comments_only:
+        if not args.from_ref:
+            p.error("--assert-comments-only requires --from-ref")
+        try:
+            offenders = comments_only(args.from_ref, args.to_ref)
+        except GitError as e:
+            # A check that could not run has not passed.
+            print(f"Could not verify: {e}")
+            return 1
+        if offenders:
+            print("This change is NOT comments-only. Code changed in:")
+            for f in offenders:
+                print(f"  {f}")
+            return 1
+        print("Verified: comments and blank lines only; no code changed.")
+        return 0
 
     # pre-commit exports these when invoked with --from-ref/--to-ref, which is how CI
     # runs it; a plain `git commit` has neither and we read the staged diff instead.

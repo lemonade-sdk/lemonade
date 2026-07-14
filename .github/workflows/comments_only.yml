@@ -1,0 +1,37 @@
+name: Comments Only
+
+# Proves a PR that CLAIMS to be a comment cleanup really is one, so a reviewer can merge
+# it without re-reading the diff. Opt-in: a maintainer applies the `comments-only` label.
+#
+# It re-runs on every push while the label is applied, not just when the label lands. A
+# check that ran only on `labeled` would leave a stale green tick on a PR that afterwards
+# pushed code -- which is the exact false pass this is here to prevent.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  comments-only:
+    if: contains(github.event.pull_request.labels.*.name, 'comments-only')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Assert the change touches comments and blank lines only
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_SHA"
+          BASE=$(git merge-base "$BASE_SHA" HEAD)
+          python tools/check_comment_slop.py \
+            --assert-comments-only --from-ref "$BASE" --to-ref HEAD
