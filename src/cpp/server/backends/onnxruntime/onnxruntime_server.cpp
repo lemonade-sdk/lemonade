@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -37,8 +38,9 @@ bool is_complete_model_dir(const fs::path& dir) {
 std::string capture_startup_error(const std::string& executable,
                                   const std::vector<std::string>& args) {
     std::string captured;
+    int exit_code = -1;
     try {
-        utils::ProcessManager::run_process_with_output(
+        exit_code = utils::ProcessManager::run_process_with_output(
             executable, args,
             [&captured](const std::string& line) {
                 if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -53,6 +55,28 @@ std::string capture_startup_error(const std::string& executable,
             },
             "", /*timeout_seconds=*/20);
     } catch (const std::exception&) {
+    }
+
+    // A process that dies without saying anything cannot be diagnosed from its
+    // (empty) output: report how it died, and what was actually installed next
+    // to it. On Windows, 0xC0000135 here means a missing DLL beside the binary.
+    if (captured.empty()) {
+        std::ostringstream detail;
+        detail << "exited with code " << exit_code;
+        if (exit_code == static_cast<int>(0xC0000135)) {
+            detail << " (STATUS_DLL_NOT_FOUND — a required library is missing "
+                      "from the backend install directory)";
+        }
+        std::error_code ec;
+        fs::path bin_dir = path_from_utf8(executable).parent_path();
+        std::string listing;
+        for (const auto& entry : fs::directory_iterator(bin_dir, ec)) {
+            if (ec) break;
+            if (!listing.empty()) listing += ", ";
+            listing += path_to_utf8(entry.path().filename());
+        }
+        if (!listing.empty()) detail << "; installed: " << listing;
+        captured = detail.str();
     }
     // Trim, and keep the message bounded — it is going into an HTTP error body.
     const size_t start = captured.find_first_not_of(" \t\r\n");
