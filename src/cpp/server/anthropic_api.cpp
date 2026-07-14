@@ -1,9 +1,11 @@
 #include "lemon/ollama_api.h"
+#include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <iostream>
 #include <sstream>
-#include <chrono>
-#include <algorithm>
+#include <stdexcept>
 #include <vector>
 
 namespace lemon {
@@ -16,7 +18,7 @@ static void add_warning(std::vector<std::string>& warnings, const std::string& w
     }
 }
 
-static std::string join_strings(const std::vector<std::string>& parts, const char* sep = "\n") {
+static std::string join_strings(const std::vector<std::string>& parts, const char* sep = "") {
     std::ostringstream os;
     for (size_t i = 0; i < parts.size(); ++i) {
         if (i > 0) os << sep;
@@ -25,7 +27,7 @@ static std::string join_strings(const std::vector<std::string>& parts, const cha
     return os.str();
 }
 
-static void append_joined_text(std::string& target, const std::string& value, const char* sep = "\n") {
+static void append_joined_text(std::string& target, const std::string& value, const char* sep = "") {
     if (value.empty()) {
         return;
     }
@@ -145,14 +147,32 @@ static int get_backend_error_status(const json& error, int default_status_code =
 }
 
 static std::string map_status_to_anthropic_error_type(int status_code) {
-    if (status_code == 401 || status_code == 403) {
+    if (status_code == 401) {
         return "authentication_error";
+    }
+    if (status_code == 402) {
+        return "billing_error";
+    }
+    if (status_code == 403) {
+        return "permission_error";
     }
     if (status_code == 404) {
         return "not_found_error";
     }
+    if (status_code == 409) {
+        return "conflict_error";
+    }
+    if (status_code == 413) {
+        return "request_too_large";
+    }
     if (status_code == 429) {
         return "rate_limit_error";
+    }
+    if (status_code == 504) {
+        return "timeout_error";
+    }
+    if (status_code == 529) {
+        return "overloaded_error";
     }
     if (status_code >= 400 && status_code < 500) {
         return "invalid_request_error";
@@ -227,22 +247,316 @@ static std::string join_text_blocks(const json& value, std::vector<std::string>&
     return join_strings(parts);
 }
 
-static std::string map_finish_reason_to_anthropic_stop_reason(const json& choice) {
-    std::string finish_reason = choice.value("finish_reason", "stop");
+static std::string map_finish_reason_to_anthropic_stop_reason(
+    const json& choice,
+    std::vector<std::string>* warnings = nullptr) {
+    if (!choice.contains("finish_reason") || choice["finish_reason"].is_null()) {
+        return "end_turn";
+    }
+    if (!choice["finish_reason"].is_string()) {
+        if (warnings) {
+            add_warning(*warnings, "Backend returned a non-string finish_reason; mapped to end_turn");
+        }
+        return "end_turn";
+    }
 
-    if (finish_reason == "length") {
+    const std::string finish_reason = choice["finish_reason"].get<std::string>();
+    if (finish_reason == "length" || finish_reason == "max_tokens") {
         return "max_tokens";
     }
-    if (finish_reason == "tool_calls") {
+    if (finish_reason == "tool_calls" || finish_reason == "tool_use") {
         return "tool_use";
+    }
+    if (finish_reason == "stop" || finish_reason == "end_turn") {
+        return "end_turn";
+    }
+    if (finish_reason == "stop_sequence" || finish_reason == "refusal" ||
+        finish_reason == "pause_turn") {
+        return finish_reason;
+    }
+    if (finish_reason == "content_filter") {
+        return "refusal";
+    }
+    if (warnings) {
+        add_warning(*warnings, "Unknown backend finish_reason '" + finish_reason + "' mapped to end_turn");
     }
     return "end_turn";
 }
 
+static std::string generate_anthropic_id(const char* prefix) {
+    static std::atomic<uint64_t> sequence{
+        static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count())};
+    return std::string(prefix) + std::to_string(sequence.fetch_add(1, std::memory_order_relaxed));
+}
+
 static std::string generate_anthropic_message_id() {
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    return "msg_" + std::to_string(millis);
+    return generate_anthropic_id("msg_");
+}
+
+static std::string generate_anthropic_tool_id() {
+    return generate_anthropic_id("toolu_");
+}
+
+static std::string warning_header_value(const std::vector<std::string>& warnings) {
+    std::string value;
+    for (const auto& warning : warnings) {
+        if (!value.empty()) {
+            value += " | ";
+        }
+        for (unsigned char c : warning) {
+            value += (c >= 0x20 && c != 0x7f) ? static_cast<char>(c) : '?';
+        }
+        if (value.size() >= 4096) {
+            value.resize(4096);
+            break;
+        }
+    }
+    return value;
+}
+
+static void validate_anthropic_request(const json& request, bool count_tokens) {
+    if (!request.is_object()) {
+        throw std::invalid_argument("request body must be a JSON object");
+    }
+    if (!request.contains("model") || !request["model"].is_string() ||
+        request["model"].get<std::string>().empty()) {
+        throw std::invalid_argument("model is required and must be a non-empty string");
+    }
+    if (!request.contains("messages") || !request["messages"].is_array()) {
+        throw std::invalid_argument("messages is required and must be an array");
+    }
+    if (request["messages"].empty()) {
+        throw std::invalid_argument("messages must contain at least one message");
+    }
+    if (!count_tokens) {
+        if (!request.contains("max_tokens") || !request["max_tokens"].is_number_integer() ||
+            request["max_tokens"].get<int64_t>() < 0) {
+            throw std::invalid_argument("max_tokens is required and must be a non-negative integer");
+        }
+    }
+    if (request.contains("stream") && !request["stream"].is_boolean()) {
+        throw std::invalid_argument("stream must be a boolean");
+    }
+    if (request.contains("stop_sequences")) {
+        if (!request["stop_sequences"].is_array()) {
+            throw std::invalid_argument("stop_sequences must be an array of strings");
+        }
+        for (const auto& stop : request["stop_sequences"]) {
+            if (!stop.is_string()) {
+                throw std::invalid_argument("stop_sequences must contain only strings");
+            }
+        }
+    }
+
+    auto validate_image_source = [](const json& block, const std::string& path) {
+        if (!block.contains("source") || !block["source"].is_object()) {
+            throw std::invalid_argument(path + ".source must be an object");
+        }
+        const auto& source = block["source"];
+        if (!source.contains("type") || !source["type"].is_string()) {
+            throw std::invalid_argument(path + ".source.type must be a string");
+        }
+        const std::string type = source["type"].get<std::string>();
+        if (type == "base64") {
+            if (!source.contains("media_type") || !source["media_type"].is_string() ||
+                !source.contains("data") || !source["data"].is_string()) {
+                throw std::invalid_argument(path + ".source requires string media_type and data");
+            }
+        } else if (type == "url") {
+            if (!source.contains("url") || !source["url"].is_string() ||
+                source["url"].get<std::string>().empty()) {
+                throw std::invalid_argument(path + ".source.url must be a non-empty string");
+            }
+        } else {
+            throw std::invalid_argument(path + ".source.type must be 'base64' or 'url'");
+        }
+    };
+
+    auto validate_content = [&](const json& content, const std::string& role, const std::string& path) {
+        if (content.is_string()) {
+            return;
+        }
+        if (!content.is_array()) {
+            throw std::invalid_argument(path + " must be a string or an array");
+        }
+        for (size_t i = 0; i < content.size(); ++i) {
+            const auto& block = content[i];
+            const std::string block_path = path + "[" + std::to_string(i) + "]";
+            if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
+                throw std::invalid_argument(block_path + " must be an object with a string type");
+            }
+            const std::string type = block["type"].get<std::string>();
+            if (type == "text") {
+                if (!block.contains("text") || !block["text"].is_string()) {
+                    throw std::invalid_argument(block_path + ".text must be a string");
+                }
+            } else if (type == "image") {
+                if (role != "user") {
+                    throw std::invalid_argument("image blocks are only valid in user messages");
+                }
+                validate_image_source(block, block_path);
+            } else if (type == "tool_use") {
+                if (role != "assistant") {
+                    throw std::invalid_argument("tool_use blocks are only valid in assistant messages");
+                }
+                if (!block.contains("id") || !block["id"].is_string() ||
+                    !block.contains("name") || !block["name"].is_string() ||
+                    !block.contains("input") || !block["input"].is_object()) {
+                    throw std::invalid_argument(block_path + " requires string id/name and object input");
+                }
+            } else if (type == "tool_result") {
+                if (role != "user") {
+                    throw std::invalid_argument("tool_result blocks are only valid in user messages");
+                }
+                if (!block.contains("tool_use_id") || !block["tool_use_id"].is_string()) {
+                    throw std::invalid_argument(block_path + ".tool_use_id must be a string");
+                }
+                if (block.contains("is_error") && !block["is_error"].is_boolean()) {
+                    throw std::invalid_argument(block_path + ".is_error must be a boolean");
+                }
+                if (block.contains("content")) {
+                    const auto& result = block["content"];
+                    if (!result.is_string() && !result.is_array()) {
+                        throw std::invalid_argument(block_path + ".content must be a string or an array");
+                    }
+                    if (result.is_array()) {
+                        for (size_t j = 0; j < result.size(); ++j) {
+                            const auto& result_block = result[j];
+                            const std::string result_path = block_path + ".content[" + std::to_string(j) + "]";
+                            if (!result_block.is_object() || !result_block.contains("type") ||
+                                !result_block["type"].is_string()) {
+                                throw std::invalid_argument(result_path + " must have a string type");
+                            }
+                            const std::string result_type = result_block["type"].get<std::string>();
+                            if (result_type == "text") {
+                                if (!result_block.contains("text") || !result_block["text"].is_string()) {
+                                    throw std::invalid_argument(result_path + ".text must be a string");
+                                }
+                            } else if (result_type == "image") {
+                                validate_image_source(result_block, result_path);
+                            } else {
+                                throw std::invalid_argument(result_path + ".type is unsupported");
+                            }
+                        }
+                    }
+                }
+            } else if (type == "thinking") {
+                if (role != "assistant" || !block.contains("thinking") || !block["thinking"].is_string()) {
+                    throw std::invalid_argument(block_path + " is not a valid assistant thinking block");
+                }
+                if (block.contains("signature") && !block["signature"].is_string()) {
+                    throw std::invalid_argument(block_path + ".signature must be a string");
+                }
+                if (block.value("signature", std::string()).size() > 0) {
+                    throw std::invalid_argument("signed thinking blocks from remote Anthropic models cannot be verified by local backends");
+                }
+            } else if (type == "redacted_thinking") {
+                throw std::invalid_argument("redacted_thinking blocks cannot be consumed by local backends");
+            } else {
+                throw std::invalid_argument(block_path + ".type '" + type + "' is unsupported");
+            }
+        }
+    };
+
+    for (size_t i = 0; i < request["messages"].size(); ++i) {
+        const auto& message = request["messages"][i];
+        const std::string path = "messages[" + std::to_string(i) + "]";
+        if (!message.is_object() || !message.contains("role") || !message["role"].is_string()) {
+            throw std::invalid_argument(path + ".role must be 'user' or 'assistant'");
+        }
+        const std::string role = message["role"].get<std::string>();
+        if (role != "user" && role != "assistant") {
+            throw std::invalid_argument(path + ".role must be 'user' or 'assistant'");
+        }
+        if (!message.contains("content")) {
+            throw std::invalid_argument(path + ".content is required");
+        }
+        validate_content(message["content"], role, path + ".content");
+    }
+
+    if (request.contains("system")) {
+        const auto& system = request["system"];
+        if (!system.is_string() && !system.is_array()) {
+            throw std::invalid_argument("system must be a string or an array of text blocks");
+        }
+        if (system.is_array()) {
+            for (size_t i = 0; i < system.size(); ++i) {
+                const auto& block = system[i];
+                if (!block.is_object() || !block.contains("type") || !block["type"].is_string() ||
+                    block["type"].get<std::string>() != "text" ||
+                    !block.contains("text") || !block["text"].is_string()) {
+                    throw std::invalid_argument("system blocks must be text blocks with string text");
+                }
+            }
+        }
+    }
+
+    if (request.contains("tools")) {
+        if (!request["tools"].is_array()) {
+            throw std::invalid_argument("tools must be an array");
+        }
+        for (size_t i = 0; i < request["tools"].size(); ++i) {
+            const auto& tool = request["tools"][i];
+            if (!tool.is_object() || !tool.contains("name") || !tool["name"].is_string() ||
+                tool["name"].get<std::string>().empty() || !tool.contains("input_schema") ||
+                !tool["input_schema"].is_object()) {
+                throw std::invalid_argument("tools[" + std::to_string(i) + "] requires a non-empty name and object input_schema");
+            }
+            if (tool.contains("description") && !tool["description"].is_string()) {
+                throw std::invalid_argument("tools[" + std::to_string(i) + "].description must be a string");
+            }
+        }
+    }
+
+    if (request.contains("tool_choice")) {
+        if (!request["tool_choice"].is_object() || !request["tool_choice"].contains("type") ||
+            !request["tool_choice"]["type"].is_string()) {
+            throw std::invalid_argument("tool_choice must be an object with a string type");
+        }
+        const std::string type = request["tool_choice"]["type"].get<std::string>();
+        if (type != "auto" && type != "any" && type != "none" && type != "tool") {
+            throw std::invalid_argument("tool_choice.type must be auto, any, none, or tool");
+        }
+        if (type != "none" && (!request.contains("tools") || request["tools"].empty())) {
+            throw std::invalid_argument("tool_choice requires at least one tool");
+        }
+        if (type == "tool") {
+            if (!request["tool_choice"].contains("name") || !request["tool_choice"]["name"].is_string()) {
+                throw std::invalid_argument("tool_choice.type=tool requires a string name");
+            }
+            const std::string name = request["tool_choice"]["name"].get<std::string>();
+            bool found = false;
+            for (const auto& tool : request["tools"]) {
+                found = found || tool.value("name", std::string()) == name;
+            }
+            if (!found) {
+                throw std::invalid_argument("tool_choice.name must match a declared tool");
+            }
+        }
+    }
+
+    if (request.contains("thinking")) {
+        if (!request["thinking"].is_object() || !request["thinking"].contains("type") ||
+            !request["thinking"]["type"].is_string()) {
+            throw std::invalid_argument("thinking must be an object with a string type");
+        }
+        const std::string type = request["thinking"]["type"].get<std::string>();
+        if (type != "enabled" && type != "disabled" && type != "adaptive") {
+            throw std::invalid_argument("thinking.type must be enabled, disabled, or adaptive");
+        }
+        if (type == "enabled" &&
+            (!request["thinking"].contains("budget_tokens") ||
+             !request["thinking"]["budget_tokens"].is_number_integer() ||
+             request["thinking"]["budget_tokens"].get<int64_t>() <= 0)) {
+            throw std::invalid_argument("thinking.budget_tokens must be a positive integer when thinking is enabled");
+        }
+        if ((type == "enabled" || type == "adaptive") && request.contains("tool_choice")) {
+            const std::string tool_type = request["tool_choice"].value("type", std::string("auto"));
+            if (tool_type == "any" || tool_type == "tool") {
+                throw std::invalid_argument("thinking is incompatible with forced tool_choice modes");
+            }
+        }
+    }
 }
 
 static bool write_sse_event(httplib::DataSink& sink, const std::string& event, const json& data) {
@@ -514,7 +828,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                             continue;
                         }
 
-                        std::string tool_id = block.value("id", generate_anthropic_message_id());
+                        std::string tool_id = block.value("id", generate_anthropic_tool_id());
                         json input_obj = json::object();
                         if (block.contains("input")) {
                             if (block["input"].is_object()) {
@@ -748,7 +1062,7 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
     if (openai_response.contains("choices") && openai_response["choices"].is_array() &&
         !openai_response["choices"].empty()) {
         const auto& choice = openai_response["choices"][0];
-        stop_reason = map_finish_reason_to_anthropic_stop_reason(choice);
+        stop_reason = map_finish_reason_to_anthropic_stop_reason(choice, &mutable_warnings);
 
         if (choice.contains("message") && choice["message"].is_object()) {
             const auto& message = choice["message"];
@@ -789,7 +1103,7 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
                         continue;
                     }
 
-                    std::string tool_id = tool_call.value("id", generate_anthropic_message_id());
+                    std::string tool_id = tool_call.value("id", generate_anthropic_tool_id());
                     std::string tool_name;
                     if (tool_call.contains("function") && tool_call["function"].is_object()) {
                         tool_name = tool_call["function"].value("name", "");
@@ -854,10 +1168,6 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
             {"output_tokens", output_tokens}
         }}
     };
-
-    if (!mutable_warnings.empty()) {
-        anthropic_res["warnings"] = mutable_warnings;
-    }
 
     return anthropic_res;
 }
@@ -1396,9 +1706,6 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                 {"output_tokens", output_tokens}
             }}
         };
-        if (!warnings.empty()) {
-            message_delta["warnings"] = warnings;
-        }
         if (!write_sse_event(client_sink, "message_delta", message_delta)) {
             client_sink.done();
             return;
@@ -1415,15 +1722,10 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
+        validate_anthropic_request(request_json, true);
         std::vector<std::string> warnings;
 
         std::string model = normalize_model_name(request_json.value("model", ""));
-        if (model.empty()) {
-            res.status = 400;
-            json error = {{"message", "model is required"}};
-            res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
-            return;
-        }
 
         auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
         openai_req["stream"] = false;
@@ -1438,12 +1740,7 @@ void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httpl
         }
 
         if (!warnings.empty()) {
-            std::ostringstream warning_header;
-            for (size_t i = 0; i < warnings.size(); ++i) {
-                if (i > 0) warning_header << " | ";
-                warning_header << warnings[i];
-            }
-            res.set_header("X-Lemonade-Warning", warning_header.str());
+            res.set_header("X-Lemonade-Warning", warning_header_value(warnings));
         }
 
         std::string prompt = render_openai_chat_for_token_count(openai_req);
@@ -1459,6 +1756,14 @@ void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httpl
         res.status = 400;
         json error = {{"message", std::string("Invalid JSON in request body: ") + e.what()}};
         res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+    } catch (const json::exception& e) {
+        res.status = 400;
+        json error = {{"message", std::string("Invalid request body: ") + e.what()}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        json error = {{"message", std::string(e.what())}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
     } catch (const std::exception& e) {
         std::cerr << "[OllamaApi] Error in Anthropic count_tokens: " << e.what() << std::endl;
         res.status = 500;
@@ -1470,14 +1775,10 @@ void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httpl
 void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
+        validate_anthropic_request(request_json, false);
         std::vector<std::string> warnings;
 
         std::string model = normalize_model_name(request_json.value("model", ""));
-        if (model.empty()) {
-            res.status = 400;
-            res.set_content(R"({"type":"error","error":{"type":"invalid_request_error","message":"model is required"}})", "application/json");
-            return;
-        }
 
         if (req.has_param("beta")) {
             std::string beta_value = req.get_param_value("beta");
@@ -1505,13 +1806,9 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
 
         bool stream = openai_req.value("stream", false);
         if (!warnings.empty()) {
-            std::ostringstream warning_header;
-            for (size_t i = 0; i < warnings.size(); ++i) {
-                if (i > 0) warning_header << " | ";
-                warning_header << warnings[i];
-            }
-            res.set_header("X-Lemonade-Warning", warning_header.str());
-            std::cerr << "[OllamaApi] Anthropic compatibility warnings: " << warning_header.str() << std::endl;
+            const std::string header = warning_header_value(warnings);
+            res.set_header("X-Lemonade-Warning", header);
+            std::cerr << "[OllamaApi] Anthropic compatibility warnings: " << header << std::endl;
         }
 
         if (stream) {
@@ -1547,6 +1844,18 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         auto anthropic_response = convert_openai_chat_to_anthropic(openai_response, model, warnings);
         res.set_content(anthropic_response.dump(), "application/json");
 
+    } catch (const json::parse_error& e) {
+        res.status = 400;
+        json error = {{"message", std::string("Invalid JSON in request body: ") + e.what()}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+    } catch (const json::exception& e) {
+        res.status = 400;
+        json error = {{"message", std::string("Invalid request body: ") + e.what()}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        json error = {{"message", std::string(e.what())}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
     } catch (const std::exception& e) {
         std::cerr << "[OllamaApi] Error in /v1/messages: " << e.what() << std::endl;
         res.status = 500;

@@ -635,7 +635,13 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         if (!api_key_.empty()) {
             if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
                 res.status = 401;
-                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                if (req.path == "/v1/messages" || req.path == "/v1/messages/count_tokens") {
+                    res.set_content(
+                        R"({"type":"error","error":{"type":"authentication_error","message":"Invalid or missing API key"}})",
+                        "application/json");
+                } else {
+                    res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                }
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
