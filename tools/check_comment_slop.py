@@ -239,16 +239,19 @@ def strip_comment_markers(text):
     return re.sub(r"^\s*(//+|#+|/\*+|\*+/?)\s?", "", text).strip()
 
 
-def _block_open_after(text, was_open):
-    """Whether a C block comment is still open once this line has been read.
+def _scan_line(text, was_open):
+    """Read one line and return (block still open after, any code outside comments).
 
-    String and char literals are skipped: `char s[] = "/*";` opens no comment, and
-    reading it as one hands the next line of ordinary code to the slop detector as prose.
+    `has_code` is what makes `/* note */ x = 1;` a code line rather than prose: the
+    prefix `/*` opens and closes on the same line, and the `x = 1;` after it is code.
+    String and char literals are content (code); a raw string holds `"` and `/*` as
+    ordinary content and is consumed whole, so the quote tracker does not leave it early.
     """
-    i, open_, quote = 0, was_open, ""
+    i, open_, quote, has_code = 0, was_open, "", False
     while i < len(text):
         ch = text[i]
         if quote:
+            has_code = True
             if ch == "\\":
                 i += 2
                 continue
@@ -260,12 +263,11 @@ def _block_open_after(text, was_open):
                 i += 2
                 continue
         elif (raw := _raw_string_at(text, i)) is not None:
-            # A raw string holds `"` and `/*` as ordinary content; the quote tracker
-            # would leave it early and read the `/*` as a comment opener, misclassifying
-            # the next line. Consume it whole, exactly as _code_of_cish does.
+            has_code = True
             i += len(raw)
             continue
         elif ch in ('"', "'"):
+            has_code = True
             quote = ch
         elif text.startswith("//", i):
             break
@@ -273,8 +275,10 @@ def _block_open_after(text, was_open):
             open_ = True
             i += 2
             continue
+        elif not ch.isspace():
+            has_code = True
         i += 1
-    return open_
+    return open_, has_code
 
 
 def collect(diff):
@@ -293,9 +297,8 @@ def collect(diff):
             in_block = False
         expected = (path, lineno + 1)
         if not path.endswith((".py", ".pyi")):
-            if in_block:
-                is_comment = True
-            in_block = _block_open_after(text, in_block)
+            in_block, has_code = _scan_line(text, in_block)
+            is_comment = not has_code
 
         if is_comment:
             stripped = strip_comment_markers(text)
