@@ -41,6 +41,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": [],
   "auto_check_model_updates": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -425,6 +426,26 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 | Both keys different | "regular" | "admin" | Requires admin key | Either key accepted |
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
+
+### CORS and Allowed Origins
+
+When Lemonade Server is bound to a non-loopback address (e.g., `--host 0.0.0.0` for Docker or LAN access), the bundled web app may be accessed from origins other than `localhost`. By default, only loopback origins (`localhost`, `127.0.0.1`, `::1`) and native desktop app origins (Tauri) are permitted for cross-origin requests.
+
+To allow legitimate non-loopback web-app access (e.g., `http://192.168.1.50:13305`), configure the `allowed_origins` array:
+
+```bash
+lemonade config set allowed_origins='["http://192.168.1.50:13305"]'
+```
+
+Or in `config.json`:
+
+```json
+{
+  "allowed_origins": ["http://192.168.1.50:13305", "http://server.local:13305"]
+}
+```
+
+Each origin must be explicitly listed — wildcards are not supported. This protects against DNS rebinding attacks where a malicious hostname could resolve to an arbitrary IP controlled by an attacker.
 
 ## Remote Server Connection
 

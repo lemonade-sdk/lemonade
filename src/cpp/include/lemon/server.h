@@ -70,6 +70,10 @@ private:
     void setup_routes(httplib::Server &web_server);
     void setup_static_files(httplib::Server &web_server);
     void setup_cors(httplib::Server &web_server);
+    // True if a browser Origin is permitted to make cross-origin requests: the
+    // native desktop-app origins and loopback hosts (any port). Same-origin
+    // callers (the bundled web-app) never reach this. See SWSPLAT-24172.
+    bool is_origin_allowed(const std::string& origin) const;
     void setup_http_logger(httplib::Server &web_server);
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);

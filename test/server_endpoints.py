@@ -39,6 +39,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
@@ -4655,6 +4656,152 @@ class EndpointTests(ServerTestBase):
                         proc.kill()
                         proc.wait(timeout=10)
             shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def test_040_params_rejects_backend_bin_override(self):
+        """SWSPLAT-24170: POST /params must not let a caller pick the backend
+        binary. Accepting *_bin here turns a config write into local RCE."""
+        for key in ("cpu_bin", "rocm_bin", "vulkan_bin"):
+            with self.subTest(key=key):
+                response = requests.post(
+                    f"{self.base_url}/params",
+                    json={"llamacpp": {key: "/bin/sh"}},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 400, response.text)
+
+    def test_041_params_rejects_backend_args_override(self):
+        """SWSPLAT-24170: POST /params must not let a caller inject backend
+        command-line arguments."""
+        for payload in (
+            {"llamacpp": {"args": "-c id"}},
+            {"llamacpp": {"llamacpp_args": "-c id"}},
+        ):
+            with self.subTest(payload=payload):
+                response = requests.post(
+                    f"{self.base_url}/params",
+                    json=payload,
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 400, response.text)
+
+    def test_042_params_accepts_benign_key(self):
+        """POST /params still accepts non-privileged runtime options."""
+        response = requests.post(
+            f"{self.base_url}/params",
+            json={"ctx_size": 4096},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_043_cors_rejects_foreign_origin(self):
+        """SWSPLAT-24172: a cross-origin web page must not receive an
+        Access-Control-Allow-Origin header echoing its Origin."""
+        response = requests.get(
+            f"{self.base_url}/health",
+            headers={**_auth_headers(), "Origin": "http://evil.example"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        acao = response.headers.get("Access-Control-Allow-Origin")
+        self.assertNotIn(acao, ("*", "http://evil.example"))
+
+    def test_044_cors_allows_loopback_origin(self):
+        """SWSPLAT-24172: loopback origins (local tooling) are reflected so the
+        legitimate local clients keep working."""
+        origin = "http://localhost:12345"
+        response = requests.get(
+            f"{self.base_url}/health",
+            headers={**_auth_headers(), "Origin": origin},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), origin)
+
+    def test_045_cors_blocks_simple_post_from_foreign_origin(self):
+        """SWSPLAT-24172 regression: a malicious web page can send a simple POST
+        (safelisted content-type like text/plain + JSON body) from a disallowed
+        origin without triggering a preflight. The browser hides the response,
+        but without server-side validation the handler still runs. Verify that
+        disallowed origins receive 403 server-side before the handler executes,
+        and that mutating endpoints (e.g. /internal/set) do not change state."""
+        # Read current config to establish baseline
+        config_before = requests.get(
+            f"http://localhost:{PORT}/internal/config",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+
+        # Attempt a simple POST from evil.example with text/plain (safelisted,
+        # no preflight) carrying a JSON payload that would mutate state.
+        response = requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            data='{"llamacpp": {"cpu_bin": "/bin/sh"}}',
+            headers={
+                **_auth_headers(),
+                "Origin": "http://evil.example",
+                "Content-Type": "text/plain",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        # Server must reject the request server-side with 403
+        self.assertEqual(
+            response.status_code,
+            403,
+            f"Expected 403 for disallowed origin, got {response.status_code}: {response.text}",
+        )
+
+        # Config must remain unchanged
+        config_after = requests.get(
+            f"http://localhost:{PORT}/internal/config",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(
+            config_before,
+            config_after,
+            "Config changed despite disallowed origin",
+        )
+
+    def test_046_cors_allows_configured_non_loopback_origin(self):
+        """SWSPLAT-24172: configured allowed_origins permit legitimate non-loopback
+        web-app access (e.g., http://192.168.1.50:13305 when bound to --host 0.0.0.0)
+        without reintroducing DNS-rebinding exposure."""
+        # Add a non-loopback origin to the allowed list
+        test_origin = "http://192.168.1.50:13305"
+        requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={"allowed_origins": [test_origin]},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        # Verify the origin is now accepted for POST requests
+        response = requests.post(
+            f"{self.base_url}/params",
+            json={"ctx_size": 4096},
+            headers={**_auth_headers(), "Origin": test_origin},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Configured origin should be allowed, got {response.status_code}: {response.text}",
+        )
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            test_origin,
+            "CORS header should reflect configured origin",
+        )
+
+        # Clean up: remove the test origin
+        requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={"allowed_origins": []},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
 
 
 if __name__ == "__main__":

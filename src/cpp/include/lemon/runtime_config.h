@@ -35,6 +35,7 @@ public:
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
     bool inhibit_suspend() const;
+    std::vector<std::string> allowed_origins() const;
 
     // Telemetry settings
     bool telemetry_enabled() const;
@@ -80,7 +81,15 @@ public:
     // Accepts nested JSON: {"llamacpp": {"backend": "vulkan"}} merges into
     // the llamacpp section rather than replacing it.
     // Returns JSON: {"status":"success","updated":{...}} or throws on validation error.
-    json set(const json& changes, ConfigSideEffectCallback side_effect_cb = nullptr);
+    //
+    // allow_privileged_keys gates config that can turn a config write into local
+    // code execution: a backend's *_bin (which executable to spawn) and args/*_args
+    // (its command line). The low-privilege HTTP surface (POST /params) MUST pass
+    // false so an unauthenticated caller cannot substitute the backend binary or
+    // inject arguments. The admin/config path (/internal/set, CLI `config set`)
+    // passes true. See SWSPLAT-24170.
+    json set(const json& changes, ConfigSideEffectCallback side_effect_cb = nullptr,
+             bool allow_privileged_keys = true);
 
     // --- Full snapshot ---
     json snapshot() const;
@@ -121,11 +130,14 @@ public:
 
 private:
     // Validate a single key/value pair. Throws std::invalid_argument on failure.
-    void validate(const std::string& key, const json& value) const;
+    // When allow_privileged_keys is false, privileged backend keys (*_bin,
+    // args/*_args) are rejected rather than validated.
+    void validate(const std::string& key, const json& value,
+                  bool allow_privileged_keys) const;
 
     // Validate a nested backend key/value pair.
     void validate_backend(const std::string& backend, const std::string& key,
-                          const json& value) const;
+                          const json& value, bool allow_privileged_keys) const;
 
     // Apply changes and emit the subset that actually differed from the previous
     // state into `applied_diff`. Mirrors the shape of `changes` (nested for
