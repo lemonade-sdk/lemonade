@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for tools/check_comment_slop.py."""
 
+import importlib
 import os
 import sys
 import unittest
@@ -329,6 +330,29 @@ class CodeOfTests(unittest.TestCase):
         self.assertNotEqual(
             slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
         )
+
+
+class ChangedEntryTests(unittest.TestCase):
+    def _entries(self, raw):
+        slop.run = lambda *a, **k: raw  # noqa: ARG005
+        try:
+            return slop._changed_entries("A", "B")
+        finally:
+            importlib.reload(slop)
+
+    def test_a_mode_change_is_reported(self):
+        # chmod +x leaves every byte of content identical, so a content comparison sees
+        # nothing -- but the mode is part of the tree, so the change is not comments-only.
+        raw = ":100644 100755 b859599 b859599 M\0a.py\0"
+        self.assertEqual(self._entries(raw), [("a.py", "100644", "100755", "M")])
+
+    def test_a_path_containing_a_space_survives(self):
+        raw = ":100644 100644 aaa bbb M\0my file.py\0"
+        self.assertEqual(self._entries(raw)[0][0], "my file.py")
+
+    def test_a_rename_reports_the_destination(self):
+        raw = ":100644 100644 aaa bbb R100\0old.py\0new.py\0"
+        self.assertEqual(self._entries(raw), [("new.py", "100644", "100644", "R100")])
 
 
 class DirectiveTests(unittest.TestCase):
