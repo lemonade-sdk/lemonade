@@ -314,6 +314,24 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
         )
 
+    def test_a_backslash_newline_inside_a_raw_string_is_content_not_a_splice(self):
+        # C++ deletes a backslash-newline EXCEPT inside a raw string ([lex.phases]/2).
+        # Splicing the whole file first edits the raw string's CONTENTS, so two literals
+        # that genuinely differ compare equal -- a false pass introduced BY the fix for
+        # the line-continuation hole below.
+        before = '// old\nauto s = R"delim(\nhello \\\nworld\n)delim";\n'
+        after = '// new\nauto s = R"delim(\nhello world\n)delim";\n'
+        self.assertNotEqual(
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+    def test_a_line_continuation_in_an_ordinary_string_is_still_spliced(self):
+        # The exemption is raw strings ONLY; an ordinary string still splices.
+        self.assertEqual(
+            slop._code_of('auto s = "ab\\\ncd";\n', "a.cpp"),
+            slop._code_of('auto s = "abcd";\n', "a.cpp"),
+        )
+
     def test_an_unparseable_python_file_fails_closed(self):
         # Refuse to certify what we could not parse, rather than compare two blanks.
         with self.assertRaises(slop.GitError):
