@@ -7,6 +7,7 @@
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
+#include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
@@ -406,6 +407,44 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    {
+        lemon::jobs::OpProviders providers;
+        providers.system_info = [] {
+            return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
+        };
+        providers.system_stats = [this] {
+            lemon::jobs::json stats;
+            const double cpu_percent = get_cpu_usage();
+            stats["cpu_percent"] =
+                cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
+            stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
+            const double gpu_percent = get_gpu_usage();
+            stats["gpu_percent"] =
+                gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
+            const double vram_gb = get_vram_usage();
+            stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
+            const double npu_percent = get_npu_utilization();
+            stats["npu_percent"] =
+                npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
+            return stats;
+        };
+        providers.models_list = [this] {
+            nlohmann::json data = nlohmann::json::array();
+            for (const auto& [model_id, info] : model_manager_->get_supported_models())
+                data.push_back(model_info_to_json(model_id, info));
+            nlohmann::json response = {{"object", "list"}, {"data", data}};
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.model_get = [this](const std::string& id) -> lemon::jobs::json {
+            auto models = model_manager_->get_supported_models();
+            auto it = models.find(id);
+            if (it == models.end()) return lemon::jobs::json(nullptr);
+            return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
+        };
+        job_manager_ = std::make_unique<lemon::jobs::JobManager>(
+            lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
+    }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -860,6 +899,35 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
         handle_download_control(req, res);
     });
+
+    register_post("jobs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_jobs_create(req, res);
+    });
+    register_get("jobs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_jobs_list(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/pause)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_pause(req, res);
+                        });
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/interrupt)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_interrupt(req, res);
+                        });
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/resume)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_resume(req, res);
+                        });
+        web_server.Get(std::string(prefix) + R"(/jobs/([^/]+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+                           handle_jobs_get(req, res);
+                       });
+        web_server.Delete(std::string(prefix) + R"(/jobs/([^/]+))",
+                          [this](const httplib::Request& req, httplib::Response& res) {
+                              handle_jobs_delete(req, res);
+                          });
+    }
 
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
@@ -5529,6 +5597,92 @@ void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib:
         res.status = 400;
         res.set_content(json{{"error", e.what()}}.dump(), "application/json");
     }
+}
+
+namespace {
+
+std::string job_id_from_path(const httplib::Request& req) {
+    return req.matches.size() > 1 ? std::string(req.matches[1]) : std::string();
+}
+
+void job_error(httplib::Response& res, int status, const std::string& message) {
+    res.status = status;
+    res.set_content(lemon::jobs::json{{"error", message}}.dump(), "application/json");
+}
+
+}  // namespace
+
+void Server::handle_jobs_create(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto body = lemon::jobs::json::parse(req.body);
+        const std::string name = body.value("name", "");
+        lemon::jobs::json steps_json = lemon::jobs::json::array();
+        if (body.contains("definition") && body["definition"].is_object()
+            && body["definition"].contains("steps")) {
+            steps_json = body["definition"]["steps"];
+        } else if (body.contains("steps")) {
+            steps_json = body["steps"];
+        }
+        std::vector<lemon::jobs::StepRecord> steps;
+        if (steps_json.is_array())
+            for (const auto& s : steps_json)
+                steps.push_back(lemon::jobs::StepRecord::from_json(s));
+        lemon::jobs::json inputs =
+            body.contains("inputs") ? body["inputs"] : lemon::jobs::json::object();
+        const std::string id = job_manager_->create(name, std::move(steps), inputs);
+        res.status = 202;
+        res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
+    } catch (const lemon::jobs::JobError& e) {
+        job_error(res, e.status, e.what());
+    } catch (const std::exception& e) {
+        job_error(res, 400, e.what());
+    }
+}
+
+void Server::handle_jobs_list(const httplib::Request&, httplib::Response& res) {
+    res.set_content(lemon::jobs::json{{"jobs", job_manager_->list()}}.dump(), "application/json");
+}
+
+void Server::handle_jobs_get(const httplib::Request& req, httplib::Response& res) {
+    const auto job = job_manager_->get(job_id_from_path(req));
+    if (!job) {
+        job_error(res, 404, "unknown job");
+        return;
+    }
+    res.set_content(job->dump(), "application/json");
+}
+
+void Server::handle_jobs_pause(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->pause(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not pausable");
+        return;
+    }
+    res.set_content(R"({"status":"pausing"})", "application/json");
+}
+
+void Server::handle_jobs_interrupt(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->interrupt(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not interruptible");
+        return;
+    }
+    res.set_content(R"({"status":"interrupting"})", "application/json");
+}
+
+void Server::handle_jobs_resume(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->resume(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not resumable");
+        return;
+    }
+    res.set_content(R"({"status":"resuming"})", "application/json");
+}
+
+void Server::handle_jobs_delete(const httplib::Request& req, httplib::Response& res) {
+    bool active = false;
+    if (!job_manager_->remove(job_id_from_path(req), active)) {
+        job_error(res, active ? 409 : 404, active ? "job is active" : "unknown job");
+        return;
+    }
+    res.set_content(R"({"status":"deleted"})", "application/json");
 }
 
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {

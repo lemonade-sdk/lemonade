@@ -1,0 +1,468 @@
+#include "lemon/jobs/job_manager.h"
+
+#include "lemon/jobs/job_expr.h"
+#include "lemon/jobs/job_graph.h"
+#include "lemon/utils/path_utils.h"
+
+#include <lemon/utils/aixlog.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+
+namespace fs = std::filesystem;
+
+namespace lemon {
+namespace jobs {
+
+namespace {
+
+constexpr size_t kMaxJobs = 50;
+
+std::string iso_now() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_utc{};
+#ifdef _WIN32
+    gmtime_s(&tm_utc, &t);
+#else
+    gmtime_r(&t, &tm_utc);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+    return buf;
+}
+
+bool is_terminal(JobStatus s) {
+    return s == JobStatus::Completed || s == JobStatus::Failed;
+}
+
+StepRecord* find_step(Job& job, const std::string& id) {
+    for (auto& s : job.steps)
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
+int step_index(const Job& job, const std::string& id) {
+    for (int i = 0; i < (int)job.steps.size(); ++i)
+        if (job.steps[i].id == id) return i;
+    return -1;
+}
+
+// The step to run after `from` completes: first matching branch case, else
+// on_done, else the next step in list order ("" when none remains).
+std::string next_after_success(const Job& job, const StepRecord& from) {
+    for (const Case& c : from.branch)
+        if (eval_condition(c.when, job.context)) return c.goto_id;
+    if (!from.on_done.empty()) return from.on_done;
+    const int idx = step_index(job, from.id);
+    if (idx >= 0 && idx + 1 < (int)job.steps.size()) return job.steps[idx + 1].id;
+    return "";
+}
+
+std::string next_in_list(const Job& job, const std::string& id) {
+    const int idx = step_index(job, id);
+    if (idx >= 0 && idx + 1 < (int)job.steps.size()) return job.steps[idx + 1].id;
+    return "";
+}
+
+}  // namespace
+
+JobManager::JobManager(std::string cache_dir, OpRegistry registry)
+    : storage_path_((fs::path(cache_dir) / "jobs.json").string()),
+      registry_(std::move(registry)) {
+    load_from_disk();
+    worker_ = std::thread(&JobManager::worker_main, this);
+}
+
+JobManager::~JobManager() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stop_ = true;
+        for (auto& kv : controls_) {
+            kv.second->interrupt_requested.store(true);
+            kv.second->cancel.store(true);
+        }
+    }
+    cv_.notify_all();
+    if (worker_.joinable()) worker_.join();
+}
+
+void JobManager::load_from_disk() {
+    std::ifstream in(lemon::utils::path_from_utf8(storage_path_));
+    if (!in) return;
+    try {
+        json doc = json::parse(in);
+        for (const auto& jj : doc.value("jobs", json::array())) {
+            Job job = Job::from_json(jj);
+            if (job.id.empty()) continue;
+            if (job.status == JobStatus::Running || job.status == JobStatus::Queued) {
+                job.status = JobStatus::Interrupted;
+                job.error = "server restarted while the job was active";
+                if (StepRecord* s = find_step(job, job.cursor))
+                    if (s->status == StepStatus::Running) s->status = StepStatus::Pending;
+            }
+            const std::string id = job.id;
+            controls_[id] = std::make_shared<Control>();
+            order_.push_back(id);
+            jobs_.emplace(id, std::move(job));
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Jobs") << "Could not load " << storage_path_ << ": " << e.what()
+                             << std::endl;
+    }
+}
+
+void JobManager::persist_locked() {
+    json arr = json::array();
+    for (const auto& id : order_) {
+        auto it = jobs_.find(id);
+        if (it != jobs_.end()) arr.push_back(it->second.to_json());
+    }
+    json doc = {{"version", 1}, {"jobs", arr}};
+    const std::string tmp = storage_path_ + ".tmp";
+    {
+        std::ofstream out(lemon::utils::path_from_utf8(tmp), std::ios::trunc);
+        out << doc.dump(2);
+    }
+    std::error_code ec;
+    fs::rename(lemon::utils::path_from_utf8(tmp), lemon::utils::path_from_utf8(storage_path_), ec);
+    if (ec) LOG(WARNING, "Jobs") << "Could not persist jobs: " << ec.message() << std::endl;
+}
+
+void JobManager::enqueue_locked(const std::string& id) {
+    queue_.push_back(id);
+}
+
+std::shared_ptr<JobManager::Control> JobManager::control_for_locked(const std::string& id) {
+    auto it = controls_.find(id);
+    if (it != controls_.end()) return it->second;
+    auto ctrl = std::make_shared<Control>();
+    controls_[id] = ctrl;
+    return ctrl;
+}
+
+std::string JobManager::create(const std::string& name, std::vector<StepRecord> steps,
+                               json inputs) {
+    const std::string err = validate_steps(steps, registry_.names());
+    if (!err.empty()) throw JobError(400, err);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    Job job;
+    char stamp[24];
+    const std::time_t t = std::time(nullptr);
+    std::tm tm_utc{};
+#ifdef _WIN32
+    gmtime_s(&tm_utc, &t);
+#else
+    gmtime_r(&t, &tm_utc);
+#endif
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm_utc);
+    char suffix[16];
+    std::snprintf(suffix, sizeof(suffix), "%06llu", (unsigned long long)(++id_counter_));
+    job.id = std::string("job-") + stamp + "-" + suffix;
+    job.name = name;
+    job.status = JobStatus::Queued;
+    job.inputs = inputs.is_null() ? json::object() : inputs;
+    job.context = {{"inputs", job.inputs}};
+    job.steps = std::move(steps);
+    job.cursor = job.steps.front().id;
+    job.created_at = iso_now();
+
+    const std::string id = job.id;
+    order_.insert(order_.begin(), id);
+    controls_[id] = std::make_shared<Control>();
+    jobs_.emplace(id, std::move(job));
+
+    while (order_.size() > kMaxJobs) {
+        bool evicted = false;
+        for (auto rit = order_.rbegin(); rit != order_.rend(); ++rit) {
+            auto jit = jobs_.find(*rit);
+            if (jit != jobs_.end() && is_terminal(jit->second.status)) {
+                const std::string victim = *rit;
+                jobs_.erase(victim);
+                controls_.erase(victim);
+                order_.erase(std::next(rit).base());
+                evicted = true;
+                break;
+            }
+        }
+        if (!evicted) break;
+    }
+
+    enqueue_locked(id);
+    persist_locked();
+    cv_.notify_all();
+    return id;
+}
+
+json JobManager::list() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    json out = json::array();
+    for (const auto& id : order_) {
+        auto it = jobs_.find(id);
+        if (it != jobs_.end()) out.push_back(it->second.to_summary_json());
+    }
+    return out;
+}
+
+std::optional<json> JobManager::get(const std::string& id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) return std::nullopt;
+    return it->second.to_json();
+}
+
+bool JobManager::pause(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) return false;
+    if (it->second.status != JobStatus::Running && it->second.status != JobStatus::Queued)
+        return false;
+    control_for_locked(id)->pause_requested.store(true);
+    return true;
+}
+
+bool JobManager::interrupt(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) return false;
+    if (it->second.status != JobStatus::Running && it->second.status != JobStatus::Queued)
+        return false;
+    auto ctrl = control_for_locked(id);
+    ctrl->interrupt_requested.store(true);
+    ctrl->cancel.store(true);
+    return true;
+}
+
+bool JobManager::resume(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) return false;
+    if (it->second.status != JobStatus::Paused && it->second.status != JobStatus::Interrupted)
+        return false;
+    auto ctrl = control_for_locked(id);
+    ctrl->pause_requested.store(false);
+    ctrl->interrupt_requested.store(false);
+    ctrl->cancel.store(false);
+    it->second.status = JobStatus::Queued;
+    it->second.error.clear();
+    enqueue_locked(id);
+    persist_locked();
+    cv_.notify_all();
+    return true;
+}
+
+bool JobManager::remove(const std::string& id, bool& active_out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    active_out = false;
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) return false;
+    if (id == active_id_) {
+        active_out = true;
+        auto ctrl = control_for_locked(id);
+        ctrl->interrupt_requested.store(true);
+        ctrl->cancel.store(true);
+    }
+    jobs_.erase(id);
+    controls_.erase(id);
+    order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
+    queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
+    persist_locked();
+    return true;
+}
+
+void JobManager::worker_main() {
+    while (true) {
+        std::string id;
+        std::shared_ptr<Control> ctrl;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
+            if (stop_ && queue_.empty()) return;
+            if (queue_.empty()) continue;
+            id = queue_.front();
+            queue_.pop_front();
+            auto it = jobs_.find(id);
+            if (it == jobs_.end() || it->second.status != JobStatus::Queued) continue;
+            ctrl = control_for_locked(id);
+            it->second.status = JobStatus::Running;
+            if (it->second.started_at.empty()) it->second.started_at = iso_now();
+            active_id_ = id;
+            persist_locked();
+        }
+        execute(id, ctrl);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            active_id_.clear();
+        }
+    }
+}
+
+void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& ctrl) {
+    using clock = std::chrono::steady_clock;
+
+    while (true) {
+        json params;
+        json context_snapshot;
+        const OpHandler* handler = nullptr;
+        std::string step_id;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = jobs_.find(id);
+            if (it == jobs_.end()) return;
+            Job& job = it->second;
+
+            if (ctrl->interrupt_requested.load()) {
+                if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
+                job.status = JobStatus::Interrupted;
+                persist_locked();
+                return;
+            }
+            if (ctrl->pause_requested.load()) {
+                job.status = JobStatus::Paused;
+                persist_locked();
+                return;
+            }
+            if (job.cursor.empty()) {
+                job.status = JobStatus::Completed;
+                if (job.finished_at.empty()) job.finished_at = iso_now();
+                persist_locked();
+                return;
+            }
+
+            StepRecord* s = find_step(job, job.cursor);
+            if (!s) {
+                job.status = JobStatus::Failed;
+                job.error = "cursor points to unknown step '" + job.cursor + "'";
+                job.finished_at = iso_now();
+                persist_locked();
+                return;
+            }
+
+            bool skip = false;
+            try {
+                skip = !eval_condition(s->when, job.context);
+            } catch (const std::exception& e) {
+                s->status = StepStatus::Failed;
+                s->error = e.what();
+                job.status = JobStatus::Failed;
+                job.error = e.what();
+                job.finished_at = iso_now();
+                persist_locked();
+                return;
+            }
+            if (skip) {
+                s->status = StepStatus::Skipped;
+                job.cursor = next_in_list(job, s->id);
+                persist_locked();
+                continue;
+            }
+
+            handler = registry_.find(s->op);
+            if (!handler) {
+                s->status = StepStatus::Failed;
+                s->error = "unknown op '" + s->op + "'";
+                job.status = JobStatus::Failed;
+                job.error = s->error;
+                job.finished_at = iso_now();
+                persist_locked();
+                return;
+            }
+
+            try {
+                params = resolve_refs(s->params, job.context);
+            } catch (const std::exception& e) {
+                s->status = StepStatus::Failed;
+                s->error = e.what();
+                job.status = JobStatus::Failed;
+                job.error = e.what();
+                job.finished_at = iso_now();
+                persist_locked();
+                return;
+            }
+
+            s->status = StepStatus::Running;
+            step_id = s->id;
+            context_snapshot = job.context;
+            ctrl->cancel.store(false);
+            persist_locked();
+        }
+
+        json output;
+        std::string run_error;
+        bool ok = true;
+        const auto t0 = clock::now();
+        try {
+            output = handler->run(params, context_snapshot, ctrl->cancel);
+        } catch (const std::exception& e) {
+            ok = false;
+            run_error = e.what();
+        }
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = jobs_.find(id);
+            if (it == jobs_.end()) return;
+            Job& job = it->second;
+            StepRecord* s = find_step(job, step_id);
+            if (!s) return;
+            s->duration_ms = ms;
+
+            if (ctrl->interrupt_requested.load()) {
+                s->status = StepStatus::Pending;
+                s->error.clear();
+                job.status = JobStatus::Interrupted;
+                persist_locked();
+                return;
+            }
+
+            if (ok) {
+                s->output = output;
+                job.context[s->id] = output;
+                try {
+                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2)
+                        job.context[it2.key()] =
+                            expr_detail::resolve_ref_path(it2.value().get<std::string>(), output);
+                    const std::string next = next_after_success(job, *s);
+                    s->status = StepStatus::Completed;
+                    job.cursor = next;
+                } catch (const std::exception& e) {
+                    s->status = StepStatus::Failed;
+                    s->error = e.what();
+                    job.status = JobStatus::Failed;
+                    job.error = e.what();
+                    job.finished_at = iso_now();
+                    persist_locked();
+                    return;
+                }
+            } else {
+                s->status = StepStatus::Failed;
+                s->error = run_error;
+                if (s->on_fail == kOnFailAbort) {
+                    job.status = JobStatus::Failed;
+                    job.error = run_error;
+                    job.finished_at = iso_now();
+                    persist_locked();
+                    return;
+                } else if (s->on_fail == kOnFailContinue) {
+                    job.cursor = next_in_list(job, s->id);
+                } else {
+                    job.cursor = s->on_fail;
+                }
+            }
+            persist_locked();
+        }
+    }
+}
+
+}  // namespace jobs
+}  // namespace lemon
