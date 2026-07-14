@@ -121,7 +121,7 @@ elseif(APPLE)
 elseif(UNIX)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_linux.cpp
-        ../server/utils/platform/process_unix.cpp
+        ../server/utils/platform/process_linux.cpp
     )
 endif()
 

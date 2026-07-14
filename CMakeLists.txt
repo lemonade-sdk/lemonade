@@ -685,7 +685,7 @@ elseif(UNIX)
     list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
-    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_unix.cpp)
 endif()
 
@@ -1834,7 +1834,7 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(test_process_manager
             test/cpp/test_process_manager.cpp
             src/cpp/server/utils/process_manager.cpp
-            src/cpp/server/utils/platform/process_unix.cpp
+            src/cpp/server/utils/platform/process_linux.cpp
         )
         target_include_directories(test_process_manager PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
