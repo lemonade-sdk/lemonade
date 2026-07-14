@@ -257,6 +257,12 @@ def _block_open_after(text, was_open):
                 open_ = False
                 i += 2
                 continue
+        elif (raw := _raw_string_at(text, i)) is not None:
+            # A raw string holds `"` and `/*` as ordinary content; the quote tracker
+            # would leave it early and read the `/*` as a comment opener, misclassifying
+            # the next line. Consume it whole, exactly as _code_of_cish does.
+            i += len(raw)
+            continue
         elif ch in ('"', "'"):
             quote = ch
         elif text.startswith("//", i):
@@ -412,12 +418,18 @@ CODING_RE = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*[-_.a-zA-Z0-9]+")
 def _directives_of(text):
     """The comments the toolchain OBEYS.
 
-    `# type: int` is read by a type checker but is absent from both the tree and the
-    token stream, so it can only be compared here.
+    `# type: int` is read by a type checker, and a first-line `#!` shebang by the kernel
+    when the file is executed directly -- `python3` -> `python3 -O` silently disables
+    every assert. Both are `#` comments, absent from the tree and the token stream, so a
+    change to one would otherwise be certified as no-code-change; compare them here.
     """
     out = []
     for i, line in enumerate(text.splitlines()):
-        if DIRECTIVE_RE.search(line) or (i < 2 and CODING_RE.match(line)):
+        if (
+            DIRECTIVE_RE.search(line)
+            or (i == 0 and line.startswith("#!"))
+            or (i < 2 and CODING_RE.match(line))
+        ):
             out.append(line.strip())
     return out
 
