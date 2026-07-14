@@ -275,6 +275,7 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_process_manager
           cmake --build --preset default --target test_latest_version_fallback
           cmake --build --preset default --target test_routing_policy_contract
           cmake --build --preset default --target test_routing_policy_evaluator
@@ -289,7 +290,7 @@ jobs:
           cmake --build --preset default --target test_network_utils
           cmake --build --preset default --target test_mcp_client_config
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -587,6 +588,7 @@ jobs:
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_process_manager
           cmake --build --preset default --target test_latest_version_fallback
           cmake --build --preset default --target test_routing_policy_contract
           cmake --build --preset default --target test_routing_policy_evaluator
@@ -601,7 +603,7 @@ jobs:
           cmake --build --preset default --target test_network_utils
           cmake --build --preset default --target test_mcp_client_config
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -707,6 +709,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           HF_HOME: ${{ github.workspace }}/hf-cache
           GGML_METAL_NO_RESIDENCY: "1"
+          LEMONADE_WS_IDLE_SECONDS: "31"
         run: |
           set -e
           echo "Resetting server state before endpoint tests..."
@@ -714,6 +717,12 @@ jobs:
           echo "Running endpoint tests..."
           .venv/bin/python test/server_endpoints.py --cli-binary ./build/lemonade
           echo "Endpoint tests PASSED!"
+          echo "Running WebSocket idle test (31s regression)..."
+          .venv/bin/python test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       - name: Run web-app path traversal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -2072,6 +2081,12 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
           .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+          echo "Running WebSocket idle test..."
+          .venv/bin/python test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
@@ -2197,6 +2212,12 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
             echo "Running endpoint tests..."
             $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+            echo "Running WebSocket idle test..."
+            $VENV_PYTHON test/test_websocket_idle.py
+            echo "WebSocket idle test PASSED!"
+            echo "Running WebSocket auth tests..."
+            $VENV_PYTHON test/server_websocket_auth.py
+            echo "WebSocket auth tests PASSED!"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
             echo "Running Ollama API tests..."
             $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
@@ -2331,6 +2352,9 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} endpoints"
           $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+          echo "Running WebSocket idle test..."
+          $VENV_PYTHON test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
 
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}

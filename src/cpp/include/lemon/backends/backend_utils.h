@@ -110,8 +110,9 @@ namespace lemon::backends {
         /**
          * Resolve the ROCm install root, honoring an externally-installed ROCm
          * before the bundled default. Resolution order, returning the first root
-         * that contains the HIP runtime (Windows: bin\amdhip64.dll or
-         * lib\amdhip64.dll; Linux: lib{,64}/libamdhip64.so):
+         * that contains the HIP runtime (Windows: amdhip64.dll or
+         * amdhip64_<version>.dll under bin\ or lib\; Linux:
+         * lib{,64}/libamdhip64.so):
          *   1. ROCM_PATH environment variable
          *   2. `rocm-sdk path --root` (when rocm-sdk is on PATH)
          *   3. Platform default (Windows: HIP_PATH set by the AMD HIP SDK;

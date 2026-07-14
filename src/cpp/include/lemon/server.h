@@ -1,8 +1,10 @@
 #pragma once
 
-// CRITICAL: Define thread pool count BEFORE including httplib.h
+// Define thread pool count BEFORE including httplib.h. This is only the
+// fallback for httplib's default-constructed servers; the listeners are sized
+// at runtime from the host CPU count in setup_http_servers().
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+#define CPPHTTPLIB_THREAD_POOL_COUNT 64
 #endif
 
 #include <string>
@@ -18,6 +20,7 @@
 #include <httplib.h>
 #include "runtime_config.h"
 #include "router.h"
+#include "routing_policy.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -30,6 +33,12 @@ namespace lemon {
 
 // Forward declaration
 class SystemMetricsPlatform;
+
+struct RouterDispatchResult {
+    std::string requested_model;
+    std::string selected_model;
+    Decision decision;
+};
 
 class Server {
 public:
@@ -93,6 +102,7 @@ private:
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
@@ -100,13 +110,16 @@ private:
                                             const ModelInfo& collection_info,
                                             httplib::Response& res);
     // Run a collection.router model's routing engine and return the selected
-    // candidate model. Returns std::nullopt when routing did not engage (no
-    // parsed policy), so callers leave the request's model field untouched.
-    std::optional<std::string> route_collection_request(const nlohmann::json& request_json,
-                                                        const ModelInfo& collection_info);
+    // candidate plus the full Decision. Returns std::nullopt when routing did
+    // not engage (no parsed policy), so callers leave the request untouched.
+    std::optional<RouterDispatchResult> route_collection_request(
+        const nlohmann::json& request_json,
+        const ModelInfo& collection_info);
     // If request_json addresses a collection.router model, rewrite its "model"
-    // field in place to the engine-selected candidate. No-op otherwise.
-    void apply_router_collection_dispatch(nlohmann::json& request_json);
+    // field in place to the engine-selected candidate and return the Decision.
+    // No-op otherwise.
+    std::optional<RouterDispatchResult> apply_router_collection_dispatch(
+        nlohmann::json& request_json);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
@@ -236,8 +249,12 @@ private:
                                   httplib::Response& res,
                                   nlohmann::json& out);
 
-    // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    void auto_load_model_if_needed(const std::string& model_name);
+    // Auto-load a model on first use. request_options are applied only on the first load;
+    // if the model is already loaded they are ignored so explicit /v1/load settings win.
+    // Callers must pass only load-level options from extract_auto_load_options() — never
+    // the raw request body — to keep request-scoped fields out of persistent recipe options.
+    void auto_load_model_if_needed(const std::string& model_name,
+                                   const json& request_options = json::object());
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
@@ -318,6 +335,10 @@ private:
 
     // Set to true after check_for_model_updates() completes at startup.
     std::atomic<bool> update_check_done_{false};
+
+    // Extract load-level options from an inference request body. Currently only ctx_size
+    // is forwarded; request-scoped fields are excluded so they cannot leak into recipe options.
+    static json extract_auto_load_options(const json& request);
 };
 
 } // namespace lemon

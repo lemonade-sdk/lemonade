@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -146,7 +147,7 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                 LOG(DEBUG, "WebSocket") << "Transient connection closed before handshake (id: "
                                        << pss->connection_id << ")" << std::endl;
             } else {
-                LOG(INFO, "WebSocket") << "New connection from: " << ip
+                LOG(DEBUG, "WebSocket") << "New connection from: " << ip
                                        << " (id: " << pss->connection_id << ")" << std::endl;
             }
 
@@ -384,6 +385,9 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     if (!token) {
         token = get_url_arg(wsi, "api_key");
     }
+    if (!token) {
+        token = get_protocol_credential(wsi);
+    }
     return token ? strip_bearer_prefix(*token) : "";
 }
 
@@ -395,6 +399,9 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
     if (!token) {
         token = get_url_arg(wsi, "api_key");
+    }
+    if (!token) {
+        token = get_protocol_credential(wsi);
     }
 
     if (!token) {
@@ -705,6 +712,38 @@ std::optional<std::string> WebSocketServer::get_header(struct lws* wsi, enum lws
     }
 
     return std::string(buffer, static_cast<size_t>(copied));
+}
+
+std::optional<std::string> WebSocketServer::get_protocol_credential(struct lws* wsi) {
+    static constexpr char credential_prefix[] = "bearer.";
+    static constexpr size_t prefix_len = sizeof(credential_prefix) - 1;
+
+    auto header = get_header(wsi, WSI_TOKEN_PROTOCOL);
+    if (!header) {
+        return std::nullopt;
+    }
+
+    // The credential rides in Sec-WebSocket-Protocol alongside the registered
+    // application protocol. The encoding is base64url, so the value contains
+    // only token characters and ends at the next list separator.
+    const std::string& value = *header;
+    size_t pos = value.find(credential_prefix);
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    size_t begin = pos + prefix_len;
+    size_t end = value.find_first_of(", \t", begin);
+    std::string encoded = value.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+
+    // Translate base64url back to standard base64 before decoding.
+    for (char& c : encoded) {
+        if (c == '-') {
+            c = '+';
+        } else if (c == '_') {
+            c = '/';
+        }
+    }
+    return utils::JsonUtils::base64_decode(encoded);
 }
 
 std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {

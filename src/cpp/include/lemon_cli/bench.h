@@ -25,6 +25,7 @@ struct BenchScenario {
     std::string name;
     std::string category;
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
+    json input;                  // Input for non-chat scenarios (e.g., textgen, embedding)
     int max_tokens;
     int warmup_runs = 0;
     int measurement_runs = 3;
@@ -143,6 +144,13 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 bool memory_tracking,
                                 bool capture_response);
 
+// Run a single benchmark measurement with embedding
+BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response);
+
 // Run a full scenario (warmup + measurement runs).
 // When reload=true, unloads+loads the model before each measurement run to clear prompt cache.
 BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
@@ -180,6 +188,7 @@ struct BenchCliOptions {
     std::string response_log;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
+    std::vector<std::string> flm_args;
     std::vector<std::string> vllm_args;
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;

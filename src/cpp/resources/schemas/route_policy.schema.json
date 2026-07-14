@@ -125,7 +125,11 @@
       "type": "object",
       "required": ["id", "match", "route_to"],
       "properties": {
-        "id": { "type": "string" },
+        "id": {
+          "description": "Safe rule token surfaced in the x-lemonade-route header when matched.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
         "match": { "$ref": "#/$defs/match_expr" },
         "route_to": {
           "description": "Must name a candidate. The local/private/cloud route category is derived from the chosen component's recipe.",

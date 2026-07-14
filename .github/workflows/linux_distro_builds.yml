@@ -5,6 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     paths:
+      - "src/cpp/**"
       - "CMakeLists.txt"
       - "**/CMakeLists.txt"
       - "CMakePresets.json"
@@ -15,7 +16,7 @@ on:
       - "test/requirements.txt"
       - "test/utils/**"
       - ".github/workflows/linux_distro_builds.yml"
-      - ".github/actions/capture-server-logs/**"
+      - ".github/actions/**"
       - "!**/*.md"
   workflow_dispatch:
 
@@ -34,6 +35,9 @@ jobs:
       image: ${{ matrix.image }}
     env:
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     strategy:
       fail-fast: false
@@ -52,6 +56,51 @@ jobs:
         with:
           clean: true
           fetch-depth: 0
+
+      - name: Cache package downloads and ccache
+        uses: actions/cache@v5
+        with:
+          path: |
+            .package-cache
+            .ccache
+          key: cache-linux-distro-${{ matrix.distro }}-${{ hashFiles('CMakeLists.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            cache-linux-distro-${{ matrix.distro }}-${{ hashFiles('CMakeLists.txt') }}-
+            cache-linux-distro-${{ matrix.distro }}-
+
+      - name: Setup package cache directories
+        run: |
+          mkdir -p .package-cache/pacman .package-cache/zypp .package-cache/apt .package-cache/dnf
+          if command -v pacman >/dev/null 2>&1; then
+            mkdir -p /var/cache/pacman
+            rm -rf /var/cache/pacman/pkg
+            ln -s "$GITHUB_WORKSPACE/.package-cache/pacman" /var/cache/pacman/pkg
+          elif command -v zypper >/dev/null 2>&1; then
+            mkdir -p /var/cache
+            rm -rf /var/cache/zypp
+            ln -s "$GITHUB_WORKSPACE/.package-cache/zypp" /var/cache/zypp
+          elif command -v apt-get >/dev/null 2>&1; then
+            mkdir -p /var/cache/apt
+            rm -rf /var/cache/apt/archives
+            ln -s "$GITHUB_WORKSPACE/.package-cache/apt" /var/cache/apt/archives
+          elif command -v dnf >/dev/null 2>&1; then
+            mkdir -p /var/cache
+            rm -rf /var/cache/dnf
+            ln -s "$GITHUB_WORKSPACE/.package-cache/dnf" /var/cache/dnf
+          fi
+
+      - name: Install ccache
+        run: |
+          if command -v pacman >/dev/null 2>&1; then
+            pacman -Syu --needed --noconfirm ccache
+          elif command -v zypper >/dev/null 2>&1; then
+            zypper install -y ccache
+          elif command -v apt-get >/dev/null 2>&1; then
+            apt-get update && apt-get install -y ccache
+          elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y ccache
+          fi
+          ccache -z
 
       - name: Run setup.sh to configure environment
         run: |
@@ -102,6 +151,9 @@ jobs:
           echo "Verifying binary executability..."
           ./build/lemond --version
           ./build/lemonade --version
+
+          echo "=== ccache statistics ==="
+          ccache -s
 
           echo "${{ matrix.distro }} build successful!"
 

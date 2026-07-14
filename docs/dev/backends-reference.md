@@ -28,7 +28,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-matrix -->
 | Recipe | Backend | OS | Device families |
 |--------|---------|----|-----------------|
-| `acestep` | rocm | linux, windows | amd_gpu |
+| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
@@ -52,10 +52,10 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
 | `sd-cpp` | metal | macos | metal |
-| `thinksound` | rocm | linux, windows | amd_gpu |
+| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | rocm | linux, windows | amd_gpu |
+| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
@@ -74,6 +74,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
+#### `flm` — FastFlowLM NPU
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
 
 #### `llamacpp` — Llama.cpp GPU
 
@@ -372,7 +379,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `TRELLIS-3D` | 15.4 | 3d |
 
-#### `vllm` — vLLM ROCm (experimental) (7 models)
+#### `vllm` — vLLM ROCm (experimental) (11 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -382,7 +389,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.5-4B-FP16-vLLM` | 9.34 | reasoning, hot, tool-calling |
 | `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
 | `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
+| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
+| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 
@@ -395,3 +406,21 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Whisper-Small` | 0.488 | transcription, realtime-transcription |
 | `Whisper-Tiny` | 0.075 | transcription, realtime-transcription |
 <!-- END GENERATED: backend-models -->
+
+## Implementation notes
+
+### ACE-Step (`acestep`)
+
+`ace-server` exposes an asynchronous job API: `POST /lm` or `POST /synth` returns a job id immediately, `GET /job?id=N` polls the status, and `GET /job?id=N&result=1` fetches the finished result. `AceStepServer::run_job` wraps this submit/poll/fetch cycle with a ceiling of roughly 20 minutes per stage at a 1-second poll cadence. Synth results arrive as `multipart/mixed` (an audio part plus a latent part); Lemonade extracts the first audio part.
+
+Vocals are a two-stage pipeline. `POST /lm` with `lm_mode: "generate"` runs the ACE-Step language model, which turns the caption and lyrics into audio codes plus LM-filled metadata, returned as a JSON array of enriched requests. That array is accepted by `POST /synth` verbatim, so Lemonade feeds it through unchanged. `POST /synth` on its own is the DiT-only instrumental path — it has no language model and cannot sing, so a `lyrics` value (other than the sentinel below) is what routes a request through `/lm` first.
+
+`[Instrumental]` — any case, surrounding whitespace ignored — is ACE-Step's sentinel for the no-vocals path, matching the Python reference implementation. Instrumental requests send the sentinel explicitly rather than an empty string because the synth stage also feeds the lyrics text into its conditioning.
+
+Errors from `audio_generations` are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.
+
+The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
+
+### Backend auto-selection
+
+When a recipe's backend is not pinned in `config.json` (the `backend` key is absent or `"auto"`), the default backend reported in `system-info` — and used by `RecipeOptions` when resolving `*_backend` options — is chosen as follows: the first supported backend in `RECIPE_DEFS` preference order wins, unless a later supported backend is already locally installed (state `installed`, `update_available`, or `update_required`) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit `backend` value in `config.json` always takes precedence over both rules. The llamacpp `system` variant is never auto-selected unless `prefer_system` is set.

@@ -744,6 +744,130 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
+    def test_013_auto_load_forwards_only_allowlisted_options(self):
+        """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
+        into recipe_options on auto-load.
+
+        When the server auto-loads a model via an inference endpoint (e.g.
+        /v1/chat/completions) it must only forward an explicit allowlist
+        of load-level fields (currently only ctx_size).  Request-scoped
+        fields like temperature, max_tokens, stream, messages, model, etc. must
+        remain invisible to RecipeOptions so they cannot affect subsequent requests.
+
+        Steps:
+          1. Unload the test model.
+          2. Call /v1/chat/completions with a large mix of request-scoped params
+             AND a custom ctx_size.
+          3. Auto-load should only apply ctx_size.
+          4. Verify recipe_options on the loaded model contains ctx_size but
+             none of the request-scoped or recipe-level fields sent alongside."""
+        # Ensure clean slate
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        try:
+            # Send an inference request with both load-level and request-scoped params.
+            # Only ctx_size should be forwarded to the RecipeOptions constructor.
+            custom_ctx_size = 8192
+            inference_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Hello, world!"}],
+                    "max_tokens": 5,
+                    "temperature": 0.99,
+                    "top_p": 0.88,
+                    "top_k": 77,
+                    "stream": False,
+                    "presence_penalty": -0.5,
+                    "frequency_penalty": 1.2,
+                    "seed": 42,
+                    "pinned": True,
+                    "llamacpp_args": "--foo-bar",
+                    "auto_evict": True,
+                    "evict_idle_timeout": 1,
+                    "ctx_size": custom_ctx_size,
+                    "max_completion_tokens": 10,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                inference_response.status_code,
+                200,
+                f"Chat completions should succeed: {inference_response.text[:500]}",
+            )
+
+            # Verify the loaded model's recipe_options
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            health_data = health_response.json()
+
+            loaded_model = None
+            for m in health_data.get("all_models_loaded", []):
+                if m["model_name"] == ENDPOINT_TEST_MODEL:
+                    loaded_model = m
+                    break
+
+            self.assertIsNotNone(
+                loaded_model,
+                f"Model {ENDPOINT_TEST_MODEL} should be loaded after auto-load",
+            )
+
+            recipe_options = loaded_model.get("recipe_options", {})
+
+            # ---- Allowlisted: ctx_size MUST be present ----
+            self.assertIn(
+                "ctx_size",
+                recipe_options,
+                "ctx_size from inference request should be forwarded to recipe_options",
+            )
+            self.assertEqual(
+                recipe_options["ctx_size"],
+                custom_ctx_size,
+                f"ctx_size should match request value {custom_ctx_size}",
+            )
+
+            # ---- Denied: request-scoped params must NOT be in recipe_options ----
+            forbidden = [
+                "temperature",
+                "max_tokens",
+                "stream",
+                "messages",
+                "top_p",
+                "top_k",
+                "presence_penalty",
+                "frequency_penalty",
+                "seed",
+                "max_completion_tokens",
+                "model",
+                "pinned",
+                "llamacpp_args",
+                "auto_evict",
+                "evict_idle_timeout",
+            ]
+            for field in forbidden:
+                self.assertNotIn(
+                    field,
+                    recipe_options,
+                    f"Request-scoped field '{field}' must NOT leak into recipe_options "
+                    f"on auto-load (found: {recipe_options.get(field)})",
+                )
+
+            print(
+                f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
+                f"request-scoped params correctly excluded"
+            )
+        finally:
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
     def _start_mock_cloud_provider(
         self, upstream_ids, chat_handler=None, sse_chunks=None
     ):
@@ -2890,6 +3014,40 @@ class EndpointTests(ServerTestBase):
                 public_name,
                 "response model must be the routed candidate, not the router alias",
             )
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("version"), "1")
+            self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+            self.assertEqual(route.get("default_used"), False)
+            self.assertEqual(route.get("outputs"), {})
+            self.assertNotIn("trace", route, "trace must be opt-in via route_trace")
+            self.assertEqual(
+                chat_response.headers.get("x-lemonade-route"),
+                "code-to-test-model",
+            )
+
+            default_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "Hello there"}],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(default_response.status_code, 200, default_response.text)
+            default_body = default_response.json()
+            default_route = default_body.get("x_lemonade_route")
+            self.assertIsInstance(default_route, dict)
+            self.assertEqual(default_route.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(default_route.get("matched_rule"), "")
+            self.assertEqual(default_route.get("default_used"), True)
+            self.assertEqual(default_route.get("outputs"), {})
+            self.assertNotIn("trace", default_route)
+            self.assertEqual(
+                default_response.headers.get("x-lemonade-route"), "default"
+            )
             print(f"[OK] collection.router dispatched {public_name} -> completion")
         finally:
             try:
@@ -2908,6 +3066,68 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def test_021zi_router_collection_trace_and_outputs(self):
+        """route_trace=true returns the full Decision trace and copies rule
+        outputs verbatim without interpreting them (#2386)."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterTrace-{suffix}"
+        public_name = canonical_name[5:]
+        routing = {
+            "candidates": [ENDPOINT_TEST_MODEL],
+            "default_model": ENDPOINT_TEST_MODEL,
+            "rules": [
+                {
+                    "id": "code-to-test-model",
+                    "match": {"keywords_any": ["code", "def "]},
+                    "route_to": ENDPOINT_TEST_MODEL,
+                    "outputs": {"verdict": "warn"},
+                }
+            ],
+        }
+        try:
+            pull_response = self._pull_router_collection(
+                canonical_name, routing=routing
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "route_trace": True,
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertIn("choices", body)
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("outputs"), {"verdict": "warn"})
+            self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+            trace = route.get("trace")
+            self.assertIsInstance(trace, list)
+            self.assertTrue(trace)
+            self.assertTrue(
+                any(
+                    entry.get("condition") == "keywords_any"
+                    and entry.get("result") is True
+                    for entry in trace
+                ),
+                f"route trace must include the matched keywords condition: {trace}",
+            )
+            # Core must not interpret trust outputs as content-filter behavior.
+            choice = body["choices"][0]
+            self.assertNotEqual(choice.get("finish_reason"), "content_filter")
+            print(f"[OK] collection.router route_trace returned Decision trace")
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
@@ -2953,6 +3173,114 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def _collect_sse_data_events(self, resp):
+        data_events = []
+        for raw_line in resp.iter_lines():
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8", errors="replace")
+            if line.startswith("data:"):
+                data_events.append(line[len("data:") :].strip())
+        return data_events
+
+    def _assert_stream_route_decision(self, resp, endpoint_name):
+        if resp.status_code != 200:
+            self.fail(
+                f"streaming {endpoint_name} returned {resp.status_code}: {resp.text}"
+            )
+        self.assertEqual(resp.headers.get("x-lemonade-route"), "code-to-test-model")
+        data_events = self._collect_sse_data_events(resp)
+        self.assertTrue(
+            data_events,
+            f"streaming {endpoint_name} must emit at least one SSE data event",
+        )
+        blob = "\n".join(data_events)
+        self.assertNotIn(
+            '"error"',
+            blob,
+            f"streaming {endpoint_name} must not error: {blob[:500]}",
+        )
+        route_chunks = []
+        for event in data_events:
+            if event == "[DONE]":
+                continue
+            try:
+                payload = json.loads(event)
+            except Exception:
+                continue
+            route = payload.get("x_lemonade_route")
+            if route:
+                route_chunks.append(route)
+        self.assertTrue(
+            route_chunks,
+            f"streaming {endpoint_name} must attach x_lemonade_route to a chunk",
+        )
+        route = route_chunks[0]
+        self.assertEqual(route.get("route_to"), ENDPOINT_TEST_MODEL)
+        self.assertEqual(route.get("matched_rule"), "code-to-test-model")
+        self.assertIsInstance(route.get("trace"), list)
+        return data_events
+
+    def test_021zj_router_collection_chat_streaming_route_decision(self):
+        """/chat/completions streaming attaches additive route metadata."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterChatStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                    "max_tokens": 8,
+                    "stream": True,
+                    "route_trace": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self._assert_stream_route_decision(resp, "/chat/completions")
+            print(
+                f"[OK] collection.router /chat/completions (streaming) attached route decision"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021zk_router_collection_completions_streaming_route_decision(self):
+        """/completions streaming attaches additive route metadata."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterComplStream-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = self._pull_router_collection(canonical_name)
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            with requests.post(
+                f"{self.base_url}/completions",
+                json={
+                    "model": public_name,
+                    "prompt": "Please write code for me",
+                    "max_tokens": 8,
+                    "stream": True,
+                    "route_trace": True,
+                },
+                stream=True,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ) as resp:
+                self._assert_stream_route_decision(resp, "/completions")
+            print(
+                f"[OK] collection.router /completions (streaming) attached route decision"
+            )
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def test_021za_router_collection_completions_dispatch(self):
         """/completions dispatches a collection.router request to the
@@ -3040,28 +3368,12 @@ class EndpointTests(ServerTestBase):
                     "input": "Please write code for me",
                     "max_output_tokens": 16,
                     "stream": True,
+                    "route_trace": True,
                 },
                 stream=True,
                 timeout=TIMEOUT_MODEL_OPERATION,
             ) as resp:
-                self.assertEqual(resp.status_code, 200, resp.text)
-                data_events = []
-                for raw_line in resp.iter_lines():
-                    if not raw_line:
-                        continue
-                    line = raw_line.decode("utf-8", errors="replace")
-                    if line.startswith("data:"):
-                        data_events.append(line[len("data:") :].strip())
-            self.assertTrue(
-                data_events,
-                "streaming /responses must emit at least one SSE data event",
-            )
-            blob = "\n".join(data_events)
-            self.assertNotIn(
-                '"error"',
-                blob,
-                f"streaming /responses must not error: {blob[:500]}",
-            )
+                self._assert_stream_route_decision(resp, "/responses")
             print(
                 f"[OK] collection.router /responses (streaming) dispatched {public_name}"
             )

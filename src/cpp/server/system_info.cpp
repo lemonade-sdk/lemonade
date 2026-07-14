@@ -32,7 +32,10 @@
 #include <Wbemidl.h>
 #include <intrin.h>
 #include "utils/wmi_helper.h"
+#include <dxgi1_4.h>
+#include <wrl/client.h>
 #pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "dxgi.lib")
 #endif
 
 #ifdef __APPLE__
@@ -42,8 +45,10 @@
 
 #ifdef __linux__
 #include <dlfcn.h>
-#include <sys/ioctl.h>
 #include <fcntl.h>
+#include <libdrm/amdgpu.h>
+#include <libdrm/amdgpu_drm.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include "lemon/amdxdna_accel.h"
 #endif
@@ -153,6 +158,54 @@ struct HsaRuntimeApi {
     hsa_status_t (*amd_agent_iterate_memory_pools)(hsa_agent_t, HsaMemoryPoolCallback, void*) = nullptr;
     hsa_status_t (*amd_memory_pool_get_info)(hsa_amd_memory_pool_t, hsa_amd_memory_pool_info_t, void*) = nullptr;
 };
+
+bool query_amdgpu_is_apu(const fs::path& card_path) {
+    const fs::path drm_device_dir = card_path / "device" / "drm";
+    std::error_code ec;
+    if (!fs::is_directory(drm_device_dir, ec)) {
+        return false;
+    }
+
+    bool is_apu = false;
+    for (fs::directory_iterator it(drm_device_dir, ec), end;
+         it != end && !ec;
+         it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.rfind("renderD", 0) != 0) {
+            continue;
+        }
+
+        const fs::path node = fs::path("/dev/dri") / name;
+        const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            continue;
+        }
+
+        uint32_t major_version = 0;
+        uint32_t minor_version = 0;
+        amdgpu_device_handle device = nullptr;
+        const int init_result = amdgpu_device_initialize(
+            fd, &major_version, &minor_version, &device);
+        if (init_result != 0 || device == nullptr) {
+            close(fd);
+            continue;
+        }
+
+        amdgpu_gpu_info info{};
+        const int query_result = amdgpu_query_gpu_info(device, &info);
+        amdgpu_device_deinitialize(device);
+        close(fd);
+
+        if (query_result != 0) {
+            continue;
+        }
+
+        is_apu = (info.ids_flags & AMDGPU_IDS_FLAGS_FUSION) != 0;
+        break;
+    }
+
+    return is_apu;
+}
 
 std::string trim_copy(const std::string& value) {
     const auto start = value.find_first_not_of(" \t\n\r");
@@ -741,7 +794,21 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[resolved_backend].get<std::string>();
+    std::string base_version = recipe_config[resolved_backend].get<std::string>();
+
+    // The expected version must resolve the SAME per-arch override that install used,
+    // or these GPUs report update_required forever: versions_match tolerates the
+    // "-{family}" suffix but not a different base.
+    if (recipe == "vllm" && resolved_backend == "rocm") {
+        std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        if (!asset_family.empty()) {
+            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
+            if (!override_version.empty()) {
+                return override_version;
+            }
+        }
+    }
+    return base_version;
 }
 
 // ============================================================================
@@ -806,7 +873,8 @@ json SystemInfo::get_device_dict() {
         if (amd_igpu.available) {
             json gpu_json = {
                 {"name", amd_igpu.name},
-                {"available", amd_igpu.available}
+                {"available", amd_igpu.available},
+                {"integrated", true}
             };
             if (amd_igpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = amd_igpu.vram_gb;
@@ -826,7 +894,8 @@ json SystemInfo::get_device_dict() {
             if (gpu.available) {
                 json gpu_json = {
                     {"name", gpu.name},
-                    {"available", gpu.available}
+                    {"available", gpu.available},
+                    {"integrated", false}
                 };
                 if (gpu.vram_gb > 0) {
                     gpu_json["vram_gb"] = gpu.vram_gb;
@@ -1147,6 +1216,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     static constexpr int kNonUnsupportedPriority = 2;
 
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
+    std::set<std::string> default_backend_installed;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
                                 const std::string& recipe,
@@ -1484,12 +1554,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
             continue;
         }
 
-        // First supported backend in RECIPE_DEFS order becomes the default when
-        // the recipe backend is auto-selected. Skip 'system' backend unless
-        // explicitly preferred via env var.
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
-        if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
-            recipes[def.recipe]["default_backend"] = def.backend;
+        if (supported && !skip_as_default) {
+            const std::string effective_state =
+                recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+            const bool locally_installed = effective_state == "installed"
+                || effective_state == "update_available"
+                || effective_state == "update_required";
+            const bool overrides_uninstalled_default =
+                locally_installed && default_backend_installed.count(def.recipe) == 0;
+            if (!recipes[def.recipe].contains("default_backend") || overrides_uninstalled_default) {
+                recipes[def.recipe]["default_backend"] = def.backend;
+                if (locally_installed) {
+                    default_backend_installed.insert(def.recipe);
+                }
+            }
         }
     }
 
@@ -2033,9 +2112,59 @@ std::string SystemInfo::rocm_asset_family(const std::string& arch) {
     return arch;
 }
 
+std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family) {
+    static const json overrides = []() -> json {
+        try {
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            std::ifstream file(config_path);
+            if (!file.is_open()) {
+                return json::object();
+            }
+            json vllm = json::parse(file).value("vllm", json::object());
+            return vllm.value("rocm_arch_overrides", json::object());
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
+        return it->get<std::string>();
+    }
+    return "";
+}
+
+std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
+    if (!amd_gpu_devices.is_array()) {
+        return "";
+    }
+    // The device array is iGPU-first, so taking the first supported match would pick the
+    // APU on a hybrid host. Prefer a discrete GPU; fall back to integrated.
+    std::string integrated_fallback;
+    for (const auto& gpu : amd_gpu_devices) {
+        if (!gpu.value("available", false)) {
+            continue;
+        }
+        // The "family" field is identify_rocm_arch_from_name(name) captured at
+        // detection time; fall back to re-deriving from the name if it is absent.
+        std::string arch = gpu.value("family", "");
+        if (arch.empty()) {
+            arch = identify_rocm_arch_from_name(gpu.value("name", ""));
+        }
+        if (arch.empty()) {
+            continue;
+        }
+        if (gpu.value("integrated", false)) {
+            if (integrated_fallback.empty()) {
+                integrated_fallback = arch;
+            }
+            continue;
+        }
+        return arch;  // discrete GPU wins
+    }
+    return integrated_fallback;  // empty if no supported AMD GPU found
+}
+
 std::string SystemInfo::get_rocm_arch() {
-    // Returns the ROCm architecture for the best available AMD GPU on this system
-    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     if (!g_rocm_arch_override.empty()) {
         return g_rocm_arch_override;
     }
@@ -2048,20 +2177,8 @@ std::string SystemInfo::get_rocm_arch() {
         }
 
         const auto& devices = system_info["devices"];
-
-        // Check AMD GPUs
-        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
-            for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
-                        }
-                    }
-                }
-            }
+        if (devices.contains("amd_gpu")) {
+            return select_rocm_arch(devices["amd_gpu"]);
         }
     } catch (...) {
         // Detection failed
@@ -3969,84 +4086,194 @@ bool SystemInfo::is_running_under_systemd() {
 #endif
 }
 
-double SystemInfo::get_global_vram_usage_pct() {
-    // Report *global* GPU memory pressure (all processes, not just lemonade's),
-    // so the eviction engine yields VRAM when other apps (ComfyUI, games, etc.)
-    // consume it. Returns used/total in [0,1], or -1.0 if no source is available.
-    //
-    // Reuses the same detection sources as the rest of this file: nvidia-smi for
-    // NVIDIA (Linux + Windows) and AMD sysfs for Linux. macOS/Metal is unsupported
-    // for now and falls through to -1.0.
+#ifdef _WIN32
+double get_windows_dxgi_vram_usage() {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IDXGIFactory4> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return -1.0;
+    }
 
-    // NVIDIA: one query returns used + total for the first GPU.
-    {
-        if (!find_executable_in_path("nvidia-smi").empty()) {
-            std::string output;
-            int rc = lemon::utils::ProcessManager::run_command(
-                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
-                output, 5);
-            if (rc == 0 && !output.empty()) {
-                std::istringstream iss(output);
-                std::string line;
-                if (std::getline(iss, line)) {
-                    size_t comma = line.find(',');
-                    if (comma != std::string::npos) {
-                        try {
-                            double used = std::stod(line.substr(0, comma));
-                            double total = std::stod(line.substr(comma + 1));
-                            if (total > 0.0) {
-                                return used / total;
-                            }
-                        } catch (...) {
-                            // fall through to other sources
-                        }
-                    }
+    ComPtr<IDXGIAdapter1> adapter;
+    double highest_ratio = -1.0;
+    bool found_discrete = false;
+    std::vector<std::pair<DXGI_ADAPTER_DESC1, DXGI_QUERY_VIDEO_MEMORY_INFO>> candidates;
+
+    for (UINT adapterIndex = 0;
+         factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND;
+         ++adapterIndex) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc))) {
+            continue;
+        }
+
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+            continue;
+        }
+
+        ComPtr<IDXGIAdapter3> adapter3;
+        if (SUCCEEDED(adapter.As(&adapter3))) {
+            DXGI_QUERY_VIDEO_MEMORY_INFO memInfo{};
+
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
+                    0,
+                    DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                    &memInfo))) {
+                candidates.push_back({desc, memInfo});
+
+                if (desc.DedicatedVideoMemory > 0) {
+                    found_discrete = true;
                 }
             }
         }
     }
-#ifdef __linux__
-    // AMD (and other DRM GPUs): read used/total from sysfs, taking the busiest card.
-    try {
-        const std::string drm_path = "/sys/class/drm";
-        if (fs::exists(drm_path)) {
-            double highest_ratio = -1.0;
-            for (const auto& entry : fs::directory_iterator(drm_path)) {
-                std::string card_name = entry.path().filename().string();
-                if (card_name.rfind("card", 0) != 0 || card_name.find('-') != std::string::npos) {
+
+    for (const auto& pair : candidates) {
+        const auto& desc = pair.first;
+        const auto& memInfo = pair.second;
+
+        bool is_discrete = desc.DedicatedVideoMemory > 0;
+        if (found_discrete && !is_discrete) {
+            continue;
+        }
+
+        double total_mem = is_discrete
+            ? static_cast<double>(desc.DedicatedVideoMemory)
+            : static_cast<double>(desc.SharedSystemMemory);
+
+        if (total_mem > 0.0 && memInfo.Budget > 0) {
+            double ratio = std::clamp(
+                1.0 - static_cast<double>(memInfo.Budget) / total_mem,
+                0.0,
+                1.0);
+
+            if (ratio > highest_ratio) {
+                highest_ratio = ratio;
+            }
+        }
+    }
+
+    return highest_ratio;
+}
+#endif
+
+double SystemInfo::get_global_vram_usage_pct() {
+    auto usage_ratio = [](uint64_t used, uint64_t total) {
+        if (total == 0) {
+            return -1.0;
+        }
+        return std::min(
+            1.0,
+            static_cast<double>(used) / static_cast<double>(total));
+    };
+
+    double highest_ratio = -1.0;
+
+    if (!find_executable_in_path("nvidia-smi").empty()) {
+        std::string output;
+        const int rc = lemon::utils::ProcessManager::run_command(
+            "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits",
+            output, 5);
+        if (rc == 0 && !output.empty()) {
+            std::istringstream iss(output);
+            std::string line;
+            while (std::getline(iss, line)) {
+                const size_t comma = line.find(',');
+                if (comma == std::string::npos) {
                     continue;
                 }
-                std::string device_path = entry.path().string() + "/device";
+
+                try {
+                    const double used = std::stod(line.substr(0, comma));
+                    const double total = std::stod(line.substr(comma + 1));
+                    if (used >= 0.0 && total > 0.0) {
+                        highest_ratio = std::max(
+                            highest_ratio,
+                            std::min(1.0, used / total));
+                    }
+                } catch (...) {
+                }
+            }
+        }
+    }
+
+#ifdef __linux__
+    // Free GTT must not hide discrete-GPU VRAM exhaustion.
+    try {
+        const fs::path drm_path = "/sys/class/drm";
+        if (fs::exists(drm_path)) {
+            auto read_sysfs_u64 = [](const fs::path& path, uint64_t& value) {
+                std::ifstream file(path);
+                return file.is_open() && static_cast<bool>(file >> value);
+            };
+
+            for (const auto& entry : fs::directory_iterator(drm_path)) {
+                const std::string card_name = entry.path().filename().string();
+                if (card_name.rfind("card", 0) != 0 ||
+                    card_name.find('-') != std::string::npos) {
+                    continue;
+                }
+
+                const fs::path device_path = entry.path() / "device";
 
                 uint64_t vram_used = 0;
                 uint64_t vram_total = 0;
-                {
-                    std::ifstream f(device_path + "/mem_info_vram_used");
-                    if (f.is_open()) f >> vram_used;
-                }
-                {
-                    std::ifstream f(device_path + "/mem_info_vram_total");
-                    if (f.is_open()) f >> vram_total;
+                const bool have_vram =
+                    read_sysfs_u64(device_path / "mem_info_vram_used", vram_used) &&
+                    read_sysfs_u64(device_path / "mem_info_vram_total", vram_total) &&
+                    vram_total > 0;
+
+                const bool is_amd_apu = query_amdgpu_is_apu(entry.path());
+
+                double ratio = -1.0;
+                if (is_amd_apu) {
+                    uint64_t gtt_used = 0;
+                    uint64_t gtt_total = 0;
+                    const bool have_gtt =
+                        read_sysfs_u64(device_path / "mem_info_gtt_used", gtt_used) &&
+                        read_sysfs_u64(device_path / "mem_info_gtt_total", gtt_total) &&
+                        gtt_total > 0;
+
+                    uint64_t combined_used = 0;
+                    uint64_t combined_total = 0;
+                    if (have_vram) {
+                        combined_used += vram_used;
+                        combined_total += vram_total;
+                    }
+                    if (have_gtt) {
+                        combined_used += gtt_used;
+                        combined_total += gtt_total;
+                    }
+                    const double vulkan_ratio =
+                        usage_ratio(combined_used, combined_total);
+
+                    // Use the stricter of Vulkan's combined budget and ROCm's
+                    // preferred-pool pressure because this monitor is backend-agnostic.
+                    double rocm_ratio = -1.0;
+                    if (have_gtt && (!have_vram || gtt_total > vram_total)) {
+                        rocm_ratio = usage_ratio(gtt_used, gtt_total);
+                    } else if (have_vram) {
+                        rocm_ratio = usage_ratio(vram_used, vram_total);
+                    }
+
+                    ratio = std::max(vulkan_ratio, rocm_ratio);
+                } else if (have_vram) {
+                    ratio = usage_ratio(vram_used, vram_total);
                 }
 
-                if (vram_total > 0) {
-                    double ratio = static_cast<double>(vram_used) / static_cast<double>(vram_total);
-                    if (ratio > highest_ratio) {
-                        highest_ratio = ratio;
-                    }
-                }
-            }
-            if (highest_ratio >= 0.0) {
-                return highest_ratio;
+                highest_ratio = std::max(highest_ratio, ratio);
             }
         }
-    } catch (...) {
-        // fall through
+    } catch (...) {}
+#endif
+
+#ifdef _WIN32
+    if (highest_ratio < 0.0) {
+        highest_ratio = get_windows_dxgi_vram_usage();
     }
 #endif
 
-    // No supported VRAM source available on this platform/hardware.
-    return -1.0;
+    return highest_ratio;
 }
 
 } // namespace lemon

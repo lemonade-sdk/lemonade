@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -82,6 +83,20 @@ static void preserve_capabilities_for_exec() {
 }
 #endif
 
+static bool is_zombie_by_proc(pid_t pid) {
+    std::ifstream stat_file("/proc/" + std::to_string(pid) + "/stat");
+    std::string stat_line;
+    if (!std::getline(stat_file, stat_line)) {
+        return false;
+    }
+
+    // Process state is the first field after the final ')' of comm.
+    const auto close_paren = stat_line.rfind(')');
+    return close_paren != std::string::npos &&
+           close_paren + 2 < stat_line.size() &&
+           stat_line[close_paren + 2] == 'Z';
+}
+
 class UnixProcessPlatform : public ProcessPlatform {
 public:
     ProcessHandle spawn(
@@ -105,7 +120,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir,
-        int timeout_seconds) override;
+        int timeout_seconds,
+        bool capture_stderr = true) override;
 
     int find_free_port(int start_port) override;
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override;
@@ -370,6 +386,10 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
     }
 #endif
 
+    if (is_zombie_by_proc(handle.pid)) {
+        return false;
+    }
+
     errno = 0;
     return ::kill(handle.pid, 0) == 0 || errno == EPERM;
 }
@@ -483,7 +503,8 @@ int UnixProcessPlatform::run_with_output(
     const std::vector<std::string>& args,
     OutputLineCallback on_line,
     const std::string& working_dir,
-    int timeout_seconds) {
+    int timeout_seconds,
+    bool capture_stderr) {
 
     int stdout_pipe[2];
 
@@ -507,7 +528,9 @@ int UnixProcessPlatform::run_with_output(
         close(stdout_pipe[0]);
 
         dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stdout_pipe[1], STDERR_FILENO);
+        if (capture_stderr) {
+            dup2(stdout_pipe[1], STDERR_FILENO);
+        }
         close(stdout_pipe[1]);
 
         if (!working_dir.empty()) {

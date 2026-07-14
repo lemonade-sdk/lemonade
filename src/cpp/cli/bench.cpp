@@ -213,31 +213,35 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
 
         if (!item.contains("name") || !item["name"].is_string()) continue;
         scenario.name = item["name"].get<std::string>();
-
         scenario.category = item.value("category", "general");
-
-        if (!item.contains("messages") || !item["messages"].is_array()) continue;
-        scenario.messages = item["messages"].get<std::vector<json>>();
-
-        scenario.max_tokens = item.value("max_tokens", 128);
-        scenario.warmup_runs = item.value("warmup_runs", 0);
         scenario.measurement_runs = item.value("measurement_runs", 3);
 
-        if (item.contains("context") && item["context"].is_object()) {
-            std::string expanded = expand_context(item["context"], scenario.messages);
-            for (auto& msg : scenario.messages) {
-                if (msg.contains("role") && msg["role"] == "user") {
-                    if (msg.contains("content") && msg["content"].is_string()) {
-                        msg["content"] = expanded;
+        if (scenario.category == "embed"){
+            if (scenario.category == "embed" && item.contains("input"))
+                scenario.input = item["input"].get<json>();
+        } else {
+            if (item.contains("messages") && item["messages"].is_array()) {
+                scenario.messages = item["messages"].get<std::vector<json>>();
+            }
+
+            scenario.max_tokens = item.value("max_tokens", 128);
+            scenario.warmup_runs = item.value("warmup_runs", 0);
+
+            if (item.contains("context") && item["context"].is_object()) {
+                std::string expanded = expand_context(item["context"], scenario.messages);
+                for (auto& msg : scenario.messages) {
+                    if (msg.contains("role") && msg["role"] == "user") {
+                        if (msg.contains("content") && msg["content"].is_string()) {
+                            msg["content"] = expanded;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
 
         scenarios.push_back(scenario);
     }
-
     return scenarios;
 }
 
@@ -508,13 +512,28 @@ static void extract_timings_into_result(const json& timings, BenchRunResult& res
     }
 }
 
+static void extract_mem_use_into_result(lemonade::LemonadeClient& client, BenchRunResult& result) {
+        double vram_after = -1.0, mem_after = -1.0;
+        query_system_stats(client, vram_after, mem_after);
+        result.vram_gb = vram_after;
+        result.memory_gb = mem_after;
+}
+
+static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
+    if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0) {
+        result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
+    }
+}
+
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
                                 bool capture_response) {
-  return run_single_bench_textgen(client, model, scenario, memory_tracking,
-                                  capture_response);
+    if (scenario.category == "embed")
+        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response);
+    // default mode is text generation
+    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response);
 }
 
 BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
@@ -582,17 +601,11 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
     result.total_time_ms = duration<double, std::milli>(end - start).count();
 
     // Last resort: derive TPS from total time
-    if (result.tps <= 0 && result.output_tokens > 0 && result.total_time_ms > 0) {
-        result.tps = (result.output_tokens * 1000.0) / result.total_time_ms;
-    }
+    compute_tps_from_tokens_and_time(result);
 
     // Query memory after
-    if (memory_tracking) {
-        double vram_after = -1.0, mem_after = -1.0;
-        query_system_stats(client, vram_after, mem_after);
-        result.vram_gb = vram_after;
-        result.memory_gb = mem_after;
-    }
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
 
     // Validate: if all key metrics are zero the run failed server-side
     // (e.g. context size mismatch, model error). VRAM is excluded — it's
@@ -603,6 +616,75 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
         return result;  // success stays false
     }
 
+    result.success = true;
+    return result;
+}
+
+BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response) {
+    BenchRunResult result;
+    result.success = false;
+
+    if (memory_tracking) {
+        double _vram, _mem;
+        query_system_stats(client, _vram, _mem);
+    }
+
+    json request_body;
+    request_body["model"] = model;
+    request_body["input"] = scenario.input;  // may be string or array
+
+    std::string body = request_body.dump();
+
+    // Timing setup
+    auto start = steady_clock::now();
+
+    try {
+        std::string response = client.make_request(
+            "/api/v1/embeddings", "POST", body, "application/json",
+            300000, 300000);
+
+        auto resp_json = json::parse(response);
+
+        if (capture_response) {
+            if (resp_json.contains("data") && !resp_json["data"].empty()) {
+                result.response_text = resp_json["data"].dump();
+            } else {
+                result.response_text = "null";
+            }
+        }
+
+        if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
+            extract_timings_into_result(resp_json["timings"], result);
+        }
+
+        // Extract usage statistics
+        if (resp_json.contains("usage") && resp_json["usage"].is_object()) {
+            // prompt_tokens = input tokens, total_tokens = output tokens
+            result.input_tokens = resp_json["usage"]["prompt_tokens"].get<int>();
+            result.output_tokens = resp_json["usage"]["total_tokens"].get<int>();
+        }
+
+        // Populate timing fields
+        auto end = steady_clock::now();
+        result.ttft_ms = duration<double, std::milli>(end - start).count();
+
+        compute_tps_from_tokens_and_time(result);
+
+    } catch (const std::exception& e) {
+        std::cerr << "    Embedding benchmark run failed: " << e.what() << std::endl;
+        return result;  // success stays false
+    }
+
+    // Query memory after
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
+
+
+    // Success flag is already true by default if we reach here
     result.success = true;
     return result;
 }
@@ -1271,10 +1353,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     // Filter scenarios
     // When no --scenarios filter is given, exclude long-context by default
-    // (they run very long and fail on many systems).
+    // (they run very long and fail on many systems). Also exclude embeddings
+    // since they're not the usual text generation use case.
     // When --scenarios is provided, match by name, category, or "all".
     if (config.scenario_names.empty()) {
         scenarios = exclude_category(scenarios, "long-context");
+        scenarios = exclude_category(scenarios, "embed");
     } else {
         scenarios = filter_scenarios(scenarios, config.scenario_names);
     }
@@ -1580,6 +1664,9 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--flm-args", opts.flm_args, "Safe custom args for flm serve. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--vllm-args", opts.vllm_args, "Custom args for vllm-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1612,6 +1699,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     config.response_log = cli.response_log;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
+    if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
