@@ -156,6 +156,87 @@ static std::string extract_user_content(const std::vector<json>& messages) {
     return "Answer the question.";
 }
 
+// Map benchmark scenario categories to required model capabilities
+// Used to filter which backends a scenario can run on
+static bool scenario_requires_capability(const std::string& category, lemon::ModelType required_type) {
+    if (category == "embed") {
+        return required_type == lemon::ModelType::EMBEDDING;
+    }
+    if (category == "imagegen") {
+        return required_type == lemon::ModelType::IMAGE;
+    }
+    if (category == "transcription") {
+        return required_type == lemon::ModelType::TRANSCRIPTION;
+    }
+    if (category == "tts") {
+        return required_type == lemon::ModelType::TTS;
+    }
+    if (category == "audio-generation") {
+        return required_type == lemon::ModelType::AUDIO_GENERATION;
+    }
+    // Default: text generation scenarios require LLM capability
+    // but can also run on embedding models (for embeddings benchmarks)
+    // They should NOT run on image or other specialized models
+    return required_type == lemon::ModelType::LLM || required_type == lemon::ModelType::EMBEDDING;
+}
+
+// Check if a backend supports a specific capability based on its descriptor
+// Uses the BackendDescriptor's modality field and model_type
+static bool backend_supports_capability(const std::string& recipe,
+                                        const std::string& backend_name,
+                                        const lemon::ModelType required_type) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (!desc) return false;
+
+    // Get the model type from the descriptor's modality field
+    // This is a simplified mapping - in practice we might need more sophisticated logic
+    std::string modality = desc->modality;
+
+    // Map modality to ModelType
+    if (modality == "Text generation" || modality == "Completion") {
+        return required_type == lemon::ModelType::LLM;
+    }
+    if (modality == "Embeddings" || modality == "Embedding") {
+        return required_type == lemon::ModelType::EMBEDDING;
+    }
+    if (modality == "Image generation") {
+        return required_type == lemon::ModelType::IMAGE;
+    }
+    if (modality == "Speech-to-text" || modality == "Transcription") {
+        return required_type == lemon::ModelType::TRANSCRIPTION;
+    }
+    if (modality == "Text-to-speech") {
+        return required_type == lemon::ModelType::TTS;
+    }
+    if (modality == "Generative audio" || modality == "Audio generation") {
+        return required_type == lemon::ModelType::AUDIO_GENERATION;
+    }
+
+    // Default to LLM for unknown modalities
+    return required_type == lemon::ModelType::LLM;
+}
+
+// Get the required ModelType for a scenario category
+static lemon::ModelType get_required_model_type_for_scenario(const std::string& category) {
+    if (category == "embed") {
+        return lemon::ModelType::EMBEDDING;
+    }
+    if (category == "imagegen") {
+        return lemon::ModelType::IMAGE;
+    }
+    if (category == "transcription") {
+        return lemon::ModelType::TRANSCRIPTION;
+    }
+    if (category == "tts") {
+        return lemon::ModelType::TTS;
+    }
+    if (category == "audio-generation") {
+        return lemon::ModelType::AUDIO_GENERATION;
+    }
+    // Default: text generation
+    return lemon::ModelType::LLM;
+}
+
 std::string expand_context(const json& context_block, const std::vector<json>& messages) {
     std::string filler = context_block.value("filler", "");
     int target_tokens = context_block.value("target_tokens", 2000);
@@ -1532,6 +1613,29 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
                     for (const auto& scenario : scenarios) {
                         std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
+
+                        // Filter backends based on scenario category and backend capabilities
+                        // This ensures embed scenarios only run on embedding models,
+                        // imagegen scenarios only run on image models, etc.
+                        bool backend_suitable = false;
+                        const auto required_type = get_required_model_type_for_scenario(scenario.category);
+
+                        if (scenario.category == "embed") {
+                            backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::EMBEDDING);
+                        } else if (scenario.category == "imagegen") {
+                            backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE);
+                        } else {
+                            // For text generation and other scenarios, ensure we don't run on incompatible backends
+                            // Text generation, for example, should NOT run on image or embedding models
+                            if (!backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE)) {
+                                backend_suitable = backend_supports_capability(recipe, backend, required_type);
+                            }
+                        }
+
+                        if (!backend_suitable) {
+                            std::cout << "    Skipping backend - not suitable for " << scenario.category << " scenario" << std::endl;
+                            continue;
+                        }
 
                         int warmup = scenario.warmup_runs;
                         int runs = scenario.measurement_runs;
