@@ -173,6 +173,13 @@ class CommentClassificationTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(code, 1)
 
+    def test_an_inline_block_comment_before_code_is_a_code_line(self):
+        # `/* note */ x = 1;` starts with `/*` but the code after the close is not prose.
+        for line in ("/* note */ int evil = 1;", "*/ int x = 1;"):
+            blocks, code = slop.collect(diff(("a.cpp", 1, [line])))
+            self.assertEqual(blocks, [], line)
+            self.assertEqual(code, 1, line)
+
     def test_a_string_containing_a_block_opener_does_not_open_one(self):
         # Reading `"/*"` as an open comment hands the NEXT line of ordinary code to the
         # slop detector as prose.
