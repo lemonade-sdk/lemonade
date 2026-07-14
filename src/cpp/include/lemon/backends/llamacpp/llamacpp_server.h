@@ -47,6 +47,7 @@ public:
 
     // ITokenizerServer implementation
     json tokenize(const json& request) override;
+    json count_chat_tokens(const json& request) override;
 };
 
 namespace llamacpp {

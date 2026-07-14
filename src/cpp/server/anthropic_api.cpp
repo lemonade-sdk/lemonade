@@ -314,6 +314,90 @@ static std::string warning_header_value(const std::vector<std::string>& warnings
     return value;
 }
 
+struct AnthropicUsage {
+    int input_tokens = 0;
+    int output_tokens = 0;
+    int cache_creation_input_tokens = 0;
+    int cache_read_input_tokens = 0;
+    bool has_cache_creation = false;
+    bool has_cache_read = false;
+};
+
+static int nonnegative_int(const json& object, const char* key, int fallback = 0) {
+    if (!object.contains(key) || !object[key].is_number_integer()) {
+        return fallback;
+    }
+    return std::max(0, object[key].get<int>());
+}
+
+static AnthropicUsage convert_openai_usage(const json& usage) {
+    AnthropicUsage result;
+    if (!usage.is_object()) {
+        return result;
+    }
+
+    result.output_tokens = nonnegative_int(
+        usage, "completion_tokens", nonnegative_int(usage, "output_tokens"));
+    result.cache_creation_input_tokens = nonnegative_int(usage, "cache_creation_input_tokens");
+    result.cache_read_input_tokens = nonnegative_int(usage, "cache_read_input_tokens");
+    result.has_cache_creation = usage.contains("cache_creation_input_tokens");
+    result.has_cache_read = usage.contains("cache_read_input_tokens");
+
+    if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object()) {
+        const auto& details = usage["prompt_tokens_details"];
+        if (details.contains("cached_tokens")) {
+            result.cache_read_input_tokens = nonnegative_int(details, "cached_tokens");
+            result.has_cache_read = true;
+        }
+    }
+    if (usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object()) {
+        const auto& details = usage["input_tokens_details"];
+        if (details.contains("cached_tokens")) {
+            result.cache_read_input_tokens = nonnegative_int(details, "cached_tokens");
+            result.has_cache_read = true;
+        }
+    }
+
+    const int total_input = nonnegative_int(
+        usage, "prompt_tokens", nonnegative_int(usage, "input_tokens"));
+    result.input_tokens = std::max(
+        0, total_input - result.cache_creation_input_tokens - result.cache_read_input_tokens);
+    return result;
+}
+
+static json anthropic_usage_json(const AnthropicUsage& usage, bool include_input) {
+    json result = {{"output_tokens", usage.output_tokens}};
+    if (include_input) {
+        result["input_tokens"] = usage.input_tokens;
+    }
+    if (usage.has_cache_creation) {
+        result["cache_creation_input_tokens"] = usage.cache_creation_input_tokens;
+    }
+    if (usage.has_cache_read) {
+        result["cache_read_input_tokens"] = usage.cache_read_input_tokens;
+    }
+    return result;
+}
+
+static json extract_stop_sequence(const json& response, const json& choice) {
+    for (const auto* key : {"stop_sequence", "stopping_word"}) {
+        if (choice.contains(key) && choice[key].is_string() && !choice[key].get<std::string>().empty()) {
+            return choice[key];
+        }
+        if (response.contains(key) && response[key].is_string() && !response[key].get<std::string>().empty()) {
+            return response[key];
+        }
+    }
+    if (response.contains("__verbose") && response["__verbose"].is_object()) {
+        const auto& verbose = response["__verbose"];
+        if (verbose.contains("stopping_word") && verbose["stopping_word"].is_string() &&
+            !verbose["stopping_word"].get<std::string>().empty()) {
+            return verbose["stopping_word"];
+        }
+    }
+    return nullptr;
+}
+
 static void validate_anthropic_request(const json& request, bool count_tokens) {
     if (!request.is_object()) {
         throw std::invalid_argument("request body must be a JSON object");
@@ -564,37 +648,40 @@ static bool write_sse_event(httplib::DataSink& sink, const std::string& event, c
     return sink.write(payload.c_str(), payload.size());
 }
 
-static std::string stringify_anthropic_tool_result_content(const json& content,
-                                                           std::vector<std::string>& warnings) {
+static json convert_anthropic_tool_result_content(const json& content) {
     if (content.is_string()) {
-        return content.get<std::string>();
+        return content;
     }
 
     if (content.is_array()) {
-        std::vector<std::string> parts;
+        std::string text;
+        json parts = json::array();
+        bool has_images = false;
         for (const auto& block : content) {
-            if (!block.is_object()) {
-                add_warning(warnings, "Ignored non-object block in tool_result.content");
-                continue;
+            const std::string type = block["type"].get<std::string>();
+            if (type == "text") {
+                const std::string value = block["text"].get<std::string>();
+                text += value;
+                parts.push_back({{"type", "text"}, {"text", value}});
+            } else if (type == "image") {
+                has_images = true;
+                const auto& source = block["source"];
+                std::string url;
+                if (source["type"] == "base64") {
+                    url = "data:" + source["media_type"].get<std::string>() +
+                          ";base64," + source["data"].get<std::string>();
+                } else {
+                    url = source["url"].get<std::string>();
+                }
+                parts.push_back({
+                    {"type", "image_url"},
+                    {"image_url", {{"url", url}}}
+                });
             }
-
-            std::string type = block.value("type", "");
-            if (type == "text" && block.contains("text") && block["text"].is_string()) {
-                parts.push_back(block["text"].get<std::string>());
-                continue;
-            }
-
-            add_warning(warnings, "Ignored unsupported block type in tool_result.content: " + type);
         }
-
-        return join_strings(parts);
+        return has_images ? parts : json(text);
     }
 
-    if (content.is_object()) {
-        return content.dump();
-    }
-
-    add_warning(warnings, "Ignored unsupported type for tool_result.content");
     return "";
 }
 
@@ -633,66 +720,6 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
 
     add_warning(warnings, "Tool arguments had unsupported type; using empty object");
     return json::object();
-}
-
-static std::string stringify_openai_content_for_token_count(const json& content) {
-    if (content.is_string()) {
-        return content.get<std::string>();
-    }
-
-    if (!content.is_array()) {
-        return content.dump();
-    }
-
-    std::vector<std::string> parts;
-    for (const auto& block : content) {
-        if (!block.is_object()) {
-            continue;
-        }
-
-        std::string type = block.value("type", "");
-        if (type == "text" && block.contains("text") && block["text"].is_string()) {
-            parts.push_back(block["text"].get<std::string>());
-        } else if (type == "image_url") {
-            parts.push_back("[image]");
-        }
-    }
-
-    return join_strings(parts);
-}
-
-static std::string render_openai_chat_for_token_count(const json& openai_request) {
-    std::ostringstream prompt;
-
-    if (openai_request.contains("messages") && openai_request["messages"].is_array()) {
-        for (const auto& message : openai_request["messages"]) {
-            if (!message.is_object()) {
-                continue;
-            }
-
-            std::string role = message.value("role", "user");
-            prompt << role << ": ";
-            if (message.contains("content")) {
-                prompt << stringify_openai_content_for_token_count(message["content"]);
-            }
-            if (message.contains("reasoning_content") && message["reasoning_content"].is_string()) {
-                prompt << "\nreasoning: " << message["reasoning_content"].get<std::string>();
-            }
-            if (message.contains("tool_calls")) {
-                prompt << "\ntool_calls: " << message["tool_calls"].dump();
-            }
-            if (message.contains("tool_call_id") && message["tool_call_id"].is_string()) {
-                prompt << "\ntool_call_id: " << message["tool_call_id"].get<std::string>();
-            }
-            prompt << "\n";
-        }
-    }
-
-    if (openai_request.contains("tools")) {
-        prompt << "tools: " << openai_request["tools"].dump() << "\n";
-    }
-
-    return prompt.str();
 }
 
 static int count_tokenizer_response_tokens(const json& tokenize_response) {
@@ -862,9 +889,20 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                             continue;
                         }
 
-                        std::string tool_content = block.contains("content")
-                            ? stringify_anthropic_tool_result_content(block["content"], warnings)
-                            : std::string();
+                        json tool_content = block.contains("content")
+                            ? convert_anthropic_tool_result_content(block["content"])
+                            : json("");
+
+                        if (block.value("is_error", false)) {
+                            if (tool_content.is_string()) {
+                                tool_content = "Error: " + tool_content.get<std::string>();
+                            } else {
+                                tool_content.insert(tool_content.begin(), {
+                                    {"type", "text"},
+                                    {"text", "Error: "}
+                                });
+                            }
+                        }
 
                         tool_result_messages.push_back({
                             {"role", "tool"},
@@ -991,10 +1029,16 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
             if (name.empty()) {
                 add_warning(warnings, "Ignored tool_choice.type=tool without name");
             } else {
-                openai_req["tool_choice"] = {
-                    {"type", "function"},
-                    {"function", {{"name", name}}}
-                };
+                json selected_tools = json::array();
+                if (openai_req.contains("tools") && openai_req["tools"].is_array()) {
+                    for (const auto& tool : openai_req["tools"]) {
+                        if (tool["function"].value("name", std::string()) == name) {
+                            selected_tools.push_back(tool);
+                        }
+                    }
+                }
+                openai_req["tools"] = selected_tools;
+                openai_req["tool_choice"] = "required";
             }
         } else {
             add_warning(warnings, "Ignored unsupported tool_choice.type: " + type);
@@ -1030,6 +1074,8 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
             if (anthropic_request["thinking"].contains("budget_tokens")) {
                 openai_req["thinking_budget_tokens"] = anthropic_request["thinking"]["budget_tokens"];
             }
+        } else if (thinking_type == "adaptive") {
+            openai_req["enable_thinking"] = true;
         } else if (thinking_type == "disabled") {
             openai_req["enable_thinking"] = false;
         } else {
@@ -1057,12 +1103,17 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
     std::string thinking_text;
     json tool_blocks = json::array();
     std::string stop_reason = "end_turn";
+    json stop_sequence = nullptr;
     std::string response_id = openai_response.value("id", generate_anthropic_message_id());
 
     if (openai_response.contains("choices") && openai_response["choices"].is_array() &&
         !openai_response["choices"].empty()) {
         const auto& choice = openai_response["choices"][0];
         stop_reason = map_finish_reason_to_anthropic_stop_reason(choice, &mutable_warnings);
+        stop_sequence = extract_stop_sequence(openai_response, choice);
+        if (!stop_sequence.is_null()) {
+            stop_reason = "stop_sequence";
+        }
 
         if (choice.contains("message") && choice["message"].is_object()) {
             const auto& message = choice["message"];
@@ -1147,12 +1198,9 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
         }
     }
 
-    int input_tokens = 0;
-    int output_tokens = 0;
+    AnthropicUsage usage;
     if (openai_response.contains("usage") && openai_response["usage"].is_object()) {
-        const auto& usage = openai_response["usage"];
-        input_tokens = usage.value("prompt_tokens", 0);
-        output_tokens = usage.value("completion_tokens", 0);
+        usage = convert_openai_usage(openai_response["usage"]);
     }
 
     json anthropic_res = {
@@ -1162,11 +1210,8 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
         {"model", model},
         {"content", content_blocks},
         {"stop_reason", stop_reason},
-        {"stop_sequence", nullptr},
-        {"usage", {
-            {"input_tokens", input_tokens},
-            {"output_tokens", output_tokens}
-        }}
+        {"stop_sequence", stop_sequence},
+        {"usage", anthropic_usage_json(usage, true)}
     };
 
     return anthropic_res;
@@ -1175,6 +1220,7 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
 void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                                    httplib::DataSink& client_sink,
                                                    const std::string& model,
+                                                   int initial_input_tokens,
                                                    const std::vector<std::string>& warnings,
                                                    StreamFn call_router) {
     httplib::DataSink adapter_sink;
@@ -1188,14 +1234,17 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     bool sent_thinking_content_stop = false;
     bool sent_text_content_start = false;
     bool sent_text_content_stop = false;
+    std::vector<bool> seen_tool_blocks;
     std::vector<bool> started_tool_blocks;
     std::vector<bool> stopped_tool_blocks;
     std::vector<int> tool_content_indices;
     std::vector<std::string> tool_ids;
     std::vector<std::string> tool_names;
+    std::vector<std::string> tool_argument_buffers;
     std::string stop_reason = "end_turn";
-    int input_tokens = 0;
-    int output_tokens = 0;
+    json stop_sequence = nullptr;
+    AnthropicUsage stream_usage;
+    stream_usage.input_tokens = initial_input_tokens;
     std::string message_id = generate_anthropic_message_id();
     int next_content_index = 0;
     int thinking_content_index = -1;
@@ -1221,7 +1270,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                 {"content", json::array()},
                 {"stop_reason", nullptr},
                 {"stop_sequence", nullptr},
-                {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
+                {"usage", anthropic_usage_json(stream_usage, true)}
             }}
         };
         if (!write_sse_event(client_sink, "message_start", message_start)) {
@@ -1358,32 +1407,48 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
     auto ensure_tool_storage = [&](size_t idx) {
         if (started_tool_blocks.size() <= idx) {
+            seen_tool_blocks.resize(idx + 1, false);
             started_tool_blocks.resize(idx + 1, false);
             stopped_tool_blocks.resize(idx + 1, false);
             tool_content_indices.resize(idx + 1, -1);
             tool_ids.resize(idx + 1);
             tool_names.resize(idx + 1);
+            tool_argument_buffers.resize(idx + 1);
         }
     };
 
-    auto start_tool_block = [&](size_t idx) -> bool {
+    auto send_tool_arguments = [&](size_t idx, const std::string& arguments) -> bool {
+        if (arguments.empty()) {
+            return true;
+        }
+        json tool_input_delta = {
+            {"type", "content_block_delta"},
+            {"index", tool_content_indices[idx]},
+            {"delta", {
+                {"type", "input_json_delta"},
+                {"partial_json", arguments}
+            }}
+        };
+        return write_sse_event(client_sink, "content_block_delta", tool_input_delta);
+    };
+
+    auto start_tool_block = [&](size_t idx, bool allow_fallback_id) -> bool {
+        ensure_tool_storage(idx);
+        if (started_tool_blocks[idx]) {
+            return true;
+        }
+        if (tool_names[idx].empty() || (tool_ids[idx].empty() && !allow_fallback_id)) {
+            return true;
+        }
+        if (tool_ids[idx].empty()) {
+            tool_ids[idx] = generate_anthropic_tool_id();
+        }
+
         if (!close_thinking_block() || !close_text_block()) {
             return false;
         }
         if (!send_message_start()) {
             return false;
-        }
-
-        ensure_tool_storage(idx);
-        if (started_tool_blocks[idx]) {
-            return true;
-        }
-
-        if (tool_ids[idx].empty()) {
-            tool_ids[idx] = generate_anthropic_message_id();
-        }
-        if (tool_names[idx].empty()) {
-            tool_names[idx] = "unknown_tool";
         }
 
         tool_content_indices[idx] = next_content_index++;
@@ -1401,7 +1466,9 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
             return false;
         }
         started_tool_blocks[idx] = true;
-        return true;
+        const std::string buffered_arguments = std::move(tool_argument_buffers[idx]);
+        tool_argument_buffers[idx].clear();
+        return send_tool_arguments(idx, buffered_arguments);
     };
 
     auto process_content_delta = [&](const std::string& delta_text) -> bool {
@@ -1482,13 +1549,16 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                           &ensure_tool_storage,
                           &start_tool_block,
                           &tool_content_indices,
+                          &seen_tool_blocks,
                           &started_tool_blocks,
                           &stopped_tool_blocks,
                           &tool_ids,
                           &tool_names,
+                          &tool_argument_buffers,
+                          &send_tool_arguments,
                           &stop_reason,
-                          &input_tokens,
-                          &output_tokens,
+                          &stop_sequence,
+                          &stream_usage,
                           &message_id,
                           &model](const char* data, size_t len) -> bool {
         sse_buffer.append(data, len);
@@ -1502,11 +1572,14 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                 line.pop_back();
             }
 
-            if (line.empty() || line.find("data: ") != 0) {
+            if (line.empty() || line.rfind("data:", 0) != 0) {
                 continue;
             }
 
-            std::string json_str = line.substr(6);
+            std::string json_str = line.substr(5);
+            if (!json_str.empty() && json_str.front() == ' ') {
+                json_str.erase(0, 1);
+            }
             if (json_str == "[DONE]") {
                 continue;
             }
@@ -1536,9 +1609,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                 }
 
                 if (openai_chunk.contains("usage") && openai_chunk["usage"].is_object()) {
-                    const auto& usage = openai_chunk["usage"];
-                    input_tokens = usage.value("prompt_tokens", input_tokens);
-                    output_tokens = usage.value("completion_tokens", output_tokens);
+                    stream_usage = convert_openai_usage(openai_chunk["usage"]);
                 }
 
                 if (openai_chunk.contains("choices") && openai_chunk["choices"].is_array() &&
@@ -1578,6 +1649,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
                                 size_t idx = static_cast<size_t>(openai_tool_index);
                                 ensure_tool_storage(idx);
+                                seen_tool_blocks[idx] = true;
 
                                 if (tool_delta.contains("id") && tool_delta["id"].is_string()) {
                                     tool_ids[idx] = tool_delta["id"].get<std::string>();
@@ -1588,29 +1660,23 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                                     if (fn.contains("name") && fn["name"].is_string()) {
                                         tool_names[idx] = fn["name"].get<std::string>();
                                     }
-                                }
-
-                                if (!started_tool_blocks[idx] && !start_tool_block(idx)) {
-                                    return false;
-                                }
-
-                                if (tool_delta.contains("function") && tool_delta["function"].is_object()) {
-                                    const auto& fn = tool_delta["function"];
                                     if (fn.contains("arguments") && fn["arguments"].is_string()) {
                                         std::string args_delta = fn["arguments"].get<std::string>();
                                         if (!args_delta.empty()) {
-                                            json tool_input_delta = {
-                                                {"type", "content_block_delta"},
-                                                {"index", tool_content_indices[idx]},
-                                                {"delta", {
-                                                    {"type", "input_json_delta"},
-                                                    {"partial_json", args_delta}
-                                                }}
-                                            };
-                                            if (!write_sse_event(client_sink, "content_block_delta", tool_input_delta)) {
-                                                return false;
+                                            if (started_tool_blocks[idx]) {
+                                                if (!send_tool_arguments(idx, args_delta)) {
+                                                    return false;
+                                                }
+                                            } else {
+                                                tool_argument_buffers[idx] += args_delta;
                                             }
                                         }
+                                    }
+                                }
+
+                                if (!started_tool_blocks[idx]) {
+                                    if (!start_tool_block(idx, false)) {
+                                        return false;
                                     }
                                 }
                             }
@@ -1619,32 +1685,48 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
                     if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
                         stop_reason = map_finish_reason_to_anthropic_stop_reason(choice);
+                        json matched_stop = extract_stop_sequence(openai_chunk, choice);
+                        if (!matched_stop.is_null()) {
+                            stop_sequence = matched_stop;
+                            stop_reason = "stop_sequence";
+                        }
                     }
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[OllamaApi] Failed to parse Anthropic stream chunk: " << e.what() << std::endl;
+                json error = {{"message", std::string("Malformed backend stream chunk: ") + e.what()}};
+                if (!send_error_event(error)) {
+                    return false;
+                }
             }
         }
         return true;
     };
 
     adapter_sink.done = [&client_sink,
+                         &sse_buffer,
+                         &send_error_event,
                          &send_message_start,
                          &flush_inline_content,
                          &close_thinking_block,
                          &close_text_block,
                          &start_text_block,
+                         &start_tool_block,
                          &sent_message_start,
                          &sent_thinking_content_start,
                          &sent_text_content_start,
                          &stream_error,
+                         &seen_tool_blocks,
                          &started_tool_blocks,
                          &stopped_tool_blocks,
                          &tool_content_indices,
+                         &tool_names,
                          &stop_reason,
-                         &input_tokens,
-                         &output_tokens,
-                         &warnings]() {
+                         &stop_sequence,
+                         &stream_usage]() {
+        if (!stream_error && !trim_ascii_whitespace(sse_buffer).empty()) {
+            json error = {{"message", "Backend stream ended with an incomplete SSE event"}};
+            send_error_event(error);
+        }
         if (stream_error) {
             client_sink.done();
             return;
@@ -1653,6 +1735,21 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
         if (!flush_inline_content() || !send_message_start()) {
             client_sink.done();
             return;
+        }
+
+        for (size_t idx = 0; idx < started_tool_blocks.size(); ++idx) {
+            if (seen_tool_blocks[idx] && !started_tool_blocks[idx]) {
+                if (tool_names[idx].empty()) {
+                    json error = {{"message", "Backend emitted a tool call without a function name"}};
+                    send_error_event(error);
+                    client_sink.done();
+                    return;
+                }
+                if (!start_tool_block(idx, true)) {
+                    client_sink.done();
+                    return;
+                }
+            }
         }
 
         bool any_tool_started = false;
@@ -1699,12 +1796,9 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
             {"type", "message_delta"},
             {"delta", {
                 {"stop_reason", stop_reason},
-                {"stop_sequence", nullptr}
+                {"stop_sequence", stop_sequence}
             }},
-            {"usage", {
-                {"input_tokens", input_tokens},
-                {"output_tokens", output_tokens}
-            }}
+            {"usage", anthropic_usage_json(stream_usage, false)}
         };
         if (!write_sse_event(client_sink, "message_delta", message_delta)) {
             client_sink.done();
@@ -1716,7 +1810,15 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
         client_sink.done();
     };
 
-    call_router(openai_body, adapter_sink);
+    try {
+        call_router(openai_body, adapter_sink);
+    } catch (const std::exception& e) {
+        if (!stream_error) {
+            json error = {{"message", std::string("Backend stream failed: ") + e.what()}};
+            send_error_event(error);
+        }
+        client_sink.done();
+    }
 }
 
 void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httplib::Response& res) {
@@ -1743,9 +1845,7 @@ void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httpl
             res.set_header("X-Lemonade-Warning", warning_header_value(warnings));
         }
 
-        std::string prompt = render_openai_chat_for_token_count(openai_req);
-        json tokenize_request = {{"content", prompt}};
-        auto tokenize_response = router_->tokenize(tokenize_request);
+        auto tokenize_response = router_->count_chat_tokens(openai_req);
         if (send_anthropic_backend_error(tokenize_response, res)) {
             return;
         }
@@ -1805,6 +1905,18 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         }
 
         bool stream = openai_req.value("stream", false);
+        int stream_input_tokens = 0;
+        if (stream) {
+            json count_request = openai_req;
+            count_request["stream"] = false;
+            auto count_response = router_->count_chat_tokens(count_request);
+            if (count_response.contains("error")) {
+                add_warning(warnings, "Backend does not provide prompt token counts before streaming");
+            } else {
+                stream_input_tokens = count_tokenizer_response_tokens(count_response);
+            }
+            openai_req["stream_options"] = {{"include_usage", true}};
+        }
         if (!warnings.empty()) {
             const std::string header = warning_header_value(warnings);
             res.set_header("X-Lemonade-Warning", header);
@@ -1821,10 +1933,10 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
 
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, openai_body, model, warnings](size_t offset, httplib::DataSink& sink) {
+                [this, openai_body, model, stream_input_tokens, warnings](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false;
 
-                    stream_openai_sse_to_anthropic_sse(openai_body, sink, model, warnings,
+                    stream_openai_sse_to_anthropic_sse(openai_body, sink, model, stream_input_tokens, warnings,
                         [this](const std::string& body, httplib::DataSink& s) {
                             router_->chat_completion_stream(body, s);
                         }

@@ -92,6 +92,7 @@ class ITokenizerServer : public virtual ICapability {
 public:
     virtual ~ITokenizerServer() = default;
     virtual json tokenize(const json& request_body) = 0;
+    virtual json count_chat_tokens(const json& request_body) = 0;
 };
 
 template<typename T>

@@ -1448,6 +1448,18 @@ json Router::tokenize(const json& request_body) {
     }
 }
 
+json Router::count_chat_tokens(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto tokenizer_server = dynamic_cast<ITokenizerServer*>(server);
+        if (!tokenizer_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Chat token counting", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return tokenizer_server->count_chat_tokens(request);
+    });
+}
+
 json Router::responses(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         return server->responses(request);

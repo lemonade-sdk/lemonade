@@ -64,6 +64,7 @@ private:
     void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                             httplib::DataSink& client_sink,
                                             const std::string& model,
+                                            int input_tokens,
                                             const std::vector<std::string>& warnings,
                                             StreamFn call_router);
 };
