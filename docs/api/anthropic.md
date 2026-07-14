@@ -17,6 +17,6 @@ Local models cannot create or verify Anthropic's cryptographic thinking signatur
 
 Token counting uses the same converted messages, tools, and model chat template as generation. A model must be loaded to access its tokenizer and template, so this endpoint may auto-load the requested model and is unavailable for backends that do not implement chat token counting.
 
-Streaming also requires chat token counting so `message_start.usage.input_tokens` is accurate before generation deltas are emitted. The current exact implementation is available for llama.cpp models.
+Streaming uses chat token counting when the backend supports it so `message_start.usage.input_tokens` is accurate before generation deltas are emitted. Other backends report `input_tokens: 0` and return an `X-Lemonade-Warning` instead of rejecting the stream.
 
 When `LEMONADE_API_KEY` is set, Anthropic clients may authenticate with either `Authorization: Bearer ...` or `X-Api-Key`.
