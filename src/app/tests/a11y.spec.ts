@@ -3498,7 +3498,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     expect(ariaValueText).toContain('estimat');
   });
 
-  // ── 8. HuggingFace search nav entry in the left rail (#2424) ──────────────
+  // ── 8. HuggingFace inline zone in the model list panel (#2564) ──────────────
 
   async function goToModelsRefinedWithHf(page: Page): Promise<void> {
     await page.route('**huggingface.co/api/models**', async route =>
@@ -3513,37 +3513,37 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
   }
 
-  test('A152 — a HuggingFace nav entry appears below the primary list on search, shows the count, is keyboard operable, and clears', async ({ page }) => {
+  test('A152 — HuggingFace results appear inline in the model list panel on search and clear when search is cleared', async ({ page }) => {
     await goToModelsRefinedWithHf(page);
     const search = page.locator('#model-list-search');
     await search.fill('mistral');
     // Allow the debounced HF search (400ms) + render to settle.
     await page.waitForTimeout(900);
 
-    const hf = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' });
-    await expect(hf).toBeVisible();
-    await expect(hf).toContainText('2');
+    // No nav rail HF entry — results are inline in the list panel.
+    await expect(page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' })).toHaveCount(0);
 
-    // Keyboard operable: focus + Enter selects it and filters the middle list.
-    await hf.focus();
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(150);
-    expect(await hf.getAttribute('aria-current')).toBe('true');
-    const rows = page.locator('.model-list-item');
-    await expect(rows.first()).toContainText(/Mistral-7B|Phi-3/);
+    // HF zone is visible (elevated at top since no local models match "mistral").
+    const hfZone = page.locator('.zone--hf');
+    await expect(hfZone).toBeVisible();
+    await expect(hfZone).toContainText('HuggingFace');
 
-    // Clearing the search removes the HF entry entirely.
+    // HF result cards are present in the zone.
+    const hfRows = page.locator('.zone--hf .row--hf');
+    await expect(hfRows).toHaveCount(2);
+
+    // Clearing the search removes the HF zone entirely.
     await search.fill('');
     await page.waitForTimeout(300);
-    await expect(page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' })).toHaveCount(0);
+    await expect(page.locator('.zone--hf')).toHaveCount(0);
   });
 
   test('A153 — the model view with an active HuggingFace search passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
     await goToModelsRefinedWithHf(page);
     await page.locator('#model-list-search').fill('mistral');
     await page.waitForTimeout(900);
-    await page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' }).click();
-    await page.waitForTimeout(150);
+    // HF zone is now inline in the list panel; no nav rail click needed.
+    await expect(page.locator('.zone--hf')).toBeVisible();
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
       .analyze();

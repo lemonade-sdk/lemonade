@@ -1205,6 +1205,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState<string | null>(null);
   const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
+  const [selectedHfModel, setSelectedHfModel] = useState<HFModelResult | null>(null);
   const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
   const pullHfAbortRef = useRef<Record<string, AbortController>>({});
   const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
@@ -1576,7 +1577,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     model: LoadedModel,
     recipeOptions?: Record<string, unknown>,
   ) => {
-    const info = listModels.find(m => modelName(m) === model.model_name) ?? null;
+    const info = allModels.find(m => modelName(m) === model.model_name) ?? null;
     await api.reloadModel(model.model_name, recipeOptions, info);
     await refresh();
   };
@@ -2188,32 +2189,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
   }, [hfResults, allModels, filterTab]);
 
-  // The "Hugging Face" rail entry is live only while a search yields HF matches.
-  const hfSearchActive = filteredHfResults.length > 0;
-
-  // Map HF search results into ModelInfo rows so the SAME middle list can render
-  // them when the Hugging Face nav entry is selected (#2424 item 5).
-  const hfModelInfos = useMemo<ModelInfo[]>(() => filteredHfResults.map(r => ({
-    id: r.id,
-    name: r.id,
-    display_name: r.modelId || r.id,
-    labels: [...(Array.isArray(r.tags) ? r.tags : []), ...(r.pipeline_tag ? [r.pipeline_tag] : [])],
-    downloads: r.downloads,
-    recipe: 'huggingface',
-    huggingface: true,
-  } as ModelInfo)), [filteredHfResults]);
-
-  // When the HF search clears, drop out of the HF view back to All Models.
-  useEffect(() => {
-    if (!hfSearchActive && primaryFilter === 'huggingface') {
-      setPrimaryFilter('all');
-    }
-  }, [hfSearchActive, primaryFilter]);
-
-  // The middle list shows HF results when the HF nav entry is active, otherwise
-  // the normal local registry.
-  const hfMode = primaryFilter === 'huggingface' && hfSearchActive;
-  const listModels = hfMode ? hfModelInfos : allModels;
+  // Rough check: does any local model match the current search query?
+  // Used to decide whether to elevate the HF zone (top, prominent) or
+  // keep it inline at the bottom with an anchor bar.
+  const hasLocalMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return true;
+    return allModels.some(m => {
+      const mName = modelName(m).toLowerCase();
+      const disp = String(m.display_name || '').toLowerCase();
+      const recipe = String((m as any).recipe || '').toLowerCase();
+      const labels = (m.labels || []).join(' ').toLowerCase();
+      return `${mName} ${disp} ${recipe} ${labels}`.includes(q);
+    });
+  }, [allModels, searchQuery]);
   const selectedDetailModel = selectedDetailModelId
     ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
     : null;
@@ -2636,6 +2625,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       const next = isExpanded ? null : r.id;
       setExpandedHfModel(next);
       if (next) fetchHfVariants(r.id);
+      setSelectedHfModel(r);
+      setSelectedDetailModelId(null);
+      setMobileDetailOpen(true);
     };
 
     return (
@@ -2859,18 +2851,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
 
-  const shouldPinHuggingFaceZone = showHuggingFaceZone && searchQuery.trim().length >= 2;
-  const renderHuggingFaceZone = () => !showHuggingFaceZone ? null : (
-    <section className="zone zone--hf zone--hf-compact">
+  const renderHuggingFaceZone = () => !hasHuggingFaceActivity ? null : (
+    <section className="zone zone--hf" aria-label="HuggingFace search results">
       <div className="zone__head">
-        <span className="zone__dot zone__dot--hf" />
+        <span className="zone__dot zone__dot--hf" aria-hidden="true" />
         <span className="zone__title">HuggingFace</span>
         {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
         <span className="zone__rule" />
       </div>
       {hfLoading ? (
-        <div className="hf-zone__loading">
-          <span className="hf-zone__spinner" />
+        <div className="hf-zone__loading" role="status" aria-live="polite">
+          <span className="hf-zone__spinner" aria-hidden="true" />
           <span>Searching HuggingFace…</span>
         </div>
       ) : hfError ? (
@@ -2878,13 +2869,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <Icon name="alert" size={16} />
           <span>HuggingFace search is unavailable: {hfError}</span>
         </div>
-      ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
-        filteredHfResults.map(r => renderHfRow(r))
       ) : (
-        <div className="hf-zone__empty">
-          <Icon name="download" size={16} />
-          <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
-        </div>
+        filteredHfResults.map(r => renderHfRow(r))
       )}
     </section>
   );
@@ -2920,35 +2906,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         tagFilter={tagFilter}
         onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
         storageInfo={storageInfo}
-        hfCount={filteredHfResults.length}
       />
 
       {/* Middle panel: searchable/filterable model list */}
       <ModelListPanel
-        allModels={listModels}
+        allModels={allModels}
         loadedNames={loadedNames}
         pulling={pulling}
         downloadItems={downloadItems}
         selectedModelId={selectedDetailModelId}
         onSelectModel={(id) => {
           setSelectedDetailModelId(id);
+          setSelectedHfModel(null);
           setMobileDetailOpen(true);
           if (showCustomForm) closeCustomForm();
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        filterTab={hfMode ? 'all' : filterTab}
+        filterTab={filterTab}
         onFilterChange={setFilterTab}
         capabilityFilter={capabilityFilter}
         onCapabilityFilterChange={setCapabilityFilter}
         primaryFilter={primaryFilter}
-        backendFilter={hfMode ? 'all' : backendFilter}
-        tagFilter={hfMode ? null : tagFilter}
+        backendFilter={backendFilter}
+        tagFilter={tagFilter}
         searchInputRef={searchRef}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
         favoriteNames={favoriteNameSet}
+        hfZoneTop={hasHuggingFaceActivity && !hasLocalMatches ? renderHuggingFaceZone() : undefined}
+        hfZone={hasHuggingFaceActivity && hasLocalMatches ? renderHuggingFaceZone() : undefined}
+        hfResultCount={filteredHfResults.length}
       />
 
       <div
@@ -3244,9 +3233,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onToggleFavorite={toggleFavoriteModel}
           onEditCustomCollection={openCustomCollectionEditor}
           noModelsAvailable={allModels.length === 0}
+          hfModel={selectedHfModel}
+          hfVariants={selectedHfModel ? hfVariants[selectedHfModel.id] : undefined}
+          onFetchHfVariants={fetchHfVariants}
+          onHfPull={handleHfPull}
+          pullingHf={pullingHf}
+          onCancelHfPull={handleCancelHfPull}
           onBack={() => {
             setMobileDetailOpen(false);
-            // Return focus to the selected list item
             if (selectedDetailModelId) {
               requestAnimationFrame(() => {
                 const sel = document.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(selectedDetailModelId)}"]`);
@@ -3254,6 +3248,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               });
             }
           }}
+          onClose={() => { setSelectedDetailModelId(null); setSelectedHfModel(null); }}
         />
       )}
     </div>
