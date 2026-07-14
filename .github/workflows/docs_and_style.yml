@@ -85,7 +85,9 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.event.repository.default_branch }}
         run: |
           BASE_BRANCH="${BASE_REF#refs/heads/}"
-          git fetch --no-tags --depth=0 origin "$BASE_BRANCH"
+          # checkout already fetched full history (fetch-depth: 0); fetch the base branch
+          # so origin/<base> resolves for merge-base. No --depth: 0 is not a valid depth.
+          git fetch --no-tags origin "$BASE_BRANCH"
           BASE=$(git merge-base "origin/$BASE_BRANCH" HEAD)
 
           if [ "${{ github.event_name }}" = "merge_group" ]; then

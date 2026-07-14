@@ -44,7 +44,7 @@ POINTER_RE = re.compile(r"\bsee\s+\S", re.IGNORECASE)
 
 # A test comment naming the invariant under test is the spec, even when the source
 # explains the same mechanism.
-TEST_PATH_RE = re.compile(r"(^|/)tests?(/|_)|(^|/)testing(/|_)|_tests?\.|(^|/)test_")
+TEST_PATH_RE = re.compile(r"(^|/)tests?(/|_|\.)|(^|/)testing(/|_)|_tests?\.|(^|/)test_")
 
 STOPWORDS = {
     "about",
@@ -176,7 +176,12 @@ def run(cmd, allow_missing=False):
     comparison that never ran. `allow_missing` covers the one legitimate failure: a
     path absent from one side of the comparison.
     """
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    # errors="replace": a file with invalid UTF-8 bytes must degrade to a comparison,
+    # not an uncaught UnicodeDecodeError. The replacement is deterministic, so a real
+    # change in the undecodable region still shows up as a difference.
+    p = subprocess.run(
+        cmd, capture_output=True, text=True, errors="replace", check=False
+    )
     if p.returncode != 0:
         if allow_missing:
             return None
@@ -428,7 +433,31 @@ def _code_of(text, path=""):
     """
     if path.endswith((".py", ".pyi")):
         return _code_of_python(text)
+    # C replaces trigraphs in phase 1, before line splicing and comment removal, so `??/`
+    # is a backslash that can continue a // comment over the next line. C++17 removed
+    # them, so only .c is treated as trigraph-live; a .h here is a C++ header, where
+    # detrigraphing would instead flag a literal `??/` in a comment as a code change.
+    if path.endswith(".c"):
+        text = _detrigraph(text)
     return _code_of_cish(text)
+
+
+TRIGRAPHS = {
+    "=": "#",
+    "/": "\\",
+    "'": "^",
+    "(": "[",
+    ")": "]",
+    "!": "|",
+    "<": "{",
+    ">": "}",
+    "-": "~",
+}
+TRIGRAPH_RE = re.compile(r"\?\?([=/'()!<>-])")
+
+
+def _detrigraph(text):
+    return TRIGRAPH_RE.sub(lambda m: TRIGRAPHS[m.group(1)], text)
 
 
 def _code_of_python(text):

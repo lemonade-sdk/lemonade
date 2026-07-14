@@ -255,6 +255,11 @@ class TestPathTests(unittest.TestCase):
 
     def test_a_word_merely_containing_test_is_not_a_test_file(self):
         self.assertFalse(slop.TEST_PATH_RE.search("src/latest_version.py"))
+        self.assertFalse(slop.TEST_PATH_RE.search("contest.py"))
+
+    def test_a_root_level_test_file_is_recognised(self):
+        for path in ("test.cpp", "tests.py", "test.py"):
+            self.assertTrue(slop.TEST_PATH_RE.search(path), path)
 
 
 class CodeOfTests(unittest.TestCase):
@@ -331,6 +336,25 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of('auto s = "ab\\\ncd";\n', "a.cpp"),
             slop._code_of('auto s = "abcd";\n', "a.cpp"),
         )
+
+    def test_a_trigraph_continuing_a_c_comment_is_caught(self):
+        # In C, `??/` is a backslash, so `// x ??/` continues over the next line and
+        # buries live code. C++17 removed trigraphs, so only .c is affected.
+        plain = "// comment\nint x = 1;\n"
+        trigraph = "// comment ??/\nint x = 1;\n"
+        self.assertNotEqual(slop._code_of(plain, "a.c"), slop._code_of(trigraph, "a.c"))
+
+    def test_a_literal_trigraph_in_a_cpp_header_is_a_comment_change(self):
+        # A .h here is a C++ header; `??/` is three ordinary characters, so adding it to
+        # a comment is genuinely comment-only and must not be flagged.
+        plain = "// comment\nint x = 1;\n"
+        trigraph = "// comment ??/\nint x = 1;\n"
+        self.assertEqual(slop._code_of(plain, "a.h"), slop._code_of(trigraph, "a.h"))
+
+    def test_invalid_utf8_degrades_instead_of_crashing(self):
+        # run() decodes with errors="replace", so an undecodable file becomes a
+        # comparison rather than an uncaught UnicodeDecodeError.
+        self.assertIsInstance(slop.run(["printf", "\\xff\\xfe"]), str)
 
     def test_an_unparseable_python_file_fails_closed(self):
         # Refuse to certify what we could not parse, rather than compare two blanks.
