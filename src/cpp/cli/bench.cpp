@@ -979,6 +979,22 @@ static std::string fmt_vram_change(std::optional<double> val) {
     return fmt_double(*val) + " GB";
 }
 
+static size_t calculate_number_width(double value, int precision = 1) {
+    if (value < 0) {
+        value = -value;
+    }
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str().length();
+}
+
+static size_t calculate_vram_width(double value) {
+    if (value < 0) return 1;
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1) << value;
+    return oss.str().length();
+}
+
 FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results) {
     FieldWidths widths;
 
@@ -992,6 +1008,26 @@ FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& result
                 if (scenario_len > widths.scenario_name) {
                     widths.scenario_name = std::min<size_t>(scenario_len, 36)+3;
                 }
+            }
+        }
+    }
+
+    for (const auto& backend_result : results) {
+        for (const auto& scenario : backend_result.scenarios) {
+            if (scenario.runs.empty()) {
+                widths.ttft = std::max(widths.ttft, 8UL);
+                widths.tps = std::max(widths.tps, 8UL);
+            } else {
+                double max_ttft = scenario.ttft_max_ms();
+                widths.ttft = std::max(widths.ttft, calculate_number_width(max_ttft, 1));
+
+                double max_tps = scenario.tps_max();
+                widths.tps = std::max(widths.tps, calculate_number_width(max_tps, 1));
+            }
+
+            double vram_peak = scenario.vram_peak_gb();
+            if (vram_peak >= 0) {
+                widths.vram = std::max(widths.vram, calculate_vram_width(vram_peak));
             }
         }
     }
@@ -1017,17 +1053,17 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
                   << std::setw(widths.tps) << "-"
                   << std::setw(widths.tps) << "-"
                   << std::setw(widths.tps) << "-"
-                  << std::setw(8) << "-"
+                  << std::setw(widths.vram) << "-"
                   << std::endl;
     } else {
         std::cout << std::left << std::setw(widths.scenario_name) << name
                   << std::setw(widths.ttft) << fmt_double(scenario.ttft_mean_ms())
-                  << std::setw(widths.ttft) << fmt_double(ttft_1)
-                  << std::setw(widths.ttft) << fmt_double(ttft_2)
-                  << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
-                  << std::setw(widths.tps) << fmt_double(tps_1)
-                  << std::setw(widths.tps) << fmt_double(tps_2)
-                  << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
+                  << " " << std::setw(widths.ttft) << fmt_double(ttft_1)
+                  << " " << std::setw(widths.ttft) << fmt_double(ttft_2)
+                  << " " << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
+                  << " " << std::setw(widths.tps) << fmt_double(tps_1)
+                  << " " << std::setw(widths.tps) << fmt_double(tps_2)
+                  << " " << std::setw(widths.vram) << fmt_vram(scenario.vram_peak_gb())
                   << std::endl;
     }
 }
@@ -1047,12 +1083,12 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
         // Header — show min/max by default, switch to p50/p95 when runs >= 10
         std::cout << std::left << std::setw(widths.scenario_name) << "Scenario"
                   << std::setw(widths.ttft) << "TTFT"
-                  << std::setw(widths.ttft) << (use_percentiles ? "p50" : "min")
-                  << std::setw(widths.ttft) << (use_percentiles ? "p95" : "max")
-                  << std::setw(widths.tps) << "TPS"
-                  << std::setw(widths.tps) << (use_percentiles ? "p50" : "min")
-                  << std::setw(widths.tps) << (use_percentiles ? "p95" : "max")
-                  << std::setw(8) << "VRAM (GB)" << std::endl;
+                  << " " << std::setw(widths.ttft) << (use_percentiles ? "p50" : "min")
+                  << " " << std::setw(widths.ttft) << (use_percentiles ? "p95" : "max")
+                  << " " << std::setw(widths.tps) << "TPS"
+                  << " " << std::setw(widths.tps) << (use_percentiles ? "p50" : "min")
+                  << " " << std::setw(widths.tps) << (use_percentiles ? "p95" : "max")
+                  << " " << std::setw(widths.vram) << "VRAM (GB)" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         for (const auto& scenario : backend_result.scenarios) {

@@ -248,6 +248,7 @@ struct FieldWidths {
     size_t scenario_name = 20;
     size_t ttft = 8;
     size_t tps = 8;
+    size_t vram = 8;
 };
 
 FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results);
