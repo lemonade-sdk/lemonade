@@ -54,6 +54,7 @@ const ClassifierCard: React.FC<{
   onRemove: () => void;
 }> = ({ clf, isHighlighted, embeddingOptions, candidateOptions, displayNameWithStatus, onPatch, onRemove }) => {
   const [expanded, setExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const modelOptions = clf.type === 'semantic_similarity' ? embeddingOptions : candidateOptions;
 
   // Compact chip summary lines
@@ -71,6 +72,11 @@ const ClassifierCard: React.FC<{
             {expanded
               ? <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 8 L6 4 L10 8"/></svg>
               : <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 4 L6 8 L10 4"/></svg>}
+          </button>
+          <button type="button" className="pipeline-icon-btn" title="Open in full view" onClick={() => setFullscreen(true)}>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 4V1H4M8 1H11V4M11 8V11H8M4 11H1V8"/>
+            </svg>
           </button>
           <button type="button" className="pipeline-icon-btn" title="Remove" onClick={onRemove}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M1 1 L11 11 M11 1 L1 11"/></svg>
@@ -94,6 +100,102 @@ const ClassifierCard: React.FC<{
             <span className="pipeline-clf-chip-detail">{clf.prompt.slice(0, 30)}{clf.prompt.length > 30 ? '…' : ''}</span>
           )}
         </div>
+      )}
+
+      {fullscreen && createPortal(
+        <div className="clf-fullscreen-overlay" onClick={e => { if (e.target === e.currentTarget) setFullscreen(false); }}>
+          <div className="clf-fullscreen-panel">
+            <div className="clf-fullscreen-header">
+              <span className="pipeline-clf-type-badge">{TYPE_BADGE[clf.type]}</span>
+              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{clf.id || '(unnamed)'}</span>
+              <div style={{ flex: 1 }} />
+              <button type="button" className="pipeline-icon-btn" title="Close" onClick={() => setFullscreen(false)}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M1 1 L11 11 M11 1 L1 11"/></svg>
+              </button>
+            </div>
+            <div className="clf-fullscreen-body pipeline-clf-expanded">
+              <div className="pipeline-clf-field">
+                <label className="pipeline-clf-label">ID *</label>
+                <input type="text" className="form-input pipeline-clf-input" defaultValue={clf.id}
+                  onBlur={e => onPatch({ id: slugify(e.target.value) || clf.id })} placeholder="e.g. pii" />
+              </div>
+              <div className="pipeline-clf-field">
+                <label className="pipeline-clf-label">Type *</label>
+                <select className="form-input form-select pipeline-clf-select" value={clf.type}
+                  onChange={e => onPatch({ type: e.target.value as RouterClassifier['type'], labels: [], defaultLabel: '', referencePhrases: {}, prompt: undefined })}>
+                  <option value="classifier">Classifier</option>
+                  <option value="semantic_similarity">Semantic Similarity</option>
+                  <option value="llm">LLM</option>
+                </select>
+              </div>
+              <div className="pipeline-clf-field">
+                <label className="pipeline-clf-label">Model *</label>
+                <ModelSelect
+                  options={modelOptions.map(({ id }) => ({ id, label: displayNameWithStatus(id) }))}
+                  value={clf.model}
+                  onChange={id => onPatch({ model: id })}
+                  placeholder="Select a model…"
+                  searchPlaceholder="Search models…"
+                />
+              </div>
+              {clf.type === 'classifier' && (
+                <>
+                  <div className="pipeline-clf-field">
+                    <label className="pipeline-clf-label">Labels <span className="settings-description" style={{ marginLeft: 4 }}>(one per line)</span></label>
+                    <textarea className="form-input pipeline-clf-textarea" rows={4}
+                      defaultValue={(clf.labels ?? []).join('\n')}
+                      onBlur={e => { const labels = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); onPatch({ labels, defaultLabel: labels.includes(clf.defaultLabel ?? '') ? clf.defaultLabel : '' }); }}
+                      placeholder={'PII\nNO_PII'} />
+                  </div>
+                  <div className="pipeline-clf-field">
+                    <label className="pipeline-clf-label">On Error</label>
+                    <select className="form-input form-select pipeline-clf-select" value={clf.onError ?? 'match_false'}
+                      onChange={e => onPatch({ onError: e.target.value as RouterClassifier['onError'] })}>
+                      <option value="match_false">match_false — fail-open (default)</option>
+                      <option value="match_true">match_true — fail-closed (safer)</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              {clf.type === 'llm' && (
+                <div className="pipeline-clf-field">
+                  <label className="pipeline-clf-label">Prompt *</label>
+                  <textarea className="form-input pipeline-clf-textarea" rows={6}
+                    defaultValue={clf.prompt ?? ''}
+                    onBlur={e => onPatch({ prompt: e.target.value || undefined })}
+                    placeholder={'Classify this request.\nReply with ONLY one of: SAFE, RISKY'} />
+                </div>
+              )}
+              {clf.type === 'semantic_similarity' && (
+                <div className="pipeline-clf-field">
+                  <div className="pipeline-clf-concepts-header">
+                    <label className="pipeline-clf-label" style={{ margin: 0 }}>Concepts * <span className="settings-description" style={{ marginLeft: 4 }}>each key becomes an output label</span></label>
+                    <button type="button" className="settings-reset-button" style={{ fontSize: '0.65rem', padding: '1px 7px' }}
+                      onClick={() => { const ex = clf.referencePhrases ?? {}; onPatch({ referencePhrases: { ...ex, [`concept-${Object.keys(ex).length + 1}`]: [] } }); }}>+ Concept</button>
+                  </div>
+                  {Object.entries(clf.referencePhrases ?? {}).map(([concept, phrases]) => (
+                    <div key={concept} className="pipeline-concept-row">
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input type="text" className="form-input pipeline-concept-name" defaultValue={concept}
+                          onBlur={e => { const n = e.target.value.trim(); if (!n || n === concept) return; const ex = { ...clf.referencePhrases }; const p = ex[concept]; delete ex[concept]; ex[n] = p; onPatch({ referencePhrases: ex }); }}
+                          placeholder="concept name" />
+                        <button type="button" className="pipeline-icon-btn" onClick={() => { const ex = { ...clf.referencePhrases }; delete ex[concept]; onPatch({ referencePhrases: ex }); }}>×</button>
+                      </div>
+                      <textarea className="form-input pipeline-concept-phrases" rows={3}
+                        defaultValue={phrases.join('\n')}
+                        onBlur={e => onPatch({ referencePhrases: { ...clf.referencePhrases, [concept]: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) } })}
+                        placeholder="phrases (one per line)" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="clf-fullscreen-footer">
+              <button type="button" className="settings-save-button" onClick={() => setFullscreen(false)}>Done</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {expanded && (

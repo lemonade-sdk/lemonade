@@ -82,8 +82,8 @@ type QuickConditionType = 'min_chars' | 'max_chars' | 'keywords_any' | 'regex' |
 interface QCDef { type: QuickConditionType; label: string; shortLabel: string; placeholder?: string; inputType?: 'number' | 'text'; boolean?: true }
 
 const QUICK_CONDITIONS: QCDef[] = [
-  { type: 'min_chars',    label: 'Prompt is long',       shortLabel: 'Prompt is long',    inputType: 'number', placeholder: '500' },
-  { type: 'max_chars',    label: 'Prompt is short',      shortLabel: 'Prompt is short',   inputType: 'number', placeholder: '200' },
+  { type: 'min_chars',    label: 'Prompt is longer than…', shortLabel: 'Prompt is longer', inputType: 'number', placeholder: '500' },
+  { type: 'max_chars',    label: 'Prompt is shorter than…', shortLabel: 'Prompt is shorter', inputType: 'number', placeholder: '200' },
   { type: 'keywords_any', label: 'Contains keywords',    shortLabel: 'Contains keywords', inputType: 'text',   placeholder: 'word1, word2' },
   { type: 'regex',        label: 'Matches regex',        shortLabel: 'Matches regex',     inputType: 'text',   placeholder: 'e.g. \\d{4}' },
   { type: 'has_images',   label: 'Has attached images',  shortLabel: 'Has images',        boolean: true },
@@ -405,6 +405,91 @@ const QuickRulesEditor: React.FC<QuickRulesEditorProps> = ({
   );
 };
 
+// ── Prompt textarea with @ mention picker ─────────────────────────────────
+
+interface PromptTextareaProps {
+  value: string;
+  onChange: (v: string) => void;
+  candidates: string[];
+  displayName: (id: string) => string;
+  placeholder?: string;
+}
+
+const PromptTextarea: React.FC<PromptTextareaProps> = ({ value, onChange, candidates, displayName, placeholder }) => {
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionPos, setMentionPos] = useState({ top: 0, left: 0 });
+  const [atIndex, setAtIndex] = useState(-1);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    onChange(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const before = val.slice(0, cursor);
+    const lastAt = before.lastIndexOf('@');
+    if (lastAt !== -1 && !/[\s\n]/.test(before.slice(lastAt + 1))) {
+      const ta = taRef.current;
+      const wrap = wrapRef.current;
+      if (ta && wrap) {
+        const taRect = ta.getBoundingClientRect();
+        const wrapRect = wrap.getBoundingClientRect();
+        setMentionPos({ top: taRect.bottom - wrapRect.top + 4, left: 0 });
+      }
+      setAtIndex(lastAt);
+      setMentionOpen(true);
+    } else {
+      setMentionOpen(false);
+    }
+  };
+
+  const insertCandidate = (id: string) => {
+    const name = displayName(id);
+    const cursorAfterAt = taRef.current?.selectionStart ?? atIndex + 1;
+    const before = value.slice(0, atIndex);
+    const after = value.slice(cursorAfterAt);
+    const next = before + name + (after.startsWith(' ') ? '' : ' ') + after;
+    onChange(next);
+    setMentionOpen(false);
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = before.length + name.length + 1; }
+    }, 0);
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <textarea
+        ref={taRef}
+        className="form-input"
+        rows={5}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={e => { if (e.key === 'Escape') setMentionOpen(false); }}
+        placeholder={placeholder}
+        spellCheck={false}
+        style={{ fontFamily: 'monospace', fontSize: '12px', resize: 'vertical', width: '100%' }}
+      />
+      {mentionOpen && candidates.length > 0 && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10799 }} onMouseDown={() => setMentionOpen(false)} />
+          <div className="prompt-mention-menu" style={{ top: mentionPos.top, left: mentionPos.left }}>
+            <div className="prompt-mention-hint">Insert candidate model</div>
+            {candidates.map(id => (
+              <button key={id} type="button" className="prompt-mention-item"
+                onMouseDown={e => { e.preventDefault(); insertCandidate(id); }}>
+                {displayName(id)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ── Panel ─────────────────────────────────────────────────────────────────
+
 const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   mode, collectionId, onClose, onSave, onExport,
 }) => {
@@ -558,11 +643,13 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       if (!draft.routerPrompt?.trim()) { setError('Enter a routing prompt.'); return null; }
     } else if (draft.routingMode === 'quick') {
       if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
-      for (const r of draft.rules) {
-        if (!r.conditionTree) { setError('Each rule needs at least one condition.'); return null; }
-        if (!r.routeTo) { setError('Each rule needs a target model.'); return null; }
+      for (let ri = 0; ri < draft.rules.length; ri++) {
+        const r = draft.rules[ri];
+        const label = `Rule #${ri + 1}`;
+        if (!r.conditionTree) { setError(`${label} needs at least one condition.`); return null; }
+        if (!r.routeTo) { setError(`${label} needs a target model.`); return null; }
         const errs = validateRuleNode(r.conditionTree, new Set());
-        if (errs.length) { setError(`Rule "${r.id}": ${errs[0]}`); return null; }
+        if (errs.length) { setError(`${label}: ${errs[0]}`); return null; }
       }
     } else {
       for (const c of draft.classifiers ?? []) {
@@ -583,14 +670,16 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       }
       if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
       const classifierIds = new Set((draft.classifiers ?? []).map(c => c.id));
-      for (const r of draft.rules) {
-        if (!r.routeTo) { setError(`Rule "${r.id}": select a target model.`); return null; }
+      for (let ri = 0; ri < draft.rules.length; ri++) {
+        const r = draft.rules[ri];
+        const label = `Rule #${ri + 1}`;
+        if (!r.routeTo) { setError(`${label}: select a target model.`); return null; }
         if (!draft.candidates.includes(r.routeTo)) {
-          setError(`Rule "${r.id}": target model must be a candidate.`); return null;
+          setError(`${label}: target model must be a candidate.`); return null;
         }
-        if (!r.conditionTree) { setError(`Rule "${r.id}": add at least one condition.`); return null; }
+        if (!r.conditionTree) { setError(`${label}: add at least one condition.`); return null; }
         const treeErrors = validateRuleNode(r.conditionTree, classifierIds);
-        if (treeErrors.length) { setError(`Rule "${r.id}": ${treeErrors[0]}`); return null; }
+        if (treeErrors.length) { setError(`${label}: ${treeErrors[0]}`); return null; }
       }
     }
     return { ...draft, name };
@@ -659,16 +748,23 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           {candidateOptions.length === 0 ? (
             <div className="collection-role-empty">No compatible models found. Pull or register LLM models first.</div>
           ) : (
-            <ModelCheckboxList
-              options={candidateOptions.map(({ id, info }) => ({
-                id,
-                label: info.model_name ?? getModelDisplayName(id),
-                sublabel: info.downloaded === true ? 'local' : 'will download',
-                downloaded: info.downloaded === true,
-              }) satisfies ModelOption)}
-              selected={draft.candidates}
-              onToggle={toggleCandidate}
-            />
+            <>
+              <ModelCheckboxList
+                options={candidateOptions.map(({ id, info }) => ({
+                  id,
+                  label: info.model_name ?? getModelDisplayName(id),
+                  sublabel: info.downloaded === true ? 'local' : 'will download',
+                  downloaded: info.downloaded === true,
+                }) satisfies ModelOption)}
+                selected={draft.candidates}
+                onToggle={toggleCandidate}
+              />
+              {draft.candidates.length > 0 && (
+                <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
+                  {draft.candidates.map(id => displayName(id)).join(', ')}
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -724,18 +820,16 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             </div>
             <div className="form-section">
               <label className="form-label">Routing Prompt *</label>
-              <textarea className="form-input" rows={5} value={draft.routerPrompt ?? ''}
-                onChange={e => patch({ routerPrompt: e.target.value })}
-                placeholder={DEFAULT_ROUTER_PROMPT} spellCheck={false}
-                style={{ fontFamily: 'monospace', fontSize: '12px', resize: 'vertical' }} />
+              <PromptTextarea
+                value={draft.routerPrompt ?? ''}
+                onChange={v => patch({ routerPrompt: v })}
+                candidates={draft.candidates}
+                displayName={displayName}
+                placeholder={DEFAULT_ROUTER_PROMPT}
+              />
               <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
-                Tell the router LLM which model to pick and when. End with: &ldquo;Reply with ONLY the exact model name.&rdquo;
+                Tell the router LLM which model to pick and when. Type <strong>@</strong> to insert a candidate model name.
               </span>
-              {draft.candidates.length > 0 && (
-                <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
-                  Candidates: {draft.candidates.join(', ')}
-                </span>
-              )}
             </div>
           </>
         )}

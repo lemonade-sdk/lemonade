@@ -233,6 +233,45 @@
     color: #60a5fa;
 }
 
+/* @ mention picker in routing prompt */
+.prompt-mention-menu {
+    position: absolute;
+    z-index: 10800;
+    background: var(--settings-bg, var(--bg-secondary));
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 200px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.prompt-mention-hint {
+    font-size: 0.62rem;
+    color: var(--text-tertiary);
+    padding: 3px 10px 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.prompt-mention-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    font-family: monospace;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.prompt-mention-item:hover {
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
+}
+
 
 .quick-rules-editor {
     display: flex;
@@ -856,6 +895,55 @@
     border-radius: 8px;
     background: var(--bg-primary);
     min-height: 40px;
+}
+
+/* Classifier fullscreen overlay */
+.clf-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10600;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clf-fullscreen-panel {
+    background: var(--settings-bg, var(--bg-secondary));
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    width: min(480px, calc(100vw - 48px));
+    height: min(560px, calc(100vh - 80px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.clf-fullscreen-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border-primary);
+    flex-shrink: 0;
+    background: var(--settings-bg, var(--bg-secondary));
+}
+
+.clf-fullscreen-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.clf-fullscreen-body {
+    overflow-y: auto;
+    padding: 12px 14px;
+    flex: 1;
+    min-height: 0;
+    scrollbar-width: thin;
 }
 
 .pipeline-clf-card {
@@ -2059,9 +2147,9 @@
 
 /* Operator (gate) node */
 .rtc-operator {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 0;
 }
 
@@ -2077,7 +2165,7 @@
     user-select: none;
     transition: box-shadow 0.12s;
     min-width: 100px;
-    justify-content: center;
+    justify-content: flex-start;
 }
 
 .rtc-gate-header:hover {
@@ -2122,34 +2210,31 @@
     font-weight: 700;
 }
 
-/* Children area - horizontal row of children connected by vertical lines */
 .rtc-children {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 0;
-    padding: 0 8px;
-    border-left: 1.5px dashed color-mix(in srgb, var(--node-color, #60a5fa) 40%, transparent);
-    margin-left: 16px;
+    padding: 0 0 4px 0;
+    border-left: 2px solid color-mix(in srgb, var(--node-color, #60a5fa) 35%, transparent);
+    margin-left: 28px;
     margin-top: 4px;
     padding-top: 4px;
-    padding-bottom: 4px;
-    min-width: 80px;
+    padding-left: 14px;
 }
 
 /* Leaf node */
 .rtc-leaf {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     gap: 2px;
     padding: 6px 10px;
     border: 1.5px solid var(--node-color, var(--border-primary));
     border-radius: 6px;
     background: color-mix(in srgb, var(--node-color, #60a5fa) 8%, var(--bg-secondary));
-    cursor: grab;
+    cursor: default;
     position: relative;
     min-width: 100px;
-    max-width: 220px;
     transition: box-shadow 0.12s;
     margin: 3px 0;
 }
@@ -2258,7 +2343,6 @@
 
 /* Drop zone */
 .rtc-dropzone {
-    width: 90px;
     min-height: 28px;
     border: 1.5px dashed var(--border-primary);
     border-radius: 5px;
