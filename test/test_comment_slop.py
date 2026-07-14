@@ -355,7 +355,56 @@ class ChangedEntryTests(unittest.TestCase):
         self.assertEqual(self._entries(raw), [("new.py", "100644", "100644", "R100")])
 
 
+class TwoRepresentationTests(unittest.TestCase):
+    """The tree and the token stream are each blind where the other sees."""
+
+    def test_a_literal_rewritten_to_the_same_value_is_still_a_code_change(self):
+        # ast.dump keeps the VALUE and loses the written form, so the tree alone calls
+        # these equal. The token stream sees it.
+        self.assertNotEqual(
+            slop._code_of("B = 0x100000\n", "a.py"),
+            slop._code_of("B = 1048576\n", "a.py"),
+        )
+
+    def test_implicit_string_concatenation_is_still_a_code_change(self):
+        self.assertNotEqual(
+            slop._code_of("s = 'a' 'b'\n", "a.py"), slop._code_of("s = 'ab'\n", "a.py")
+        )
+
+    def test_a_statement_moved_between_scopes_is_still_a_code_change(self):
+        # The token stream loses INDENT/DEDENT, so tokens alone call these equal. The
+        # tree sees it. Neither representation is sufficient by itself.
+        self.assertNotEqual(
+            slop._code_of("def f(x):\n    if x:\n        g()\n    h()\n", "a.py"),
+            slop._code_of("def f(x):\n    if x:\n        g()\n        h()\n", "a.py"),
+        )
+
+
 class DirectiveTests(unittest.TestCase):
+    def test_a_variable_type_comment_is_obeyed_by_the_toolchain(self):
+        # `# type: int` is read by a type checker and appears in neither the tree nor
+        # the token stream, so it can only be caught here.
+        self.assertNotEqual(
+            slop._directives_of("x = c()  # type: int"),
+            slop._directives_of("x = c()  # type: str"),
+        )
+
+    def test_other_linter_directives_are_obeyed_too(self):
+        for a, b in (
+            ("import x  # pyright: ignore", "import x  # pyright: basic"),
+            ("import x  # ruff: noqa", "import x"),
+            ("import x  # isort: skip", "import x"),
+        ):
+            self.assertNotEqual(slop._directives_of(a), slop._directives_of(b), a)
+
+    def test_an_encoding_cookie_is_honoured_only_on_the_first_two_lines(self):
+        # PEP 263 only reads the cookie there -- and a line matching its regex IS a
+        # declaration, prose or not: CPython rejects `# the encoding: moved` with
+        # "SyntaxError: encoding problem: moved". So matching it is correct, not
+        # overconservative. Below line 2 it is inert and must not be treated as one.
+        self.assertTrue(slop._directives_of("# -*- coding: utf-8 -*-\nx = 1"))
+        self.assertFalse(slop._directives_of("x = 1\ny = 2\n# coding: utf-8 talk"))
+
     def test_a_directive_comment_is_not_decoration(self):
         # These read as comments but the toolchain obeys them, and they survive into
         # neither the AST nor the stripped code -- so compare them in their own right.
