@@ -176,17 +176,19 @@ def run(cmd, allow_missing=False):
     comparison that never ran. `allow_missing` covers the one legitimate failure: a
     path absent from one side of the comparison.
     """
-    # errors="replace": a file with invalid UTF-8 bytes must degrade to a comparison,
-    # not an uncaught UnicodeDecodeError. The replacement is deterministic, so a real
-    # change in the undecodable region still shows up as a difference.
-    p = subprocess.run(
-        cmd, capture_output=True, text=True, errors="replace", check=False
-    )
+    # Decode losslessly. `errors="replace"` collapses every invalid byte to one U+FFFD,
+    # so `\xff` and `\xfe` inside a string compare equal -- a change certified as no
+    # change. `surrogateescape` maps each invalid byte to a distinct surrogate, so the
+    # difference survives. And we do NOT translate newlines (no text=True), because a raw
+    # CR inside a string literal (an HTTP template, say) is content, and `\r\n`->`\n`
+    # would hide a CRLF change as comments-only.
+    p = subprocess.run(cmd, capture_output=True, check=False)
     if p.returncode != 0:
         if allow_missing:
             return None
-        raise GitError(f"{' '.join(cmd)} failed ({p.returncode}): {p.stderr.strip()}")
-    return p.stdout
+        msg = p.stderr.decode("utf-8", "replace").strip()
+        raise GitError(f"{' '.join(cmd)} failed ({p.returncode}): {msg}")
+    return p.stdout.decode("utf-8", "surrogateescape")
 
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -550,7 +552,10 @@ def _code_of_cish(text):
                 in_chr = True
             out.append(ch)
         i += 1
-    return [ln.strip() for ln in "".join(out).splitlines() if ln.strip()]
+    # Split on \n and strip only spaces/tabs, NOT \r: a `\r` inside a string literal is
+    # content (a CRLF HTTP template differs from an LF one), and splitlines()/strip()
+    # would erase it, certifying a CRLF->LF change of string content as comments-only.
+    return [ln.strip(" \t") for ln in "".join(out).split("\n") if ln.strip(" \t")]
 
 
 def _raw_string_at(text, i):

@@ -365,6 +365,35 @@ class CodeOfTests(unittest.TestCase):
         # comparison rather than an uncaught UnicodeDecodeError.
         self.assertIsInstance(slop.run(["printf", "\\xff\\xfe"]), str)
 
+    def test_two_different_invalid_utf8_bytes_are_distinguished(self):
+        # git output is decoded with surrogateescape, so \xff and \xfe inside a string
+        # map to distinct surrogates. errors="replace" collapsed both to U+FFFD and hid
+        # the change.
+        self.assertNotEqual(
+            slop._code_of('char m = "\udcff";\n', "a.c"),
+            slop._code_of('char m = "\udcfe";\n', "a.c"),
+        )
+
+    def test_a_raw_crlf_inside_a_string_is_not_a_comment_change(self):
+        # A raw CR byte inside a string literal is content -- a CRLF HTTP template differs
+        # from an LF one. Universal newlines (text=True) plus splitlines/strip erased it.
+        self.assertNotEqual(
+            slop._code_of('auto h = "OK\r\n\r\n";\n', "a.c"),
+            slop._code_of('auto h = "OK\n\n";\n', "a.c"),
+        )
+        self.assertNotEqual(
+            slop._code_of('h = """OK\r\n\r\n"""\n', "a.py"),
+            slop._code_of('h = """OK\n\n"""\n', "a.py"),
+        )
+
+    def test_a_crlf_source_file_with_a_genuine_comment_edit_still_passes(self):
+        # The fix must not flag an ordinary comment edit in a CRLF-saved file -- both
+        # sides carry the same line-ending \r, so the code compares equal.
+        self.assertEqual(
+            slop._code_of("// a\r\nint x = 1;\r\n", "a.c"),
+            slop._code_of("// b\r\nint x = 1;\r\n", "a.c"),
+        )
+
     def test_an_unparseable_python_file_fails_closed(self):
         # Refuse to certify what we could not parse, rather than compare two blanks.
         with self.assertRaises(slop.GitError):
