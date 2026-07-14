@@ -55,6 +55,24 @@ jobs:
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
 
+  vendored-asset-integrity:
+    # The vendored 3D viewer (src/app/src/renderer/vendor/model-viewer.min.js) is a
+    # pristine upstream bundle with no SRI hash a webpack import can carry. Pin its
+    # SHA-256 and fail on drift — an accidental edit, corrupted download, or tampered
+    # blob — the in-repo equivalent of Subresource Integrity.
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-vendored-asset-integrity-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify vendored asset hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src/app/src/renderer/vendor
+          sha256sum -c model-viewer.min.js.sha256
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
