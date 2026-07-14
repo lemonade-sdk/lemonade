@@ -381,7 +381,7 @@ static double get_collection_component_size(const json& model) {
     if (model.contains("recipe") && model["recipe"].is_string() && model["recipe"].get<std::string>() == "cloud") {
         return UNKNOWN_MODEL_SIZE;
     }
-    if (model.contains("size") && 
+    if (model.contains("size") &&
             model["size"].is_number()) {
         return model["size"].get<double>();
     }

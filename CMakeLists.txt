@@ -1833,6 +1833,26 @@ if(EXISTS "${_ANTHROPIC_API_TEST_SRC}")
     add_test(NAME AnthropicApiTest COMMAND test_anthropic_api)
 endif()
 
+# FastFlowLM argument validation. Keep this test independent from the server
+set(_FLM_ARG_RESOLVER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_arg_resolver.cpp"
+)
+set(_FLM_ARG_RESOLVER_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp"
+)
+if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
+    add_executable(test_flm_arg_resolver
+        test/cpp/test_flm_arg_resolver.cpp
+        src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp
+    )
+    target_include_directories(test_flm_arg_resolver PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    add_test(NAME FlmArgResolverTest COMMAND test_flm_arg_resolver)
+endif()
+
 set(_DIR_WATCHER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
 )
@@ -2235,4 +2255,18 @@ if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
+endif()
+
+set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
+if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
+    add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
+    target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
+    add_test(NAME HttpClientSecurityTest COMMAND test_http_client_security)
+endif()
+
+set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
+if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
+    add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
+    target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
+    add_test(NAME CloudDiscoveryPolicyTest COMMAND test_cloud_discovery_policy)
 endif()

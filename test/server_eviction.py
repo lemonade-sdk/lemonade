@@ -84,7 +84,11 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90,"max_loaded_models": 2},
+            json={
+                "auto_evict": True,
+                "auto_evict_threshold_pct": 0.90,
+                "max_loaded_models": 2,
+            },
             headers=headers,
         )
 
@@ -188,7 +192,11 @@ class EvictionTests(ServerTestBase):
 
         requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/set",
-            json={"auto_evict": True, "auto_evict_threshold_pct": 0.90, "max_loaded_models" : 2},
+            json={
+                "auto_evict": True,
+                "auto_evict_threshold_pct": 0.90,
+                "max_loaded_models": 2,
+            },
             headers=headers,
         )
 

@@ -362,6 +362,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
+| `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
 
 #### Ryzen AI LLM (`ryzenai-llm` recipe)
 

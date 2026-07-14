@@ -1664,6 +1664,9 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--flm-args", opts.flm_args, "Safe custom args for flm serve. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--vllm-args", opts.vllm_args, "Custom args for vllm-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1696,6 +1699,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     config.response_log = cli.response_log;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
+    if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
