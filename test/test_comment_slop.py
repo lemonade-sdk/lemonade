@@ -182,6 +182,15 @@ class CommentClassificationTests(unittest.TestCase):
         self.assertEqual(blocks, [])
         self.assertEqual(code, 2)
 
+    def test_a_raw_string_containing_a_block_opener_does_not_open_one(self):
+        # A raw string holds `"` and `/*` as content; the quote tracker would leave it
+        # early at the inner `"` and read the `/*` as a comment opener.
+        blocks, code = slop.collect(
+            diff(("a.cpp", 1, ['R"({"/*":"b"})"', "int evil();"]))
+        )
+        self.assertEqual(blocks, [])
+        self.assertEqual(code, 2)
+
     def test_routine_include_block_is_not_slop(self):
         includes = [
             "#include <lemon/backends/wrapped_server.h>",
@@ -476,6 +485,18 @@ class DirectiveTests(unittest.TestCase):
             ("os.system(c)  # nosec", "os.system(c)"),
         ):
             self.assertNotEqual(slop._directives_of(a), slop._directives_of(b), a)
+
+    def test_a_shebang_is_obeyed_by_the_kernel(self):
+        # A shebang is a `#` comment, but the kernel reads it to exec the file; python3
+        # -> python3 -O silently disables every assert. So a shebang change is not a
+        # comment-only change.
+        self.assertNotEqual(
+            slop._directives_of("#!/usr/bin/env python3\nx = 1"),
+            slop._directives_of("#!/usr/bin/env python3 -O\nx = 1"),
+        )
+
+    def test_a_first_line_hash_that_is_not_a_shebang_is_not_a_directive(self):
+        self.assertEqual(slop._directives_of("# just a comment\nx = 1"), [])
 
     def test_an_encoding_cookie_is_honoured_only_on_the_first_two_lines(self):
         # PEP 263 only reads the cookie there -- and a line matching its regex IS a
