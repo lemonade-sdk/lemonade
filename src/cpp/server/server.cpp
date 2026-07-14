@@ -616,9 +616,6 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     if (auth_token.empty()) {
         auth_token = req.get_header_value("X-Api-Key");
-        if (auth_token.empty()) {
-            auth_token = req.get_header_value("x-api-key");
-        }
     }
     telemetry::g_current_auth_token = auth_token;
 
@@ -1348,8 +1345,7 @@ void Server::setup_cors(httplib::Server &web_server) {
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
         {"Access-Control-Allow-Headers",
          "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
-         "X-Api-Key, x-api-key, Anthropic-Version, anthropic-version, Anthropic-Beta, "
-         "anthropic-beta"}
+         "X-Api-Key, Anthropic-Version, Anthropic-Beta"}
     });
 
     // Handle preflight OPTIONS requests
