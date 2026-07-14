@@ -501,6 +501,13 @@ def _code_of_python(text):
     return [tree, *toks]
 
 
+def _after_splices(text, i):
+    """Index of the first character at or after i that survives phase-2 line splicing."""
+    while text[i : i + 2] == "\\\n":
+        i += 2
+    return i
+
+
 def _code_of_cish(text):
     # Phase 1: normalise line endings to \n, as the compiler does before splicing and
     # comment removal. Without this the splice below only matches `\`+`\n`, so on a CRLF
@@ -531,18 +538,17 @@ def _code_of_cish(text):
                 in_line = False
                 out.append(ch)
         elif in_block:
-            # A `*/` split by a backslash-newline (`*\<LF>/`) is still a `*/` after
-            # phase-2 splicing, so it closes the comment -- but the `*` and `/` are never
-            # adjacent for the check above, since the splice consumes the `\<LF>` between
-            # them. Match the spliced form so the comment closes where the compiler ends
-            # it, rather than swallowing the rest of the file as prose.
-            if ch == "*" and text[i + 1 : i + 4] == "\\\n/":
-                in_block = False
-                i += 3
-            elif ch == "*" and nxt == "/":
-                in_block = False
-                i += 1
-            elif ch == "\n":
+            # Phase 2 splices EVERY `\<LF>` before comments are removed, so `*`, any run of
+            # them, then `/` is a `*/` that closes the comment. Splice to a fixed point
+            # rather than matching one: a lone `*\<LF>/` check misses `*\<LF>\<LF>/`, and the
+            # comment then swallows the rest of the file, comparing two revisions equal.
+            if ch == "*":
+                j = _after_splices(text, i + 1)
+                if text[j : j + 1] == "/":
+                    in_block = False
+                    i = j + 1
+                    continue
+            if ch == "\n":
                 out.append(ch)
         elif in_str or in_chr:
             out.append(ch)
@@ -551,12 +557,14 @@ def _code_of_cish(text):
                 i += 1
             elif (in_str and ch == '"') or (in_chr and ch == "'"):
                 in_str = in_chr = False
-        elif ch == "/" and nxt == "/":
-            in_line = True
-            i += 1
-        elif ch == "/" and nxt == "*":
-            in_block = True
-            i += 1
+        elif ch == "/" and text[(j := _after_splices(text, i + 1)) : j + 1] in (
+            "/",
+            "*",
+        ):
+            # An opener is spliceable too (`/\<LF>/`, `/\<LF>*`), for the same reason.
+            in_line = text[j] == "/"
+            in_block = not in_line
+            i = j
         else:
             raw = _raw_string_at(text, i)
             if raw:
@@ -569,6 +577,10 @@ def _code_of_cish(text):
                 in_chr = True
             out.append(ch)
         i += 1
+    if in_block:
+        # An unterminated `/*` is not valid C, and swallowing it would certify two
+        # differing revisions as equal. Refuse, as the Python path refuses to parse.
+        raise GitError("unterminated /* block comment in C/C++ source")
     # Split on \n and strip only spaces/tabs, NOT \r: a `\r` inside a string literal is
     # content (a CRLF HTTP template differs from an LF one), and splitlines()/strip()
     # would erase it, certifying a CRLF->LF change of string content as comments-only.
