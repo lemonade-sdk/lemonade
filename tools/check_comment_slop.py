@@ -119,11 +119,22 @@ STOPWORDS = {
 # as a repeated explanation.
 COMMENT_RE_PY = re.compile(r"^\s*#")
 COMMENT_RE_CISH = re.compile(r"^\s*(//|/\*|\*/|\*(?=\s|$))")
-SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".h", ".hpp", ".py")
+SOURCE_SUFFIXES = (
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".h",
+    ".hh",
+    ".hpp",
+    ".hxx",
+    ".py",
+    ".pyi",
+)
 
 
 def is_comment_line(path, text):
-    pattern = COMMENT_RE_PY if path.endswith(".py") else COMMENT_RE_CISH
+    pattern = COMMENT_RE_PY if path.endswith((".py", ".pyi")) else COMMENT_RE_CISH
     return bool(pattern.match(text))
 
 
@@ -222,21 +233,33 @@ def strip_comment_markers(text):
 
 
 def _block_open_after(text, was_open):
-    """Whether a C block comment is still open once this line has been read."""
-    i, open_ = 0, was_open
+    """Whether a C block comment is still open once this line has been read.
+
+    String and char literals are skipped: `char s[] = "/*";` opens no comment, and
+    reading it as one hands the next line of ordinary code to the slop detector as prose.
+    """
+    i, open_, quote = 0, was_open, ""
     while i < len(text):
-        if open_:
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif open_:
             if text.startswith("*/", i):
                 open_ = False
                 i += 2
                 continue
-        else:
-            if text.startswith("//", i):
-                break
-            if text.startswith("/*", i):
-                open_ = True
-                i += 2
-                continue
+        elif ch in ('"', "'"):
+            quote = ch
+        elif text.startswith("//", i):
+            break
+        elif text.startswith("/*", i):
+            open_ = True
+            i += 2
+            continue
         i += 1
     return open_
 
@@ -256,7 +279,7 @@ def collect(diff):
         if expected != (path, lineno):
             in_block = False
         expected = (path, lineno + 1)
-        if not path.endswith(".py"):
+        if not path.endswith((".py", ".pyi")):
             if in_block:
                 is_comment = True
             in_block = _block_open_after(text, in_block)
@@ -368,8 +391,8 @@ def _changed_entries(from_ref, to_ref):
 # into the AST or the stripped code, so compare them separately rather than certify a
 # change to one as "comments only".
 DIRECTIVE_RE = re.compile(
-    r"#\s*(type:\s*\S|noqa|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
-    r"|fmt:\s*(on|off)|pragma:)"
+    r"#\s*(type:\s*\S|noqa|nosec|bandit:|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
+    r"|fmt:\s*(on|off|skip)|pragma:)"
     r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
     r"|/\*\s*(NOLINT|clang-format\s+(on|off))",
     re.IGNORECASE,
@@ -403,7 +426,7 @@ def _code_of(text, path=""):
     it must never happen: it would let a change advertised as a comment cleanup
     smuggle code past --assert-comments-only.
     """
-    if path.endswith(".py"):
+    if path.endswith((".py", ".pyi")):
         return _code_of_python(text)
     return _code_of_cish(text)
 

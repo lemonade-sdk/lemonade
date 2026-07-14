@@ -173,6 +173,15 @@ class CommentClassificationTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(code, 1)
 
+    def test_a_string_containing_a_block_opener_does_not_open_one(self):
+        # Reading `"/*"` as an open comment hands the NEXT line of ordinary code to the
+        # slop detector as prose.
+        blocks, code = slop.collect(
+            diff(("a.cpp", 1, ['char s[] = "/*";', "int x = 1;"]))
+        )
+        self.assertEqual(blocks, [])
+        self.assertEqual(code, 2)
+
     def test_routine_include_block_is_not_slop(self):
         includes = [
             "#include <lemon/backends/wrapped_server.h>",
@@ -355,6 +364,33 @@ class ChangedEntryTests(unittest.TestCase):
         self.assertEqual(self._entries(raw), [("new.py", "100644", "100644", "R100")])
 
 
+class FileSelectionTests(unittest.TestCase):
+    def test_a_filename_containing_a_space_is_one_path(self):
+        # Splitting the file list on whitespace shatters `model.c manager.py` into two
+        # paths that both exist and are unchanged, so the real file is never examined
+        # and the change is certified as comments-only.
+        raw = ":000000 100644 0000000 aaaaaaa A\0model.c manager.py\0"
+        slop.run = lambda *a, **k: raw  # noqa: ARG005
+        try:
+            self.assertEqual(
+                slop._changed_entries("A", "B")[0][0], "model.c manager.py"
+            )
+        finally:
+            importlib.reload(slop)
+
+    def test_python_stubs_are_parsed_as_python(self):
+        # A .pyi does not end with ".py", so a suffix test that checks for it routes stub
+        # files through the C scanner.
+        self.assertEqual(
+            slop._code_of("# old\ndef f() -> int: ...\n", "a.pyi"),
+            slop._code_of("# new\ndef f() -> int: ...\n", "a.pyi"),
+        )
+        self.assertNotEqual(
+            slop._code_of("def f() -> int: ...\n", "a.pyi"),
+            slop._code_of("def f() -> str: ...\n", "a.pyi"),
+        )
+
+
 class TwoRepresentationTests(unittest.TestCase):
     """The tree and the token stream are each blind where the other sees."""
 
@@ -394,6 +430,8 @@ class DirectiveTests(unittest.TestCase):
             ("import x  # pyright: ignore", "import x  # pyright: basic"),
             ("import x  # ruff: noqa", "import x"),
             ("import x  # isort: skip", "import x"),
+            ("x = 1  # fmt: skip", "x = 1"),
+            ("os.system(c)  # nosec", "os.system(c)"),
         ):
             self.assertNotEqual(slop._directives_of(a), slop._directives_of(b), a)
 
