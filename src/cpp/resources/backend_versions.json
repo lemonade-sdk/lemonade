@@ -1,9 +1,9 @@
 {
-  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.\n\nROCm builds: upstream ggml-org/llama.cpp defaults GGML_HIP_ROCWMMA_FATTN to OFF in cmake (b9752+).\nlemonade-sdk/llamacpp-rocm builds also set -DGGML_HIP_ROCWMMA_FATTN=OFF. ROCWMMA_FATTN=ON can improve\nshort-context prefill but hurts long-context (4× slower on Strix Halo with 30K context).\nIf shipping both ON/OFF variants in future, select based on expected context length / GPU type.",
   "llamacpp": {
     "vulkan": "b9747",
     "rocm-stable": "b9752",
-    "rocm-nightly": "b1292",
+    "rocm-nightly": "b1295",
     "cuda": "b9851",
     "metal": "b9747",
     "cpu": "b9747"
