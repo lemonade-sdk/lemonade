@@ -456,17 +456,24 @@ def _code_of_python(text):
 
 
 def _code_of_cish(text):
-    # C removes comments in translation phase 3, AFTER a backslash-newline splices two
-    # lines together in phase 2. Skipping the splice means a `// warn \` whose next line
-    # is code reads that line as live -- so DELETING the backslash, a change entirely
-    # inside a comment, silently promotes dead code to live code and still compares equal.
-    text = text.replace("\\\n", "")
     out = []
     i, n = 0, len(text)
     in_str = in_chr = in_line = in_block = False
     while i < n:
         ch = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
+
+        # Phase 2: a backslash-newline joins two lines, and it happens BEFORE comments are
+        # removed in phase 3 -- so deleting the backslash from a `// warn \` promotes the
+        # line below it from dead code to live. It is spliced HERE rather than in a pass
+        # over the whole text because C++ exempts raw string literals ([lex.phases]/2),
+        # and a global splice would edit their CONTENTS: two raw strings differing by a
+        # backslash-newline would then compare equal. The loop never steps inside a raw
+        # string, because _raw_string_at consumes each one whole.
+        if ch == "\\" and nxt == "\n":
+            i += 2
+            continue
+
         if in_line:
             if ch == "\n":
                 in_line = False
