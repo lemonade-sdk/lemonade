@@ -252,6 +252,14 @@ bool RuntimeConfig::auto_evict() const {
     return false;
 }
 
+bool RuntimeConfig::inhibit_suspend() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("inhibit_suspend")) {
+        return config_["inhibit_suspend"].get<bool>();
+    }
+    return true;
+}
+
 double RuntimeConfig::auto_evict_threshold_pct() const {
     std::shared_lock lock(mutex_);
     if (config_.contains("auto_evict_threshold_pct")) {
@@ -266,6 +274,11 @@ bool RuntimeConfig::offline() const {
 
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
+}
+
+bool RuntimeConfig::auto_check_model_updates() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("auto_check_model_updates", true);
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
@@ -525,6 +538,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'" + key + "' must be a string");
         }
     } else if (key == "no_broadcast" || key == "offline" ||
+               key == "auto_check_model_updates" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
@@ -556,6 +570,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "auto_evict") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'auto_evict' must be a boolean");
+        }
+    } else if (key == "inhibit_suspend") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'inhibit_suspend' must be a boolean");
         }
     } else if (key == "auto_evict_threshold_pct") {
         if (!value.is_number()) {

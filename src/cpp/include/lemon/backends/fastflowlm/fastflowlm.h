@@ -22,7 +22,12 @@ inline const BackendDescriptor descriptor = {
     /*selectable_backend*/ false,
     /*uses_ctx_size*/   true,
     /*dynamic_models*/  true,  // models come from flm's model_list.json, not server_models.json
-    /*options*/ {},
+    /*options*/ {
+        {"flm_args", "--flm-args", "", "ARGS",
+         "Safe flm serve tuning args: --pmode, --prefill-chunk-len, "
+         "--img-pre-resize, --socket, --q-len, --preemption",
+         "FastFlowLM Options"},
+    },
     /*support*/ {
         {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
@@ -39,7 +44,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      true,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    nlohmann::json::object(),
+    /*config_extra*/    {{"prefer_system", false}},
 };
 
 }  // namespace fastflowlm

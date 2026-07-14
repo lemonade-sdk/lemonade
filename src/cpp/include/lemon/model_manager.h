@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <cstdint>
 #include <string>
 #include <map>
 #include <optional>
@@ -55,6 +56,11 @@ struct DownloadProgress {
 // Returns bool: true = continue download, false = cancel download
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
+// Parsed collection.router routing policy (defined in routing_policy.h). Only
+// forward-declared here so this widely-included header stays light; ModelInfo
+// holds it behind a shared_ptr, which supports incomplete types.
+struct RoutePolicy;
+
 // Image generation defaults for SD models
 struct ImageDefaults {
     int steps = 20;
@@ -77,6 +83,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    bool update_available = false; // Whether a newer version exists on HuggingFace
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -110,6 +117,12 @@ struct ModelInfo {
     // custom per-model config in load() without editing this shared struct.
     std::map<std::string, json> extras;
 
+    // Parsed routing policy for collection.router models. Populated once when the
+    // models cache is built (from recipe + components + the "routing" block in
+    // extras) so request-time dispatch reads it directly instead of re-parsing.
+    // Null for every other recipe. shared_ptr keeps ModelInfo copies cheap.
+    std::shared_ptr<const RoutePolicy> route_policy;
+
     // Look up an extra field, returning a default when absent.
     template <typename T>
     T extra(const std::string& key, const T& fallback) const {
@@ -123,6 +136,14 @@ struct ModelInfo {
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
 
     std::string mmproj() const { return checkpoint("mmproj"); }
+};
+
+struct ModelFileInfo {
+    std::string name;
+    std::string path;
+    std::string role;
+    std::uint64_t size_bytes = 0;
+    bool exists = false;
 };
 
 class CloudProviderRegistry;
@@ -189,6 +210,9 @@ public:
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
 
+    // Get per-model file inventory for the Files tab.
+    std::vector<ModelFileInfo> list_model_files(const std::string& model_name);
+
     // Resolve a public model reference to its canonical internal name.
     std::string resolve_model_name(const std::string& model_name);
 
@@ -218,6 +242,15 @@ public:
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
+
+    // Check all downloaded models for updates on Hugging Face.
+    // Fetches the latest commit SHA for each model's repo and compares it
+    // with the cached commit (refs/main). Sets update_available on models
+    // whose upstream repo has changed and clears stale flags for repos that
+    // were successfully verified as current. Returns public model names with
+    // updates available.
+    // Safe to call from a background thread — locks are internal.
+    std::vector<std::string> check_for_model_updates();
 
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
@@ -331,6 +364,15 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+
+    // Serializes concurrent downloads that write into the same snapshot
+    // (keyed by checkpoint repo). See download_registered_model.
+    std::mutex download_locks_mutex_;
+    std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
+
+    // Prevent startup and manual update checks from running concurrently.
+    std::mutex update_check_mutex_;
+
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name

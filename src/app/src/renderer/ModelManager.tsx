@@ -376,6 +376,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateCheckDoneRef = useRef(false);
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -442,6 +443,13 @@ const [searchQuery, setSearchQuery] = useState('');
           loadedModelNames.forEach(modelName => newSet.delete(modelName));
           return newSet;
         });
+
+        // Once the server's background update check completes, refresh models
+        // to pick up update_available flags
+        if (data.update_check_done && !updateCheckDoneRef.current) {
+          updateCheckDoneRef.current = true;
+          refreshModels();
+        }
       } else {
         setLoadedModels(new Set());
         setPinnedModels(new Set());
@@ -974,7 +982,7 @@ const [searchQuery, setSearchQuery] = useState('');
   }, [hfModelBackends, hfSelectedQuantizations]);
 
 
-  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData, upgrade?: boolean) => {
     let downloadId: string | null = null;
 
     try {
@@ -1033,6 +1041,7 @@ const [searchQuery, setSearchQuery] = useState('');
         registrationData,
         collectionComponents,
         declaredSizeGB: modelsData[modelName]?.size,
+        upgrade,
       });
 
       await fetchCurrentLoadedModel();
@@ -1076,16 +1085,52 @@ const [searchQuery, setSearchQuery] = useState('');
     return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
   }, [hfSelectedQuantizations]);
 
-  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend): string => {
-    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
-    if (backend.recipe !== 'llamacpp') return suggestedName;
+  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend, checkpoint?: string): string => {
+    const getOwnerSuffixName = (modelName: string): string => {
+      const owner = modelId.split('/')[0]?.trim();
+      if (!owner) return modelName;
+      const safeOwner = owner.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+      return safeOwner ? `${modelName}-${safeOwner}` : modelName;
+    };
+    const lookupModelInfo = (modelName: string): ModelInfo | undefined => {
+      return modelsData[`user.${modelName}`] ?? modelsData[modelName];
+    };
 
-    const selectedFilename = hfSelectedQuantizations[modelId];
-    if (!selectedFilename) return suggestedName;
-    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
-    const variantName = quantObj?.quantization ?? selectedFilename;
-    return `${suggestedName}-${variantName}`;
-  }, [hfSelectedQuantizations]);
+    const matchesCheckpoint = (info: ModelInfo | undefined): boolean => {
+      if (!info || !checkpoint) return false;
+      return info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint;
+    };
+
+    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
+    let defaultName = suggestedName;
+
+    if (backend.recipe === 'llamacpp') {
+      const selectedFilename = hfSelectedQuantizations[modelId];
+      if (selectedFilename) {
+        const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+        const variantName = quantObj?.quantization ?? selectedFilename;
+        defaultName = `${suggestedName}-${variantName}`;
+      }
+    }
+
+    if (!checkpoint) return defaultName;
+
+    const existingDefault = lookupModelInfo(defaultName);
+    if (!existingDefault || matchesCheckpoint(existingDefault)) {
+      return defaultName;
+    }
+
+    const fallbackBase = getOwnerSuffixName(defaultName);
+    let candidate = fallbackBase;
+    let suffix = 2;
+    let existingCandidate = lookupModelInfo(candidate);
+    while (existingCandidate && !matchesCheckpoint(existingCandidate)) {
+      candidate = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+      existingCandidate = lookupModelInfo(candidate);
+    }
+    return candidate;
+  }, [hfSelectedQuantizations, modelsData]);
 
   const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
     const backend = hfModelBackends[hfModel.id];
@@ -1093,7 +1138,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const checkpoint = backend.recipe === 'llamacpp'
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
-    const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
+    const modelName = `user.${resolveHfModelName(hfModel.id, backend, checkpoint)}`;
     const labels = new Set(backend.suggestedLabels ?? []);
     const mmproj = backend.mmprojFiles?.[0];
     if (mmproj) labels.add('vision');
@@ -1513,6 +1558,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
+    const hasUpdate = info?.update_available === true;
     const isCollection = isCollectionModel(info);
     // Cloud-recipe rows have no local artifact (Delete is meaningless and
     // dynamic discovery would re-add anyway) and no per-model knobs the
@@ -1543,6 +1589,19 @@ const [searchQuery, setSearchQuery] = useState('');
             {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
           </>
+        )}
+        {isDownloaded && hasUpdate && (
+          <button
+            className="model-action-btn update-btn"
+            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName, undefined, true); }}
+            title="Update available — click to re-download"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
         )}
         {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>
@@ -2013,7 +2072,7 @@ const [searchQuery, setSearchQuery] = useState('');
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
-                                        name: resolveHfModelName(hfModel.id, backend),
+                                        name: resolveHfModelName(hfModel.id, backend, checkpoint),
                                         checkpoint,
                                         recipe: backend.recipe,
                                         mmprojOptions: backend.mmprojFiles,

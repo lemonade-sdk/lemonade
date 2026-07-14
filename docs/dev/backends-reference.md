@@ -9,12 +9,16 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-overview -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
+| `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
+| `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
+| `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
@@ -24,6 +28,9 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-matrix -->
 | Recipe | Backend | OS | Device families |
 |--------|---------|----|-----------------|
+| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `acestep` | cuda | linux, windows | nvidia_gpu |
+| `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `kokoro` | metal | macos | metal |
@@ -31,17 +38,26 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
+| `openmoss` | rocm | linux, windows | amd_gpu |
+| `openmoss` | cuda | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `sd-cpp` | cuda | linux | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
 | `sd-cpp` | metal | macos | metal |
+| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thinksound` | cuda | linux, windows | nvidia_gpu |
+| `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
@@ -53,6 +69,19 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Recipe options
 
 <!-- BEGIN GENERATED: backend-options -->
+#### `acestep` — ACE-Step
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
+#### `flm` — FastFlowLM NPU
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -68,6 +97,12 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `moonshine_args` | `--moonshine-args` | ARGS | "" | Custom arguments to pass to moonshine-server |
 
+#### `openmoss` — OpenMOSS TTS
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
 #### `sd-cpp` — StableDiffusion.cpp
 
 | Option | CLI flag | Type | Default | Description |
@@ -80,6 +115,18 @@ the generator instead. Prose outside the markers is preserved. -->
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+
+#### `thinksound` — ThinkSound
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
+
+#### `trellis` — TRELLIS.2
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 
 #### `vllm` — vLLM ROCm (experimental)
 
@@ -100,13 +147,20 @@ the generator instead. Prose outside the markers is preserved. -->
 ## Models
 
 <!-- BEGIN GENERATED: backend-models -->
-#### `collection.omni` — collection.omni (4 models)
+#### `acestep` — ACE-Step (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `ACE-Step-Music` | 10.5 | audio-generation |
+
+#### `collection.omni` — collection.omni (5 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `LMX-Omni-5.5B-Lite` | 9.3 | — |
 | `LMX-Omni-52B-Halo` | 44.77 | — |
 | `Lite Collection` |  | — |
+| `RPG-HaloTales-V1` | 39.77 | — |
 | `Ultra Collection` |  | — |
 
 #### `kokoro` — Kokoro (1 models)
@@ -205,6 +259,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
 
+#### `openmoss` — OpenMOSS TTS (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `MOSS-VoiceGen` | 7.3 | tts, voice-design |
+| `OpenMOSS-TTS` | 12.5 | tts |
+
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)
 
 | Model | Size (GB) | Labels |
@@ -239,13 +300,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Meta-Llama-3-8B-NPU` | 9.23 | — |
 | `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | — |
 | `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | — |
-| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.84 | — |
+| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | — |
 | `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | — |
-| `Mistral-7B-v0.3-Hybrid` | 7.85 | — |
+| `Mistral-7B-v0.3-Hybrid` | 7.35 | — |
 | `Mistral-7B-v0.3-NPU` | 8.09 | — |
 | `Phi-3-Mini-Instruct-CPU` | 2.39 | — |
 | `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | — |
@@ -306,7 +367,19 @@ the generator instead. Prose outside the markers is preserved. -->
 | `SDXL-Turbo` | 6.94 | image |
 | `Z-Image-Turbo` | 20.7 | image |
 
-#### `vllm` — vLLM ROCm (experimental) (7 models)
+#### `thinksound` — ThinkSound (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `ThinkSound-SFX` | 6.4 | audio-generation |
+
+#### `trellis` — TRELLIS.2 (1 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `TRELLIS-3D` | 15.4 | 3d |
+
+#### `vllm` — vLLM ROCm (experimental) (11 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -316,7 +389,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.5-4B-FP16-vLLM` | 9.34 | reasoning, hot, tool-calling |
 | `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
 | `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
+| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
+| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 
@@ -329,3 +406,21 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Whisper-Small` | 0.488 | transcription, realtime-transcription |
 | `Whisper-Tiny` | 0.075 | transcription, realtime-transcription |
 <!-- END GENERATED: backend-models -->
+
+## Implementation notes
+
+### ACE-Step (`acestep`)
+
+`ace-server` exposes an asynchronous job API: `POST /lm` or `POST /synth` returns a job id immediately, `GET /job?id=N` polls the status, and `GET /job?id=N&result=1` fetches the finished result. `AceStepServer::run_job` wraps this submit/poll/fetch cycle with a ceiling of roughly 20 minutes per stage at a 1-second poll cadence. Synth results arrive as `multipart/mixed` (an audio part plus a latent part); Lemonade extracts the first audio part.
+
+Vocals are a two-stage pipeline. `POST /lm` with `lm_mode: "generate"` runs the ACE-Step language model, which turns the caption and lyrics into audio codes plus LM-filled metadata, returned as a JSON array of enriched requests. That array is accepted by `POST /synth` verbatim, so Lemonade feeds it through unchanged. `POST /synth` on its own is the DiT-only instrumental path — it has no language model and cannot sing, so a `lyrics` value (other than the sentinel below) is what routes a request through `/lm` first.
+
+`[Instrumental]` — any case, surrounding whitespace ignored — is ACE-Step's sentinel for the no-vocals path, matching the Python reference implementation. Instrumental requests send the sentinel explicitly rather than an empty string because the synth stage also feeds the lyrics text into its conditioning.
+
+Errors from `audio_generations` are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.
+
+The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
+
+### Backend auto-selection
+
+When a recipe's backend is not pinned in `config.json` (the `backend` key is absent or `"auto"`), the default backend reported in `system-info` — and used by `RecipeOptions` when resolving `*_backend` options — is chosen as follows: the first supported backend in `RECIPE_DEFS` preference order wins, unless a later supported backend is already locally installed (state `installed`, `update_available`, or `update_required`) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit `backend` value in `config.json` always takes precedence over both rules. The llamacpp `system` variant is never auto-selected unless `prefer_system` is set.

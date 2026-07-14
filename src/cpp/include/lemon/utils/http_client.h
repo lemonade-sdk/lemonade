@@ -45,11 +45,29 @@ struct DownloadResult {
     size_t total_bytes = 0;           // Total file size (if known)
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
+    bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
 };
 
 // Progress callback returns bool: true = continue, false = cancel download
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
 using StreamCallback = std::function<bool(const char* data, size_t length)>;
+
+// Trust boundary for HTTP requests that may follow redirects. Selects which URL
+// schemes are allowed for the initial request and for redirect targets, and
+// whether redirects are followed at all.
+enum class HttpSecurityPolicy {
+    // External hosts (Hugging Face, GitHub, release CDNs). Require https for the
+    // initial request and every redirect hop; bound the redirect chain. This is
+    // the default so untrusted destinations are HTTPS-only unless a caller opts
+    // out for a specific trust boundary.
+    ExternalHttpsOnly,
+    // Lemonade-managed backends reached over loopback http://127.0.0.1. Require
+    // http and never follow redirects.
+    TrustedLoopback,
+    // User-configured plaintext endpoints that explicitly opted in via
+    // allow_insecure_http. Permit http and https; bound the redirect chain.
+    AllowInsecureHttp,
+};
 
 // Download configuration options
 struct DownloadOptions {
@@ -60,6 +78,9 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
+    bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
@@ -83,7 +104,8 @@ public:
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
-                           long timeout_seconds = 0);
+                           long timeout_seconds = 0,
+                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Simple POST request
     static HttpResponse post(const std::string& url,
@@ -96,19 +118,23 @@ public:
                                        const std::vector<MultipartField>& fields,
                                        long timeout_seconds = 300);
 
-    // Streaming POST request (calls callback for each chunk as it arrives)
+    // Streaming POST request (calls callback for each chunk as it arrives).
+    // on_status fires once, before the first chunk is delivered, so callers can
+    // divert an error body instead of forwarding it as payload bytes.
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+                                   long timeout_seconds = 300,
+                                   std::function<void(int status_code)> on_status = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
                                         const std::map<std::string, std::string>& headers = {},
-                                        const DownloadOptions& options = DownloadOptions());
+                                        const DownloadOptions& options = DownloadOptions(),
+                                        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Check if URL is reachable
     static bool is_reachable(const std::string& url, int timeout_seconds = 5);
@@ -122,7 +148,9 @@ private:
                                            size_t resume_from,
                                            ProgressCallback callback,
                                            const std::map<std::string, std::string>& headers,
-                                           const DownloadOptions& options);
+                                           const DownloadOptions& options,
+                                           bool initial_range_request,
+                                           HttpSecurityPolicy policy);
 };
 
 // Creates a throttled progress callback that prints at most once per second.

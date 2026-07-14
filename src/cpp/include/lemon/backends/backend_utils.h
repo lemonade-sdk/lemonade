@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <optional>
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
@@ -106,8 +107,38 @@ namespace lemon::backends {
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
 
-        /** Check if ROCm libraries are installed system-wide (Linux only) */
-        static bool is_rocm_installed_system_wide();
+        /**
+         * Resolve the ROCm install root, honoring an externally-installed ROCm
+         * before the bundled default. Resolution order, returning the first root
+         * that contains the HIP runtime (Windows: amdhip64.dll or
+         * amdhip64_<version>.dll under bin\ or lib\; Linux:
+         * lib{,64}/libamdhip64.so):
+         *   1. ROCM_PATH environment variable
+         *   2. `rocm-sdk path --root` (when rocm-sdk is on PATH)
+         *   3. Platform default (Windows: HIP_PATH set by the AMD HIP SDK;
+         *      Linux: /opt/rocm)
+         * Returns std::nullopt when none validate. When resolved_explicitly is
+         * non-null, it is set to true when the root came from ROCM_PATH or
+         * rocm-sdk (a user-selected ROCm) and false for the platform default.
+         */
+        static std::optional<fs::path> resolve_rocm_root(bool* resolved_explicitly = nullptr);
+
+        /**
+         * Trim each line and keep those that name an absolute path, preserving
+         * order. `rocm-sdk path --root`'s stdout can be interleaved with the
+         * child's stderr (warnings), so the wanted path is not necessarily the
+         * first line. Pure string logic; the caller validates each candidate.
+         */
+        static std::vector<std::string> pick_rocm_root_candidates(
+            const std::vector<std::string>& lines);
+
+        /**
+         * Read the ROCm version string from a resolved install root, probing the
+         * known version-file locations ({root}/.info/version,
+         * {root}/share/rocm/version, {root}/version). Returns the trimmed first
+         * line of the first file found, or "" when none exist.
+         */
+        static std::string read_rocm_version_from_root(const fs::path& root);
 
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);

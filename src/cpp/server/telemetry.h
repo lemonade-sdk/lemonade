@@ -1,9 +1,10 @@
 #pragma once
-#include <string>
-#include <map>
 #include <chrono>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
+
 #include <nlohmann/json.hpp>
 
 namespace lemon::telemetry {
@@ -18,8 +19,7 @@ public:
     void end_with_error(const std::string& error_message);
     void cancel();
 
-    std::string trace_id() const { return trace_id_; }
-    std::string span_id() const { return span_id_; }
+
 
 private:
     std::string span_kind_;
@@ -58,5 +58,16 @@ void end_llm_span_async(
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser,
     const nlohmann::json& usage_payload,
     const std::string& text_output);
+
+using SpanListenerCallback = std::function<void(const nlohmann::json&)>;
+void register_span_listener(SpanListenerCallback callback);
+void unregister_span_listener();
+bool has_span_listeners();
+void emit_span(const nlohmann::json& span_details);
+std::string hash_token(const std::string& token);
+
+extern thread_local std::string g_current_auth_token;
+extern thread_local std::chrono::steady_clock::time_point g_request_start_time;
+extern thread_local std::string g_current_client_session_id;
 
 } // namespace lemon::telemetry

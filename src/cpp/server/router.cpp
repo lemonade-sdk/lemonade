@@ -25,11 +25,33 @@
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
 #include "lemon/eviction_engine.h"
+#include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
 
 namespace lemon {
 
+namespace {
 
+// RAII: holds a suspend-inhibitor refcount for the duration of one inference,
+// but only when the feature is enabled in config. Released on scope exit so all
+// early-return/exception paths are covered.
+class InhibitGuard {
+public:
+    InhibitGuard(SuspendInhibitor* inhibitor, bool enabled)
+        : inhibitor_(enabled ? inhibitor : nullptr) {
+        if (inhibitor_) inhibitor_->acquire();
+    }
+    ~InhibitGuard() {
+        if (inhibitor_) inhibitor_->release();
+    }
+    InhibitGuard(const InhibitGuard&) = delete;
+    InhibitGuard& operator=(const InhibitGuard&) = delete;
+
+private:
+    SuspendInhibitor* inhibitor_;
+};
+
+} // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
     : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
@@ -43,6 +65,7 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 
     vram_monitor_ = std::make_unique<GlobalVramMonitor>();
     eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
+    suspend_inhibitor_ = create_suspend_inhibitor();
 
     // Always start the monitor/engine threads; they are cheap no-ops until the
     // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
@@ -416,7 +439,7 @@ void Router::load_model(const std::string& model_name,
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                LOG(INFO, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
+                LOG(DEBUG, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
                 existing->set_pinned(final_pinned);
                 existing->update_access_time();
                 is_loading_ = false;
@@ -599,11 +622,12 @@ void Router::load_model(const std::string& model_name,
                 lock.lock();
 
                 retry_server->set_state(ModelState::READY);
+                const auto retry_duration_ms = retry_server->get_load_duration_ms();
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
@@ -864,6 +888,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             );
         }
 
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
+
         try {
             auto response = inference_func(server);
             const bool watchdog_reset =
@@ -975,6 +1001,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
+
         try {
             streaming_func(server);
             const bool watchdog_reset = server->was_watchdog_triggered();
@@ -1061,10 +1089,18 @@ json Router::chat_completion(const json& request) {
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
                 }
                 if (response.contains("timings")) {
                     auto timings = response["timings"];
@@ -1152,10 +1188,18 @@ json Router::completion(const json& request) {
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
                 std::string text_output = "";
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    if (usage.contains("completion_tokens")) usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
                 }
 
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
@@ -1212,9 +1256,13 @@ json Router::embeddings(const json& request) {
                 span->end_with_error(error_msg);
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
                     if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
                 }
                 std::string output_dump = "";
@@ -1264,9 +1312,13 @@ json Router::reranking(const json& request) {
                 span->end_with_error(error_msg);
             } else {
                 nlohmann::json usage_payload = nlohmann::json::object();
-                if (response.contains("usage")) {
+                if (response.contains("usage") && response["usage"].is_object()) {
                     auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
                     if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
                 }
                 span->end_with_success(usage_payload, response.dump());
@@ -1424,6 +1476,13 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     });
 }
 
+std::vector<std::string> Router::audio_speech_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
@@ -1457,6 +1516,33 @@ json Router::image_variations(const json& request) {
             );
         }
         return image_server->image_variations(request);
+    });
+}
+
+void Router::audio_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+        if (!audio_server) {
+            throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
+        }
+        audio_server->audio_generations(request, sink);
+    });
+}
+
+std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        if (!model_server) {
+            throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
+        }
+        model_server->model_3d_generations(request, sink);
     });
 }
 
@@ -1916,15 +2002,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                     try {
                         auto parsed = json::parse(json_str);
                         if (!hide_outputs) {
-                            if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
-                                auto delta = parsed["choices"][0]["delta"];
-                                if (delta.contains("content") && delta["content"].is_string()) {
-                                    *accumulated_text += delta["content"].get<std::string>();
-                                }
-                            }
-                            if (parsed.contains("response") && parsed["response"].is_string()) {
-                                *accumulated_text += parsed["response"].get<std::string>();
-                            }
+                            StreamingProxy::accumulate_responses_delta(parsed, *accumulated_text);
                         }
                     } catch (...) {}
                 }

@@ -1,12 +1,30 @@
 #include <lemon/utils/archive_platform.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/aixlog.hpp>
+#include <cstdio>
 #include <filesystem>
 #include <cstdlib>
+#include <memory>
+#include <process.h>
 
 namespace fs = std::filesystem;
 
 namespace lemon::utils {
+
+namespace {
+std::string escape_powershell_literal(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value) {
+        if (c == '\'') {
+            escaped += "''";
+        } else {
+            escaped += c;
+        }
+    }
+    return escaped;
+}
+} // namespace
 
 class WindowsArchivePlatform : public ArchivePlatform {
 public:
@@ -20,19 +38,37 @@ public:
 
     bool is_native_tar_available() override {
         std::string tar_path = get_native_tar_path();
-        std::string command = tar_path + " --version >nul 2>&1";
-        std::string unused;
-        return ProcessManager::run_command(command, unused) == 0;
+        try {
+            return ProcessManager::run_process_with_output(
+                tar_path,
+                {"--version"},
+                [](const std::string&) { return true; },
+                "",
+                5
+            ) == 0;
+        } catch (const std::exception&) {
+            return false;
+        }
     }
     bool extract_zip(const std::string& zip_path,
                     const std::string& dest_dir,
                     const std::string& backend_name) override {
-        std::string command;
         fs::create_directories(dest_dir);
+        std::string output;
+        int result;
 
         if (is_native_tar_available()) {
             LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
-            command = get_native_tar_path() + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
+            result = ProcessManager::run_process_with_output(
+                get_native_tar_path(),
+                {"-xf", zip_path, "-C", dest_dir},
+                [&output](const std::string& line) {
+                    output += line + "\n";
+                    return true;
+                },
+                "",
+                300
+            );
         } else {
             LOG(DEBUG, backend_name) << "Extracting ZIP via PowerShell to " << dest_dir << std::endl;
             std::string powershell_path = "powershell";
@@ -40,21 +76,30 @@ public:
             if (system_root) {
                 powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
             }
-            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path +
-                     "' -DestinationPath '" + dest_dir + "' -Force\"";
+            result = ProcessManager::run_process_with_output(
+                powershell_path,
+                {"-Command", "Expand-Archive -LiteralPath '" + escape_powershell_literal(zip_path) +
+                 "' -DestinationPath '" + escape_powershell_literal(dest_dir) + "' -Force"},
+                [&output](const std::string& line) {
+                    output += line + "\n";
+                    return true;
+                },
+                "",
+                300
+            );
         }
 
-        int result = system(command.c_str());
         if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result
+                                    << (output.empty() ? "" : " - " + output) << std::endl;
             return false;
         }
         return true;
     }
 
     bool extract_tarball(const std::string& tarball_path,
-                        const std::string& dest_dir,
-                        const std::string& backend_name) override {
+                         const std::string& dest_dir,
+                         const std::string& backend_name) override {
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 
@@ -63,12 +108,43 @@ public:
             return false;
         }
 
-        std::string command = get_native_tar_path() + " -xf \"" + tarball_path +
-                            "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        std::string entries;
+        int list_result = ProcessManager::run_process_with_output(
+            get_native_tar_path(),
+            {"-tf", tarball_path},
+            [&entries](const std::string& line) {
+                entries += line + "\n";
+                return true;
+            },
+            "",
+            30,
+            false
+        );
 
-        int result = system(command.c_str());
+        int strip = 0;
+        if (list_result == 0) {
+            strip = compute_tarball_strip_components(entries);
+            LOG(DEBUG, backend_name) << "Tarball strip-components: " << strip << std::endl;
+        } else {
+            LOG(DEBUG, backend_name) << "Could not list tarball contents, using strip=0" << std::endl;
+        }
+
+        std::string output;
+        int result = ProcessManager::run_process_with_output(
+            get_native_tar_path(),
+            {"-xf", tarball_path, "-C", dest_dir,
+             "--strip-components=" + std::to_string(strip), "--no-same-owner"},
+            [&output](const std::string& line) {
+                output += line + "\n";
+                return true;
+            },
+            "",
+            300
+        );
+
         if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result
+                                    << (output.empty() ? "" : " - " + output) << std::endl;
             return false;
         }
         return true;

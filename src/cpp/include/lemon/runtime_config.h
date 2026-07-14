@@ -34,6 +34,7 @@ public:
     int ctx_size() const;
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
+    bool inhibit_suspend() const;
 
     // Telemetry settings
     bool telemetry_enabled() const;
@@ -54,6 +55,7 @@ public:
 
     // Feature flags
     bool offline() const;
+    bool auto_check_model_updates() const;
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;

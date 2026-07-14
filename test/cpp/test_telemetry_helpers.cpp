@@ -1,10 +1,14 @@
-#include <cstdio>
-#include <string>
-#include <vector>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <httplib.h>
 #include <map>
+#include <string>
+#include <thread>
+#include <vector>
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/streaming_proxy.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
@@ -150,6 +154,212 @@ int main() {
         bool wait_missing = (it_wait == res.end());
         std::printf("[%s] parse_vllm_metrics_text malformed: num_requests_waiting (abc) is skipped\n", wait_missing ? "PASS" : "FAIL");
         if (!wait_missing) ++g_failures;
+    }
+
+    // --- parse_telemetry tests ---
+    std::printf("===========================================\n");
+    {
+        auto check_int = [](const char* name, int actual, int expected) {
+            bool ok = (actual == expected);
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) {
+                std::printf("      Expected: %d\n", expected);
+                std::printf("      Actual:   %d\n", actual);
+                ++g_failures;
+            }
+        };
+
+        auto check_double_val = [](const char* name, double actual, double expected) {
+            bool ok = (std::abs(actual - expected) < 1e-6);
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) {
+                std::printf("      Expected: %f\n", expected);
+                std::printf("      Actual:   %f\n", actual);
+                ++g_failures;
+            }
+        };
+
+        // 1. Root level usage
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: root usage prompt_tokens", tel.input_tokens, 10);
+            check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
+        }
+
+        // 2. Nested usage under response (OpenAI keys)
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"prompt_tokens\": 30, \"completion_tokens\": 40, \"prefill_duration_ttft\": 0.15, \"decoding_speed_tps\": 45.2}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested usage prompt_tokens", tel.input_tokens, 30);
+            check_int("parse_telemetry: nested usage completion_tokens", tel.output_tokens, 40);
+            check_double_val("parse_telemetry: nested usage prefill_duration_ttft", tel.time_to_first_token, 0.15);
+            check_double_val("parse_telemetry: nested usage decoding_speed_tps", tel.tokens_per_second, 45.2);
+        }
+
+        // 2b. Nested usage under response (Responses API keys)
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"input_tokens\": 35, \"output_tokens\": 45, \"prefill_duration_ttft\": 0.18, \"decoding_speed_tps\": 50.0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested usage input_tokens", tel.input_tokens, 35);
+            check_int("parse_telemetry: nested usage output_tokens", tel.output_tokens, 45);
+            check_double_val("parse_telemetry: nested usage input prefill_duration_ttft", tel.time_to_first_token, 0.18);
+            check_double_val("parse_telemetry: nested usage input decoding_speed_tps", tel.tokens_per_second, 50.0);
+        }
+
+        // 3. Root level timings
+        {
+            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: root timings prompt_tokens", tel.input_tokens, 50);
+            check_int("parse_telemetry: root timings completion_tokens", tel.output_tokens, 60);
+            check_double_val("parse_telemetry: root timings prompt_ms", tel.time_to_first_token, 1.5);
+            check_double_val("parse_telemetry: root timings predicted_per_second", tel.tokens_per_second, 25.5);
+        }
+
+        // 4. Nested timings under response
+        {
+            std::string buffer = "data: {\"response\": {\"timings\": {\"prompt_n\": 70, \"predicted_n\": 80, \"prompt_ms\": 2000.0, \"predicted_per_second\": 30.0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: nested timings prompt_tokens", tel.input_tokens, 70);
+            check_int("parse_telemetry: nested timings completion_tokens", tel.output_tokens, 80);
+            check_double_val("parse_telemetry: nested timings prompt_ms", tel.time_to_first_token, 2.0);
+            check_double_val("parse_telemetry: nested timings predicted_per_second", tel.tokens_per_second, 30.0);
+        }
+    }
+
+    // --- accumulate_responses_delta tests ---
+    std::printf("===========================================\n");
+    {
+        // a) Verify that chunk type "response.output_text.delta" with string delta contributes to accumulated_text.
+        {
+            std::string acc = "";
+            nlohmann::json chunk = {
+                {"type", "response.output_text.delta"},
+                {"delta", "hello"}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(chunk, acc);
+            check_eq("accumulate_responses_delta: type output_text.delta + string delta", acc, "hello");
+        }
+
+        // b) Verify that chunk type "response.output_text.delta" with object delta (text field) contributes to accumulated_text.
+        {
+            std::string acc = "";
+            nlohmann::json chunk = {
+                {"type", "response.output_text.delta"},
+                {"delta", {{"text", " world"}}}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(chunk, acc);
+            check_eq("accumulate_responses_delta: type output_text.delta + object delta", acc, " world");
+        }
+
+        // c) Verify that a non-text event (e.g., type == "response.audio.delta" or type == "response.tool.delta") does NOT contribute to accumulated_text.
+        {
+            std::string acc = "";
+            nlohmann::json audio_chunk = {
+                {"type", "response.audio.delta"},
+                {"delta", "audio_data"}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(audio_chunk, acc);
+            check_eq("accumulate_responses_delta: non-text type response.audio.delta (string)", acc, "");
+
+            nlohmann::json tool_chunk = {
+                {"type", "response.tool.delta"},
+                {"delta", {{"text", "tool_data"}}}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(tool_chunk, acc);
+            check_eq("accumulate_responses_delta: non-text type response.tool.delta (object)", acc, "");
+        }
+
+        // d) Verify that chunks without 'type' (fallback/OpenAI chat completion chunks) still contribute to accumulated_text.
+        {
+            std::string acc = "";
+            nlohmann::json chunk_no_type_string = {
+                {"delta", "fallback string"}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(chunk_no_type_string, acc);
+            check_eq("accumulate_responses_delta: no type + string delta", acc, "fallback string");
+
+            acc = "";
+            nlohmann::json chunk_no_type_obj = {
+                {"delta", {{"text", "fallback object"}}}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(chunk_no_type_obj, acc);
+            check_eq("accumulate_responses_delta: no type + object delta", acc, "fallback object");
+
+            acc = "";
+            nlohmann::json chunk_openai = {
+                {"choices", nlohmann::json::array({{{"delta", {{"content", "OpenAI content"}}}}})}
+            };
+            lemon::StreamingProxy::accumulate_responses_delta(chunk_openai, acc);
+            check_eq("accumulate_responses_delta: no type + choices array delta", acc, "OpenAI content");
+        }
+    }
+
+    // --- Client disconnect telemetry error handling tests ---
+    std::printf("===========================================\n");
+    {
+        httplib::Server svr;
+        svr.Post("/stream", [](const httplib::Request& req, httplib::Response& res) {
+            res.set_content_provider(
+                "text/event-stream",
+                [](size_t offset, httplib::DataSink& sink) {
+                    sink.write("data: hello\n\n", 13);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    sink.write("data: [DONE]\n\n", 14);
+                    sink.done();
+                    return true;
+                }
+            );
+        });
+
+        int port = svr.bind_to_any_port("127.0.0.1");
+        if (port < 0) {
+            std::printf("[FAIL] Failed to bind httplib::Server to any port\n");
+            ++g_failures;
+        } else {
+            std::thread server_thread([&svr]() {
+                svr.listen_after_bind();
+            });
+            svr.wait_until_ready();
+
+            httplib::DataSink sink;
+            sink.write = [](const char* data, size_t len) {
+                // Abort the stream by returning false
+                return false;
+            };
+            sink.done = []() {};
+
+            bool callback_called = false;
+            std::string error_msg = "";
+
+            std::string backend_url = "http://127.0.0.1:" + std::to_string(port) + "/stream";
+
+            lemon::StreamingProxy::forward_sse_stream(
+                backend_url,
+                "{}",
+                sink,
+                [&callback_called, &error_msg](const lemon::StreamingProxy::TelemetryData& tel) {
+                    callback_called = true;
+                    error_msg = tel.error_message;
+                },
+                5 // 5 seconds timeout
+            );
+
+            svr.stop();
+            if (server_thread.joinable()) {
+                server_thread.join();
+            }
+
+            if (callback_called) {
+                std::printf("[PASS] forward_sse_stream abort: callback was called\n");
+            } else {
+                std::printf("[FAIL] forward_sse_stream abort: callback was NOT called\n");
+                ++g_failures;
+            }
+
+            check_eq("Client disconnected error message check", error_msg, "Client disconnected during stream");
+        }
     }
 
     std::printf("===========================================\n");

@@ -13,6 +13,8 @@ import RerankingPanel from './components/panels/RerankingPanel';
 import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
+import AudioGenerationPanel from './components/panels/AudioGenerationPanel';
+import Model3DPanel from './components/panels/Model3DPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
 import { isCollectionModel, getCollectionComponents } from './utils/collectionModels';
@@ -42,7 +44,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [addModelInitialValues, setAddModelInitialValues] = useState<AddModelInitialValues | undefined>(undefined);
   const addModelFromJSONRef = useRef<HTMLInputElement>(null);
 
-  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'tts';
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'tts' | 'audio' | 'model3d';
 
   const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
@@ -60,6 +62,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (info.labels?.includes('transcription')) return 'transcription';
     if (info.labels?.includes('image')) return 'image';
     if (info.labels?.includes('tts')) return 'tts';
+    if (info.labels?.includes('audio-generation')) return 'audio';
+    if (info.labels?.includes('3d')) return 'model3d';
     return 'llm';
   }, [selectedModel, modelsData]);
 
@@ -276,6 +280,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     : activeModelType === 'transcription' ? 'Lemonade Transcriber'
     : activeModelType === 'image' ? 'Lemonade Image Generator'
     : activeModelType === 'tts' ? 'Lemonade Text to Speech'
+    : activeModelType === 'audio' ? 'Lemonade Audio Generator'
+    : activeModelType === 'model3d' ? 'Lemonade 3D Generator'
     : 'LLM Chat';
 
   const sharedProps = {
@@ -313,6 +319,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'tts' && <TTSPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'audio' && <AudioGenerationPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'model3d' && <Model3DPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'llm' && (
         <LLMChatPanel
           key={resetKey}

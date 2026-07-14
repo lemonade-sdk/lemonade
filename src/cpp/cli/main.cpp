@@ -361,7 +361,7 @@ static bool has_manual_pull_options(const CliConfig& config) {
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
-        if (lemon::is_collection_recipe(config.recipe)) {
+        if (lemon::is_omni_collection_recipe(config.recipe)) {
             if (config.components.empty()) {
                 std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
                           << std::endl;
@@ -1209,6 +1209,8 @@ int main(int argc, char* argv[]) {
 
     // Model commands
     CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
+    CLI::App* check_updates_cmd = app.add_subcommand(
+        "check-updates", "Check downloaded models for upstream updates")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1271,7 +1273,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni, collection.router)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1455,6 +1457,8 @@ int main(int argc, char* argv[]) {
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded, config.list_filter);
+    } else if (check_updates_cmd->count() > 0) {
+        return client.check_model_updates();
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;

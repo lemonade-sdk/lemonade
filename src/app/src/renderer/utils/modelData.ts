@@ -1,4 +1,4 @@
-import { isCollectionRecipe } from './recipeNames';
+import { isModelCollectionRecipe } from './recipeNames';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -30,17 +30,30 @@ export interface ModelInfo {
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  update_available?: boolean;
   image_defaults?: ImageDefaults;
   // Per-collection system prompt template (collection.omni only). Overrides the
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
   // {tool_guidance} placeholders so runtime substitution still works.
   system_prompt?: string;
+  // collection.router policies. Kept opaque in the general model catalog; router
+  // authoring tools validate against the routing schema.
+  routing?: unknown;
   [key: string]: unknown;
 }
 
 export interface ModelsData {
   [key: string]: ModelInfo;
 }
+
+export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
+
+export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
+  if (!info) return 'fixed';
+  if ((info.labels || []).includes('voice-design')) return 'design';
+  if (info.recipe === 'openmoss') return 'clone';
+  return 'fixed';
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,7 +88,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
+  if (!recipe || (!checkpoint && !isModelCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -141,6 +154,10 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.system_prompt = systemPrompt;
   }
 
+  if (isRecord(info['routing'])) {
+    normalized.routing = info['routing'];
+  }
+
   const vision = info['vision'];
   if (typeof vision === 'boolean') {
     normalized.vision = vision;
@@ -172,6 +189,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
+        update_available: model.update_available === true,
       };
 
       if (Array.isArray(model.labels)) {
@@ -232,6 +250,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.system_prompt = model.system_prompt;
       }
 
+      if (model.routing && typeof model.routing === 'object' && !Array.isArray(model.routing)) {
+        modelInfo.routing = model.routing;
+      }
+
       // cloud_provider distinguishes per-provider buckets in the Model
       // Manager grouping (recipe="cloud" alone collapses all providers
       // into a single sub-heading).
@@ -287,6 +309,7 @@ const EXPORT_KNOWN_KEYS = new Set([
   'labels',
   'recipe',
   'recipe_options',
+  'routing',
   'size',
   'system_prompt',
 ]);
@@ -321,7 +344,7 @@ export const normalizeModelExportPayload = (
   const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
   payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
 
-  if (isCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+  if (isModelCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
     // Normalize each embedded component with the same transform. Components
     // are leaf models: drop their (empty) collection fields and keep bare
     // names — the server decides `user.` prefixing when registering them.
