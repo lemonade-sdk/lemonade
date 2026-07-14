@@ -1985,17 +1985,16 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         if (stream) {
             json count_request = openai_req;
             count_request["stream"] = false;
-            auto count_response = router_->count_chat_tokens(count_request);
-            if (send_anthropic_backend_error(count_response, res)) {
-                return;
+            try {
+                auto count_response = router_->count_chat_tokens(count_request);
+                if (has_tokenizer_response_count(count_response)) {
+                    stream_input_tokens = count_tokenizer_response_tokens(count_response);
+                } else {
+                    add_warning(warnings, "Backend could not count input tokens; streaming usage reports input_tokens as 0");
+                }
+            } catch (const std::exception&) {
+                add_warning(warnings, "Backend could not count input tokens; streaming usage reports input_tokens as 0");
             }
-            if (!has_tokenizer_response_count(count_response)) {
-                res.status = 502;
-                json error = {{"message", "Backend returned an invalid token-count response"}};
-                res.set_content(make_anthropic_error(error, 502).dump(), "application/json");
-                return;
-            }
-            stream_input_tokens = count_tokenizer_response_tokens(count_response);
             openai_req["stream_options"] = {{"include_usage", true}};
         }
         if (!warnings.empty()) {
