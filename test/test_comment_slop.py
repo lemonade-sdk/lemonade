@@ -374,16 +374,29 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of('char m = "\udcfe";\n', "a.c"),
         )
 
-    def test_a_raw_crlf_inside_a_string_is_not_a_comment_change(self):
-        # A raw CR byte inside a string literal is content -- a CRLF HTTP template differs
-        # from an LF one. Universal newlines (text=True) plus splitlines/strip erased it.
-        self.assertNotEqual(
-            slop._code_of('auto h = "OK\r\n\r\n";\n', "a.c"),
-            slop._code_of('auto h = "OK\n\n";\n', "a.c"),
-        )
+    def test_a_raw_crlf_inside_a_python_triple_quote_is_a_code_change(self):
+        # A raw CR inside a Python triple-quoted string is a real value difference, and
+        # the Python path is not line-normalised. (The C case is ill-formed -- a raw
+        # newline in a "..." literal -- so the C scanner normalises line endings instead.)
         self.assertNotEqual(
             slop._code_of('h = """OK\r\n\r\n"""\n', "a.py"),
             slop._code_of('h = """OK\n\n"""\n', "a.py"),
+        )
+
+    def test_a_line_continuation_in_a_crlf_file_revives_dead_code(self):
+        # `\`+CRLF continues a // comment just as `\`+LF does, once line endings are
+        # normalised. Deleting the backslash promotes the line below from dead to live.
+        before = "// disable this \\\r\nevil();\r\nint x = 1;\r\n"
+        after = "// disable this\r\nevil();\r\nint x = 1;\r\n"
+        self.assertNotEqual(slop._code_of(before, "a.c"), slop._code_of(after, "a.c"))
+
+    def test_a_cr_only_file_gets_line_boundaries(self):
+        # An old-Mac CR-only file starting with `//` was read as one whole-file comment,
+        # hiding every code change inside it. Normalising CR to newline restores the
+        # boundaries so a change is seen.
+        self.assertNotEqual(
+            slop._code_of("// header\rint x = 1;\r", "a.c"),
+            slop._code_of("// header\rint x = 2;\r", "a.c"),
         )
 
     def test_a_crlf_source_file_with_a_genuine_comment_edit_still_passes(self):

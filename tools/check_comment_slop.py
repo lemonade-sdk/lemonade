@@ -499,6 +499,12 @@ def _code_of_python(text):
 
 
 def _code_of_cish(text):
+    # Phase 1: normalise line endings to \n, as the compiler does before splicing and
+    # comment removal. Without this the splice below only matches `\`+`\n`, so on a CRLF
+    # file deleting the `\` from a `// warn \` (which is `\`+`\r\n`) fails to splice and
+    # the revived code compares equal. A line-ending change carries no code meaning (a
+    # raw newline inside a "..." literal is ill-formed C), so normalising hides nothing.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     out = []
     i, n = 0, len(text)
     in_str = in_chr = in_line = in_block = False
