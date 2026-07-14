@@ -274,8 +274,18 @@ namespace {
 // model.onnx so the subprocess is launched with --model-path <dir>.
 class OnnxRuntimeOps : public BackendOps {
 public:
+    // For a Hugging Face cache, `refs/main` names the active revision — an older
+    // snapshot lying beside it is normal, not an ambiguity, so scope the search
+    // to that snapshot. Only a local import (no refs/main) is searched whole,
+    // where exactly-one really is the right rule.
     std::string resolve_checkpoint_path(const ModelInfo&,
                                         const CheckpointResolveContext& ctx) const override {
+        fs::path cache = path_from_utf8(ctx.model_cache_path);
+        fs::path active = hf_cache::active_snapshot_path(cache);
+        if (!active.empty()) {
+            std::string found = find_imported_checkpoint(path_to_utf8(active));
+            return found.empty() ? path_to_utf8(active) : found;
+        }
         std::string found = find_imported_checkpoint(ctx.model_cache_path);
         return found.empty() ? ctx.model_cache_path : found;
     }
