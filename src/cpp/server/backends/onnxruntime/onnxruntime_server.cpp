@@ -25,11 +25,13 @@ namespace backends {
 
 namespace {
 // A directory ort-server can actually serve: the graph, the HF tokenizer, and
-// an output contract (explicit manifest.json, or config.json to infer from).
+// config.json. The config is mandatory even when a manifest is present — the
+// manifest describes the output contract only, so the backend still needs the
+// config to check the architecture against its supported input convention.
 bool is_complete_model_dir(const fs::path& dir) {
     std::error_code ec;
     return fs::exists(dir / "model.onnx", ec) && fs::exists(dir / "tokenizer.json", ec) &&
-           (fs::exists(dir / "manifest.json", ec) || fs::exists(dir / "config.json", ec));
+           fs::exists(dir / "config.json", ec);
 }
 
 // Relaunch ort-server just long enough to read the error it prints before
@@ -164,7 +166,8 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     if (candidates.empty()) {
         throw std::runtime_error(
             "No servable model directory under '" + model_path +
-            "': need model.onnx + tokenizer.json + (manifest.json or config.json)");
+            "': need model.onnx + tokenizer.json + config.json "
+            "(manifest.json is optional and overrides the output contract)");
     }
     if (candidates.size() > 1) {
         std::string listing;
@@ -269,7 +272,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 namespace {
-// ort-server models are a directory (model.onnx + tokenizer.json + manifest.json).
+// ort-server models are a directory (model.onnx + tokenizer.json + config.json).
 // The whole repo downloads by default; resolve to the directory that holds
 // model.onnx so the subprocess is launched with --model-path <dir>.
 class OnnxRuntimeOps : public BackendOps {
