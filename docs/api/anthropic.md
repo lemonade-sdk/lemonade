@@ -9,6 +9,8 @@ Lemonade provides Anthropic Messages compatibility for applications that call Cl
 
 The adapter supports text and image content, system prompts, sampling and stop controls, streaming, structured tool use and tool results, and local-model thinking output. Tool definitions are converted to the OpenAI-compatible format used by Lemonade backends. Structured backend `tool_calls` are converted back to Anthropic `tool_use` blocks; raw model text that resembles a tool call is not reparsed by this adapter, so the selected model and backend chat template must support tool calling.
 
+`stop_sequence` is populated when the backend identifies the matched stop string; otherwise it remains `null`.
+
 Requests with malformed required fields or unsupported content-block types return `invalid_request_error`. Lossy optional compatibility behavior is reported through `X-Lemonade-Warning` and server logs rather than non-standard fields in successful response bodies.
 
 Local models cannot create or verify Anthropic's cryptographic thinking signatures. Lemonade emits empty signatures for local thinking blocks, accepts empty signatures on subsequent turns, and rejects signed or `redacted_thinking` blocks from remote Anthropic responses instead of silently discarding them. `thinking.type: adaptive` enables the backend's local thinking mode, but model-specific adaptive behavior is not emulated.
