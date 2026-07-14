@@ -16,12 +16,11 @@ Usage:
 """
 
 import argparse
-import io
+import ast
 import os
 import re
 import subprocess
 import sys
-import tokenize
 from dataclasses import dataclass, field
 
 # A concept re-explained at N sites is the dominant failure: the model restates it at
@@ -152,8 +151,24 @@ class Block:
         }
 
 
-def run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+class GitError(RuntimeError):
+    pass
+
+
+def run(cmd, allow_missing=False):
+    """Run a git command, or raise.
+
+    A failed command that returned "" would be indistinguishable from one that
+    succeeded and found nothing, so the verification would report a clean result for a
+    comparison that never ran. `allow_missing` covers the one legitimate failure: a
+    path absent from one side of the comparison.
+    """
+    p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if p.returncode != 0:
+        if allow_missing:
+            return None
+        raise GitError(f"{' '.join(cmd)} failed ({p.returncode}): {p.stderr.strip()}")
+    return p.stdout
 
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -306,11 +321,34 @@ def comments_only(from_ref, to_ref):
         if not path.endswith(SOURCE_SUFFIXES):
             offenders.append(path)
             continue
-        before = run(["git", "show", f"{from_ref}:{path}"])
-        after = run(["git", "show", f"{to_ref}:{path}"])
+        before = run(["git", "show", f"{from_ref}:{path}"], allow_missing=True)
+        after = run(["git", "show", f"{to_ref}:{path}"], allow_missing=True)
+        if before is None or after is None:  # added or deleted, so not a comment edit
+            offenders.append(path)
+            continue
+        if _directives_of(before) != _directives_of(after):
+            offenders.append(path)
+            continue
         if _code_of(before, path) != _code_of(after, path):
             offenders.append(path)
     return offenders
+
+
+# A comment the toolchain reads is not decoration: dropping `# type: ignore` changes what
+# mypy accepts, and an encoding cookie changes how the file is decoded. Neither survives
+# into the AST or the stripped code, so compare them separately rather than certify a
+# change to one as "comments only".
+DIRECTIVE_RE = re.compile(
+    r"#\s*(type:\s*ignore|noqa|pylint:|mypy:|fmt:\s*(on|off)|pragma:)"
+    r"|#.*coding[:=]"  # PEP 263 writes it as `# -*- coding: utf-8 -*-`
+    r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
+    r"|/\*\s*(NOLINT|clang-format\s+(on|off))",
+    re.IGNORECASE,
+)
+
+
+def _directives_of(text):
+    return [line.strip() for line in text.splitlines() if DIRECTIVE_RE.search(line)]
 
 
 def _code_of(text, path=""):
@@ -328,28 +366,26 @@ def _code_of(text, path=""):
 
 
 def _code_of_python(text):
+    """The parsed program, as a tree.
+
+    A token stream cannot carry a security claim: dropping INDENT and DEDENT makes
+    `bar()` inside an `if` and `bar()` after it compare equal, so a change that moves a
+    statement between scopes passes as comments-only. The tree is what the interpreter
+    runs, and comments are absent from it by construction.
+    """
     try:
-        toks = tokenize.generate_tokens(io.StringIO(text).readline)
-        return [
-            t.string
-            for t in toks
-            if t.type
-            not in (
-                tokenize.COMMENT,
-                tokenize.NL,
-                tokenize.NEWLINE,
-                tokenize.INDENT,
-                tokenize.DEDENT,
-                tokenize.ENCODING,
-                tokenize.ENDMARKER,
-            )
-        ]
-    except (tokenize.TokenError, IndentationError, SyntaxError):
-        # An un-tokenisable file must not silently compare equal to anything.
-        return ["<unparseable>", text]
+        return ast.dump(ast.parse(text))
+    except (SyntaxError, ValueError) as e:
+        # Refuse to certify what we could not parse.
+        raise GitError(f"cannot parse Python source: {e}") from e
 
 
 def _code_of_cish(text):
+    # C removes comments in translation phase 3, AFTER a backslash-newline splices two
+    # lines together in phase 2. Skipping the splice means a `// warn \` whose next line
+    # is code reads that line as live -- so DELETING the backslash, a change entirely
+    # inside a comment, silently promotes dead code to live code and still compares equal.
+    text = text.replace("\\\n", "")
     out = []
     i, n = 0, len(text)
     in_str = in_chr = in_line = in_block = False
@@ -430,7 +466,12 @@ def main():
     if args.assert_comments_only:
         if not args.from_ref:
             p.error("--assert-comments-only requires --from-ref")
-        offenders = comments_only(args.from_ref, args.to_ref)
+        try:
+            offenders = comments_only(args.from_ref, args.to_ref)
+        except GitError as e:
+            # A check that could not run has not passed.
+            print(f"Could not verify: {e}")
+            return 1
         if offenders:
             print("This change is NOT comments-only. Code changed in:")
             for f in offenders:

@@ -305,9 +305,47 @@ class CodeOfTests(unittest.TestCase):
         )
 
     def test_an_unparseable_python_file_fails_closed(self):
+        # Refuse to certify what we could not parse, rather than compare two blanks.
+        with self.assertRaises(slop.GitError):
+            slop._code_of("def f(:\n  x = 1", "a.py")
+
+    def test_moving_a_statement_into_a_block_is_not_a_comment_change(self):
+        # Same tokens, different program: bar() runs unconditionally, then only when x.
+        # A token stream that drops INDENT/DEDENT cannot see this.
+        before = "def f(x):\n    if x:\n        foo()\n    bar()\n"
+        after = "def f(x):\n    if x:\n        foo()\n        bar()\n"
+        self.assertNotEqual(slop._code_of(before, "a.py"), slop._code_of(after, "a.py"))
+
+    def test_rewording_a_comment_still_leaves_python_code_identical(self):
+        before = "# long-winded explanation\ndef f(x):\n    return x\n"
+        after = "# terse why\ndef f(x):\n    return x\n"
+        self.assertEqual(slop._code_of(before, "a.py"), slop._code_of(after, "a.py"))
+
+    def test_deleting_a_line_continuation_revives_dead_code(self):
+        # The backslash continues the // comment onto the next line, so evil() is dead.
+        # Removing it -- a change entirely inside a comment -- makes evil() live code.
+        before = "// disable this \\\nevil();\nint x = 1;\n"
+        after = "// disable this\nevil();\nint x = 1;\n"
         self.assertNotEqual(
-            slop._code_of("def f(:\n  x = 1", "a.py"),
-            slop._code_of("def f(:\n  x = 2", "a.py"),
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+
+class DirectiveTests(unittest.TestCase):
+    def test_a_directive_comment_is_not_decoration(self):
+        # These read as comments but the toolchain obeys them, and they survive into
+        # neither the AST nor the stripped code -- so compare them in their own right.
+        for line in (
+            "x = f()  # type: ignore",
+            "import os  # noqa: F401",
+            "# -*- coding: latin-1 -*-",
+            "int x;  // NOLINT",
+        ):
+            self.assertTrue(slop._directives_of(line), line)
+
+    def test_ordinary_comments_are_not_directives(self):
+        self.assertEqual(
+            slop._directives_of("# why this is not obvious\n// and here"), []
         )
 
 
