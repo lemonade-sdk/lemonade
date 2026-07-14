@@ -562,11 +562,10 @@ static void validate_anthropic_request(const json& request, bool count_tokens) {
                 if (block.contains("signature") && !block["signature"].is_string()) {
                     throw std::invalid_argument(block_path + ".signature must be a string");
                 }
-                if (block.value("signature", std::string()).size() > 0) {
-                    throw std::invalid_argument("signed thinking blocks from remote Anthropic models cannot be verified by local backends");
-                }
             } else if (type == "redacted_thinking") {
-                throw std::invalid_argument("redacted_thinking blocks cannot be consumed by local backends");
+                if (role != "assistant" || !block.contains("data") || !block["data"].is_string()) {
+                    throw std::invalid_argument(block_path + " is not a valid assistant redacted_thinking block");
+                }
             } else {
                 throw std::invalid_argument(block_path + ".type '" + type + "' is unsupported");
             }
@@ -966,11 +965,19 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                             continue;
                         }
 
+                        if (!block.value("signature", std::string()).empty()) {
+                            add_warning(warnings, "Ignored unverifiable signature on thinking block");
+                        }
                         if (block.contains("thinking") && block["thinking"].is_string()) {
                             thinking_parts.push_back(block["thinking"].get<std::string>());
                         } else {
                             add_warning(warnings, "Ignored thinking block missing string thinking field");
                         }
+                        continue;
+                    }
+
+                    if (type == "redacted_thinking") {
+                        add_warning(warnings, "Ignored redacted_thinking block");
                         continue;
                     }
 

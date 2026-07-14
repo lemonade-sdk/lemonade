@@ -11,9 +11,15 @@ namespace lemon {
 
 class AnthropicApiTestPeer {
 public:
-    static json convert_request(OllamaApi& api, const json& request) {
+    static json convert_request(OllamaApi& api,
+                                const json& request,
+                                std::vector<std::string>* returned_warnings = nullptr) {
         std::vector<std::string> warnings;
-        return api.convert_anthropic_to_openai_chat(request, warnings);
+        auto result = api.convert_anthropic_to_openai_chat(request, warnings);
+        if (returned_warnings) {
+            *returned_warnings = warnings;
+        }
+        return result;
     }
 
     static json convert_response(OllamaApi& api, const json& response) {
@@ -77,10 +83,15 @@ static void test_validation() {
         R"({"model":"test-model","max_tokens":8,"messages":[{"role":"system","content":"x"}]})");
     assert(invalid_role.status == 400);
 
-    auto signed_thinking = AnthropicApiTestPeer::handle_messages(
+    auto invalid_thinking_signature = AnthropicApiTestPeer::handle_messages(
         api,
-        R"({"model":"test-model","max_tokens":8,"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"x","signature":"remote"}]}]})");
-    assert(signed_thinking.status == 400);
+        R"({"model":"test-model","max_tokens":8,"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"x","signature":1}]}]})");
+    assert(invalid_thinking_signature.status == 400);
+
+    auto invalid_redacted_thinking = AnthropicApiTestPeer::handle_messages(
+        api,
+        R"({"model":"test-model","max_tokens":8,"messages":[{"role":"assistant","content":[{"type":"redacted_thinking","data":1}]}]})");
+    assert(invalid_redacted_thinking.status == 400);
 
     auto invalid_sampling = AnthropicApiTestPeer::handle_messages(
         api,
@@ -104,6 +115,8 @@ static void test_request_conversion() {
         {
             {"role", "assistant"},
             {"content", json::array({
+                {{"type", "thinking"}, {"thinking", "private"}, {"signature", "remote"}},
+                {{"type", "redacted_thinking"}, {"data", "opaque"}},
                 {{"type", "tool_use"}, {"id", "call_1"}, {"name", "inspect"}, {"input", json::object()}}
             })}
         },
@@ -134,8 +147,10 @@ static void test_request_conversion() {
         {"disable_parallel_tool_use", false}
     };
 
-    auto converted = AnthropicApiTestPeer::convert_request(api, request);
+    std::vector<std::string> warnings;
+    auto converted = AnthropicApiTestPeer::convert_request(api, request, &warnings);
     assert(converted["messages"][0]["content"] == "alphabeta");
+    assert(converted["messages"][1]["reasoning_content"] == "private");
     assert(converted["messages"][2]["content"].is_array());
     assert(converted["messages"][2]["content"][1]["type"] == "image_url");
     assert(converted["messages"][3]["content"] == "continue");
@@ -143,6 +158,10 @@ static void test_request_conversion() {
     assert(converted["tools"][0]["function"]["name"] == "inspect");
     assert(converted["tool_choice"] == "required");
     assert(converted["parallel_tool_calls"] == true);
+    assert(warnings == std::vector<std::string>({
+        "Ignored unverifiable signature on thinking block",
+        "Ignored redacted_thinking block"
+    }));
 
     auto adaptive_request = base_request();
     adaptive_request["thinking"] = {{"type", "adaptive"}};

@@ -13,7 +13,7 @@ The adapter supports text and image content, system prompts, sampling and stop c
 
 Requests with malformed required fields or unsupported content-block types return `invalid_request_error`. Lossy optional compatibility behavior is reported through `X-Lemonade-Warning` and server logs rather than non-standard fields in successful response bodies.
 
-Local models cannot create or verify Anthropic's cryptographic thinking signatures. Lemonade emits empty signatures for local thinking blocks, accepts empty signatures on subsequent turns, and rejects signed or `redacted_thinking` blocks from remote Anthropic responses instead of silently discarding them. `thinking.type: adaptive` enables the backend's local thinking mode, but model-specific adaptive behavior is not emulated.
+Local models cannot create or verify Anthropic's cryptographic thinking signatures. Lemonade emits empty signatures for local thinking blocks, strips signatures from replayed thinking blocks, and drops replayed `redacted_thinking` blocks with an `X-Lemonade-Warning`. `thinking.type: adaptive` enables the backend's local thinking mode, but model-specific adaptive behavior is not emulated.
 
 Token counting uses the same converted messages, tools, and model chat template as generation. A model must be loaded to access its tokenizer and template, so this endpoint may auto-load the requested model and is unavailable for backends that do not implement chat token counting.
 
