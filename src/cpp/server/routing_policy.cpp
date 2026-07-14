@@ -20,6 +20,16 @@ Score failed_score() {
     return score;
 }
 
+// Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
+// chat reply before matching it against candidate names.
+std::string trim_copy(const std::string& s) {
+    const char* ws = " \t\r\n";
+    const auto begin = s.find_first_not_of(ws);
+    if (begin == std::string::npos) return std::string();
+    const auto end = s.find_last_not_of(ws);
+    return s.substr(begin, end - begin + 1);
+}
+
 // Cosine similarity of two equal-length, non-zero vectors. Returns nullopt when
 // the vectors are empty, mismatched in length, or either has zero magnitude —
 // all of which the caller treats as a classifier failure (Score::ok=false).
@@ -148,7 +158,11 @@ public:
         }
 
         if (ctx.want_trace) {
-            ctx.trace.push_back(TraceEntry{"classifier:" + classifier_->id(), traced_score, result});
+            TraceEntry entry{"classifier:" + classifier_->id(), traced_score, result};
+            if (score.ok && !score.rationale.empty()) {
+                entry.rationale = score.rationale;
+            }
+            ctx.trace.push_back(std::move(entry));
         }
         return result;
     }
@@ -233,6 +247,75 @@ public:
 
 private:
     std::string model_;
+};
+
+// The `llm` router / L0(a) on-ramp. Runs a small chat model with an author
+// prompt, constrained to name one candidate, and reports that candidate as the
+// label (score 1.0) plus the model's reply as the rationale. A reply that names
+// no candidate yields an empty Score (ok=true, no labels): no identity rule
+// fires and the engine fails open to default_model. A backend failure yields
+// Score{ok=false} so the owning condition applies on_error.
+class LlmClassifier final : public Classifier {
+public:
+    LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
+                  OnError on_error, std::vector<std::string> labels,
+                  std::optional<std::string> default_label)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
+                     std::move(default_label)),
+          model_(std::move(model)), prompt_(std::move(prompt)) {
+        if (model_.empty()) {
+            throw std::invalid_argument("llm classifier requires model");
+        }
+        if (prompt_.empty()) {
+            throw std::invalid_argument("llm classifier requires prompt");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument("llm classifier requires at least one label (candidate)");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.chat) {
+            return failed_score();
+        }
+        std::string reply;
+        try {
+            reply = ctx.services.chat(model_, prompt_, ctx.request.input);
+        } catch (...) {
+            return failed_score();
+        }
+
+        Score score;
+        score.ok = true;
+        score.rationale = trim_copy(reply);
+        if (const std::string* chosen = match_label(score.rationale)) {
+            score.labels[*chosen] = 1.0;
+        }
+        // No label matched => empty labels => identity rules all miss =>
+        // fail-open to default_model (the invalid-choice fallback).
+        return score;
+    }
+
+private:
+    // Which candidate did the model name? Exact (trimmed) match first; else the
+    // longest declared label appearing as a substring, so a short candidate name
+    // that prefixes a longer one can never shadow it.
+    const std::string* match_label(const std::string& reply) const {
+        for (const auto& label : labels()) {
+            if (reply == label) return &label;
+        }
+        const std::string* best = nullptr;
+        for (const auto& label : labels()) {
+            if (reply.find(label) != std::string::npos &&
+                (best == nullptr || label.size() > best->size())) {
+                best = &label;
+            }
+        }
+        return best;
+    }
+
+    std::string model_;
+    std::string prompt_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -933,8 +1016,15 @@ ClassifierPtr make_classifier(const json& config) {
             std::move(labels), std::move(default_label));
     }
 
-    if (type == "llm" ||
-        type == "pii_detection" || type == "prompt_safety" ||
+    if (type == "llm") {
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<LlmClassifier>(
+            id, type, config.value("model", ""), config.value("prompt", ""),
+            on_error, std::move(labels), std::move(default_label));
+    }
+
+    if (type == "pii_detection" || type == "prompt_safety" ||
         type == "language_detection" || type == "domain_classification" ||
         type == "complexity" || type == "sentiment") {
         throw std::invalid_argument("classifier type not implemented yet: " + type);

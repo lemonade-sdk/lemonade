@@ -416,14 +416,8 @@ json parse_classifier_configs(const json& routing,
             item["model"] = std::move(resolved_model);
         }
 
-        // make_classifier performs the type-specific checks. Keep this local
-        // branch only for clearer errors on reserved-but-not-yet-implemented
-        // router sugar paths handled in #2405.
-        if (type == "llm") {
-            throw std::invalid_argument(
-                path + " uses classifier type 'llm', which is reserved for #2405 "
-                "routing.router desugaring and is not implemented by the M9 parser");
-        }
+        // make_classifier performs the type-specific checks (including the
+        // `llm` router classifier implemented in #2405).
         resolved.push_back(std::move(item));
     }
     return resolved;
@@ -536,6 +530,59 @@ const std::set<std::string>& routing_metadata_match_keys() {
     return keys;
 }
 
+// Desugar the `routing.router` (L0a) sugar into the explicit core form: one
+// `llm` classifier whose labels are the candidates, plus one identity rule per
+// candidate (label X -> route_to X), evaluated first-match-wins. The engine
+// stays single-path; `routing.router` is pure load-time sugar. Returns a new
+// `routing` object with `router` removed and `classifiers`/`rules` synthesized.
+json desugar_routing_router(const json& routing,
+                            const std::vector<std::string>& candidates) {
+    const json& router = routing.at("router");
+    reject_unknown_keys(router, routing_router_keys(), "routing.router");
+
+    const std::string type = required_string(router, "type", "routing.router");
+    if (type != "llm") {
+        throw std::invalid_argument("routing.router.type must be 'llm'");
+    }
+    // The sugar owns classifiers + rules; authoring both forms is ambiguous.
+    if (routing.contains("classifiers") || routing.contains("rules")) {
+        throw std::invalid_argument(
+            "routing.router cannot be combined with routing.classifiers or routing.rules");
+    }
+    required_string(router, "model", "routing.router");
+    required_string(router, "prompt", "routing.router");
+
+    json out = routing;
+    out.erase("router");
+
+    // The single llm classifier. `model` is resolved later by
+    // parse_classifier_configs; labels are the candidates it must choose among.
+    out["classifiers"] = json::array({json{
+        {"id", "__router"},
+        {"type", "llm"},
+        {"model", router.at("model")},
+        {"prompt", router.at("prompt")},
+        {"labels", candidates},
+    }});
+
+    // Identity rules. Index-based ids avoid any charset assumptions about
+    // candidate names (which may contain '.' or '-').
+    json rules = json::array();
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        rules.push_back(json{
+            {"id", "__route_" + std::to_string(i)},
+            {"match", json{
+                {"classifier", "__router"},
+                {"label", candidates[i]},
+                {"min_score", 1.0},
+            }},
+            {"route_to", candidates[i]},
+        });
+    }
+    out["rules"] = std::move(rules);
+    return out;
+}
+
 RoutePolicy parse_route_policy_collection(const json& collection_json,
                                           const RoutingPolicyParseOptions& options) {
     reject_unknown_keys(collection_json, routing_policy_root_keys(), "collection");
@@ -555,9 +602,19 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     policy.candidates = parse_candidates(routing, declared, options);
     policy.default_model = parse_default_model(routing, policy.candidates, declared, options);
 
-    const json classifier_configs = parse_classifier_configs(routing, declared, options);
+    // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
+    // before the normal parse path runs. Everything downstream sees the core
+    // form only.
+    json desugared;
+    const json* routing_eff = &routing;
+    if (routing.contains("router")) {
+        desugared = desugar_routing_router(routing, policy.candidates);
+        routing_eff = &desugared;
+    }
+
+    const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
     policy.classifiers = make_classifiers(classifier_configs);
-    policy.rules = parse_rules(routing, policy.candidates, policy.classifiers, declared, options);
+    policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
     return policy;
 }
 
