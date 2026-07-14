@@ -163,6 +163,23 @@ static void test_request_conversion() {
         "Ignored redacted_thinking block"
     }));
 
+    auto malformed_result_request = base_request();
+    malformed_result_request["messages"] = json::array({{
+        {"role", "user"},
+        {"content", json::array({{
+            {"type", "tool_result"},
+            {"tool_use_id", "call_1"},
+            {"content", json::array({
+                json::object(),
+                {{"type", "text"}, {"text", 1}},
+                {{"type", "image"}, {"source", {{"type", 1}}}},
+                {{"type", "image"}, {"source", {{"type", "url"}}}}
+            })}
+        }})}
+    }});
+    auto malformed_result = AnthropicApiTestPeer::convert_request(api, malformed_result_request);
+    assert(malformed_result["messages"][0]["content"] == "");
+
     auto adaptive_request = base_request();
     adaptive_request["thinking"] = {{"type", "adaptive"}};
     auto adaptive = AnthropicApiTestPeer::convert_request(api, adaptive_request);

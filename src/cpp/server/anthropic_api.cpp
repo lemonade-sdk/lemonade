@@ -696,21 +696,38 @@ static json convert_anthropic_tool_result_content(const json& content) {
         json parts = json::array();
         bool has_images = false;
         for (const auto& block : content) {
+            if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
+                continue;
+            }
             const std::string type = block["type"].get<std::string>();
             if (type == "text") {
+                if (!block.contains("text") || !block["text"].is_string()) {
+                    continue;
+                }
                 const std::string value = block["text"].get<std::string>();
                 text += value;
                 parts.push_back({{"type", "text"}, {"text", value}});
             } else if (type == "image") {
-                has_images = true;
+                if (!block.contains("source") || !block["source"].is_object()) {
+                    continue;
+                }
                 const auto& source = block["source"];
                 std::string url;
-                if (source["type"] == "base64") {
+                if (!source.contains("type") || !source["type"].is_string()) {
+                    continue;
+                }
+                if (source["type"] == "base64" &&
+                    source.contains("media_type") && source["media_type"].is_string() &&
+                    source.contains("data") && source["data"].is_string()) {
                     url = "data:" + source["media_type"].get<std::string>() +
                           ";base64," + source["data"].get<std::string>();
-                } else {
+                } else if (source["type"] == "url" &&
+                           source.contains("url") && source["url"].is_string()) {
                     url = source["url"].get<std::string>();
+                } else {
+                    continue;
                 }
+                has_images = true;
                 parts.push_back({
                     {"type", "image_url"},
                     {"image_url", {{"url", url}}}
