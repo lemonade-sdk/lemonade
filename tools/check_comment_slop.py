@@ -315,23 +315,50 @@ def comments_only(from_ref, to_ref):
     A change that claims to be a comment cleanup should prove it rather than ask a
     reviewer to take it on faith.
     """
-    files = run(["git", "diff", "--name-only", f"{from_ref}..{to_ref}"]).split()
     offenders = []
-    for path in files:
-        if not path.endswith(SOURCE_SUFFIXES):
+    for path, old_mode, new_mode, status in _changed_entries(from_ref, to_ref):
+        # The mode is part of the tree, so `chmod +x` changes the change even though
+        # every byte of content is identical. Only a modified, same-mode source file can
+        # possibly be a comment edit; everything else is reported rather than reasoned
+        # about (added, deleted, renamed, retyped, or any non-source path).
+        if old_mode != new_mode:
+            offenders.append(f"{path} (mode {old_mode} -> {new_mode})")
+            continue
+        if status[:1] != "M" or not path.endswith(SOURCE_SUFFIXES):
             offenders.append(path)
             continue
+
         before = run(["git", "show", f"{from_ref}:{path}"], allow_missing=True)
         after = run(["git", "show", f"{to_ref}:{path}"], allow_missing=True)
-        if before is None or after is None:  # added or deleted, so not a comment edit
+        if before is None or after is None:
             offenders.append(path)
-            continue
-        if _directives_of(before) != _directives_of(after):
+        elif _directives_of(before) != _directives_of(after):
             offenders.append(path)
-            continue
-        if _code_of(before, path) != _code_of(after, path):
+        elif _code_of(before, path) != _code_of(after, path):
             offenders.append(path)
     return offenders
+
+
+def _changed_entries(from_ref, to_ref):
+    """(path, old_mode, new_mode, status) per changed path.
+
+    --raw carries the file modes, which --name-only does not; -z keeps a path holding a
+    space or a quote in one piece.
+    """
+    fields = run(["git", "diff", "--raw", "-z", f"{from_ref}..{to_ref}"]).split("\0")
+    entries, i = [], 0
+    while i < len(fields):
+        meta = fields[i]
+        if not meta.startswith(":"):
+            i += 1
+            continue
+        old_mode, new_mode, _, _, status = meta[1:].split()
+        n = 2 if status[:1] in ("R", "C") else 1  # rename and copy carry src and dst
+        paths = fields[i + 1 : i + 1 + n]
+        if paths:
+            entries.append((paths[-1], old_mode, new_mode, status))
+        i += 1 + n
+    return entries
 
 
 # A comment the toolchain reads is not decoration: dropping `# type: ignore` changes what
