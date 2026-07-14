@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, PullVariantsResult } from '../api';
 import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
@@ -36,6 +36,12 @@ function fmtSize(gb: number): string {
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   if (gb >= 0.01) return `${(gb * 1000).toFixed(0)} MB`;
   return '< 1 MB';
+}
+
+function fmtDownloads(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 function recipeDisplayLabel(recipe: string): string {
@@ -532,7 +538,311 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
   );
 };
 
-/* ── Presets tab ─────────────────────────────────────────────── */
+/* ── HF README tab ────────────────────────────────────────────── */
+
+const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isActive }) => {
+  const readmeUrl = `https://huggingface.co/${hfId}/raw/main/README.md`;
+  const [readme, setReadme] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const cached = readmeCache.get(readmeUrl);
+    if (cached !== undefined) { setReadme(cached); return; }
+    let cancelled = false;
+    setLoading(true);
+    fetch(readmeUrl)
+      .then(r => r.ok ? r.text() : null)
+      .then(text => {
+        if (cancelled) return;
+        const content = text || '';
+        readmeCache.set(readmeUrl, content);
+        setReadme(content);
+      })
+      .catch(() => {
+        if (!cancelled) { readmeCache.set(readmeUrl, ''); setReadme(''); }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [readmeUrl, isActive]);
+
+  if (loading) {
+    return (
+      <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
+        <span>Loading README…</span>
+      </div>
+    );
+  }
+  if (!readme) {
+    return (
+      <div className="detail-tab-content detail-readme detail-readme--empty">
+        <Icon name="book-open" size={32} aria-hidden="true" />
+        <p>README unavailable for this model.</p>
+      </div>
+    );
+  }
+  const html = DOMPurify.sanitize(readmeMd.render(stripFrontmatter(readme)), README_PURIFY_CONFIG);
+  return (
+    <div className="detail-tab-content detail-readme" dangerouslySetInnerHTML={{ __html: html }} />
+  );
+};
+
+/* ── HF overview tab ──────────────────────────────────────────── */
+
+const HfOverviewTab: React.FC<{
+  hfModel: HFModelResult;
+  hfVariants?: PullVariantsResult;
+  onHfPull?: (hfId: string, variantName: string, recipe: string) => void;
+  isPulling: boolean;
+  isActive: boolean;
+}> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+  if (!isActive) return null;
+  return (
+    <div className="detail-tab-content hf-detail__overview">
+      {hfVariants ? (
+        <>
+          {hfVariants.suggested_labels.length > 0 && (
+            <div className="hf-detail__overview-section">
+              <span className="hf-detail__overview-label">Capabilities</span>
+              <div className="hf-detail__overview-value">{hfVariants.suggested_labels.join(', ')}</div>
+            </div>
+          )}
+          {hfVariants.variants.length > 0 ? (
+            <div className="hf-detail__overview-section">
+              <span className="hf-detail__overview-label">Variants — pick one to download</span>
+              <div className="hf-detail__gguf-list">
+                {hfVariants.variants.map(v => (
+                  <button
+                    key={v.name}
+                    className="hf-detail__gguf-btn"
+                    aria-label={`Download ${v.name} from ${hfModel.id}`}
+                    disabled={isPulling}
+                    onClick={() => onHfPull?.(hfModel.id, v.name, hfVariants.recipe)}
+                  >
+                    <span className="hf-detail__gguf-name">
+                      {v.name}{v.sharded ? ' (sharded)' : ''}
+                    </span>
+                    <span className="hf-detail__gguf-size">{fmtBytes(v.size_bytes)}</span>
+                    <span className="hf-detail__gguf-action">Download</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="hf-detail__overview-section">
+              <span className="hf-detail__overview-value hf-detail__overview-value--muted">No downloadable variants found for this repository.</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="hf-detail__overview-section">
+          <span className="hf-detail__overview-value hf-detail__overview-value--muted">Loading variant information…</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ── HF detail view ───────────────────────────────────────────── */
+
+type HfDetailTab = 'overview' | 'readme';
+
+const HF_DETAIL_TABS: Array<{ id: HfDetailTab; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'readme', label: 'README' },
+];
+
+const HfDetailView: React.FC<{
+  hfModel: HFModelResult;
+  hfVariants?: PullVariantsResult;
+  onFetchHfVariants?: (hfId: string) => void;
+  onHfPull?: (hfId: string, variantName: string, recipe: string) => void;
+  pullingHf?: Record<string, number>;
+  onCancelHfPull?: (hfId: string) => void;
+  onBack?: () => void;
+  onClose?: () => void;
+}> = ({ hfModel, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
+  const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const panelHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  const repoName = hfModel.id;
+  const pipelineTag = hfModel.pipeline_tag || '';
+  const displayTags = (hfModel.tags || [])
+    .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
+    .slice(0, 8);
+  const isPulling = (pullingHf?.[hfModel.id]) !== undefined;
+  const pullPct = pullingHf?.[hfModel.id] ?? 0;
+
+  useEffect(() => {
+    setActiveTab('overview');
+    panelHeadingRef.current?.focus();
+  }, [repoName]);
+
+  useEffect(() => {
+    if (!hfVariants && onFetchHfVariants) {
+      onFetchHfVariants(hfModel.id);
+    }
+  }, [hfModel.id, hfVariants, onFetchHfVariants]);
+
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const count = HF_DETAIL_TABS.length;
+    let next = -1;
+    if (e.key === 'ArrowRight') { e.preventDefault(); next = (index + 1) % count; }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); next = (index - 1 + count) % count; }
+    else if (e.key === 'Home') { e.preventDefault(); next = 0; }
+    else if (e.key === 'End') { e.preventDefault(); next = count - 1; }
+    if (next >= 0) {
+      setActiveTab(HF_DETAIL_TABS[next].id);
+      tabRefs.current[next]?.focus();
+    }
+  };
+
+  return (
+    <div className="model-detail-panel model-detail-panel--hf" role="region" aria-label={`HuggingFace model: ${repoName}`}>
+      {onClose && (
+        <button
+          type="button"
+          className="model-detail-panel__close-btn"
+          onClick={onClose}
+          aria-label="Close detail panel"
+        >
+          ×
+        </button>
+      )}
+      {onBack && (
+        <button
+          type="button"
+          className="model-detail-panel__back-btn"
+          onClick={onBack}
+          aria-label="Back to models list"
+        >
+          ← Back to models
+        </button>
+      )}
+
+      <div className="model-detail-panel__head model-detail-panel__head--hf">
+        <div className="hf-detail__source-label">
+          <Icon name="download" size={11} aria-hidden="true" /> HuggingFace
+        </div>
+        <h2
+          className="model-detail-panel__name"
+          ref={panelHeadingRef}
+          tabIndex={-1}
+          id="detail-panel-heading"
+        >
+          {repoName}
+        </h2>
+
+        <div className="model-detail-panel__meta">
+          {pipelineTag && (
+            <span className="model-detail-panel__badge model-detail-panel__badge--pipeline">{pipelineTag}</span>
+          )}
+          {hfVariants?.recipe && (
+            <span className="model-detail-panel__badge model-detail-panel__badge--recipe">
+              {recipeDisplayLabel(hfVariants.recipe)}
+            </span>
+          )}
+          <span className="model-detail-panel__badge">{fmtDownloads(hfModel.downloads)} downloads</span>
+          <span className="model-detail-panel__badge">{fmtDownloads(hfModel.likes)} likes</span>
+          {hfModel.createdAt && (
+            <span className="model-detail-panel__badge">{new Date(hfModel.createdAt).toLocaleDateString()}</span>
+          )}
+        </div>
+
+        {displayTags.length > 0 && (
+          <div className="hf-detail__tag-row">
+            {displayTags.map(t => (
+              <span key={t} className="row__label row__label--hf">{t}</span>
+            ))}
+          </div>
+        )}
+
+        <div className="model-detail-panel__actions" aria-label={`Actions for ${repoName}`}>
+          {isPulling ? (
+            <>
+              <div className="row__progress">
+                <div className="row__progress-bar">
+                  <div className="row__progress-fill" style={{ width: `${pullPct}%` }} />
+                </div>
+                <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
+              </div>
+              {onCancelHfPull && (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => onCancelHfPull(hfModel.id)}
+                  aria-label={`Cancel download of ${repoName}`}
+                >
+                  Cancel
+                </button>
+              )}
+            </>
+          ) : null}
+          <a
+            className="model-detail-panel__hf-link"
+            href={`https://huggingface.co/${repoName}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${repoName} on Hugging Face (opens in new tab)`}
+          >
+            <Icon name="globe" size={12} /> Hugging Face
+          </a>
+        </div>
+      </div>
+
+      <div
+        className="detail-tabs__tablist"
+        role="tablist"
+        aria-label="Model details sections"
+        aria-labelledby="detail-panel-heading"
+      >
+        {HF_DETAIL_TABS.map((tab, i) => (
+          <button
+            key={tab.id}
+            ref={el => { tabRefs.current[i] = el; }}
+            role="tab"
+            id={`detail-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`detail-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            className={`detail-tabs__tab${activeTab === tab.id ? ' detail-tabs__tab--active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+            onKeyDown={e => handleTabKeyDown(e, i)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {HF_DETAIL_TABS.map(tab => (
+        <div
+          key={tab.id}
+          id={`detail-panel-${tab.id}`}
+          role="tabpanel"
+          aria-labelledby={`detail-tab-${tab.id}`}
+          className={`detail-tabs__panel${activeTab === tab.id ? ' detail-tabs__panel--active' : ''}`}
+          hidden={activeTab !== tab.id}
+        >
+          {tab.id === 'overview' && (
+            <HfOverviewTab
+              hfModel={hfModel}
+              hfVariants={hfVariants}
+              onHfPull={onHfPull}
+              isPulling={isPulling}
+              isActive={activeTab === 'overview'}
+            />
+          )}
+          {tab.id === 'readme' && (
+            <HfReadmeTab hfId={hfModel.id} isActive={activeTab === 'readme'} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+
 
 const ModelPresetsTab: React.FC<{
   model: ModelInfo;
@@ -1743,9 +2053,23 @@ export interface ModelDetailPanelProps {
   onEditCustomCollection?: (model: ModelInfo) => void;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
+  /** Called when the close button is clicked to dismiss the detail panel. */
+  onClose?: () => void;
   /** True when the registry has no models at all (empty state guidance differs
       from the normal "nothing selected yet" copy). */
   noModelsAvailable?: boolean;
+  /** HuggingFace model to show in the detail panel (alternative to a local model). */
+  hfModel?: HFModelResult | null;
+  /** Pre-fetched variant data for the selected HF model. */
+  hfVariants?: PullVariantsResult;
+  /** Trigger fetching variants for an HF model id. */
+  onFetchHfVariants?: (hfId: string) => void;
+  /** Initiate a pull of a specific HF variant. */
+  onHfPull?: (hfId: string, variantName: string, recipe: string) => void;
+  /** Current pull progress per HF model id (0-100). */
+  pullingHf?: Record<string, number>;
+  /** Cancel an in-progress HF download. */
+  onCancelHfPull?: (hfId: string) => void;
 }
 
 type DetailTab = 'settings' | 'readme' | 'presets' | 'tuning' | 'files';
@@ -1780,7 +2104,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onToggleFavorite,
   onEditCustomCollection,
   onBack,
+  onClose,
   noModelsAvailable = false,
+  hfModel,
+  hfVariants,
+  onFetchHfVariants,
+  onHfPull,
+  pullingHf,
+  onCancelHfPull,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('readme');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -1929,6 +2260,21 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     }
   };
 
+  if (!model && hfModel) {
+    return (
+      <HfDetailView
+        hfModel={hfModel}
+        hfVariants={hfVariants}
+        onFetchHfVariants={onFetchHfVariants}
+        onHfPull={onHfPull}
+        pullingHf={pullingHf}
+        onCancelHfPull={onCancelHfPull}
+        onBack={onBack}
+        onClose={onClose}
+      />
+    );
+  }
+
   if (!model) {
     return (
       <div className="model-detail-panel model-detail-panel--empty" aria-label="Model detail">
@@ -1983,6 +2329,18 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   return (
     <div className="model-detail-panel" role="region" aria-label={`Model details: ${name}`}>
+
+      {/* Close button */}
+      {onClose && (
+        <button
+          type="button"
+          className="model-detail-panel__close-btn"
+          onClick={onClose}
+          aria-label="Close detail panel"
+        >
+          ×
+        </button>
+      )}
 
       {/* Back button for narrow viewports */}
       {onBack && (

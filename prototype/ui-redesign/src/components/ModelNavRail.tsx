@@ -91,9 +91,6 @@ export interface ModelNavRailProps {
   /** Real disk usage of the model-storage drive, when available (else null →
       derived fallback). Sourced from api.getStorageInfo(). */
   storageInfo?: StorageInfo | null;
-  /** Count of HuggingFace search matches. When > 0, a "Hugging Face" nav entry
-      appears below the primary list; clicking it filters to HF results. */
-  hfCount?: number;
   /** id used by the responsive nav toggle's aria-controls. */
   id?: string;
 }
@@ -114,7 +111,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   tagFilter,
   onTagFilterChange,
   storageInfo,
-  hfCount = 0,
   id = 'model-nav-rail',
 }) => {
   const [categoriesOpen, setCategoriesOpen] = useState(true);
@@ -122,7 +118,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
-    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, 'my-models': 0, favorites: 0, huggingface: 0 };
+    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, 'my-models': 0, favorites: 0 };
     for (const m of allModels) {
       if (!listModelName(m)) continue;
       counts.all += 1;
@@ -215,24 +211,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             </li>
           );
         })}
-        {/* HuggingFace search results — only present while a search is active.
-            Positioned BELOW My Models and Favorites (#2424). Count reflects the
-            current HF search matches; clicking filters the middle list to them. */}
-        {hfCount > 0 && (
-          <li>
-            <button
-              type="button"
-              className={`model-nav-rail__nav-item${primaryFilter === 'huggingface' ? ' model-nav-rail__nav-item--active' : ''}`}
-              aria-current={primaryFilter === 'huggingface' ? 'true' : undefined}
-              onClick={() => onPrimaryFilterChange('huggingface')}
-            >
-              <Icon name="hugging-face" size={15} aria-hidden="true" className="model-nav-rail__nav-icon" />
-              <span className="model-nav-rail__nav-label">Hugging Face</span>
-              <span className="model-nav-rail__nav-count" aria-hidden="true">{hfCount}</span>
-              <span className="sr-only">{`, ${hfCount} HuggingFace search results`}</span>
-            </button>
-          </li>
-        )}
+
       </ul>
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
