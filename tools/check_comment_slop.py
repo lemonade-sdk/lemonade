@@ -410,7 +410,7 @@ DIRECTIVE_RE = re.compile(
     r"#\s*(type:\s*\S|noqa|nosec|bandit:|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
     r"|fmt:\s*(on|off|skip)|pragma:)"
     r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
-    r"|/\*\s*(NOLINT|clang-format\s+(on|off))",
+    r"|/\*\s*(NOLINT|clang-format\s+(on|off)|IWYU)",
     re.IGNORECASE,
 )
 
@@ -531,7 +531,15 @@ def _code_of_cish(text):
                 in_line = False
                 out.append(ch)
         elif in_block:
-            if ch == "*" and nxt == "/":
+            # A `*/` split by a backslash-newline (`*\<LF>/`) is still a `*/` after
+            # phase-2 splicing, so it closes the comment -- but the `*` and `/` are never
+            # adjacent for the check above, since the splice consumes the `\<LF>` between
+            # them. Match the spliced form so the comment closes where the compiler ends
+            # it, rather than swallowing the rest of the file as prose.
+            if ch == "*" and text[i + 1 : i + 4] == "\\\n/":
+                in_block = False
+                i += 3
+            elif ch == "*" and nxt == "/":
                 in_block = False
                 i += 1
             elif ch == "\n":

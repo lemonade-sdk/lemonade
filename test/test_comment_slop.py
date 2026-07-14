@@ -390,6 +390,14 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of('h = """OK\n\n"""\n', "a.py"),
         )
 
+    def test_a_star_backslash_newline_slash_closes_a_block_comment(self):
+        # `*\<newline>/` splices to `*/`, closing the comment in the compiler; the `*` and
+        # `/` are never adjacent, so the scanner must match the spliced form or it
+        # swallows the code after it as prose.
+        before = "int x = 0; /* old *\\\n/\nevil();\nint y = 1;\n"
+        after = "int x = 0; /* new *\\\n/\ngood();\nint y = 1;\n"
+        self.assertNotEqual(slop._code_of(before, "a.c"), slop._code_of(after, "a.c"))
+
     def test_a_line_continuation_in_a_crlf_file_revives_dead_code(self):
         # `\`+CRLF continues a // comment just as `\`+LF does, once line endings are
         # normalised. Deleting the backslash promotes the line below from dead to live.
@@ -532,6 +540,7 @@ class DirectiveTests(unittest.TestCase):
             ("import x  # isort: skip", "import x"),
             ("x = 1  # fmt: skip", "x = 1"),
             ("os.system(c)  # nosec", "os.system(c)"),
+            ("/* IWYU pragma: keep */", "/* IWYU pragma: export */"),
         ):
             self.assertNotEqual(slop._directives_of(a), slop._directives_of(b), a)
 
