@@ -422,6 +422,29 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of("// b\r\nint x = 1;\r\n", "a.c"),
         )
 
+    def test_a_block_comment_closed_by_repeated_splices_does_not_swallow_the_file(self):
+        # Phase 2 splices EVERY backslash-newline, so `*\<LF>\<LF>/` is a `*/` and the code
+        # after it is LIVE (gcc -E agrees). Matching a single splice missed this and the
+        # comment ate the rest of the file, comparing the two revisions equal.
+        for pad in ("\\\n", "\\\n\\\n", "\\\n\\\n\\\n"):
+            self.assertNotEqual(
+                slop._code_of(f"/* *{pad}/ int x = old();\n", "a.c"),
+                slop._code_of(f"/* *{pad}/ int x = new();\n", "a.c"),
+                pad,
+            )
+
+    def test_a_comment_opener_split_by_a_splice_still_opens_a_comment(self):
+        # `/\<LF>/` splices to `//`, so the text after it is a comment, not code.
+        self.assertEqual(
+            slop._code_of("/\\\n/ old\nint x = 1;\n", "a.c"),
+            slop._code_of("/\\\n/ new\nint x = 1;\n", "a.c"),
+        )
+
+    def test_an_unterminated_block_comment_fails_closed(self):
+        # Not valid C. Swallowing it certified two differing revisions as equal.
+        with self.assertRaises(slop.GitError):
+            slop._code_of("/* never closed\nint evil();\n", "a.c")
+
     def test_an_unparseable_python_file_fails_closed(self):
         # Refuse to certify what we could not parse, rather than compare two blanks.
         with self.assertRaises(slop.GitError):
