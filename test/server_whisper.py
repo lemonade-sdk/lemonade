@@ -552,10 +552,7 @@ class WhisperTests(ServerTestBase):
                 if event_type == "error":
                     self.fail(f"Realtime transcription returned error: {event}")
 
-                if (
-                    event_type
-                    == "conversation.item.input_audio_transcription.delta"
-                ):
+                if event_type == "conversation.item.input_audio_transcription.delta":
                     delta = self._event_text(event, "delta", "transcript", "text")
                     if delta:
                         transcript_parts.append(delta)

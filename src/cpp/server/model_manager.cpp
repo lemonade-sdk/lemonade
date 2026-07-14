@@ -2334,7 +2334,9 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     // provider and we don't want to block /models on it.
     std::vector<ModelInfo> models;
     try {
-        models = backends::CloudServer::discover_models(provider, api_key, base_url);
+        models = backends::CloudServer::discover_models(
+            provider, api_key, base_url,
+            cloud_registry_->allow_insecure_http_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;

@@ -703,7 +703,8 @@ std::map<std::string, nlohmann::json> VLLMServer::get_additional_telemetry() {
 
     std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/metrics";
     try {
-        auto response = utils::HttpClient::get(url, {}, 1);
+        auto response = utils::HttpClient::get(url, {}, 1,
+                                               utils::HttpSecurityPolicy::TrustedLoopback);
         if (response.status_code == 200) {
             return parse_vllm_metrics_text(response.body);
         }
