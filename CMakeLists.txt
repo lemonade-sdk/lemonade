@@ -1824,6 +1824,27 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # C++ Unit Tests
 # ============================================================
 
+# ProcessManager zombie detection and non-mutating reap contract.
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(_PROCESS_MANAGER_TEST_SRC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_manager.cpp"
+    )
+    if(EXISTS "${_PROCESS_MANAGER_TEST_SRC}")
+        add_executable(test_process_manager
+            test/cpp/test_process_manager.cpp
+            src/cpp/server/utils/process_manager.cpp
+            src/cpp/server/utils/platform/process_unix.cpp
+        )
+        target_include_directories(test_process_manager PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        )
+        find_package(Threads REQUIRED)
+        target_link_libraries(test_process_manager PRIVATE Threads::Threads)
+        add_test(NAME ProcessManagerTest COMMAND test_process_manager)
+    endif()
+endif()
+
 # FastFlowLM argument validation. Keep this test independent from the server
 set(_FLM_ARG_RESOLVER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_arg_resolver.cpp"

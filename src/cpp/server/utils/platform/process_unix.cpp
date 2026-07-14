@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -81,6 +82,20 @@ static void preserve_capabilities_for_exec() {
     cap_free(caps);
 }
 #endif
+
+static bool is_zombie_by_proc(pid_t pid) {
+    std::ifstream stat_file("/proc/" + std::to_string(pid) + "/stat");
+    std::string stat_line;
+    if (!std::getline(stat_file, stat_line)) {
+        return false;
+    }
+
+    // Process state is the first field after the final ')' of comm.
+    const auto close_paren = stat_line.rfind(')');
+    return close_paren != std::string::npos &&
+           close_paren + 2 < stat_line.size() &&
+           stat_line[close_paren + 2] == 'Z';
+}
 
 class UnixProcessPlatform : public ProcessPlatform {
 public:
@@ -370,6 +385,10 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
         return false;
     }
 #endif
+
+    if (is_zombie_by_proc(handle.pid)) {
+        return false;
+    }
 
     errno = 0;
     return ::kill(handle.pid, 0) == 0 || errno == EPERM;
