@@ -166,6 +166,7 @@ class EndpointTests(ServerTestBase):
             "models",
             "responses",
             "pull",
+            "registry/search",
             "pull/variants",
             "delete",
             "load",
@@ -338,6 +339,45 @@ class EndpointTests(ServerTestBase):
             "Catalog should have more models than downloaded",
         )
         print(f"[OK] /models: downloaded={downloaded_count}, catalog={all_count}")
+
+    def test_004a_registry_search_validation(self):
+        # Registry search validates locally without contacting a provider.
+        missing_query = requests.get(
+            f"{self.base_url}/registry/search", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(missing_query.status_code, 400)
+
+        bad_source = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "unknown"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_source.status_code, 400)
+        self.assertIn("Unsupported model source", bad_source.text)
+
+        bad_limit = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "limit": 0},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_limit.status_code, 400)
+        self.assertIn("limit", bad_limit.text)
+
+        malformed_limit = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "limit": "12x"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(malformed_limit.status_code, 400)
+        self.assertIn("limit", malformed_limit.text)
+
+        bad_format = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "format": "safetensors"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_format.status_code, 400)
+        self.assertIn("format", bad_format.text)
 
     def test_005_models_retrieve(self):
         """Test retrieving a specific model by ID with extended fields."""
