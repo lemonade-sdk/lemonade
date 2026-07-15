@@ -102,6 +102,7 @@ private:
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
@@ -122,6 +123,7 @@ private:
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
+    void handle_classify(const httplib::Request& req, httplib::Response& res);
     void handle_slots(const httplib::Request& req, httplib::Response& res);
     void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_tokenize(const httplib::Request& req, httplib::Response& res);
@@ -248,8 +250,12 @@ private:
                                   httplib::Response& res,
                                   nlohmann::json& out);
 
-    // Helper function for auto-loading models (eliminates code duplication and race conditions)
-    void auto_load_model_if_needed(const std::string& model_name);
+    // Auto-load a model on first use. request_options are applied only on the first load;
+    // if the model is already loaded they are ignored so explicit /v1/load settings win.
+    // Callers must pass only load-level options from extract_auto_load_options() — never
+    // the raw request body — to keep request-scoped fields out of persistent recipe options.
+    void auto_load_model_if_needed(const std::string& model_name,
+                                   const json& request_options = json::object());
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
@@ -330,6 +336,10 @@ private:
 
     // Set to true after check_for_model_updates() completes at startup.
     std::atomic<bool> update_check_done_{false};
+
+    // Extract load-level options from an inference request body. Currently only ctx_size
+    // is forwarded; request-scoped fields are excluded so they cannot leak into recipe options.
+    static json extract_auto_load_options(const json& request);
 };
 
 } // namespace lemon

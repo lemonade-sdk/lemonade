@@ -9,6 +9,7 @@ const RECIPE_PRIORITY = [
   'kokoro',
   'llamacpp',
   'moonshine',
+  'onnxruntime',
   'openmoss',
   'ryzenai-llm',
   'sd-cpp',
@@ -29,6 +30,7 @@ const RECIPE_DISPLAY_NAMES = {
   vte: 'VTE (RDNA3 native, experimental)',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
+  onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
   openmoss: 'OpenMOSS TTS'
 };
@@ -191,10 +193,18 @@ function buildModelTableRows(name, details) {
   const checkpoint = parseCheckpoint(name, details);
 
   if (checkpoint.repo) {
+    const registrySource = details.registry_source
+      || (details.source === 'modelscope' || details.source === 'huggingface'
+        ? details.source
+        : 'huggingface');
+    const checkpointUrl = registrySource === 'modelscope'
+      ? `https://modelscope.cn/models/${escapeHtml(checkpoint.repo)}/summary`
+      : `https://huggingface.co/${escapeHtml(checkpoint.repo)}`;
     rows.push({
       key: 'Checkpoint',
-      value: `<a href="https://huggingface.co/${escapeHtml(checkpoint.repo)}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
+      value: `<a href="${checkpointUrl}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
     });
+    rows.push({ key: 'Model Source', value: registrySource === 'modelscope' ? 'ModelScope' : 'Hugging Face' });
     if (checkpoint.variant) {
       rows.push({ key: 'GGUF Variant', value: escapeHtml(checkpoint.variant) });
     }

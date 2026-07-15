@@ -188,6 +188,7 @@ struct BenchCliOptions {
     std::string response_log;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
+    std::vector<std::string> flm_args;
     std::vector<std::string> vllm_args;
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;

@@ -6,6 +6,7 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "auto_check_model_updates": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
@@ -45,6 +46,11 @@
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "onnxruntime": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",

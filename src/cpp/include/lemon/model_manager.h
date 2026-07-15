@@ -81,9 +81,10 @@ struct ModelInfo {
     std::vector<std::string> labels;
     std::vector<std::string> components;
     bool suggested = false;
-    std::string source;  // "local_upload" for locally uploaded models
+    std::string source;  // Local origin: local_upload/local_path/extra_models_dir
+    std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
     bool downloaded = false;     // Whether model is downloaded and available
-    bool update_available = false; // Whether a newer version exists on HuggingFace
+    bool update_available = false; // Whether a newer remote-registry version exists
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -243,28 +244,34 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Check all downloaded models for updates on HuggingFace.
+    // Check all downloaded models for updates in their configured remote registry.
     // Fetches the latest commit SHA for each model's repo and compares it
     // with the cached commit (refs/main). Sets update_available on models
-    // whose upstream repo has changed.
+    // whose upstream repo has changed and clears stale flags for repos that
+    // were successfully verified as current. Returns public model names with
+    // updates available.
     // Safe to call from a background thread — locks are internal.
-    void check_for_model_updates();
+    std::vector<std::string> check_for_model_updates();
 
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
     bool backend_self_manages_downloads(const std::string& recipe) const;
 
-    // Shared Hugging Face completeness check: true if all required checkpoints
-    // are present and complete (per-backend file validation runs via ops). The
-    // default BackendOps::is_downloaded delegates here for HF-backed backends.
+    // Shared registry-backed completeness check: true if all required checkpoints
+    // are present and complete (per-backend file validation runs via ops).
     bool checkpoints_complete(const ModelInfo& info) const;
 
-    // Shared Hugging Face download engine. The default BackendOps::download_model
+    // Shared remote-registry download engine. The default BackendOps::download_model
     // delegates here; flm/cloud override with their own download.
+    void download_from_registry_engine(const ModelInfo& info,
+                                       DownloadProgressCallback progress_callback = nullptr);
+
+    // Source-compatible alias for integrations built against the original API.
+    // The model's registry_source still controls which provider is contacted.
     void download_from_huggingface_engine(const ModelInfo& info,
                                           DownloadProgressCallback progress_callback = nullptr);
 
-    // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
+    // Get shared model-hub cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
     // Set extra models directory for GGUF discovery.
@@ -304,13 +311,12 @@ private:
     std::string get_user_models_file();
     std::string get_recipe_options_file();
 
-    // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
-    // the full collection definition lives on Hugging Face as an exported
-    // collection JSON (conventionally <CollectionName>.json; discovered by
-    // content, not filename). fetch_collection_manifest downloads/refreshes it
-    // into the HF cache (honoring do_not_upgrade and offline mode) and returns
-    // the parsed manifest object.
-    nlohmann::json fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade);
+    // Collection manifests (recipe="collection.omni" with a registry checkpoint):
+    // the full collection definition lives in the configured remote registry as
+    // an exported collection JSON (discovered by content, not filename).
+    nlohmann::json fetch_collection_manifest(const std::string& repo_id,
+                                               const std::string& registry_source,
+                                               bool do_not_upgrade);
 
     // Resolve a collection's component list against the registry: known names
     // keep the local definition (local-wins, drift logged); unknown names are
@@ -318,12 +324,14 @@ private:
     // `component_defs` (the `models` array of a collection file/manifest).
     // Returns the components as canonical cache names, preserving order.
     std::vector<std::string> register_components(const nlohmann::json& component_names,
-                                                 const nlohmann::json& component_defs);
+                                                 const nlohmann::json& component_defs,
+                                                 const std::string& registry_source = "huggingface");
 
-    // Resolve an HF-backed collection's components at pull time: fetch the
+    // Resolve a registry-backed collection's components at pull time: fetch the
     // manifest, then register_components() against its components/models arrays.
     std::vector<std::string> resolve_collection_components_from_manifest(
-        const std::string& repo_id, bool do_not_upgrade);
+        const std::string& repo_id,
+        const std::string& registry_source, bool do_not_upgrade);
 
     // Populate a collection's components from a manifest already cached on disk
     // (offline, no registration). Used by build_cache so a pulled collection keeps
@@ -345,8 +353,8 @@ private:
     // Download from a JSON manifest
     void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
-    // Download from Hugging Face
-    void download_from_huggingface(const ModelInfo& info,
+    // Download from the model's configured remote registry
+    void download_from_registry(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
 
     // Discover GGUF models from extra_models_dir
@@ -367,6 +375,10 @@ private:
     // (keyed by checkpoint repo). See download_registered_model.
     std::mutex download_locks_mutex_;
     std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
+
+    // Prevent startup and manual update checks from running concurrently.
+    std::mutex update_check_mutex_;
+
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
