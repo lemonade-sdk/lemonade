@@ -124,8 +124,28 @@ static void test_register_preserves_routing(ModelManager& manager) {
 static void write_fake_gguf(const fs::path& path, uint32_t context_length) {
     std::ofstream out(path, std::ios::binary);
     out.exceptions(std::ios::failbit | std::ios::badbit);
-    auto w32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
-    auto w64 = [&](uint64_t v) { out.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
+    auto w32 = [&](uint32_t v) {
+        uint8_t buf[4] = {
+            static_cast<uint8_t>(v),
+            static_cast<uint8_t>(v >> 8),
+            static_cast<uint8_t>(v >> 16),
+            static_cast<uint8_t>(v >> 24),
+        };
+        out.write(reinterpret_cast<const char*>(buf), 4);
+    };
+    auto w64 = [&](uint64_t v) {
+        uint8_t buf[8] = {
+            static_cast<uint8_t>(v),
+            static_cast<uint8_t>(v >> 8),
+            static_cast<uint8_t>(v >> 16),
+            static_cast<uint8_t>(v >> 24),
+            static_cast<uint8_t>(v >> 32),
+            static_cast<uint8_t>(v >> 40),
+            static_cast<uint8_t>(v >> 48),
+            static_cast<uint8_t>(v >> 56),
+        };
+        out.write(reinterpret_cast<const char*>(buf), 8);
+    };
     auto wstr = [&](const std::string& s) {
         w64(s.size());
         out.write(s.data(), static_cast<std::streamsize>(s.size()));
