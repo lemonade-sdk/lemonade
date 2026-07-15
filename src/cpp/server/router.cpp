@@ -189,7 +189,7 @@ static bool is_unmetered_recipe(const std::string& recipe) {
     return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
 }
 
-int Router::count_servers_by_type(ModelType type) const {
+int Router::count_servers_by_type(ModelType type, bool classifier_slot) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
         // Unmetered backends (cloud) consume no local memory and stay loaded for
@@ -197,14 +197,15 @@ int Router::count_servers_by_type(ModelType type) const {
         if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
-        if (server->is_backend_alive() && server->get_model_type() == type) {
+        if (server->is_backend_alive() && server->get_model_type() == type &&
+            server->is_classifier_slot() == classifier_slot) {
             count++;
         }
     }
     return count;
 }
 
-WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
+WrappedServer* Router::find_lru_server_by_type(ModelType type, bool classifier_slot) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
@@ -214,7 +215,8 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
         if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
-        if (server->is_backend_alive() && server->get_model_type() == type) {
+        if (server->is_backend_alive() && server->get_model_type() == type &&
+            server->is_classifier_slot() == classifier_slot) {
             if (server->is_pinned()) {
                 continue;
             }
@@ -374,7 +376,8 @@ void Router::load_model(const std::string& model_name,
                        RecipeOptions options,
                        bool do_not_upgrade,
                        bool allow_reload_on_option_change,
-                       std::optional<bool> pinned) {
+                       std::optional<bool> pinned,
+                       bool classifier_slot) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     const std::string backend_option = model_info.recipe + "_backend";
 
@@ -508,9 +511,9 @@ void Router::load_model(const std::string& model_name,
         // check entirely: they consume no local resources, so they have no
         // business kicking a warm local model out of memory.
         bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
-        int current_count = count_servers_by_type(model_type);
+        int current_count = count_servers_by_type(model_type, classifier_slot);
         if (!is_unmetered_load && max_models != -1 && current_count >= max_models) {
-            WrappedServer* lru = find_lru_server_by_type(model_type);
+            WrappedServer* lru = find_lru_server_by_type(model_type, classifier_slot);
             if (lru) {
                 LOG(INFO, "Router") << "Slot limit reached for type "
                           << model_type_to_string(model_type)
@@ -539,6 +542,7 @@ void Router::load_model(const std::string& model_name,
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->set_pinned(final_pinned);
+        new_server->set_classifier_slot(classifier_slot);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup

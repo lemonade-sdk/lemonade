@@ -67,12 +67,19 @@ public:
     // allow_reload_on_option_change: intended for explicit /load callers only.
     // Auto-load callers (inference-triggered) should leave this false so they
     // don't overturn options set by a prior explicit /load.
+    // classifier_slot: load into the classifier slot pool (router/classifier
+    // models used by routing decisions). Classifier and generation models of
+    // the same ModelType are counted and LRU-evicted independently, so the
+    // L0a flow (router LLM + selected candidate) fits under the default
+    // max_loaded_models=1 without mutual eviction, and a pinned model in one
+    // pool can never starve loads in the other.
     void load_model(const std::string& model_name,
                     const ModelInfo& model_info,
                     RecipeOptions options,
                     bool do_not_upgrade = true,
                     bool allow_reload_on_option_change = false,
-                    std::optional<bool> pinned = std::nullopt);
+                    std::optional<bool> pinned = std::nullopt,
+                    bool classifier_slot = false);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -172,9 +179,9 @@ private:
     void prune_unavailable_servers_locked();
     bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
     bool is_watchdog_reset_response(const json& response) const;
-    int count_servers_by_type(ModelType type) const;
+    int count_servers_by_type(ModelType type, bool classifier_slot) const;
     int count_pinned_servers_by_type(ModelType type) const;
-    WrappedServer* find_lru_server_by_type(ModelType type) const;
+    WrappedServer* find_lru_server_by_type(ModelType type, bool classifier_slot) const;
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;

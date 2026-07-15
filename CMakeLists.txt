@@ -635,6 +635,7 @@ set(SOURCES_CORE
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_classifier_services.cpp
     src/cpp/server/routing_classifier_services_router.cpp
+    src/cpp/server/thinking_controls.cpp
     src/cpp/server/routing_policy.cpp
     src/cpp/server/routing_policy_parser.cpp
     src/cpp/server/routing_policy_store.cpp
@@ -2130,6 +2131,32 @@ if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
     add_test(NAME RoutingPolicyParserTest COMMAND test_routing_policy_parser)
 endif()
 
+# LLM router classifier + routing.router desugaring (issue #2405): the L0a
+# on-ramp. Unit + parser + engine-level tests against FakeClassifierServices.
+set(_ROUTING_LLM_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_llm_router.cpp"
+)
+if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
+    add_executable(test_routing_policy_llm_router
+        test/cpp/test_routing_policy_llm_router.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_llm_router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_llm_router PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_llm_router PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+        ROUTING_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/schemas/route_policy.schema.json"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingPolicyLlmRouterTest COMMAND test_routing_policy_llm_router)
+endif()
+
 # Routing policy store (issue #2383): directory-backed policy loading and
 # DirectoryWatcher-triggered shared_ptr snapshot swaps.
 set(_ROUTING_STORE_TEST_SRC
@@ -2222,6 +2249,7 @@ if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
     add_executable(test_routing_classifier_services
         test/cpp/test_routing_classifier_services.cpp
         src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
         src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_classifier_services PRIVATE

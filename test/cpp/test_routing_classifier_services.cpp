@@ -283,6 +283,39 @@ static void test_chat_service_extracts_text() {
           services.chat("router-model", "route this", "hard problem") == "large-model");
 }
 
+// #2405 review: the router-model invocation must be a deliberately constrained
+// classifier call — thinking disabled through the same cross-backend
+// normalization as normal Lemonade requests (so a Qwen3-style router does not
+// emit <think> blocks or spend unbounded time reasoning), and output tightly
+// bounded. These assertions capture the exact request handed to
+// Router::chat_completion.
+static void test_chat_service_is_constrained_invocation() {
+    json captured;
+    auto services = lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [&captured](const json& request) {
+            captured = request;
+            return json{{"choices", json::array({
+                json{{"message", {{"content", "{\"model\":\"x\"}"}}}}
+            })}};
+        });
+    services.chat("router-model", "route this", "hard problem");
+
+    check("chat sets stream=false", captured.value("stream", true) == false);
+    check("chat sets temperature=0", captured.value("temperature", 1.0) == 0.0);
+    check("chat bounds output with a tight max_tokens",
+          captured.contains("max_tokens") && captured["max_tokens"].is_number_integer() &&
+          captured["max_tokens"].get<int>() > 0 && captured["max_tokens"].get<int>() <= 256);
+    check("chat disables thinking via /no_think injection (cross-backend form)",
+          captured["messages"][1].value("content", "").rfind("/no_think\n", 0) == 0);
+    check("chat strips handled thinking fields before dispatch",
+          !captured.contains("enable_thinking") && !captured.contains("thinking"));
+    check("chat keeps the user input after the /no_think prefix",
+          captured["messages"][1].value("content", "") == "/no_think\nhard problem");
+    check("chat system message carries the composed prompt untouched",
+          captured["messages"][0].value("content", "") == "route this");
+}
+
 static void test_build_route_context_chat_typed_parts_and_image() {
     json request = {
         {"model", "router"},
@@ -364,6 +397,7 @@ int main() {
     test_out_of_range_scores_drive_on_error();
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
+    test_chat_service_is_constrained_invocation();
     test_build_route_context_chat_typed_parts_and_image();
     test_build_route_context_responses_typed_input_message();
     test_build_route_context_responses_bare_parts();

@@ -252,15 +252,16 @@ private:
     std::string model_;
 };
 
-// The `llm` router / L0(a) on-ramp. Runs a small chat model with an author
-// prompt, constrained to name one candidate, and reports that candidate as the
-// label (score 1.0) plus the model's reply as the rationale. Only an exact
-// (whitespace-trimmed) candidate name is accepted — matching the example
-// prompts, which require the model to reply with ONLY a model name. Anything
-// else (prose around a name, several names, a negated name, an unknown name)
-// yields an empty Score (ok=true, no labels): no identity rule fires and the
-// engine fails open to default_model. A backend failure yields Score{ok=false}
-// so the owning condition applies on_error.
+// The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
+// prompt plus a fixed response-contract suffix (listing the candidates), and
+// requires a structured reply: a single JSON object
+//   {"model": "<exact candidate name>", "rationale": "<one short sentence>"}
+// The chosen candidate becomes the label (score 1.0) and the model's stated
+// rationale is recorded in Score::rationale for the trace. Malformed JSON, a
+// missing/unknown "model", or any extra prose yields an empty Score (ok=true,
+// no labels): no identity rule fires and the engine fails open to
+// default_model. A backend failure yields Score{ok=false} so the owning
+// condition applies on_error.
 class LlmClassifier final : public Classifier {
 public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
@@ -286,30 +287,74 @@ public:
         }
         std::string reply;
         try {
-            reply = ctx.services.chat(model_, prompt_, ctx.request.input);
+            reply = ctx.services.chat(model_, effective_prompt(), ctx.request.input);
         } catch (...) {
             return failed_score();
         }
 
         Score score;
         score.ok = true;
-        score.rationale = trim_copy(reply);
-        if (const std::string* chosen = match_label(score.rationale)) {
-            score.labels[*chosen] = 1.0;
+
+        const json parsed = parse_structured_reply(reply);
+        if (!parsed.is_object() ||
+            !parsed.contains("model") || !parsed["model"].is_string()) {
+            // Malformed reply => empty labels => identity rules all miss =>
+            // fail-open to default_model.
+            return score;
         }
-        // No label matched => empty labels => identity rules all miss =>
-        // fail-open to default_model (the invalid-choice fallback).
+        const std::string chosen = parsed["model"].get<std::string>();
+        const std::string* label = match_label(chosen);
+        if (label == nullptr) {
+            // Unknown choice => same fail-open path.
+            return score;
+        }
+        score.labels[*label] = 1.0;
+        if (parsed.contains("rationale") && parsed["rationale"].is_string()) {
+            score.rationale = trim_copy(parsed["rationale"].get<std::string>());
+        }
         return score;
     }
 
 private:
-    // Which candidate did the model name? Exact (trimmed) match only. A
-    // substring fallback was rejected in review: it can turn contradictory or
-    // negated answers ("Do not use X. Use gpt-4o instead.") into a valid route
-    // and weakens the required invalid-choice fallback.
-    const std::string* match_label(const std::string& reply) const {
+    // The author's prompt describes routing intent; the response contract —
+    // candidate vocabulary and the required JSON shape — is appended here so
+    // every llm router speaks the same protocol regardless of authoring.
+    std::string effective_prompt() const {
+        std::string suffix = "You must choose exactly one of these models: ";
+        for (std::size_t i = 0; i < labels().size(); ++i) {
+            if (i > 0) suffix += ", ";
+            suffix += labels()[i];
+        }
+        suffix +=
+            ". Respond with ONLY a JSON object of the form "
+            "{\"model\": \"<one of the listed names>\", "
+            "\"rationale\": \"<one short sentence>\"} and no other text.";
+        return prompt_ + "\n\n" + suffix;
+    }
+
+    // Parse the model's reply into the structured-choice object. Strict: the
+    // trimmed reply must be a JSON object (one leading/trailing ``` fence pair
+    // is tolerated and stripped, since instruction-tuned models often add it).
+    static json parse_structured_reply(const std::string& reply) {
+        std::string text = trim_copy(reply);
+        if (text.rfind("```", 0) == 0) {
+            const auto first_newline = text.find('\n');
+            const auto last_fence = text.rfind("```");
+            if (first_newline != std::string::npos && last_fence > first_newline) {
+                text = trim_copy(text.substr(first_newline + 1, last_fence - first_newline - 1));
+            }
+        }
+        json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
+        return parsed.is_discarded() ? json(nullptr) : parsed;
+    }
+
+    // Which candidate did the model name? Exact match only, against the
+    // structured "model" field. A substring fallback was rejected in review:
+    // it can turn contradictory or negated answers into a valid route and
+    // weakens the required invalid-choice fallback.
+    const std::string* match_label(const std::string& chosen) const {
         for (const auto& label : labels()) {
-            if (reply == label) return &label;
+            if (chosen == label) return &label;
         }
         return nullptr;
     }

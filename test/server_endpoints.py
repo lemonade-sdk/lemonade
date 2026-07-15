@@ -43,6 +43,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -3128,6 +3129,148 @@ class EndpointTests(ServerTestBase):
             print(f"[OK] collection.router route_trace returned Decision trace")
         finally:
             self._cleanup_router_collection(canonical_name)
+
+    def test_021zj_router_llm_l0a_live_and_slot_coexistence(self):
+        """L0a live path (#2405): a routing.router (type llm) collection routes a
+        real request end to end through Router::chat_completion — exercising the
+        chat adapter, reasoning suppression, and model loading, not a fake.
+
+        Also the slot-coexistence guarantee: the router LLM and the selected
+        candidate are DIFFERENT models, yet under the default
+        max_loaded_models=1 both must be resident after a request, because
+        classifier-slot models occupy a pool separate from generation models.
+        Before the slot fix this thrashed (each load evicted the other)."""
+        router_model = ENDPOINT_TEST_MODEL
+        candidate_model = SECOND_TEST_MODEL_EVICTION
+        pull_model_with_retry(router_model)
+        pull_model_with_retry(candidate_model)
+
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterL0a-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            # Confirm the default single-model limit is in effect, so the test
+            # actually proves coexistence rather than passing on a raised cap.
+            limits = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json().get("max_models", {})
+            if limits.get("llm") not in (None, 1):
+                self.skipTest(
+                    f"requires max_loaded_models=1, server reports {limits.get('llm')}"
+                )
+
+            requests.post(
+                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+            )
+
+            # routing.router desugars to an llm classifier over both candidates.
+            # The router model is a component but NOT a candidate; the candidate
+            # is a distinct model, so routing forces two different LLMs live.
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "router": {
+                    "type": "llm",
+                    "model": router_model,
+                    "prompt": (
+                        "You are a model router. Always choose "
+                        f"{candidate_model} for every request."
+                    ),
+                },
+            }
+            pull_response = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [router_model, candidate_model]},
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            chat_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {"role": "user", "content": "Explain gradient descent."}
+                    ],
+                    "max_tokens": 16,
+                    "route_trace": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(chat_response.status_code, 200, chat_response.text)
+            body = chat_response.json()
+            self.assertNotIn("error", body, body)
+
+            # The engine-selected candidate produced the completion, and the
+            # response model is the candidate, not the router alias.
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("route_to"), candidate_model)
+            self.assertEqual(
+                body.get("model"),
+                candidate_model,
+                "response model must be the routed candidate",
+            )
+
+            # The trace came from the live llm router: the winning entry names
+            # the chosen candidate as its label and carries a rationale string.
+            trace = route.get("trace")
+            self.assertIsInstance(trace, list)
+            router_entry = next(
+                (
+                    e
+                    for e in trace
+                    if e.get("condition") == "classifier:__router"
+                    and e.get("result") is True
+                ),
+                None,
+            )
+            self.assertIsNotNone(
+                router_entry, f"no winning __router trace entry: {trace}"
+            )
+            self.assertEqual(router_entry.get("label"), candidate_model)
+            self.assertIsInstance(
+                router_entry.get("rationale"),
+                str,
+                "llm router must record a rationale in the trace",
+            )
+
+            # The coexistence guarantee: both the router LLM and the candidate
+            # are loaded at once under max_loaded_models=1.
+            router_info = self._get_loaded_model_info(router_model)
+            candidate_info = self._get_loaded_model_info(candidate_model)
+            self.assertIsNotNone(
+                router_info,
+                "router model must stay loaded (classifier slot) after routing",
+            )
+            self.assertIsNotNone(
+                candidate_info,
+                "selected candidate must be loaded (generation slot) after routing",
+            )
+            print(
+                "[OK] L0a live: routed through Router::chat_completion; "
+                "router + candidate coexist under max_loaded_models=1"
+            )
+        finally:
+            for body in (
+                {"model_name": router_model},
+                {"model_name": candidate_model},
+            ):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload", json=body, timeout=TIMEOUT_DEFAULT
+                    )
+                except Exception:
+                    pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is

@@ -200,7 +200,8 @@ static void test_router_sugar_desugars_and_canonicalizes() {
     // tested label. This is the regression the review called out: canonical
     // labels would make this reply unmatchable and silently fall to default.
     lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("builtin.Qwen3-1.7B-GGUF", "Qwen3.5-35B-A3B-GGUF");
+    fake.set_chat_reply("builtin.Qwen3-1.7B-GGUF",
+        "{\"model\": \"Qwen3.5-35B-A3B-GGUF\", \"rationale\": \"Hard reasoning\"}");
     RoutingPolicyEngine engine(std::move(policy), fake.make());
     Decision decision = engine.route(request("prove this theorem"), true);
     check("authored reply routes to canonical candidate",

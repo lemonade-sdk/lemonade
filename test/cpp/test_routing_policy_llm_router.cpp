@@ -94,30 +94,57 @@ static ClassifierPtr make_llm(const std::vector<std::string>& candidates) {
     return lemon::make_classifier(cfg);
 }
 
-static void test_classifier_exact_choice() {
+static void test_classifier_structured_choice() {
     lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("router-model", "Qwen3.5-35B-A3B-GGUF");
+    fake.set_chat_reply("router-model",
+        "{\"model\": \"Qwen3.5-35B-A3B-GGUF\", \"rationale\": \"Hard reasoning task\"}");
     ClassifierServices svc = fake.make();
 
     auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
     Score s = llm->evaluate(ClassifierContext{make_route("prove this theorem"), svc});
 
-    check("llm: exact reply scores chosen candidate 1.0",
+    check("llm: structured choice scores chosen candidate 1.0",
           s.ok && s.labels.size() == 1 && s.score_of("Qwen3.5-35B-A3B-GGUF") == 1.0);
-    check("llm: rationale records the model reply",
-          s.rationale == "Qwen3.5-35B-A3B-GGUF");
+    check("llm: rationale records the model's stated reason, not the name",
+          s.rationale == "Hard reasoning task");
 }
 
-static void test_classifier_exact_choice_with_whitespace() {
+static void test_classifier_prompt_carries_contract() {
     lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("router-model", "  Qwen3-8B-GGUF\n");
+    fake.set_chat_reply("router-model", "{\"model\": \"Qwen3-8B-GGUF\"}");
+    ClassifierServices svc = fake.make();
+    std::string seen_prompt;
+    auto inner = svc.chat;
+    svc.chat = [&seen_prompt, inner](const std::string& m, const std::string& p,
+                                     const std::string& i) {
+        seen_prompt = p;
+        return inner(m, p, i);
+    };
+
+    auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
+    llm->evaluate(ClassifierContext{make_route("hi"), svc});
+
+    check("llm: composed prompt keeps the author text",
+          seen_prompt.rfind("pick one", 0) == 0);
+    check("llm: composed prompt lists every candidate",
+          seen_prompt.find("Qwen3-8B-GGUF") != std::string::npos &&
+          seen_prompt.find("Qwen3.5-35B-A3B-GGUF") != std::string::npos);
+    check("llm: composed prompt states the JSON response contract",
+          seen_prompt.find("\"model\"") != std::string::npos &&
+          seen_prompt.find("\"rationale\"") != std::string::npos);
+}
+
+static void test_classifier_fenced_json_is_tolerated() {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_chat_reply("router-model",
+        "```json\n{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"Small ask\"}\n```");
     ClassifierServices svc = fake.make();
 
     auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
     Score s = llm->evaluate(ClassifierContext{make_route("hi"), svc});
 
-    check("llm: whitespace-padded exact name is matched after trim",
-          s.ok && s.score_of("Qwen3-8B-GGUF") == 1.0);
+    check("llm: one fenced JSON block is stripped and parsed",
+          s.ok && s.score_of("Qwen3-8B-GGUF") == 1.0 && s.rationale == "Small ask");
 }
 
 // Review point: substring matching can turn an invalid or contradictory answer
@@ -127,13 +154,16 @@ static void test_classifier_rejects_non_exact_replies() {
     const std::vector<std::string> candidates = {"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"};
     struct Case { const char* name; const char* reply; };
     const Case cases[] = {
-        {"llm: prose surrounding a candidate is rejected",
+        {"llm: prose surrounding a candidate is rejected (malformed)",
          "I would use Qwen3-8B-GGUF for this."},
-        {"llm: multiple candidate names in one reply are rejected",
-         "I considered Qwen3.5-35B-A3B-GGUF, but choose Qwen3-8B-GGUF."},
-        {"llm: negated candidate name is rejected",
+        {"llm: bare candidate name without JSON is rejected (malformed)",
+         "Qwen3-8B-GGUF"},
+        {"llm: negated/contradictory prose is rejected (malformed)",
          "Do not use Qwen3.5-35B-A3B-GGUF. Use gpt-4o instead."},
-        {"llm: unknown choice is rejected", "gpt-4o"},
+        {"llm: JSON naming an unknown model is rejected",
+         "{\"model\": \"gpt-4o\", \"rationale\": \"whatever\"}"},
+        {"llm: JSON missing the model field is rejected",
+         "{\"rationale\": \"no choice made\"}"},
     };
     for (const Case& c : cases) {
         lemon::testing::FakeClassifierServices fake;
@@ -199,7 +229,9 @@ static Decision route_with_reply(const std::string& reply, const std::string& in
 }
 
 static void test_e2e_routes_to_chosen() {
-    Decision d = route_with_reply("Qwen3.5-35B-A3B-GGUF", "solve this hard problem");
+    Decision d = route_with_reply(
+        "{\"model\": \"Qwen3.5-35B-A3B-GGUF\", \"rationale\": \"Hard reasoning\"}",
+        "solve this hard problem");
     check("e2e: routes to the LLM-chosen candidate",
           d.route_to == "Qwen3.5-35B-A3B-GGUF" && !d.default_used);
 
@@ -207,7 +239,7 @@ static void test_e2e_routes_to_chosen() {
     for (const auto& e : d.trace) {
         if (e.condition == "classifier:__router" && e.result &&
             e.label == "Qwen3.5-35B-A3B-GGUF" &&
-            e.rationale == "Qwen3.5-35B-A3B-GGUF") {
+            e.rationale == "Hard reasoning") {
             trace_has_rationale = true;
         }
     }
@@ -215,14 +247,20 @@ static void test_e2e_routes_to_chosen() {
 }
 
 static void test_e2e_invalid_falls_back() {
-    Decision d = route_with_reply("some-unknown-model", "hello");
-    check("e2e: non-candidate choice falls back to default_model",
+    Decision d = route_with_reply(
+        "{\"model\": \"some-unknown-model\", \"rationale\": \"n/a\"}", "hello");
+    check("e2e: unknown structured choice falls back to default_model",
           d.route_to == "Qwen3-8B-GGUF" && d.default_used);
+
+    Decision d2 = route_with_reply("I think the small model is fine here.", "hello");
+    check("e2e: malformed (non-JSON) reply falls back to default_model",
+          d2.route_to == "Qwen3-8B-GGUF" && d2.default_used);
 }
 
 int main() {
-    test_classifier_exact_choice();
-    test_classifier_exact_choice_with_whitespace();
+    test_classifier_structured_choice();
+    test_classifier_prompt_carries_contract();
+    test_classifier_fenced_json_is_tolerated();
     test_classifier_rejects_non_exact_replies();
     test_classifier_backend_failure();
     test_desugar_shape();
