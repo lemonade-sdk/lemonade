@@ -108,13 +108,13 @@ const LeafEditor: React.FC<LeafEditorProps> = ({ leaf, classifiers, anchorEl, on
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <div style={{ flex: 1 }}>
                 <label className="rtc-editor-label">Min score</label>
-                <input className="form-input rtc-editor-input" type="number" min={0} max={1} step={0.05}
+                <input className="form-input rtc-editor-input" type="number" min={0} max={val.maxScore ?? 1} step={0.05}
                   value={val.minScore ?? 0.5}
                   onChange={e => setVal(v => ({ ...v, minScore: parseFloat(e.target.value) }))} />
               </div>
               <div style={{ flex: 1 }}>
                 <label className="rtc-editor-label">Max score</label>
-                <input className="form-input rtc-editor-input" type="number" min={0} max={1} step={0.05}
+                <input className="form-input rtc-editor-input" type="number" min={val.minScore ?? 0} max={1} step={0.05}
                   value={val.maxScore ?? ''}
                   onChange={e => setVal(v => ({ ...v, maxScore: e.target.value ? parseFloat(e.target.value) : undefined }))}
                   placeholder="none" />

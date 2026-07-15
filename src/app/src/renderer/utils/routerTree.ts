@@ -261,6 +261,9 @@ export function validateRuleNode(node: RuleNode | null, classifierIds: Set<strin
     if (node.signalType === 'classifier') {
       if (!node.classifierId) return ['A classifier condition has no classifier selected'];
       if (!classifierIds.has(node.classifierId)) return [`Classifier "${node.classifierId}" is not declared`];
+      if (node.minScore !== undefined && node.maxScore !== undefined && node.minScore > node.maxScore) {
+        return [`Classifier score range is invalid: min (${node.minScore}) > max (${node.maxScore})`];
+      }
     }
     return [];
   }
