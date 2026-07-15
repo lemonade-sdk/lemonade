@@ -327,6 +327,47 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
 
         asyncio.run(run_test())
 
+    def test_004b_websocket_rejects_dns_rebinding_origin(self):
+        """SWSPLAT-24172 follow-up: the WebSocket upgrade path must use the same
+        Origin allow-list as the HTTP CORS path, not an Origin-host-equals-
+        Host-header fallback. That fallback was not DNS-rebinding-safe: a page
+        served from an attacker-controlled hostname (e.g. evil.example) that
+        resolves to loopback/LAN sends both Origin and Host stamped with that
+        same hostname, so a same-host check alone would incorrectly allow it.
+        The connection here targets loopback (simulating a successful rebind)
+        while Origin/Host both carry a non-allow-listed hostname, so it must
+        still be rejected."""
+
+        async def run_test():
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{self.ws_port}/spans/stream",
+                    additional_headers={
+                        "Origin": "http://evil.example:1234",
+                        "Host": "evil.example:1234",
+                    },
+                ):
+                    self.fail(
+                        "Expected connection to be rejected for a rebinding "
+                        "Origin/Host pair that doesn't match the allow-list"
+                    )
+            except (
+                websockets.exceptions.InvalidStatus,
+                websockets.exceptions.InvalidHandshake,
+                TypeError,
+            ):
+                pass
+
+            # Sanity check: a genuinely loopback Origin (Origin/Host both
+            # naming loopback, not merely matching each other) still works.
+            async with websockets.connect(
+                f"ws://localhost:{self.ws_port}/spans/stream",
+                additional_headers={"Origin": "http://localhost:3000"},
+            ) as ws:
+                pass
+
+        asyncio.run(run_test())
+
     def test_007_upgrade_on_main_http_port(self):
         """Verify that clients can upgrade to WebSocket spans stream directly on the main HTTP port."""
 

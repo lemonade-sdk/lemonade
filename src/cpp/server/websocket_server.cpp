@@ -1,4 +1,6 @@
 #include "lemon/router.h"
+#include "lemon/runtime_config.h"
+#include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -8,6 +10,7 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -69,58 +72,22 @@ int WebSocketServer::ws_callback(struct lws* wsi,
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
-                std::string origin = *origin_opt;
-                std::string origin_host = origin;
-                size_t scheme_end = origin.find("://");
-                if (scheme_end != std::string::npos) {
-                    origin_host = origin.substr(scheme_end + 3);
-                }
-                size_t port_pos = std::string::npos;
-                if (!origin_host.empty() && origin_host[0] == '[') {
-                    size_t bracket_end = origin_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        port_pos = origin_host.find(':', bracket_end);
-                    }
-                } else {
-                    port_pos = origin_host.find(':');
-                }
-                if (port_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, port_pos);
-                }
-                size_t path_pos = origin_host.find('/');
-                if (path_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, path_pos);
+                const std::string& origin = *origin_opt;
+
+                // Reuse the exact same allow-list logic as the HTTP CORS path
+                // (lemon::utils::is_origin_allowed) instead of an
+                // Origin-host-equals-Host-header fallback. That fallback was
+                // not DNS-rebinding-safe: an attacker-controlled hostname that
+                // resolves to loopback/LAN sends a matching Host header for
+                // its own name, so origin_host == request_host would pass
+                // even though the Origin isn't actually trusted. See
+                // SWSPLAT-24172 follow-up.
+                std::vector<std::string> allowed_origins;
+                if (auto* cfg = RuntimeConfig::global()) {
+                    allowed_origins = cfg->allowed_origins();
                 }
 
-                std::string host_header_val;
-                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
-                if (host_opt && !host_opt->empty()) {
-                    host_header_val = *host_opt;
-                }
-                std::string request_host = host_header_val;
-                size_t r_port_pos = std::string::npos;
-                if (!request_host.empty() && request_host[0] == '[') {
-                    size_t bracket_end = request_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        r_port_pos = request_host.find(':', bracket_end);
-                    }
-                } else {
-                    r_port_pos = request_host.find(':');
-                }
-                if (r_port_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_port_pos);
-                }
-                size_t r_path_pos = request_host.find('/');
-                if (r_path_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_path_pos);
-                }
-
-                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" || origin_host == "[::1]" || origin_host == "::1");
-                if (!is_allowed && !request_host.empty() && origin_host == request_host) {
-                    is_allowed = true;
-                }
-
-                if (!is_allowed) {
+                if (!lemon::utils::is_origin_allowed(origin, allowed_origins)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }
