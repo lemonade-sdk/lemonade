@@ -753,6 +753,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
     bool streamed_any_bytes = false;
     auto mark_stream_progress = [this, &streamed_any_bytes]() {
+        if (!streamed_any_bytes) {
+            set_streaming(true);
+        }
         streamed_any_bytes = true;
         note_backend_activity();
     };
