@@ -1607,7 +1607,8 @@ static std::string resolve_collection_component_cache_key(
     }
 
     std::optional<std::pair<std::string, int>> winner;
-    for (const auto& [cache_key, _info] : model_map) {
+    for (const auto& entry : model_map) {
+        const std::string& cache_key = entry.first;
         ModelSource source = ModelSource::Builtin;
         std::string bare = cache_key;
         if (auto canon = parse_canonical_id(cache_key)) {
