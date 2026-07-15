@@ -114,12 +114,37 @@ static void test_route_header_default_value() {
           lemon::route_decision_header_value(defaulted) == "default");
 }
 
+// #2405: trace entries may carry the tested label and the classifier's
+// rationale (the llm router's pick reason). Both are optional, serialized only
+// when non-empty, and both are declared in decision.schema.json's trace_entry
+// (which uses additionalProperties:false — a key emitted here but missing from
+// the schema would make every such response schema-invalid).
+static void test_trace_serializes_label_and_rationale() {
+    Decision decision;
+    decision.route_to = "builtin.Qwen3.5-35B-A3B-GGUF";
+    decision.matched_rule = "__route_1";
+    decision.trace.push_back(lemon::TraceEntry{
+        "classifier:__router", 1.0, true, "Qwen3.5-35B-A3B-GGUF",
+        "Qwen3.5-35B-A3B-GGUF"});
+    decision.trace.push_back(lemon::TraceEntry{"keywords_any", std::nullopt, false});
+
+    json out = lemon::route_decision_to_json(decision);
+    const json& first = out["trace"][0];
+    check("trace entry serializes label",
+          first.value("label", "") == "Qwen3.5-35B-A3B-GGUF");
+    check("trace entry serializes rationale",
+          first.value("rationale", "") == "Qwen3.5-35B-A3B-GGUF");
+    check("empty label/rationale keys are omitted",
+          !out["trace"][1].contains("label") && !out["trace"][1].contains("rationale"));
+}
+
 int main() {
     test_lf_event_is_injected();
     test_crlf_split_event_is_injected_before_done();
     test_cr_event_is_injected();
     test_only_first_json_event_gets_route();
     test_route_header_default_value();
+    test_trace_serializes_label_and_rationale();
 
     if (g_failures == 0) {
         std::printf("All route decision response tests passed.\n");

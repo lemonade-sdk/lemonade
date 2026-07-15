@@ -159,6 +159,9 @@ public:
 
         if (ctx.want_trace) {
             TraceEntry entry{"classifier:" + classifier_->id(), traced_score, result};
+            if (label_.has_value()) {
+                entry.label = *label_;
+            }
             if (score.ok && !score.rationale.empty()) {
                 entry.rationale = score.rationale;
             }
@@ -251,10 +254,13 @@ private:
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with an author
 // prompt, constrained to name one candidate, and reports that candidate as the
-// label (score 1.0) plus the model's reply as the rationale. A reply that names
-// no candidate yields an empty Score (ok=true, no labels): no identity rule
-// fires and the engine fails open to default_model. A backend failure yields
-// Score{ok=false} so the owning condition applies on_error.
+// label (score 1.0) plus the model's reply as the rationale. Only an exact
+// (whitespace-trimmed) candidate name is accepted — matching the example
+// prompts, which require the model to reply with ONLY a model name. Anything
+// else (prose around a name, several names, a negated name, an unknown name)
+// yields an empty Score (ok=true, no labels): no identity rule fires and the
+// engine fails open to default_model. A backend failure yields Score{ok=false}
+// so the owning condition applies on_error.
 class LlmClassifier final : public Classifier {
 public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
@@ -297,21 +303,15 @@ public:
     }
 
 private:
-    // Which candidate did the model name? Exact (trimmed) match first; else the
-    // longest declared label appearing as a substring, so a short candidate name
-    // that prefixes a longer one can never shadow it.
+    // Which candidate did the model name? Exact (trimmed) match only. A
+    // substring fallback was rejected in review: it can turn contradictory or
+    // negated answers ("Do not use X. Use gpt-4o instead.") into a valid route
+    // and weakens the required invalid-choice fallback.
     const std::string* match_label(const std::string& reply) const {
         for (const auto& label : labels()) {
             if (reply == label) return &label;
         }
-        const std::string* best = nullptr;
-        for (const auto& label : labels()) {
-            if (reply.find(label) != std::string::npos &&
-                (best == nullptr || label.size() > best->size())) {
-                best = &label;
-            }
-        }
-        return best;
+        return nullptr;
     }
 
     std::string model_;

@@ -48,9 +48,10 @@
           "items": { "$ref": "#/$defs/rule" }
         }
       },
-      "anyOf": [
-        { "required": ["router"] },
-        { "required": ["rules"] }
+      "allOf": [
+        { "anyOf": [{ "required": ["router"] }, { "required": ["rules"] }] },
+        { "if":   { "required": ["router"] },
+          "then": { "not": { "anyOf": [{ "required": ["rules"] }, { "required": ["classifiers"] }] } } }
       ],
       "additionalProperties": false
     },
@@ -118,7 +119,8 @@
         { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
           "then": { "required": ["model"] } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
-          "then": { "required": ["model", "prompt"] } }
+          "then": { "required": ["model", "prompt", "labels"],
+                    "properties": { "labels": { "minItems": 1 } } } }
       ]
     },
     "rule": {

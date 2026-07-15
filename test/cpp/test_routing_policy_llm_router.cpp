@@ -108,28 +108,41 @@ static void test_classifier_exact_choice() {
           s.rationale == "Qwen3.5-35B-A3B-GGUF");
 }
 
-static void test_classifier_substring_choice() {
+static void test_classifier_exact_choice_with_whitespace() {
     lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("router-model", "  I would use Qwen3-8B-GGUF for this.\n");
+    fake.set_chat_reply("router-model", "  Qwen3-8B-GGUF\n");
     ClassifierServices svc = fake.make();
 
     auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
     Score s = llm->evaluate(ClassifierContext{make_route("hi"), svc});
 
-    check("llm: candidate named inside prose is matched",
+    check("llm: whitespace-padded exact name is matched after trim",
           s.ok && s.score_of("Qwen3-8B-GGUF") == 1.0);
 }
 
-static void test_classifier_non_candidate_is_empty() {
-    lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("router-model", "gpt-4o");  // not a candidate
-    ClassifierServices svc = fake.make();
-
-    auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
-    Score s = llm->evaluate(ClassifierContext{make_route("hi"), svc});
-
-    check("llm: non-candidate reply yields ok but no labels",
-          s.ok && s.labels.empty());
+// Review point: substring matching can turn an invalid or contradictory answer
+// into a valid route. Only an exact trimmed candidate name may match; every
+// reply below must yield an empty score (=> fail-open to default_model).
+static void test_classifier_rejects_non_exact_replies() {
+    const std::vector<std::string> candidates = {"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"};
+    struct Case { const char* name; const char* reply; };
+    const Case cases[] = {
+        {"llm: prose surrounding a candidate is rejected",
+         "I would use Qwen3-8B-GGUF for this."},
+        {"llm: multiple candidate names in one reply are rejected",
+         "I considered Qwen3.5-35B-A3B-GGUF, but choose Qwen3-8B-GGUF."},
+        {"llm: negated candidate name is rejected",
+         "Do not use Qwen3.5-35B-A3B-GGUF. Use gpt-4o instead."},
+        {"llm: unknown choice is rejected", "gpt-4o"},
+    };
+    for (const Case& c : cases) {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_chat_reply("router-model", c.reply);
+        ClassifierServices svc = fake.make();
+        auto llm = make_llm(candidates);
+        Score s = llm->evaluate(ClassifierContext{make_route("hi"), svc});
+        check(c.name, s.ok && s.labels.empty());
+    }
 }
 
 static void test_classifier_backend_failure() {
@@ -193,11 +206,12 @@ static void test_e2e_routes_to_chosen() {
     bool trace_has_rationale = false;
     for (const auto& e : d.trace) {
         if (e.condition == "classifier:__router" && e.result &&
+            e.label == "Qwen3.5-35B-A3B-GGUF" &&
             e.rationale == "Qwen3.5-35B-A3B-GGUF") {
             trace_has_rationale = true;
         }
     }
-    check("e2e: trace records the chosen label + rationale", trace_has_rationale);
+    check("e2e: trace identifies the tested label and records the rationale", trace_has_rationale);
 }
 
 static void test_e2e_invalid_falls_back() {
@@ -208,8 +222,8 @@ static void test_e2e_invalid_falls_back() {
 
 int main() {
     test_classifier_exact_choice();
-    test_classifier_substring_choice();
-    test_classifier_non_candidate_is_empty();
+    test_classifier_exact_choice_with_whitespace();
+    test_classifier_rejects_non_exact_replies();
     test_classifier_backend_failure();
     test_desugar_shape();
     test_desugar_rejects_router_plus_rules();

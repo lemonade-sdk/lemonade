@@ -535,8 +535,16 @@ const std::set<std::string>& routing_metadata_match_keys() {
 // candidate (label X -> route_to X), evaluated first-match-wins. The engine
 // stays single-path; `routing.router` is pure load-time sugar. Returns a new
 // `routing` object with `router` removed and `classifiers`/`rules` synthesized.
-json desugar_routing_router(const json& routing,
-                            const std::vector<std::string>& candidates) {
+//
+// Names: the synthesized classifier labels and rule match.labels use the
+// AUTHORED candidate names (read from routing.candidates verbatim), because
+// that is the vocabulary the author's prompt exposes to the router LLM and
+// therefore what the model replies with. Only route_to is canonicalized — and
+// that happens downstream in parse_rules via the component resolver, exactly as
+// for hand-written rules. Feeding pre-resolved canonical IDs in here would
+// break label matching (the LLM never sees canonical IDs) and would
+// double-resolve route_to.
+json desugar_routing_router(const json& routing) {
     const json& router = routing.at("router");
     reject_unknown_keys(router, routing_router_keys(), "routing.router");
 
@@ -552,6 +560,13 @@ json desugar_routing_router(const json& routing,
     required_string(router, "model", "routing.router");
     required_string(router, "prompt", "routing.router");
 
+    // Authored names, validated already by parse_candidates (shape, non-empty,
+    // declared, no duplicates after resolution) before this runs.
+    std::vector<std::string> authored;
+    for (const auto& entry : routing.at("candidates")) {
+        authored.push_back(entry.get<std::string>());
+    }
+
     json out = routing;
     out.erase("router");
 
@@ -562,21 +577,21 @@ json desugar_routing_router(const json& routing,
         {"type", "llm"},
         {"model", router.at("model")},
         {"prompt", router.at("prompt")},
-        {"labels", candidates},
+        {"labels", authored},
     }});
 
     // Identity rules. Index-based ids avoid any charset assumptions about
     // candidate names (which may contain '.' or '-').
     json rules = json::array();
-    for (std::size_t i = 0; i < candidates.size(); ++i) {
+    for (std::size_t i = 0; i < authored.size(); ++i) {
         rules.push_back(json{
             {"id", "__route_" + std::to_string(i)},
             {"match", json{
                 {"classifier", "__router"},
-                {"label", candidates[i]},
+                {"label", authored[i]},
                 {"min_score", 1.0},
             }},
-            {"route_to", candidates[i]},
+            {"route_to", authored[i]},
         });
     }
     out["rules"] = std::move(rules);
@@ -608,7 +623,7 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     json desugared;
     const json* routing_eff = &routing;
     if (routing.contains("router")) {
-        desugared = desugar_routing_router(routing, policy.candidates);
+        desugared = desugar_routing_router(routing);
         routing_eff = &desugared;
     }
 
