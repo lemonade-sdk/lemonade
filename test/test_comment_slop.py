@@ -478,6 +478,37 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of('// new\nauto s = R"(\n  keep\n)";\n', "a.cpp"),
         )
 
+    def test_a_slash_slash_inside_an_include_is_a_header_name_not_a_comment(self):
+        # `<a//b.h>` is a header-name token; gcc keeps the `//` literal, so a change to the
+        # header past the `//` is a real, different include -- not comments-only.
+        self.assertNotEqual(
+            slop._code_of(
+                "#include <boost//algorithm//string.hpp>\nint x = 1;\n", "a.cpp"
+            ),
+            slop._code_of(
+                "#include <boost//algorithm//vector.hpp>\nint x = 1;\n", "a.cpp"
+            ),
+        )
+
+    def test_a_comment_edit_on_an_include_line_still_passes(self):
+        # The header-name guard must not flag a genuine comment change after the include.
+        self.assertEqual(
+            slop._code_of("#include <vector>  // old\nint x = 1;\n", "a.cpp"),
+            slop._code_of("#include <vector>  // new\nint x = 1;\n", "a.cpp"),
+        )
+
+    def test_an_ordinary_less_than_is_not_treated_as_a_header_name(self):
+        # `<` outside an include directive is an operator: the change must be caught and a
+        # trailing comment must still be stripped.
+        self.assertNotEqual(
+            slop._code_of("int r = a < b; // c\n", "a.cpp"),
+            slop._code_of("int r = a > b; // c\n", "a.cpp"),
+        )
+        self.assertEqual(
+            slop._code_of("int r = a < b; // old\n", "a.cpp"),
+            slop._code_of("int r = a < b; // new\n", "a.cpp"),
+        )
+
     def test_an_unterminated_block_comment_fails_closed(self):
         # Not valid C. Swallowing it certified two differing revisions as equal.
         with self.assertRaises(slop.GitError):

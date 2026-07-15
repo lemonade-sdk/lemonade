@@ -119,6 +119,9 @@ STOPWORDS = {
 # as a repeated explanation.
 COMMENT_RE_PY = re.compile(r"^\s*#")
 COMMENT_RE_CISH = re.compile(r"^\s*(//|/\*|\*/|\*(?=\s|$))")
+# A `<` that opens a header-name token: the current line is a `#include`/`#import`
+# directive or a module `import`, with only whitespace before the `<`.
+_INCLUDE_RE = re.compile(r"^\s*(#\s*(?:include|import)|(?:export\s+)?import)\s*$")
 SOURCE_SUFFIXES = (
     ".c",
     ".cc",
@@ -588,6 +591,18 @@ def _code_of_cish(text):
                 raws.append(raw)
                 i += len(raw)
                 continue
+            # In `#include <...>` (and `#import` / a module `import <...>`) the angle-bracket
+            # content is a header-name token: `//` and `/*` inside it are literal, not
+            # comments. Scanning it as code truncates `<a//b.h>` at the `//`, so a change to
+            # the header past the `//` -- a real, different include -- compares equal. Consume
+            # the header name whole. It is content, so protect it from the final strip/split.
+            if ch == "<" and _INCLUDE_RE.search("".join(out).rsplit("\n", 1)[-1]):
+                end = text.find(">", i)
+                if end != -1 and "\n" not in text[i:end]:
+                    out.append(f"{sent}{len(raws)}{sent}")
+                    raws.append(text[i : end + 1])
+                    i = end + 1
+                    continue
             if ch == '"':
                 in_str = True
             elif ch == "'":
