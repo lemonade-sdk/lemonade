@@ -413,7 +413,7 @@ lemonade backends
 
 Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
 
-## Integrate Embeddable Lemonade in You Application
+## Integrate Embeddable Lemonade in Your Application
 
 Embeddable Lemonade is a binary version of Lemonade that you can bundle into your own app to give it a portable, auto-optimizing, multi-modal local AI stack. This lets users focus on your app, with zero Lemonade installers, branding, or telemetry.
 
