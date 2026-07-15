@@ -41,6 +41,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "auto_check_model_updates": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
@@ -80,6 +81,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "openmoss": {
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
   "port": 13305,
   "rocm_channel": "stable",
   "ryzenai": {
@@ -91,6 +98,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "cfg_scale": 7.0,
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
+    "cuda_bin": "builtin",
     "height": 512,
     "rocm_args": "",
     "rocm_bin": "builtin",
@@ -120,6 +129,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
     }
   },
   "thinksound": {
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
+  "trellis": {
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
@@ -156,6 +171,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `offline` | bool | false | Skip model downloads |
+| `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |

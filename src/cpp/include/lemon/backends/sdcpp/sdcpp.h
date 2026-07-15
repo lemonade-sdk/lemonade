@@ -38,7 +38,7 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
-        {"cuda", {"linux"},
+        {"cuda", {"windows", "linux"},
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
@@ -55,8 +55,8 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"cpu", "rocm", "vulkan"},
-    /*bin_variants*/    {"cpu", "rocm", "vulkan"},
+    /*arg_variants*/    {"cpu", "rocm", "vulkan", "cuda"},
+    /*bin_variants*/    {"cpu", "rocm", "vulkan", "cuda"},
     /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"width", 512}, {"height", 512}},
 };
 

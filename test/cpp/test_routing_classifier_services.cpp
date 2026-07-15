@@ -283,6 +283,77 @@ static void test_chat_service_extracts_text() {
           services.chat("router-model", "route this", "hard problem") == "large-model");
 }
 
+static void test_build_route_context_chat_typed_parts_and_image() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "text"}, {"text", "describe this"}},
+                {{"type", "image_url"}, {"image_url", {{"url", "data:image/png;base64,AAAA"}}}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("chat typed parts collect text",
+          ctx.input == "describe this" && ctx.params.chars == ctx.input.size());
+    check("chat image_url part sets has_images", ctx.params.has_images);
+}
+
+static void test_build_route_context_responses_typed_input_message() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "what is this"}},
+                {{"type", "input_image"}, {"image_url", "data:image/png;base64,AAAA"}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses input_text part collects text", ctx.input == "what is this");
+    check("responses input_image part sets has_images", ctx.params.has_images);
+}
+
+static void test_build_route_context_responses_bare_parts() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"type", "input_text"}, {"text", "hello"}},
+            {{"type", "input_image"}, {"image_url", "data:image/png;base64,AAAA"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses bare input_text collects text", ctx.input == "hello");
+    check("responses bare input_image sets has_images", ctx.params.has_images);
+}
+
+static void test_build_route_context_responses_string_input_no_image() {
+    json request = {
+        {"model", "router"},
+        {"input", "plain text prompt"},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses string input collects text", ctx.input == "plain text prompt");
+    check("responses string input has no image", !ctx.params.has_images);
+}
+
+static void test_build_route_context_responses_uses_last_user_message() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "assistant"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "here is some code"}},
+            })}},
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "thanks that helps"}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses uses only last user message, not earlier assistant turn",
+          ctx.input == "thanks that helps");
+}
+
 int main() {
     test_embed_uses_router_embeddings_shape();
     test_semantic_similarity_loops_through_router_embeddings();
@@ -293,6 +364,11 @@ int main() {
     test_out_of_range_scores_drive_on_error();
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
+    test_build_route_context_chat_typed_parts_and_image();
+    test_build_route_context_responses_typed_input_message();
+    test_build_route_context_responses_bare_parts();
+    test_build_route_context_responses_string_input_no_image();
+    test_build_route_context_responses_uses_last_user_message();
 
     if (g_failures == 0) {
         std::printf("All routing classifier service tests passed.\n");

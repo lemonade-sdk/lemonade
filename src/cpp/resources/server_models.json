@@ -147,25 +147,25 @@
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.2-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Mistral-7B-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Phi-3-mini-128k-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
@@ -1647,6 +1647,34 @@
         ],
         "size": 10.5
     },
+    "TRELLIS-3D": {
+        "checkpoint": "ilintar/trellis2-gguf",
+        "recipe": "trellis",
+        "suggested": true,
+        "labels": [
+            "3d"
+        ],
+        "size": 15.4
+    },
+    "OpenMOSS-TTS": {
+        "checkpoint": "ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts"
+        ],
+        "size": 12.5
+    },
+    "MOSS-VoiceGen": {
+        "checkpoint": "ilintar/moss-voicegen-gguf:moss-voicegen.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 7.3
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
@@ -1718,6 +1746,30 @@
         ],
         "size": 55.59
     },
+    "Qwen3.6-27B-FP8-vLLM-lowconc": {
+        "checkpoint": "Qwen/Qwen3.6-27B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 27.8
+    },
+    "Qwen3.6-27B-FP8-vLLM-highconc": {
+        "checkpoint": "Qwen/Qwen3.6-27B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 27.8
+    },
     "Qwen3.6-35B-A3B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.6-35B-A3B",
         "recipe": "vllm",
@@ -1728,6 +1780,30 @@
             "vision"
         ],
         "size": 71.93
+    },
+    "Qwen3.6-35B-A3B-FP8-vLLM-lowconc": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 36.0
+    },
+    "Qwen3.6-35B-A3B-FP8-vLLM-highconc": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 36.0
     },
     "GLM-4.7-Flash-FP16-vLLM": {
         "checkpoint": "zai-org/GLM-4.7-Flash",

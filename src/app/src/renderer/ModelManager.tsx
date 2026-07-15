@@ -1085,16 +1085,55 @@ const [searchQuery, setSearchQuery] = useState('');
     return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
   }, [hfSelectedQuantizations]);
 
-  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend): string => {
-    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
-    if (backend.recipe !== 'llamacpp') return suggestedName;
+  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend, checkpoint?: string): string => {
+    const getOwnerSuffixName = (modelName: string): string => {
+      const owner = modelId.split('/')[0]?.trim();
+      if (!owner) return modelName;
+      const safeOwner = owner.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+      return safeOwner ? `${modelName}-${safeOwner}` : modelName;
+    };
+    const lookupModelInfo = (modelName: string): ModelInfo | undefined => {
+      return modelsData[`user.${modelName}`] ?? modelsData[modelName];
+    };
 
-    const selectedFilename = hfSelectedQuantizations[modelId];
-    if (!selectedFilename) return suggestedName;
-    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
-    const variantName = quantObj?.quantization ?? selectedFilename;
-    return `${suggestedName}-${variantName}`;
-  }, [hfSelectedQuantizations]);
+    const matchesCheckpoint = (info: ModelInfo | undefined): boolean => {
+      if (!info || !checkpoint) return false;
+      const registrySource = info.registry_source
+        ?? (info.source === 'modelscope' || info.source === 'huggingface' ? info.source : 'huggingface');
+      return registrySource === 'huggingface'
+        && (info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint);
+    };
+
+    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
+    let defaultName = suggestedName;
+
+    if (backend.recipe === 'llamacpp') {
+      const selectedFilename = hfSelectedQuantizations[modelId];
+      if (selectedFilename) {
+        const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+        const variantName = quantObj?.quantization ?? selectedFilename;
+        defaultName = `${suggestedName}-${variantName}`;
+      }
+    }
+
+    if (!checkpoint) return defaultName;
+
+    const existingDefault = lookupModelInfo(defaultName);
+    if (!existingDefault || matchesCheckpoint(existingDefault)) {
+      return defaultName;
+    }
+
+    const fallbackBase = getOwnerSuffixName(defaultName);
+    let candidate = fallbackBase;
+    let suffix = 2;
+    let existingCandidate = lookupModelInfo(candidate);
+    while (existingCandidate && !matchesCheckpoint(existingCandidate)) {
+      candidate = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+      existingCandidate = lookupModelInfo(candidate);
+    }
+    return candidate;
+  }, [hfSelectedQuantizations, modelsData]);
 
   const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
     const backend = hfModelBackends[hfModel.id];
@@ -1102,13 +1141,14 @@ const [searchQuery, setSearchQuery] = useState('');
     const checkpoint = backend.recipe === 'llamacpp'
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
-    const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
+    const modelName = `user.${resolveHfModelName(hfModel.id, backend, checkpoint)}`;
     const labels = new Set(backend.suggestedLabels ?? []);
     const mmproj = backend.mmprojFiles?.[0];
     if (mmproj) labels.add('vision');
     handleDownloadModel(modelName, {
       checkpoint,
       recipe: backend.recipe,
+      source: 'huggingface',
       mmproj,
       labels: Array.from(labels),
       vision: labels.has('vision'),
@@ -2036,9 +2076,10 @@ const [searchQuery, setSearchQuery] = useState('');
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
-                                        name: resolveHfModelName(hfModel.id, backend),
+                                        name: resolveHfModelName(hfModel.id, backend, checkpoint),
                                         checkpoint,
                                         recipe: backend.recipe,
+                                        source: 'huggingface',
                                         mmprojOptions: backend.mmprojFiles,
                                         labels,
                                         vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,

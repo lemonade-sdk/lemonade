@@ -17,6 +17,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
+| `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
+| `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
@@ -30,6 +32,48 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+
+## `POST /v1/models/check-updates`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Explicitly checks downloaded Hugging Face-backed models for newer upstream
+commits. This is the manual counterpart to the startup update check and works
+even when `auto_check_model_updates=false`.
+
+Full offline mode remains authoritative: when `offline=true`, this endpoint
+returns HTTP 409 and does not make network requests.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/models/check-updates
+```
+
+The same action is available from the CLI:
+
+```bash
+lemonade check-updates
+```
+
+### Response format
+
+```json
+{
+  "status": "success",
+  "updates_available": 2,
+  "models": [
+    "Qwen3-4B-GGUF",
+    "Whisper-Tiny"
+  ]
+}
+```
+
+The endpoint is available at:
+
+- `/v1/models/check-updates`
+- `/api/v1/models/check-updates`
+- `/v0/models/check-updates`
+- `/api/v0/models/check-updates`
 
 ## `GET /v1/models/{id}/files`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -702,12 +746,25 @@ This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover spee
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model` | Yes | The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`). |
-| `prompt` | Yes | Text description of the music or sound effect to generate. |
+| `prompt` | Yes | Text description of the music or sound effect to generate. For music, this is the style description: genre, mood, tempo, instruments, and voice. |
+| `lyrics` | No | Lyrics to sing (ACE-Step only). When present and not empty, the track is generated with vocals singing these lyrics. Omitting the field, an empty string, or the sentinel `[Instrumental]` (any case) produces an instrumental track. See [Lyrics](#lyrics) below for the expected format. |
+| `vocal_language` | No | BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Default: `en`. |
 | `duration` | No | Length of the clip in seconds. Defaults to the backend's native default. |
 | `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. |
 | `cfg` | No | Classifier-free guidance strength (ThinkSound only). |
 | `seed` | No | Random seed for reproducibility. |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `wav`); other values are rejected with `400 Bad Request`. Default: `wav`. |
+
+### Lyrics
+
+ACE-Step vocals are a two-stage pipeline inside the backend: a language model first turns the style description and lyrics into audio codes, then the diffusion synthesizer renders those codes into audio. The instrumental path skips the language-model stage entirely, which also means lyrics embedded in the `prompt` field are treated as style text — they are never sung. Vocal generations take noticeably longer than instrumental ones of the same duration because of the extra language-model pass.
+
+Format the `lyrics` value the way the ACE-Step authors recommend:
+
+- Mark each song section with a structure tag on its own line: `[verse]`, `[chorus]`, `[bridge]`, `[intro]`, `[outro]`.
+- Write one sung phrase per line and separate sections with a blank line.
+- Describe the voice ("gentle female vocals", "raspy male baritone") in `prompt`, not in the lyrics.
+- Lyrics may be in any supported language; set `vocal_language` to match.
 
 ### Response
 
@@ -725,6 +782,58 @@ curl -X POST http://localhost:13305/v1/audio/generations \
         "seed": 42
       }' \
   --output clip.wav
+```
+
+### Example request (music with vocals)
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ACE-Step-Music",
+        "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+        "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+        "duration": 60
+      }' \
+  --output song.wav
+```
+
+## `POST /v1/3d/generations`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+3D Generation API. You provide an input image and receive a textured 3D mesh as a glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image must be PNG, JPEG, BMP, or GIF.
+
+This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extension.
+
+> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and takes on the order of minutes; higher cascade resolutions take longer.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The 3D-generation model to use (e.g., `TRELLIS-3D`). |
+| `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
+| `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
+| `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
+
+### Response
+
+On success the raw mesh bytes are returned as `model/gltf-binary`. On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/3d/generations \
+  -H "Content-Type: application/json" \
+  -d "{
+        \"model\": \"TRELLIS-3D\",
+        \"image\": \"$(base64 -w0 input.png)\",
+        \"resolution\": 512,
+        \"seed\": 42
+      }" \
+  --output model.glb
 ```
 
 ## `GET /v1/health`

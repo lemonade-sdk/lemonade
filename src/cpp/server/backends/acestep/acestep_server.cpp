@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backend_manager.h"
+#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -13,6 +14,7 @@
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -39,6 +41,16 @@ std::string extract_multipart_audio(const std::string& body) {
     size_t bend = body.find("\r\n--ace-batch-boundary", bstart);
     if (bend == std::string::npos) return "";
     return body.substr(bstart, bend - bstart);
+}
+
+bool is_instrumental_sentinel(const std::string& lyrics) {
+    size_t b = lyrics.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return true;
+    size_t e = lyrics.find_last_not_of(" \t\r\n");
+    std::string t = lyrics.substr(b, e - b + 1);
+    std::transform(t.begin(), t.end(), t.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return t == "[instrumental]";
 }
 }  // namespace
 
@@ -77,8 +89,7 @@ std::string AceStepServer::resolve_binary_path(const std::string& backend) {
 void AceStepServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
-                         bool do_not_upgrade) {
-    (void)do_not_upgrade;
+                         bool /*do_not_upgrade*/) {
     LOG(INFO, "acestep-server") << "Loading model: " << model_name << std::endl;
 
     const std::string model_path = model_info.resolved_path();
@@ -89,7 +100,11 @@ void AceStepServer::load(const std::string& model_name,
     std::string backend = options.get_option("acestep_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("acestep");
-        backend = supported.backends.empty() ? "vulkan" : supported.backends[0];
+        if (supported.backends.empty()) {
+            throw UnsupportedOperationException(
+                "ACE-Step audio generation", "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected");
+        }
+        backend = supported.backends[0];
     }
     RuntimeConfig::validate_backend_choice("acestep", backend);
     const std::string exe_path = resolve_binary_path(backend);
@@ -113,34 +128,35 @@ void AceStepServer::load(const std::string& model_name,
     // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
     // needs no special env.
     std::vector<std::pair<std::string, std::string>> env_vars;
-    if (backend == "rocm" || backend == "cuda") {
-        std::string therock_lib;
-        if (backend == "rocm") {
-            const std::string arch = SystemInfo::get_rocm_arch();
-            therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
-        }
-        const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
+    const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
+    auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
 #ifdef _WIN32
-        // TheRock keeps its LLVM support DLLs (libomp140.x86_64.dll for
-        // OpenMP-enabled ggml builds) under lib/llvm/bin, a sibling of the
-        // main bin/ dir (therock_lib), not inside it.
-        std::string llvm_bin = therock_lib.empty() ? ""
-            : (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
-        std::string path = therock_lib.empty() ? exe_dir
-            : (therock_lib + ";" + llvm_bin + ";" + exe_dir);
+        std::string path = extra_dirs.empty() ? exe_dir : (extra_dirs + ";" + exe_dir);
         if (const char* p = std::getenv("PATH")) path += std::string(";") + p;
         env_vars.push_back({"PATH", path});
 #else
-        // TheRock keeps its LLVM support libs (libomp for OpenMP-enabled ggml
-        // builds) under lib/llvm/lib, next to the main lib dir.
-        std::string ld = therock_lib.empty() ? exe_dir
-            : (therock_lib + ":" + therock_lib + "/llvm/lib:" + exe_dir);
+        std::string ld = extra_dirs.empty() ? exe_dir : (extra_dirs + ":" + exe_dir);
         if (const char* p = std::getenv("LD_LIBRARY_PATH")) ld += std::string(":") + p;
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
-        if (backend == "cuda") {
-            BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
+    };
+    if (backend == "rocm") {
+        const std::string arch = SystemInfo::get_rocm_arch();
+        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+        std::string dirs;
+        if (!therock_lib.empty()) {
+#ifdef _WIN32
+            const std::string llvm_bin =
+                (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
+            dirs = therock_lib + ";" + llvm_bin;
+#else
+            dirs = therock_lib + ":" + therock_lib + "/llvm/lib";
+#endif
         }
+        prepend_loader_path(dirs);
+    } else if (backend == "cuda") {
+        prepend_loader_path("");
+        BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
@@ -167,16 +183,64 @@ void AceStepServer::unload() {
     }
 }
 
+bool AceStepServer::run_job(const std::string& path, const std::string& body,
+                            std::string& result, std::string& error) {
+    const std::string stage = path.substr(1);
+    const std::string base = get_base_url();
+    auto submit = utils::HttpClient::post(base + path, body,
+                                          {{"Content-Type", "application/json"}}, 60);
+    if (submit.status_code != 200) {
+        LOG(ERROR, "acestep-server") << stage << " submit failed (HTTP " << submit.status_code
+                                     << "): " << submit.body << std::endl;
+        error = stage + " submit failed (HTTP " + std::to_string(submit.status_code) + ")";
+        return false;
+    }
+    std::string job_id = json::parse(submit.body).value("id", std::string());
+    if (job_id.empty()) {
+        LOG(ERROR, "acestep-server") << stage << " submit returned no job id: " << submit.body << std::endl;
+        error = stage + " submit returned no job id";
+        return false;
+    }
+
+    const std::string job_url = base + "/job?id=" + job_id;
+    std::string status;
+    for (int i = 0; i < 1200; ++i) {
+        auto poll = utils::HttpClient::get(job_url, {}, 30,
+                                           utils::HttpSecurityPolicy::TrustedLoopback);
+        if (poll.status_code == 200) {
+            try { status = json::parse(poll.body).value("status", std::string()); }
+            catch (...) { status.clear(); }
+        }
+        if (status == "done" || status == "failed" || status == "cancelled") break;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    if (status != "done") {
+        LOG(ERROR, "acestep-server") << stage << " job " << job_id << " ended with status '"
+                                     << status << "'" << std::endl;
+        error = stage + " job ended with status '" + status + "'";
+        return false;
+    }
+
+    auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120,
+                                          utils::HttpSecurityPolicy::TrustedLoopback);
+    if (fetched.status_code != 200) {
+        LOG(ERROR, "acestep-server") << "fetching " << stage << " job result failed (HTTP "
+                                     << fetched.status_code << ")" << std::endl;
+        error = "fetching " + stage + " job result failed (HTTP " +
+                std::to_string(fetched.status_code) + ")";
+        return false;
+    }
+    result = std::move(fetched.body);
+    return true;
+}
+
 void AceStepServer::audio_generations(const json& request, httplib::DataSink& sink) {
-    // Failures write an error payload into the sink; the endpoint handler turns
-    // it into an HTTP error instead of shipping it as audio.
     auto fail = [&sink](const std::string& message) {
         const std::string payload =
             json{{"error", {{"message", message}, {"type", "backend_error"}}}}.dump();
         sink.write(payload.data(), payload.size());
     };
     try {
-        // Map the Lemonade request onto ace-server's /synth (instrumental, DiT-only).
         json synth;
         synth["caption"] = request.value("prompt", std::string());
         synth["synth_model"] = "";
@@ -185,47 +249,38 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
         if (request.contains("seed"))     synth["seed"]     = request["seed"];
         if (request.contains("steps"))    synth["inference_steps"] = request["steps"];
 
-        const std::string base = get_base_url();
-        auto submit = utils::HttpClient::post(base + "/synth", synth.dump(),
-                                              {{"Content-Type", "application/json"}}, 60);
-        if (submit.status_code != 200) {
-            LOG(ERROR, "acestep-server") << "synth submit failed (HTTP " << submit.status_code
-                                         << "): " << submit.body << std::endl;
-            fail("synth submit failed (HTTP " + std::to_string(submit.status_code) + ")");
-            return;
+        std::string lyrics;
+        if (request.contains("lyrics") && request["lyrics"].is_string()) {
+            lyrics = request["lyrics"].get<std::string>();
         }
-        std::string job_id = json::parse(submit.body).value("id", std::string());
-        if (job_id.empty()) {
-            LOG(ERROR, "acestep-server") << "synth submit returned no job id: " << submit.body << std::endl;
-            fail("synth submit returned no job id");
-            return;
-        }
+        const bool vocal = !is_instrumental_sentinel(lyrics);
 
-        // Poll until the job finishes (music generation: seconds to a few minutes).
-        const std::string job_url = base + "/job?id=" + job_id;
-        std::string status;
-        for (int i = 0; i < 1200; ++i) {  // ~20 min ceiling at 1s cadence
-            auto poll = utils::HttpClient::get(job_url, {}, 30);
-            if (poll.status_code == 200) {
-                try { status = json::parse(poll.body).value("status", std::string()); }
-                catch (...) { status.clear(); }
+        std::string error;
+        std::string synth_body;
+        if (vocal) {
+            synth["lyrics"] = lyrics;
+            synth["lm_mode"] = "generate";
+            std::string language = "en";
+            if (request.contains("vocal_language") && request["vocal_language"].is_string()) {
+                language = request["vocal_language"].get<std::string>();
             }
-            if (status == "done" || status == "failed" || status == "cancelled") break;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        if (status != "done") {
-            LOG(ERROR, "acestep-server") << "synth job " << job_id << " ended with status '" << status << "'" << std::endl;
-            fail("synth job ended with status '" + status + "'");
-            return;
+            synth["vocal_language"] = language;
+
+            if (!run_job("/lm", synth.dump(), synth_body, error)) {
+                fail(error);
+                return;
+            }
+        } else {
+            synth["lyrics"] = "[Instrumental]";
+            synth_body = synth.dump();
         }
 
-        auto result = utils::HttpClient::get(job_url + "&result=1", {}, 120);
-        if (result.status_code != 200) {
-            LOG(ERROR, "acestep-server") << "fetching job result failed (HTTP " << result.status_code << ")" << std::endl;
-            fail("fetching job result failed (HTTP " + std::to_string(result.status_code) + ")");
+        std::string result;
+        if (!run_job("/synth", synth_body, result, error)) {
+            fail(error);
             return;
         }
-        std::string audio = extract_multipart_audio(result.body);
+        std::string audio = extract_multipart_audio(result);
         if (audio.empty()) {
             LOG(ERROR, "acestep-server") << "no audio part in multipart result" << std::endl;
             fail("no audio part in synth result");

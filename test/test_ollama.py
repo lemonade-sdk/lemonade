@@ -49,6 +49,7 @@ class OllamaTests(ServerTestBase):
     additional_server_args = ["--sdcpp", "cpu"]
 
     _model_pulled = False
+    _tool_calling_model_pulled = False
 
     @classmethod
     def setUpClass(cls):
@@ -88,6 +89,17 @@ class OllamaTests(ServerTestBase):
             )
             self.assertEqual(response.status_code, 200)
             OllamaTests._model_pulled = True
+
+    def ensure_tool_calling_model_pulled(self):
+        """Ensure the tool-calling model is downloaded."""
+        if not OllamaTests._tool_calling_model_pulled:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+            OllamaTests._tool_calling_model_pulled = True
 
     # ========================================================================
     # Basic endpoint tests (no model required)
@@ -349,12 +361,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn(response.status_code, (200, 404), response.text)
 
         try:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            self.ensure_tool_calling_model_pulled()
 
             response = requests.post(
                 f"{self.base_url}/load",
@@ -526,6 +533,77 @@ class OllamaTests(ServerTestBase):
         self.assertGreater(len(chunks), 0)
         last_chunk = chunks[-1]
         self.assertTrue(last_chunk.get("done", False))
+
+    def test_015a_auto_load_forwards_only_ctx_size(self):
+        """Regression: Ollama auto-load must forward only ctx_size to recipe_options.
+
+        Request-scoped fields (temperature, top_p, num_predict, etc.) must not leak
+        into persistent model-load settings."""
+        self.ensure_model_pulled()
+
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
+
+        try:
+            custom_ctx_size = 8192
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "stream": False,
+                    "options": {
+                        "num_ctx": custom_ctx_size,
+                        "num_predict": 10,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "pinned": True,
+                        "llamacpp_args": "--foo-bar",
+                        "auto_evict": True,
+                        "evict_idle_timeout": 1,
+                    },
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            # Verify ctx_size was applied and request-scoped options did not leak
+            # by inspecting the runtime recipe_options from /health.
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            loaded_model = None
+            for m in health_response.json().get("all_models_loaded", []):
+                if m["model_name"] == ENDPOINT_TEST_MODEL:
+                    loaded_model = m
+                    break
+            self.assertIsNotNone(
+                loaded_model,
+                f"{ENDPOINT_TEST_MODEL} should be loaded after auto-load",
+            )
+            recipe_options = loaded_model.get("recipe_options", {})
+            self.assertEqual(
+                recipe_options.get("ctx_size"),
+                custom_ctx_size,
+                "ctx_size should be present in recipe_options",
+            )
+            for field in (
+                "temperature",
+                "top_p",
+                "num_predict",
+                "pinned",
+                "llamacpp_args",
+                "auto_evict",
+                "evict_idle_timeout",
+            ):
+                self.assertNotIn(
+                    field,
+                    recipe_options,
+                    f"Request-scoped field '{field}' must not leak into recipe_options",
+                )
+        finally:
+            unload_all_models()
 
     # ========================================================================
     # 501 stubs
@@ -779,12 +857,7 @@ class OllamaTests(ServerTestBase):
             # Use a model with native tool-calling support in its chat template;
             # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
             # autoparser ignores tools even with tool_choice required.
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            self.ensure_tool_calling_model_pulled()
 
             response = requests.post(
                 f"{self.base_url}/load",

@@ -2,8 +2,10 @@
 #include "lemon/backends/vllm/vllm.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
 #include "lemon/model_manager.h"
+#include "lemon/model_registry.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
@@ -17,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <regex>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -26,6 +29,11 @@ namespace lemon {
 namespace backends {
 
 static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
+
+static std::string registry_repo_id_from_checkpoint(const std::string& checkpoint) {
+    const auto separator = checkpoint.find(':');
+    return separator == std::string::npos ? checkpoint : checkpoint.substr(0, separator);
+}
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -124,11 +132,28 @@ json VLLMServer::prepare_openai_request(const json& request) {
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
-// First checks the HuggingFace hub cache; if config.json isn't there yet,
-// fetches it over HTTP from huggingface.co directly. This ensures detection
-// works on first load before vLLM has downloaded anything.
-static std::string detect_quant_method(const std::string& model_id) {
-    // 1. Check HF cache first (fast path)
+// Prefer the Lemonade-managed active snapshot. Hugging Face models retain the
+// historical cache/network fallback; ModelScope models are always loaded from
+// their normalized local snapshot and must never fall back to Hugging Face.
+static std::string detect_quant_method(const std::string& model_id,
+                                       const fs::path& local_snapshot,
+                                       RemoteRegistrySource registry_source) {
+    if (!local_snapshot.empty()) {
+        fs::path cfg = local_snapshot / "config.json";
+        if (fs::exists(cfg)) {
+            std::ifstream f(cfg);
+            std::stringstream buf;
+            buf << f.rdbuf();
+            std::string result = parse_quant_method(buf.str());
+            if (!result.empty()) return result;
+        }
+    }
+
+    if (registry_source != RemoteRegistrySource::HuggingFace) {
+        return "";
+    }
+
+    // Check the historical HF cache location (fast path).
     std::string hf_dir = "models--";
     for (char c : model_id) {
         if (c == '/') hf_dir += "--";
@@ -152,7 +177,7 @@ static std::string detect_quant_method(const std::string& model_id) {
         }
     }
 
-    // 2. Fetch directly from HF
+    // Fetch directly from HF only for Hugging Face registrations.
     std::string url = "https://huggingface.co/" + model_id + "/resolve/main/config.json";
     auto resp = HttpClient::get(url);
     if (resp.status_code == 200) {
@@ -280,9 +305,32 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             );
         }
 #ifdef __linux__
-        // One release per GPU target since 0.19.1: release tag is
-        // {version}-{target_arch}, e.g. vllm0.20.1-rocm7.12.0-gfx1151.
-        std::string release_tag = version + "-" + target_arch;
+        // The per-arch override replaces ONLY the builtin default base, so an explicit
+        // vllm.rocm_bin pin is not silently clobbered on an MI300X host.
+        std::string arch_override = SystemInfo::vllm_rocm_version_override(target_arch);
+        std::string default_pin = BackendUtils::get_backend_version("vllm", "rocm");
+        const bool on_builtin_default = version.empty() || version == default_pin;
+        const std::string& effective_version =
+            (!arch_override.empty() && on_builtin_default) ? arch_override : version;
+        // One release per GPU target since 0.19.1 (vllm0.20.1-rocm7.12.0-gfx1151): a bare
+        // base gets the detected suffix appended. An already-suffixed pin is rejected
+        // unless it matches, so a cross-arch pin cannot install against the wrong line.
+        static const std::regex arch_suffix_re("-(gfx[0-9a-fA-FxX]+)$");
+        std::smatch arch_suffix_match;
+        std::string release_tag;
+        if (std::regex_search(effective_version, arch_suffix_match, arch_suffix_re)) {
+            const std::string pinned_arch = arch_suffix_match[1].str();
+            if (pinned_arch != target_arch) {
+                throw std::runtime_error(
+                    "vLLM ROCm pin '" + effective_version + "' targets " + pinned_arch +
+                    " but this host is " + target_arch +
+                    "; pin a " + target_arch +
+                    " release (vllm.rocm_bin) or unset it to use the default.");
+            }
+            release_tag = effective_version;
+        } else {
+            release_tag = effective_version + "-" + target_arch;
+        }
         params.version_override = release_tag;
         params.filename = release_tag + "-x64.tar.gz";
 #else
@@ -318,13 +366,36 @@ void VLLMServer::load(const std::string& model_name,
 
     backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
 
-    // vLLM uses HuggingFace model IDs, not local file paths.
     std::string model_id = model_info.checkpoint();
     if (model_id.empty()) {
-        throw std::runtime_error("Model checkpoint (HuggingFace ID) not found for: " + model_name);
+        throw std::runtime_error("Model checkpoint (registry ID) not found for: " + model_name);
     }
 
-    LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
+    const RemoteRegistrySource registry_source =
+        parse_remote_registry_source(model_info.registry_source);
+    std::string model_target = model_id;
+    fs::path active_snapshot;
+
+    // vLLM can resolve Hugging Face IDs itself, but it has no native knowledge
+    // of Lemonade's ModelScope cache namespace. Point it at the normalized
+    // active snapshot so it stays offline and uses the exact revision Lemonade
+    // recorded for update checks.
+    if (registry_source == RemoteRegistrySource::ModelScope) {
+        if (model_manager_ == nullptr) {
+            throw std::runtime_error("Model manager is unavailable while resolving ModelScope cache");
+        }
+        const std::string repo_id = registry_repo_id_from_checkpoint(model_id);
+        const fs::path repo_cache = path_from_utf8(model_manager_->get_hf_cache_dir()) /
+            hf_cache::repo_id_to_cache_dir_name(repo_id, model_info.registry_source);
+        active_snapshot = hf_cache::active_snapshot_path(repo_cache);
+        if (active_snapshot.empty() || !fs::exists(active_snapshot)) {
+            throw std::runtime_error(
+                "ModelScope snapshot is not downloaded or refs/main is invalid for: " + model_name);
+        }
+        model_target = path_to_utf8(active_snapshot);
+    }
+
+    LOG(DEBUG, "vLLM") << "Using model target: " << model_target << std::endl;
 
     std::string vllm_model_config_path =
         utils::get_resource_path("resources/vllm_model_config.json");
@@ -339,7 +410,7 @@ void VLLMServer::load(const std::string& model_name,
 
     std::vector<std::string> args;
     args.push_back("--model");
-    args.push_back(model_id);
+    args.push_back(model_target);
     args.push_back("--port");
     args.push_back(std::to_string(port_));
     args.push_back("--host");
@@ -348,7 +419,13 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--served-model-name");
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
-    args.push_back("--enforce-eager");
+    // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
+    const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
+        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+        resolved_vllm_args.has_enforce_eager);
+    if (launch_policy.enforce_eager) {
+        args.push_back("--enforce-eager");
+    }
     // Pass ctx_size through to vllm-server's --max-model-len. Trust the
     // user's value verbatim; the global default lives in defaults.json
     // (same as llamacpp). Larger values raise KV-cache memory and Triton
@@ -360,8 +437,9 @@ void VLLMServer::load(const std::string& model_name,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
     // For AWQ specifically we force the 'awq' kernel because vLLM's default
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
-    std::string quant_method = detect_quant_method(model_id);
-    if (quant_method == "awq") {
+    std::string quant_method = detect_quant_method(
+        model_id, active_snapshot, registry_source);
+    if (quant_method == "awq" && launch_policy.force_awq_kernel) {
         if (!resolved_vllm_args.has_quantization_arg) {
             LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
             args.push_back("--quantization");
@@ -391,9 +469,19 @@ void VLLMServer::load(const std::string& model_name,
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
     // Keep this overridable through vllm_args for users that want another limit.
-    if (!resolved_vllm_args.has_memory_budget_arg) {
+    // Discrete-HBM GPUs get vLLM's native budgeting instead of a fixed cap.
+    if (launch_policy.cap_kv_cache) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
+    }
+
+    // Emitted as its own argv element, never through vllm_args: that tokenizer strips quotes
+    // and would corrupt the JSON.
+    if (!resolved_vllm_args.speculative_config.empty()) {
+        LOG(DEBUG, "vLLM") << "Enabling speculative decoding: "
+                           << resolved_vllm_args.speculative_config << std::endl;
+        args.push_back("--speculative-config");
+        args.push_back(resolved_vllm_args.speculative_config);
     }
 
     if (!resolved_vllm_args.args.empty()) {
@@ -663,7 +751,8 @@ std::map<std::string, nlohmann::json> VLLMServer::get_additional_telemetry() {
 
     std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/metrics";
     try {
-        auto response = utils::HttpClient::get(url, {}, 1);
+        auto response = utils::HttpClient::get(url, {}, 1,
+                                               utils::HttpSecurityPolicy::TrustedLoopback);
         if (response.status_code == 200) {
             return parse_vllm_metrics_text(response.body);
         }
