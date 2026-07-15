@@ -1,0 +1,27 @@
+name: "Close stale PRs"
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 7
+          days-before-close: 7
+          stale-pr-message: >
+            This pull request has not had any activity in the last week.
+            It is being marked as stale — if there is no further activity
+            in the next week, it will be automatically closed.
+          exempt-pr-labels: stale-exempt
+          close-pr-message: >
+            This pull request has been automatically closed due to
+            extended inactivity. If you would like to continue working
+            on this, feel free to reopen it.
