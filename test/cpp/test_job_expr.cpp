@@ -95,11 +95,24 @@ static void test_truthiness_and_edges() {
     check("edge: unterminated ref throws", threw("${a", c));
 }
 
+static void test_syntax_check() {
+    check("syntax: valid passes", check_expression_syntax("${a} > 1 && ${b} == 'x'").empty());
+    check("syntax: unresolved ref deferred", check_expression_syntax("${x.y.z} + 1").empty());
+    check("syntax: type mismatch deferred", check_expression_syntax("${backend} < 5").empty());
+    check("syntax: incomplete rejected", !check_expression_syntax("1 +").empty());
+    check("syntax: unmatched paren rejected", !check_expression_syntax("(true").empty());
+    check("syntax: chained comparison rejected", !check_expression_syntax("1 < 2 < 3").empty());
+    check("syntax: trailing tokens rejected", !check_expression_syntax("1 2").empty());
+    check("syntax: bad char rejected", !check_expression_syntax("1 @ 2").empty());
+    check("syntax: empty ok", check_expression_syntax("").empty());
+}
+
 int main() {
     test_reference_resolution();
     test_arithmetic_and_precedence();
     test_comparison_and_boolean();
     test_truthiness_and_edges();
+    test_syntax_check();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

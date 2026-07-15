@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -118,6 +119,12 @@ void JobManager::load_from_disk() {
                                      << "')" << std::endl;
             }
             const std::string id = job.id;
+            const size_t dash = id.rfind('-');
+            if (dash != std::string::npos && dash + 1 < id.size()) {
+                char* end = nullptr;
+                const unsigned long long suffix = std::strtoull(id.c_str() + dash + 1, &end, 10);
+                if (end && *end == '\0' && suffix > id_counter_) id_counter_ = suffix;
+            }
             controls_[id] = std::make_shared<Control>();
             order_.push_back(id);
             jobs_.emplace(id, std::move(job));
@@ -291,13 +298,17 @@ bool JobManager::remove(const std::string& id, bool& active_out) {
         auto ctrl = control_for_locked(id);
         ctrl->interrupt_requested.store(true);
         ctrl->cancel.store(true);
+        ctrl->delete_requested.store(true);
+        LOG(INFO, "Jobs") << "delete requested for active job " << id
+                          << " (erased after cleanup)" << std::endl;
+        return true;
     }
     jobs_.erase(id);
     controls_.erase(id);
     order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
     queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
     persist_locked();
-    LOG(INFO, "Jobs") << "deleted job " << id << (active_out ? " (was active)" : "") << std::endl;
+    LOG(INFO, "Jobs") << "deleted job " << id << std::endl;
     return true;
 }
 
@@ -355,6 +366,16 @@ void JobManager::worker_main() {
             LOG(INFO, "Jobs") << "job " << id << " interrupted — unloaded resident model(s)"
                               << std::endl;
         }
+
+        if (ctrl->delete_requested.load()) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            jobs_.erase(id);
+            controls_.erase(id);
+            order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
+            queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
+            persist_locked();
+            LOG(INFO, "Jobs") << "erased deleted job " << id << " after cleanup" << std::endl;
+        }
     }
 }
 
@@ -390,6 +411,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             }
             if (job.cursor.empty()) {
                 job.status = JobStatus::Completed;
+                for (auto& st : job.steps)
+                    if (st.status == StepStatus::Pending) st.status = StepStatus::Skipped;
                 if (job.finished_at.empty()) job.finished_at = iso_now();
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " completed" << std::endl;

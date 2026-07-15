@@ -115,6 +115,14 @@ class JobEngineTests(unittest.TestCase):
                 return s
         self.fail(f"step {step_id} not present in job")
 
+    def poll_gone(self, job_id, timeout=20):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.get_job(job_id).status_code == 404:
+                return
+            time.sleep(0.2)
+        self.fail(f"job {job_id} was not erased in time")
+
     def poll_cursor(self, job_id, target_cursor, timeout=30):
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -166,6 +174,18 @@ class JobEngineTests(unittest.TestCase):
         self.assertTrue(done["context"]["a"])
         self.assertEqual(self.step_by_id(done, "a")["status"], "completed")
 
+    def test_list_jobs_get(self):
+        self.create_job("listme", [{"id": "a", "op": "system_info"}])
+        r = requests.get(f"{BASE}/jobs", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertIn("jobs", body)
+        self.assertIsInstance(body["jobs"], list)
+        self.assertTrue(
+            any(j.get("name") == "listme" for j in body["jobs"]),
+            f"created job not present in list: {body}",
+        )
+
     def test_invalid_graph_rejected(self):
         backward = [
             {"id": "a", "op": "system_info", "on_done": "a"},
@@ -211,7 +231,7 @@ class JobEngineTests(unittest.TestCase):
         job = self.create_job("branch", steps, inputs={"pick": "b"})
         done = self.poll_status(job["id"], "completed")
         self.assertEqual(self.step_by_id(done, "a")["status"], "completed")
-        self.assertEqual(self.step_by_id(done, "b")["status"], "pending")
+        self.assertEqual(self.step_by_id(done, "b")["status"], "skipped")
         self.assertEqual(self.step_by_id(done, "c")["status"], "completed")
 
     def test_on_fail_goto_recovery(self):
@@ -270,7 +290,7 @@ class JobEngineTests(unittest.TestCase):
         self.poll_status(jid2, "running", timeout=10)
         r = requests.delete(f"{BASE}/jobs/{jid2}", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(self.get_job(jid2).status_code, 404)
+        self.poll_gone(jid2)
 
     def test_persistence_across_restart(self):
         steps = [{"id": "w", "op": "sleep", "params": {"ms": 8000}}]
@@ -455,6 +475,77 @@ class JobEngineTests(unittest.TestCase):
         r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=40)
+
+    def test_delete_active_exclusive_cleans_up(self):
+        backend = self.require_real_backend()
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+            {"id": "u", "op": "unload"},
+        ]
+        job = self.create_job("delete-active-exclusive", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+
+        r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if (
+                requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded")
+                is None
+            ):
+                break
+            time.sleep(0.25)
+        self.assertIsNone(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            "deleting an active exclusive job did not unload the resident model",
+        )
+        self.poll_gone(jid)
+
+    def test_preexisting_model_survives_job_interrupt(self):
+        backend = self.require_real_backend()
+        r = requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+            },
+            timeout=120,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        steps = [
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+            {"id": "u", "op": "unload"},
+        ]
+        job = self.create_job("preexisting-survives", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=30)
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "interrupted", timeout=20)
+
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "interrupt cleanup unloaded a model the job did not load",
+        )
 
     def test_bench_shaped_sweep(self):
         backend = self.require_real_backend()

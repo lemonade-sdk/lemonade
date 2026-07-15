@@ -74,13 +74,27 @@ A single worker runs one job at a time.
 
 - **pause** — stop *after the current step*; the job goes `paused` at the next
   step boundary and (if exclusive) releases the slot.
-- **interrupt** — cancel the *current step now* (kills an in-flight `load`); the
-  step returns to `pending`, the job goes `interrupted`. An interrupted
-  exclusive job unloads whatever it left resident before releasing the slot.
+- **interrupt** — cancel the *current step now* (kills an in-flight `load`, and
+  aborts an in-flight `chat` at the HTTP layer rather than waiting for the
+  backend to reply); the step returns to `pending`, the job goes `interrupted`.
+  An interrupted exclusive job unloads only the model(s) it loaded itself before
+  releasing the slot: the reconcile snapshots the router's loaded-model set when
+  the exclusive session begins and unloads only `(current set − snapshot)`,
+  leaving models that were resident before the job started and pinned models
+  untouched.
 - **resume** — `paused` continues at the next step; `interrupted` re-runs the
   pending step. Steps must be idempotent on re-run.
-- **delete** — removes the job (interrupting it first if running).
+- **delete** — removes the job. Deleting an active job interrupts it first and
+  defers the actual removal until the worker has finished cleanup (reconcile
+  unload), so a deleted exclusive job never leaks a resident model.
 - **query** — the full job record (status, per-step state, context).
+
+Chat interrupts are genuine aborts: the chat op passes its cancel flag through
+`Router::chat_completion` to the backend `WrappedServer`, and `forward_request`
+hands it to the HTTP client, which tears down the in-flight connection (curl
+`XFERINFO` abort, fired at least once per second even when no bytes move). The
+exclusive slot is therefore released promptly instead of being held until a slow
+or stuck backend responds.
 
 There is no rollback: an op commits only on completion, so an interrupted step
 never took effect and "before the step" is automatic.

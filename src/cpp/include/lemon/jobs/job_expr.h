@@ -133,6 +133,8 @@ public:
         return v;
     }
 
+    void set_syntax_only() { syntax_only_ = true; }
+
 private:
     const Token& peek() const { return toks_[pos_]; }
     const Token& advance() { return toks_[pos_++]; }
@@ -141,8 +143,11 @@ private:
         return false;
     }
 
-    static double num(const json& v, const char* ctx) {
-        if (!v.is_number()) throw JobError(400, std::string("expected a number for ") + ctx);
+    double num(const json& v, const char* ctx) const {
+        if (!v.is_number()) {
+            if (syntax_only_) return 0.0;
+            throw JobError(400, std::string("expected a number for ") + ctx);
+        }
         return v.get<double>();
     }
 
@@ -188,7 +193,10 @@ private:
             if (op == "*") l = num(l, "*") * num(r, "*");
             else {
                 double d = num(r, "/");
-                if (d == 0.0) throw JobError(400, "division by zero in expression");
+                if (d == 0.0) {
+                    if (syntax_only_) { l = 0.0; continue; }
+                    throw JobError(400, "division by zero in expression");
+                }
                 l = num(l, "/") / d;
             }
         }
@@ -206,7 +214,10 @@ private:
             case Tok::True: advance(); return true;
             case Tok::False: advance(); return false;
             case Tok::Null: advance(); return json(nullptr);
-            case Tok::Ref: advance(); return resolve_ref_path(t.text, ctx_);
+            case Tok::Ref:
+                advance();
+                if (syntax_only_) return json(nullptr);
+                return resolve_ref_path(t.text, ctx_);
             case Tok::Op:
                 if (t.text == "(") {
                     advance();
@@ -220,7 +231,7 @@ private:
         throw JobError(400, "unexpected token in expression");
     }
 
-    static json compare(const std::string& op, const json& l, const json& r) {
+    json compare(const std::string& op, const json& l, const json& r) const {
         if (op == "==") return l == r;
         if (op == "!=") return l != r;
         if (l.is_number() && r.is_number()) {
@@ -238,12 +249,14 @@ private:
             if (op == ">") return a > b;
             return a >= b;
         }
+        if (syntax_only_) return false;
         throw JobError(400, "cannot order-compare these operand types");
     }
 
     std::vector<Token> toks_;
     const json& ctx_;
     size_t pos_ = 0;
+    bool syntax_only_ = false;
 };
 
 }
@@ -288,6 +301,19 @@ inline json resolve_refs(const json& value, const json& ctx) {
 inline bool eval_condition(const std::string& expr, const json& ctx) {
     if (expr.empty()) return true;
     return expr_detail::truthy(expr_detail::Parser(expr_detail::tokenize(expr), ctx).parse());
+}
+
+inline std::string check_expression_syntax(const std::string& expr) {
+    if (expr.empty()) return "";
+    static const json placeholder = json(nullptr);
+    try {
+        expr_detail::Parser parser(expr_detail::tokenize(expr), placeholder);
+        parser.set_syntax_only();
+        parser.parse();
+    } catch (const JobError& e) {
+        return e.what();
+    }
+    return "";
 }
 
 }

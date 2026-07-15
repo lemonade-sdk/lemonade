@@ -373,6 +373,8 @@ void Router::begin_exclusive() {
     std::lock_guard<std::mutex> lock(load_mutex_);
     exclusive_active_ = true;
     exclusive_owner_ = std::this_thread::get_id();
+    exclusive_cv_.notify_all();
+    load_cv_.notify_all();
 }
 
 void Router::end_exclusive() {
@@ -380,12 +382,38 @@ void Router::end_exclusive() {
     exclusive_active_ = false;
     exclusive_owner_ = std::thread::id{};
     exclusive_cv_.notify_all();
+    load_cv_.notify_all();
 }
 
 void Router::wait_for_slot_clearance(std::unique_lock<std::mutex>& lock) {
     exclusive_cv_.wait(lock, [&] {
         return !exclusive_active_ || exclusive_owner_ == std::this_thread::get_id();
     });
+}
+
+std::set<std::string> Router::snapshot_loaded_models() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::set<std::string> names;
+    for (const auto& server : loaded_servers_)
+        if (server->is_backend_alive()) names.insert(server->get_model_name());
+    return names;
+}
+
+void Router::unload_models_not_in(const std::set<std::string>& keep) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
+    std::vector<WrappedServer*> victims;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive()) continue;
+        if (server->is_pinned()) continue;
+        if (keep.count(server->get_model_name())) continue;
+        victims.push_back(server.get());
+    }
+    for (auto* victim : victims) {
+        LOG(INFO, "Router") << "Reconcile-unload of job-loaded model: "
+                            << victim->get_model_name() << std::endl;
+        evict_server(victim);
+    }
 }
 
 void Router::load_model(const std::string& model_name,
@@ -413,15 +441,11 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    wait_for_slot_clearance(lock);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_
+               && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
+    });
 
-    // Wait if another thread is currently loading
-    while (is_loading_) {
-    LOG(INFO, "Router") << "Another load is in progress, waiting..." << std::endl;
-        load_cv_.wait(lock);
-    }
-
-    // Mark that we're now loading (prevents concurrent loads)
     is_loading_ = true;
 
     LOG(DEBUG, "Router") << "Loading model: " << canonical_model_name
@@ -638,6 +662,7 @@ void Router::load_model(const std::string& model_name,
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
+            retry_server->set_load_cancel_flag(cancel_flag);
 
             lock.unlock();
 
@@ -1104,14 +1129,25 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 }
 
-json Router::chat_completion(const json& request) {
+json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+
+    struct RequestCancelScope {
+        WrappedServer* server = nullptr;
+        ~RequestCancelScope() {
+            if (server) server->set_request_cancel_flag(nullptr);
+        }
+    } cancel_scope;
 
     try {
         WrappedServer* active_server = nullptr;
         json response = execute_inference(request, [&](WrappedServer* server) {
             active_server = server;
+            if (cancel) {
+                server->set_request_cancel_flag(cancel);
+                cancel_scope.server = server;
+            }
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);

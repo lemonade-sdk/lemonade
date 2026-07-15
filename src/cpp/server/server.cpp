@@ -487,9 +487,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             return lemon::jobs::json::object();
         };
         providers.chat_op = [this](const lemon::jobs::json& params,
-                                   lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            nlohmann::json response = router_->chat_completion(request);
+            nlohmann::json response = router_->chat_completion(request, &cancel);
             if (response.contains("error")) {
                 std::string msg = "chat failed";
                 const auto& err = response["error"];
@@ -501,9 +501,23 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             }
             return lemon::jobs::json::parse(response.dump());
         };
-        providers.begin_exclusive = [this] { router_->begin_exclusive(); };
+        auto exclusive_snapshot = std::make_shared<std::set<std::string>>();
+        auto snapshot_mutex = std::make_shared<std::mutex>();
+        providers.begin_exclusive = [this, exclusive_snapshot, snapshot_mutex] {
+            router_->begin_exclusive();
+            auto snap = router_->snapshot_loaded_models();
+            std::lock_guard<std::mutex> lk(*snapshot_mutex);
+            *exclusive_snapshot = std::move(snap);
+        };
         providers.end_exclusive = [this] { router_->end_exclusive(); };
-        providers.reconcile_unload = [this] { router_->unload_model(""); };
+        providers.reconcile_unload = [this, exclusive_snapshot, snapshot_mutex] {
+            std::set<std::string> keep;
+            {
+                std::lock_guard<std::mutex> lk(*snapshot_mutex);
+                keep = *exclusive_snapshot;
+            }
+            router_->unload_models_not_in(keep);
+        };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
             lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
     }
@@ -794,7 +808,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        if (endpoint != "params") {
+        if (endpoint != "params" && endpoint != "jobs") {
             web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
                 res.status = 405;
                 res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");

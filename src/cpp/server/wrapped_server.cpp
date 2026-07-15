@@ -651,7 +651,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             request.dump(),
             headers,
             timeout_seconds,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            request_cancel_);
         note_backend_activity();
 
         if (response.status_code == 200) {

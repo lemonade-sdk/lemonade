@@ -19,6 +19,9 @@ inline std::string validate_steps(const std::vector<StepRecord>& steps,
     for (int i = 0; i < (int)steps.size(); ++i) {
         const std::string& id = steps[i].id;
         if (id.empty()) return "step " + std::to_string(i) + " has an empty id";
+        if (id == "inputs") return "step id 'inputs' is reserved";
+        if (id.find('.') != std::string::npos)
+            return "step id '" + id + "' must not contain '.'";
         if (index.count(id)) return "duplicate step id '" + id + "'";
         index[id] = i;
     }
@@ -37,11 +40,8 @@ inline std::string validate_steps(const std::vector<StepRecord>& steps,
 
     auto check_expr = [](const std::string& e, const std::string& where) -> std::string {
         if (e.empty()) return "";
-        try {
-            expr_detail::tokenize(e);
-        } catch (const JobError& err) {
-            return where + ": " + err.what();
-        }
+        const std::string err = check_expression_syntax(e);
+        if (!err.empty()) return where + ": " + err;
         return "";
     };
 

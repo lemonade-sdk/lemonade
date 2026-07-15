@@ -34,6 +34,7 @@ private:
     struct Control {
         std::atomic<bool> pause_requested{false};
         std::atomic<bool> interrupt_requested{false};
+        std::atomic<bool> delete_requested{false};
         CancelFlag cancel{false};
     };
 

@@ -5,6 +5,7 @@
 #include <memory>
 #include <map>
 #include <mutex>
+#include <set>
 #include <condition_variable>
 #include <thread>
 #include <vector>
@@ -112,7 +113,7 @@ public:
     // Returns empty string if the backend does not support streaming transcription.
     std::string get_streaming_transcription_address(const std::string& model_name) const;
 
-    json chat_completion(const json& request);
+    json chat_completion(const json& request, std::atomic<bool>* cancel = nullptr);
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
@@ -151,6 +152,9 @@ public:
 
     void begin_exclusive();
     void end_exclusive();
+
+    std::set<std::string> snapshot_loaded_models() const;
+    void unload_models_not_in(const std::set<std::string>& keep);
 
     // Test hooks
     void simulate_vram_pressure(double pct);

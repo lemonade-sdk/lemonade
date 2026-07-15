@@ -68,6 +68,34 @@ static void test_invalid_graphs() {
     badexpr[0].when = "1 @ 2";
     check("invalid: malformed when rejected",
           validate_steps(badexpr, kOps).find("when") != std::string::npos);
+
+    std::vector<StepRecord> incomplete = {step("a", "load")};
+    incomplete[0].when = "1 +";
+    check("invalid: incomplete expression rejected at validation",
+          !validate_steps(incomplete, kOps).empty());
+
+    std::vector<StepRecord> unbalanced = {step("a", "load")};
+    unbalanced[0].when = "(true";
+    check("invalid: unmatched paren rejected at validation",
+          !validate_steps(unbalanced, kOps).empty());
+
+    std::vector<StepRecord> chained = {step("a", "load"), step("b", "chat")};
+    chained[0].branch.push_back({"1 < 2 < 3", "b"});
+    check("invalid: chained comparison rejected at validation",
+          !validate_steps(chained, kOps).empty());
+
+    std::vector<StepRecord> defref = {step("a", "load")};
+    defref[0].when = "${some.missing.ref} > 0";
+    check("valid: unresolved ref deferred past validation",
+          validate_steps(defref, kOps).empty());
+
+    std::vector<StepRecord> reserved = {step("inputs", "load")};
+    check("invalid: step id 'inputs' rejected",
+          validate_steps(reserved, kOps).find("reserved") != std::string::npos);
+
+    std::vector<StepRecord> dotted = {step("a.b", "load")};
+    check("invalid: step id with '.' rejected",
+          validate_steps(dotted, kOps).find("'.'") != std::string::npos);
 }
 
 static void test_json_roundtrip() {
