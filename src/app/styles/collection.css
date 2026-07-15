@@ -558,6 +558,12 @@
     background: var(--bg-alpha-1);
 }
 
+.quick-add-condition-divider {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border-primary);
+}
+
 /* Summary line */
 .quick-rule-summary {
     font-size: 0.65rem;
@@ -1887,6 +1893,48 @@
 
 .rpc-no-selection-text {
     font-size: 0.78rem;
+}
+
+/* ── Per-rule graph escalation (inline canvas inside the rules list) ──────── */
+
+.rule-graph-row {
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.rule-graph-row--dragging {
+    opacity: 0.5;
+}
+
+.rule-graph-row-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-primary);
+    background: var(--bg-tertiary);
+}
+
+.rule-graph-row-header .rpc-rule-id-input {
+    width: 130px;
+}
+
+.rule-graph-collapse {
+    margin-left: auto;
+    font-size: 0.65rem;
+    padding: 2px 8px;
+}
+
+.rule-graph-row-body {
+    height: 340px;
+    flex: none;
+}
+
+.quick-rule-graph {
+    color: var(--text-tertiary);
 }
 
 /* ── RouterRuleCanvas ─────────────────────────────────────────────────────── */

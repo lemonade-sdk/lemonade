@@ -219,7 +219,7 @@ export interface RouterRule {
   outputs?: Record<string, unknown>;
 }
 
-export type RouterRoutingMode = 'llm' | 'quick' | 'rules';
+export type RouterRoutingMode = 'llm' | 'rules';
 
 export interface RouterCollectionDraft {
   id?: string;
@@ -252,7 +252,7 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
   if (draft.routingMode === 'llm' && draft.routerModel) {
     componentSet.add(draft.routerModel);
   }
-  if (draft.routingMode === 'rules' || draft.routingMode === 'quick') {
+  if (draft.routingMode !== 'llm') {
     for (const c of draft.classifiers ?? []) {
       if (c.model) componentSet.add(c.model);
     }
@@ -277,7 +277,7 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
     }
     routing.router = { type: 'llm', model: draft.routerModel, prompt: draft.routerPrompt.trim() };
   } else {
-    // Both 'quick' and 'rules' emit the same rules-based routing JSON
+    // Rules-based routing JSON (classifiers[] + rules[])
     if (!draft.rules?.length) {
       throw new Error('Rules router requires at least one rule.');
     }
@@ -370,14 +370,12 @@ export const routingToRouterCollectionDraft = (
     };
   });
 
-  // Detect quick mode: no classifiers, every rule has a single leaf condition tree
-  const isQuick = classifiers.length === 0 && rules.length > 0 && rules.every(
-    r => r.conditionTree !== null && 'signalType' in r.conditionTree && r.conditionTree.signalType !== 'classifier'
-  );
-
+  // A single rules-based mode: the panel decides per rule whether to show the
+  // simple form or the graph canvas (see isFlatMatch), so parsing never needs
+  // to pick a global "quick vs advanced" mode.
   return {
     id: collectionId, name, candidates, defaultModel,
-    routingMode: isQuick ? 'quick' : 'rules',
+    routingMode: 'rules',
     classifiers, rules,
   };
 };

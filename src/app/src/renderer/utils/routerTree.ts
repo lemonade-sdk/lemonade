@@ -243,6 +243,26 @@ export function matchExprToRuleNode(expr: Record<string, unknown>): RuleNode | n
 }
 
 
+// A match expression is "flat" when the simple per-rule form can fully
+// represent it: a lone condition or a single-level AND/OR over non-composite
+// signals. NOT gates and nested gates need the graph canvas. A classifier
+// condition is flat when it matches by label (or just fires); a score range
+// (min/max score) still needs the graph. Leaf-level `.not` stays flat (the
+// simple form negates chips).
+export function isFlatLeaf(leaf: RuleLeaf): boolean {
+  if (leaf.signalType === 'classifier') {
+    return leaf.minScore === undefined && leaf.maxScore === undefined;
+  }
+  return true;
+}
+
+export function isFlatMatch(node: RuleNode | null): boolean {
+  if (!node) return true;
+  if (isLeaf(node)) return isFlatLeaf(node);
+  if (node.operator === 'NOT') return false;
+  return node.conditions.every(c => isLeaf(c) && isFlatLeaf(c));
+}
+
 export function validateRuleNode(node: RuleNode | null, classifierIds: Set<string>): string[] {
   if (!node) return [];
   if (isLeaf(node)) {
