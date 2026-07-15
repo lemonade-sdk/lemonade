@@ -495,6 +495,80 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=40)
 
+    # ── Phase 4: a bench-shaped sweep (the AutoOpt methodology end-to-end) ──
+
+    def test_bench_shaped_sweep(self):
+        backend = self.require_real_backend()
+
+        def config(tag, args):
+            return [
+                {"id": f"u_{tag}0", "op": "unload"},
+                {
+                    "id": f"ld_{tag}",
+                    "op": "load",
+                    "params": {
+                        "model": TEST_MODEL,
+                        "llamacpp_backend": backend,
+                        "ctx_size": 2048,
+                        "llamacpp_args": args,
+                        "merge_args": False,
+                        "save_options": False,
+                    },
+                },
+                {
+                    "id": f"run_{tag}",
+                    "op": "chat",
+                    "params": {
+                        "model": TEST_MODEL,
+                        "messages": [{"role": "user", "content": "Count to five."}],
+                        "temperature": 0,
+                        "max_completion_tokens": 24,
+                    },
+                    "extract": {
+                        f"{tag}_tps": "timings.predicted_per_second",
+                        f"{tag}_ttft": "timings.prompt_ms",
+                    },
+                },
+                {"id": f"u_{tag}1", "op": "unload"},
+            ]
+
+        steps = config("a", "") + config("b", "-b 256")
+        steps += [
+            {
+                "id": "decide",
+                "op": "system_info",
+                "branch": [{"when": "${a_tps} >= ${b_tps}", "goto": "a_wins"}],
+                "on_done": "b_wins",
+            },
+            {"id": "a_wins", "op": "sleep", "params": {"ms": 10}, "on_done": "done"},
+            {"id": "b_wins", "op": "sleep", "params": {"ms": 10}},
+            {"id": "done", "op": "sleep", "params": {"ms": 1}},
+        ]
+
+        job = self.create_job("bench-sweep", steps)
+        result = self.poll_status(job["id"], "completed", timeout=180)
+        ctx = result["context"]
+
+        # Both configs were measured and their throughput extracted.
+        self.assertIn("a_tps", ctx)
+        self.assertIn("b_tps", ctx)
+        self.assertGreater(ctx["a_tps"], 0)
+        self.assertGreater(ctx["b_tps"], 0)
+
+        # The branch fired on the measured metric: exactly one winner ran, and it
+        # is consistent with the extracted tps values.
+        a_ran = self.step_by_id(result, "a_wins")["status"] == "completed"
+        b_ran = self.step_by_id(result, "b_wins")["status"] == "completed"
+        self.assertNotEqual(a_ran, b_ran, "exactly one winner branch should run")
+        if ctx["a_tps"] >= ctx["b_tps"]:
+            self.assertTrue(a_ran, "a had >= tps but b_wins ran")
+        else:
+            self.assertTrue(b_ran, "b had > tps but a_wins ran")
+
+        # No model left resident after the sweep's final unload.
+        h = requests.get(f"http://{HOST}:{PORT}/api/v1/health", timeout=5).json()
+        self.assertIsNone(h.get("model_loaded"))
+
 
 def parse_args():
     global _LEMOND_BINARY
