@@ -70,6 +70,14 @@ std::string next_in_list(const Job& job, const std::string& id) {
     return "";
 }
 
+bool job_needs_exclusive(const Job& job, const OpRegistry& registry) {
+    for (const auto& s : job.steps) {
+        const OpHandler* h = registry.find(s.op);
+        if (h && h->exclusive) return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 JobManager::JobManager(std::string cache_dir, OpRegistry registry)
@@ -299,6 +307,7 @@ void JobManager::worker_main() {
     while (true) {
         std::string id;
         std::shared_ptr<Control> ctrl;
+        bool exclusive = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
@@ -312,10 +321,31 @@ void JobManager::worker_main() {
             it->second.status = JobStatus::Running;
             if (it->second.started_at.empty()) it->second.started_at = iso_now();
             active_id_ = id;
+            exclusive = job_needs_exclusive(it->second, registry_);
             persist_locked();
             LOG(INFO, "Jobs") << "running job " << id << " from step '" << it->second.cursor << "'"
                               << std::endl;
         }
+
+        // Hold the Router's exclusive slot for the whole job so normal traffic
+        // queues behind it. begin/end run on this worker thread (the gate's
+        // owner). The guard fires end_exclusive exactly once, on every exit path.
+        struct ExclusiveGuard {
+            const OpRegistry& reg;
+            const std::string& id;
+            bool held = false;
+            void begin() {
+                if (reg.begin_exclusive) reg.begin_exclusive();
+                held = true;
+                LOG(INFO, "Jobs") << "job " << id << " acquired exclusive slot" << std::endl;
+            }
+            ~ExclusiveGuard() {
+                if (held && reg.end_exclusive) reg.end_exclusive();
+                if (held) LOG(INFO, "Jobs") << "job " << id << " released exclusive slot" << std::endl;
+            }
+        } guard{registry_, id};
+        if (exclusive) guard.begin();
+
         execute(id, ctrl);
         {
             std::lock_guard<std::mutex> lock(mutex_);

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <memory>
 #include <map>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
 #include <vector>
 #include <optional>
 #include <nlohmann/json.hpp>
@@ -72,7 +74,8 @@ public:
                     RecipeOptions options,
                     bool do_not_upgrade = true,
                     bool allow_reload_on_option_change = false,
-                    std::optional<bool> pinned = std::nullopt);
+                    std::optional<bool> pinned = std::nullopt,
+                    std::atomic<bool>* cancel_flag = nullptr);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -146,6 +149,12 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
+    // Exclusive slot gate: while a job engine worker holds the exclusive slot,
+    // every load/inference path on other (httplib) threads queues behind it; the
+    // owner thread passes through. begin/end run on the worker thread.
+    void begin_exclusive();
+    void end_exclusive();
+
     // Test hooks
     void simulate_vram_pressure(double pct);
 
@@ -167,6 +176,14 @@ private:
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+
+    // Exclusive slot gate (all guarded by load_mutex_). A running exclusive job
+    // sets exclusive_active_ with itself as owner; other threads park on
+    // exclusive_cv_ until it clears.
+    bool exclusive_active_ = false;
+    std::thread::id exclusive_owner_;
+    std::condition_variable exclusive_cv_;
+    void wait_for_slot_clearance(std::unique_lock<std::mutex>& lock);
 
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;

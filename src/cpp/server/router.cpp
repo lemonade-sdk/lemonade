@@ -369,12 +369,32 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
 }
 
+void Router::begin_exclusive() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    exclusive_active_ = true;
+    exclusive_owner_ = std::this_thread::get_id();
+}
+
+void Router::end_exclusive() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    exclusive_active_ = false;
+    exclusive_owner_ = std::thread::id{};
+    exclusive_cv_.notify_all();
+}
+
+void Router::wait_for_slot_clearance(std::unique_lock<std::mutex>& lock) {
+    exclusive_cv_.wait(lock, [&] {
+        return !exclusive_active_ || exclusive_owner_ == std::this_thread::get_id();
+    });
+}
+
 void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        RecipeOptions options,
                        bool do_not_upgrade,
                        bool allow_reload_on_option_change,
-                       std::optional<bool> pinned) {
+                       std::optional<bool> pinned,
+                       std::atomic<bool>* cancel_flag) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     const std::string backend_option = model_info.recipe + "_backend";
 
@@ -392,6 +412,9 @@ void Router::load_model(const std::string& model_name,
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
+
+    // Queue behind a running exclusive job (the job's worker thread passes through).
+    wait_for_slot_clearance(lock);
 
     // Wait if another thread is currently loading
     while (is_loading_) {
@@ -550,6 +573,8 @@ void Router::load_model(const std::string& model_name,
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
 
+        new_server->set_load_cancel_flag(cancel_flag);
+
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
@@ -589,6 +614,13 @@ void Router::load_model(const std::string& model_name,
 
             is_loading_ = false;
             load_cv_.notify_all();
+
+            // A cancelled in-flight load (job interrupt) must not trigger the
+            // nuclear evict-all-and-retry: the subprocess was killed deliberately.
+            if (cancel_flag && cancel_flag->load()) {
+                LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
+                throw std::runtime_error("load cancelled");
+            }
 
             if (is_file_not_found) {
                 LOG(ERROR, "Router") << "File not found error, NOT evicting other models" << std::endl;
@@ -652,7 +684,8 @@ void Router::load_model(const std::string& model_name,
 }
 
 void Router::unload_model(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
 
     if (model_name.empty()) {
         // Unload all models
@@ -871,7 +904,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
@@ -970,7 +1004,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 json error = ErrorResponse::from_exception(ModelNotLoadedException(requested_model));

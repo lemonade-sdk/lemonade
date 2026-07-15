@@ -532,6 +532,15 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
     for (int i = 0; i < max_attempts; i++) {
+        // A job interrupt landing mid-startup kills the spawned subprocess and
+        // aborts the wait; the caller (load_model) then throws "load cancelled".
+        if (load_cancel_ && load_cancel_->load()) {
+            const ProcessHandle h = consume_process_handle_for_cleanup();
+            if (has_process_handle(h)) utils::ProcessManager::stop_process(h);
+            LOG(WARNING, "WrappedServer") << server_name_ << " load cancelled" << std::endl;
+            return false;
+        }
+
         // Check if process is still running. If it already exited, consume and
         // reap the owned handle here so the caller cannot later signal a stale
         // PID while cleaning up a failed startup.

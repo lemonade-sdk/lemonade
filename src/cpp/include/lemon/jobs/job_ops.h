@@ -28,6 +28,12 @@ public:
     const OpHandler* find(const std::string& name) const;
     std::set<std::string> names() const;
 
+    // Acquire/release the Router's exclusive slot; wired to the Router by
+    // build_op_registry so the engine can gate a whole job without depending on
+    // the Router type. Either may be empty (no-op) in unit tests.
+    std::function<void()> begin_exclusive;
+    std::function<void()> end_exclusive;
+
 private:
     std::map<std::string, OpHandler> handlers_;
 };
@@ -39,6 +45,15 @@ struct OpProviders {
     std::function<json()> system_stats;
     std::function<json()> models_list;
     std::function<json(const std::string& id)> model_get;
+
+    // Exclusive ops (require the model slot). Each returns the op's output json
+    // and throws JobError on bad input.
+    std::function<json(const json& params, CancelFlag& cancel)> load_op;
+    std::function<json(const json& params, CancelFlag& cancel)> unload_op;
+    std::function<json(const json& params, CancelFlag& cancel)> chat_op;
+
+    std::function<void()> begin_exclusive;
+    std::function<void()> end_exclusive;
 };
 
 OpRegistry build_op_registry(OpProviders providers);

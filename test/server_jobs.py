@@ -28,6 +28,9 @@ PORT = 13401
 HOST = "127.0.0.1"
 BASE = f"http://{HOST}:{PORT}/api/v1"
 
+# Tiny llama.cpp model shared with the endpoint suite; small enough to load fast.
+TEST_MODEL = "Tiny-Test-Model-GGUF"
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LEMOND_BINARY = None
 
@@ -130,6 +133,52 @@ class JobEngineTests(unittest.TestCase):
             if s["id"] == step_id:
                 return s
         self.fail(f"step {step_id} not present in job")
+
+    def poll_cursor(self, job_id, target_cursor, timeout=30):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            r = self.get_job(job_id)
+            self.assertEqual(r.status_code, 200, r.text)
+            body = r.json()
+            if body["cursor"] == target_cursor:
+                return body
+            if body["status"] in ("completed", "failed"):
+                self.fail(
+                    f"job {job_id} reached {body['status']} before cursor "
+                    f"'{target_cursor}'"
+                )
+            time.sleep(0.1)
+        self.fail(f"job {job_id} cursor did not reach '{target_cursor}'")
+
+    # ── real-backend helpers ────────────────────────────────────────────
+
+    def installed_llamacpp_backend(self):
+        r = requests.get(f"{BASE}/system-info", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        backends = r.json().get("recipes", {}).get("llamacpp", {}).get("backends", {})
+        for name, info in backends.items():
+            if info.get("state") in ("installed", "ready"):
+                return name
+        return None
+
+    def ensure_test_model(self):
+        r = requests.post(
+            f"{BASE}/pull",
+            json={"model_name": TEST_MODEL},
+            timeout=600,
+            stream=True,
+        )
+        # Drain the streamed progress so the request completes.
+        for _ in r.iter_lines():
+            pass
+        self.assertEqual(r.status_code, 200, "failed to pull the test model")
+
+    def require_real_backend(self):
+        backend = self.installed_llamacpp_backend()
+        if not backend:
+            self.skipTest("no installed llamacpp backend available")
+        self.ensure_test_model()
+        return backend
 
     # ── tests ───────────────────────────────────────────────────────────
 
@@ -268,6 +317,168 @@ class JobEngineTests(unittest.TestCase):
         r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=25)
+
+    # ── Phase 3: exclusive ops + slot gate ──────────────────────────────
+
+    def test_real_exclusive_job(self):
+        backend = self.require_real_backend()
+        steps = [
+            {"id": "u0", "op": "unload"},
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                    "merge_args": False,
+                    "save_options": False,
+                },
+            },
+            {
+                "id": "say",
+                "op": "chat",
+                "params": {
+                    "model": TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Say hi in one word."}],
+                    "temperature": 0,
+                    "max_completion_tokens": 32,
+                },
+            },
+            {"id": "u1", "op": "unload"},
+        ]
+        job = self.create_job("real-exclusive", steps)
+        done = self.poll_status(job["id"], "completed", timeout=120)
+        self.assertEqual(self.step_by_id(done, "ld")["status"], "completed")
+        self.assertEqual(self.step_by_id(done, "say")["status"], "completed")
+        self.assertEqual(done["context"]["ld"]["loaded"], True)
+        self.assertEqual(done["context"]["ld"]["backend"], backend)
+
+        chat_out = done["context"]["say"]
+        timings = chat_out.get("timings", {})
+        usage = chat_out.get("usage", {})
+        self.assertTrue(
+            "prompt_ms" in timings
+            or "predicted_per_second" in timings
+            or "total_tokens" in usage,
+            f"chat output carried neither timings nor usage: keys={list(chat_out)}",
+        )
+
+    def test_queue_behind_exclusive_job(self):
+        backend = self.require_real_backend()
+
+        # Control: with no job running, a normal chat on a preloaded model is prompt.
+        requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+            },
+            timeout=120,
+        )
+        t0 = time.time()
+        r = requests.post(
+            f"{BASE}/chat/completions",
+            json={
+                "model": TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "temperature": 0,
+                "max_completion_tokens": 8,
+            },
+            timeout=60,
+        )
+        control_latency = time.time() - t0
+        self.assertEqual(r.status_code, 200, r.text)
+
+        # Now hold the exclusive slot with a load + a several-second sleep (no
+        # final unload, so the queued chat finds the model still loaded).
+        hold_ms = 6000
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": hold_ms}},
+        ]
+        job = self.create_job("queue", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)  # load done, provably mid-exclusive
+
+        t0 = time.time()
+        r = requests.post(
+            f"{BASE}/chat/completions",
+            json={
+                "model": TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "temperature": 0,
+                "max_completion_tokens": 8,
+            },
+            timeout=60,
+        )
+        queued_latency = time.time() - t0
+        self.assertEqual(r.status_code, 200, r.text)
+
+        # The queued request must have been held behind the job: it returns only
+        # after the slot is released, so its latency dwarfs the control call and
+        # the job is finished by the time it comes back.
+        self.assertGreater(
+            queued_latency,
+            max(2.0, control_latency * 5),
+            f"queued chat was not held behind the job "
+            f"(queued={queued_latency:.2f}s, control={control_latency:.2f}s)",
+        )
+        self.assertEqual(self.get_job(jid).json()["status"], "completed")
+        print(f"\n[queue] control={control_latency:.3f}s queued={queued_latency:.3f}s")
+
+    def test_interrupt_mid_job_cleans_up(self):
+        backend = self.require_real_backend()
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+            {"id": "u", "op": "unload"},
+        ]
+        job = self.create_job("interrupt-mid", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        stopped = self.poll_status(jid, "interrupted", timeout=20)
+        self.assertEqual(self.step_by_id(stopped, "hold")["status"], "pending")
+
+        # The slot was released cleanly: a normal request goes through promptly
+        # rather than deadlocking behind an abandoned exclusive hold.
+        t0 = time.time()
+        r = requests.post(
+            f"{BASE}/chat/completions",
+            json={
+                "model": TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "temperature": 0,
+                "max_completion_tokens": 8,
+            },
+            timeout=30,
+        )
+        self.assertLess(time.time() - t0, 10.0, "slot was not released on interrupt")
+
+        # Resume re-runs the pending sleep and the job finishes.
+        r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "completed", timeout=40)
 
 
 def parse_args():

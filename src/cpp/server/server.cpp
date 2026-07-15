@@ -442,6 +442,67 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             if (it == models.end()) return lemon::jobs::json(nullptr);
             return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
         };
+        providers.load_op = [this](const lemon::jobs::json& params,
+                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (!params.contains("model") || !params["model"].is_string())
+                throw lemon::jobs::JobError(400, "load requires a 'model' string");
+            const std::string model = params["model"].get<std::string>();
+            if (!model_manager_->model_exists(model))
+                throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+            if (!model_manager_->is_model_downloaded(model))
+                throw lemon::jobs::JobError(404, "model '" + model + "' is not downloaded");
+            auto info = model_manager_->get_model_info(model);
+            nlohmann::json opt_json = nlohmann::json::parse(params.dump());
+            RecipeOptions options(info.recipe, opt_json);
+            std::optional<bool> pinned = std::nullopt;
+            if (params.contains("pinned") && params["pinned"].is_boolean())
+                pinned = params["pinned"].get<bool>();
+            try {
+                router_->load_model(model, info, options, true, true, pinned, &cancel);
+            } catch (const std::exception& e) {
+                throw lemon::jobs::JobError(500, e.what());
+            }
+            if (cancel.load()) {
+                router_->unload_model("");
+                throw lemon::jobs::JobError(499, "interrupted");
+            }
+            RecipeOptions effective = router_->get_model_recipe_options(model);
+            lemon::jobs::json out;
+            out["loaded"] = true;
+            out["model"] = model;
+            const nlohmann::json backend_json = effective.get_option(info.recipe + "_backend");
+            if (backend_json.is_string()) out["backend"] = backend_json.get<std::string>();
+            const nlohmann::json ctx_json = effective.get_option("ctx_size");
+            if (ctx_json.is_number()) out["ctx_size"] = ctx_json.get<int64_t>();
+            return out;
+        };
+        providers.unload_op = [this](const lemon::jobs::json& params,
+                                     lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            if (params.contains("model") && params["model"].is_string()) {
+                const std::string model = params["model"].get<std::string>();
+                if (router_->is_model_loaded(model)) router_->unload_model(model);
+            } else {
+                router_->unload_model("");
+            }
+            return lemon::jobs::json::object();
+        };
+        providers.chat_op = [this](const lemon::jobs::json& params,
+                                   lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            nlohmann::json response = router_->chat_completion(request);
+            if (response.contains("error")) {
+                std::string msg = "chat failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.begin_exclusive = [this] { router_->begin_exclusive(); };
+        providers.end_exclusive = [this] { router_->end_exclusive(); };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
             lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
     }

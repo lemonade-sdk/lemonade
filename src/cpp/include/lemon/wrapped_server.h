@@ -294,6 +294,11 @@ public:
     // Unload the model and stop the server
     virtual void unload() = 0;
 
+    // Cooperative cancel for an in-flight load: the health-wait loop kills the
+    // spawned subprocess and returns failure when this flag flips true. Cleared
+    // by passing nullptr. Not owned.
+    void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
+
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
     // The default is a successful no-op: backends that cannot downsize transition
@@ -503,6 +508,7 @@ protected:
     bool maintenance_in_progress_;
     long load_duration_ms_;
     bool pinned_ = false;
+    std::atomic<bool>* load_cancel_ = nullptr;  // Not owned; see set_load_cancel_flag
 
 private:
     void begin_backend_request(BackendRequestKind kind);

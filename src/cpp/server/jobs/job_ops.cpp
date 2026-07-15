@@ -55,6 +55,24 @@ OpRegistry build_op_registry(OpProviders providers) {
         return json::object();
     }, false});
 
+    reg.register_op("load", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.load_op) throw JobError(501, "load op not available");
+        return providers.load_op(params, cancel);
+    }, true});
+
+    reg.register_op("unload", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.unload_op) throw JobError(501, "unload op not available");
+        return providers.unload_op(params, cancel);
+    }, true});
+
+    reg.register_op("chat", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.chat_op) throw JobError(501, "chat op not available");
+        return providers.chat_op(params, cancel);
+    }, true});
+
+    reg.begin_exclusive = providers.begin_exclusive;
+    reg.end_exclusive = providers.end_exclusive;
+
     return reg;
 }
 
