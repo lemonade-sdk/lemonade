@@ -149,9 +149,6 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
-    // Exclusive slot gate: while a job engine worker holds the exclusive slot,
-    // every load/inference path on other (httplib) threads queues behind it; the
-    // owner thread passes through. begin/end run on the worker thread.
     void begin_exclusive();
     void end_exclusive();
 
@@ -177,9 +174,6 @@ private:
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
 
-    // Exclusive slot gate (all guarded by load_mutex_). A running exclusive job
-    // sets exclusive_active_ with itself as owner; other threads park on
-    // exclusive_cv_ until it clears.
     bool exclusive_active_ = false;
     std::thread::id exclusive_owner_;
     std::condition_variable exclusive_cv_;

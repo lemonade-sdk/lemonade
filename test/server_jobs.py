@@ -1,17 +1,3 @@
-"""
-Endpoint tests for the generic server-side job engine.
-
-These exercise the job lifecycle with no inference backend: read-only ops
-(system_info / models) plus a `sleep` op used to make pause / interrupt /
-persistence observable. Each test runs its own isolated `lemond` on a private
-cache dir and port so the persistence-across-restart case can kill and relaunch
-the server without disturbing anything else.
-
-Usage:
-    python server_jobs.py
-    python server_jobs.py --lemond-binary /path/to/lemond
-"""
-
 import argparse
 import os
 import shutil
@@ -28,7 +14,6 @@ PORT = 13401
 HOST = "127.0.0.1"
 BASE = f"http://{HOST}:{PORT}/api/v1"
 
-# Tiny llama.cpp model shared with the endpoint suite; small enough to load fast.
 TEST_MODEL = "Tiny-Test-Model-GGUF"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,8 +44,6 @@ class JobEngineTests(unittest.TestCase):
     def tearDown(self):
         self.stop_server()
         shutil.rmtree(self.cache_dir, ignore_errors=True)
-
-    # ── server lifecycle ────────────────────────────────────────────────
 
     def start_server(self):
         binary = find_lemond_binary()
@@ -99,8 +82,6 @@ class JobEngineTests(unittest.TestCase):
                 self.proc.send_signal(signal.SIGKILL)
                 self.proc.wait(timeout=10)
         self.proc = None
-
-    # ── helpers ─────────────────────────────────────────────────────────
 
     def create_job(self, name, steps, inputs=None, expect=202):
         body = {"name": name, "definition": {"steps": steps}}
@@ -150,8 +131,6 @@ class JobEngineTests(unittest.TestCase):
             time.sleep(0.1)
         self.fail(f"job {job_id} cursor did not reach '{target_cursor}'")
 
-    # ── real-backend helpers ────────────────────────────────────────────
-
     def installed_llamacpp_backend(self):
         r = requests.get(f"{BASE}/system-info", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
@@ -168,7 +147,7 @@ class JobEngineTests(unittest.TestCase):
             timeout=600,
             stream=True,
         )
-        # Drain the streamed progress so the request completes.
+
         for _ in r.iter_lines():
             pass
         self.assertEqual(r.status_code, 200, "failed to pull the test model")
@@ -179,8 +158,6 @@ class JobEngineTests(unittest.TestCase):
             self.skipTest("no installed llamacpp backend available")
         self.ensure_test_model()
         return backend
-
-    # ── tests ───────────────────────────────────────────────────────────
 
     def test_system_info_job_completes(self):
         job = self.create_job("sysinfo", [{"id": "a", "op": "system_info"}])
@@ -221,7 +198,7 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(self.step_by_id(done, "b")["status"], "skipped")
 
     def test_branch_on_input(self):
-        # step "a" branches to "c" when inputs.pick == 'b', skipping "b".
+
         steps = [
             {
                 "id": "a",
@@ -278,7 +255,7 @@ class JobEngineTests(unittest.TestCase):
         self.poll_status(jid, "completed", timeout=20)
 
     def test_delete_terminal_and_active(self):
-        # terminal job removed cleanly
+
         job = self.create_job("del", [{"id": "a", "op": "system_info"}])
         jid = job["id"]
         self.poll_status(jid, "completed")
@@ -286,7 +263,6 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.get_job(jid).status_code, 404)
 
-        # active (long sleep) job deleted via interrupt-then-remove
         job2 = self.create_job(
             "del2", [{"id": "w", "op": "sleep", "params": {"ms": 8000}}]
         )
@@ -302,7 +278,6 @@ class JobEngineTests(unittest.TestCase):
         jid = job["id"]
         self.poll_status(jid, "running", timeout=10)
 
-        # Hard-kill the server while the sleep step is in flight, then restart.
         self.stop_server(hard=True)
         self.start_server()
 
@@ -313,12 +288,9 @@ class JobEngineTests(unittest.TestCase):
         self.assertIn("server restarted", body.get("error", ""))
         self.assertEqual(self.step_by_id(body, "w")["status"], "pending")
 
-        # Resume re-runs the pending step and the job runs to completion.
         r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=25)
-
-    # ── Phase 3: exclusive ops + slot gate ──────────────────────────────
 
     def test_real_exclusive_job(self):
         backend = self.require_real_backend()
@@ -367,7 +339,6 @@ class JobEngineTests(unittest.TestCase):
     def test_queue_behind_exclusive_job(self):
         backend = self.require_real_backend()
 
-        # Control: with no job running, a normal chat on a preloaded model is prompt.
         requests.post(
             f"{BASE}/load",
             json={
@@ -391,8 +362,6 @@ class JobEngineTests(unittest.TestCase):
         control_latency = time.time() - t0
         self.assertEqual(r.status_code, 200, r.text)
 
-        # Now hold the exclusive slot with a load + a several-second sleep (no
-        # final unload, so the queued chat finds the model still loaded).
         hold_ms = 6000
         steps = [
             {
@@ -408,7 +377,7 @@ class JobEngineTests(unittest.TestCase):
         ]
         job = self.create_job("queue", steps)
         jid = job["id"]
-        self.poll_cursor(jid, "hold", timeout=60)  # load done, provably mid-exclusive
+        self.poll_cursor(jid, "hold", timeout=60)
 
         t0 = time.time()
         r = requests.post(
@@ -424,9 +393,6 @@ class JobEngineTests(unittest.TestCase):
         queued_latency = time.time() - t0
         self.assertEqual(r.status_code, 200, r.text)
 
-        # The queued request must have been held behind the job: it returns only
-        # after the slot is released, so its latency dwarfs the control call and
-        # the job is finished by the time it comes back.
         self.assertGreater(
             queued_latency,
             max(2.0, control_latency * 5),
@@ -460,8 +426,6 @@ class JobEngineTests(unittest.TestCase):
         stopped = self.poll_status(jid, "interrupted", timeout=20)
         self.assertEqual(self.step_by_id(stopped, "hold")["status"], "pending")
 
-        # Reconcile: an interrupted exclusive job unloads the model it left
-        # resident (it had loaded TEST_MODEL before the sleep it was stopped in).
         deadline = time.time() + 10
         while time.time() < deadline:
             if (
@@ -475,8 +439,6 @@ class JobEngineTests(unittest.TestCase):
             "interrupt did not unload the resident model",
         )
 
-        # The slot was released cleanly: a normal request goes through promptly
-        # rather than deadlocking behind an abandoned exclusive hold.
         t0 = time.time()
         r = requests.post(
             f"{BASE}/chat/completions",
@@ -490,12 +452,9 @@ class JobEngineTests(unittest.TestCase):
         )
         self.assertLess(time.time() - t0, 10.0, "slot was not released on interrupt")
 
-        # Resume re-runs the pending sleep and the job finishes.
         r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=40)
-
-    # ── Phase 4: a bench-shaped sweep (the AutoOpt methodology end-to-end) ──
 
     def test_bench_shaped_sweep(self):
         backend = self.require_real_backend()
@@ -549,14 +508,11 @@ class JobEngineTests(unittest.TestCase):
         result = self.poll_status(job["id"], "completed", timeout=180)
         ctx = result["context"]
 
-        # Both configs were measured and their throughput extracted.
         self.assertIn("a_tps", ctx)
         self.assertIn("b_tps", ctx)
         self.assertGreater(ctx["a_tps"], 0)
         self.assertGreater(ctx["b_tps"], 0)
 
-        # The branch fired on the measured metric: exactly one winner ran, and it
-        # is consistent with the extracted tps values.
         a_ran = self.step_by_id(result, "a_wins")["status"] == "completed"
         b_ran = self.step_by_id(result, "b_wins")["status"] == "completed"
         self.assertNotEqual(a_ran, b_ran, "exactly one winner branch should run")
@@ -565,7 +521,6 @@ class JobEngineTests(unittest.TestCase):
         else:
             self.assertTrue(b_ran, "b had > tps but a_wins ran")
 
-        # No model left resident after the sweep's final unload.
         h = requests.get(f"http://{HOST}:{PORT}/api/v1/health", timeout=5).json()
         self.assertIsNone(h.get("model_loaded"))
 

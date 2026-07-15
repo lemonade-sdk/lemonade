@@ -413,7 +413,6 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    // Queue behind a running exclusive job (the job's worker thread passes through).
     wait_for_slot_clearance(lock);
 
     // Wait if another thread is currently loading
@@ -615,8 +614,6 @@ void Router::load_model(const std::string& model_name,
             is_loading_ = false;
             load_cv_.notify_all();
 
-            // A cancelled in-flight load (job interrupt) must not trigger the
-            // nuclear evict-all-and-retry: the subprocess was killed deliberately.
             if (cancel_flag && cancel_flag->load()) {
                 LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
                 throw std::runtime_error("load cancelled");

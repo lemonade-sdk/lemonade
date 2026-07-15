@@ -1,8 +1,3 @@
-// Data model for the generic server-side job engine: a job is a client-posted,
-// ordered list of steps executed on the server with data passing forward
-// through a shared context, forward-only branching, and a
-// pause/interrupt/resume/delete/query lifecycle. These types are pure (JSON in,
-// JSON out) so the parser/evaluator/validator can be unit-tested with no server.
 #pragma once
 
 #include <nlohmann/json.hpp>
@@ -17,8 +12,6 @@ namespace jobs {
 
 using json = nlohmann::ordered_json;
 
-// Client-facing error carrying an HTTP status; thrown by parsing/validation and
-// by ops, caught at the handler boundary.
 class JobError : public std::runtime_error {
 public:
     JobError(int status, std::string message)
@@ -67,8 +60,6 @@ inline StepStatus step_status_from_string(const std::string& s) {
     return StepStatus::Pending;
 }
 
-// A conditional forward jump: if `when` evaluates true, control transfers to the
-// step whose id is `goto_id`.
 struct Case {
     std::string when;
     std::string goto_id;
@@ -83,22 +74,20 @@ struct Case {
     }
 };
 
-// The special non-id `on_fail` dispositions. Anything else is a step id.
 inline constexpr const char* kOnFailAbort = "abort";
 inline constexpr const char* kOnFailContinue = "continue";
 
 struct StepRecord {
-    // ── definition (client-posted) ──
+
     std::string id;
     std::string op;
     json params = json::object();
-    std::string when;                  // optional guard; skip step if false
-    json extract = json::object();     // { context_key: "path.into.output" }
-    std::string on_done;               // optional forward jump on success
-    std::vector<Case> branch;          // first matching case wins over on_done
-    std::string on_fail = kOnFailAbort; // abort | continue | <step id>
+    std::string when;
+    json extract = json::object();
+    std::string on_done;
+    std::vector<Case> branch;
+    std::string on_fail = kOnFailAbort;
 
-    // ── runtime ──
     StepStatus status = StepStatus::Pending;
     int64_t duration_ms = 0;
     std::string error;
@@ -148,7 +137,7 @@ struct Job {
     json inputs = json::object();
     json context = json::object();
     std::vector<StepRecord> steps;
-    std::string cursor;                // id of the current/next step ("" = done)
+    std::string cursor;
     std::string created_at;
     std::string started_at;
     std::string finished_at;
@@ -209,5 +198,5 @@ struct Job {
     }
 };
 
-}  // namespace jobs
-}  // namespace lemon
+}
+}

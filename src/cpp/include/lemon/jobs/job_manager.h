@@ -1,7 +1,3 @@
-// The generic server-side job engine: a single persistent worker runs one
-// client-posted job at a time, passing data forward through the job context,
-// evaluating forward-only branches, and persisting every transition so a job
-// survives client disconnect and server restart.
 #pragma once
 
 #include "lemon/jobs/job_ops.h"
@@ -55,7 +51,7 @@ private:
     std::condition_variable cv_;
     std::map<std::string, Job> jobs_;
     std::map<std::string, std::shared_ptr<Control>> controls_;
-    std::vector<std::string> order_;  // newest first
+    std::vector<std::string> order_;
     std::deque<std::string> queue_;
     std::string active_id_;
     uint64_t id_counter_ = 0;
@@ -63,5 +59,5 @@ private:
     std::thread worker_;
 };
 
-}  // namespace jobs
-}  // namespace lemon
+}
+}

@@ -1,6 +1,3 @@
-// Unit tests for job step-graph validation: unique ids, known ops, forward-only
-// jump targets. Also exercises Job/StepRecord JSON round-tripping.
-
 #include "lemon/jobs/job_graph.h"
 #include "lemon/jobs/job_types.h"
 
@@ -31,8 +28,8 @@ static void test_valid_graphs() {
     check("valid: linear ok", validate_steps(ok, kOps).empty());
 
     std::vector<StepRecord> br = {step("a", "load"), step("b", "chat"), step("c", "unload")};
-    br[0].on_fail = "c";                                  // forward jump on failure
-    br[1].branch.push_back({"${b.tps} > 0", "c"});        // forward branch
+    br[0].on_fail = "c";
+    br[1].branch.push_back({"${b.tps} > 0", "c"});
     br[1].on_done = "c";
     check("valid: forward on_fail/branch/on_done ok", validate_steps(br, kOps).empty());
 }
@@ -50,12 +47,12 @@ static void test_invalid_graphs() {
           validate_steps(unk, kOps).find("unknown op") != std::string::npos);
 
     std::vector<StepRecord> back = {step("a", "load"), step("b", "chat")};
-    back[1].on_done = "a";  // backward jump = loop
+    back[1].on_done = "a";
     check("invalid: backward on_done rejected (no loops)",
           validate_steps(back, kOps).find("later step") != std::string::npos);
 
     std::vector<StepRecord> self = {step("a", "load"), step("b", "chat")};
-    self[0].branch.push_back({"true", "a"});  // self/backward branch
+    self[0].branch.push_back({"true", "a"});
     check("invalid: non-forward branch rejected",
           validate_steps(self, kOps).find("later step") != std::string::npos);
 
@@ -101,9 +98,8 @@ static void test_json_roundtrip() {
     check("json: step runtime survives",
           back.steps[0].status == StepStatus::Completed && back.steps[0].duration_ms == 4200);
 
-    // The round-tripped definition still validates.
     std::set<std::string> ops = {"load"};
-    // Give the forward targets real steps so validation passes.
+
     back.steps.push_back(step("unload_v", "load"));
     back.steps.push_back(step("load_v_lo", "load"));
     check("json: round-tripped graph validates", validate_steps(back.steps, ops).empty());

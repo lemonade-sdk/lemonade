@@ -53,8 +53,6 @@ int step_index(const Job& job, const std::string& id) {
     return -1;
 }
 
-// The step to run after `from` completes: first matching branch case, else
-// on_done, else the next step in list order ("" when none remains).
 std::string next_after_success(const Job& job, const StepRecord& from) {
     for (const Case& c : from.branch)
         if (eval_condition(c.when, job.context)) return c.goto_id;
@@ -78,7 +76,7 @@ bool job_needs_exclusive(const Job& job, const OpRegistry& registry) {
     return false;
 }
 
-}  // namespace
+}
 
 JobManager::JobManager(std::string cache_dir, OpRegistry registry)
     : storage_path_((fs::path(cache_dir) / "jobs.json").string()),
@@ -327,9 +325,6 @@ void JobManager::worker_main() {
                               << std::endl;
         }
 
-        // Hold the Router's exclusive slot for the whole job so normal traffic
-        // queues behind it. begin/end run on this worker thread (the gate's
-        // owner). The guard fires end_exclusive exactly once, on every exit path.
         struct ExclusiveGuard {
             const OpRegistry& reg;
             const std::string& id;
@@ -354,9 +349,7 @@ void JobManager::worker_main() {
             interrupted = it != jobs_.end() && it->second.status == JobStatus::Interrupted;
             active_id_.clear();
         }
-        // An interrupted exclusive job abandons its run mid-way and may have left
-        // a model resident. Unload it while we still own the slot (this worker is
-        // the gate owner, so it passes straight through) before the guard releases.
+
         if (exclusive && interrupted && registry_.reconcile_unload) {
             registry_.reconcile_unload();
             LOG(INFO, "Jobs") << "job " << id << " interrupted — unloaded resident model(s)"
@@ -548,5 +541,5 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
     }
 }
 
-}  // namespace jobs
-}  // namespace lemon
+}
+}

@@ -1,6 +1,3 @@
-// Unit tests for the job engine's reference resolution and condition evaluator.
-// Pure — driven entirely by synthetic JSON contexts.
-
 #include "lemon/jobs/job_expr.h"
 
 #include <cstdio>
@@ -30,7 +27,6 @@ static void test_reference_resolution() {
                 {"list", {10, 20, 30}},
                 {"cfg", {{"nested", {{"deep", 5}}}}}};
 
-    // Whole-string ref preserves type.
     json m = resolve_refs("${model}", ctx);
     check("ref: whole-string keeps string", m.is_string() && m == "Agents-A1");
     json tps = resolve_refs("${run_v.tps}", ctx);
@@ -40,20 +36,17 @@ static void test_reference_resolution() {
     json deep = resolve_refs("${cfg.nested.deep}", ctx);
     check("ref: deep path", deep.get<int>() == 5);
 
-    // Embedded refs interpolate to text.
     json interp = resolve_refs("model=${model} tps=${run_v.tps}", ctx);
     check("ref: embedded interpolates",
           interp.is_string() && interp.get<std::string>().find("model=Agents-A1") == 0
               && interp.get<std::string>().find("tps=73.3") != std::string::npos);
 
-    // Nested params get resolved recursively.
     json params = {{"a", "${model}"}, {"b", {{"c", "${run_v.tps}"}}}, {"d", {1, "${list.0}"}}};
     json out = resolve_refs(params, ctx);
     check("ref: recurses objects/arrays",
           out["a"] == "Agents-A1" && out["b"]["c"].get<double>() == 73.3
               && out["d"][1].get<int>() == 10);
 
-    // Missing reference is an error.
     check("ref: missing path throws", threw("${nope.missing}", ctx));
     bool caught = false;
     try { resolve_refs("${also.missing}", ctx); } catch (const JobError&) { caught = true; }

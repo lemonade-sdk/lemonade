@@ -5672,7 +5672,7 @@ void job_error(httplib::Response& res, int status, const std::string& message) {
     res.set_content(lemon::jobs::json{{"error", message}}.dump(), "application/json");
 }
 
-}  // namespace
+}
 
 void Server::handle_jobs_create(const httplib::Request& req, httplib::Response& res) {
     try {

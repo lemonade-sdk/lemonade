@@ -1,7 +1,3 @@
-// Reference resolution and the `when`/`branch` condition evaluator for the job
-// engine. Pure: JSON context in, values/booleans out. A recipe's expressions
-// carry only references, literals, comparisons, boolean logic, and basic
-// arithmetic — never arbitrary code.
 #pragma once
 
 #include "lemon/jobs/job_types.h"
@@ -17,8 +13,6 @@ namespace jobs {
 
 namespace expr_detail {
 
-// Descend a dotted path ("a.b.0.c") into the context; object keys and numeric
-// array indices are both honored. Missing path -> JobError.
 inline json resolve_ref_path(const std::string& path, const json& ctx) {
     const json* cur = &ctx;
     size_t start = 0;
@@ -56,16 +50,14 @@ inline bool truthy(const json& v) {
     if (v.is_number()) return v.get<double>() != 0.0;
     if (v.is_string()) return !v.get<std::string>().empty();
     if (v.is_null()) return false;
-    return !v.empty();  // array/object
+    return !v.empty();
 }
-
-// ── expression tokenizer + recursive-descent parser ──
 
 enum class Tok { Num, Str, Ref, True, False, Null, Op, End };
 
 struct Token {
     Tok kind;
-    std::string text;   // operator text, ref path, or string literal
+    std::string text;
     double num = 0;
 };
 
@@ -254,10 +246,8 @@ private:
     size_t pos_ = 0;
 };
 
-}  // namespace expr_detail
+}
 
-// Deep-resolve ${refs} in a params value. A whole-string ref preserves the
-// referenced value's type; an embedded ref interpolates as text.
 inline json resolve_refs(const json& value, const json& ctx) {
     if (value.is_object()) {
         json out = json::object();
@@ -277,10 +267,10 @@ inline json resolve_refs(const json& value, const json& ctx) {
     if (open == std::string::npos) return value;
     const size_t close = s.find('}', open + 2);
     if (close == std::string::npos) return value;
-    // Whole-string single reference -> keep the resolved value's type.
+
     if (open == 0 && close == s.size() - 1 && s.find("${", 2) == std::string::npos)
         return expr_detail::resolve_ref_path(s.substr(2, close - 2), ctx);
-    // Otherwise interpolate every ${...} into the string.
+
     std::string out;
     size_t i = 0;
     while (i < s.size()) {
@@ -295,11 +285,10 @@ inline json resolve_refs(const json& value, const json& ctx) {
     return out;
 }
 
-// Evaluate a `when`/`branch` condition to a boolean. Empty expression is true.
 inline bool eval_condition(const std::string& expr, const json& ctx) {
     if (expr.empty()) return true;
     return expr_detail::truthy(expr_detail::Parser(expr_detail::tokenize(expr), ctx).parse());
 }
 
-}  // namespace jobs
-}  // namespace lemon
+}
+}

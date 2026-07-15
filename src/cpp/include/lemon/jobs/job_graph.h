@@ -1,7 +1,3 @@
-// Step-graph validation for a client-posted job definition. Enforces the
-// invariants that keep execution well-defined and terminating: unique step ids,
-// known ops, and forward-only jump targets (every branch/on_done/on_fail target
-// references a strictly later step). Forward-only ⇒ acyclic ⇒ no loops.
 #pragma once
 
 #include "lemon/jobs/job_expr.h"
@@ -15,7 +11,6 @@
 namespace lemon {
 namespace jobs {
 
-// Returns "" if the step list is a valid graph, else a client-facing message.
 inline std::string validate_steps(const std::vector<StepRecord>& steps,
                                   const std::set<std::string>& known_ops) {
     if (steps.empty()) return "a job needs at least one step";
@@ -43,7 +38,7 @@ inline std::string validate_steps(const std::vector<StepRecord>& steps,
     auto check_expr = [](const std::string& e, const std::string& where) -> std::string {
         if (e.empty()) return "";
         try {
-            expr_detail::tokenize(e);  // syntactic pre-check; refs resolve at run time
+            expr_detail::tokenize(e);
         } catch (const JobError& err) {
             return where + ": " + err.what();
         }
@@ -77,5 +72,5 @@ inline std::string validate_steps(const std::vector<StepRecord>& steps,
     return "";
 }
 
-}  // namespace jobs
-}  // namespace lemon
+}
+}
