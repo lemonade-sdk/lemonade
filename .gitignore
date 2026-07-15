@@ -189,4 +189,3 @@ CLAUDE.local.md
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
-test/app/routerCollections.test.cjs

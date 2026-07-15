@@ -446,10 +446,10 @@ const AppContent: React.FC = () => {
   // ── Router collection handlers ───────────────────────────────────────────
 
   const handleSaveRouterCollection = async (collection: RouterCollectionDraft) => {
-    setRouterCollectionModal(null);
     try {
       const requestBody = buildRouterCollectionPullRequest(collection);
       await pullRegistration(requestBody);
+      setRouterCollectionModal(null);
       window.dispatchEvent(new CustomEvent('modelsUpdated'));
       await refreshModels();
       setSelectedModel(requestBody.model_name);
