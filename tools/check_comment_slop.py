@@ -515,6 +515,15 @@ def _code_of_cish(text):
     # the revived code compares equal. A line-ending change carries no code meaning (a
     # raw newline inside a "..." literal is ill-formed C), so normalising hides nothing.
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # A raw string's interior whitespace and newlines are string CONTENT, not code
+    # formatting -- `R"(  x)"` and `R"(x)"` are different constants. The line-split and
+    # strip at the end would erase that, so raw strings are held out as opaque blobs
+    # behind a placeholder and restored verbatim. The sentinel is grown until it cannot
+    # occur in the source, so a placeholder can never collide with real content.
+    sent = "\x00"
+    while sent in text:
+        sent += "\x00"
+    raws = []
     out = []
     i, n = 0, len(text)
     in_str = in_chr = in_line = in_block = False
@@ -575,7 +584,8 @@ def _code_of_cish(text):
         else:
             raw = _raw_string_at(text, i)
             if raw:
-                out.append(raw)
+                out.append(f"{sent}{len(raws)}{sent}")
+                raws.append(raw)
                 i += len(raw)
                 continue
             if ch == '"':
@@ -591,7 +601,13 @@ def _code_of_cish(text):
     # Split on \n and strip only spaces/tabs, NOT \r: a `\r` inside a string literal is
     # content (a CRLF HTTP template differs from an LF one), and splitlines()/strip()
     # would erase it, certifying a CRLF->LF change of string content as comments-only.
-    return [ln.strip(" \t") for ln in "".join(out).split("\n") if ln.strip(" \t")]
+    lines = [ln.strip(" \t") for ln in "".join(out).split("\n") if ln.strip(" \t")]
+    if not raws:
+        return lines
+    return [
+        re.sub(f"{sent}([0-9]+){sent}", lambda m: raws[int(m.group(1))], ln)
+        for ln in lines
+    ]
 
 
 def _raw_string_at(text, i):

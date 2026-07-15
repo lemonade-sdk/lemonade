@@ -456,6 +456,28 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of("/\\\n/ new\nint x = 1;\n", "a.c"),
         )
 
+    def test_whitespace_inside_a_raw_string_is_content_not_formatting(self):
+        # `R"(  x)"` and `R"(x)"` are different string constants (gcc keeps the spaces),
+        # so the final line-strip must not erase interior raw-string whitespace.
+        self.assertNotEqual(
+            slop._code_of('auto s = R"(\n  hello\n)";\nint x = 1;\n', "a.cpp"),
+            slop._code_of('auto s = R"(\nhello\n)";\nint x = 1;\n', "a.cpp"),
+        )
+
+    def test_a_blank_line_inside_a_raw_string_is_content(self):
+        # A dropped blank line inside a raw string changes the constant.
+        self.assertNotEqual(
+            slop._code_of('auto s = R"(\nx\n\ny\n)";\n', "a.cpp"),
+            slop._code_of('auto s = R"(\nx\ny\n)";\n', "a.cpp"),
+        )
+
+    def test_a_comment_edit_beside_an_unchanged_raw_string_still_passes(self):
+        # The raw-string guard must not make a genuine comment-only change fail.
+        self.assertEqual(
+            slop._code_of('// old\nauto s = R"(\n  keep\n)";\n', "a.cpp"),
+            slop._code_of('// new\nauto s = R"(\n  keep\n)";\n', "a.cpp"),
+        )
+
     def test_an_unterminated_block_comment_fails_closed(self):
         # Not valid C. Swallowing it certified two differing revisions as equal.
         with self.assertRaises(slop.GitError):
