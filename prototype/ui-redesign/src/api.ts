@@ -355,6 +355,28 @@ export interface SlotTimings {
   predicted_per_second: number;
 }
 
+export type JobStatus = 'queued' | 'running' | 'paused' | 'interrupted' | 'completed' | 'failed';
+
+export interface JobStep {
+  id: string;
+  op: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+  duration_ms?: number;
+  error?: string;
+  output?: unknown;
+}
+
+export interface JobRecord {
+  id: string;
+  name: string;
+  status: JobStatus;
+  inputs?: Record<string, unknown>;
+  context: Record<string, unknown>;
+  cursor?: string;
+  steps: JobStep[];
+  created_at?: string;
+}
+
 export interface SlotData {
   id: number;
   n_ctx: number;
@@ -1562,6 +1584,44 @@ class LemonadeAPI {
     if (Array.isArray(data)) return data as DownloadProgressEvent[];
     if (isObject(data) && Array.isArray(data.downloads)) return data.downloads as DownloadProgressEvent[];
     return [];
+  }
+
+
+  async createJob(name: string, steps: unknown[], inputs: Record<string, unknown> = {}): Promise<{ id: string }> {
+    return this._json<{ id: string }>('/api/v1/jobs', {
+      method: 'POST',
+      body: { name, definition: { steps }, inputs },
+    });
+  }
+
+  async getJob(id: string, signal?: AbortSignal): Promise<JobRecord> {
+    return this._json<JobRecord>(`/api/v1/jobs/${encodeURIComponent(id)}`, {
+      cache: 'no-store',
+      signal,
+    } as LemonadeRequestInit);
+  }
+
+  async listJobs(): Promise<JobRecord[]> {
+    const data = await this._json<unknown>('/api/v1/jobs', { cache: 'no-store' } as LemonadeRequestInit);
+    if (Array.isArray(data)) return data as JobRecord[];
+    if (isObject(data) && Array.isArray(data.jobs)) return data.jobs as JobRecord[];
+    return [];
+  }
+
+  async interruptJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/interrupt`, { method: 'POST' });
+  }
+
+  async pauseJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST' });
+  }
+
+  async resumeJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/resume`, { method: 'POST' });
+  }
+
+  async deleteJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async controlDownload(downloadId: string, action: 'pause' | 'cancel' | 'remove'): Promise<unknown> {

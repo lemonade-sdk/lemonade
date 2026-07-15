@@ -136,6 +136,7 @@ const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
   voice: 'Voice',
   speed: 'Speed',
   merge_args: 'Backend args behavior',
+  mmproj_enabled: 'Vision projector',
 };
 
 const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
@@ -156,10 +157,11 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   vllm_args: 'Raw backend args for this model only.',
   flm_args: 'Raw backend args for this model only.',
   merge_args: 'Choose whether backend defaults, model args, or both should be used for this model.',
+  mmproj_enabled: "Off frees the projector's memory for context when image input is not needed.",
 };
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
-const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args']);
+const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args', 'mmproj_enabled']);
 const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
 const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
@@ -170,7 +172,7 @@ const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>
   moonshine_backend: 'moonshine_args',
 };
 
-const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'];
+const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'merge_args'];
 const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args', 'merge_args'];
 const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args', 'merge_args'];
 const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['merge_args'];
@@ -1534,6 +1536,21 @@ const ModelTuningTab: React.FC<{
       );
     }
 
+    if (key === 'mmproj_enabled') {
+      const activeState = typeof baseValue === 'boolean' && !baseValue ? 'Off' : 'On';
+      return (
+        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
+          <span>{label}</span>
+          <select id={inputId} className="select" value={draftValue} onChange={e => setRecipeField(key, e.target.value)}>
+            <option value="">{activeState}</option>
+            <option value="true">On</option>
+            <option value="false">Off</option>
+          </select>
+          {hint && <small>{hint}</small>}
+        </label>
+      );
+    }
+
     if (BOOLEAN_TUNING_KEYS.has(key)) {
       const argsKey = activeArgsKey;
       const hasModelArgs = !!(argsKey && (recipeDraft[argsKey] || fieldValue(baseTuning.recipe_options[argsKey])));
@@ -1697,7 +1714,7 @@ const ModelTuningTab: React.FC<{
         </div>
         <div className="detail-tuning__summary-card">
           <span className="detail-tuning__summary-label">Pair source</span>
-          <strong>{hasUserTuning ? 'Custom tuning' : 'Resolved defaults'}</strong>
+          <strong>{resolvedTuning.tuning.source === 'optimized' ? 'AutoOpt optimized' : (hasUserTuning ? 'Custom tuning' : 'Resolved defaults')}</strong>
         </div>
       </section>
 
@@ -1711,7 +1728,12 @@ const ModelTuningTab: React.FC<{
               <div className="detail-tuning__kv" key={`ro-${key}`}>
                 <span>{TUNING_FIELD_LABELS[key as keyof RecipeOptions] || key}</span>
                 <code>{tuningValue(value)}</code>
-                <small>{tuningSourceLabel(resolvedTuning.sources.recipe_options[key as keyof RecipeOptions])}</small>
+                <small>
+                  {key === 'ctx_size' && selectedPreset.context_hint === 'max'
+                    && resolvedTuning.sources.recipe_options.ctx_size === 'generic'
+                    ? 'Model maximum'
+                    : tuningSourceLabel(resolvedTuning.sources.recipe_options[key as keyof RecipeOptions])}
+                </small>
               </div>
             ))}
             {effectiveSamplingEntries.map(([key, value]) => (

@@ -22,6 +22,7 @@ import {
   loadBackendApplied,
   loadUserPresets,
   normalizePresetCapabilities,
+  PRESET_STORE_EVENT,
   presetLabelsFor,
   presetParamPreviewLines,
   presetSupportsCapability,
@@ -34,6 +35,8 @@ import {
 } from '../presetStore';
 import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import AutoOptRail, { openAutoOptRun } from '../features/autoOpt/AutoOptRail';
+import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
 
 const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
@@ -109,54 +112,6 @@ function backendOptionsFromSystemInfo(info: Record<string, unknown> | null): Bac
   }
   return out.sort((a, b) => a.label.localeCompare(b.label));
 }
-
-interface AutoOptRun {
-  id: string;
-  name: string;
-  date: string;
-  lemonadeVersion: string;
-  summary: string;
-  args: string;
-  backends: { name: string; version: string; device: string }[];
-}
-
-const AUTO_OPT_RUNS: AutoOptRun[] = [
-  {
-    id: 'autoopt-1',
-    name: 'AutoOpt #1',
-    date: '2026-06-11',
-    lemonadeVersion: '0.6.0-prototype',
-    summary: 'Balanced local baseline for llama.cpp on mixed CPU/GPU machines.',
-    args: '--threads auto --batch-size 512 --ubatch-size 256 --ctx-size 4096',
-    backends: [
-      { name: 'llama.cpp', version: 'b5412', device: 'CPU baseline' },
-      { name: 'Vulkan', version: '1.3 safe path', device: 'GPU if available' },
-    ],
-  },
-  {
-    id: 'autoopt-2',
-    name: 'AutoOpt #2',
-    date: '2026-06-09',
-    lemonadeVersion: '0.6.0-prototype',
-    summary: 'Low-memory fallback that favors predictable CPU execution.',
-    args: '--threads auto --batch-size 256 --ubatch-size 128 --ctx-size 4096 --n-gpu-layers 0',
-    backends: [
-      { name: 'llama.cpp', version: 'b5408', device: 'CPU' },
-    ],
-  },
-  {
-    id: 'autoopt-3',
-    name: 'AutoOpt #3',
-    date: '2026-06-05',
-    lemonadeVersion: '0.5.9',
-    summary: 'Throughput-oriented llama.cpp draft for larger VRAM systems.',
-    args: '--threads auto --batch-size 1024 --ubatch-size 512 --ctx-size 8192 --n-gpu-layers 99',
-    backends: [
-      { name: 'llama.cpp', version: 'b5389', device: 'GPU preferred' },
-      { name: 'CUDA/Vulkan', version: 'runtime default', device: 'Auto by Lemonade' },
-    ],
-  },
-];
 
 function modelName(model: ModelInfo): string {
   return model.id || model.name || model.display_name || 'unknown';
@@ -267,15 +222,43 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [applyBackendTarget, setApplyBackendTarget] = useState('');
   const [applyBackendSuccess, setApplyBackendSuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
-  const [selectedAutoRunId, setSelectedAutoRunId] = useState(AUTO_OPT_RUNS[0]?.id || '');
-  const [autoOptRuns, setAutoOptRuns] = useState<AutoOptRun[]>(AUTO_OPT_RUNS);
-  const [autoOptRunning, setAutoOptRunning] = useState(false);
+  const [highlightPresetId, setHighlightPresetId] = useState<string | null>(null);
   const slideoverRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const userPresetsRef = useRef(userPresets);
 
+  useEffect(() => { userPresetsRef.current = userPresets; }, [userPresets]);
   useEffect(() => { saveUserPresets(userPresets); }, [userPresets]);
   useEffect(() => { saveApplied(appliedPresets); }, [appliedPresets]);
   useEffect(() => { saveBackendApplied(backendPresets); }, [backendPresets]);
+
+  useEffect(() => {
+    const onStoreChange = () => {
+      const next = loadUserPresets();
+      if (JSON.stringify(next) !== JSON.stringify(userPresetsRef.current)) {
+        const previousIds = new Set(userPresetsRef.current.map(preset => preset.id));
+        const added = next.find(preset => !previousIds.has(preset.id));
+        setUserPresets(next);
+        if (added) setHighlightPresetId(added.id);
+      }
+      setAppliedPresets(prev => {
+        const nextApplied = loadApplied();
+        return JSON.stringify(nextApplied) === JSON.stringify(prev) ? prev : nextApplied;
+      });
+    };
+    window.addEventListener(PRESET_STORE_EVENT, onStoreChange);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, onStoreChange);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightPresetId) return;
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-recipe-id="${highlightPresetId}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    const timer = window.setTimeout(() => setHighlightPresetId(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [highlightPresetId]);
 
   useEffect(() => {
     let alive = true;
@@ -301,6 +284,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
   const appliedModelNames = useMemo(() => Object.keys(appliedPresets), [appliedPresets]);
   const appliedBackendKeys = useMemo(() => Object.keys(backendPresets), [backendPresets]);
+
+  const linkedModelsByPreset = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const [model, presetId] of Object.entries(appliedPresets)) {
+      map.set(presetId, [...(map.get(presetId) || []), model]);
+    }
+    return map;
+  }, [appliedPresets]);
 
   const closeSlideover = useCallback(() => {
     setSelectedPreset(null);
@@ -341,14 +332,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       engine_hint: 'auto',
       starter: false,
       auto_opt_enabled: true,
-      auto_opt_run_id: autoOptRuns[0]?.id || null,
+      auto_opt_run_id: null,
       system_prompt_id: 'general',
       system_prompts: cloneSystemPrompts(CUSTOM_PRESET_PROMPTS),
       tools_enabled: true,
     };
     setUserPresets(prev => [newPreset, ...prev]);
     openSlideover(newPreset);
-  }, [openSlideover, autoOptRuns]);
+  }, [openSlideover]);
 
   const importPresets = useCallback((raw: string) => {
     const data = JSON.parse(raw);
@@ -481,76 +472,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     });
   }, []);
 
-  const handleRunAutoOpt = useCallback(() => {
-    setAutoOptRunning(true);
-    setTimeout(() => {
-      const newRun: AutoOptRun = {
-        id: `autoopt-${Date.now()}`,
-        name: `AutoOpt #${autoOptRuns.length + 1}`,
-        date: new Date().toISOString().split('T')[0],
-        lemonadeVersion: '0.6.0-prototype',
-        summary: 'Fresh optimization based on current system hardware and loaded backends.',
-        args: '--threads auto --batch-size 512 --ubatch-size 256 --ctx-size 4096',
-        backends: [{ name: 'llama.cpp', version: 'latest', device: 'Auto-detected' }],
-      };
-      setAutoOptRuns(prev => [newRun, ...prev]);
-      setSelectedAutoRunId(newRun.id);
-      setAutoOptRunning(false);
-    }, 2000);
-  }, [autoOptRuns.length]);
-
-  const handleDeleteAutoOptRun = useCallback((runId: string) => {
-    setAutoOptRuns(prev => {
-      const next = prev.filter(r => r.id !== runId);
-      if (selectedAutoRunId === runId) {
-        setSelectedAutoRunId(next[0]?.id || '');
-      }
-      return next;
-    });
-  }, [selectedAutoRunId]);
-
-  const selectedAutoRun = autoOptRuns.find(run => run.id === selectedAutoRunId) || autoOptRuns[0];
-
   return (
     <>
       <section className={`recipes recipes--with-rail${autoRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="presets">
-        <aside className={`context-rail context-rail--autoopt${autoRailCollapsed ? ' is-collapsed' : ''}`} aria-label="AutoOpt runs">
-          <div className="context-rail__head">
-            <button type="button" className="context-rail__toggle" onClick={() => setAutoRailCollapsed(v => !v)} aria-label="Toggle AutoOpt rail">☰</button>
-            <div className="context-rail__title-wrap">
-              <span className="context-rail__eyebrow">Auto Optimizer</span>
-              <strong className="context-rail__title">Runs</strong>
-            </div>
-          </div>
-          <div className="context-rail__body">
-            <p className="context-rail__hint">Select a safe local optimization result and attach it to editable presets. Manual args override AutoOpt.</p>
-            <button type="button" className="btn btn--primary btn--small" style={{ width: '100%', marginBottom: '0.75rem' }} onClick={handleRunAutoOpt} disabled={autoOptRunning}>
-              {autoOptRunning ? '⏳ Running…' : '▶ Run optimizer'}
-            </button>
-            <div className="auto-run-list">
-              {autoOptRuns.map(run => (
-                <article key={run.id} className={`auto-run-card${selectedAutoRunId === run.id ? ' is-active' : ''}`}>
-                  <button type="button" className="auto-run-card__main" onClick={() => setSelectedAutoRunId(run.id)} aria-pressed={selectedAutoRunId === run.id}>
-                    <span className="auto-run-card__icon">⚙️</span>
-                    <span className="auto-run-card__text">
-                      <strong>{run.name}</strong>
-                      <span>{run.date} · Lemonade {run.lemonadeVersion}</span>
-                    </span>
-                  </button>
-                  <details className="auto-run-card__details" onClick={e => e.stopPropagation()}>
-                    <summary>Backend details</summary>
-                    <p>{run.summary}</p>
-                    <code>{run.args}</code>
-                    <ul>
-                      {run.backends.map(backend => <li key={`${run.id}-${backend.name}-${backend.version}`}>{backend.name} {backend.version} · {backend.device}</li>)}
-                    </ul>
-                  </details>
-                  <button type="button" className="btn btn--ghost btn--tiny auto-run-card__delete" onClick={(e) => { e.stopPropagation(); handleDeleteAutoOptRun(run.id); }} aria-label={`Delete ${run.name}`} title="Delete this run">✕</button>
-                </article>
-              ))}
-            </div>
-          </div>
-        </aside>
+        <AutoOptRail
+          loadedModels={loadedModels}
+          collapsed={autoRailCollapsed}
+          onToggleCollapsed={() => setAutoRailCollapsed(v => !v)}
+        />
         <div className="recipes__main">
         <div className="recipes__head">
           <div className="recipes__title">
@@ -577,35 +506,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           </p>
           {importError && <p className="preset-error" role="alert">⚠ {importError}</p>}
 
-
-          {selectedAutoRun && (
-            <div className="autoopt-summary">
-              <div>
-                <span className="autoopt-summary__kicker">Selected AutoOpt result</span>
-                <strong>{selectedAutoRun.name}</strong>
-                <span>{selectedAutoRun.summary}</span>
-              </div>
-              <code>{selectedAutoRun.args}</code>
-            </div>
-          )}
-
-          <div className="zone">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Bundled starters</span>
-              <span className="zone__count">{STARTERS.length + 1}</span>
-              <span className="zone__rule" />
-            </div>
-            <div className="recipe-grid recipe-grid--starters-combined">
-              <PresetCard preset={DEFAULT_PRESET} onClick={() => openSlideover(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
-              <div className="recipe-grid__contents" data-recipe-grid="starters">
-                {STARTERS.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} onClick={() => openSlideover(preset)} onClone={() => handleClone(preset)} />
-                ))}
-              </div>
-            </div>
-          </div>
-
           <div className="zone">
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
@@ -616,7 +516,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             {userPresets.length > 0 ? (
               <div className="recipe-grid" data-recipe-grid="yours">
                 {userPresets.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onExport={() => handleExport(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onExport={() => handleExport(preset)} />
                 ))}
               </div>
             ) : (
@@ -700,6 +600,23 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
               </div>
             </div>
           )}
+
+          <div className="zone">
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--ready" />
+              <span className="zone__title">Bundled starters</span>
+              <span className="zone__count">{STARTERS.length + 1}</span>
+              <span className="zone__rule" />
+            </div>
+            <div className="recipe-grid recipe-grid--starters-combined">
+              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} onClick={() => openSlideover(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
+              <div className="recipe-grid__contents" data-recipe-grid="starters">
+                {STARTERS.map(preset => (
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} onClick={() => openSlideover(preset)} onClone={() => handleClone(preset)} />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
         </div>
       </section>
@@ -717,6 +634,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           <SlideoverContent
             preset={selectedPreset}
             models={allModelOptions}
+            linkedModels={linkedModelsByPreset.get(selectedPreset.id) || []}
             applyTarget={applyTarget}
             onApplyTargetChange={setApplyTarget}
             onApply={handleApply}
@@ -731,7 +649,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onExport={handleExport}
             onDelete={handleDelete}
             onClose={closeSlideover}
-            autoRuns={autoOptRuns}
           />
         )}
       </aside>
@@ -739,25 +656,32 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   );
 };
 
+function linkedModelsText(preset: Preset, linkedModels: string[]): string {
+  return `${preset.auto_opt_run_id ? 'Optimized for' : 'Linked to'} ${linkedModels.join(', ')}`;
+}
+
 const PresetCard: React.FC<{
   preset: Preset;
+  linkedModels?: string[];
+  highlight?: boolean;
   onClick: () => void;
   onClone?: () => void;
   onApply?: () => void;
   onExport?: () => void;
-}> = ({ preset, onClick, onClone, onApply, onExport }) => {
+}> = ({ preset, linkedModels, highlight, onClick, onClone, onApply, onExport }) => {
   const descId = `preset-card-desc-${preset.id}`;
   const capLabels = presetLabelsFor(preset).map(c => CAPABILITY_LABELS[c] || c).join(', ');
   const paramLines = paramsPreviewLines(preset);
   const descParts: string[] = [];
   if (preset.starter) descParts.push('Starter');
   descParts.push(`Applies to: ${capLabels}`);
+  if (linkedModels?.length) descParts.push(linkedModelsText(preset, linkedModels));
   if (paramLines.length) descParts.push(`Intent: ${paramLines.join('; ')}`);
   descParts.push(`Prompt: ${promptDisplayText(preset)}`);
   descParts.push(`Tools: ${toolsDisplayText(preset)}`);
   return (
   <article
-    className="recipe-card"
+    className={`recipe-card${highlight ? ' recipe-card--flash' : ''}`}
     data-recipe-id={preset.id}
   >
     {/* Overlay button covers the card for pointer/keyboard activation without nesting interactive roles */}
@@ -772,6 +696,12 @@ const PresetCard: React.FC<{
     {preset.starter && <span className="starter-badge">Starter</span>}
     <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
     <p className="recipe-card__desc">{preset.description}</p>
+    {linkedModels && linkedModels.length > 0 && (
+      <p className={`recipe-card__linked${preset.auto_opt_run_id ? ' recipe-card__linked--optimized' : ''}`} data-preset-linked-models aria-hidden="true">
+        <Icon name={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'} size={12} aria-hidden="true" />
+        {linkedModelsText(preset, linkedModels)}
+      </p>
+    )}
     <div className="cap-chip-list cap-chip-list--card" title="Applies to">
       {presetLabelsFor(preset).map(cap => <CapabilityChip key={cap} cap={cap} small />)}
     </div>
@@ -821,6 +751,7 @@ const THINKING_INTENT_OPTIONS: Array<{ value: ThinkingMode; icon: IconName; desc
 const SlideoverContent: React.FC<{
   preset: Preset;
   models: ModelInfo[];
+  linkedModels: string[];
   applyTarget: string;
   onApplyTargetChange: (v: string) => void;
   onApply: (presetId: string, model: ModelInfo) => void;
@@ -835,8 +766,7 @@ const SlideoverContent: React.FC<{
   onExport: (preset: Preset) => void;
   onDelete: (preset: Preset) => void;
   onClose: () => void;
-  autoRuns: AutoOptRun[];
-}> = ({ preset, models, applyTarget, onApplyTargetChange, onApply, applySuccess, backendOptions, applyBackendTarget, onApplyBackendTargetChange, onApplyBackend, applyBackendSuccess, onSave, onClone, onExport, onDelete, onClose }) => {
+}> = ({ preset, models, linkedModels, applyTarget, onApplyTargetChange, onApply, applySuccess, backendOptions, applyBackendTarget, onApplyBackendTargetChange, onApplyBackend, applyBackendSuccess, onSave, onClone, onExport, onDelete, onClose }) => {
   const isReadOnly = preset.starter;
   const [name, setName] = useState(preset.name);
   const [description, setDescription] = useState(preset.description);
@@ -848,8 +778,13 @@ const SlideoverContent: React.FC<{
   const [systemPrompts, setSystemPrompts] = useState<PresetSystemPrompt[]>(cloneSystemPrompts(preset.system_prompts));
   const [toolsEnabled, setToolsEnabled] = useState(preset.tools_enabled !== false);
   const [saved, setSaved] = useState(false);
+  const [autoOptState, setAutoOptState] = useState<AutoOptState>(() => autoOptStore.snapshot());
+  const [missingRunNote, setMissingRunNote] = useState(false);
+
+  useEffect(() => autoOptStore.subscribe(setAutoOptState), []);
 
   useEffect(() => {
+    setMissingRunNote(false);
     setName(preset.name);
     setDescription(preset.description);
     setAppliesTo(normalizePresetCapabilities(preset.id, preset.applies_to));
@@ -976,7 +911,33 @@ const SlideoverContent: React.FC<{
         <div className="slideover__meta-row">
           {normalizedAppliesTo.map(cap => <CapabilityChip key={cap} cap={cap} />)}
           {preset.starter && <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>Starter</span>}
+          {preset.auto_opt_run_id && (
+            <button
+              type="button"
+              className="autoopt-preset-chip"
+              onClick={() => {
+                const runId = preset.auto_opt_run_id!;
+                if (autoOptState.runs.some(run => run.id === runId)) {
+                  setMissingRunNote(false);
+                  openAutoOptRun(runId);
+                } else {
+                  setMissingRunNote(true);
+                }
+              }}
+              title="Open the AutoOpt run that produced this preset"
+              data-preset-autoopt-chip
+            >
+              ⚙ Optimized by AutoOpt
+            </button>
+          )}
         </div>
+        {linkedModels.length > 0 && (
+          <p className={`preset-linked-note${preset.auto_opt_run_id ? ' preset-linked-note--optimized' : ''}`} data-preset-editor-linked>
+            <Icon name={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'} size={13} aria-hidden="true" />
+            {linkedModelsText(preset, linkedModels)}
+          </p>
+        )}
+        {missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
         {isReadOnly ? <p className="slideover__desc" data-recipe-desc>{preset.description}</p> : (
           <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
         )}
