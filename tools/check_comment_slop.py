@@ -551,6 +551,13 @@ def _code_of_cish(text):
             if ch == "\n":
                 out.append(ch)
         elif in_str or in_chr:
+            if ch == "\n":
+                # A backslash-newline was already spliced at the top of the loop, so a bare
+                # newline inside a literal is unescaped -- ill-formed C. Phase-1 normalised
+                # any CR/CRLF here to \n, so this also catches a raw line ending mutated
+                # inside a string. Refuse rather than absorb it and compare two revisions
+                # equal (a `"a\r\nb"` -> `"a\nb"` change is a real change the compiler rejects).
+                raise GitError("newline inside a string or character literal")
             out.append(ch)
             if ch == "\\" and nxt:
                 out.append(nxt)

@@ -329,10 +329,26 @@ class CodeOfTests(unittest.TestCase):
         self.assertEqual(code, ["char c = '\"'; int x = 1;"])
 
     def test_an_unterminated_string_fails_closed(self):
-        before = 'auto s = "unterminated;\nint x = 1;'
-        after = 'auto s = "unterminated;\nint x = 2;'
-        self.assertNotEqual(
-            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        # A newline inside a string literal is ill-formed C (gcc: missing terminating ").
+        # Refuse it, rather than absorb the newline and hope a later line-split happens to
+        # expose the change -- which it does not when both sides normalise to the same text.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('auto s = "unterminated;\nint x = 1;', "a.cpp")
+
+    def test_a_raw_line_ending_change_inside_a_string_does_not_compare_equal(self):
+        # `"a\r\nb"` and `"a\nb"` are different string constants, but phase-1 line-ending
+        # normalisation collapses both to `"a\nb"` -- so absorbing the newline would certify
+        # a real change as comments-only. Both are ill-formed C, so fail closed.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('char *s = "a\r\nb";\nint x = 1;\n', "a.c")
+        with self.assertRaises(slop.GitError):
+            slop._code_of('char *s = "a\nb";\nint x = 1;\n', "a.c")
+
+    def test_a_backslash_continued_string_is_legal_and_does_not_fail_closed(self):
+        # `"a\<newline>b"` is a legal line splice inside a string; it must NOT raise.
+        self.assertEqual(
+            slop._code_of('char *s = "a\\\nb";\nint x = 1;\n', "a.c"),
+            slop._code_of('char *s = "a\\\nb";\nint x = 1;\n', "a.c"),
         )
 
     def test_a_backslash_newline_inside_a_raw_string_is_content_not_a_splice(self):
