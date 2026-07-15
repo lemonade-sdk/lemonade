@@ -3,7 +3,9 @@
 // max_context_window computed for collection models at cache-build time.
 
 #include "lemon/config_file.h"
+#define private public
 #include "lemon/model_manager.h"
+#undef private
 #include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
@@ -188,6 +190,8 @@ static void test_collection_aggregate_context_window(ModelManager& manager,
           large.max_context_window == 32768);
 
     auto router_info = manager.get_model_info("user.CtxRouter");
+    check("collection.router is marked downloaded when bare component names resolve",
+          router_info.downloaded);
     check("collection.router aggregates min candidate context window",
           router_info.max_context_window == 8192);
 
@@ -199,6 +203,13 @@ static void test_collection_aggregate_context_window(ModelManager& manager,
     auto omni_info = manager.get_model_info("user.CtxOmni");
     check("collection.omni aggregates min component context window, skipping unknowns",
           omni_info.max_context_window == 512);
+
+    manager.update_model_in_cache("user.ctx-small", false);
+    router_info = manager.get_model_info("user.CtxRouter");
+    check("collection.router download state refreshes when a canonical component changes",
+          !router_info.downloaded);
+    check("collection.router context window refreshes when a canonical component changes",
+          router_info.max_context_window == 32768);
 }
 
 int main() {
