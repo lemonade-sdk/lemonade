@@ -97,6 +97,7 @@ void JobManager::load_from_disk() {
     if (!in) return;
     try {
         json doc = json::parse(in);
+        int loaded = 0, recovered = 0;
         for (const auto& jj : doc.value("jobs", json::array())) {
             Job job = Job::from_json(jj);
             if (job.id.empty()) continue;
@@ -105,12 +106,20 @@ void JobManager::load_from_disk() {
                 job.error = "server restarted while the job was active";
                 if (StepRecord* s = find_step(job, job.cursor))
                     if (s->status == StepStatus::Running) s->status = StepStatus::Pending;
+                recovered++;
+                LOG(WARNING, "Jobs") << "recovered active job " << job.id
+                                     << " as interrupted (resumable at step '" << job.cursor
+                                     << "')" << std::endl;
             }
             const std::string id = job.id;
             controls_[id] = std::make_shared<Control>();
             order_.push_back(id);
             jobs_.emplace(id, std::move(job));
+            loaded++;
         }
+        if (loaded)
+            LOG(INFO, "Jobs") << "loaded " << loaded << " job(s) from " << storage_path_ << " ("
+                              << recovered << " recovered as interrupted)" << std::endl;
     } catch (const std::exception& e) {
         LOG(WARNING, "Jobs") << "Could not load " << storage_path_ << ": " << e.what()
                              << std::endl;
@@ -175,6 +184,7 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
     job.created_at = iso_now();
 
     const std::string id = job.id;
+    const size_t n_steps = job.steps.size();
     order_.insert(order_.begin(), id);
     controls_[id] = std::make_shared<Control>();
     jobs_.emplace(id, std::move(job));
@@ -198,6 +208,8 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
     enqueue_locked(id);
     persist_locked();
     cv_.notify_all();
+    LOG(INFO, "Jobs") << "created job " << id << " '" << name << "' (" << n_steps << " steps)"
+                      << std::endl;
     return id;
 }
 
@@ -225,6 +237,8 @@ bool JobManager::pause(const std::string& id) {
     if (it->second.status != JobStatus::Running && it->second.status != JobStatus::Queued)
         return false;
     control_for_locked(id)->pause_requested.store(true);
+    LOG(INFO, "Jobs") << "pause requested for job " << id << " (takes effect at next step)"
+                      << std::endl;
     return true;
 }
 
@@ -237,6 +251,7 @@ bool JobManager::interrupt(const std::string& id) {
     auto ctrl = control_for_locked(id);
     ctrl->interrupt_requested.store(true);
     ctrl->cancel.store(true);
+    LOG(INFO, "Jobs") << "interrupt requested for job " << id << std::endl;
     return true;
 }
 
@@ -255,6 +270,8 @@ bool JobManager::resume(const std::string& id) {
     enqueue_locked(id);
     persist_locked();
     cv_.notify_all();
+    LOG(INFO, "Jobs") << "resumed job " << id << " at step '" << it->second.cursor << "'"
+                      << std::endl;
     return true;
 }
 
@@ -274,6 +291,7 @@ bool JobManager::remove(const std::string& id, bool& active_out) {
     order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
     queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
     persist_locked();
+    LOG(INFO, "Jobs") << "deleted job " << id << (active_out ? " (was active)" : "") << std::endl;
     return true;
 }
 
@@ -295,6 +313,8 @@ void JobManager::worker_main() {
             if (it->second.started_at.empty()) it->second.started_at = iso_now();
             active_id_ = id;
             persist_locked();
+            LOG(INFO, "Jobs") << "running job " << id << " from step '" << it->second.cursor << "'"
+                              << std::endl;
         }
         execute(id, ctrl);
         {
@@ -323,17 +343,22 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
                 job.status = JobStatus::Interrupted;
                 persist_locked();
+                LOG(INFO, "Jobs") << "job " << id << " interrupted at step '" << job.cursor << "'"
+                                  << std::endl;
                 return;
             }
             if (ctrl->pause_requested.load()) {
                 job.status = JobStatus::Paused;
                 persist_locked();
+                LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
+                                  << std::endl;
                 return;
             }
             if (job.cursor.empty()) {
                 job.status = JobStatus::Completed;
                 if (job.finished_at.empty()) job.finished_at = iso_now();
                 persist_locked();
+                LOG(INFO, "Jobs") << "job " << id << " completed" << std::endl;
                 return;
             }
 
@@ -360,6 +385,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             }
             if (skip) {
                 s->status = StepStatus::Skipped;
+                LOG(DEBUG, "Jobs") << "job " << id << " step '" << s->id
+                                   << "' skipped (when=false)" << std::endl;
                 job.cursor = next_in_list(job, s->id);
                 persist_locked();
                 continue;
@@ -393,6 +420,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             context_snapshot = job.context;
             ctrl->cancel.store(false);
             persist_locked();
+            LOG(DEBUG, "Jobs") << "job " << id << " running step '" << s->id << "' (op " << s->op
+                               << ")" << std::endl;
         }
 
         json output;
@@ -422,6 +451,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->error.clear();
                 job.status = JobStatus::Interrupted;
                 persist_locked();
+                LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"
+                                  << std::endl;
                 return;
             }
 
@@ -435,6 +466,9 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                     const std::string next = next_after_success(job, *s);
                     s->status = StepStatus::Completed;
                     job.cursor = next;
+                    LOG(DEBUG, "Jobs") << "job " << id << " step '" << step_id << "' completed in "
+                                       << ms << "ms -> "
+                                       << (next.empty() ? "end" : "'" + next + "'") << std::endl;
                 } catch (const std::exception& e) {
                     s->status = StepStatus::Failed;
                     s->error = e.what();
@@ -442,6 +476,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                     job.error = e.what();
                     job.finished_at = iso_now();
                     persist_locked();
+                    LOG(ERROR, "Jobs") << "job " << id << " failed at step '" << step_id
+                                       << "' (extract/branch): " << e.what() << std::endl;
                     return;
                 }
             } else {
@@ -452,11 +488,18 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                     job.error = run_error;
                     job.finished_at = iso_now();
                     persist_locked();
+                    LOG(ERROR, "Jobs") << "job " << id << " failed at step '" << step_id << "' (op "
+                                       << s->op << "): " << run_error << std::endl;
                     return;
                 } else if (s->on_fail == kOnFailContinue) {
                     job.cursor = next_in_list(job, s->id);
+                    LOG(WARNING, "Jobs") << "job " << id << " step '" << step_id
+                                         << "' failed (" << run_error << "), continuing" << std::endl;
                 } else {
                     job.cursor = s->on_fail;
+                    LOG(WARNING, "Jobs") << "job " << id << " step '" << step_id << "' failed ("
+                                         << run_error << "), branching to '" << s->on_fail << "'"
+                                         << std::endl;
                 }
             }
             persist_locked();
