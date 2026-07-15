@@ -296,7 +296,8 @@ public:
 
     void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
 
-    void set_request_cancel_flag(std::atomic<bool>* f) { request_cancel_ = f; }
+    static void set_request_cancel_flag(std::atomic<bool>* f);
+    static std::atomic<bool>* current_request_cancel();
 
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
@@ -508,7 +509,6 @@ protected:
     long load_duration_ms_;
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;
-    std::atomic<bool>* request_cancel_ = nullptr;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

@@ -14,6 +14,12 @@
 
 namespace lemon {
 
+static thread_local std::atomic<bool>* t_request_cancel = nullptr;
+
+void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) { t_request_cancel = f; }
+
+std::atomic<bool>* WrappedServer::current_request_cancel() { return t_request_cancel; }
+
 namespace {
 
 std::string lower_copy(std::string value) {
@@ -652,7 +658,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             headers,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            request_cancel_);
+            current_request_cancel());
         note_backend_activity();
 
         if (response.status_code == 200) {

@@ -370,9 +370,10 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
 }
 
 void Router::begin_exclusive() {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
     exclusive_active_ = true;
     exclusive_owner_ = std::this_thread::get_id();
+    load_cv_.wait(lock, [&] { return !is_loading_; });
     exclusive_cv_.notify_all();
     load_cv_.notify_all();
 }
