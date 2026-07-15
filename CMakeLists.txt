@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.10.0)
+project(lemon_cpp VERSION 11.0.0)
 
 include(CTest)
 
@@ -66,6 +66,7 @@ set(LEMON_BACKENDS
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
+    "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
 )
@@ -627,6 +628,7 @@ set(SOURCES_CORE
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
+    src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
@@ -685,7 +687,7 @@ elseif(UNIX)
     list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
-    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_linux.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_unix.cpp)
 endif()
 
@@ -1861,7 +1863,7 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(test_process_manager
             test/cpp/test_process_manager.cpp
             src/cpp/server/utils/process_manager.cpp
-            src/cpp/server/utils/platform/process_unix.cpp
+            src/cpp/server/utils/platform/process_linux.cpp
         )
         target_include_directories(test_process_manager PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -2202,6 +2204,20 @@ if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
 
     include(CTest)
     add_test(NAME ModelManagerCollectionValidationTest COMMAND test_model_manager_collection_validation)
+endif()
+
+# Remote model registry source parsing, cache namespaces, snapshot fingerprints,
+# and persistence of ModelScope provenance in ModelInfo.
+set(_MODEL_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_registry.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
+    add_executable(test_model_registry test/cpp/test_model_registry.cpp)
+    target_link_libraries(test_model_registry PRIVATE lemonade-server-core)
+    add_dependencies(test_model_registry copy_resources)
+
+    include(CTest)
+    add_test(NAME ModelRegistryTest COMMAND test_model_registry)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's

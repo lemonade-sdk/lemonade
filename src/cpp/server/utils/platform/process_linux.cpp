@@ -20,9 +20,7 @@
 #include <algorithm>
 #include <cctype>
 
-#ifdef __linux__
 #include <sys/prctl.h>
-#endif
 
 #ifdef HAVE_LIBCAP
 #include <sys/capability.h>
@@ -72,9 +70,7 @@ static void preserve_capabilities_for_exec() {
 
         if (cap_set_flag(caps, CAP_INHERITABLE, 1, cap_list, CAP_SET) == 0) {
             if (cap_set_proc(caps) == 0) {
-#ifdef __linux__
                 prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_RESOURCE, 0, 0);
-#endif
             }
         }
     }
@@ -97,7 +93,7 @@ static bool is_zombie_by_proc(pid_t pid) {
            stat_line[close_paren + 2] == 'Z';
 }
 
-class UnixProcessPlatform : public ProcessPlatform {
+class LinuxProcessPlatform : public ProcessPlatform {
 public:
     ProcessHandle spawn(
         const std::string& executable,
@@ -139,8 +135,8 @@ protected:
         int stderr_pipe[2]);
 };
 
-// Default Unix implementation using fork/exec (Linux)
-pid_t UnixProcessPlatform::spawn_process(
+// Linux implementation using fork/exec
+pid_t LinuxProcessPlatform::spawn_process(
     const std::string& executable,
     const std::vector<std::string>& args,
     const std::string& working_dir,
@@ -158,9 +154,7 @@ pid_t UnixProcessPlatform::spawn_process(
 
     if (pid == 0) {
         // Child process
-#ifdef __linux__
         prctl(PR_SET_PDEATHSIG, SIGTERM);
-#endif
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
@@ -210,7 +204,7 @@ pid_t UnixProcessPlatform::spawn_process(
     return pid;
 }
 
-ProcessHandle UnixProcessPlatform::spawn(
+ProcessHandle LinuxProcessPlatform::spawn(
     const std::string& executable,
     const std::vector<std::string>& args,
     const std::string& working_dir,
@@ -310,7 +304,7 @@ ProcessHandle UnixProcessPlatform::spawn(
     return handle;
 }
 
-void UnixProcessPlatform::terminate(ProcessHandle handle) {
+void LinuxProcessPlatform::terminate(ProcessHandle handle) {
     if (handle.pid <= 0) {
         return;
     }
@@ -369,7 +363,7 @@ void UnixProcessPlatform::terminate(ProcessHandle handle) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
-bool UnixProcessPlatform::is_running(ProcessHandle handle) {
+bool LinuxProcessPlatform::is_running(ProcessHandle handle) {
     if (handle.pid <= 0) {
         return false;
     }
@@ -394,7 +388,7 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
     return ::kill(handle.pid, 0) == 0 || errno == EPERM;
 }
 
-int UnixProcessPlatform::get_exit_code(ProcessHandle handle) {
+int LinuxProcessPlatform::get_exit_code(ProcessHandle handle) {
     if (handle.pid <= 0) {
         return -1;
     }
@@ -421,7 +415,7 @@ int UnixProcessPlatform::get_exit_code(ProcessHandle handle) {
     return -1;
 }
 
-int UnixProcessPlatform::wait_for_exit(ProcessHandle handle, int timeout_seconds) {
+int LinuxProcessPlatform::wait_for_exit(ProcessHandle handle, int timeout_seconds) {
     if (handle.pid <= 0) {
         return -1;
     }
@@ -460,7 +454,7 @@ int UnixProcessPlatform::wait_for_exit(ProcessHandle handle, int timeout_seconds
     return -1;
 }
 
-int UnixProcessPlatform::reap(ProcessHandle handle) {
+int LinuxProcessPlatform::reap(ProcessHandle handle) {
     if (handle.pid <= 0) {
         return -1;
     }
@@ -482,7 +476,7 @@ int UnixProcessPlatform::reap(ProcessHandle handle) {
     return -1;
 }
 
-void UnixProcessPlatform::kill(ProcessHandle handle) {
+void LinuxProcessPlatform::kill(ProcessHandle handle) {
     if (handle.pid > 0) {
         errno = 0;
         if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
@@ -492,13 +486,13 @@ void UnixProcessPlatform::kill(ProcessHandle handle) {
     }
 }
 
-void UnixProcessPlatform::terminate_without_cleanup(ProcessHandle handle) {
+void LinuxProcessPlatform::terminate_without_cleanup(ProcessHandle handle) {
     if (handle.pid > 0) {
         ::kill(handle.pid, SIGKILL);
     }
 }
 
-int UnixProcessPlatform::run_with_output(
+int LinuxProcessPlatform::run_with_output(
     const std::string& executable,
     const std::vector<std::string>& args,
     OutputLineCallback on_line,
@@ -522,9 +516,7 @@ int UnixProcessPlatform::run_with_output(
 
     if (pid == 0) {
         // Child process
-#ifdef __linux__
         prctl(PR_SET_PDEATHSIG, SIGTERM);
-#endif
         close(stdout_pipe[0]);
 
         dup2(stdout_pipe[1], STDOUT_FILENO);
@@ -658,7 +650,7 @@ int UnixProcessPlatform::run_with_output(
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
-int UnixProcessPlatform::find_free_port(int start_port) {
+int LinuxProcessPlatform::find_free_port(int start_port) {
     for (int port = start_port; port < start_port + 1000; ++port) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
@@ -681,7 +673,7 @@ int UnixProcessPlatform::find_free_port(int start_port) {
     return -1;
 }
 
-int UnixProcessPlatform::run_command(const std::string& command, std::string& output, int timeout_seconds) {
+int LinuxProcessPlatform::run_command(const std::string& command, std::string& output, int timeout_seconds) {
     output.clear();
 
     FILE* pipe = popen(command.c_str(), "r");
@@ -698,7 +690,7 @@ int UnixProcessPlatform::run_command(const std::string& command, std::string& ou
 }
 
 std::unique_ptr<ProcessPlatform> create_process_platform() {
-    return std::make_unique<UnixProcessPlatform>();
+    return std::make_unique<LinuxProcessPlatform>();
 }
 
 } // namespace lemon::utils

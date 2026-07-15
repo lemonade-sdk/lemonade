@@ -17,6 +17,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
+| `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
@@ -32,6 +33,57 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+
+## `POST /v1/classify`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Both sequence-classification (one label set) and token-classification (aggregated span labels) models are supported.
+
+**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as-is.
+
+A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The `config.json` is **always required**: it declares the architecture, which is checked against the list above so an unsupported family (e.g. XLNet, which uses different segment/special-token conventions) is **rejected at load time** rather than served with wrong scores. The output contract (labels, normalization, token budget) is read from that same config; an optional `manifest.json` overrides it but does not replace the config. Without a manifest, inference assumes **single-label softmax**; a multi-label (sigmoid) model must declare `problem_type: multi_label_classification` in its config or ship a `manifest.json`.
+
+This endpoint provides the classification capability that the router's `classifier` condition type will consume; the live routing-policy wiring is tracked in [#2384](https://github.com/lemonade-sdk/lemonade/issues/2384).
+
+The endpoint is available at:
+
+- `/v1/classify`
+- `/api/v1/classify`
+- `/v0/classify`
+- `/api/v0/classify`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model` | string | yes* | Classifier model id (a model with the `onnxruntime` recipe). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
+| `input` | string | yes | Text to classify. `text` is accepted as an alias. |
+| `top_k` | integer | no | Return only the highest-scoring `k` labels. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/json"   -d '{"model": "Phishing-Email-Detection-ONNX", "input": "Please verify your account at http://secure-login.example now."}'
+```
+
+### Response format
+
+```json
+{
+  "object": "classification",
+  "model": "Phishing-Email-Detection-ONNX",
+  "labels": {
+    "LABEL_1": 0.982,
+    "LABEL_0": 0.011,
+    "LABEL_2": 0.005,
+    "LABEL_3": 0.002
+  }
+}
+```
+
+Label names come from the model's `id2label` — from `config.json`, or from `manifest.json` when one is present to override it; some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
+
+Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

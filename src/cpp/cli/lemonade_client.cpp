@@ -718,7 +718,7 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
         request_body["stream"] = true;
 
         // Cache-first by default: an already-downloaded model is reused instead
-        // of triggering a Hugging Face update check (and a possible full
+        // of triggering a remote-registry update check (and a possible full
         // re-download). Only the explicit `lemonade pull` update flow opts into
         // an upgrade. An explicit field already in model_data wins.
         if (!request_body.contains("do_not_upgrade")) {
@@ -758,7 +758,7 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
                 state.error_message =
                     "No built-in model with the name '" + model_name + "' is registered.\n\n"
                     "If you meant a built-in model, run `lemonade list` to see available models.\n"
-                    "If you meant to add a custom model from Hugging Face, run `lemonade pull CHECKPOINT`.";
+                    "If you meant to add a custom model from Hugging Face or ModelScope, run `lemonade pull CHECKPOINT`.";
             }
 
             if (!state.error_message.empty()) {

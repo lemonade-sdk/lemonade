@@ -81,6 +81,11 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "onnxruntime": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
