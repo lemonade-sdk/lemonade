@@ -288,6 +288,11 @@ public:
 
     void start_directory_watcher();
 
+    // Update a single model's downloaded state in the cache and propagate
+    // to any collection that depends on it. Called after a download completes
+    // or a model is removed.
+    void update_model_in_cache(const std::string& model_name, bool downloaded);
+
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
     // `visited` accumulates collection names already entered on the current
@@ -343,7 +348,6 @@ private:
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
     void update_model_options_in_cache(const ModelInfo& info);
-    void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
     // Resolve model checkpoint to absolute path on disk

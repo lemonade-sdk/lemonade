@@ -1601,8 +1601,9 @@ static std::string describe_registration_conflict(const ModelInfo& existing,
 static std::string resolve_collection_component_cache_key(
         const std::string& name,
         const std::map<std::string, ModelInfo>& model_map) {
-    if (parse_canonical_id(name)) {
-        return name;
+    if (auto canon = parse_canonical_id(name)) {
+        // Builtins are keyed bare in models_cache_; strip the canonical prefix.
+        return (canon->source == ModelSource::Builtin) ? canon->bare_name : name;
     }
 
     std::optional<std::pair<std::string, int>> winner;
@@ -1643,13 +1644,18 @@ static bool check_component_downloaded(const ModelInfo& info,
 static int64_t aggregate_collection_context_window(
         const ModelInfo& info,
         const std::map<std::string, ModelInfo>& model_map) {
+    const bool use_candidates =
+        info.route_policy && !info.route_policy->candidates.empty();
     const std::vector<std::string>& names =
-        (info.route_policy && !info.route_policy->candidates.empty())
-            ? info.route_policy->candidates
-            : info.components;
+        use_candidates ? info.route_policy->candidates : info.components;
     int64_t min_ctx = 0;
     for (const auto& name : names) {
-        auto it = model_map.find(resolve_collection_component_cache_key(name, model_map));
+        // route_policy->candidates are already resolved cache keys; only
+        // info.components may contain bare alias names that need resolution.
+        const std::string cache_key =
+            use_candidates ? name
+                           : resolve_collection_component_cache_key(name, model_map);
+        auto it = model_map.find(cache_key);
         if (it == model_map.end()) continue;
         const int64_t ctx = it->second.max_context_window;
         if (ctx > 0 && (min_ctx == 0 || ctx < min_ctx)) {
@@ -1662,10 +1668,8 @@ static int64_t aggregate_collection_context_window(
 static bool collection_depends_on_model(const ModelInfo& info,
                                         const std::string& model_name,
                                         const std::map<std::string, ModelInfo>& model_map) {
-    const std::string resolved_model =
-        resolve_collection_component_cache_key(model_name, model_map);
     for (const auto& component_name : info.components) {
-        if (resolve_collection_component_cache_key(component_name, model_map) == resolved_model) {
+        if (resolve_collection_component_cache_key(component_name, model_map) == model_name) {
             return true;
         }
     }

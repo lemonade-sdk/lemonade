@@ -3,9 +3,7 @@
 // max_context_window computed for collection models at cache-build time.
 
 #include "lemon/config_file.h"
-#define private public
 #include "lemon/model_manager.h"
-#undef private
 #include "lemon/runtime_config.h"
 #include "lemon/utils/path_utils.h"
 
@@ -125,6 +123,7 @@ static void test_register_preserves_routing(ModelManager& manager) {
 
 static void write_fake_gguf(const fs::path& path, uint32_t context_length) {
     std::ofstream out(path, std::ios::binary);
+    out.exceptions(std::ios::failbit | std::ios::badbit);
     auto w32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
     auto w64 = [&](uint64_t v) { out.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
     auto wstr = [&](const std::string& s) {
