@@ -490,6 +490,33 @@ class CodeOfTests(unittest.TestCase):
             ),
         )
 
+    def test_slash_slash_is_literal_across_every_header_name_context(self):
+        # `//` inside `<...>` is part of the header-name token in a closed set of contexts;
+        # a change past it is a different header, not a comment. gcc keeps it literal.
+        for before, after in [
+            (
+                "#include <a//b\\\nc.h>\n",
+                "#include <a//b\\\nd.h>\n",
+            ),  # spliced multi-line
+            ("%:include <a//b.h>\n", "%:include <a//c.h>\n"),  # %: digraph for #
+            (
+                "#if __has_include(<a//b.h>)\n#endif\n",
+                "#if __has_include(<a//c.h>)\n#endif\n",
+            ),
+            ("#include_next <a//b.h>\n", "#include_next <a//c.h>\n"),  # gcc extension
+            ("#embed <a//b.bin>\n", "#embed <a//c.bin>\n"),  # C23
+        ]:
+            self.assertNotEqual(
+                slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp"), before
+            )
+
+    def test_a_spliced_header_name_joins_to_the_same_header(self):
+        # `<a//b\<LF>c.h>` and `<a//bc.h>` are the SAME header after phase-2 splicing.
+        self.assertEqual(
+            slop._code_of("#include <a//b\\\nc.h>\n", "a.cpp"),
+            slop._code_of("#include <a//bc.h>\n", "a.cpp"),
+        )
+
     def test_a_comment_edit_on_an_include_line_still_passes(self):
         # The header-name guard must not flag a genuine comment change after the include.
         self.assertEqual(

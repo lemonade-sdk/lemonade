@@ -119,9 +119,15 @@ STOPWORDS = {
 # as a repeated explanation.
 COMMENT_RE_PY = re.compile(r"^\s*#")
 COMMENT_RE_CISH = re.compile(r"^\s*(//|/\*|\*/|\*(?=\s|$))")
-# A `<` that opens a header-name token: the current line is a `#include`/`#import`
-# directive or a module `import`, with only whitespace before the `<`.
-_INCLUDE_RE = re.compile(r"^\s*(#\s*(?:include|import)|(?:export\s+)?import)\s*$")
+# A `<` opens a header-name token (where `//` and `/*` are literal, not comments) in a
+# closed set of contexts: an include-family preprocessor directive (`#`, or its `%:`
+# digraph, then include/include_next/import/embed), a `__has_include`/`__has_embed`
+# expression, or a module `import`. Matched against the line up to the `<`.
+_INCLUDE_RE = re.compile(
+    r"^\s*(?:#|%:)\s*(?:include(?:_next)?|import|embed)\b"
+    r"|__has_(?:include(?:_next)?|embed)\s*\(\s*$"
+    r"|^\s*(?:export\s+)?import\s*$"
+)
 SOURCE_SUFFIXES = (
     ".c",
     ".cc",
@@ -511,6 +517,28 @@ def _after_splices(text, i):
     return i
 
 
+def _header_name_at(text, i):
+    """The header-name token at `<` (index i), splice-normalised, and the raw end index.
+
+    Phase 2 splices `\\<LF>` before the header name is formed, so a spliced multi-line
+    `<a//b\\<LF>c.h>` is the single header `<a//bc.h>`. Returns (None, None) if a raw
+    (unspliced) newline is hit first -- then it is not a header name.
+    """
+    out = ["<"]
+    j = i + 1
+    while j < len(text):
+        if text[j] == "\\" and text[j + 1 : j + 2] == "\n":
+            j += 2
+            continue
+        if text[j] == "\n":
+            return None, None
+        out.append(text[j])
+        if text[j] == ">":
+            return "".join(out), j + 1
+        j += 1
+    return None, None
+
+
 def _code_of_cish(text):
     # Phase 1: normalise line endings to \n, as the compiler does before splicing and
     # comment removal. Without this the splice below only matches `\`+`\n`, so on a CRLF
@@ -591,17 +619,18 @@ def _code_of_cish(text):
                 raws.append(raw)
                 i += len(raw)
                 continue
-            # In `#include <...>` (and `#import` / a module `import <...>`) the angle-bracket
-            # content is a header-name token: `//` and `/*` inside it are literal, not
-            # comments. Scanning it as code truncates `<a//b.h>` at the `//`, so a change to
-            # the header past the `//` -- a real, different include -- compares equal. Consume
-            # the header name whole. It is content, so protect it from the final strip/split.
+            # In a header-name context the angle-bracket content is a single token: `//`
+            # and `/*` inside it are literal, not comments. Scanning it as code truncates
+            # `<a//b.h>` at the `//`, so a change to the header past the `//` -- a real,
+            # different include -- compares equal. Consume the header name whole (phase-2
+            # splices removed, as the compiler forms the token AFTER splicing), and protect
+            # it from the final strip/split as content.
             if ch == "<" and _INCLUDE_RE.search("".join(out).rsplit("\n", 1)[-1]):
-                end = text.find(">", i)
-                if end != -1 and "\n" not in text[i:end]:
+                hdr, end = _header_name_at(text, i)
+                if hdr is not None and end is not None:
                     out.append(f"{sent}{len(raws)}{sent}")
-                    raws.append(text[i : end + 1])
-                    i = end + 1
+                    raws.append(hdr)
+                    i = end
                     continue
             if ch == '"':
                 in_str = True
