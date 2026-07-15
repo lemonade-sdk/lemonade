@@ -1611,6 +1611,32 @@ static bool check_component_downloaded(const ModelInfo& info,
     return true;
 }
 
+// A collection's usable context is bounded by the smallest model a request can
+// be dispatched to: the routing policy's resolved candidates for
+// collection.router (classifier components never serve the final completion),
+// every component otherwise. Components with unknown context (0, e.g. not yet
+// downloaded) are skipped rather than zeroing the aggregate.
+static int64_t aggregate_collection_context_window(
+        const ModelInfo& info,
+        const std::map<std::string, ModelInfo>& model_map,
+        const std::map<std::string, std::string>& aliases) {
+    const std::vector<std::string>& names =
+        (info.route_policy && !info.route_policy->candidates.empty())
+            ? info.route_policy->candidates
+            : info.components;
+    int64_t min_ctx = 0;
+    for (const auto& name : names) {
+        auto alias_it = aliases.find(name);
+        auto it = model_map.find(alias_it != aliases.end() ? alias_it->second : name);
+        if (it == model_map.end()) continue;
+        const int64_t ctx = it->second.max_context_window;
+        if (ctx > 0 && (min_ctx == 0 || ctx < min_ctx)) {
+            min_ctx = ctx;
+        }
+    }
+    return min_ctx;
+}
+
 static bool has_partial_files(const fs::path& dir) {
     std::error_code ec;
     if (!safe_is_directory(dir)) return false;
@@ -1956,6 +1982,15 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Runs after the metadata pass and routing-policy parsing above, so every
+    // component's own max_context_window (and each router's resolved candidate
+    // list) is already in place.
+    for (auto& [name, info] : models_cache_) {
+        if (!is_model_collection_recipe(info.recipe)) continue;
+        info.max_context_window = aggregate_collection_context_window(
+            info, models_cache_, public_model_aliases_);
+    }
+
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }
@@ -2039,6 +2074,10 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     populate_model_metadata(info);
+    if (is_model_collection_recipe(info.recipe)) {
+        info.max_context_window = aggregate_collection_context_window(
+            info, models_cache_, public_model_aliases_);
+    }
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
@@ -2111,6 +2150,8 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                 LOG(INFO, "ModelManager") << "Collection '" << name
                           << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
             }
+            entry.max_context_window = aggregate_collection_context_window(
+                entry, models_cache_, public_model_aliases_);
         }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
