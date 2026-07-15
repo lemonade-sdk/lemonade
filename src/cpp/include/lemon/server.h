@@ -123,6 +123,7 @@ private:
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
+    void handle_classify(const httplib::Request& req, httplib::Response& res);
     void handle_slots(const httplib::Request& req, httplib::Response& res);
     void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_tokenize(const httplib::Request& req, httplib::Response& res);

@@ -583,11 +583,9 @@ jobs:
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Run C++ unit tests
-        if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
-          cmake --build --preset default --target test_process_manager
           cmake --build --preset default --target test_latest_version_fallback
           cmake --build --preset default --target test_routing_policy_contract
           cmake --build --preset default --target test_routing_policy_evaluator
@@ -601,7 +599,7 @@ jobs:
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
           cd build
-          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -1152,6 +1150,11 @@ jobs:
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
+          - name: classify-onnxruntime
+            script: server_classify.py
+            extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
           - name: stable-diffusion

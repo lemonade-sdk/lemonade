@@ -758,6 +758,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_reranking(req, res);
     });
 
+    register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_classify(req, res);
+    });
+
     // Slots (llama.cpp backend information)
     register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots(req, res);
@@ -2995,6 +2999,151 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_reranking: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_classify(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const nlohmann::json::parse_error& e) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", std::string("Invalid JSON in request body: ") + e.what()},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Reject malformed requests before any model gets loaded.
+        std::string validation_error;
+        bool has_text = request_json.contains("text");
+        bool has_input = request_json.contains("input");
+        const auto& input_field = has_text ? request_json["text"]
+                                 : has_input ? request_json["input"] : request_json;
+        if (request_json.contains("model") && !request_json["model"].is_string()) {
+            validation_error = "'model' must be a string";
+        } else if (!has_text && !has_input) {
+            validation_error = "Missing 'input' (or 'text') string in classify request";
+        } else if (has_text && !request_json["text"].is_string()) {
+            validation_error = "'text' must be a string";
+        } else if (has_input && !request_json["input"].is_string()) {
+            validation_error = "'input' must be a string";
+        } else if (input_field.get<std::string>().find_first_not_of(" \t\r\n") ==
+                   std::string::npos) {
+            validation_error = "input text must not be empty";
+        } else if (request_json.contains("top_k") &&
+                   (!request_json["top_k"].is_number_integer() ||
+                    request_json["top_k"].get<long long>() < 1 ||
+                    request_json["top_k"].get<long long>() > 1000000)) {
+            validation_error = "'top_k' must be a positive integer";
+        }
+        if (!validation_error.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", validation_error},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            requested_model = request_json["model"].get<std::string>();
+        }
+        auto span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request_json);
+
+        // Handle model loading/switching using helper function
+        if (request_json.contains("model")) {
+            try {
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+                if (span) {
+                    span->cancel();
+                }
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = get_http_status_from_error(error_code);
+                res.set_content(error_response.dump(), "application/json");
+
+                if (span) {
+                    span->end_with_error(e.what());
+                }
+                return;
+            }
+        } else {
+            // "model" may be omitted only when exactly one classifier is loaded.
+            // The router requires a model on every request, so resolve it here
+            // and put it in the request rather than letting it fail downstream.
+            requested_model = router_->get_sole_loaded_model_of_type(ModelType::CLASSIFICATION);
+            if (requested_model.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "No 'model' specified and no single classification model "
+                                "is loaded (load one, or name it in the request)"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                if (span) {
+                    span->cancel();
+                }
+                return;
+            }
+            request_json["model"] = requested_model;
+        }
+
+        if (span) {
+            span->cancel();
+        }
+
+        auto response = router_->classify(request_json);
+        if (response.contains("error") && response["error"].is_object()) {
+            const auto& err = response["error"];
+            if (err.contains("status_code") && err["status_code"].is_number_integer()) {
+                res.status = err["status_code"].get<int>();
+            } else if (err.contains("code") && err["code"].is_string()) {
+                res.status = get_http_status_from_error(err["code"].get<std::string>());
+            } else if (err.contains("type") && err["type"].is_string()) {
+                // LemonException::to_json carries only {message, type}.
+                const std::string type = err["type"].get<std::string>();
+                if (type == "invalid_request" || type == "invalid_request_error" ||
+                    type == "unsupported_operation") {
+                    res.status = 400;
+                } else if (type == "model_not_loaded") {
+                    res.status = 404;
+                } else {
+                    res.status = 500;
+                }
+            } else {
+                res.status = 500;
+            }
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
+        // Envelope pins the public API shape; the backend subprocess's raw
+        // output is not the contract.
+        if (!response.contains("labels") || !response["labels"].is_object()) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "Classification backend returned an unexpected response"},
+                {"type", "classification_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        nlohmann::json enveloped = {
+            {"object", "classification"},
+            {"model", requested_model.empty() ? router_->get_loaded_model() : requested_model},
+            {"labels", response["labels"]},
+        };
+        res.set_content(enveloped.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_classify: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
