@@ -250,7 +250,12 @@ export function validateRuleNode(node: RuleNode | null, classifierIds: Set<strin
       const kws = String(node.signalValue ?? '').split(',').map(s => s.trim()).filter(Boolean);
       if (!kws.length) return [`A ${node.signalType} condition has no keywords`];
     }
-    if (node.signalType === 'regex' && !String(node.signalValue ?? '').trim()) return ['A regex condition is empty'];
+    if (node.signalType === 'regex') {
+      const pat = String(node.signalValue ?? '').trim();
+      if (!pat) return ['A regex condition is empty'];
+      try { new RegExp(pat); } catch { return [`Invalid regex pattern: ${pat}`]; }
+      return [];
+    }
     if (node.signalType === 'min_chars' && (node.signalValue === undefined || node.signalValue === '')) return ['A min_chars condition has no value'];
     if (node.signalType === 'max_chars' && (node.signalValue === undefined || node.signalValue === '')) return ['A max_chars condition has no value'];
     if (node.signalType === 'classifier') {

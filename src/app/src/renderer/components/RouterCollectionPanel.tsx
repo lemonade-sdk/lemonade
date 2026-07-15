@@ -504,7 +504,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
   const embeddingOptions = useMemo(() =>
     Object.entries(modelsData)
-      .filter(([, info]) => (info?.labels ?? []).includes('embeddings') && !isCollectionRecipe(info?.recipe))
+      .filter(([, info]) => (info?.labels ?? []).some(l => l === 'embeddings' || l === 'embedding') && !isCollectionRecipe(info?.recipe))
       .map(([id, info]) => ({ id, info }))
       .sort((a, b) => {
         const dl = Number(b.info.downloaded === true) - Number(a.info.downloaded === true);
@@ -652,6 +652,14 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         if (errs.length) { setError(`${label}: ${errs[0]}`); return null; }
       }
     } else {
+      // Duplicate classifier ID check
+      const clfIds = (draft.classifiers ?? []).map(c => c.id.trim()).filter(Boolean);
+      const dupClf = clfIds.find((id, i) => clfIds.indexOf(id) !== i);
+      if (dupClf) { setError(`Duplicate classifier ID: "${dupClf}"`); return null; }
+      // Duplicate rule ID check
+      const ruleIds = (draft.rules ?? []).map(r => r.id.trim()).filter(Boolean);
+      const dupRule = ruleIds.find((id, i) => ruleIds.indexOf(id) !== i);
+      if (dupRule) { setError(`Duplicate rule ID: "${dupRule}"`); return null; }
       for (const c of draft.classifiers ?? []) {
         if (!c.id.trim()) { setError('Each classifier needs an id.'); return null; }
         if (!c.model) { setError(`Classifier "${c.id}": select a model.`); return null; }
