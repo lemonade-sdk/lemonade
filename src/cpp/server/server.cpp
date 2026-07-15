@@ -2,6 +2,7 @@
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
+#include "lemon/model_registry.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
@@ -1003,6 +1004,8 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
+                {"source", info.source.empty() ? info.registry_source : info.source},
+                {"registry_source", info.registry_source},
                 {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
@@ -1860,25 +1863,33 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 // Behavior:
 //   1. If model is already loaded: Return immediately (no-op)
 //   2. If model is not downloaded: Download it (first-time use)
-//   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
+//   3. If model is downloaded: Use cached version
+//      (do not check the remote registry for updates)
 //
-// Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
+// Note: Only the /pull endpoint checks the model's recorded registry for
+// updates (do_not_upgrade=false).
 
 // Load-level options that may be forwarded to RecipeOptions during auto-load.
-// Keep this an explicit allowlist so request-scoped fields don't leak into recipe options.
+// Keep this an explicit allowlist so request-scoped fields do not leak into
+// recipe options.
 nlohmann::json Server::extract_auto_load_options(const json& request) {
     nlohmann::json result = json::object();
-    auto extract_if_present = [&request, &result](const std::string& key) {
-        if (request.contains(key)) {
-            result[key] = request[key];
-        }
-    };
+
+    auto extract_if_present =
+        [&request, &result](const std::string& key) {
+            if (request.contains(key)) {
+                result[key] = request[key];
+            }
+        };
+
     extract_if_present("ctx_size");
+
     return result;
 }
 
 void Server::auto_load_model_if_needed(
-    const std::string& requested_model, const json& request_options) {
+    const std::string& requested_model,
+    const json& request_options) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
@@ -1910,14 +1921,17 @@ void Server::auto_load_model_if_needed(
     }
 
     // Download model if not cached (first-time use)
-    // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
+    // IMPORTANT: Use do_not_upgrade=true to prevent checking the remote registry for updates
     // This means:
-    //   - If model is NOT downloaded: Download it from HuggingFace
-    //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
+    //   - If model is NOT downloaded: Download it from its recorded registry
+    //   - If model IS downloaded: Skip the registry API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
     if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
         !model_manager_->is_model_downloaded(requested_model)) {
-        LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
+        LOG(INFO, "Server") << "Model not cached, downloading from "
+                            << remote_registry_display_name(
+                                   parse_remote_registry_source(info.registry_source))
+                            << "..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
         LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
@@ -2117,6 +2131,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
+        {"source", info.source.empty() ? info.registry_source : info.source},
+        {"registry_source", info.registry_source},
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
@@ -3962,7 +3978,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             auto info = model_manager_->get_model_info(upscale_model_name);
 
             if (!model_manager_->is_model_downloaded(upscale_model_name)) {
-                LOG(INFO, "Server") << "Upscale model not cached, downloading from Hugging Face..." << std::endl;
+                LOG(INFO, "Server") << "Upscale model not cached, downloading from its remote registry..." << std::endl;
                 model_manager_->download_registered_model(info, true);
                 LOG(INFO, "Server") << "Upscale model download complete: " << upscale_model_name << std::endl;
                 info = model_manager_->get_model_info(upscale_model_name);
@@ -4227,6 +4243,52 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
         bool subscribe = request_json.value("subscribe", true);
+        bool local_import = request_json.value("local_import", false);
+
+        // Validate and canonicalize remote-registry provenance before anything is
+        // persisted. `source` remains backward-compatible with local origins, while
+        // remote registrations store a canonical huggingface/modelscope value.
+        if (request_json.contains("source") || request_json.contains("registry_source")) {
+            try {
+                std::optional<std::string> normalized_registry;
+                if (request_json.contains("registry_source")) {
+                    normalized_registry = remote_registry_source_name(
+                        parse_remote_registry_source(
+                            request_json["registry_source"].get<std::string>()));
+                }
+
+                if (request_json.contains("source")) {
+                    const std::string public_source = request_json["source"].get<std::string>();
+                    if (is_remote_registry_source(public_source)) {
+                        const std::string normalized_public = remote_registry_source_name(
+                            parse_remote_registry_source(public_source));
+                        if (normalized_registry && *normalized_registry != normalized_public) {
+                            bad_request("'source' and 'registry_source' must identify the same registry");
+                            return;
+                        }
+                        normalized_registry = normalized_public;
+                        request_json["source"] = normalized_public;
+                    } else if (!local_import && public_source != "local_upload" &&
+                               public_source != "local_path" &&
+                               public_source != "extra_models_dir") {
+                        bad_request("Unsupported model source '" + public_source +
+                                    "' (expected 'huggingface' or 'modelscope')");
+                        return;
+                    }
+                }
+
+                if (normalized_registry) {
+                    if (!request_json.contains("source") ||
+                        is_remote_registry_source(request_json["source"].get<std::string>())) {
+                        request_json["source"] = *normalized_registry;
+                    }
+                    request_json["registry_source"] = *normalized_registry;
+                }
+            } catch (const std::exception& e) {
+                bad_request(e.what());
+                return;
+            }
+        }
 
         LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
@@ -4268,7 +4330,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             // A body carrying a `models` array is a collection file import: its
             // components may not be registered yet (download_model registers them
             // from the embedded definitions and canonicalizes the list itself).
-            // A pointer body (HF-backed collection) has no `components` at all —
+            // A pointer body (registry-backed collection) has no `components` at all —
             // they come from the downloaded manifest. Only pre-canonicalize an
             // inline `components` list whose entries must already exist.
             if (request_json.contains("components") && request_json["components"].is_array() &&
@@ -4284,7 +4346,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
 
         // Local import mode: CLI has already copied files to HF cache, just resolve and register
-        bool local_import = request_json.value("local_import", false);
         if (local_import) {
             std::string hf_cache = model_manager_->get_hf_cache_dir();
             std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
@@ -4370,10 +4431,13 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         if (checkpoint.find('/') == std::string::npos) {
             res.status = 400;
             nlohmann::json error = {{"error",
-                "Malformed 'checkpoint': expected a Hugging Face repo id of the form 'owner/name'"}};
+                "Malformed 'checkpoint': expected a repository id of the form 'owner/name'"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
+        const std::string source = req.has_param("source")
+            ? req.get_param_value("source") : "huggingface";
+        const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;
             nlohmann::json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
@@ -4381,14 +4445,20 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         bool not_found = false;
-        nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
+        nlohmann::json body = lemon::fetch_pull_variants(
+            checkpoint, remote_registry_source_name(parsed_source), not_found);
         if (not_found) {
             res.status = 404;
-            nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on Hugging Face"}};
+            nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +
+                remote_registry_display_name(parsed_source)}};
             res.set_content(error.dump(), "application/json");
             return;
         }
         res.set_content(body.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull_variants: " << e.what() << std::endl;
         res.status = 500;

@@ -1,5 +1,50 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "checksums": {
+    "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
+    "github": {
+      "pwilkin/openmoss": {
+        "v0.1.3": {
+          "moss-tts-vulkan-linux-x64.tar.gz": "sha256:15e64803ed7f93e0459f4e3132346a83123e1de0b973702c2c0631ae32f55feb",
+          "moss-tts-vulkan-windows-x64.zip": "sha256:6cafdc45c53cc614427696bd369f44602e7881d3879f5acb48b5f92b339149b6",
+          "moss-tts-rocm-linux-x64.tar.gz": "sha256:6bf1dac5fc8511e6bc6d11ec55623e1d364db814242a5af7346f5b6feb6b0dad",
+          "moss-tts-rocm-windows-x64.zip": "sha256:c9178dfad4ddf51fc8d8df8d1412e65237ff364ca9ca8fc997c9c71f55d60827",
+          "moss-tts-cuda-linux-x64.tar.gz": "sha256:8662251a854bda4993a5f99e90ba02c176797bf22b1c5b3e89a0061b0a4b102a",
+          "moss-tts-cuda-windows-x64.zip": "sha256:2b2f5f4b6757d99acf621b43426483ab0bc4a70f1f13904c17deed09cac70969"
+        }
+      },
+      "pwilkin/acestep.cpp": {
+        "v0.1.1": {
+          "acestep-vulkan-linux-x64.tar.gz": "sha256:398520b322058c1a6d7303849354b9d0afffc99b33870a94b50680932e6b2e41",
+          "acestep-vulkan-windows-x64.zip": "sha256:a20f11af4d0eca8c906019c62db5074d30132860735404d84cec3cecddc00d4c",
+          "acestep-rocm-linux-x64.tar.gz": "sha256:476ac942746b49edf50c5d57e705618fa8d242aca1e88c14e4ce6c791b0a5d0a",
+          "acestep-rocm-windows-x64.zip": "sha256:2bf8e02b337d760bc538df2d5118ded7f068a9adccd3c5b48ede30a3a26149dd",
+          "acestep-cuda-linux-x64.tar.gz": "sha256:1b94e862a09b76583ba314a6f49c7cb599a234d6fbf3950adf67c3965af5e1a8",
+          "acestep-cuda-windows-x64.zip": "sha256:f278b148eaff7f3fc3fee9a2f4503dbc94759356e0c48074310538026c3fc059"
+        }
+      },
+      "pwilkin/thinksound.cpp": {
+        "v0.1.2": {
+          "thinksound-vulkan-linux-x64.tar.gz": "sha256:913cb141ff0bcde488474fbba9e911437e2cbf58dd12a0a41251dbe4fa69e61f",
+          "thinksound-vulkan-windows-x64.zip": "sha256:e0af57c3cd2f4605cd0062939e8134f2ac60e197f95bbab347ed274002ffbfd2",
+          "thinksound-rocm-linux-x64.tar.gz": "sha256:46379f969b4c097a357a0717077c41272eb3290494bd2acec08ce6591a2d778a",
+          "thinksound-rocm-windows-x64.zip": "sha256:3e27483cc88c4e10c68f485a9b1bae02381dd3a16a64cf5c44bae53f4fbb0d68",
+          "thinksound-cuda-linux-x64.tar.gz": "sha256:ac3875c6bba8cf0753708e749bdb606006ac6e001f7d78649ede78c5e96bd36a",
+          "thinksound-cuda-windows-x64.zip": "sha256:1261c1eadd91b8a4a62dd20e9e8d7e5320db671896337ea84ac23251df54b0d9"
+        }
+      },
+      "pwilkin/trellis.cpp": {
+        "v0.1.5": {
+          "trellis-vulkan-linux-x64.tar.gz": "sha256:1c6c1137ea0dafd103ffd19f4db17e9b55cf63ed30807262896dc2c8912d29b0",
+          "trellis-vulkan-windows-x64.zip": "sha256:5953c34d325f6a34cf2a7b69e739b3a0ca7a0952d918b73edb251d5054f320ac",
+          "trellis-rocm-linux-x64.tar.gz": "sha256:fcc8abadea186c45ac8403e8cd67567d6ae61ec3db2a09eade9d4865c30c00fc",
+          "trellis-rocm-windows-x64.zip": "sha256:49edd81b826e01827710a5f3ab7550e4bed2812c15e1ac9b4c27407b362585f2",
+          "trellis-cuda-linux-x64.tar.gz": "sha256:4d3bcc732e88cfa0e89448bd46a501a5d352ce1ca08a2839bb5194663f7c1404",
+          "trellis-cuda-windows-x64.zip": "sha256:d1e1cce20892c2f22c185d6f22b042d41f87424adf0a40eda9d1194e87899c98"
+        }
+      }
+    }
+  },
   "llamacpp": {
     "vulkan": "b9747",
     "rocm-stable": "b9752",

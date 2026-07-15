@@ -1098,7 +1098,10 @@ const [searchQuery, setSearchQuery] = useState('');
 
     const matchesCheckpoint = (info: ModelInfo | undefined): boolean => {
       if (!info || !checkpoint) return false;
-      return info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint;
+      const registrySource = info.registry_source
+        ?? (info.source === 'modelscope' || info.source === 'huggingface' ? info.source : 'huggingface');
+      return registrySource === 'huggingface'
+        && (info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint);
     };
 
     const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
@@ -1145,6 +1148,7 @@ const [searchQuery, setSearchQuery] = useState('');
     handleDownloadModel(modelName, {
       checkpoint,
       recipe: backend.recipe,
+      source: 'huggingface',
       mmproj,
       labels: Array.from(labels),
       vision: labels.has('vision'),
@@ -2075,6 +2079,7 @@ const [searchQuery, setSearchQuery] = useState('');
                                         name: resolveHfModelName(hfModel.id, backend, checkpoint),
                                         checkpoint,
                                         recipe: backend.recipe,
+                                        source: 'huggingface',
                                         mmprojOptions: backend.mmprojFiles,
                                         labels,
                                         vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,

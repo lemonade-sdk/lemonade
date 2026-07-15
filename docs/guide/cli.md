@@ -46,7 +46,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
@@ -190,7 +190,8 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
+| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
+| `--source` | Remote registry for checkpoint pulls: `huggingface` (default) or `modelscope`; direct hub URLs are auto-detected | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
