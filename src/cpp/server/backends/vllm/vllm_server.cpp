@@ -336,8 +336,31 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 #else
         throw std::runtime_error("vLLM ROCm is only supported on Linux");
 #endif
+    } else if (backend == "cuda") {
+        params.repo = "lemonade-sdk/vllm-cuda";
+        std::string target_arch = SystemInfo::get_cuda_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("vllm", "cuda")
+            );
+        }
+#ifdef __linux__
+        // Unlike vllm-rocm, vllm-cuda publishes one release per vllm version
+        // (the pin IS the tag, e.g. "vllm0.25.1") with one fat, multi-GPU
+        // asset per HOST architecture -- not one asset per sm_XX target. See
+        // that repo's README: nvprune cannot prune the already-linked shared
+        // libraries official PyPI wheels ship, so every supported GPU
+        // generation for a host arch rides in the same asset.
+#if defined(__aarch64__)
+        params.filename = "vllm-server-" + version + "-linux-arm64-cuda.tar.gz";
+#else
+        params.filename = "vllm-server-" + version + "-linux-x64-cuda.tar.gz";
+#endif
+#else
+        throw std::runtime_error("vLLM CUDA is currently supported on Linux only");
+#endif
     } else {
-        throw std::runtime_error("vLLM backend '" + backend + "' is not supported. Supported: rocm");
+        throw std::runtime_error("vLLM backend '" + backend + "' is not supported. Supported: rocm, cuda");
     }
 
     return params;
@@ -420,8 +443,13 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
-    const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
-        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+    // ROCm iGPUs (gfx11xx) keep the conservative defaults; CUDA has no such integrated
+    // part in its supported matrix today, so every detected CUDA arch counts as discrete.
+    const bool discrete_hbm = (vllm_backend == "cuda")
+        ? is_discrete_cuda_arch(SystemInfo::get_cuda_arch())
+        : is_discrete_hbm_arch(SystemInfo::get_rocm_arch());
+    const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy_for_class(
+        discrete_hbm, resolved_vllm_args.has_memory_budget_arg,
         resolved_vllm_args.has_enforce_eager);
     if (launch_policy.enforce_eager) {
         args.push_back("--enforce-eager");
@@ -495,8 +523,12 @@ void VLLMServer::load(const std::string& model_name,
 
     configure_vllm_rocm_env(vllm_backend, env_vars, rocm_shim_dir_);
 
-    // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
-    env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+    if (vllm_backend == "rocm") {
+        // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
+        env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+    } else if (vllm_backend == "cuda") {
+        BackendUtils::apply_cuda_env_vars(env_vars, "vLLM");
+    }
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 

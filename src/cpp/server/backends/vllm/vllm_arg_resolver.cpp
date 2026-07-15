@@ -345,15 +345,25 @@ bool is_discrete_hbm_arch(const std::string& arch) {
     return arch.rfind("gfx9", 0) == 0;
 }
 
-DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
-                                                   bool has_memory_budget_arg,
-                                                   bool has_enforce_eager) {
-    const bool discrete_hbm = is_discrete_hbm_arch(arch);
+bool is_discrete_cuda_arch(const std::string& arch) {
+    return !arch.empty();
+}
+
+DeviceClassLaunchPolicy device_class_launch_policy_for_class(bool discrete_hbm,
+                                                              bool has_memory_budget_arg,
+                                                              bool has_enforce_eager) {
     return {
         /*enforce_eager*/    !discrete_hbm || has_enforce_eager,
         /*force_awq_kernel*/ !discrete_hbm,
         /*cap_kv_cache*/     !discrete_hbm && !has_memory_budget_arg,
     };
+}
+
+DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
+                                                   bool has_memory_budget_arg,
+                                                   bool has_enforce_eager) {
+    return device_class_launch_policy_for_class(is_discrete_hbm_arch(arch), has_memory_budget_arg,
+                                                has_enforce_eager);
 }
 
 } // namespace backends

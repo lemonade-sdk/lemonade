@@ -135,11 +135,12 @@
     "metal": "b17"
   },
   "vllm": {
-    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942) shares no release tag with the RDNA line, so it pins its own version. Review each override at release time - feature/fix parity across arch lines lags until bumped.",
+    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942) shares no release tag with the RDNA line, so it pins its own version. Review each override at release time - feature/fix parity across arch lines lags until bumped. 'cuda' pins lemonade-sdk/vllm-cuda, which publishes one release per vllm version (the pin IS the release tag, e.g. 'vllm0.25.1') with a single fat multi-GPU-architecture asset per host arch - no per-arch overrides needed.",
     "rocm": "vllm0.20.1-rocm7.12.0",
     "rocm_arch_overrides": {
       "gfx942": "vllm0.19.1-rocm7.13.0"
-    }
+    },
+    "cuda": "vllm0.25.1"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

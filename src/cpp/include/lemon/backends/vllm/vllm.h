@@ -28,6 +28,9 @@ inline const BackendDescriptor descriptor = {
         // gfx942 omitted until its vLLM/ROCm asset ships in lemonade-sdk/vllm-rocm;
         // everything else is wired, so re-add it here once that lands.
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
+        {"cuda", {"linux"},
+         {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}},
+         "NVIDIA GPUs (Turing or newer)"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
