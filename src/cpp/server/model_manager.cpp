@@ -212,6 +212,68 @@ static std::string read_hf_ref_main(const fs::path& model_cache_path) {
     return ref;
 }
 
+static std::string registry_model_selection(const ModelInfo& info) {
+    std::ostringstream selection;
+    selection << info.recipe;
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        selection << '\n' << type << '=' << checkpoint;
+    }
+    return selection.str();
+}
+
+static std::string read_processed_registry_snapshot_id(
+    const fs::path& model_cache_path,
+    const std::string& model_name,
+    const std::string& selection) {
+    const fs::path provenance_path = model_cache_path / ".lemonade_registry.json";
+    if (!safe_exists(provenance_path)) {
+        return "";
+    }
+
+    try {
+        const json provenance = JsonUtils::load_from_file(path_to_utf8(provenance_path));
+        if (!provenance.contains("processed_models") ||
+            !provenance["processed_models"].is_object()) {
+            return "";
+        }
+
+        const auto& processed_models = provenance["processed_models"];
+        auto model_it = processed_models.find(model_name);
+        if (model_it == processed_models.end() || !model_it->is_object()) {
+            return "";
+        }
+        if (JsonUtils::get_or_default<std::string>(
+                *model_it, "selection", "") != selection) {
+            return "";
+        }
+        return JsonUtils::get_or_default<std::string>(*model_it, "snapshot_id", "");
+    } catch (const std::exception&) {
+        return "";
+    }
+}
+
+static std::string snapshot_id_from_resolved_path(
+    const ModelInfo& info,
+    const fs::path& model_cache_path) {
+    const std::string resolved_path = info.resolved_path("main");
+    if (resolved_path.empty()) {
+        return "";
+    }
+
+    const fs::path snapshots_path = model_cache_path / "snapshots";
+    const fs::path relative =
+        path_from_utf8(resolved_path).lexically_relative(snapshots_path);
+    if (relative.empty()) {
+        return "";
+    }
+
+    auto first = relative.begin();
+    if (first == relative.end() || *first == "." || *first == "..") {
+        return "";
+    }
+    return path_to_utf8(*first);
+}
+
 static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
     std::string ref = read_hf_ref_main(model_cache_path);
     if (ref.empty()) {
@@ -1326,7 +1388,7 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
 
     struct RepoEntry {
         std::vector<std::string> model_names;
-        std::string cached_snapshot;
+        std::unordered_map<std::string, std::string> cached_snapshots;
         std::string repo_id;
         std::string registry_source;
     };
@@ -1374,13 +1436,19 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
             entry.registry_source = source;
             entry.model_names.push_back(name);
 
-            if (entry.cached_snapshot.empty()) {
-                const fs::path cache_path =
-                    path_from_utf8(get_hf_cache_dir()) /
-                    repo_id_to_cache_dir_name(repo_id, source);
+            const fs::path cache_path =
+                path_from_utf8(get_hf_cache_dir()) /
+                repo_id_to_cache_dir_name(repo_id, source);
 
-                entry.cached_snapshot = read_hf_ref_main(cache_path);
+            std::string cached_snapshot = read_processed_registry_snapshot_id(
+                cache_path, name, registry_model_selection(info));
+            if (cached_snapshot.empty()) {
+                cached_snapshot = snapshot_id_from_resolved_path(info, cache_path);
             }
+            if (cached_snapshot.empty()) {
+                cached_snapshot = read_hf_ref_main(cache_path);
+            }
+            entry.cached_snapshots[name] = std::move(cached_snapshot);
         }
     }
 
@@ -1389,12 +1457,6 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
 
     for (auto& [key, entry] : repos) {
         (void)key;
-
-        // Without a local snapshot reference, there is nothing reliable to
-        // compare against.
-        if (entry.cached_snapshot.empty()) {
-            continue;
-        }
 
         try {
             const auto source =
@@ -1413,27 +1475,29 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 continue;
             }
 
-            // Only a successful registry response with a usable snapshot may
-            // clear an update flag discovered by an earlier check.
-            verified_models.insert(
-                entry.model_names.begin(),
-                entry.model_names.end());
+            size_t updated_variants = 0;
+            for (const auto& model_name : entry.model_names) {
+                auto cached_it = entry.cached_snapshots.find(model_name);
+                if (cached_it == entry.cached_snapshots.end() || cached_it->second.empty()) {
+                    continue;
+                }
 
-            if (latest.snapshot_id == entry.cached_snapshot) {
-                continue;
+                // Only a successful registry response with a usable local
+                // baseline may clear an update flag discovered earlier.
+                verified_models.insert(model_name);
+                if (latest.snapshot_id != cached_it->second) {
+                    updated_models.insert(model_name);
+                    ++updated_variants;
+                }
             }
 
-            LOG(INFO, "ModelManager")
-                << "Update available for " << entry.repo_id
-                << " on " << remote_registry_display_name(source)
-                << ": cached=" << entry.cached_snapshot.substr(0, 18)
-                << ", latest=" << latest.snapshot_id.substr(0, 18)
-                << " (" << entry.model_names.size()
-                << " variant(s))" << std::endl;
-
-            updated_models.insert(
-                entry.model_names.begin(),
-                entry.model_names.end());
+            if (updated_variants > 0) {
+                LOG(INFO, "ModelManager")
+                    << "Update available for " << entry.repo_id
+                    << " on " << remote_registry_display_name(source)
+                    << ": latest=" << latest.snapshot_id.substr(0, 18)
+                    << " (" << updated_variants << " variant(s))" << std::endl;
+            }
 
         } catch (const RegistryNotFoundError& e) {
             LOG(DEBUG, "ModelManager")
@@ -2686,7 +2750,9 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     std::shared_ptr<std::mutex> repo_lock;
     {
         std::lock_guard<std::mutex> guard(download_locks_mutex_);
-        auto& slot = download_locks_[effective_registry_source(info) + ":" + info.checkpoint()];
+        auto& slot = download_locks_[
+            effective_registry_source(info) + ":" +
+            checkpoint_to_repo_id(info.checkpoint("main"))];
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
     }
@@ -4093,12 +4159,38 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
     for (const auto& [repo_id, snapshot_id] : repo_snapshot_ids) {
         const fs::path& cache_path = repo_cache_paths.at(repo_id);
-        if (repos_reusing_previous_snapshot.count(repo_id)) {
-            const std::string& previous_ref = repo_previous_refs.at(repo_id);
-            write_hf_ref_main(cache_path, previous_ref);
-            remove_unused_hf_snapshot(cache_path, repo_snapshot_paths.at(repo_id), previous_ref);
-        } else {
-            write_hf_ref_main(cache_path, snapshot_id);
+        const bool reusing_previous_snapshot =
+            repos_reusing_previous_snapshot.count(repo_id) != 0;
+        const std::string active_snapshot_id = reusing_previous_snapshot
+            ? repo_previous_refs.at(repo_id)
+            : snapshot_id;
+
+        write_hf_ref_main(cache_path, active_snapshot_id);
+        if (reusing_previous_snapshot) {
+            remove_unused_hf_snapshot(
+                cache_path, repo_snapshot_paths.at(repo_id), active_snapshot_id);
+        }
+
+        const fs::path provenance_path = cache_path / ".lemonade_registry.json";
+        json processed_models = json::object();
+        if (safe_exists(provenance_path)) {
+            try {
+                const json previous_provenance =
+                    JsonUtils::load_from_file(path_to_utf8(provenance_path));
+                if (previous_provenance.contains("processed_models") &&
+                    previous_provenance["processed_models"].is_object()) {
+                    processed_models = previous_provenance["processed_models"];
+                }
+            } catch (const std::exception&) {
+                // Replace invalid provenance after a successful download.
+            }
+        }
+
+        if (repo_id == main_repo_id) {
+            processed_models[info.model_name] = {
+                {"selection", registry_model_selection(info)},
+                {"snapshot_id", snapshot_id}
+            };
         }
 
         const auto& repo = repositories.at(repo_id);
@@ -4106,11 +4198,10 @@ void ModelManager::download_from_registry(const ModelInfo& info,
             {"source", source_name},
             {"repo_id", repo_id},
             {"revision", repo.revision},
-            {"snapshot_id", repos_reusing_previous_snapshot.count(repo_id)
-                                ? repo_previous_refs.at(repo_id) : snapshot_id}
+            {"snapshot_id", active_snapshot_id},
+            {"processed_models", std::move(processed_models)}
         };
-        JsonUtils::save_to_file(provenance,
-            path_to_utf8(cache_path / ".lemonade_registry.json"));
+        JsonUtils::save_to_file(provenance, path_to_utf8(provenance_path));
     }
 
     if (progress_callback) {
