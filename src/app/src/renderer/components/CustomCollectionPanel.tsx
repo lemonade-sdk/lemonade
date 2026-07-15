@@ -376,7 +376,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
               type="button"
               className="settings-reset-button"
               onClick={() => updateOmniForm({ systemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT })}
-              disabled={omniForm.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim()}
+              disabled={(() => { const form = omniForm; return form.systemPrompt.trim() === DEFAULT_OMNI_SYSTEM_PROMPT.trim(); })()}
               title="Restore the shipped default OmniRouter system prompt."
             >
               Reset to default
