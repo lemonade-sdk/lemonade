@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y \
     vulkan-tools \
     libvulkan1 \
     unzip \
+    xz-utils \
     libgomp1 \
     libatomic1 \
     && rm -rf /var/lib/apt/lists/*

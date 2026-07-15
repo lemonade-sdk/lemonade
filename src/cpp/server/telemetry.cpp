@@ -410,7 +410,8 @@ private:
 
             if (!task.metrics_url.empty() && task.parser) {
                 try {
-                    auto response = utils::HttpClient::get(task.metrics_url, {}, 1);
+                    auto response = utils::HttpClient::get(
+                        task.metrics_url, {}, 1, utils::HttpSecurityPolicy::TrustedLoopback);
                     if (response.status_code == 200) {
                         auto extra = task.parser(response.body);
                         for (const auto& [k, v] : extra) {

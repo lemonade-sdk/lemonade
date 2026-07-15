@@ -358,9 +358,37 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
     return 0;
 }
 
+namespace {
+// Applies the scheme and redirect restrictions for a trust boundary. Returns
+// false if any security-relevant option fails to apply so callers can fail
+// closed instead of issuing an unrestricted request.
+bool apply_http_security_policy(CURL* curl, HttpSecurityPolicy policy) {
+    auto set = [curl](CURLoption opt, auto value) {
+        return curl_easy_setopt(curl, opt, value) == CURLE_OK;
+    };
+    switch (policy) {
+        case HttpSecurityPolicy::TrustedLoopback:
+            return set(CURLOPT_FOLLOWLOCATION, 0L) &&
+                   set(CURLOPT_PROTOCOLS_STR, "http");
+        case HttpSecurityPolicy::AllowInsecureHttp:
+            return set(CURLOPT_FOLLOWLOCATION, 1L) &&
+                   set(CURLOPT_MAXREDIRS, 5L) &&
+                   set(CURLOPT_PROTOCOLS_STR, "http,https") &&
+                   set(CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+        case HttpSecurityPolicy::ExternalHttpsOnly:
+        default:
+            return set(CURLOPT_FOLLOWLOCATION, 1L) &&
+                   set(CURLOPT_MAXREDIRS, 5L) &&
+                   set(CURLOPT_PROTOCOLS_STR, "https") &&
+                   set(CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    }
+}
+} // namespace
+
 HttpResponse HttpClient::get(const std::string& url,
                              const std::map<std::string, std::string>& headers,
-                             long timeout_seconds) {
+                             long timeout_seconds,
+                             HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -372,7 +400,10 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    if (!apply_http_security_policy(curl, policy)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT,
                      timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
@@ -651,7 +682,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                                             ProgressCallback callback,
                                             const std::map<std::string, std::string>& headers,
                                             const DownloadOptions& options,
-                                            bool initial_range_request) {
+                                            bool initial_range_request,
+                                            HttpSecurityPolicy policy) {
     DownloadResult result;
 
     CURL* curl = curl_easy_init();
@@ -677,7 +709,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    if (!apply_http_security_policy(curl, policy)) {
+        result.error_message = "Failed to apply HTTP security policy";
+        fclose(fp);
+        curl_easy_cleanup(curl);
+        return result;
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
@@ -778,6 +815,15 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             case CURLE_SSL_CONNECT_ERROR:
                 retryable = true;
                 break;
+            // A rejected scheme (e.g. an https-only policy hit on an http URL or
+            // a disallowed redirect target) and a malformed URL can never
+            // succeed on retry. Fail permanently so the outer loop stops
+            // immediately and preserves any existing partial file.
+            case CURLE_UNSUPPORTED_PROTOCOL:
+            case CURLE_URL_MALFORMAT:
+                result.permanent = true;
+                retryable = false;
+                break;
             case CURLE_WRITE_ERROR: {
                 // CURLE_WRITE_ERROR (23) typically means disk full.
                 // Check available disk space to confirm.
@@ -833,7 +879,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             if (head_curl) {
                 curl_easy_setopt(head_curl, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
-                curl_easy_setopt(head_curl, CURLOPT_FOLLOWLOCATION, 1L);
+                if (!apply_http_security_policy(head_curl, policy)) {
+                    curl_easy_cleanup(head_curl);
+                    result.error_message = "Resume failed (HTTP 416) - could not apply security policy";
+                    result.can_resume = false;
+                    return result;
+                }
                 curl_easy_setopt(head_curl, CURLOPT_TIMEOUT, 30L);
 
                 // Add headers
@@ -899,7 +950,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          const std::string& output_path,
                                          ProgressCallback callback,
                                          const std::map<std::string, std::string>& headers,
-                                         const DownloadOptions& options) {
+                                         const DownloadOptions& options,
+                                         HttpSecurityPolicy policy) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
     const ExpectedHash expected_hash = parse_expected_hash(options);
@@ -1022,7 +1074,7 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         final_result = download_attempt(url, partial_path, resume_offset,
                                         adjusted_callback, headers, options,
-                                        initial_range_request);
+                                        initial_range_request, policy);
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
@@ -1074,6 +1126,14 @@ DownloadResult HttpClient::download_file(const std::string& url,
                 final_result.error_message = "Download succeeded but failed to rename file: " + ec.message();
             }
             return final_result;
+        }
+
+        // A permanent transport failure (unsupported protocol, malformed URL)
+        // can never succeed on retry. Stop immediately and leave any partial
+        // file in place rather than removing it on each doomed attempt.
+        if (final_result.permanent) {
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
+            break;
         }
 
         // Don't retry permanent HTTP failures (4xx client errors).

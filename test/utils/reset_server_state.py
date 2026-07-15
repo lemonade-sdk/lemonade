@@ -20,7 +20,6 @@ import requests
 
 from .test_models import PORT, TIMEOUT_DEFAULT
 
-
 HOST_CANDIDATES = ("127.0.0.1", "localhost")
 
 

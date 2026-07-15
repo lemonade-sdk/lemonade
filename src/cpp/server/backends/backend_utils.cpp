@@ -232,7 +232,6 @@ namespace lemon::backends {
     bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // CUDA Windows release assets are .7z and use the existing native tar.exe path.
         // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
-        std::string command;
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
 #ifdef _WIN32
@@ -247,9 +246,14 @@ namespace lemon::backends {
         }
         {
             std::string tar_path = platform->get_native_tar_path();
-            std::string probe_cmd = tar_path + " --list -f \"" + archive_path + "\" >nul 2>&1";
-            std::string unused;
-            if (lemon::utils::ProcessManager::run_command(probe_cmd, unused, 10) != 0) {
+            int probe_result = lemon::utils::ProcessManager::run_process_with_output(
+                tar_path,
+                {"--list", "-f", archive_path},
+                [](const std::string&) { return true; },
+                "",
+                10
+            );
+            if (probe_result != 0) {
                 LOG(ERROR, backend_name) << "Error: tar.exe cannot read this .7z archive. Windows 11 22H2+ (bsdtar/libarchive) required." << std::endl;
                 return false;
             }
@@ -257,19 +261,27 @@ namespace lemon::backends {
         // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
         // lemonade-sdk/llama.cpp have no top-level directory — files sit at the
         // archive root. Stripping would discard every entry and produce an empty dir.
-        command = platform->get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
-#else
-        LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
-        return false;
-#endif
         std::string output;
-        int result = lemon::utils::ProcessManager::run_command(command, output, 300);
+        int result = lemon::utils::ProcessManager::run_process_with_output(
+            platform->get_native_tar_path(),
+            {"-xf", archive_path, "-C", dest_dir},
+            [&output](const std::string& line) {
+                output += line + "\n";
+                return true;
+            },
+            "",
+            300
+        );
         if (result != 0) {
             LOG(ERROR, backend_name) << "Extraction failed with code: " << result
                                      << (output.empty() ? "" : " - " + output) << std::endl;
             return false;
         }
         return true;
+#else
+        LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
+        return false;
+#endif
     }
 
     static fs::path get_backend_download_cache_dir() {

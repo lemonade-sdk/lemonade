@@ -105,7 +105,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir,
-        int timeout_seconds) override;
+        int timeout_seconds,
+        bool capture_stderr = true) override;
 
     int find_free_port(int start_port) override;
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override;
@@ -483,7 +484,8 @@ int UnixProcessPlatform::run_with_output(
     const std::vector<std::string>& args,
     OutputLineCallback on_line,
     const std::string& working_dir,
-    int timeout_seconds) {
+    int timeout_seconds,
+    bool capture_stderr) {
 
     int stdout_pipe[2];
 
@@ -507,7 +509,9 @@ int UnixProcessPlatform::run_with_output(
         close(stdout_pipe[0]);
 
         dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stdout_pipe[1], STDERR_FILENO);
+        if (capture_stderr) {
+            dup2(stdout_pipe[1], STDERR_FILENO);
+        }
         close(stdout_pipe[1]);
 
         if (!working_dir.empty()) {

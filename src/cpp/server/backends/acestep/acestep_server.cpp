@@ -205,7 +205,8 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
     const std::string job_url = base + "/job?id=" + job_id;
     std::string status;
     for (int i = 0; i < 1200; ++i) {
-        auto poll = utils::HttpClient::get(job_url, {}, 30);
+        auto poll = utils::HttpClient::get(job_url, {}, 30,
+                                           utils::HttpSecurityPolicy::TrustedLoopback);
         if (poll.status_code == 200) {
             try { status = json::parse(poll.body).value("status", std::string()); }
             catch (...) { status.clear(); }
@@ -220,7 +221,8 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
         return false;
     }
 
-    auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120);
+    auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120,
+                                          utils::HttpSecurityPolicy::TrustedLoopback);
     if (fetched.status_code != 200) {
         LOG(ERROR, "acestep-server") << "fetching " << stage << " job result failed (HTTP "
                                      << fetched.status_code << ")" << std::endl;
