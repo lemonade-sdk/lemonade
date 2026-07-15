@@ -3067,6 +3067,63 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021zh_router_collection_repull_overwrite(self):
+        """Re-pulling an already-registered collection.router under the same
+        name must succeed (#2703). On overwrite the registration data is
+        enriched with the persisted registry source; that internal field must
+        not reach the strict routing-policy parser, which would otherwise reject
+        it as an unknown root key."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterRepull-{suffix}"
+        collection_body = {
+            "model_name": canonical_name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [ENDPOINT_TEST_MODEL],
+            "routing": {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "always-test-model",
+                        "match": {"keywords_any": ["code"]},
+                        "route_to": ENDPOINT_TEST_MODEL,
+                    }
+                ],
+            },
+        }
+        try:
+            # Initial registration.
+            first = requests.post(
+                f"{self.base_url}/pull",
+                json=collection_body,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["status"], "success")
+
+            # Re-pull the identical body (no explicit source/registry_source).
+            # The overwrite path injects the persisted registry source into the
+            # registration data; validating that enriched object used to 500
+            # with "collection contains unknown key 'source'".
+            second = requests.post(
+                f"{self.base_url}/pull",
+                json=collection_body,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertEqual(second.json()["status"], "success")
+            print(f"[OK] collection.router re-pull overwrite: {canonical_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021zi_router_collection_trace_and_outputs(self):
         """route_trace=true returns the full Decision trace and copies rule
         outputs verbatim without interpreting them (#2386)."""

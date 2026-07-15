@@ -496,8 +496,7 @@ std::vector<Rule> parse_rules(const json& routing,
 
 const std::set<std::string>& routing_policy_root_keys() {
     static const std::set<std::string> keys = {
-        "version", "model_name", "recipe", "components", "models", "routing",
-        "source", "registry_source"};
+        "version", "model_name", "recipe", "components", "models", "routing"};
     return keys;
 }
 
