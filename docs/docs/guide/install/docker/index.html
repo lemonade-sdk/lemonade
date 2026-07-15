@@ -612,10 +612,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#docker-run-with-a-specific-port-and-version" class="md-nav__link">
+  <a href="#docker-run-with-a-specific-port" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Docker Run with a Specific Port and Version
+        Docker Run with a Specific Port
       </span>
     </span>
   </a>
@@ -2391,10 +2391,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#docker-run-with-a-specific-port-and-version" class="md-nav__link">
+  <a href="#docker-run-with-a-specific-port" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Docker Run with a Specific Port and Version
+        Docker Run with a Specific Port
       </span>
     </span>
   </a>
@@ -2489,24 +2489,42 @@
 <h2 id="quick-start-with-docker">Quick Start with Docker</h2>
 <blockquote>
 <p>You may need additional configuration depending on your environment.</p>
+<p><strong>Security note</strong></p>
+<p>The container runs <code>lemond</code> as an unprivileged user and binds <code>0.0.0.0</code>
+<em>inside</em> the container (required for Docker port publishing to work). The
+examples below use <code>-p 13305:13305</code>, which exposes the <strong>unauthenticated</strong> API
+on every host interface. To limit exposure:
+- Publish to host loopback only: <code>-p 127.0.0.1:13305:13305</code>.
+- Require authentication by setting <code>-e LEMONADE_API_KEY=&lt;key&gt;</code>.</p>
 </blockquote>
 <h3 id="docker-run-with-default-configuration">Docker Run with Default Configuration</h3>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
-<h3 id="docker-run-with-a-specific-port-and-version">Docker Run with a Specific Port and Version</h3>
+<blockquote>
+<p><strong>Upgrading from an older version?</strong></p>
+<p>If you're upgrading from an image that ran as root (versions prior to v10.10.1), your existing named volumes may still be owned by root. The new image runs as UID 10001 and will fail to write to root-owned volumes. Fix ownership with helper containers:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>lemonade-cache:/v<span class="w"> </span>ubuntu:24.04<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>/v
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>lemonade-llama:/v<span class="w"> </span>ubuntu:24.04<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>/v
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span>lemonade-recipe:/v<span class="w"> </span>ubuntu:24.04<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>/v
+</code></pre></div>
+<p>Alternatively, remove the old volumes and let the new container recreate them:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>volume<span class="w"> </span>rm<span class="w"> </span>lemonade-cache<span class="w"> </span>lemonade-llama<span class="w"> </span>lemonade-recipe
+</code></pre></div>
+</blockquote>
+<h3 id="docker-run-with-a-specific-port">Docker Run with a Specific Port</h3>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">4000</span>:5000<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:v9.1.3<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>./lemond<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">5000</span>
 </code></pre></div>
 <blockquote>
@@ -2524,9 +2542,9 @@
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
 <h3 id="docker-run-with-amd-gpu-passthrough-using-rocm">Docker Run with AMD GPU Passthrough using ROCm</h3>
@@ -2541,9 +2559,9 @@
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--device<span class="o">=</span>/dev/kfd<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--device<span class="o">=</span>/dev/dri<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
@@ -2565,9 +2583,9 @@
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>/usr/lib/wsl/lib:/usr/lib/wsl/lib:ro<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>/opt/rocm/lib:/opt/rocm/lib:ro<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-e<span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span>/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib<span class="w"> </span><span class="se">\</span>
@@ -2590,11 +2608,11 @@
       - &quot;13305:13305&quot;
     volumes:
       # Persist downloaded models
-      - lemonade-cache:/root/.cache/huggingface
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
       # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
-      - lemonade-recipe:/root/.cache/lemonade
+      - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
 
 volumes:
@@ -2723,8 +2741,17 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="w">    </span>libatomic1<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="o">&amp;&amp;</span><span class="w"> </span>rm<span class="w"> </span>-rf<span class="w"> </span>/var/lib/apt/lists/*
 
-<span class="c"># Create application directory</span>
+<span class="c"># Run as an unprivileged user; lemond never needs root at runtime.</span>
+<span class="k">RUN</span><span class="w"> </span>useradd<span class="w"> </span>-r<span class="w"> </span>-u<span class="w"> </span><span class="m">10001</span><span class="w"> </span>-s<span class="w"> </span>/usr/sbin/nologin<span class="w"> </span>lemonade
+
+<span class="c"># The application directory doubles as the user&#39;s HOME so the HuggingFace and</span>
+<span class="c"># lemonade caches (both derived from $HOME) resolve to writable, owned paths.</span>
 <span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/lemonade</span>
+<span class="k">ENV</span><span class="w"> </span><span class="nv">HOME</span><span class="o">=</span>/opt/lemonade
+
+<span class="c"># Provide a private runtime directory so lemond can use get_runtime_dir()</span>
+<span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/run/lemonade<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span><span class="m">700</span><span class="w"> </span>/run/lemonade
+<span class="k">ENV</span><span class="w"> </span><span class="nv">XDG_RUNTIME_DIR</span><span class="o">=</span>/run/lemonade
 
 <span class="c"># Copy built executables and resources from builder</span>
 <span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/app/build/lemond<span class="w"> </span>./lemond
@@ -2738,10 +2765,14 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="c"># them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.</span>
 <span class="k">ENV</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;/opt/lemonade:</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span><span class="s2">&quot;</span>
 
-<span class="c"># Create necessary directories</span>
+<span class="c"># Create cache directories and hand the whole tree to the unprivileged user.</span>
 <span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/lemonade/llama/cpu<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>/opt/lemonade/llama/vulkan<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>/root/.cache/huggingface
+<span class="w">    </span>/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>/opt/lemonade/.cache/lemonade<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>chown<span class="w"> </span>-R<span class="w"> </span>lemonade:lemonade<span class="w"> </span>/opt/lemonade<span class="w"> </span>/run/lemonade
+
+<span class="k">USER</span><span class="w"> </span><span class="s">lemonade</span>
 
 <span class="c"># Expose default port</span>
 <span class="k">EXPOSE</span><span class="w"> </span><span class="s">13305</span>
@@ -2750,7 +2781,10 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="k">HEALTHCHECK</span><span class="w"> </span>--interval<span class="o">=</span>30s<span class="w"> </span>--timeout<span class="o">=</span>10s<span class="w"> </span>--start-period<span class="o">=</span>5s<span class="w"> </span>--retries<span class="o">=</span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>CMD<span class="w"> </span>curl<span class="w"> </span>-f<span class="w"> </span>http://localhost:13305/live<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
 
-<span class="c"># Default command: start server in headless mode</span>
+<span class="c"># Default command: start server in headless mode.</span>
+<span class="c"># Binds 0.0.0.0 because Docker port publishing (-p) reaches the container via</span>
+<span class="c"># its external interface, not loopback. Restrict exposure by publishing to</span>
+<span class="c"># host loopback (-p 127.0.0.1:13305:13305) and/or setting LEMONADE_API_KEY.</span>
 <span class="k">CMD</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;./lemond&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--host&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">]</span>
 </code></pre></div>
 <h3 id="2-build-the-docker-image">2. Build the Docker Image</h3>
@@ -2765,11 +2799,11 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
       - &quot;13305:13305&quot;
     volumes:
       # Persist downloaded models
-      - lemonade-cache:/root/.cache/huggingface
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
       # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
-      - lemonade-recipe:/root/.cache/lemonade
+      - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
 
 volumes:
@@ -2858,12 +2892,12 @@ lemonade-server<span class="w">  </span><span class="p">|</span><span class="w">
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">9000</span>:9000<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/opt/lemonade/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
 <ul>
-<li>Model download fails: Ensure /root/.cache/huggingface volume is writable</li>
+<li>Model download fails: Ensure /opt/lemonade/.cache/huggingface volume is writable</li>
 <li>Vulkan errors on CPU-only machine: The server will fallback to CPU backend automatically</li>
 </ul>
 

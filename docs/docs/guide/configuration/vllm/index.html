@@ -915,6 +915,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Install">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-architecture-release-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Per-architecture release overrides
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploying-on-mi300x-gfx942-quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Deploying on MI300X (gfx942) — quickstart
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -933,6 +961,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Model-Family Argument Config
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#speculative-decoding-mtp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Speculative decoding (MTP)
       </span>
     </span>
   </a>
@@ -2409,6 +2448,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Install">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-architecture-release-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Per-architecture release overrides
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploying-on-mi300x-gfx942-quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Deploying on MI300X (gfx942) — quickstart
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2427,6 +2494,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Model-Family Argument Config
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#speculative-decoding-mtp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Speculative decoding (MTP)
       </span>
     </span>
   </a>
@@ -2480,13 +2558,13 @@
 <li><strong>Concurrency and multi-GPU.</strong> Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.</li>
 </ol>
 <blockquote>
-<p><strong>Status: experimental.</strong> The backend has been validated on <strong>gfx1151 (Strix Halo)</strong> and <strong>gfx1150 (Strix Point)</strong>. Prebuilt wheels also exist for <code>gfx110X</code> (RDNA3) and <code>gfx120X</code> (RDNA4) but those targets have not been exercised end-to-end yet.</p>
+<p><strong>Status: experimental.</strong> The backend has been validated on <strong>gfx1151 (Strix Halo)</strong> and <strong>gfx1150 (Strix Point)</strong>. Prebuilt wheels also exist for <code>gfx110X</code> (RDNA3) and <code>gfx120X</code> (RDNA4) but those targets have not been exercised end-to-end yet. <strong>gfx942 (AMD Instinct MI300X, CDNA3)</strong> is <strong>staged, not auto-installable yet</strong> — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official <code>-gfx942</code> release asset is published (see <a href="#deploying-on-mi300x-gfx942--quickstart">Deploying on MI300X</a>).</p>
 </blockquote>
 <h2 id="available-backend">Available Backend</h2>
 <h3 id="rocm">ROCm</h3>
 <ul>
 <li><strong>Platform</strong>: Linux only</li>
-<li><strong>Hardware</strong>: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4)</li>
+<li><strong>Hardware</strong>: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4); gfx942 (MI300X, CDNA3) is <strong>staged / manually validated, not auto-installable</strong> until the official per-arch release asset ships</li>
 <li><strong>Bundle</strong>: a self-contained tarball from <a href="https://github.com/lemonade-sdk/vllm-rocm">lemonade-sdk/vllm-rocm</a> with a relocatable Python interpreter, PyTorch (ROCm), the ROCm user-space libs, Triton, and vLLM. No system Python / PyTorch / ROCm install is required on the host.</li>
 </ul>
 <h2 id="prerequisites">Prerequisites</h2>
@@ -2499,7 +2577,35 @@
 <span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;recipe&quot;: &quot;vllm&quot;, &quot;backend&quot;: &quot;rocm&quot;}&#39;</span>
 </code></pre></div></p>
-<p>The install fetches a per-GPU-target release (e.g. <code>…-gfx1151</code>, <code>…-gfx1150</code>) from <a href="https://github.com/lemonade-sdk/vllm-rocm/releases">lemonade-sdk/vllm-rocm</a>. The base version is pinned in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json"><code>backend_versions.json</code></a>; the <code>-{gfx_target}</code> suffix is appended at runtime from <code>SystemInfo::get_rocm_arch()</code>, so a single pin covers all supported architectures.</p>
+<p>The install fetches a per-GPU-target release (e.g. <code>…-gfx1151</code>, <code>…-gfx1150</code>) from <a href="https://github.com/lemonade-sdk/vllm-rocm/releases">lemonade-sdk/vllm-rocm</a>. The base version is pinned in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json"><code>backend_versions.json</code></a>; the <code>-{gfx_target}</code> suffix is appended at runtime from <code>SystemInfo::get_rocm_arch()</code>, so the default pin covers all RDNA/APU architectures on one line.</p>
+<h4 id="per-architecture-release-overrides">Per-architecture release overrides</h4>
+<p>Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line (its official asset is not published yet — see the staged-status note above). For those, <code>backend_versions.json</code> carries an optional <code>vllm.rocm_arch_overrides</code> map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the <code>-{gfx_target}</code> suffix is appended. An explicit <code>vllm.rocm_bin</code> pin (<code>latest</code> or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the <em>default</em> base. A pin that already carries a <code>-{gfx_target}</code> suffix must match the detected architecture: a cross-arch pin (for example a repo-wide <code>latest</code> that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is <strong>rejected</strong> rather than installed against the wrong architecture line. Note that pinning <code>vllm.rocm_bin</code> to the exact default base tag is treated the same as leaving it unset (<code>builtin</code>) — the per-arch override still applies; set an explicit <em>non-default</em> tag to opt out of the override.</p>
+<h3 id="deploying-on-mi300x-gfx942-quickstart">Deploying on MI300X (gfx942) — quickstart</h3>
+<blockquote>
+<p><strong>gfx942 is currently staged, not auto-installable.</strong> The resolver, per-arch release pinning,
+device-class launch policy, and FP8/MTP recipes are all in place, but gfx942 is intentionally
+<strong>not</strong> in the public installable support matrix yet because its per-arch vLLM/ROCm release asset
+is not published in <code>lemonade-sdk/vllm-rocm</code>. Once that official <code>gfx94X-dcgpu</code> asset ships, gfx942
+is enabled with a one-line matrix flip and the steps below become a one-click <code>install</code>.</p>
+</blockquote>
+<p>The minimum path to a working gfx942 deployment today with the FP8 + MTP recipes:</p>
+<ol>
+<li><strong>Runtime asset.</strong> Until the official asset ships, use the community-built, hardware-validated
+   tarball (<code>ianbmacdonald/vllm-rocm-cdna</code>, tag <code>vllm0.19.1-rocm7.13.0-gfx942</code>) by <strong>manually sideloading</strong>
+   it into the vLLM backend install directory. A <code>vllm.rocm_bin</code> pin changes only the tag/version, not
+   the source repository, so it cannot redirect the built-in install to a fork's build — the sideload
+   is the supported interim path (the standalone runbook published alongside the tarball covers the
+   exact steps).</li>
+<li><strong>Recipes.</strong> The <code>Qwen3.6-27B-FP8-vLLM-{low,high}conc</code> and <code>Qwen3.6-35B-A3B-FP8-vLLM-{low,high}conc</code>
+   recipes are built in; <code>lemonade run Qwen3.6-27B-FP8-vLLM-lowconc</code> pulls and serves. To register a
+   pre-quantized checkpoint yourself: <code>lemonade pull user.MyModel --checkpoint Qwen/Qwen3.6-27B-FP8 --recipe vllm</code>.</li>
+<li><strong>Verify.</strong> The vLLM log shows the MTP head detected and the draft-token acceptance rate (~80% on
+   the 27B dense recipe, gfx942). Discrete-HBM launch defaults apply automatically; force eager for a
+   newly-added or misbehaving model with <code>lemonade config set vllm.args="--enforce-eager"</code>.</li>
+</ol>
+<p>A standalone copy of this runbook and importable recipe JSONs are published alongside the gfx942
+runtime tarball as release assets. AITER (fused-MoE FP8 kernels) is a separate build-repo bake — the
+recipes serve correctly without it.</p>
 <h2 id="use">Use</h2>
 <p>Models registered with the <code>vllm</code> recipe in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json"><code>server_models.json</code></a> load automatically on first request. Built-in <code>vllm</code> entries serve the upstream Hugging Face weights as-is in <strong>FP16</strong> — there is no quantization step in the load path — so their model IDs carry an explicit <code>-FP16-</code> segment (e.g. <code>Qwen3.5-4B-FP16-vLLM</code>). This mirrors the <code>-Hybrid</code> / <code>-CPU</code> suffix convention used by <code>ryzenai-llm</code> and makes the data type obvious next to <code>llamacpp</code> (GGUF, typically Q4_K_M) and <code>flm</code> (4-bit) entries in the same list. Pointing a <code>user.*</code> <code>vllm</code> registration at a pre-quantized checkpoint (FP8, AWQ, GPTQ, etc.) is still supported.</p>
 <p>To register your own:</p>
@@ -2546,7 +2652,11 @@
 <li>User-provided <code>vllm_args</code></li>
 </ol>
 <p>Later layers override conflicting earlier flags but keep non-conflicting flags. Binary <code>--flag</code> / <code>--no-flag</code> pairs are resolved like the rest of Lemonade's <code>*_args</code> merge behavior, and repeated generic flags are preserved when the same flag appears multiple times.</p>
-<p>Lemonade-managed process arguments cannot be set in this file or in <code>vllm_args</code>: <code>--model</code>, <code>--served-model-name</code>, <code>--host</code>, <code>--port</code>, <code>--max-model-len</code>, <code>--enforce-eager</code>, and <code>--enable-prefix-caching</code>.</p>
+<p>Lemonade-managed process arguments cannot be set in this file or in <code>vllm_args</code>: <code>--model</code>, <code>--served-model-name</code>, <code>--host</code>, <code>--port</code>, <code>--max-model-len</code>, and <code>--enable-prefix-caching</code>.</p>
+<p><code>--enforce-eager</code> is a special case: it is normally managed by Lemonade (discrete-HBM GPUs such as MI300X default to CUDA-graph capture, while every other GPU — shared-memory APUs and consumer discrete dGPUs alike — defaults to eager), but you <strong>may</strong> pass <code>--enforce-eager</code> in <code>vllm_args</code> as a managed <em>intent</em> to force eager mode on a discrete-HBM GPU — either when bringing up a newly-added / not-yet-fully-supported model, or when an existing model's CUDA-graph capture misbehaves. Lemonade detects it and re-emits it exactly once (it is not passed through as a raw duplicate flag).</p>
+<h2 id="speculative-decoding-mtp">Speculative decoding (MTP)</h2>
+<p>Some FP8 Qwen3.6 recipes enable <strong>Multi-Token Prediction (MTP)</strong> speculative decoding through a structured <code>speculative_config</code> object in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json"><code>vllm_model_config.json</code></a> (<code>{"method": "mtp", "num_speculative_tokens": 1}</code>). It is configured as an object rather than a <code>vllm_args</code> string because the space-delimited <code>vllm_args</code> tokenizer would corrupt inline JSON; Lemonade serializes it to a single <code>--speculative-config</code> argument.</p>
+<p><strong>Validation scope.</strong> MTP was verified on gfx942 / MI300X (<code>vllm0.19.1-rocm7.13.0</code>): vLLM detects the model's MTP head, and the dense <code>Qwen3.6-27B-FP8</code> recipe reached ~80% draft-token acceptance. The <code>Qwen3.6-35B-A3B-FP8</code> MoE recipes were throughput-benched on the same GPU with the MTP head active. The recipes are <strong>not</strong> arch-restricted, so an RDNA host with enough VRAM can load them against the default RDNA pin (<code>vllm0.20.1-rocm7.12.0</code>); that pin is newer than the gfx942 line and exposes the same method, but MTP on RDNA has not been independently serve-validated.</p>
 <h2 id="tuning">Tuning</h2>
 <p>Free-form CLI args can be appended to <code>vllm-server</code> via <code>vllm.args</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Allow more concurrent sequences and turn on prefix caching</span>

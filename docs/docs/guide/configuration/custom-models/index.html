@@ -796,13 +796,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pull-a-hugging-face-model" class="md-nav__link">
+  <a href="#pull-from-hugging-face-or-modelscope" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Pull a Hugging Face model
+        Pull from Hugging Face or ModelScope
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Pull from Hugging Face or ModelScope">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-and-revision-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cache and revision behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -840,10 +857,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#share-a-collection-export-import-and-hugging-face" class="md-nav__link">
+  <a href="#share-a-collection-export-import-and-model-registries" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Share a collection: export, import, and Hugging Face
+        Share a collection: export, import, and model registries
       </span>
     </span>
   </a>
@@ -2640,13 +2657,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pull-a-hugging-face-model" class="md-nav__link">
+  <a href="#pull-from-hugging-face-or-modelscope" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Pull a Hugging Face model
+        Pull from Hugging Face or ModelScope
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Pull from Hugging Face or ModelScope">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-and-revision-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cache and revision behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -2684,10 +2718,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#share-a-collection-export-import-and-hugging-face" class="md-nav__link">
+  <a href="#share-a-collection-export-import-and-model-registries" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Share a collection: export, import, and Hugging Face
+        Share a collection: export, import, and model registries
       </span>
     </span>
   </a>
@@ -3008,30 +3042,36 @@
 <h1 id="add-a-custom-model">Add a Custom Model</h1>
 <p>This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit <code>user_models.json</code> or <code>recipe_options.json</code>.</p>
 <h2 id="choose-a-workflow">Choose a Workflow</h2>
-<h3 id="pull-a-hugging-face-model">Pull a Hugging Face model</h3>
-<p>For most Hugging Face GGUFs, use the repo id directly:</p>
+<h3 id="pull-from-hugging-face-or-modelscope">Pull from Hugging Face or ModelScope</h3>
+<p>Hugging Face remains the default registry, so existing commands keep working unchanged:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo
+lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo:Q4_K_M
 </code></pre></div>
-<p>Lemonade fetches the repo, lists the available quantizations and sharded folder variants, auto-detects <code>mmproj-*.gguf</code> files for vision models, infers labels (<code>vision</code>/<code>embeddings</code>/<code>reranking</code>) from the repo id, and presents an interactive variant menu.</p>
-<p>To skip the menu, append a variant:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo:Q4_K_M
+<p>Choose ModelScope explicitly when the model is hosted or mirrored there:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>--source<span class="w"> </span>modelscope<span class="w"> </span>org/repo
+lemonade<span class="w"> </span>pull<span class="w"> </span>--source<span class="w"> </span>modelscope<span class="w"> </span>org/repo:Q4_K_M
 </code></pre></div>
+<p>Full model URLs are accepted and select the registry automatically:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>https://huggingface.co/unsloth/Qwen3-8B-GGUF
+lemonade<span class="w"> </span>pull<span class="w"> </span>https://modelscope.cn/models/Qwen/Qwen3-8B-GGUF
+</code></pre></div>
+<p>For supported repository layouts, Lemonade lists GGUF quantizations and sharded variants, auto-detects <code>mmproj-*.gguf</code> files, infers common labels, and presents the same interactive variant menu for either registry.</p>
 <p>Examples:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Interactive GGUF variant menu</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF
-
-<span class="c1"># Specific GGUF variant</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Hugging Face (default)</span>
 lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-<span class="c1"># Vision model with mmproj auto-detection</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
-
-<span class="c1"># Sharded variant</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+<span class="c1"># ModelScope</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>--source<span class="w"> </span>modelscope<span class="w"> </span>Qwen/Qwen3-8B-GGUF:Q4_K_M
 </code></pre></div>
+<p>The selected source is persisted with the model registration. Variant discovery, downloads, display links, cache lookup, deletion, and future update checks therefore continue to use the same registry. All checkpoints belonging to one model use one registry source.</p>
+<p>Private repositories can be authenticated with <code>HF_TOKEN</code> for Hugging Face or <code>MODELSCOPE_API_TOKEN</code> for ModelScope. <code>MODELSCOPE_ACCESS_TOKEN</code> is also accepted as a compatibility alias. Custom endpoints can be supplied with <code>HF_ENDPOINT</code> or <code>MODELSCOPE_ENDPOINT</code>.</p>
+<h4 id="cache-and-revision-behavior">Cache and revision behavior</h4>
+<p>Both registries share Lemonade's configured <code>models_dir</code>. Hugging Face keeps its established <code>models--org--repo</code> directory names. ModelScope uses the collision-free <code>modelscope--models--org--repo</code> namespace. Under either directory Lemonade uses the same <code>snapshots/&lt;id&gt;</code> and <code>refs/main</code> structure consumed by runtime resolution and cache cleanup.</p>
+<p>Hugging Face snapshots use the immutable commit returned by the Hub. ModelScope downloads use its branch/tag revision (normally <code>master</code>); Lemonade derives a stable local snapshot fingerprint from the normalized remote file tree so a changed ModelScope repository is detected even when the branch name stays the same.</p>
+<p>The desktop app's manual model form exposes the same source selector. The browse/search catalog remains Hugging Face-backed in this first version; ModelScope models can be added by repository ID through the manual form, CLI, or API.</p>
 <h3 id="register-with-explicit-cli-flags">Register with explicit CLI flags</h3>
 <p>Use a <code>user.*</code> name plus <code>--checkpoint</code> and <code>--recipe</code> when you need full control: multiple checkpoints, a non-default recipe, or custom labels.</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.NAME<span class="w"> </span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="w"> </span>--recipe<span class="w"> </span>RECIPE<span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="w"> </span>...<span class="o">]</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.NAME<span class="w"> </span>--source<span class="w"> </span>SOURCE<span class="w"> </span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="w"> </span>--recipe<span class="w"> </span>RECIPE<span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="w"> </span>...<span class="o">]</span>
 </code></pre></div>
 <p>Examples:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Register and pull a custom GGUF model with a main checkpoint</span>
@@ -3062,12 +3102,16 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </thead>
 <tbody>
 <tr>
+<td><code>--source SOURCE</code></td>
+<td>Remote registry for every checkpoint in this model: <code>huggingface</code> (default) or <code>modelscope</code>.</td>
+</tr>
+<tr>
 <td><code>--checkpoint TYPE CHECKPOINT</code></td>
 <td>Add a checkpoint entry. Repeat for multi-file models such as <code>main</code> + <code>mmproj</code> or <code>main</code> + <code>vae</code>.</td>
 </tr>
 <tr>
 <td><code>--recipe RECIPE</code></td>
-<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thinksound</code>, <code>acestep</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
+<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thinksound</code>, <code>acestep</code>, <code>trellis</code>, <code>openmoss</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
@@ -3141,7 +3185,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </table>
 <p>If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.</p>
 <p>The editor also exposes a <strong>System Prompt</strong> field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a <em>template</em> — both the <code>{tool_list}</code> and <code>{tool_guidance}</code> placeholders are <strong>required</strong> in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via <strong>Reset to default</strong> — stores no override and keeps tracking whatever the global default is at runtime.</p>
-<h3 id="share-a-collection-export-import-and-hugging-face">Share a collection: export, import, and Hugging Face</h3>
+<h3 id="share-a-collection-export-import-and-model-registries">Share a collection: export, import, and model registries</h3>
 <p><code>lemonade export &lt;collection&gt;</code> (and the desktop app's Export button) writes a <em>collection file</em>: the
 collection's <a href="../../../api/openai/#get-v1modelsmodel_id"><code>/v1/models/{model_id}</code></a> object normalized into
 an import-ready <a href="../../../api/lemonade/#post-v1pull"><code>/v1/pull</code></a> body. The file carries <code>model_name</code>,
@@ -3155,10 +3199,12 @@ the server regenerates those on import (<code>suggested</code> is set to <code>t
 <li><code>lemonade import &lt;CollectionName&gt;.json</code> on the CLI (or <strong>File &gt; New Omni Model &gt; From JSON</strong> in the
   desktop app).</li>
 <li><code>POST /v1/pull</code> with the file contents as the request body.</li>
-<li>Uploaded to a Hugging Face model repo <strong>named after the collection</strong>, so that the repo contains
-  <code>&lt;RepoName&gt;.json</code>. <code>lemonade pull &lt;org&gt;/&lt;repo&gt;</code> looks for the manifest named after the repo,
-  then registers and downloads everything in it. The built-in <code>LMX-Omni-*</code> collections are
-  distributed this way.</li>
+<li>Uploaded to a Hugging Face or ModelScope model repo <strong>named after the collection</strong>, so that the
+  repo contains <code>&lt;RepoName&gt;.json</code>. Pull it with the corresponding source, for example
+  <code>lemonade pull &lt;org&gt;/&lt;repo&gt;</code> or <code>lemonade pull --source modelscope &lt;org&gt;/&lt;repo&gt;</code>. Lemonade
+  downloads the manifest, preserves its registry provenance, then registers and downloads every
+  component. Inline component definitions inherit the collection source unless they explicitly
+  declare their own source.</li>
 </ul>
 <p>On import, component names that are already registered keep their local definition (differences from
 the embedded definition are logged as warnings); unknown components are registered as <code>user.*</code> models
@@ -3195,12 +3241,13 @@ from the embedded definitions.</p>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="register-via-api">Register via API</h3>
-<p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:</p>
+<p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Set <code>source</code> to <code>huggingface</code> (the default) or <code>modelscope</code>; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">        &quot;model_name&quot;: &quot;user.MyModel&quot;,</span>
 <span class="s1">        &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
+<span class="s1">        &quot;source&quot;: &quot;modelscope&quot;,</span>
 <span class="s1">        &quot;checkpoint&quot;: &quot;org/repo:Q4_0&quot;</span>
 <span class="s1">    }&#39;</span>
 </code></pre></div>
@@ -3358,6 +3405,7 @@ from the embedded definitions.</p>
 <h3 id="template">Template</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;MyCustomModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;modelscope&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;org/repo-name:filename.gguf&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.5</span>
@@ -3376,10 +3424,16 @@ from the embedded definitions.</p>
 </thead>
 <tbody>
 <tr>
+<td><code>source</code></td>
+<td>No</td>
+<td>String</td>
+<td>Remote registry: <code>huggingface</code> (default) or <code>modelscope</code>. Persisted and used for variants, downloads, cache paths, links, and update checks.</td>
+</tr>
+<tr>
 <td><code>checkpoint</code></td>
 <td>Yes*</td>
 <td>String</td>
-<td>HuggingFace checkpoint in <code>org/repo</code> or <code>org/repo:variant</code> format. Use <code>org/repo:filename.gguf</code> for GGUF models.</td>
+<td>Registry checkpoint in <code>org/repo</code> or <code>org/repo:variant</code> format. Use <code>org/repo:filename.gguf</code> for GGUF models.</td>
 </tr>
 <tr>
 <td><code>checkpoints</code></td>
@@ -3409,7 +3463,7 @@ from the embedded definitions.</p>
 <td><code>mmproj</code></td>
 <td>No</td>
 <td>String</td>
-<td>Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a <strong>top-level field</strong>, not inside <code>checkpoints</code>.</td>
+<td>Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a <strong>top-level field</strong>, not inside <code>checkpoints</code>.</td>
 </tr>
 <tr>
 <td><code>image_defaults</code></td>
@@ -3530,6 +3584,7 @@ from the embedded definitions.</p>
 <p><strong><code>user_models.json</code>:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;huggingface&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span>

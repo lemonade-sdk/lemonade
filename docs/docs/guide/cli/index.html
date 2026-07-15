@@ -900,6 +900,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#trellis2-trellis-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        TRELLIS.2 (<code>trellis</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openmoss-tts-openmoss-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenMOSS TTS (<code>openmoss</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3085,6 +3107,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#trellis2-trellis-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        TRELLIS.2 (<code>trellis</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openmoss-tts-openmoss-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenMOSS TTS (<code>openmoss</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3516,7 +3560,7 @@
 </tr>
 <tr>
 <td><code>pull MODEL_OR_CHECKPOINT</code></td>
-<td>Download a registered model, pull a Hugging Face checkpoint, or manually register a <code>user.*</code> model with <code>--checkpoint</code>/<code>--recipe</code>. See command options <a href="#options-for-pull">below</a>.</td>
+<td>Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a <code>user.*</code> model with <code>--checkpoint</code>/<code>--recipe</code>. See command options <a href="#options-for-pull">below</a>.</td>
 </tr>
 <tr>
 <td><code>import JSON_FILE</code></td>
@@ -3717,8 +3761,13 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span cl
 <tbody>
 <tr>
 <td><code>MODEL_OR_CHECKPOINT</code></td>
-<td>Registered model name, or <code>owner/repo[:variant]</code> Hugging Face checkpoint</td>
+<td>Registered model name, or <code>owner/repo[:variant]</code> Hugging Face/ModelScope checkpoint</td>
 <td>Yes</td>
+</tr>
+<tr>
+<td><code>--source</code></td>
+<td>Remote registry for checkpoint pulls: <code>huggingface</code> (default) or <code>modelscope</code>; direct hub URLs are auto-detected</td>
+<td>No</td>
 </tr>
 <tr>
 <td><code>--checkpoint TYPE CHECKPOINT</code></td>
@@ -4047,6 +4096,11 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <td>Context size for the model</td>
 <td>auto</td>
 </tr>
+<tr>
+<td><code>--flm-args ARGS</code></td>
+<td>Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption</td>
+<td><code>""</code></td>
+</tr>
 </tbody>
 </table>
 <h4 id="ryzen-ai-llm-ryzenai-llm-recipe">Ryzen AI LLM (<code>ryzenai-llm</code> recipe)</h4>
@@ -4123,6 +4177,40 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <tr>
 <td><code>--acestep BACKEND</code></td>
 <td>ACE-Step backend to use</td>
+<td>Auto-detected</td>
+</tr>
+</tbody>
+</table>
+<h4 id="trellis2-trellis-recipe">TRELLIS.2 (<code>trellis</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--trellis BACKEND</code></td>
+<td>Trellis backend to use</td>
+<td>Auto-detected</td>
+</tr>
+</tbody>
+</table>
+<h4 id="openmoss-tts-openmoss-recipe">OpenMOSS TTS (<code>openmoss</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--openmoss BACKEND</code></td>
+<td>OpenMOSS TTS backend to use</td>
 <td>Auto-detected</td>
 </tr>
 </tbody>
@@ -4640,7 +4728,12 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 <tr>
 <td><code>messages</code></td>
 <td>array</td>
-<td>Chat messages in OpenAI format (required)</td>
+<td>Chat messages in OpenAI format (required for text generation)</td>
+</tr>
+<tr>
+<td><code>input</code></td>
+<td>array</td>
+<td>Chat messages in OpenAI format (required for embedding test)</td>
 </tr>
 <tr>
 <td><code>max_tokens</code></td>
@@ -4697,9 +4790,10 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 <p>Lemonade ships with a bundled set of scenarios (<code>bench_scenarios.json</code>) covering:
 - <strong>Chat</strong> — Short and long conversational turns
 - <strong>Coding</strong> — Code generation, explanation, and debugging
-- <strong>Long-context</strong> — 32K, 64K, 128K context windows and multi-turn conversation memory</p>
+- <strong>Long-context</strong> — 32K, 64K, 128K context windows and multi-turn conversation memory
+- <strong>Embed</strong> - Embeddings, converting text input into a vector</p>
 <p>You can override these with <code>--scenario-file</code> or <code>--scenario-dir</code>.</p>
-<p><strong>Note:</strong> Long-context scenarios (<code>context-32k</code>, <code>context-64k</code>, <code>context-128k</code>, <code>context-multi-turn</code>) are excluded by default because they run very long. Use <code>--scenarios long-context</code> to include them, or <code>--scenarios all</code> to run every scenario.</p>
+<p><strong>Note:</strong> Long-context scenarios (<code>context-32k</code>, <code>context-64k</code>, <code>context-128k</code>, <code>context-multi-turn</code>) are excluded by default because they run very long. Use <code>--scenarios long-context</code> to include them. Embedding tests are also excluded by default but can be enabled with <code>--scenarios embed</code>. To enable all scenarios, regardless of type, runtime, or resource requirement use <code>--scenarios all</code>.</p>
 <h3 id="output">Output</h3>
 <h4 id="table-output-default">Table Output (default)</h4>
 <p>Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when <code>--runs &gt;= 10</code>), and peak VRAM usage:</p>

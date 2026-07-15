@@ -5292,8 +5292,8 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Speech Generation API. You provide a text input and receive an audio file. This API uses <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> as the backend.</p>
 <blockquote>
-<p><strong>Note:</strong> The model to use is called <code>kokoro-v1</code>. No other model is supported at the moment.</p>
-<p><strong>Limitations:</strong> Only <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code> are supported. Streaming is supported in <code>audio</code> (<code>pcm</code>) mode.</p>
+<p><strong>Note:</strong> Supported models are <code>kokoro-v1</code> (fixed voices, <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> backend) and the OpenMOSS family — <code>OpenMOSS-TTS</code> (voice cloning from a reference WAV) and <code>MOSS-VoiceGen</code> (voice design from a text description).</p>
+<p><strong>Limitations:</strong> <code>kokoro-v1</code> supports <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code>; OpenMOSS models natively produce <code>wav</code> only, and other formats are rejected with <code>400 Bad Request</code>. Streaming is supported in <code>audio</code> (<code>pcm</code>) mode on <code>kokoro-v1</code>.</p>
 </blockquote>
 <h3 id="parameters_9">Parameters</h3>
 <table>
@@ -5329,6 +5329,18 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td>No</td>
 <td>The voice to use. All OpenAI-defined voices can be used (<code>alloy</code>, <code>ash</code>, ...), as well as those defined by the kokoro model (<code>af_sky</code>, <code>am_echo</code>, ...). Default: <code>shimmer</code></td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>voice</code> (OpenMOSS)</td>
+<td>No</td>
+<td>For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. <code>a calm, deep male narrator voice</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>reference_wav_b64</code></td>
+<td>No</td>
+<td>Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
 <td><code>response_format</code></td>
