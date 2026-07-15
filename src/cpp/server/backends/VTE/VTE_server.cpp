@@ -33,7 +33,7 @@ namespace {
 // Mirrors vte/compiler/sanitizer.py::SUPPORTED_ARCHITECTURES. Checked here
 // too (VTE's own sanitizer is the real gate) so an unsupported model fails
 // before spawning a subprocess, with a clearer error.
-const std::set<std::string> kVteSupportedArchitectures = {"qwen2", "granite", "qwen35"};
+const std::set<std::string> kVteSupportedArchitectures = {"qwen2", "granite", "qwen35", "llama"};
 
 int current_process_id() {
 #ifdef _WIN32
@@ -94,7 +94,7 @@ void VTEServer::load(const std::string& model_name,
     if (!architecture.empty() && kVteSupportedArchitectures.count(architecture) == 0) {
         throw std::runtime_error(
             "VTE does not support GGUF architecture '" + architecture +
-            "' (supported: qwen2, granite, qwen35)."
+            "' (supported: qwen2, granite, qwen35, llama)."
         );
     }
 

@@ -578,6 +578,15 @@
             "ctx_size": 8192
         }
     },
+    "Llama-3.1-8B-Instruct-VTE": {
+        "checkpoint": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "recipe": "vte",
+        "suggested": true,
+        "size": 4.58,
+        "recipe_options": {
+            "ctx_size": 8192
+        }
+    },
     "Qwen3-1.7B-GGUF": {
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
         "recipe": "llamacpp",

@@ -391,6 +391,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `Granite-4.1-3B-VTE` | 3.62 | — |
+| `Llama-3.1-8B-Instruct-VTE` | 4.58 | — |
 | `Qwen2.5-1.5B-Instruct-VTE` | 1.12 | — |
 | `Qwen3.5-2B-VTE` | 1.57 | — |
 

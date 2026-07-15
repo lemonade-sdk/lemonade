@@ -93,7 +93,7 @@
     "rocm": "vllm0.20.1-rocm7.12.0"
   },
   "vte": {
-    "rocm-stable": "0.3.0"
+    "rocm-stable": "0.3.1"
   },
   "checksums": {
     "vte": {
@@ -101,6 +101,11 @@
         "0.3.0": {
           "vte-server-0.3.0-windows-x64.zip": {
             "sha256": "b3100f987bbdb4f8189232bf803370932d144cb33b5e74caf9675954af1a76ab"
+          }
+        },
+        "0.3.1": {
+          "vte-server-0.3.1-windows-x64.zip": {
+            "sha256": "f9244e2256ca2171b88f961a2014bde99e1eeb4e507ecfcd15b40e1fcfad9d94"
           }
         }
       }
