@@ -148,7 +148,7 @@ static void register_local_gguf(ModelManager& manager, const std::string& name,
     write_fake_gguf(gguf, context_length);
     json def = {
         {"recipe", "llamacpp"},
-        {"checkpoint", gguf.string()},
+        {"checkpoint", lemon::utils::path_to_utf8(gguf)},
         {"source", "local_path"},
     };
     manager.register_user_model("user." + name, def);

@@ -1647,6 +1647,12 @@ static int64_t aggregate_collection_context_window(
         const std::map<std::string, ModelInfo>& model_map) {
     const bool use_candidates =
         info.route_policy && !info.route_policy->candidates.empty();
+    // For collection.router, candidates are the only valid dispatch targets.
+    // If the policy is missing or empty (parse failure), the context window is
+    // unknown rather than incorrectly aggregated over classifier components.
+    if (is_router_collection_recipe(info.recipe) && !use_candidates) {
+        return 0;
+    }
     const std::vector<std::string>& names =
         use_candidates ? info.route_policy->candidates : info.components;
     int64_t min_ctx = 0;
