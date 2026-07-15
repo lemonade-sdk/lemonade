@@ -7369,8 +7369,8 @@ class EndpointTests(ServerTestBase):
             shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_040_params_rejects_backend_bin_override(self):
-        """SWSPLAT-24170: POST /params must not let a caller pick the backend
-        binary. Accepting *_bin here turns a config write into local RCE."""
+        """POST /params must not let a caller pick the backend binary.
+        Accepting *_bin here turns a config write into local RCE."""
         for key in ("cpu_bin", "rocm_bin", "vulkan_bin"):
             with self.subTest(key=key):
                 response = requests.post(
@@ -7382,7 +7382,7 @@ class EndpointTests(ServerTestBase):
                 self.assertEqual(response.status_code, 400, response.text)
 
     def test_041_params_rejects_backend_args_override(self):
-        """SWSPLAT-24170: POST /params must not let a caller inject backend
+        """POST /params must not let a caller inject backend
         command-line arguments."""
         for payload in (
             {"llamacpp": {"args": "-c id"}},
@@ -7408,7 +7408,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200, response.text)
 
     def test_043_cors_rejects_foreign_origin(self):
-        """SWSPLAT-24172: a cross-origin web page must not receive an
+        """A cross-origin web page must not receive an
         Access-Control-Allow-Origin header echoing its Origin."""
         response = requests.get(
             f"{self.base_url}/health",
@@ -7419,7 +7419,7 @@ class EndpointTests(ServerTestBase):
         self.assertNotIn(acao, ("*", "http://evil.example"))
 
     def test_044_cors_allows_loopback_origin(self):
-        """SWSPLAT-24172: loopback origins (local tooling) are reflected so the
+        """Loopback origins (local tooling) are reflected so the
         legitimate local clients keep working."""
         origin = "http://localhost:12345"
         response = requests.get(
@@ -7430,7 +7430,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), origin)
 
     def test_045_cors_blocks_simple_post_from_foreign_origin(self):
-        """SWSPLAT-24172 regression: a malicious web page can send a simple POST
+        """Regression: a malicious web page can send a simple POST
         (safelisted content-type like text/plain + JSON body) from a disallowed
         origin without triggering a preflight. The browser hides the response,
         but without server-side validation the handler still runs. Verify that
@@ -7476,7 +7476,7 @@ class EndpointTests(ServerTestBase):
         )
 
     def test_046_cors_allows_configured_non_loopback_origin(self):
-        """SWSPLAT-24172: configured allowed_origins permit legitimate non-loopback
+        """Configured allowed_origins permit legitimate non-loopback
         web-app access (e.g., http://192.168.1.50:13305 when bound to --host 0.0.0.0)
         without reintroducing DNS-rebinding exposure."""
         # Add a non-loopback origin to the allowed list

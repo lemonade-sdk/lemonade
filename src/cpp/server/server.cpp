@@ -982,37 +982,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
-
-        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
-        std::string vary = "Origin";
-        if (res.has_header("Vary")) {
-            std::string existing = res.get_header_value("Vary");
-            if (existing.find("Origin") == std::string::npos) {
-                vary = existing + ", Origin";
-            } else {
-                vary = existing;
-            }
-        }
-        res.set_header("Vary", vary);
-
-        if (req.has_header("Origin")) {
-            std::string origin = req.get_header_value("Origin");
-            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
-
-            if (utils::is_origin_allowed(origin, allowed_origins)) {
-                res.set_header("Access-Control-Allow-Origin", origin);
-                if (req.has_header("Access-Control-Request-Private-Network") &&
-                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
-                    res.set_header("Access-Control-Allow-Private-Network", "true");
-                }
-            } else {
-                res.status = 403;
-                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-
         return authenticate_request(req, res);
     });
 
@@ -1785,59 +1754,16 @@ window.api = {
 }
 
 bool Server::is_origin_allowed(const std::string& origin) const {
-    if (origin.empty()) {
-        return false;
-    }
-
-    // Native desktop-app origins (Tauri custom scheme / WebView2 virtual host).
-    static const std::set<std::string> app_origins = {
-        "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"
-    };
-    if (app_origins.count(origin)) {
-        return true;
-    }
-
-    // Loopback origins on any port (local browser tooling / web-app dev server).
-    // A remote attacker's page cannot forge these: the browser stamps Origin with
-    // its own host, and DNS rebinding still yields the attacker's hostname, not a
-    // loopback literal.
-    auto scheme_end = origin.find("://");
-    if (scheme_end == std::string::npos) {
-        return false;
-    }
-    const std::string scheme = origin.substr(0, scheme_end);
-    if (scheme != "http" && scheme != "https") {
-        return false;
-    }
-    std::string host = origin.substr(scheme_end + 3);
-    if (!host.empty() && host.front() == '[') {
-        // IPv6 literal: keep the bracketed host, drop any :port suffix.
-        auto close = host.find(']');
-        if (close == std::string::npos) {
-            return false;
-        }
-        host = host.substr(0, close + 1);
-    } else {
-        auto colon = host.find(':');
-        if (colon != std::string::npos) {
-            host = host.substr(0, colon);
-        }
-    }
-    if (host == "localhost" || host == "127.0.0.1" ||
-        host == "[::1]" || host == "::1") {
-        return true;
-    }
-
-    // Configured allowed origins (for non-loopback web-app access, e.g.,
-    // http://192.168.1.50:13305 when bound to --host 0.0.0.0).
-    const auto allowed_origins = config_->allowed_origins();
-    return std::find(allowed_origins.begin(), allowed_origins.end(), origin) != allowed_origins.end();
+    // Delegates to the shared allow-list implementation in
+    // lemon::utils::is_origin_allowed so the HTTP and WebSocket paths can never
+    // drift apart.
+    return lemon::utils::is_origin_allowed(origin, config_->allowed_origins());
 }
 
 void Server::setup_cors(httplib::Server &web_server) {
     // Reflect the request Origin only when it is on the allow-list. A wildcard
     // Access-Control-Allow-Origin, combined with the no-auth default config, let
-    // any web page drive the state-changing API cross-origin (SWSPLAT-24172).
+    // any web page drive the state-changing API cross-origin.
     // Same-origin callers (the bundled web-app, served from this host:port) are
     // not subject to CORS and keep working; non-browser clients (CLI, SDKs) never
     // send Origin and ignore these headers entirely.
@@ -6521,7 +6447,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 
         // Delegate to RuntimeConfig — accepts all known recipe option keys.
         // allow_privileged_keys=false: this is the unauthenticated-by-default HTTP
-        // surface, so backend *_bin / args overrides are rejected (SWSPLAT-24170).
+        // surface, so backend *_bin / args overrides are rejected.
         auto result = config_->set(body, [this](const json& applied) {
             apply_config_side_effects(applied);
         }, /*allow_privileged_keys=*/false);

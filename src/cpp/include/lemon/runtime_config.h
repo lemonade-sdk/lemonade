@@ -93,7 +93,7 @@ public:
     // (its command line). The low-privilege HTTP surface (POST /params) MUST pass
     // false so an unauthenticated caller cannot substitute the backend binary or
     // inject arguments. The admin/config path (/internal/set, CLI `config set`)
-    // passes true. See SWSPLAT-24170.
+    // passes true.
     json set(const json& changes, ConfigSideEffectCallback side_effect_cb = nullptr,
              bool allow_privileged_keys = true);
 
