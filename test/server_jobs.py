@@ -460,6 +460,21 @@ class JobEngineTests(unittest.TestCase):
         stopped = self.poll_status(jid, "interrupted", timeout=20)
         self.assertEqual(self.step_by_id(stopped, "hold")["status"], "pending")
 
+        # Reconcile: an interrupted exclusive job unloads the model it left
+        # resident (it had loaded TEST_MODEL before the sleep it was stopped in).
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if (
+                requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded")
+                is None
+            ):
+                break
+            time.sleep(0.25)
+        self.assertIsNone(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            "interrupt did not unload the resident model",
+        )
+
         # The slot was released cleanly: a normal request goes through promptly
         # rather than deadlocking behind an abandoned exclusive hold.
         t0 = time.time()

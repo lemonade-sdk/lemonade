@@ -33,6 +33,9 @@ public:
     // the Router type. Either may be empty (no-op) in unit tests.
     std::function<void()> begin_exclusive;
     std::function<void()> end_exclusive;
+    // Unload everything a job left resident; invoked when an exclusive job is
+    // interrupted, while it still owns the slot.
+    std::function<void()> reconcile_unload;
 
 private:
     std::map<std::string, OpHandler> handlers_;
@@ -54,6 +57,7 @@ struct OpProviders {
 
     std::function<void()> begin_exclusive;
     std::function<void()> end_exclusive;
+    std::function<void()> reconcile_unload;
 };
 
 OpRegistry build_op_registry(OpProviders providers);

@@ -347,9 +347,20 @@ void JobManager::worker_main() {
         if (exclusive) guard.begin();
 
         execute(id, ctrl);
+        bool interrupted = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            auto it = jobs_.find(id);
+            interrupted = it != jobs_.end() && it->second.status == JobStatus::Interrupted;
             active_id_.clear();
+        }
+        // An interrupted exclusive job abandons its run mid-way and may have left
+        // a model resident. Unload it while we still own the slot (this worker is
+        // the gate owner, so it passes straight through) before the guard releases.
+        if (exclusive && interrupted && registry_.reconcile_unload) {
+            registry_.reconcile_unload();
+            LOG(INFO, "Jobs") << "job " << id << " interrupted — unloaded resident model(s)"
+                              << std::endl;
         }
     }
 }

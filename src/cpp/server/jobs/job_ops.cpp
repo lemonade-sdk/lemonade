@@ -72,6 +72,7 @@ OpRegistry build_op_registry(OpProviders providers) {
 
     reg.begin_exclusive = providers.begin_exclusive;
     reg.end_exclusive = providers.end_exclusive;
+    reg.reconcile_unload = providers.reconcile_unload;
 
     return reg;
 }

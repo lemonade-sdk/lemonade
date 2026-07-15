@@ -503,6 +503,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         };
         providers.begin_exclusive = [this] { router_->begin_exclusive(); };
         providers.end_exclusive = [this] { router_->end_exclusive(); };
+        providers.reconcile_unload = [this] { router_->unload_model(""); };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
             lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
     }
