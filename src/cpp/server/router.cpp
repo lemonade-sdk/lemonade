@@ -373,7 +373,20 @@ void Router::begin_exclusive() {
     std::unique_lock<std::mutex> lock(load_mutex_);
     exclusive_active_ = true;
     exclusive_owner_ = std::this_thread::get_id();
-    load_cv_.wait(lock, [&] { return !is_loading_; });
+    while (true) {
+        load_cv_.wait(lock, [&] { return !is_loading_; });
+        bool busy = false;
+        for (const auto& server : loaded_servers_) {
+            if (server->is_busy()) {
+                busy = true;
+                break;
+            }
+        }
+        if (!busy) break;
+        lock.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        lock.lock();
+    }
     exclusive_cv_.notify_all();
     load_cv_.notify_all();
 }
@@ -392,21 +405,25 @@ void Router::wait_for_slot_clearance(std::unique_lock<std::mutex>& lock) {
     });
 }
 
-std::set<std::string> Router::snapshot_loaded_models() const {
+std::map<std::string, bool> Router::snapshot_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    std::set<std::string> names;
+    std::map<std::string, bool> models;
     for (const auto& server : loaded_servers_)
-        if (server->is_backend_alive()) names.insert(server->get_model_name());
-    return names;
+        if (server->is_backend_alive()) models[server->get_model_name()] = server->is_pinned();
+    return models;
 }
 
-void Router::unload_models_not_in(const std::set<std::string>& keep) {
+void Router::unload_models_not_in(const std::map<std::string, bool>& keep) {
     std::unique_lock<std::mutex> lock(load_mutex_);
     wait_for_slot_clearance(lock);
     std::vector<WrappedServer*> victims;
     for (const auto& server : loaded_servers_) {
         if (!server->is_backend_alive()) continue;
-        if (keep.count(server->get_model_name())) continue;
+        auto it = keep.find(server->get_model_name());
+        if (it != keep.end()) {
+            if (server->is_pinned() != it->second) server->set_pinned(it->second);
+            continue;
+        }
         victims.push_back(server.get());
     }
     for (auto* victim : victims) {
@@ -1465,7 +1482,8 @@ json Router::get_slots() {
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1504,7 +1522,8 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1543,7 +1562,8 @@ json Router::tokenize(const json& request_body) {
     ITokenizerServer* tokenizer_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -2243,7 +2263,8 @@ json Router::get_pinned_model_counts() const {
 }
 
 void Router::set_model_pinned(const std::string& model_name, bool pinned) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
     WrappedServer* server = find_server_by_model_name(model_name);
     if (!server) {
         throw std::runtime_error("Model not loaded: " + model_name);

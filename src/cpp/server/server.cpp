@@ -463,7 +463,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                 throw lemon::jobs::JobError(500, e.what());
             }
             if (cancel.load()) {
-                router_->unload_model("");
                 throw lemon::jobs::JobError(499, "interrupted");
             }
             RecipeOptions effective = router_->get_model_recipe_options(model);
@@ -501,7 +500,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             }
             return lemon::jobs::json::parse(response.dump());
         };
-        auto exclusive_snapshot = std::make_shared<std::set<std::string>>();
+        auto exclusive_snapshot = std::make_shared<std::map<std::string, bool>>();
         auto snapshot_mutex = std::make_shared<std::mutex>();
         providers.begin_exclusive = [this, exclusive_snapshot, snapshot_mutex] {
             router_->begin_exclusive();
@@ -511,7 +510,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         };
         providers.end_exclusive = [this] { router_->end_exclusive(); };
         providers.reconcile_unload = [this, exclusive_snapshot, snapshot_mutex] {
-            std::set<std::string> keep;
+            std::map<std::string, bool> keep;
             {
                 std::lock_guard<std::mutex> lk(*snapshot_mutex);
                 keep = *exclusive_snapshot;

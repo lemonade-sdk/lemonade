@@ -153,8 +153,8 @@ public:
     void begin_exclusive();
     void end_exclusive();
 
-    std::set<std::string> snapshot_loaded_models() const;
-    void unload_models_not_in(const std::set<std::string>& keep);
+    std::map<std::string, bool> snapshot_loaded_models() const;
+    void unload_models_not_in(const std::map<std::string, bool>& keep);
 
     // Test hooks
     void simulate_vram_pressure(double pct);

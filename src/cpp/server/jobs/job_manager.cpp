@@ -108,6 +108,10 @@ void JobManager::load_from_disk() {
         for (const auto& jj : doc.value("jobs", json::array())) {
             Job job = Job::from_json(jj);
             if (job.id.empty()) continue;
+            if (job.deleted) {
+                LOG(INFO, "Jobs") << "dropping tombstoned job " << job.id << std::endl;
+                continue;
+            }
             if (job.status == JobStatus::Running || job.status == JobStatus::Queued) {
                 job.status = JobStatus::Interrupted;
                 job.error = "server restarted while the job was active";
@@ -186,6 +190,21 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    if (order_.size() >= kMaxJobs) {
+        bool evictable = false;
+        for (const auto& existing : order_) {
+            auto jit = jobs_.find(existing);
+            if (jit != jobs_.end() && is_terminal(jit->second.status)) {
+                evictable = true;
+                break;
+            }
+        }
+        if (!evictable)
+            throw JobError(429, "job limit (" + std::to_string(kMaxJobs)
+                                + ") reached and every existing job is still active or resumable; "
+                                  "delete a job first");
+    }
+
     Job job;
     char stamp[24];
     const std::time_t t = std::time(nullptr);
@@ -242,7 +261,7 @@ json JobManager::list() const {
     json out = json::array();
     for (const auto& id : order_) {
         auto it = jobs_.find(id);
-        if (it != jobs_.end()) out.push_back(it->second.to_summary_json());
+        if (it != jobs_.end() && !it->second.deleted) out.push_back(it->second.to_summary_json());
     }
     return out;
 }
@@ -250,16 +269,22 @@ json JobManager::list() const {
 std::optional<json> JobManager::get(const std::string& id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
-    if (it == jobs_.end()) return std::nullopt;
+    if (it == jobs_.end() || it->second.deleted) return std::nullopt;
     return it->second.to_json();
 }
 
 bool JobManager::pause(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
-    if (it == jobs_.end()) return false;
-    if (it->second.status != JobStatus::Running && it->second.status != JobStatus::Queued)
-        return false;
+    if (it == jobs_.end() || it->second.deleted) return false;
+    if (it->second.status == JobStatus::Queued) {
+        queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
+        it->second.status = JobStatus::Paused;
+        persist_locked();
+        LOG(INFO, "Jobs") << "paused queued job " << id << std::endl;
+        return true;
+    }
+    if (it->second.status != JobStatus::Running) return false;
     control_for_locked(id)->pause_requested.store(true);
     LOG(INFO, "Jobs") << "pause requested for job " << id << " (takes effect at next step)"
                       << std::endl;
@@ -269,9 +294,15 @@ bool JobManager::pause(const std::string& id) {
 bool JobManager::interrupt(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
-    if (it == jobs_.end()) return false;
-    if (it->second.status != JobStatus::Running && it->second.status != JobStatus::Queued)
-        return false;
+    if (it == jobs_.end() || it->second.deleted) return false;
+    if (it->second.status == JobStatus::Queued) {
+        queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
+        it->second.status = JobStatus::Interrupted;
+        persist_locked();
+        LOG(INFO, "Jobs") << "interrupted queued job " << id << std::endl;
+        return true;
+    }
+    if (it->second.status != JobStatus::Running) return false;
     auto ctrl = control_for_locked(id);
     ctrl->interrupt_requested.store(true);
     ctrl->cancel.store(true);
@@ -282,7 +313,7 @@ bool JobManager::interrupt(const std::string& id) {
 bool JobManager::resume(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
-    if (it == jobs_.end()) return false;
+    if (it == jobs_.end() || it->second.deleted) return false;
     if (it->second.status != JobStatus::Paused && it->second.status != JobStatus::Interrupted)
         return false;
     auto ctrl = control_for_locked(id);
@@ -303,15 +334,17 @@ bool JobManager::remove(const std::string& id, bool& active_out) {
     std::lock_guard<std::mutex> lock(mutex_);
     active_out = false;
     auto it = jobs_.find(id);
-    if (it == jobs_.end()) return false;
+    if (it == jobs_.end() || it->second.deleted) return false;
     if (id == active_id_) {
         active_out = true;
+        it->second.deleted = true;
+        persist_locked();
         auto ctrl = control_for_locked(id);
         ctrl->interrupt_requested.store(true);
         ctrl->cancel.store(true);
         ctrl->delete_requested.store(true);
         LOG(INFO, "Jobs") << "delete requested for active job " << id
-                          << " (erased after cleanup)" << std::endl;
+                          << " (tombstoned; erased after cleanup)" << std::endl;
         return true;
     }
     jobs_.erase(id);
@@ -560,10 +593,12 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                                        << s->op << "): " << run_error << std::endl;
                     return;
                 } else if (s->on_fail == kOnFailContinue) {
+                    s->failure_handled = true;
                     job.cursor = next_in_list(job, s->id);
                     LOG(WARNING, "Jobs") << "job " << id << " step '" << step_id
                                          << "' failed (" << run_error << "), continuing" << std::endl;
                 } else {
+                    s->failure_handled = true;
                     job.cursor = s->on_fail;
                     LOG(WARNING, "Jobs") << "job " << id << " step '" << step_id << "' failed ("
                                          << run_error << "), branching to '" << s->on_fail << "'"

@@ -89,6 +89,7 @@ struct StepRecord {
     std::string on_fail = kOnFailAbort;
 
     StepStatus status = StepStatus::Pending;
+    bool failure_handled = false;
     int64_t duration_ms = 0;
     std::string error;
     json output = json::object();
@@ -106,6 +107,7 @@ struct StepRecord {
         if (!on_done.empty()) j["on_done"] = on_done;
         if (!b.empty()) j["branch"] = b;
         if (on_fail != kOnFailAbort) j["on_fail"] = on_fail;
+        if (failure_handled) j["failure_handled"] = true;
         if (!error.empty()) j["error"] = error;
         if (!output.empty()) j["output"] = output;
         return j;
@@ -122,6 +124,7 @@ struct StepRecord {
         if (j.contains("branch") && j["branch"].is_array())
             for (const auto& c : j["branch"]) s.branch.push_back(Case::from_json(c));
         s.on_fail = j.value("on_fail", std::string(kOnFailAbort));
+        s.failure_handled = j.value("failure_handled", false);
         if (j.contains("status")) s.status = step_status_from_string(j["status"].get<std::string>());
         s.duration_ms = j.value("duration_ms", (int64_t)0);
         s.error = j.value("error", "");
@@ -134,6 +137,7 @@ struct Job {
     std::string id;
     std::string name;
     JobStatus status = JobStatus::Queued;
+    bool deleted = false;
     json inputs = json::object();
     json context = json::object();
     std::vector<StepRecord> steps;
@@ -147,7 +151,8 @@ struct Job {
     json to_summary_json() const {
         int completed = 0;
         for (const auto& s : steps)
-            if (s.status == StepStatus::Completed || s.status == StepStatus::Skipped) completed++;
+            if (s.status == StepStatus::Completed || s.status == StepStatus::Skipped
+                || (s.status == StepStatus::Failed && s.failure_handled)) completed++;
         json j = {{"id", id},
                   {"name", name},
                   {"status", to_string(status)},
@@ -172,6 +177,7 @@ struct Job {
                   {"steps", st},
                   {"cursor", cursor},
                   {"created_at", created_at}};
+        if (deleted) j["deleted"] = true;
         if (!started_at.empty()) j["started_at"] = started_at;
         if (!finished_at.empty()) j["finished_at"] = finished_at;
         if (!summary.empty()) j["summary"] = summary;
@@ -184,6 +190,7 @@ struct Job {
         job.id = j.value("id", "");
         job.name = j.value("name", "");
         if (j.contains("status")) job.status = job_status_from_string(j["status"].get<std::string>());
+        job.deleted = j.value("deleted", false);
         if (j.contains("inputs")) job.inputs = j["inputs"];
         if (j.contains("context")) job.context = j["context"];
         if (j.contains("steps") && j["steps"].is_array())

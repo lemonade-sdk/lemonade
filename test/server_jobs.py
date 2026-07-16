@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -341,6 +342,140 @@ class JobEngineTests(unittest.TestCase):
         for jid in ids:
             self.assertIn(jid, ids_on_disk, f"{jid} lost after further persists")
 
+    def test_delete_active_is_durable_across_crash(self):
+        steps = [{"id": "w", "op": "sleep", "params": {"ms": 30000}}]
+        job = self.create_job("del-crash", steps)
+        jid = job["id"]
+        self.poll_status(jid, "running", timeout=10)
+
+        r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            self.get_job(jid).status_code,
+            404,
+            "a deleted active job must be invisible immediately after the ack",
+        )
+
+        self.stop_server(hard=True)
+        self.start_server()
+
+        self.assertEqual(
+            self.get_job(jid).status_code,
+            404,
+            "a crash after the DELETE ack must not resurrect the job",
+        )
+        listed = requests.get(f"{BASE}/jobs", timeout=10).json()["jobs"]
+        self.assertNotIn(jid, [j["id"] for j in listed])
+
+    def test_pause_and_interrupt_queued_jobs_take_effect_immediately(self):
+        blocker = self.create_job(
+            "blocker", [{"id": "w", "op": "sleep", "params": {"ms": 20000}}]
+        )
+        self.poll_status(blocker["id"], "running", timeout=10)
+
+        queued_a = self.create_job(
+            "queued-pause", [{"id": "w", "op": "sleep", "params": {"ms": 100}}]
+        )
+        queued_b = self.create_job(
+            "queued-interrupt", [{"id": "w", "op": "sleep", "params": {"ms": 100}}]
+        )
+        self.assertEqual(self.get_job(queued_a["id"]).json()["status"], "queued")
+        self.assertEqual(self.get_job(queued_b["id"]).json()["status"], "queued")
+
+        r = requests.post(f"{BASE}/jobs/{queued_a['id']}/pause", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            self.get_job(queued_a["id"]).json()["status"],
+            "paused",
+            "pausing a queued job must take effect immediately",
+        )
+
+        r = requests.post(f"{BASE}/jobs/{queued_b['id']}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            self.get_job(queued_b["id"]).json()["status"],
+            "interrupted",
+            "interrupting a queued job must take effect immediately",
+        )
+
+        r = requests.post(f"{BASE}/jobs/{queued_a['id']}/resume", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(
+            self.get_job(queued_a["id"]).json()["status"], ("queued", "running")
+        )
+
+        r = requests.post(f"{BASE}/jobs/{blocker['id']}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(queued_a["id"], "completed", timeout=20)
+
+    def test_job_cap_rejected_when_nothing_evictable(self):
+        blocker = self.create_job(
+            "cap-blocker", [{"id": "w", "op": "sleep", "params": {"ms": 60000}}]
+        )
+        self.poll_status(blocker["id"], "running", timeout=10)
+        for i in range(49):
+            self.create_job(
+                f"cap-{i}", [{"id": "w", "op": "sleep", "params": {"ms": 60000}}]
+            )
+
+        rejected = self.create_job(
+            "cap-overflow",
+            [{"id": "w", "op": "sleep", "params": {"ms": 60000}}],
+            expect=429,
+        )
+        self.assertIn("job limit", rejected.get("error", ""))
+
+        listed = requests.get(f"{BASE}/jobs", timeout=10).json()["jobs"]
+        victim = next(j["id"] for j in listed if j["status"] == "queued")
+        r = requests.delete(f"{BASE}/jobs/{victim}", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+
+        self.create_job(
+            "cap-after-delete", [{"id": "w", "op": "sleep", "params": {"ms": 100}}]
+        )
+        r = requests.post(f"{BASE}/jobs/{blocker['id']}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_progress_counts_handled_failures(self):
+        steps = [
+            {
+                "id": "boom",
+                "op": "models",
+                "params": {"id": "definitely-not-a-real-model"},
+                "on_fail": "recover",
+            },
+            {"id": "recover", "op": "system_info"},
+        ]
+        job = self.create_job("progress-recovery", steps)
+        done = self.poll_status(job["id"], "completed")
+        self.assertEqual(self.step_by_id(done, "boom")["status"], "failed")
+
+        listed = requests.get(f"{BASE}/jobs", timeout=10).json()["jobs"]
+        summary = next(j for j in listed if j["id"] == job["id"])
+        self.assertEqual(
+            summary["progress"]["completed"],
+            summary["progress"]["step_count"],
+            "a completed recovery job must report full progress "
+            "(handled failures count as processed steps)",
+        )
+
+        steps2 = [
+            {
+                "id": "boom",
+                "op": "models",
+                "params": {"id": "definitely-not-a-real-model"},
+                "on_fail": "continue",
+            },
+            {"id": "after", "op": "system_info"},
+        ]
+        job2 = self.create_job("progress-continue", steps2)
+        self.poll_status(job2["id"], "completed")
+        listed = requests.get(f"{BASE}/jobs", timeout=10).json()["jobs"]
+        summary2 = next(j for j in listed if j["id"] == job2["id"])
+        self.assertEqual(
+            summary2["progress"]["completed"], summary2["progress"]["step_count"]
+        )
+
     def test_real_exclusive_job(self):
         backend = self.require_real_backend()
         steps = [
@@ -450,6 +585,135 @@ class JobEngineTests(unittest.TestCase):
         )
         self.assertEqual(self.get_job(jid).json()["status"], "completed")
         print(f"\n[queue] control={control_latency:.3f}s queued={queued_latency:.3f}s")
+
+    def test_tokenize_gated_behind_exclusive_job(self):
+        backend = self.require_real_backend()
+        requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+            },
+            timeout=120,
+        )
+        t0 = time.time()
+        r = requests.post(
+            f"{BASE}/tokenize",
+            json={"model": TEST_MODEL, "content": "hello world"},
+            timeout=30,
+        )
+        control_latency = time.time() - t0
+        self.assertEqual(r.status_code, 200, r.text)
+
+        hold_ms = 5000
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": hold_ms}},
+        ]
+        job = self.create_job("gate-tokenize", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+
+        t0 = time.time()
+        r = requests.post(
+            f"{BASE}/tokenize",
+            json={"model": TEST_MODEL, "content": "hello world"},
+            timeout=60,
+        )
+        gated_latency = time.time() - t0
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertGreater(
+            gated_latency,
+            max(2.0, control_latency * 5),
+            f"tokenize was not held behind the exclusive job "
+            f"(gated={gated_latency:.2f}s, control={control_latency:.2f}s)",
+        )
+        self.assertEqual(self.get_job(jid).json()["status"], "completed")
+
+    def test_exclusive_job_drains_inflight_chat(self):
+        backend = self.require_real_backend()
+        requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+            },
+            timeout=120,
+        )
+
+        result = {}
+
+        def long_chat():
+            t0 = time.time()
+            r = requests.post(
+                f"{BASE}/chat/completions",
+                json={
+                    "model": TEST_MODEL,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Write a very long story about a dragon.",
+                        }
+                    ],
+                    "temperature": 0,
+                    "max_completion_tokens": 1800,
+                    "ignore_eos": True,
+                },
+                timeout=120,
+            )
+            result["status"] = r.status_code
+            result["elapsed"] = time.time() - t0
+
+        chat_thread = threading.Thread(target=long_chat)
+        chat_thread.start()
+        time.sleep(0.3)
+
+        job = self.create_job(
+            "drain",
+            [
+                {
+                    "id": "ld",
+                    "op": "load",
+                    "params": {
+                        "model": TEST_MODEL,
+                        "llamacpp_backend": backend,
+                        "ctx_size": 2048,
+                    },
+                }
+            ],
+        )
+        jid = job["id"]
+
+        overlap = False
+        while chat_thread.is_alive():
+            status = self.get_job(jid).json()["status"]
+            if status == "completed" and chat_thread.is_alive():
+                overlap = True
+                break
+            time.sleep(0.05)
+        chat_thread.join()
+
+        self.assertEqual(
+            result.get("status"), 200, "the in-flight chat must not be disturbed"
+        )
+        if result.get("elapsed", 0) < 1.0:
+            self.skipTest("chat finished too quickly to observe the drain window")
+        self.assertFalse(
+            overlap,
+            "the exclusive job completed while an in-flight chat was still running "
+            "(begin_exclusive did not drain in-flight requests)",
+        )
+        self.poll_status(jid, "completed", timeout=60)
 
     def test_interrupt_mid_job_cleans_up(self):
         backend = self.require_real_backend()

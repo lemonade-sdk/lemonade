@@ -75,20 +75,32 @@ States: `queued → running → { paused | interrupted | completed | failed }`.
 A single worker runs one job at a time.
 
 - **pause** — stop *after the current step*; the job goes `paused` at the next
-  step boundary and (if exclusive) releases the slot.
+  step boundary and (if exclusive) releases the slot. Pausing a still-`queued`
+  job takes effect immediately: it is removed from the queue and persisted as
+  `paused` before the call returns.
 - **interrupt** — cancel the *current step now* (kills an in-flight `load`, and
   aborts an in-flight `chat` at the HTTP layer rather than waiting for the
   backend to reply); the step returns to `pending`, the job goes `interrupted`.
-  An interrupted exclusive job unloads only the model(s) it loaded itself before
-  releasing the slot: the reconcile snapshots the router's loaded-model set when
-  the exclusive session begins and unloads only `(current set − snapshot)`,
-  leaving models that were resident before the job started and pinned models
-  untouched.
+  Interrupting a still-`queued` job likewise dequeues and persists it as
+  `interrupted` immediately. An interrupted exclusive job unloads only the
+  model(s) it introduced before releasing the slot: the reconcile snapshots the
+  router's loaded models (with their pin state) when the exclusive session
+  begins, unloads `(current set − snapshot)` — including models the job pinned
+  itself — and restores the recorded pin state of surviving pre-job models.
+  **Guarantee scope:** a model that was resident before the job is preserved
+  only if it is *still resident* at reconcile time. If a job `load` evicted it
+  (loaded-model cap) or replaced it with different options, the reconcile does
+  not reload it or restore its previous options — clients that need the exact
+  prior state must reload it themselves.
 - **resume** — `paused` continues at the next step; `interrupted` re-runs the
   pending step. Steps must be idempotent on re-run.
-- **delete** — removes the job. Deleting an active job interrupts it first and
-  defers the actual removal until the worker has finished cleanup (reconcile
-  unload), so a deleted exclusive job never leaks a resident model.
+- **delete** — removes the job. Deleting an active job persists a deletion
+  tombstone *before* the call returns, then interrupts it and defers the actual
+  removal until the worker has finished cleanup (reconcile unload), so a deleted
+  exclusive job never leaks a resident model. The tombstone makes the deletion
+  durable: a crash between the acknowledgement and the final removal does not
+  resurrect the job on restart, and a tombstoned job is already invisible to
+  `GET`/list.
 - **query** — the full job record (status, per-step state, context).
 
 Chat interrupts are genuine aborts: the chat op passes its cancel flag through
@@ -107,16 +119,30 @@ never took effect and "before the step" is automatic.
 exclusive step runs, it holds a Router-level exclusive gate: all normal
 inference and load traffic **queues** behind it until the job finishes or is
 paused (pause is the escape hatch — it releases the slot so queued traffic
-drains, and resume re-acquires). The gate is keyed by the worker thread, so the
-job's own ops pass through while every other request waits. A job with only
-read-only ops (e.g. `system_info`, `sleep`) never takes the gate.
+drains, and resume re-acquires). Acquiring the gate first *drains* in-flight
+work: it waits for any active load and for every in-flight request on loaded
+backends to finish, so an external chat that started just before the job cannot
+overlap the exclusive session. Every model-touching Router path — inference,
+streaming, tokenize, slots, pinning, load/unload — checks the same gate. The
+gate is keyed by the worker thread, so the job's own ops pass through while
+every other request waits. A job with only read-only ops (e.g. `system_info`,
+`sleep`) never takes the gate. Read-only status queries (model list, health,
+telemetry) are not gated.
 
 ## Persistence
 
 Jobs persist to `<cache_dir>/jobs.json` (atomic write, cap 50, oldest terminal
-evicted first). On startup a job left `running`/`queued` by a crash is marked
-`interrupted` ("server restarted while the job was active") but keeps its cursor,
-so it can be resumed from where it stopped.
+evicted first). The cap is enforced at creation: when all 50 retained jobs are
+still active or resumable (nothing `completed`/`failed` to evict), `POST jobs`
+is rejected with `429` until a job is deleted or finishes. On startup a job left
+`running`/`queued` by a crash is marked `interrupted` ("server restarted while
+the job was active") but keeps its cursor, so it can be resumed from where it
+stopped; tombstoned (deleted-while-active) jobs are dropped.
+
+A job summary's `progress.completed` counts steps that no longer need work:
+`completed`, `skipped`, and failed steps whose failure was *handled* by
+`on_fail: continue` or a recovery branch — so a recovery job that completes
+reports full progress even though one of its steps is marked `failed`.
 
 ## API
 
@@ -124,7 +150,7 @@ Registered under all four prefixes (`/api/v0`, `/api/v1`, `/v0`, `/v1`).
 
 | method | path | purpose |
 |--------|------|---------|
-| POST   | `jobs` | create `{name, definition:{steps} \| steps, inputs}` → `202 {id}`; `400` on an invalid graph |
+| POST   | `jobs` | create `{name, definition:{steps} \| steps, inputs}` → `202 {id}`; `400` on an invalid graph; `429` when the job store is full of non-evictable jobs |
 | GET    | `jobs` | `{jobs:[summaries]}` |
 | GET    | `jobs/{id}` | full record, or `404` |
 | POST   | `jobs/{id}/pause` | `200` / `404` |
