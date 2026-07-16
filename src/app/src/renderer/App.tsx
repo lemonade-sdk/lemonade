@@ -527,7 +527,7 @@ const AppContent: React.FC = () => {
         }
         await pullRegistration(record);
         await refreshModels();
-        const kind = isCollectionRecipe(record.recipe) ? 'Omni Model' : 'model';
+        const kind = record.recipe === COLLECTION_ROUTER_MODEL_RECIPE ? 'Lemonade Router' : isCollectionRecipe(record.recipe) ? 'Omni Model' : 'model';
         showSuccess(`Imported ${kind} ${getCollectionDisplayName(record.model_name)}.`);
       } catch (importError) {
         showError(importError instanceof Error ? importError.message : 'Failed to import model.');

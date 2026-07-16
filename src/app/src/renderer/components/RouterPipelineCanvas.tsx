@@ -151,8 +151,8 @@ const ClassifierCard: React.FC<{
                     <label className="pipeline-clf-label">On Error</label>
                     <select className="form-input form-select pipeline-clf-select" value={clf.onError ?? 'match_false'}
                       onChange={e => onPatch({ onError: e.target.value as RouterClassifier['onError'] })}>
-                      <option value="match_false">match_false — fail-open (default)</option>
-                      <option value="match_true">match_true — fail-closed (safer)</option>
+                      <option value="match_false">match_false - fail-open (default)</option>
+                      <option value="match_true">match_true - fail-closed (safer)</option>
                     </select>
                   </div>
                 </>

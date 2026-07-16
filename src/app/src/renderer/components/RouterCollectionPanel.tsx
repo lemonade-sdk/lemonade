@@ -798,7 +798,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <div className="router-mode-options">
             <label className={`router-mode-option${draft.routingMode === 'llm' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'} onChange={() => patch({ routingMode: 'llm' })} />
-              <strong>NL Router</strong>
+              <strong>Natural Language</strong>
               <span className="settings-description">A small LLM reads your prompt and picks the best candidate.</span>
             </label>
             <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
@@ -901,7 +901,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
             <div className="confirm-title">Switch to Quick Rules?</div>
             <div className="confirm-body">
-              Switching to Quick Rules starts with a blank slate — your Advanced Rules, classifiers, and conditions will be cleared.
+              Switching to Quick Rules starts with a blank slate - your Advanced Rules, classifiers, and conditions will be cleared.
               <br /><br />
               Quick Rules only supports simple flat conditions. Complex gates and classifiers cannot be migrated automatically.
             </div>

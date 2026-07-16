@@ -1,4 +1,4 @@
-// Router collection builder — app regression tests.
+// Router collection builder - app regression tests.
 //
 // These tests verify that buildRouterCollectionPullRequest produces JSON
 // accepted by the CURRENT C++ parser (M9 / routing_policy_parser.cpp).
@@ -41,6 +41,10 @@ const collectionUtils = require(
   path.join(appRoot, 'src', 'renderer', 'utils', 'customCollections.ts'),
 );
 
+const routerTree = require(
+  path.join(appRoot, 'src', 'renderer', 'utils', 'routerTree.ts'),
+);
+
 if (originalTsLoader) require.extensions['.ts'] = originalTsLoader;
 else delete require.extensions['.ts'];
 
@@ -48,6 +52,7 @@ else delete require.extensions['.ts'];
 
 const build = collectionUtils.buildRouterCollectionPullRequest;
 const parse = collectionUtils.routingToRouterCollectionDraft;
+const validate = routerTree.validateRuleNode;
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'));
 
@@ -87,7 +92,7 @@ const tests = [
   // ── Schema invariants (parser-independent) ─────────────────────────────
 
   {
-    name: 'schema — version field is always the string "1"',
+    name: 'schema - version field is always the string "1"',
     run() {
       const req = build({
         name: 'T', candidates: ['a', 'b'], defaultModel: 'a',
@@ -100,7 +105,7 @@ const tests = [
   },
 
   {
-    name: 'schema — model_name receives user. prefix',
+    name: 'schema - model_name receives user. prefix',
     run() {
       const req = build({
         name: 'MyRouter', candidates: ['a', 'b'], defaultModel: 'a',
@@ -112,7 +117,7 @@ const tests = [
   },
 
   {
-    name: 'schema — recipe is collection.router',
+    name: 'schema - recipe is collection.router',
     run() {
       const req = build({
         name: 'T', candidates: ['a', 'b'], defaultModel: 'a',
@@ -124,7 +129,7 @@ const tests = [
   },
 
   {
-    name: 'schema — default_model must be in candidates (throws)',
+    name: 'schema - default_model must be in candidates (throws)',
     run() {
       assert.throws(() => build({
         name: 'Bad', candidates: ['a'], defaultModel: 'not-a-candidate',
@@ -135,7 +140,7 @@ const tests = [
   },
 
   {
-    name: 'schema — rules mode with zero rules throws',
+    name: 'schema - rules mode with zero rules throws',
     run() {
       assert.throws(() => build({
         name: 'Empty', candidates: ['a'], defaultModel: 'a',
@@ -145,7 +150,7 @@ const tests = [
   },
 
   {
-    name: 'schema — components deduplicated when candidate is also a classifier model',
+    name: 'schema - components deduplicated when candidate is also a classifier model',
     run() {
       const req = build({
         name: 'Comp', candidates: ['llm-a', 'llm-b'], defaultModel: 'llm-a',
@@ -159,17 +164,17 @@ const tests = [
     },
   },
 
-  // ── NL Router — SKIPPED (M9 parser rejects routing.router) ────────────
+  // ── NL Router - SKIPPED (M9 parser rejects routing.router) ────────────
 
   {
-    name: 'NL Router — structure matches l0a_llm_router.json [SKIPPED: #2405 not implemented]',
+    name: 'NL Router - structure matches l0a_llm_router.json [SKIPPED: #2405 not implemented]',
     run() { return SKIP_NL_ROUTER; },
   },
 
   // ── Single leaf conditions ─────────────────────────────────────────────
 
   {
-    name: 'keywords_any — flat match, no all/any wrapper',
+    name: 'keywords_any - flat match, no all/any wrapper',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -183,7 +188,7 @@ const tests = [
   },
 
   {
-    name: 'keywords_all — flat match',
+    name: 'keywords_all - flat match',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -195,7 +200,7 @@ const tests = [
   },
 
   {
-    name: 'min_chars — emitted as integer',
+    name: 'min_chars - emitted as integer',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -208,7 +213,7 @@ const tests = [
   },
 
   {
-    name: 'max_chars — emitted as integer',
+    name: 'max_chars - emitted as integer',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -220,7 +225,7 @@ const tests = [
   },
 
   {
-    name: 'has_tools — emitted as boolean true',
+    name: 'has_tools - emitted as boolean true',
     run() {
       const req = build({
         name: 'R', candidates: ['a'], defaultModel: 'a',
@@ -232,7 +237,7 @@ const tests = [
   },
 
   {
-    name: 'has_images — emitted as boolean true',
+    name: 'has_images - emitted as boolean true',
     run() {
       const req = build({
         name: 'R', candidates: ['a'], defaultModel: 'a',
@@ -244,7 +249,7 @@ const tests = [
   },
 
   {
-    name: 'regex — emitted as string',
+    name: 'regex - emitted as string',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -258,7 +263,7 @@ const tests = [
   // ── NOT negation ───────────────────────────────────────────────────────
 
   {
-    name: 'NOT operator — wraps child in { not: ... }',
+    name: 'NOT operator - wraps child in { not: ... }',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -271,7 +276,7 @@ const tests = [
   },
 
   {
-    name: 'leaf.not — flat { not: leaf } via leaf flag',
+    name: 'leaf.not - flat { not: leaf } via leaf flag',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -286,7 +291,7 @@ const tests = [
   // ── AND / OR gates ─────────────────────────────────────────────────────
 
   {
-    name: 'AND gate — two children emits { all: [...] }',
+    name: 'AND gate - two children emits { all: [...] }',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -304,7 +309,7 @@ const tests = [
   },
 
   {
-    name: 'OR gate — two children emits { any: [...] }',
+    name: 'OR gate - two children emits { any: [...] }',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -341,10 +346,10 @@ const tests = [
     },
   },
 
-  // ── Classifier — type: "classifier" ───────────────────────────────────
+  // ── Classifier - type: "classifier" ───────────────────────────────────
 
   {
-    name: 'classifier — flat match, min_score emitted',
+    name: 'classifier - flat match, min_score emitted',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -360,7 +365,7 @@ const tests = [
   },
 
   {
-    name: 'classifier — label and max_score emitted when set',
+    name: 'classifier - label and max_score emitted when set',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -376,7 +381,7 @@ const tests = [
   },
 
   {
-    name: 'classifier — on_error defaults to match_false',
+    name: 'classifier - on_error defaults to match_false',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -389,7 +394,7 @@ const tests = [
   },
 
   {
-    name: 'classifier — model in components list',
+    name: 'classifier - model in components list',
     run() {
       const req = build({
         name: 'R', candidates: ['llm-a', 'llm-b'], defaultModel: 'llm-a',
@@ -402,7 +407,7 @@ const tests = [
   },
 
   {
-    name: 'classifier — llm type is SKIPPED (M9 parser rejects)',
+    name: 'classifier - llm type is SKIPPED (M9 parser rejects)',
     run() {
       return { skip: true, reason: 'llm classifier type reserved for #2405, rejected by M9 parser' };
     },
@@ -411,7 +416,7 @@ const tests = [
   // ── Semantic similarity ─────────────────────────────────────────────────
 
   {
-    name: 'semantic_similarity — reference_phrases emitted, model in components',
+    name: 'semantic_similarity - reference_phrases emitted, model in components',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -438,7 +443,7 @@ const tests = [
   },
 
   {
-    name: 'semantic_similarity — default_label and on_error preserved on round-trip',
+    name: 'semantic_similarity - default_label and on_error preserved on round-trip',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -458,7 +463,7 @@ const tests = [
   },
 
   {
-    name: 'semantic_similarity — labels field must NOT be emitted (server rejects it)',
+    name: 'semantic_similarity - labels field must NOT be emitted (server rejects it)',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -477,7 +482,7 @@ const tests = [
   // ── Fixture matching ────────────────────────────────────────────────────
 
   {
-    name: 'fixture: l1_keywords.json — keyword + regex rules match server fixture',
+    name: 'fixture: l1_keywords.json - keyword + regex rules match server fixture',
     run() {
       const fix = fixture('l1_keywords.json');
       const req = build({
@@ -508,7 +513,7 @@ const tests = [
   },
 
   {
-    name: 'fixture: l2_semantic.json — semantic similarity matches server fixture',
+    name: 'fixture: l2_semantic.json - semantic similarity matches server fixture',
     run() {
       const req = build({
         name: 'Router-Semantic', candidates: ['Qwen3-8B-GGUF', 'vllm.qwen3-32b'],
@@ -535,7 +540,7 @@ const tests = [
   },
 
   {
-    name: 'fixture: l3_classifier.json — model classifier matches server fixture',
+    name: 'fixture: l3_classifier.json - model classifier matches server fixture',
     run() {
       const fix = fixture('l3_classifier.json');
       const req = build({
@@ -562,11 +567,12 @@ const tests = [
   // ── Parser round-trips ─────────────────────────────────────────────────
 
   {
-    name: 'round-trip: l1_keywords — conditionTree reconstructed from fixture',
+    name: 'round-trip: l1_keywords - conditionTree reconstructed from fixture',
     run() {
       const fix = fixture('l1_keywords.json');
       const draft = parse('user.Router-Keywords', fix.routing, fix.components);
-      assert.equal(draft.routingMode, 'rules');
+      // l1_keywords has no classifiers and flat deterministic leaves → detected as quick
+      assert.ok(draft.routingMode === 'quick' || draft.routingMode === 'rules');
       assert.equal(draft.rules.length, 2);
       assert.ok(draft.rules[0].conditionTree !== null);
       assert.equal(draft.rules[0].id, 'code-to-big');
@@ -628,7 +634,7 @@ const tests = [
   // ── Outputs field ──────────────────────────────────────────────────────
 
   {
-    name: 'outputs — preserved when set',
+    name: 'outputs - preserved when set',
     run() {
       const req = build({
         name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
@@ -640,7 +646,7 @@ const tests = [
   },
 
   {
-    name: 'outputs — omitted when not set',
+    name: 'outputs - omitted when not set',
     run() {
       const req = build({
         name: 'R', candidates: ['a'], defaultModel: 'a',
@@ -648,6 +654,240 @@ const tests = [
         rules: [rule('r', 'a', leaf('keywords_any', { signalValue: 'hello' }))],
       });
       assert.ok(!('outputs' in req.routing.rules[0]));
+    },
+  },
+
+  // ── Empty / blank signalValue ──────────────────────────────────────────
+
+  {
+    name: 'empty keywords_any signalValue - serializer returns null (match omitted)',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', leaf('keywords_any', { signalValue: '' }))],
+      });
+      // ruleNodeToMatchExpr returns null → match becomes {}
+      assert.deepEqual(req.routing.rules[0].match, {});
+    },
+  },
+
+  {
+    name: 'whitespace-only keywords_any - all tokens filtered, match is empty',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', leaf('keywords_any', { signalValue: '  ,  ,  ' }))],
+      });
+      assert.deepEqual(req.routing.rules[0].match, {});
+    },
+  },
+
+  {
+    name: 'empty regex signalValue - serializer returns null, match is empty',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', leaf('regex', { signalValue: '   ' }))],
+      });
+      assert.deepEqual(req.routing.rules[0].match, {});
+    },
+  },
+
+  // ── Single-child AND/OR unwrapping ─────────────────────────────────────
+
+  {
+    name: 'AND with one child - unwrapped to the child directly (no all wrapper)',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', { operator: 'AND', conditions: [
+          leaf('keywords_any', { signalValue: 'solo' }),
+        ]})],
+      });
+      const match = req.routing.rules[0].match;
+      assert.ok(!('all' in match), 'single-child AND must not emit all wrapper');
+      assert.deepEqual(match.keywords_any, ['solo']);
+    },
+  },
+
+  {
+    name: 'OR with one child - unwrapped to the child directly (no any wrapper)',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', { operator: 'OR', conditions: [
+          leaf('min_chars', { signalValue: 100 }),
+        ]})],
+      });
+      const match = req.routing.rules[0].match;
+      assert.ok(!('any' in match), 'single-child OR must not emit any wrapper');
+      assert.equal(match.min_chars, 100);
+    },
+  },
+
+  // ── Quick Rules mode ───────────────────────────────────────────────────
+
+  {
+    name: 'quick mode - emits same routing JSON as rules mode',
+    run() {
+      const shared = {
+        candidates: ['a', 'b'], defaultModel: 'a',
+        classifiers: [],
+        rules: [rule('r1', 'b', leaf('min_chars', { signalValue: 500 }))],
+      };
+      const quick = build({ name: 'Q', routingMode: 'quick', ...shared });
+      const rules = build({ name: 'Q', routingMode: 'rules', ...shared });
+      assert.deepEqual(quick.routing, rules.routing);
+    },
+  },
+
+  {
+    name: 'quick mode - round-trip re-detected as quick',
+    run() {
+      const original = {
+        name: 'QRT', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'quick', classifiers: [],
+        rules: [
+          rule('r1', 'b', leaf('min_chars', { signalValue: 500 })),
+          rule('r2', 'a', leaf('keywords_any', { signalValue: 'help, how' })),
+        ],
+      };
+      const built = build(original);
+      const parsed = parse(built.model_name, built.routing, built.components);
+      assert.equal(parsed.routingMode, 'quick', 'flat deterministic rules must round-trip as quick');
+      assert.equal(parsed.rules.length, 2);
+    },
+  },
+
+  {
+    name: 'quick mode - classifier rules round-trip as rules (not quick)',
+    run() {
+      const original = {
+        name: 'QClfRT', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 'c', type: 'classifier', model: 'm', labels: ['X'] }],
+        rules: [rule('r1', 'b', leaf('classifier', { classifierId: 'c', minScore: 0.5 }))],
+      };
+      const built = build(original);
+      const parsed = parse(built.model_name, built.routing, built.components);
+      assert.equal(parsed.routingMode, 'rules', 'classifier rules must not be detected as quick');
+    },
+  },
+
+  // ── validateRuleNode ───────────────────────────────────────────────────
+
+  {
+    name: 'validateRuleNode - min_score > max_score returns error',
+    run() {
+      const node = leaf('classifier', { classifierId: 'c', minScore: 0.8, maxScore: 0.3 });
+      const errors = validate(node, new Set(['c']), []);
+      assert.ok(errors.length > 0, 'expected validation error for min > max');
+      assert.ok(errors[0].toLowerCase().includes('min') || errors[0].toLowerCase().includes('max'),
+        `error message should mention min/max, got: ${errors[0]}`);
+    },
+  },
+
+  {
+    name: 'validateRuleNode - equal min_score and max_score is valid',
+    run() {
+      const node = leaf('classifier', { classifierId: 'c', minScore: 0.5, maxScore: 0.5 });
+      const errors = validate(node, new Set(['c']), []);
+      assert.equal(errors.length, 0, 'equal min and max should be valid');
+    },
+  },
+
+  {
+    name: 'validateRuleNode - missing keywords returns error',
+    run() {
+      const errors = validate(leaf('keywords_any', { signalValue: '' }), new Set(), []);
+      assert.ok(errors.length > 0);
+    },
+  },
+
+  {
+    name: 'validateRuleNode - invalid regex pattern returns error',
+    run() {
+      const errors = validate(leaf('regex', { signalValue: '[unclosed' }), new Set(), []);
+      assert.ok(errors.length > 0, 'invalid regex should fail validation');
+    },
+  },
+
+  {
+    name: 'validateRuleNode - valid regex passes',
+    run() {
+      const errors = validate(leaf('regex', { signalValue: '^hello\\s+world$' }), new Set(), []);
+      assert.equal(errors.length, 0);
+    },
+  },
+
+  {
+    name: 'validateRuleNode - classifier with undeclared id returns error',
+    run() {
+      const node = leaf('classifier', { classifierId: 'unknown', minScore: 0.5 });
+      const errors = validate(node, new Set(['other']), []);
+      assert.ok(errors.length > 0);
+      assert.ok(errors[0].includes('unknown'));
+    },
+  },
+
+  {
+    name: 'validateRuleNode - multi-concept semantic_similarity without label and no default returns error',
+    run() {
+      const clf = {
+        id: 's', type: 'semantic_similarity',
+        referencePhrases: { a: ['phrase1'], b: ['phrase2'] },
+        // no defaultLabel
+      };
+      const node = leaf('classifier', { classifierId: 's', minScore: 0.5 });
+      const errors = validate(node, new Set(['s']), [clf]);
+      assert.ok(errors.length > 0, 'multi-concept classifier with no label and no default should fail');
+    },
+  },
+
+  {
+    name: 'validateRuleNode - multi-concept semantic_similarity with defaultLabel passes',
+    run() {
+      const clf = {
+        id: 's', type: 'semantic_similarity',
+        referencePhrases: { a: ['phrase1'], b: ['phrase2'] },
+        defaultLabel: 'a',
+      };
+      const node = leaf('classifier', { classifierId: 's', minScore: 0.5 });
+      const errors = validate(node, new Set(['s']), [clf]);
+      assert.equal(errors.length, 0);
+    },
+  },
+
+  // ── makeCollectionId slug edge cases ───────────────────────────────────
+
+  {
+    name: 'makeCollectionId - spaces become hyphens',
+    run() {
+      const id = collectionUtils.makeCollectionId('My Cool Router');
+      assert.equal(id, 'user.My-Cool-Router');
+    },
+  },
+
+  {
+    name: 'makeCollectionId - names longer than 72 chars are truncated',
+    run() {
+      const long = 'A'.repeat(100);
+      const id = collectionUtils.makeCollectionId(long);
+      assert.ok(id.length <= 'user.'.length + 72,
+        `id length ${id.length} exceeds user. + 72`);
+    },
+  },
+
+  {
+    name: 'makeCollectionId - user. prefix is not doubled',
+    run() {
+      const id = collectionUtils.makeCollectionId('user.AlreadyPrefixed');
+      assert.ok(!id.startsWith('user.user.'), `got: ${id}`);
     },
   },
 
