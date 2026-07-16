@@ -17,10 +17,10 @@ inline const BackendDescriptor descriptor = {
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
     // vte-server has no VRAM/device-sharing awareness of its own (its preflight is
-    // disabled under Lemonade, see VTE_server.cpp) and hardcodes hipSetDevice(0), so
-    // it cannot safely coexist with another GPU-resident model or pick a specific
-    // GPU on a multi-GPU system. ExclusiveGpu makes the router evict any other GPU
-    // server before loading VTE, and evict VTE when a later GPU load comes in.
+    // disabled under Lemonade, see VTE_server.cpp), so it cannot safely coexist
+    // with another GPU-resident model. ExclusiveGpu makes the router evict any
+    // other GPU server before loading VTE, and evict VTE when a later GPU load
+    // comes in.
     /*slot_policy*/     SlotPolicy::ExclusiveGpu,
     /*selectable_backend*/ false,  // single HIP-only flavor, nothing to select between
     /*uses_ctx_size*/   true,
@@ -30,9 +30,13 @@ inline const BackendDescriptor descriptor = {
         {"rocm", {"windows"}, {{"amd_gpu", {"gfx110X"}}},
          "RDNA3 native, validated on RX 7600 (gfx1102); the rest of the gfx110X "
          "family (RX 7700/7800/7900) is cross-compiled but untested on real hardware. "
-         "Requires a single visible AMD GPU: vte-server always initializes HIP device 0 "
-         "and has no device-selection argument, so behavior on a mixed iGPU+dGPU system "
-         "is unspecified."},
+         "On a mixed iGPU+dGPU system, vte-server (0.3.4+) enumerates every visible "
+         "HIP device and auto-selects the first one matching a discrete RDNA2/RDNA3 "
+         "architecture it actually supports, so an integrated GPU is never picked by "
+         "accident. If a system exposes more than one discrete GPU VTE supports, it "
+         "picks the first one found; there is no Lemonade-side way yet to request a "
+         "specific one (see VTE_DEVICE_INDEX for a manual override on the vte-server "
+         "side)."},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
