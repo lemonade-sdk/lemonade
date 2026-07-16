@@ -1,4 +1,6 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
 #include "lemon/recipe_options.h"
 
@@ -10,6 +12,7 @@ using lemon::DEVICE_GPU;
 using lemon::DEVICE_NPU;
 using lemon::RecipeOptions;
 using lemon::backends::LlamaCppServer;
+using lemon::backends::SDServer;
 using lemon::backends::WhisperServer;
 
 static int g_failures = 0;
@@ -67,9 +70,33 @@ static void test_whispercpp_effective_device() {
           !server.effective_is_amd_gpu(options_with_backend("whispercpp_backend", "npu")));
 }
 
+// Exercises the generic WrappedServer::effective_device()/effective_is_amd_gpu()
+// fallback (SDServer has no per-backend override, unlike llamacpp/whisper above),
+// so this needs set_descriptor() -- the registry normally does this at create()
+// time, direct construction in a test does not.
+static void test_sdcpp_effective_device() {
+    SDServer server("info", nullptr, nullptr);
+    server.set_descriptor(&lemon::backends::sdcpp::descriptor);
+
+    check("sd-cpp cpu backend resolves to DEVICE_CPU",
+          server.effective_device(options_with_backend("sd-cpp_backend", "cpu")) == DEVICE_CPU);
+    check("sd-cpp rocm backend resolves to DEVICE_GPU",
+          server.effective_device(options_with_backend("sd-cpp_backend", "rocm")) == DEVICE_GPU);
+    check("sd-cpp cuda backend resolves to DEVICE_GPU",
+          server.effective_device(options_with_backend("sd-cpp_backend", "cuda")) == DEVICE_GPU);
+
+    check("sd-cpp rocm backend is AMD GPU",
+          server.effective_is_amd_gpu(options_with_backend("sd-cpp_backend", "rocm")));
+    check("sd-cpp cuda backend is NOT AMD GPU",
+          !server.effective_is_amd_gpu(options_with_backend("sd-cpp_backend", "cuda")));
+    check("sd-cpp vulkan backend is NOT AMD GPU (cross-vendor row, ambiguous, conservatively excluded)",
+          !server.effective_is_amd_gpu(options_with_backend("sd-cpp_backend", "vulkan")));
+}
+
 int main() {
     test_llamacpp_effective_device();
     test_whispercpp_effective_device();
+    test_sdcpp_effective_device();
 
     if (g_failures == 0) {
         std::printf("All backend effective-device tests passed.\n");

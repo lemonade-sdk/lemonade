@@ -328,10 +328,23 @@ public:
     const BackendDescriptor* get_descriptor() const { return descriptor_; }
 
     // Effective accelerator device for this load. The router calls this after it
-    // resolves the "<recipe>_backend" option but before eviction. Defaults to the
-    // descriptor's default_device; variant-dependent backends override.
+    // resolves the "<recipe>_backend" option but before eviction. Falls back to
+    // matching the resolved backend string against the descriptor's own support
+    // rows (see find_support_row_() below) before the static default_device, so
+    // most backends need no override at all; llamacpp/whisper still override
+    // directly since their resolved backend string needs its own channel logic
+    // before it lines up with a support-row key. Only single-device-family rows
+    // are trusted here: a cross-vendor row like vulkan (cpu+amd_gpu+nvidia_gpu
+    // together, since it can target any of them) can't be resolved to one
+    // answer from the descriptor alone, so it falls through to the static
+    // default rather than guessing.
     virtual DeviceType effective_device(const RecipeOptions& options) const {
-        (void)options;
+        if (const BackendSupport* support = find_support_row_(options); support && support->devices.size() == 1) {
+            const std::string& key = support->devices.begin()->first;
+            if (key == "cpu") return DEVICE_CPU;
+            if (key == "amd_npu") return DEVICE_NPU;
+            return DEVICE_GPU;  // amd_gpu, nvidia_gpu, metal, ...
+        }
         return descriptor_ ? descriptor_->default_device : device_type_;
     }
 
@@ -345,11 +358,11 @@ public:
 
     // Whether this load's resolved GPU backend is AMD/ROCm, for scoping
     // ExclusiveGpu eviction to the accelerator it actually contends over.
-    // Meaningless when effective_device() doesn't include DEVICE_GPU. Defaults
-    // to false; AMD/ROCm-variant backends override.
+    // Meaningless when effective_device() doesn't include DEVICE_GPU. Same
+    // support-row fallback as effective_device() above.
     virtual bool effective_is_amd_gpu(const RecipeOptions& options) const {
-        (void)options;
-        return false;
+        const BackendSupport* support = find_support_row_(options);
+        return support && support->devices.size() == 1 && support->devices.count("amd_gpu") > 0;
     }
 
     // Dynamic availability check. Returns "" if the backend can run on this
@@ -514,6 +527,20 @@ protected:
     bool pinned_ = false;
 
 private:
+    // Matches the resolved "<recipe>_backend" option against the descriptor's
+    // own support rows, used by the effective_device()/effective_is_amd_gpu()
+    // defaults above. Requires selectable_backend (otherwise there's no such
+    // option to read) and an exact row match; returns null on any miss so
+    // callers fall back to the static descriptor default.
+    const BackendSupport* find_support_row_(const RecipeOptions& options) const {
+        if (!descriptor_ || !descriptor_->selectable_backend) return nullptr;
+        std::string backend = options.get_option(descriptor_->recipe + "_backend");
+        for (const auto& support : descriptor_->support) {
+            if (support.backend == backend) return &support;
+        }
+        return nullptr;
+    }
+
     void begin_backend_request(BackendRequestKind kind);
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
