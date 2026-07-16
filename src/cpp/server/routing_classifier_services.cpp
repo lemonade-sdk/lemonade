@@ -237,11 +237,14 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
 ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall embeddings,
     RouterJsonCall chat_completion,
-    EnsureClassifierModelLoaded ensure_loaded) {
+    EnsureClassifierModelLoaded ensure_loaded,
+    RouterJsonCall classify,
+    RouterModelTypeCall get_model_type) {
     ClassifierServices services;
     auto embeddings_call = std::make_shared<RouterJsonCall>(std::move(embeddings));
     auto chat_completion_call =
         std::make_shared<RouterJsonCall>(std::move(chat_completion));
+    auto classify_call = std::make_shared<RouterJsonCall>(std::move(classify));
 
     services.embed = [embeddings_call,
                       ensure_loaded](const std::string& model,
@@ -257,14 +260,30 @@ ClassifierServices make_classifier_services_from_router_calls(
         return parse_embedding_vector((*embeddings_call)(request));
     };
 
-    services.run_classifier = [chat_completion_call,
+    services.run_classifier = [chat_completion_call, classify_call, get_model_type,
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
         -> std::map<std::string, double> {
+        ensure_model(ensure_loaded, model);
+
+        // Models registered under ModelType::CLASSIFICATION (the onnxruntime
+        // backend) speak /v1/classify natively — a real encoder classification
+        // head, not an LLM asked to emit JSON. Route to it directly instead of
+        // going through chat_completion, which such a model can't serve at all
+        // (WrappedServer's default chat_completion() is an unsupported-capability
+        // error for any backend that doesn't implement it).
+        if (classify_call && *classify_call && get_model_type &&
+            get_model_type(model) == ModelType::CLASSIFICATION) {
+            json request = {
+                {"model", model},
+                {"input", input},
+            };
+            return parse_classifier_scores((*classify_call)(request));
+        }
+
         if (!*chat_completion_call) {
             throw std::runtime_error("Router chat_completion call is not configured");
         }
-        ensure_model(ensure_loaded, model);
         json request = {
             {"model", model},
             {"stream", false},
