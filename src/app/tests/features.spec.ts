@@ -440,9 +440,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(lede).toContainText('describe how you want to use a model');
     await expect(lede).toContainText('Model Tuning');
 
-    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones)
+    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones).
+    // User-created content sorts above the starters, so match by title.
     const recipesView = page.locator('.recipes').last();
-    const starterZone = recipesView.locator('.zone').first();
+    const starterZone = recipesView.locator('.zone').filter({ hasText: 'Bundled starters' });
     await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
 
     // Should have 8 starter cards
