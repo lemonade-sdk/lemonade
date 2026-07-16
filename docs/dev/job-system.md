@@ -156,10 +156,3 @@ recommendation itself):
     /* …second config, then a `decide` step branching on ${a_tps} >= ${b_tps}… */
   ] }
 ```
-
-## Source
-
-`src/cpp/include/lemon/jobs/` (`job_types.h`, `job_expr.h`, `job_graph.h`,
-`job_ops.h`, `job_manager.h`) and `src/cpp/server/jobs/`. Tests:
-`test/cpp/test_job_expr.cpp`, `test/cpp/test_job_graph.cpp`,
-`test/server_jobs.py`.
