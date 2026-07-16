@@ -28,7 +28,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {},
     /*support*/ {
         {"rocm", {"windows"}, {{"amd_gpu", {"gfx110X"}}},
-         "RDNA3 native, validated on RX 7600; RX 7700/7800/7900 series untested. "
+         "RDNA3 native, validated on RX 7600 (gfx1102); the rest of the gfx110X "
+         "family (RX 7700/7800/7900) is cross-compiled but untested on real hardware. "
          "Requires a single visible AMD GPU: vte-server always initializes HIP device 0 "
          "and has no device-selection argument, so behavior on a mixed iGPU+dGPU system "
          "is unspecified."},
