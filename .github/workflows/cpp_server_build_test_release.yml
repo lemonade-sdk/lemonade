@@ -1152,6 +1152,11 @@ jobs:
             extra_args: "--wrapped-server moonshine"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
+          - name: classify-onnxruntime
+            script: server_classify.py
+            extra_args: "--wrapped-server onnxruntime"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""

@@ -66,6 +66,7 @@ set(LEMON_BACKENDS
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
+    "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
 )

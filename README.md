@@ -323,6 +323,23 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
+    <tr>
+      <td rowspan="3"><strong>Text classification</strong></td>
+      <td rowspan="3"><code>onnxruntime</code> (experimental)</td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code>/<code>arm64</code> CPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>arm64</code> CPU</td>
+      <td>macOS</td>
+    </tr>
   </tbody>
 </table>
 <!-- END GENERATED: backends-matrix -->

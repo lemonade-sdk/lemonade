@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <stdexcept>
@@ -18,6 +19,35 @@ enum class RemoteRegistrySource {
 class RegistryNotFoundError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+class RegistrySearchError : public std::runtime_error {
+public:
+    RegistrySearchError(int status_code, const std::string& message)
+        : std::runtime_error(message), status_code_(status_code) {}
+
+    int status_code() const noexcept { return status_code_; }
+
+private:
+    int status_code_;
+};
+
+struct RegistrySearchResult {
+    std::string repo_id;
+    std::string display_name;
+    RemoteRegistrySource source = RemoteRegistrySource::HuggingFace;
+    std::string repository_type = "model";
+    std::string description;
+    std::vector<std::string> tags;
+    std::string task;
+    std::uint64_t downloads = 0;
+    std::uint64_t likes = 0;
+    bool has_gguf = false;
+};
+
+struct RegistrySearchResponse {
+    std::vector<RegistrySearchResult> results;
+    std::uint64_t total = 0;
 };
 
 struct RegistryFile {
@@ -42,6 +72,28 @@ RemoteRegistrySource parse_remote_registry_source(const std::string& source);
 std::string remote_registry_source_name(RemoteRegistrySource source);
 std::string remote_registry_display_name(RemoteRegistrySource source);
 bool is_remote_registry_source(const std::string& source);
+
+// Normalize one provider-specific model-list entry into Lemonade's registry contract.
+// Exposed so fixture tests and future clients share the same field mapping.
+RegistrySearchResult normalize_registry_search_result(
+    RemoteRegistrySource source,
+    const nlohmann::json& metadata);
+
+// Normalize and filter a provider response without performing network I/O.
+// This keeps provider field mapping and filtering deterministic and unit-testable.
+RegistrySearchResponse normalize_registry_search_response(
+    RemoteRegistrySource source,
+    const nlohmann::json& body,
+    std::size_t limit = 12);
+
+// Search a remote model registry. Provider-side GGUF filters are candidate
+// hints only; callers must use /pull/variants as the authoritative file-level
+// compatibility check before presenting a downloadable marketplace result.
+RegistrySearchResponse search_registry_models(
+    RemoteRegistrySource source,
+    const std::string& query,
+    std::size_t limit = 12,
+    bool gguf_only = false);
 
 // Deterministic snapshot id for providers whose download revision may remain
 // mutable. Ordering of files does not affect the result.

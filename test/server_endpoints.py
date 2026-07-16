@@ -167,6 +167,7 @@ class EndpointTests(ServerTestBase):
             "models",
             "responses",
             "pull",
+            "registry/search",
             "pull/variants",
             "delete",
             "load",
@@ -339,6 +340,45 @@ class EndpointTests(ServerTestBase):
             "Catalog should have more models than downloaded",
         )
         print(f"[OK] /models: downloaded={downloaded_count}, catalog={all_count}")
+
+    def test_004a_registry_search_validation(self):
+        # Registry search validates locally without contacting a provider.
+        missing_query = requests.get(
+            f"{self.base_url}/registry/search", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(missing_query.status_code, 400)
+
+        bad_source = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "unknown"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_source.status_code, 400)
+        self.assertIn("Unsupported model source", bad_source.text)
+
+        bad_limit = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "limit": 0},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_limit.status_code, 400)
+        self.assertIn("limit", bad_limit.text)
+
+        malformed_limit = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "limit": "12x"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(malformed_limit.status_code, 400)
+        self.assertIn("limit", malformed_limit.text)
+
+        bad_format = requests.get(
+            f"{self.base_url}/registry/search",
+            params={"query": "qwen", "source": "modelscope", "format": "safetensors"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad_format.status_code, 400)
+        self.assertIn("format", bad_format.text)
 
     def test_005_models_retrieve(self):
         """Test retrieving a specific model by ID with extended fields."""
@@ -3059,6 +3099,63 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021zh_router_collection_repull_overwrite(self):
+        """Re-pulling an already-registered collection.router under the same
+        name must succeed (#2703). On overwrite the registration data is
+        enriched with the persisted registry source; that internal field must
+        not reach the strict routing-policy parser, which would otherwise reject
+        it as an unknown root key."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterRepull-{suffix}"
+        collection_body = {
+            "model_name": canonical_name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [ENDPOINT_TEST_MODEL],
+            "routing": {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "always-test-model",
+                        "match": {"keywords_any": ["code"]},
+                        "route_to": ENDPOINT_TEST_MODEL,
+                    }
+                ],
+            },
+        }
+        try:
+            # Initial registration.
+            first = requests.post(
+                f"{self.base_url}/pull",
+                json=collection_body,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["status"], "success")
+
+            # Re-pull the identical body (no explicit source/registry_source).
+            # The overwrite path injects the persisted registry source into the
+            # registration data; validating that enriched object used to 500
+            # with "collection contains unknown key 'source'".
+            second = requests.post(
+                f"{self.base_url}/pull",
+                json=collection_body,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertEqual(second.json()["status"], "success")
+            print(f"[OK] collection.router re-pull overwrite: {canonical_name}")
+        finally:
             try:
                 requests.post(
                     f"{self.base_url}/delete",

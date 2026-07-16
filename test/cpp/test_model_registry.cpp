@@ -54,6 +54,92 @@ static void test_source_parsing_and_cache_names() {
     check("unknown registry is rejected", rejected);
 }
 
+static void test_search_result_normalization() {
+    const auto hf = lemon::normalize_registry_search_result(
+        RemoteRegistrySource::HuggingFace,
+        json{{"id", "org/model-GGUF"},
+             {"downloads", 42},
+             {"likes", 7},
+             {"tags", json::array({"gguf", "text-generation"})},
+             {"pipeline_tag", "text-generation"}});
+    check("HF search result keeps canonical repo id", hf.repo_id == "org/model-GGUF");
+    check("HF GGUF metadata is normalized", hf.has_gguf && hf.downloads == 42 && hf.likes == 7);
+    check("registry result identifies repository type", hf.repository_type == "model");
+
+    const auto ms = lemon::normalize_registry_search_result(
+        RemoteRegistrySource::ModelScope,
+        json{{"Id", "Qwen/Qwen-GGUF"},
+             {"Description", "ModelScope fixture"},
+             {"Downloads", 123},
+             {"Tags", "GGUF"}});
+    check("ModelScope PascalCase fields normalize", ms.repo_id == "Qwen/Qwen-GGUF" &&
+          ms.description == "ModelScope fixture" && ms.downloads == 123);
+    check("ModelScope source remains explicit", ms.source == RemoteRegistrySource::ModelScope);
+    check("single-string ModelScope tags normalize", ms.tags.size() == 1 && ms.tags[0] == "GGUF");
+
+    const auto ms_openapi = lemon::normalize_registry_search_result(
+        RemoteRegistrySource::ModelScope,
+        json{{"Path", "Qwen/Qwen3.6-27B-GGUF"},
+             {"display_name", "Qwen3.6 27B GGUF"},
+             {"tasks", json::array({"text-generation", "chat"})}});
+    check("ModelScope Path can carry the complete repository id",
+          ms_openapi.repo_id == "Qwen/Qwen3.6-27B-GGUF");
+    check("ModelScope tasks array normalizes to the primary task",
+          ms_openapi.task == "text-generation");
+
+    const auto ms_library = lemon::normalize_registry_search_result(
+        RemoteRegistrySource::ModelScope,
+        json{{"id", "community/Qwen-GGUF"},
+             {"tags", json::array({"library:gguf", "task:text-generation"})}});
+    check("ModelScope library facet identifies GGUF", ms_library.has_gguf);
+    check("ModelScope task tag is normalized", ms_library.task == "text-generation");
+}
+
+static void test_search_response_normalization() {
+    const json hf_body = json::array({
+        json{{"id", "org/text-GGUF"}, {"pipeline_tag", "text-generation"},
+             {"tags", json::array({"gguf"})}},
+        json{{"id", "org/image-GGUF"}, {"pipeline_tag", "text-to-image"},
+             {"tags", json::array({"gguf"})}},
+    });
+    const auto hf = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, hf_body, 12);
+    check("HF response filters unsupported media pipelines", hf.results.size() == 1);
+    check("HF response preserves GGUF metadata", hf.results[0].has_gguf);
+
+    const json ms_body = {
+        {"data", {
+            {"models", json::array({
+                json{{"id", "Qwen/Qwen-GGUF"}, {"task", "text-generation"}, {"downloads", 9}},
+                json{{"id", "Qwen/Qwen-Image"}, {"task", "text-to-image"}},
+            })},
+            {"total_count", 2},
+        }},
+    };
+    const auto ms = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::ModelScope, ms_body, 12);
+    check("ModelScope data.models envelope normalizes", ms.results.size() == 1 &&
+          ms.results[0].repo_id == "Qwen/Qwen-GGUF");
+    check("ModelScope response preserves provider total", ms.total == 2);
+    check("ModelScope normalized result preserves source", ms.results[0].source == RemoteRegistrySource::ModelScope);
+
+    const json lowercase_ms_body = {
+        {"success", true},
+        {"data", {
+            {"models", json::array({
+                json{{"Path", "community/Qwen3.6-GGUF"},
+                     {"tasks", json::array({"text-generation"})}},
+            })},
+            {"total_count", 1},
+        }},
+    };
+    const auto lowercase_ms = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::ModelScope, lowercase_ms_body, 12);
+    check("lowercase ModelScope success envelope normalizes",
+          lowercase_ms.results.size() == 1 &&
+          lowercase_ms.results[0].repo_id == "community/Qwen3.6-GGUF");
+}
+
 static void test_tree_snapshot_fingerprint() {
     std::vector<RegistryFile> files = {
         {"model.gguf", 100, "sha256", "abc", false},
@@ -104,6 +190,8 @@ static void test_registration_persists_remote_provenance() {
 
 int main() {
     test_source_parsing_and_cache_names();
+    test_search_result_normalization();
+    test_search_response_normalization();
     test_tree_snapshot_fingerprint();
     test_registration_persists_remote_provenance();
 
