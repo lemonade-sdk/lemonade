@@ -85,6 +85,25 @@ Label names come from the model's `id2label` — from `config.json`, or from `ma
 
 Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
 
+## Routing (`collection.router`)
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Naming a registered `collection.router` model in the `model` field of a
+`chat/completions` or `completions` request triggers the routing engine: the
+server picks a candidate by the policy's first-matching rule (fail-open to
+`default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
+model is involved.
+
+The decision is reported on the response:
+
+- Header **`x-lemonade-route`** — the matched rule id, or `default`.
+- Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
+  response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
+  (`route_to` is the candidate that answered). For streaming responses it is
+  attached to the first SSE event.
+
+See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
