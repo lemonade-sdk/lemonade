@@ -47,9 +47,9 @@
   },
   "llamacpp": {
     "vulkan": "b9747",
-    "rocm-stable": "b9752",
+    "rocm-stable": "b10073",
     "rocm-nightly": "b1292",
-    "cuda": "b9851",
+    "cuda": "b10073",
     "metal": "b9747",
     "cpu": "b9747"
   },
@@ -68,10 +68,13 @@
     "metal": "master-721-8caa3f9"
   },
   "therock": {
-    "version": "7.13.0",
+    "version": "7.14.0",
     "architectures": [
+      "gfx900",
+      "gfx906",
       "gfx908",
       "gfx90a",
+      "gfx90c",
       "gfx942",
       "gfx950",
       "gfx1100",
@@ -81,6 +84,7 @@
       "gfx1150",
       "gfx1151",
       "gfx1152",
+      "gfx1153",
       "gfx1200",
       "gfx1201",
       "gfx1010",
@@ -98,8 +102,11 @@
       "gfx120X"
     ],
     "url_mapping": {
+      "gfx900": "gfx90X-dcgpu",
+      "gfx909": "gfx90X-dcgpu",
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
+      "gfx90c": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
       "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
@@ -112,6 +119,7 @@
       "gfx1150": "gfx1150",
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
+      "gfx1153": "gfx1153",
       "gfx1200": "gfx120X-all",
       "gfx1201": "gfx120X-all",
       "gfx1010": "gfx101X-dgpu",
