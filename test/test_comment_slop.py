@@ -576,6 +576,27 @@ class CodeOfTests(unittest.TestCase):
             slop._directives_of("a = 1\nb = 2  # type: ignore\n"),
         )
 
+    def test_toolchain_directives_are_matched_by_verb_not_just_name(self):
+        # The tool set is open (yapf, autopep8, cspell, sourcery, ...); matching the toggle
+        # verb catches the class. Changing such a directive is a behaviour change.
+        for before, after in [
+            ("x = 1  # yapf: disable\n", "x = 1  # yapf: enable\n"),
+            ("x = 1  # autopep8: off\n", "x = 1  # autopep8: on\n"),
+            ("x = 1  # cspell: ignore\n", "x = 1  # cspell: check\n"),
+            ("x = 1  # sourcery skip: foo\n", "x = 1  # sourcery skip: bar\n"),
+        ]:
+            self.assertNotEqual(
+                slop._directives_of(before), slop._directives_of(after), before
+            )
+
+    def test_ordinary_prose_comment_is_not_a_directive(self):
+        # `# Note: ...` / `# TODO: ...` are prose, not directives — editing them must pass.
+        self.assertEqual(slop._directives_of("x = 1  # Note: a\n"), [])
+        self.assertEqual(
+            slop._directives_of("x = 1  # TODO: old\n"),
+            slop._directives_of("x = 1  # TODO: new\n"),
+        )
+
     def test_an_unterminated_string_literal_fails_closed(self):
         # A literal that reaches EOF with no closing quote (and no newline, which the
         # newline-in-string guard would catch first) is ill-formed; refuse it, consistent

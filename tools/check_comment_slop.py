@@ -417,7 +417,12 @@ def _changed_entries(from_ref, to_ref):
 # change to one as "comments only".
 DIRECTIVE_RE = re.compile(
     r"#\s*(type:\s*\S|noqa|nosec|bandit:|pylint:|pyright:|mypy:|ruff:|flake8:|isort:"
-    r"|fmt:\s*(on|off|skip)|pragma:)"
+    r"|fmt:\s*(on|off|skip)|pragma:|sourcery\b"
+    # A directive is generally `# <tool>: <verb>`. Match the VERB structurally rather than
+    # enumerate every tool (yapf, autopep8, cspell, dlint, docformatter, ...) -- the tool
+    # set is open, but the verbs that toggle behaviour are small. This does NOT match prose
+    # like `# Note: something`, since the value must be a toggle word.
+    r"|[\w.-]+:\s*(disable|enable|on|off|skip|ignore)\b)"
     r"|//\s*(NOLINT|clang-format\s+(on|off)|IWYU)"
     r"|/\*\s*(NOLINT|clang-format\s+(on|off)|IWYU)",
     re.IGNORECASE,
