@@ -826,6 +826,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_pull(req, res);
     });
 
+    register_get("registry/search", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_registry_search(req, res);
+    });
+
     register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull_variants(req, res);
     });
@@ -4565,6 +4569,111 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_registry_search(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::string query = req.has_param("query")
+            ? req.get_param_value("query")
+            : (req.has_param("q") ? req.get_param_value("q") : "");
+        const auto first = query.find_first_not_of(" \t\r\n");
+        const auto last = query.find_last_not_of(" \t\r\n");
+        query = first == std::string::npos ? "" : query.substr(first, last - first + 1);
+        if (query.size() < 3) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Query parameter 'query' must contain at least 3 characters"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        const std::string source_text = req.has_param("source")
+            ? req.get_param_value("source") : "huggingface";
+        const auto source = parse_remote_registry_source(source_text);
+
+        std::size_t limit = 12;
+        if (req.has_param("limit")) {
+            const std::string limit_text = req.get_param_value("limit");
+            std::size_t parsed = 0;
+            try {
+                std::size_t consumed = 0;
+                parsed = static_cast<std::size_t>(std::stoul(limit_text, &consumed));
+                if (consumed != limit_text.size()) throw std::invalid_argument("trailing characters");
+            } catch (...) {
+                throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+            }
+            if (parsed < 1 || parsed > 50) {
+                throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+            }
+            limit = parsed;
+        }
+
+        bool gguf_only = false;
+        if (req.has_param("format")) {
+            const std::string format = req.get_param_value("format");
+            if (format != "gguf") {
+                throw std::invalid_argument(
+                    "Unsupported registry search format '" + format + "' (expected 'gguf')");
+            }
+            gguf_only = true;
+        }
+
+        if (config_->offline()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Lemond is in offline mode, registry search is unavailable"},
+                {"type", "invalid_request_error"},
+                {"code", "lemond_offline"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        const auto search = search_registry_models(source, query, limit, gguf_only);
+        nlohmann::json results = nlohmann::json::array();
+        for (const auto& model : search.results) {
+            results.push_back({
+                {"repository_id", model.repo_id},
+                {"display_name", model.display_name},
+                {"source", remote_registry_source_name(model.source)},
+                {"repository_type", model.repository_type},
+                {"description", model.description},
+                {"tags", model.tags},
+                {"task", model.task},
+                {"downloads", model.downloads},
+                {"likes", model.likes},
+                {"has_gguf", model.has_gguf}
+            });
+        }
+        nlohmann::json response = {
+            {"source", remote_registry_source_name(source)},
+            {"query", query},
+            {"total", search.total},
+            {"results", std::move(results)}
+        };
+        if (gguf_only) response["format"] = "gguf";
+        res.set_content(response.dump(), "application/json");
+    } catch (const RegistrySearchError& e) {
+        res.status = e.status_code() == 429 ? 429 : 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "registry_error"},
+            {"upstream_status_code", e.status_code()}
+        }}}.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_registry_search: " << e.what() << std::endl;
+        res.status = 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "registry_error"}
+        }}}.dump(), "application/json");
     }
 }
 

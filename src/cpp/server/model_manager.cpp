@@ -3146,7 +3146,10 @@ void ModelManager::download_model(const std::string& model_name,
         bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
                                         model_data.contains("components");
         if (is_collection_overwrite) {
-            if (auto err = validate_collection_request(model_name, registration_data)) {
+            // Validate the original user-authored request, not registration_data:
+            // the latter is enriched with the persisted registry source, which is
+            // not part of the public routing-policy document the parser accepts.
+            if (auto err = validate_collection_request(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
             model_registered = false;

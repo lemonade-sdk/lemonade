@@ -1883,7 +1883,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx120X";
     }
 
-    if (device_lower.find("7700") != std::string::npos ||
+    // "7600" alone is not product-specific enough: it also matches names like
+    // "AMD Radeon HD 7600M Series" (a GCN1 card from 2012, not RDNA3). Match
+    // the actual product family instead.
+    if (device_lower.find("rx 7600") != std::string::npos ||
+        device_lower.find("rx7600") != std::string::npos ||
+        device_lower.find("pro w7600") != std::string::npos ||
+        device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
