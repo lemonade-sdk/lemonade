@@ -3130,16 +3130,16 @@ class EndpointTests(ServerTestBase):
         finally:
             self._cleanup_router_collection(canonical_name)
 
-    def test_021zj_router_llm_l0a_live_and_slot_coexistence(self):
+    def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405): a routing.router (type llm) collection routes a
         real request end to end through Router::chat_completion — exercising the
-        chat adapter, reasoning suppression, and model loading, not a fake.
+        chat adapter, reasoning suppression, structured-reply parsing, and model
+        loading against a real backend, not FakeClassifierServices.
 
-        Also the slot-coexistence guarantee: the router LLM and the selected
-        candidate are DIFFERENT models, yet under the default
-        max_loaded_models=1 both must be resident after a request, because
-        classifier-slot models occupy a pool separate from generation models.
-        Before the slot fix this thrashed (each load evicted the other)."""
+        Note: under the default max_loaded_models=1 the router LLM and the
+        selected candidate share the single generation slot, so consecutive
+        requests reload both models. Slot semantics for classifier models are
+        deliberately out of scope here and tracked in #2725."""
         router_model = ENDPOINT_TEST_MODEL
         candidate_model = SECOND_TEST_MODEL_EVICTION
         pull_model_with_retry(router_model)
@@ -3149,23 +3149,13 @@ class EndpointTests(ServerTestBase):
         canonical_name = f"user.RouterL0a-{suffix}"
         public_name = canonical_name[5:]
         try:
-            # Confirm the default single-model limit is in effect, so the test
-            # actually proves coexistence rather than passing on a raised cap.
-            limits = requests.get(
-                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-            ).json().get("max_models", {})
-            if limits.get("llm") not in (None, 1):
-                self.skipTest(
-                    f"requires max_loaded_models=1, server reports {limits.get('llm')}"
-                )
-
             requests.post(
                 f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
             )
 
-            # routing.router desugars to an llm classifier over both candidates.
-            # The router model is a component but NOT a candidate; the candidate
-            # is a distinct model, so routing forces two different LLMs live.
+            # routing.router desugars to an llm classifier over the candidate.
+            # The router model is a component but NOT a candidate, so the live
+            # flow exercises both the router invocation and the dispatch.
             routing = {
                 "candidates": [candidate_model],
                 "default_model": candidate_model,
@@ -3214,7 +3204,9 @@ class EndpointTests(ServerTestBase):
             )
 
             # The trace came from the live llm router: the winning entry names
-            # the chosen candidate as its label and carries a rationale string.
+            # the chosen candidate as its label and carries a non-empty
+            # rationale — the structured {model, rationale} contract, produced
+            # by a real model through the constrained chat adapter.
             trace = route.get("trace")
             self.assertIsInstance(trace, list)
             router_entry = next(
@@ -3230,27 +3222,17 @@ class EndpointTests(ServerTestBase):
                 router_entry, f"no winning __router trace entry: {trace}"
             )
             self.assertEqual(router_entry.get("label"), candidate_model)
+            rationale = router_entry.get("rationale")
             self.assertIsInstance(
-                router_entry.get("rationale"),
-                str,
-                "llm router must record a rationale in the trace",
+                rationale, str, "llm router must record a rationale in the trace"
             )
-
-            # The coexistence guarantee: both the router LLM and the candidate
-            # are loaded at once under max_loaded_models=1.
-            router_info = self._get_loaded_model_info(router_model)
-            candidate_info = self._get_loaded_model_info(candidate_model)
-            self.assertIsNotNone(
-                router_info,
-                "router model must stay loaded (classifier slot) after routing",
-            )
-            self.assertIsNotNone(
-                candidate_info,
-                "selected candidate must be loaded (generation slot) after routing",
+            self.assertTrue(
+                rationale.strip(),
+                "llm router rationale must be a non-empty string",
             )
             print(
-                "[OK] L0a live: routed through Router::chat_completion; "
-                "router + candidate coexist under max_loaded_models=1"
+                "[OK] L0a live: structured choice routed through "
+                "Router::chat_completion with label + rationale in the trace"
             )
         finally:
             for body in (

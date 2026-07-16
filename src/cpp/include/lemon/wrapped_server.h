@@ -122,13 +122,6 @@ public:
     bool is_pinned() const { return pinned_; }
     void set_pinned(bool pinned) { pinned_ = pinned; }
 
-    // Classifier-slot models (router/classifier LLMs loaded for routing
-    // decisions) occupy a slot pool separate from generation models of the
-    // same ModelType, so a router LLM and the candidate it selects never
-    // evict each other under max_loaded_models=1. See Router::load_model.
-    bool is_classifier_slot() const { return classifier_slot_; }
-    void set_classifier_slot(bool classifier_slot) { classifier_slot_ = classifier_slot; }
-
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
     //
@@ -510,7 +503,6 @@ protected:
     bool maintenance_in_progress_;
     long load_duration_ms_;
     bool pinned_ = false;
-    bool classifier_slot_ = false;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

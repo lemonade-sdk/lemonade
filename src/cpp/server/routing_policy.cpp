@@ -302,6 +302,15 @@ public:
             // fail-open to default_model.
             return score;
         }
+        // The contract requires BOTH fields: a route without an auditable
+        // rationale is not a valid structured choice (#2405 acceptance).
+        if (!parsed.contains("rationale") || !parsed["rationale"].is_string()) {
+            return score;
+        }
+        const std::string rationale = trim_copy(parsed["rationale"].get<std::string>());
+        if (rationale.empty()) {
+            return score;
+        }
         const std::string chosen = parsed["model"].get<std::string>();
         const std::string* label = match_label(chosen);
         if (label == nullptr) {
@@ -309,9 +318,7 @@ public:
             return score;
         }
         score.labels[*label] = 1.0;
-        if (parsed.contains("rationale") && parsed["rationale"].is_string()) {
-            score.rationale = trim_copy(parsed["rationale"].get<std::string>());
-        }
+        score.rationale = rationale;
         return score;
     }
 
@@ -333,16 +340,22 @@ private:
     }
 
     // Parse the model's reply into the structured-choice object. Strict: the
-    // trimmed reply must be a JSON object (one leading/trailing ``` fence pair
-    // is tolerated and stripped, since instruction-tuned models often add it).
+    // trimmed reply must be a JSON object. One leading/trailing ``` fence pair
+    // is tolerated and stripped (instruction-tuned models often add it), but
+    // the closing fence must END the reply — trailing prose after it violates
+    // the "no other text" contract and rejects.
     static json parse_structured_reply(const std::string& reply) {
         std::string text = trim_copy(reply);
         if (text.rfind("```", 0) == 0) {
             const auto first_newline = text.find('\n');
             const auto last_fence = text.rfind("```");
-            if (first_newline != std::string::npos && last_fence > first_newline) {
-                text = trim_copy(text.substr(first_newline + 1, last_fence - first_newline - 1));
+            if (first_newline == std::string::npos || last_fence <= first_newline) {
+                return json(nullptr);  // opening fence without a closing fence
             }
+            if (!trim_copy(text.substr(last_fence + 3)).empty()) {
+                return json(nullptr);  // text after the closing fence
+            }
+            text = trim_copy(text.substr(first_newline + 1, last_fence - first_newline - 1));
         }
         json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
         return parsed.is_discarded() ? json(nullptr) : parsed;

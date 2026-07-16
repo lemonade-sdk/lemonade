@@ -111,7 +111,8 @@ static void test_classifier_structured_choice() {
 
 static void test_classifier_prompt_carries_contract() {
     lemon::testing::FakeClassifierServices fake;
-    fake.set_chat_reply("router-model", "{\"model\": \"Qwen3-8B-GGUF\"}");
+    fake.set_chat_reply("router-model",
+        "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}");
     ClassifierServices svc = fake.make();
     std::string seen_prompt;
     auto inner = svc.chat;
@@ -164,6 +165,18 @@ static void test_classifier_rejects_non_exact_replies() {
          "{\"model\": \"gpt-4o\", \"rationale\": \"whatever\"}"},
         {"llm: JSON missing the model field is rejected",
          "{\"rationale\": \"no choice made\"}"},
+        {"llm: JSON missing the rationale field is rejected",
+         "{\"model\": \"Qwen3-8B-GGUF\"}"},
+        {"llm: JSON with empty rationale is rejected",
+         "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"\"}"},
+        {"llm: JSON with whitespace-only rationale is rejected",
+         "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"   \"}"},
+        {"llm: JSON with non-string rationale is rejected",
+         "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": 42}"},
+        {"llm: fenced JSON followed by trailing prose is rejected",
+         "```json\n{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}\n```\nHope that helps!"},
+        {"llm: opening fence without a closing fence is rejected",
+         "```json\n{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}"},
     };
     for (const Case& c : cases) {
         lemon::testing::FakeClassifierServices fake;

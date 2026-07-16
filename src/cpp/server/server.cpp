@@ -1835,8 +1835,7 @@ nlohmann::json Server::extract_auto_load_options(const json& request) {
 
 void Server::auto_load_model_if_needed(
     const std::string& requested_model,
-    const json& request_options,
-    bool classifier_slot) {
+    const json& request_options) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
@@ -1891,9 +1890,7 @@ void Server::auto_load_model_if_needed(
     // Load model with do_not_upgrade=true, applying per-request options on first load.
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, request_options), true,
-                        /*allow_reload_on_option_change=*/false, /*pinned=*/std::nullopt,
-                        classifier_slot);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2304,12 +2301,7 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     // immutable policy into it.
     RoutePolicy policy = *collection_info.route_policy;
     ClassifierServices services = make_router_classifier_services(
-        *router_, [this](const std::string& m) {
-            // Router/classifier models load into the classifier slot pool so
-            // they never evict (or get evicted by) the generation candidate
-            // under the default max_loaded_models=1.
-            auto_load_model_if_needed(m, json::object(), /*classifier_slot=*/true);
-        });
+        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);

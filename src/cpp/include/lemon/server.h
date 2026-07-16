@@ -254,8 +254,7 @@ private:
     // Callers must pass only load-level options from extract_auto_load_options() — never
     // the raw request body — to keep request-scoped fields out of persistent recipe options.
     void auto_load_model_if_needed(const std::string& model_name,
-                                   const json& request_options = json::object(),
-                                   bool classifier_slot = false);
+                                   const json& request_options = json::object());
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
