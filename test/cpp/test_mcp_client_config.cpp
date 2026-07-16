@@ -5,10 +5,11 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <functional>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
@@ -47,9 +48,16 @@ bool throws(const std::function<void()>& operation) {
     return false;
 }
 
-}  // namespace
+void remove_test_directory(const fs::path& path) noexcept {
+    std::error_code ec;
+    fs::remove_all(path, ec);
+    if (ec) {
+        std::cerr << "warning: failed to remove MCP test directory '"
+                  << path.string() << "': " << ec.message() << '\n';
+    }
+}
 
-int main() {
+int run_tests() {
     using lemon::McpClientManager;
     using lemon::json;
 
@@ -144,11 +152,18 @@ int main() {
         assert(!id.empty());
 
         const fs::path persisted_path = cache_dir / "mcp_servers.json";
-        std::ifstream persisted_input(persisted_path);
-        assert(persisted_input.good());
-        const std::string persisted(
-            (std::istreambuf_iterator<char>(persisted_input)),
-            std::istreambuf_iterator<char>());
+        std::string persisted;
+        {
+            std::ifstream persisted_input(persisted_path);
+            if (!persisted_input) {
+                throw std::runtime_error(
+                    "failed to open persisted MCP configuration: " +
+                    persisted_path.string());
+            }
+            persisted.assign(
+                std::istreambuf_iterator<char>(persisted_input),
+                std::istreambuf_iterator<char>());
+        }
         assert(persisted.find("super-secret-value") == std::string::npos);
         assert(persisted.find("${LEMONADE_MCP_TEST_SECRET}") !=
                std::string::npos);
@@ -185,7 +200,8 @@ int main() {
             }));
         }
         for (int i = 0; i < 16; ++i) {
-            const json parallel = parallel_calls[static_cast<std::size_t>(i)].get();
+            const json parallel =
+                parallel_calls[static_cast<std::size_t>(i)].get();
             assert(parallel.at("result").at("content").at(0).at("text") ==
                    "parallel-" + std::to_string(i));
         }
@@ -273,13 +289,13 @@ int main() {
     } catch (...) {
         unset_test_env("LEMONADE_MCP_TEST_SECRET");
         unset_test_env("LEMONADE_MCP_INIT_DELAY");
-        fs::remove_all(cache_dir);
+        remove_test_directory(cache_dir);
         throw;
     }
 
     unset_test_env("LEMONADE_MCP_TEST_SECRET");
     unset_test_env("LEMONADE_MCP_INIT_DELAY");
-    fs::remove_all(cache_dir);
+    remove_test_directory(cache_dir);
 #else
     std::cout
         << "mock stdio integration test skipped: Python fixture not configured\n";
@@ -287,4 +303,18 @@ int main() {
 
     std::cout << "mcp client config tests passed\n";
     return 0;
+}
+
+}  // namespace
+
+int main() {
+    try {
+        return run_tests();
+    } catch (const std::exception& e) {
+        std::cerr << "mcp_client_config failed: " << e.what() << '\n';
+        return 1;
+    } catch (...) {
+        std::cerr << "mcp_client_config failed with unknown exception\n";
+        return 1;
+    }
 }
