@@ -1,4 +1,4 @@
-import { backendLoadArgs, recommendedCtxSize, roundUpCtx } from './autoOptSynthesize';
+import { backendLoadArgs, recommendedCtxSize } from './autoOptSynthesize';
 import {
   BenchParams,
   BenchPlanEntry,
@@ -19,16 +19,13 @@ const DEPTH_SENTENCE = 'The quick brown fox jumps over the lazy dog. ';
 const DEPTH_TOKENS_PER_SENTENCE = 11;
 const FALLBACK_CTX = 2048;
 const MAX_COMPLETION_TOKENS = 64;
+const DEEP_GEN_MARGIN = 1024;
+const MIN_DEEP_DEPTH = 2048;
 
 function depthPrompt(depthTokens: number): string {
   if (depthTokens <= 0) return 'Reply with a one-word greeting.';
   const repeats = Math.max(1, Math.ceil(depthTokens / DEPTH_TOKENS_PER_SENTENCE));
   return DEPTH_SENTENCE.repeat(repeats) + '\nReply with a one-word summary of the text above.';
-}
-
-function ctxForDepth(depth: number): number {
-  if (depth <= 0) return FALLBACK_CTX;
-  return roundUpCtx(depth + 2048);
 }
 
 interface Measurement {
@@ -57,65 +54,78 @@ export function buildBenchRecipe(
     fits.find(f => f.backend === backend) ?? null;
   const loadArgsFor = (backend: string): string =>
     backendLoadArgs(hardware, backend, fitFor(backend), facts, kv).join(' ').trim();
+  const sanitize = (s: string): string => s.replace(/[^a-zA-Z0-9_]/g, '_');
 
   const measurements: Measurement[] = [];
+  const ladderRungs = budget === 'thorough' ? [512, 1024, 2048, 4096, 8192] : [512, 2048, 8192];
+  const mtpNs = budget === 'thorough' ? [1, 2, 3, 4, 5, 6] : [2, 3, 4];
+  const doLadder = hardware.ram_is_vram && hardware.host_ram_gb >= 32;
 
   for (const backend of candidates) {
+    const bkey = sanitize(backend);
     const recCtx = recommendedCtxSize(fitFor(backend)?.fitted_ctx ?? 0, facts.n_ctx_train, kv);
     const loadArgs = loadArgsFor(backend);
-    const depths: number[] = [0];
-    if (recCtx >= 32768) depths.push(30000);
-    else if (recCtx >= 8192) depths.push(Math.floor(0.8 * recCtx));
-    for (const depth of depths) {
-      const primary = depth <= 0 ? recCtx : ctxForDepth(depth);
-      measurements.push({
-        key: `${backend}_d${depth}`.replace(/[^a-zA-Z0-9_]/g, '_'),
-        label: `Benchmarking ${backend} at depth ${depth}`,
-        backend,
-        ctxPrimary: primary,
-        ctxFallback: depth <= 0 && primary > FALLBACK_CTX ? FALLBACK_CTX : null,
-        ctxProbe: depth <= 0,
-        args: loadArgs,
-        params: { d: depth },
-        depthTokens: depth,
-      });
+
+    measurements.push({
+      key: `${bkey}_d0`,
+      label: `Benchmarking ${backend} at depth 0`,
+      backend,
+      ctxPrimary: recCtx,
+      ctxFallback: recCtx > FALLBACK_CTX ? FALLBACK_CTX : null,
+      ctxProbe: true,
+      args: loadArgs,
+      params: { d: 0 },
+      depthTokens: 0,
+    });
+
+    if (recCtx >= 8192) {
+      const target = recCtx >= 32768 ? 30000 : Math.floor(0.8 * recCtx);
+      const deepDepth = Math.min(target, recCtx - DEEP_GEN_MARGIN);
+      if (deepDepth >= MIN_DEEP_DEPTH) {
+        measurements.push({
+          key: `${bkey}_d${deepDepth}`,
+          label: `Benchmarking ${backend} at depth ${deepDepth}`,
+          backend,
+          ctxPrimary: recCtx,
+          ctxFallback: null,
+          ctxProbe: false,
+          args: loadArgs,
+          params: { d: deepDepth },
+          depthTokens: deepDepth,
+        });
+      }
     }
-  }
 
-  const winner = candidates[0] || 'vulkan';
-  const winnerArgs = loadArgsFor(winner);
-
-  if (hardware.ram_is_vram && hardware.host_ram_gb >= 32) {
-    const rungs = budget === 'thorough' ? [512, 1024, 2048, 4096, 8192] : [512, 2048, 8192];
-    for (const r of rungs) {
-      measurements.push({
-        key: `ladder_b${r}`,
-        label: `Batch ladder -b ${r} on ${winner}`,
-        backend: winner,
-        ctxPrimary: FALLBACK_CTX,
-        ctxFallback: null,
-        ctxProbe: false,
-        args: `${winnerArgs} -b ${r} -ub ${r}`.trim(),
-        params: { ladder: true, b: r, ub: r, d: 0 },
-        depthTokens: 0,
-      });
+    if (doLadder) {
+      for (const r of ladderRungs) {
+        measurements.push({
+          key: `ladder_${bkey}_b${r}`,
+          label: `Batch ladder -b ${r} on ${backend}`,
+          backend,
+          ctxPrimary: FALLBACK_CTX,
+          ctxFallback: null,
+          ctxProbe: false,
+          args: `${loadArgs} -b ${r} -ub ${r}`.trim(),
+          params: { ladder: true, b: r, ub: r, d: 0 },
+          depthTokens: 0,
+        });
+      }
     }
-  }
 
-  if (facts.has_mtp) {
-    const ns = budget === 'thorough' ? [1, 2, 3, 4, 5, 6] : [2, 3, 4];
-    for (const n of ns) {
-      measurements.push({
-        key: `mtp_n${n}`,
-        label: `MTP draft sweep n=${n} on ${winner}`,
-        backend: winner,
-        ctxPrimary: FALLBACK_CTX,
-        ctxFallback: null,
-        ctxProbe: false,
-        args: `${winnerArgs} --spec-type draft-mtp --spec-draft-n-max ${n} --spec-draft-p-min 0.75`.trim(),
-        params: { spec_n: n, d: 0 },
-        depthTokens: 0,
-      });
+    if (facts.has_mtp) {
+      for (const n of mtpNs) {
+        measurements.push({
+          key: `mtp_${bkey}_n${n}`,
+          label: `MTP draft sweep n=${n} on ${backend}`,
+          backend,
+          ctxPrimary: FALLBACK_CTX,
+          ctxFallback: null,
+          ctxProbe: false,
+          args: `${loadArgs} --spec-type draft-mtp --spec-draft-n-max ${n} --spec-draft-p-min 0.75`.trim(),
+          params: { spec_n: n, d: 0 },
+          depthTokens: 0,
+        });
+      }
     }
   }
 

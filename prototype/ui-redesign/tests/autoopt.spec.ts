@@ -41,9 +41,9 @@ const SYSTEM_INFO = {
 };
 
 function metricsForKey(measKey: string): { ttft: number; tps: number; vram: number } {
-  let m = /^ladder_b(\d+)$/.exec(measKey);
+  let m = /^ladder_.+_b(\d+)$/.exec(measKey);
   if (m) { const b = Number(m[1]); return { ttft: b === 2048 ? 70 : (b === 8192 ? 80 : 100), tps: 40, vram: 20 }; }
-  m = /^mtp_n(\d+)$/.exec(measKey);
+  m = /^mtp_.+_n(\d+)$/.exec(measKey);
   if (m) { const n = Number(m[1]); return { ttft: 100, tps: n === 2 ? 55 : 40, vram: 20 }; }
   m = /^(.+)_d(\d+)$/.exec(measKey);
   if (m) {
@@ -353,7 +353,11 @@ test.describe('AutoOpt wizard + server-side bench job', () => {
     expect(extractKeys.some(k => k.endsWith('_ttft'))).toBe(true);
     expect(extractKeys.some(k => k.endsWith('_tps'))).toBe(true);
 
-    expect(extractKeys).toEqual(expect.arrayContaining(['vulkan_d0_tps', 'vulkan_d30000_tps', 'ladder_b512_ttft', 'ladder_b2048_ttft', 'ladder_b8192_ttft']));
+    expect(extractKeys).toEqual(expect.arrayContaining([
+      'vulkan_d0_tps', 'vulkan_d30000_tps',
+      'ladder_vulkan_b512_ttft', 'ladder_vulkan_b2048_ttft', 'ladder_vulkan_b8192_ttft',
+      'ladder_rocm_b512_ttft',
+    ]));
 
     const fallbackLoad = steps.find(s => s.op === 'load' && typeof s.on_fail === 'string' && String(s.on_fail).startsWith('loadlo_'));
     expect(fallbackLoad).toBeTruthy();

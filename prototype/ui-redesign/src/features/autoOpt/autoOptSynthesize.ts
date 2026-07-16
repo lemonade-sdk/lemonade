@@ -84,6 +84,15 @@ function backendMemoryVendor(hw: HardwareSnapshot, backend: string): 'nvidia' | 
 }
 
 export function availableMibForBackend(hw: HardwareSnapshot, backend: string): number {
+  if (backend === 'vulkan') {
+    const vendors = Array.from(new Set(hw.gpus.map(g => g.vendor)));
+    if (vendors.length > 1) {
+      const pools = vendors
+        .map(v => hw.gpus.filter(g => g.vendor === v).reduce((sum, g) => sum + (g.vram_gb || 0), 0))
+        .filter(gb => gb > 0);
+      if (pools.length > 0) return Math.min(...pools) * 0.92 * 1024;
+    }
+  }
   const vendor = backendMemoryVendor(hw, backend);
   if (vendor === 'apple') return Math.max(1024, hw.host_ram_gb * 0.9 * 1024);
   if (vendor === 'amd' && hw.ram_is_vram) return Math.max(1024, hw.host_ram_gb * 0.9 * 1024);
@@ -397,7 +406,7 @@ export function synthesize(
     let bestN = 3;
     let bestTps = -1;
     for (const bp of bench) {
-      if (!bp.ok || bp.params?.spec_n === undefined) continue;
+      if (!bp.ok || bp.params?.spec_n === undefined || bp.backend !== backend) continue;
       if (bp.tps > bestTps) {
         bestTps = bp.tps;
         bestN = bp.params.spec_n;

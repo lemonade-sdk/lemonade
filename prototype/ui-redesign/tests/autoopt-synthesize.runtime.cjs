@@ -523,6 +523,18 @@ function check(name, ok) {
         // Per-backend load args: rocm gets --direct-io in BOTH the bench and the recommendation.
         check('r2#2: shared builder emits rocm --direct-io',
           backendLoadArgs(igpuHw(), 'rocm-stable', partialFit, denseModel(), 'none').includes('--direct-io'));
+
+        // ── round-3 #2: the deep probe loads at the recommended ctx, not a larger one ──
+        const fitMid = fitting('vulkan', 8192, { fits_fully: true, fitted_ctx: 8192 });
+        const recipeMid = buildBenchRecipe([fitMid], ansNo, igpuHw(), denseModel(), 'org/m', 'standard', ['vulkan']);
+        const recMid = synthesize(igpuHw(), denseModel(), ansNo, [fitMid], [], undefined);
+        const deepStep = recipeMid.steps.find(s => /^load_vulkan_d\d+$/.test(s.id) && s.id !== 'load_vulkan_d0');
+        const deepPlan = recipeMid.plan.find(e => (e.params.d ?? 0) > 0 && e.backend === 'vulkan');
+        check('r3#2: a deep probe exists', !!deepStep && !!deepPlan);
+        check('r3#2: deep probe loads at the recommended ctx, not larger',
+          deepStep.params.ctx_size === recMid.primary.ctx_size);
+        check('r3#2: deep prompt depth fits inside the recommended ctx',
+          deepPlan.params.d < recMid.primary.ctx_size);
       } finally {
         fs.rmSync(recipeBundle.outputPath, { recursive: true, force: true });
       }
@@ -540,13 +552,19 @@ function check(name, ok) {
       };
       check('r2#1: cuda fitted vs NVIDIA VRAM', Math.abs(availableMibForBackend(mixed, 'cuda') - 24 * 0.92 * 1024) < 1);
       check('r2#1: rocm fitted vs AMD budget', Math.abs(availableMibForBackend(mixed, 'rocm') - 100 * 0.92 * 1024) < 1);
-      check('r2#1: vulkan follows the AMD budget when AMD present',
-        availableMibForBackend(mixed, 'vulkan') === availableMibForBackend(mixed, 'rocm'));
       check('r2#1: cuda budget differs from rocm budget on a mixed box',
         availableMibForBackend(mixed, 'cuda') !== availableMibForBackend(mixed, 'rocm'));
 
+      // round-3 #3: vulkan is budgeted conservatively (smallest pool) on a mixed-vendor box.
+      check('r3#3: vulkan uses the conservative (smaller) pool on a mixed box',
+        Math.abs(availableMibForBackend(mixed, 'vulkan') - 24 * 0.92 * 1024) < 1);
+      check('r3#3: vulkan budget is smaller than the AMD rocm budget on a mixed box',
+        availableMibForBackend(mixed, 'vulkan') < availableMibForBackend(mixed, 'rocm'));
+
       const apu = { gpus: [{ vendor: 'amd', name: 'APU', family: 'gfx1151', vram_gb: 96 }], has_igpu: true, ram_is_vram: true, host_ram_gb: 128, installed_backends: ['rocm', 'vulkan'], os: 'linux' };
       check('r2#1: unified APU rocm uses 0.9x host RAM', Math.abs(availableMibForBackend(apu, 'rocm') - 128 * 0.9 * 1024) < 1);
+      check('r3#3: single-vendor APU vulkan matches rocm (AMD unified)',
+        availableMibForBackend(apu, 'vulkan') === availableMibForBackend(apu, 'rocm'));
     }
 
     // ── round-2 #3: a backend that FAILS the deep run cannot win the duel ──
@@ -572,6 +590,43 @@ function check(name, ok) {
       const rs = synthesize(igpuHw(), denseModel(), answers(),
         [fitting('vulkan', 65536), fitting('rocm-stable', 65536)], shallow, undefined);
       check('r2#3: no deep runs → depth-0 winner stands', rs.primary.llamacpp_backend === 'vulkan');
+
+      // round-3 #2 (synthesize): a backend whose deep run SUCCEEDS is not disqualified and wins.
+      const okDeep = [
+        dp('vulkan', 0, true, 90), dp('vulkan', 6553, true, 85),
+        dp('rocm-stable', 0, true, 40), dp('rocm-stable', 6553, true, 38),
+      ];
+      const rOk = synthesize(igpuHw(), denseModel(), answers(),
+        [fitting('vulkan', 8192), fitting('rocm-stable', 8192)], okDeep, undefined);
+      check('r3#2: backend that runs the recommended-ctx deep run wins', rOk.primary.llamacpp_backend === 'vulkan');
+    }
+
+    // ── round-3 #1: MTP/ladder tuning comes from the DUEL WINNER, not candidates[0] ──
+    {
+      const mk = (backend, extra) => ({
+        backend, label: backend, ctx_size: 4096, llamacpp_args: '',
+        ttft_ms: 100, tps: 40, vram_gb: 20, ok: true, params: { d: 0 }, ...extra,
+      });
+      const bench = [
+        mk('vulkan', { tps: 40 }),
+        mk('rocm-stable', { tps: 80 }),
+        mk('vulkan', { params: { spec_n: 2 }, tps: 200 }),
+        mk('vulkan', { params: { spec_n: 3 }, tps: 40 }),
+        mk('rocm-stable', { params: { spec_n: 5 }, tps: 95 }),
+        mk('rocm-stable', { params: { spec_n: 2 }, tps: 30 }),
+        mk('vulkan', { params: { ladder: true, b: 512, ub: 512 }, ttft_ms: 100 }),
+        mk('vulkan', { params: { ladder: true, b: 2048, ub: 2048 }, ttft_ms: 70 }),
+        mk('rocm-stable', { params: { ladder: true, b: 512, ub: 512 }, ttft_ms: 100 }),
+        mk('rocm-stable', { params: { ladder: true, b: 4096, ub: 4096 }, ttft_ms: 55 }),
+      ];
+      const mtpModel = { ...denseModel(), has_mtp: true };
+      const r = synthesize(igpuHw(), mtpModel, answers(),
+        [fitting('vulkan', 65536), fitting('rocm-stable', 65536)], bench, undefined);
+      check('r3#1: duel winner is rocm-stable (not candidates[0])', r.primary.llamacpp_backend === 'rocm-stable');
+      check('r3#1: MTP draft length comes from the winner (n=5)', r.primary.llamacpp_args.includes('--spec-draft-n-max 5'));
+      check('r3#1: MTP not taken from candidates[0] (n=2)', !r.primary.llamacpp_args.includes('--spec-draft-n-max 2'));
+      check('r3#1: batch size comes from the winner (b=4096)', r.primary.llamacpp_args.includes('-b 4096 -ub 4096'));
+      check('r3#1: batch not taken from candidates[0] (b=2048)', !r.primary.llamacpp_args.includes('-b 2048'));
     }
 
     if (failures > 0) {
