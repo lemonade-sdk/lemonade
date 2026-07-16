@@ -150,7 +150,7 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
-    void begin_exclusive();
+    bool begin_exclusive(std::atomic<bool>* cancel = nullptr);
     void end_exclusive();
 
     std::map<std::string, bool> snapshot_loaded_models() const;

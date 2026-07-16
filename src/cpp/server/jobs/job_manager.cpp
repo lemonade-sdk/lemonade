@@ -104,11 +104,12 @@ void JobManager::load_from_disk() {
     if (!in) return;
     try {
         json doc = json::parse(in);
-        int loaded = 0, recovered = 0;
+        int loaded = 0, recovered = 0, dropped = 0;
         for (const auto& jj : doc.value("jobs", json::array())) {
             Job job = Job::from_json(jj);
             if (job.id.empty()) continue;
             if (job.deleted) {
+                dropped++;
                 LOG(INFO, "Jobs") << "dropping tombstoned job " << job.id << std::endl;
                 continue;
             }
@@ -137,6 +138,10 @@ void JobManager::load_from_disk() {
         if (loaded)
             LOG(INFO, "Jobs") << "loaded " << loaded << " job(s) from " << storage_path_ << " ("
                               << recovered << " recovered as interrupted)" << std::endl;
+        if (dropped) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            persist_locked();
+        }
     } catch (const std::exception& e) {
         LOG(WARNING, "Jobs") << "Could not load " << storage_path_ << ": " << e.what()
                              << std::endl;
@@ -190,20 +195,18 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (order_.size() >= kMaxJobs) {
-        bool evictable = false;
-        for (const auto& existing : order_) {
-            auto jit = jobs_.find(existing);
-            if (jit != jobs_.end() && is_terminal(jit->second.status)) {
-                evictable = true;
-                break;
-            }
-        }
-        if (!evictable)
-            throw JobError(429, "job limit (" + std::to_string(kMaxJobs)
-                                + ") reached and every existing job is still active or resumable; "
-                                  "delete a job first");
+    size_t live = 0;
+    bool evictable = false;
+    for (const auto& existing : order_) {
+        auto jit = jobs_.find(existing);
+        if (jit == jobs_.end() || jit->second.deleted) continue;
+        live++;
+        if (is_terminal(jit->second.status)) evictable = true;
     }
+    if (live >= kMaxJobs && !evictable)
+        throw JobError(429, "job limit (" + std::to_string(kMaxJobs)
+                            + ") reached and every existing job is still active or resumable; "
+                              "delete a job first");
 
     Job job;
     char stamp[24];
@@ -384,19 +387,30 @@ void JobManager::worker_main() {
             const OpRegistry& reg;
             const std::string& id;
             bool held = false;
-            void begin() {
-                if (reg.begin_exclusive) reg.begin_exclusive();
+            bool begin(CancelFlag* cancel) {
+                if (reg.begin_exclusive && !reg.begin_exclusive(cancel)) return false;
                 held = true;
                 LOG(INFO, "Jobs") << "job " << id << " acquired exclusive slot" << std::endl;
+                return true;
             }
             ~ExclusiveGuard() {
                 if (held && reg.end_exclusive) reg.end_exclusive();
                 if (held) LOG(INFO, "Jobs") << "job " << id << " released exclusive slot" << std::endl;
             }
         } guard{registry_, id};
-        if (exclusive) guard.begin();
 
-        execute(id, ctrl);
+        if (!exclusive || guard.begin(&ctrl->cancel)) {
+            execute(id, ctrl);
+        } else {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = jobs_.find(id);
+            if (it != jobs_.end()) {
+                it->second.status = JobStatus::Interrupted;
+                persist_locked();
+            }
+            LOG(INFO, "Jobs") << "job " << id
+                              << " interrupted while waiting for the exclusive slot" << std::endl;
+        }
         bool interrupted = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -405,7 +419,7 @@ void JobManager::worker_main() {
             active_id_.clear();
         }
 
-        if (exclusive && interrupted && registry_.reconcile_unload) {
+        if (guard.held && interrupted && registry_.reconcile_unload) {
             registry_.reconcile_unload();
             LOG(INFO, "Jobs") << "job " << id << " interrupted — unloaded resident model(s)"
                               << std::endl;

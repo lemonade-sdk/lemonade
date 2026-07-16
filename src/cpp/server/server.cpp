@@ -502,11 +502,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         };
         auto exclusive_snapshot = std::make_shared<std::map<std::string, bool>>();
         auto snapshot_mutex = std::make_shared<std::mutex>();
-        providers.begin_exclusive = [this, exclusive_snapshot, snapshot_mutex] {
-            router_->begin_exclusive();
+        providers.begin_exclusive = [this, exclusive_snapshot, snapshot_mutex](
+                                        lemon::jobs::CancelFlag* cancel) -> bool {
+            if (!router_->begin_exclusive(cancel)) return false;
             auto snap = router_->snapshot_loaded_models();
             std::lock_guard<std::mutex> lk(*snapshot_mutex);
             *exclusive_snapshot = std::move(snap);
+            return true;
         };
         providers.end_exclusive = [this] { router_->end_exclusive(); };
         providers.reconcile_unload = [this, exclusive_snapshot, snapshot_mutex] {

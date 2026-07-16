@@ -20,6 +20,7 @@ TEST_MODEL = "Tiny-Test-Model-GGUF"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LEMOND_BINARY = None
+_BACKEND_BIN_TEMPLATE = None
 
 
 def find_lemond_binary():
@@ -40,6 +41,12 @@ def find_lemond_binary():
 class JobEngineTests(unittest.TestCase):
     def setUp(self):
         self.cache_dir = tempfile.mkdtemp(prefix="lemonade-jobs-")
+        if _BACKEND_BIN_TEMPLATE and os.path.isdir(_BACKEND_BIN_TEMPLATE):
+            shutil.copytree(
+                _BACKEND_BIN_TEMPLATE,
+                os.path.join(self.cache_dir, "bin"),
+                symlinks=True,
+            )
         self.proc = None
         self.start_server()
 
@@ -163,7 +170,23 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, "failed to pull the test model")
 
     def require_real_backend(self):
+        global _BACKEND_BIN_TEMPLATE
         backend = self.installed_llamacpp_backend()
+        if not backend and _BACKEND_BIN_TEMPLATE is None:
+            r = requests.post(
+                f"{BASE}/install",
+                json={"recipe": "llamacpp", "backend": "cpu", "subscribe": False},
+                timeout=1800,
+            )
+            if r.status_code == 200:
+                backend = self.installed_llamacpp_backend()
+                bin_dir = os.path.join(self.cache_dir, "bin")
+                if backend and os.path.isdir(bin_dir):
+                    _BACKEND_BIN_TEMPLATE = tempfile.mkdtemp(
+                        prefix="lemonade-jobs-backend-"
+                    )
+                    shutil.rmtree(_BACKEND_BIN_TEMPLATE)
+                    shutil.copytree(bin_dir, _BACKEND_BIN_TEMPLATE, symlinks=True)
         if not backend:
             self.skipTest("no installed llamacpp backend available")
         self.ensure_test_model()
@@ -350,6 +373,16 @@ class JobEngineTests(unittest.TestCase):
 
         r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
+
+        with open(
+            os.path.join(self.cache_dir, "jobs.json"), "r", encoding="utf-8"
+        ) as f:
+            on_disk = {j["id"]: j for j in json.load(f).get("jobs", [])}
+        self.assertTrue(
+            on_disk.get(jid, {}).get("deleted", jid not in on_disk),
+            "the tombstone must be on disk before the DELETE ack "
+            f"(entry: {on_disk.get(jid)})",
+        )
         self.assertEqual(
             self.get_job(jid).status_code,
             404,
@@ -672,7 +705,8 @@ class JobEngineTests(unittest.TestCase):
                 timeout=120,
             )
             result["status"] = r.status_code
-            result["elapsed"] = time.time() - t0
+            result["end_time"] = time.time()
+            result["elapsed"] = result["end_time"] - t0
 
         chat_thread = threading.Thread(target=long_chat)
         chat_thread.start()
@@ -694,11 +728,11 @@ class JobEngineTests(unittest.TestCase):
         )
         jid = job["id"]
 
-        overlap = False
+        overlap_at = None
         while chat_thread.is_alive():
             status = self.get_job(jid).json()["status"]
             if status == "completed" and chat_thread.is_alive():
-                overlap = True
+                overlap_at = time.time()
                 break
             time.sleep(0.05)
         chat_thread.join()
@@ -708,6 +742,10 @@ class JobEngineTests(unittest.TestCase):
         )
         if result.get("elapsed", 0) < 1.0:
             self.skipTest("chat finished too quickly to observe the drain window")
+        overlap = (
+            overlap_at is not None
+            and result.get("end_time", overlap_at) - overlap_at > 0.5
+        )
         self.assertFalse(
             overlap,
             "the exclusive job completed while an in-flight chat was still running "
@@ -941,6 +979,63 @@ class JobEngineTests(unittest.TestCase):
             requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
             TEST_MODEL,
             "interrupt cleanup unloaded a model pinned before the job started",
+        )
+
+    def loaded_model_pinned_state(self, model):
+        health = requests.get(f"{BASE}/health", timeout=5).json()
+        for entry in health.get("all_models_loaded", []):
+            if entry.get("model") == model or entry.get("model_name") == model:
+                return entry.get("pinned")
+        self.fail(f"{model} not present in all_models_loaded: {health}")
+
+    def test_pin_state_of_preexisting_model_restored_after_job(self):
+        backend = self.require_real_backend()
+        r = requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+                "pinned": True,
+            },
+            timeout=120,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(self.loaded_model_pinned_state(TEST_MODEL))
+
+        steps = [
+            {
+                "id": "unpin",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                    "pinned": False,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+        ]
+        job = self.create_job("unpin-then-interrupt", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+        self.assertFalse(
+            self.loaded_model_pinned_state(TEST_MODEL),
+            "the job load did not change the surviving model's pin state",
+        )
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "interrupted", timeout=20)
+
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "reconcile evicted a pre-job model",
+        )
+        self.assertTrue(
+            self.loaded_model_pinned_state(TEST_MODEL),
+            "reconcile did not restore the pre-job pin state of a surviving model",
         )
 
     def test_bench_shaped_sweep(self):

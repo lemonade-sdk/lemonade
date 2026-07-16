@@ -369,12 +369,22 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
 }
 
-void Router::begin_exclusive() {
+bool Router::begin_exclusive(std::atomic<bool>* cancel) {
     std::unique_lock<std::mutex> lock(load_mutex_);
     exclusive_active_ = true;
     exclusive_owner_ = std::this_thread::get_id();
     while (true) {
-        load_cv_.wait(lock, [&] { return !is_loading_; });
+        if (cancel && cancel->load()) {
+            exclusive_active_ = false;
+            exclusive_owner_ = std::thread::id{};
+            exclusive_cv_.notify_all();
+            load_cv_.notify_all();
+            return false;
+        }
+        if (is_loading_) {
+            load_cv_.wait_for(lock, std::chrono::milliseconds(25));
+            continue;
+        }
         bool busy = false;
         for (const auto& server : loaded_servers_) {
             if (server->is_busy()) {
@@ -389,6 +399,7 @@ void Router::begin_exclusive() {
     }
     exclusive_cv_.notify_all();
     load_cv_.notify_all();
+    return true;
 }
 
 void Router::end_exclusive() {
@@ -753,6 +764,17 @@ void Router::evict_if_committed(const std::string& model_name) {
     WrappedServer* server = find_server_by_model_name(model_name);
     if (!server) {
         return;  // Already gone
+    }
+
+    // An exclusive session may have started (and re-pinned this model via the
+    // job snapshot reconcile) since the EVICTING mark was set. Neither state
+    // was known when the eviction was decided, so abandon it.
+    if (exclusive_active_ || server->is_pinned()) {
+        server->rescue_from_eviction();
+        LOG(INFO, "Router") << "Eviction of " << model_name << " cancelled ("
+                            << (server->is_pinned() ? "pinned" : "exclusive session active")
+                            << ")" << std::endl;
+        return;
     }
 
     // Atomically confirm the model is still idle and EVICTING. If a request

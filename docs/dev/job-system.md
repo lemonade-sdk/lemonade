@@ -122,12 +122,17 @@ paused (pause is the escape hatch — it releases the slot so queued traffic
 drains, and resume re-acquires). Acquiring the gate first *drains* in-flight
 work: it waits for any active load and for every in-flight request on loaded
 backends to finish, so an external chat that started just before the job cannot
-overlap the exclusive session. Every model-touching Router path — inference,
-streaming, tokenize, slots, pinning, load/unload — checks the same gate. The
-gate is keyed by the worker thread, so the job's own ops pass through while
-every other request waits. A job with only read-only ops (e.g. `system_info`,
-`sleep`) never takes the gate. Read-only status queries (model list, health,
-telemetry) are not gated.
+overlap the exclusive session. The drain is cancellable — interrupting or
+deleting the job while it waits behind a long-running request aborts the
+acquisition and marks the job `interrupted` instead of blocking indefinitely.
+Every model-touching Router path — inference, streaming, tokenize, slots,
+pinning, load/unload — checks the same gate, and the idle-eviction/downsize
+engine suspends itself (and abandons any already-marked eviction) while an
+exclusive session is active, so background eviction cannot pull a model out
+from under a job step. The gate is keyed by the worker thread, so the job's
+own ops pass through while every other request waits. A job with only
+read-only ops (e.g. `system_info`, `sleep`) never takes the gate. Read-only
+status queries (model list, health, telemetry) are not gated.
 
 ## Persistence
 

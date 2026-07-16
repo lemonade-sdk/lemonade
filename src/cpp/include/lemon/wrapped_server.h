@@ -190,6 +190,14 @@ public:
         return false;
     }
 
+    void rescue_from_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+    }
+
     void release_inference() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (--active_request_count_ == 0) {

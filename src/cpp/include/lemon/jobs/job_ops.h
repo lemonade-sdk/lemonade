@@ -24,7 +24,7 @@ public:
     const OpHandler* find(const std::string& name) const;
     std::set<std::string> names() const;
 
-    std::function<void()> begin_exclusive;
+    std::function<bool(CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;
 
     std::function<void()> reconcile_unload;
@@ -43,7 +43,7 @@ struct OpProviders {
     std::function<json(const json& params, CancelFlag& cancel)> unload_op;
     std::function<json(const json& params, CancelFlag& cancel)> chat_op;
 
-    std::function<void()> begin_exclusive;
+    std::function<bool(CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;
     std::function<void()> reconcile_unload;
 };
