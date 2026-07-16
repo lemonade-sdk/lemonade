@@ -722,9 +722,8 @@ test.describe('Accessibility — preset/runtime separation', () => {
     await expect(page.locator('[data-recipe-temp], [data-recipe-ctx], [data-recipe-top-k], .slideover .slider')).toHaveCount(0);
   });
 
-  test('A39 — backend assignment remains collapsed and does not expose backend tuning inputs', async ({ page }) => {
-    const advanced = page.locator('.preset-advanced');
-    await expect(advanced).not.toHaveAttribute('open', '');
+  test('A39 — preset editor omits backend assignment and concrete tuning inputs', async ({ page }) => {
+    await expect(page.locator('.preset-advanced')).toHaveCount(0);
     await expect(page.locator('#preset-field-llamacpp-backend, #preset-field-llamacpp-device')).toHaveCount(0);
   });
 });
@@ -1175,7 +1174,7 @@ test.describe('Accessibility — backend argument tuning', () => {
   });
 
   test('A170 — editing an AutoOpt-owned entry clearly warns and converts it to a manual override', async ({ page }) => {
-    await page.addInitScript(() => {
+    await page.evaluate(() => {
       localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
         'llamacpp:cpu': {
           args: '--autoopt-old',
@@ -1216,7 +1215,7 @@ test.describe('Accessibility — backend argument tuning', () => {
   });
 
   test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
-    await page.addInitScript(() => {
+    await page.evaluate(() => {
       localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
         'llamacpp:cpu': { args: '--cpu', source: 'user' },
         'llamacpp:vulkan': { args: '--vulkan', source: 'user' },

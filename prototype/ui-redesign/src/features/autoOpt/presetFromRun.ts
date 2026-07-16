@@ -3,6 +3,7 @@ import {
   activePresetForModel,
   saveBackendTuning,
   saveOptimizedModelTuning,
+  type IntentTuningValues,
   type RecipeOptions,
   type SamplingParams,
 } from '../../presetStore';
@@ -84,9 +85,23 @@ export function saveRunToModelTuning(
   const resolvedModel = currentModelInfo(run, modelInfo);
   assertRunApplicable(run, resolvedModel, rec);
   const preset = activePresetForModel(run.model);
+  const sampling = samplingFromDefaults(run.result?.sampling_defaults);
+  const intentValues: IntentTuningValues = {};
+  const contextHint = preset.context_hint || 'medium';
+  const temperatureHint = preset.temperature_hint || 'balanced';
+  if (rec.ctx_size > 0 && contextHint !== 'max') {
+    intentValues.context = { [contextHint]: rec.ctx_size };
+  }
+  if (sampling.temperature !== undefined) {
+    intentValues.temperature = { [temperatureHint]: sampling.temperature };
+  }
   saveOptimizedModelTuning(run.model, {
+    intent_values: intentValues,
+    // Keep the exact measured values as concrete load/request options too. The
+    // intent translations make later Preset resolution deterministic, while
+    // recipe_options/sampling reproduce the AutoOpt recommendation verbatim.
     recipe_options: recommendationRecipeOptions(rec),
-    sampling: samplingFromDefaults(run.result?.sampling_defaults),
+    sampling,
   }, preset.id, run.id);
   return { presetId: preset.id, presetName: preset.name };
 }

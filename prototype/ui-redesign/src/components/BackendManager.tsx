@@ -261,11 +261,18 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
 }) => {
   const [args, setArgs] = useState('');
   const dialogRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   useFocusTrap(dialogRef, !!backendKeyValue);
 
   useEffect(() => {
     setArgs(tuning?.args || '');
   }, [backendKeyValue, tuning?.args]);
+
+  useEffect(() => {
+    if (!backendKeyValue) return;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [backendKeyValue]);
 
   useEffect(() => {
     if (!backendKeyValue) return;
@@ -311,6 +318,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
         )}
         <label className="field__label" htmlFor="backend-args-value">Arguments</label>
         <textarea
+          ref={inputRef}
           id="backend-args-value"
           className="input backend-args-dialog__textarea"
           rows={7}
@@ -376,6 +384,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     window.addEventListener(PRESET_STORE_EVENT, reloadTuningState);
     return () => window.removeEventListener(PRESET_STORE_EVENT, reloadTuningState);
   }, []);
+
+  useEffect(() => {
+    if (isActive) setBackendTunings(loadBackendTunings());
+  }, [isActive]);
 
   /* ── Fetch system-info ────────────────────────────────── */
 

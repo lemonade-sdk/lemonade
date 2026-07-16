@@ -312,6 +312,13 @@ export function useDashboardData(isActive = true): DashboardData {
     }
   }, [computeAggregates]);
 
+  // A manual resume starts a fresh retry window. Without resetting the
+  // consecutive-failure counter, the very next failed poll immediately pauses
+  // again, making the Resume control appear ineffective.
+  useEffect(() => {
+    if (!paused) failureCountRef.current = 0;
+  }, [paused]);
+
   // Resume polling when the global connection is re-established
   useEffect(() => {
     if (!isActive) return;

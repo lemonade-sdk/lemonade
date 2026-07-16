@@ -891,6 +891,10 @@ function presetForTuningId(presetId: string): Preset {
 
 function migrateLegacyConcreteIntentValues(tuning: Partial<ModelTuning>, presetId: string): ModelTuning {
   const sanitized = sanitizeModelTuning(tuning);
+  // AutoOpt writes a complete, measured model-tuning recommendation. Unlike
+  // legacy Preset payloads, its concrete context must remain in recipe_options
+  // so the exact measured configuration is reproduced on the next load.
+  if (sanitized.source === 'optimized') return sanitized;
   const preset = presetForTuningId(presetId);
   if (!presetSupportsChatIntent(preset)) return sanitized;
 
