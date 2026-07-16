@@ -1932,6 +1932,13 @@ void ModelManager::build_cache() {
         auto it = public_model_aliases_.find(name);
         return it != public_model_aliases_.end() ? it->second : name;
     };
+    // Direct lookup into the map already being built, same rationale as
+    // resolve_component above: models_cache_ is populated and the lock is
+    // still held, so this avoids re-entering get_model_info()'s own locking.
+    policy_options.get_model_type = [this](const std::string& name) -> ModelType {
+        auto it = models_cache_.find(name);
+        return it != models_cache_.end() ? it->second.type : ModelType::LLM;
+    };
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
@@ -4544,6 +4551,15 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 // names stable so parser component-role validation can still
                 // compare them against the authored components array.
                 return name;
+            }
+        };
+        options.get_model_type = [this](const std::string& name) -> ModelType {
+            try {
+                return get_model_info(name).type;
+            } catch (...) {
+                // Unregistered inline-collection component: no type to check
+                // yet, so don't block registration on it here.
+                return ModelType::LLM;
             }
         };
         try {
