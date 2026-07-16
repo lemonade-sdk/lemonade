@@ -42,6 +42,11 @@
           "trellis-cuda-linux-x64.tar.gz": "sha256:4d3bcc732e88cfa0e89448bd46a501a5d352ce1ca08a2839bb5194663f7c1404",
           "trellis-cuda-windows-x64.zip": "sha256:d1e1cce20892c2f22c185d6f22b042d41f87424adf0a40eda9d1194e87899c98"
         }
+      },
+      "kyuubyN/VTE": {
+        "0.3.2": {
+          "vte-server-0.3.2-windows-x64.zip": "sha256:bff4bf3b04fa504de8778e42e71889aadb4e2cf8c4f4ab3f92a0897ffc6fc2c0"
+        }
       }
     }
   },
@@ -142,23 +147,7 @@
     }
   },
   "vte": {
-    "rocm-stable": "0.3.1"
-  },
-  "checksums": {
-    "vte": {
-      "rocm-stable": {
-        "0.3.0": {
-          "vte-server-0.3.0-windows-x64.zip": {
-            "sha256": "b3100f987bbdb4f8189232bf803370932d144cb33b5e74caf9675954af1a76ab"
-          }
-        },
-        "0.3.1": {
-          "vte-server-0.3.1-windows-x64.zip": {
-            "sha256": "f9244e2256ca2171b88f961a2014bde99e1eeb4e507ecfcd15b40e1fcfad9d94"
-          }
-        }
-      }
-    }
+    "rocm-stable": "0.3.2"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

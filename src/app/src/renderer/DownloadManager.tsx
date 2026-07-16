@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { controlDownload, deleteModel, uninstallBackend, waitForDownloadStatus } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 export interface DownloadItem {
   id: string;
@@ -145,15 +144,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     return `${formatBytes(bytesPerSecond)}/s`;
   };
 
-  const getDownloadDisplayName = (modelName: string, downloadType?: DownloadItem['downloadType']): string => {
-    if (downloadType === 'backend') {
-      // Backend installs track modelName as "recipe:backend" (e.g. "vte:rocm") --
-      // a raw backend/GPU-flavor string, not a model name, so show the recipe's
-      // friendly display_name (from /system-info's backend descriptors) instead.
-      const [recipe] = modelName.split(':');
-      const friendlyName = RECIPE_DISPLAY_NAMES[recipe];
-      return friendlyName ? `${friendlyName} backend` : modelName;
-    }
+  const getDownloadDisplayName = (modelName: string): string => {
     return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
   };
 
@@ -630,8 +621,8 @@ Partial files may remain on disk.`);
                         <div className="download-item-text">
                           <span className="download-model-name">
                             {download.collectionComponents && download.collectionComponents.length > 0
-                              ? `Setting up ${getDownloadDisplayName(download.modelName, download.downloadType)}`
-                              : getDownloadDisplayName(download.modelName, download.downloadType)}
+                              ? `Setting up ${getDownloadDisplayName(download.modelName)}`
+                              : getDownloadDisplayName(download.modelName)}
                           </span>
                           {download.collectionComponents && download.collectionComponents.length > 0 && (
                             <span

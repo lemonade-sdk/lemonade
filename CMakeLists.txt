@@ -772,13 +772,8 @@ if(WIN32)
             /GUARD:CF         # Control Flow Guard
         )
         # Embed manifest file
-        # NOTE: /MANIFESTINPUT's path must be quoted -- an unquoted path breaks
-        # the linker (LNK1181, silently truncated to the text after the last
-        # space) whenever the source tree lives under a directory containing a
-        # space (e.g. "Aetheris Flow"). Found and fixed while building this
-        # project from such a path.
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
         )
     endif()
 endif()

@@ -414,7 +414,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 
-#### `vte` — VTE (RDNA3 native, experimental) (3 models)
+#### `vte` — VTE (RDNA3 native, experimental) (4 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|

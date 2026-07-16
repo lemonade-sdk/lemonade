@@ -111,6 +111,12 @@ void VTEServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
         "--host", "127.0.0.1",
         "--context-length", std::to_string(ctx_size),
+        // Lemonade owns lifetime and VRAM policy: disable vte-server's own idle
+        // auto-unload (would race a long request) and its 80%-free-VRAM
+        // preflight (would collide with the router's eviction-and-retry). Its
+        // per-allocation OOM guard still protects a real out-of-memory load.
+        "--idle-timeout", "0",
+        "--vram-limit-pct", "0",
         // Windows' TerminateProcess delivers no catchable signal to a child,
         // even on the normal unload path -- this lets vte-server detect a
         // vanished parent and exit instead of surviving as an orphan.
