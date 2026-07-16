@@ -46,12 +46,14 @@ export interface RecipeOptions {
   voice?: string;
   speed?: number;
   merge_args?: boolean;
+  mmproj_enabled?: boolean;
 }
 
 export interface SamplingParams {
   temperature?: number;
   top_p?: number;
   top_k?: number;
+  min_p?: number;
   repeat_penalty?: number;
 }
 
@@ -90,8 +92,8 @@ export interface ModelTuning {
   sampling: SamplingParams;
   /** Optional runtime hint kept separate from shared Preset intent. */
   engine_hint?: PresetRecipe;
-  /** 'model' means discovered from model metadata/GGUF; 'user' means locally customized. */
-  source?: 'model' | 'user';
+  source?: 'model' | 'user' | 'optimized';
+  auto_opt_run_id?: string;
   updated_at?: string;
 }
 
@@ -654,8 +656,8 @@ export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | u
   if (!options || typeof options !== 'object') return out;
   for (const [key, value] of Object.entries(options) as Array<[keyof RecipeOptions, unknown]>) {
     if (isBlankValue(value)) continue;
-    if (key === 'merge_args') {
-      if (typeof value === 'boolean') out.merge_args = value;
+    if (key === 'merge_args' || key === 'mmproj_enabled') {
+      if (typeof value === 'boolean') (out as Record<string, unknown>)[key] = value;
       continue;
     }
     if (RECIPE_OPTION_NUMBER_KEYS.has(key)) {
@@ -676,7 +678,7 @@ export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | u
 export function sanitizeSamplingParams(params: Partial<SamplingParams> | null | undefined): SamplingParams {
   const out: SamplingParams = {};
   if (!params || typeof params !== 'object') return out;
-  for (const key of ['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
+  for (const key of ['temperature', 'top_p', 'top_k', 'min_p', 'repeat_penalty'] as Array<keyof SamplingParams>) {
     const n = optionalNumberValue(params[key]);
     if (n !== undefined) out[key] = n;
   }
@@ -714,7 +716,8 @@ export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined
     recipe_options,
     sampling,
     ...(engine_hint ? { engine_hint } : {}),
-    source: raw?.source === 'user' ? 'user' : (raw?.source === 'model' ? 'model' : undefined),
+    source: raw?.source === 'user' || raw?.source === 'model' || raw?.source === 'optimized' ? raw.source : undefined,
+    ...(typeof raw?.auto_opt_run_id === 'string' && raw.auto_opt_run_id ? { auto_opt_run_id: raw.auto_opt_run_id } : {}),
     updated_at: typeof raw?.updated_at === 'string' ? raw.updated_at : undefined,
   };
 }
@@ -842,6 +845,22 @@ export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>,
   if (!modelName) return;
   const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
   const sanitized = migrateLegacyConcreteIntentValues({ ...tuning, source: 'user', updated_at: new Date().toISOString() }, resolvedPresetId);
+  const next = { ...loadModelTunings() };
+  const key = modelPresetTuningKey(modelName, resolvedPresetId);
+  if (hasConcreteTuning(sanitized)) next[key] = sanitized;
+  else delete next[key];
+  saveModelTunings(next);
+}
+
+export function saveOptimizedModelTuning(modelName: string, tuning: Partial<ModelTuning>, presetId: string, autoOptRunId: string): void {
+  if (!modelName) return;
+  const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
+  const sanitized = migrateLegacyConcreteIntentValues({
+    ...tuning,
+    source: 'optimized',
+    auto_opt_run_id: autoOptRunId,
+    updated_at: new Date().toISOString(),
+  }, resolvedPresetId);
   const next = { ...loadModelTunings() };
   const key = modelPresetTuningKey(modelName, resolvedPresetId);
   if (hasConcreteTuning(sanitized)) next[key] = sanitized;
@@ -1141,7 +1160,7 @@ function resolveIntentTranslations(
   };
 
   apply(builtIn, 'built-in');
-  apply(user, 'custom');
+  apply(user, user?.source === 'optimized' ? 'optimized' : 'custom');
   context.small = Math.min(maxContext, Math.max(1, context.small));
   if (context.medium < context.small) {
     context.medium = context.small;
@@ -1195,7 +1214,7 @@ function resolveModelTuning(
   };
 
   applyConcrete(builtIn, 'built-in');
-  applyConcrete(user, 'custom');
+  applyConcrete(user, user?.source === 'optimized' ? 'optimized' : 'custom');
 
   if (supportsIntent) {
     const contextHint = preset.context_hint || 'medium';
@@ -1217,7 +1236,8 @@ function resolveModelTuning(
       recipe_options: sanitizeRecipeOptions(recipe_options),
       sampling: sanitizeSamplingParams(sampling),
       engine_hint: user?.engine_hint || builtIn?.engine_hint || (activeRecipeName(model) as PresetRecipe) || 'auto',
-      source: user ? 'user' : 'model',
+      source: user ? (user.source === 'optimized' ? 'optimized' : 'user') : 'model',
+      ...(user?.auto_opt_run_id ? { auto_opt_run_id: user.auto_opt_run_id } : {}),
       updated_at: user?.updated_at,
     },
     preset_id: preset.id,
@@ -1508,7 +1528,7 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
     case 'omni':
     case 'vision':
     case 'code':
-      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
     case 'all':
     default:
       return { ...options };

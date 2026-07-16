@@ -805,11 +805,32 @@ test.describe('Accessibility — capability chip toggle-button semantics (#2350)
 // ─── 14. AutoOpt run selection state — issue #2352 ───────────────────────────
 
 test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
+  const mockAutoOpt = async (page: Page) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    // AutoOpt runs are client-persisted and scoped to the server's base URL.
+    await page.addInitScript(() => {
+      const base = {
+        checkpoint: '', answers: { parallel: { mode: 'single' }, kv_cache_quant: 'none', ram_headroom: 'normal', allow_network: true },
+        allow_unload: false, stages: [], measurements: { fit: [], bench: [] },
+      };
+      localStorage.setItem('lemonade_autoopt_runs_v2::http://127.0.0.1:13305', JSON.stringify({
+        version: 2,
+        runs: [
+          { ...base, id: 'run-b', model: 'org/model-b', status: 'completed', budget: 'standard', created_at: '2026-07-02T10:00:00Z', finished_at: '2026-07-02T10:12:00Z' },
+          { ...base, id: 'run-a', model: 'org/model-a', status: 'completed', budget: 'quick', created_at: '2026-07-01T10:00:00Z', finished_at: '2026-07-01T10:01:00Z' },
+        ],
+      }));
+    });
+  };
+
   test('A44 — AutoOpt run buttons expose selected state via aria-pressed', async ({ page }) => {
+    await mockAutoOpt(page);
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
-    await page.waitForSelector('.auto-run-list');
+    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
 
     const buttons = page.locator('.auto-run-card__main');
     const count = await buttons.count();
@@ -823,10 +844,11 @@ test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
   });
 
   test('A45 — clicking a different AutoOpt run updates aria-pressed to true on that button', async ({ page }) => {
+    await mockAutoOpt(page);
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
-    await page.waitForSelector('.auto-run-list');
+    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
 
     const buttons = page.locator('.auto-run-card__main');
     // Click the second button (index 1) to change selection
@@ -839,6 +861,89 @@ test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
     // First button must now be false
     const firstPressed = await buttons.nth(0).getAttribute('aria-pressed');
     expect(firstPressed).toBe('false');
+  });
+
+  test('A45b — AutoOpt rail exposes a polite live region for run completion announcements', async ({ page }) => {
+    await mockAutoOpt(page);
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+
+    const liveRegion = page.locator('[data-autoopt-announcement]');
+    await expect(liveRegion).toHaveAttribute('role', 'status');
+    await expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+  });
+});
+
+// ─── 14b. AutoOpt wizard dialog — semantics, focus trap, fieldsets ─────────────
+
+test.describe('Accessibility — AutoOpt wizard dialog', () => {
+  const openWizard = async (page: Page) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: { data: [{ id: 'org/chat-model', name: 'org/chat-model', labels: ['llm'], recipe: 'llamacpp', downloaded: true }] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { 'Physical Memory': '64.0 GB', recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed' } } } } },
+    }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.locator('[data-autoopt-run-optimizer]').click();
+    await page.waitForSelector('[data-autoopt-wizard]', { timeout: 5000 });
+  };
+
+  test('A46 — wizard is a modal dialog and moves focus inside', async ({ page }) => {
+    await openWizard(page);
+
+    const wizard = page.locator('[data-autoopt-wizard]');
+    await expect(wizard).toHaveAttribute('role', 'dialog');
+    await expect(wizard).toHaveAttribute('aria-modal', 'true');
+
+    const activeIsInWizard = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-autoopt-wizard]');
+      return dialog?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInWizard).toBe(true);
+  });
+
+  test('A47 — Tab never escapes the wizard dialog', async ({ page }) => {
+    await openWizard(page);
+
+    const count = await page.locator(
+      '[data-autoopt-wizard] :is(a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]))',
+    ).evaluateAll(els => els.filter(el => !el.closest('[aria-hidden="true"]')).length);
+
+    for (let i = 0; i < count + 2; i++) {
+      await page.keyboard.press('Tab');
+    }
+
+    const activeIsInWizard = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-autoopt-wizard]');
+      return dialog?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInWizard, 'Focus should stay inside the wizard after wrapping').toBe(true);
+  });
+
+  test('A48 — every wizard step is a fieldset with a legend', async ({ page }) => {
+    await openWizard(page);
+
+    await page.locator('[data-autoopt-model-select]').selectOption('org/chat-model');
+    const stepOrder = ['model', 'parallel', 'kv', 'ram', 'budget', 'review'];
+    for (const step of stepOrder) {
+      const fieldset = page.locator(`fieldset[data-autoopt-step="${step}"]`);
+      await expect(fieldset).toBeVisible();
+      await expect(fieldset.locator('legend')).toBeVisible();
+      if (step !== 'review') await page.locator('[data-autoopt-next]').click();
+    }
+  });
+
+  test('A49 — Escape closes the wizard', async ({ page }) => {
+    await openWizard(page);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-autoopt-wizard]')).toHaveCount(0);
   });
 });
 
