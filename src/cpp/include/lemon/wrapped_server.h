@@ -120,7 +120,11 @@ public:
 
     // Pinned status for eviction prevention
     bool is_pinned() const { return pinned_; }
-    void set_pinned(bool pinned) { pinned_ = pinned; }
+    void set_pinned(bool pinned) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pinned_ = pinned;
+        recipe_options_.set_option("pinned", pinned);
+    }
 
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
@@ -267,6 +271,7 @@ public:
     // Multi-model support: Model metadata
     void set_model_metadata(const std::string& model_name, const std::string& checkpoint,
                            ModelType type, DeviceType device, const RecipeOptions& recipe_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         model_name_ = model_name;
         checkpoint_ = checkpoint;
         model_type_ = type;
@@ -278,7 +283,10 @@ public:
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
-    RecipeOptions get_recipe_options() const { return recipe_options_; }
+    RecipeOptions get_recipe_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return recipe_options_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 

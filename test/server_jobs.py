@@ -1039,6 +1039,11 @@ class JobEngineTests(unittest.TestCase):
             pid_before,
             "a pin-only load reloaded the model instead of updating the pin in place",
         )
+        self.assertFalse(
+            mid.get("recipe_options", {}).get("pinned"),
+            "the stored recipe options disagree with the pin flag after an "
+            "in-place pin update",
+        )
 
         r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
