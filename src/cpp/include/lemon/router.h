@@ -186,6 +186,9 @@ private:
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
     WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
+    bool has_gpu_server() const;
+    WrappedServer* find_exclusive_gpu_server() const;
+    void evict_all_gpu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
     // Eviction-engine entry point: physically unload a model previously marked

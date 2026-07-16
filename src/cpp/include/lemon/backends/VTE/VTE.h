@@ -16,13 +16,22 @@ inline const BackendDescriptor descriptor = {
     /*binary*/          "vte-server",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
-    /*slot_policy*/     SlotPolicy::Standard,
+    // vte-server has no VRAM/device-sharing awareness of its own (its preflight is
+    // disabled under Lemonade, see VTE_server.cpp) and hardcodes hipSetDevice(0), so
+    // it cannot safely coexist with another GPU-resident model or pick a specific
+    // GPU on a multi-GPU system. ExclusiveGpu makes the router evict any other GPU
+    // server before loading VTE, and evict VTE when a later GPU load comes in.
+    /*slot_policy*/     SlotPolicy::ExclusiveGpu,
     /*selectable_backend*/ false,  // single HIP-only flavor, nothing to select between
     /*uses_ctx_size*/   true,
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"rocm", {"windows"}, {{"amd_gpu", {"gfx110X"}}}, "RDNA3 native, validated on RX 7600; RX 7700/7800/7900 series untested"},
+        {"rocm", {"windows"}, {{"amd_gpu", {"gfx110X"}}},
+         "RDNA3 native, validated on RX 7600; RX 7700/7800/7900 series untested. "
+         "Requires a single visible AMD GPU: vte-server always initializes HIP device 0 "
+         "and has no device-selection argument, so behavior on a mixed iGPU+dGPU system "
+         "is unspecified."},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},

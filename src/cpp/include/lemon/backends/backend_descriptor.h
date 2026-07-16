@@ -24,6 +24,9 @@ struct BackendOption {
 enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
     ExclusiveNpu,  // evict ALL npu servers before loading (ryzenai-llm, whispercpp-npu)
+    ExclusiveGpu,  // evict ALL gpu servers before loading, and gets evicted by any later
+                   // gpu load in turn -- unlike ExclusiveNpu, most GPU backends are
+                   // Standard, so this exclusivity has to be enforced from both directions (VTE)
     CoexistByType, // one per model type, evicts exclusive-npu peers (flm)
     Unmetered      // never counts toward slots, never auto-evicted (cloud)
 };
@@ -38,6 +41,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
         case SlotPolicy::Standard:      return "standard";
         case SlotPolicy::ExclusiveNpu:  return "exclusive_npu";
+        case SlotPolicy::ExclusiveGpu:  return "exclusive_gpu";
         case SlotPolicy::CoexistByType: return "coexist_by_type";
         case SlotPolicy::Unmetered:     return "unmetered";
     }

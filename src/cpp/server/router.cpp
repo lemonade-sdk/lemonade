@@ -282,6 +282,46 @@ void Router::evict_all_npu_servers() {
     }
 }
 
+bool Router::has_gpu_server() const {
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() && (server->get_device_type() & DEVICE_GPU)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Finds a currently-loaded server whose OWN policy is ExclusiveGpu (e.g. VTE),
+// regardless of what recipe/policy the caller is about to load. Used to enforce
+// exclusivity from the reverse direction: unlike NPU (where every backend is
+// already ExclusiveNpu/CoexistByType), most GPU backends are Standard, so a
+// Standard GPU load would otherwise never evict an already-loaded exclusive one.
+WrappedServer* Router::find_exclusive_gpu_server() const {
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() &&
+            (server->get_device_type() & DEVICE_GPU) &&
+            slot_policy_for_recipe(server->get_recipe_options().get_recipe()) ==
+                SlotPolicy::ExclusiveGpu) {
+            return server.get();
+        }
+    }
+    return nullptr;
+}
+
+// Helper: Evict all GPU servers
+void Router::evict_all_gpu_servers() {
+    std::vector<WrappedServer*> gpu_servers;
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() && (server->get_device_type() & DEVICE_GPU)) {
+            gpu_servers.push_back(server.get());
+        }
+    }
+    for (auto* server : gpu_servers) {
+        LOG(INFO, "Router") << "Evicting GPU server: " << server->get_model_name() << std::endl;
+        evict_server(server);
+    }
+}
+
 void Router::evict_server(WrappedServer* server, int timeout_seconds) {
     if (!server) return;
 
@@ -455,18 +495,45 @@ void Router::load_model(const std::string& model_name,
         // Get max models for this type (same limit for all types)
         int max_models = config_->max_loaded_models();
 
-        // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
+        // GPU EXCLUSIVITY CHECK (reverse direction). ExclusiveGpu's own case below
+        // evicts GPU peers when an exclusive backend (VTE) loads, but NPU's
+        // one-directional pattern doesn't transfer here: every NPU backend is
+        // already ExclusiveNpu/CoexistByType, so a Standard NPU load never exists
+        // to violate the invariant. Most GPU backends (llamacpp, vllm, ...) ARE
+        // Standard, so a later Standard GPU load must reciprocally evict an
+        // already-loaded ExclusiveGpu server, or the two would coexist.
+        if ((device_type & DEVICE_GPU) &&
+            slot_policy_for_recipe(model_info.recipe) != SlotPolicy::ExclusiveGpu) {
+            WrappedServer* exclusive_gpu_holder = find_exclusive_gpu_server();
+            if (exclusive_gpu_holder) {
+                LOG(INFO, "Router") << model_info.recipe << " cannot coexist with exclusive-GPU model "
+                          << exclusive_gpu_holder->get_model_name() << ", evicting..." << std::endl;
+                evict_server(exclusive_gpu_holder);
+            }
+        }
+
+        // NPU/GPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
+        //   ExclusiveGpu (VTE): lock the entire GPU, evicting ALL GPU servers first
+        //                (the reverse direction is handled by the guard above).
         //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
         //                but evict exclusive-NPU peers.
-        // Standard/Unmetered backends share no device exclusivity.
+        // Standard/Unmetered backends share no device exclusivity of their own.
         switch (slot_policy_for_recipe(model_info.recipe)) {
             case SlotPolicy::ExclusiveNpu: {
                 if (has_npu_server()) {
                     LOG(INFO, "Router") << model_info.recipe
                               << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
                     evict_all_npu_servers();
+                }
+                break;
+            }
+            case SlotPolicy::ExclusiveGpu: {
+                if (has_gpu_server()) {
+                    LOG(INFO, "Router") << model_info.recipe
+                              << " requires exclusive GPU access, evicting all GPU servers..." << std::endl;
+                    evict_all_gpu_servers();
                 }
                 break;
             }
