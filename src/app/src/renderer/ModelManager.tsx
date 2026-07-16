@@ -380,7 +380,7 @@ interface ModelJSON {
   image_defaults?: []
 }
 
-export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'prompt-debugger' | 'settings';
+export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
