@@ -38,6 +38,8 @@ any synthesis of the results; the server just executes the recipe durably.
 | `chat`        | yes | the backend chat response verbatim (`timings`/`usage` included); `params` is a chat/completions request |
 
 "Exclusive" ops require the model slot — see [Exclusivity](#exclusivity-and-queuing).
+This is the current set, not a fixed one; ops for other modalities are additive —
+see [Extending with new ops](#extending-with-new-ops-any-modality).
 
 ## Recipe: steps
 
@@ -154,5 +156,44 @@ recommendation itself):
       "params": { "model": "${inputs.model}", "llamacpp_backend": "${inputs.backend}",
                   "ctx_size": 2048 }, "on_fail": "abort" },
     /* …second config, then a `decide` step branching on ${a_tps} >= ${b_tps}… */
+  ] }
+```
+
+## Extending with new ops (any modality)
+
+The engine is modality-agnostic — `chat` is only the first *inference* op wired
+up. Ops are a pluggable registry, not a fixed set, so image generation, TTS,
+transcription, or a 3D-mesh op are additive: no changes to the engine, graph,
+context, or expression language.
+
+An op is a handler in the op registry (`OpRegistry`):
+
+```cpp
+struct OpHandler {
+    std::function<json(const json& params, const json& context, CancelFlag& cancel)> run;
+    bool exclusive = false;   // true if it holds the model slot (see Exclusivity)
+};
+```
+
+The signature assumes nothing about text or LLMs: `params` and the return value
+are arbitrary JSON, and any op that loads a model sets `exclusive = true` (like
+`load`/`unload`/`chat`). Because every step's output lands in the shared context,
+later steps consume it via `${step_id.field}` references — that is the data-flow
+a pipeline needs.
+
+To add one, register a provider in `OpProviders` that forwards to the relevant
+already-existing Router backend (`SdServer`, `KokoroServer`, `WhisperServer`, …)
+and `register_op` it. A `text → LLM enhancer → image → 3D` pipeline is then just
+three registered ops passing data through the context:
+
+```jsonc
+{ "steps": [
+    { "id": "enhance", "op": "chat", "params": { "...": "..." },
+      "extract": { "prompt": "choices.0.message.content" } },
+    { "id": "image",   "op": "generate_image",
+      "params": { "prompt": "${enhance.prompt}" },
+      "extract": { "path": "data.0.path" } },
+    { "id": "model3d", "op": "generate_3d",
+      "params": { "image": "${image.path}" } }
   ] }
 ```
