@@ -10,7 +10,10 @@ Note on VTE multi_model:
 VTE has multi_model disabled because its memory model uses fixed, persistent
 HIP activation buffers and AOT-compiled kernels for RDNA3 native execution. Running
 multiple VTE models concurrently can lead to HIP driver memory allocation conflicts or
-OOM within VTE's custom SlabAllocator, even when free VRAM check is disabled.
+OOM within VTE's custom SlabAllocator, even when free VRAM check is disabled. This is
+enforced, not just documented: VTE's descriptor uses SlotPolicy::ExclusiveGpu (see
+backend_descriptor.h/router.cpp), so the router evicts any other GPU model before
+loading VTE and evicts VTE when a later GPU model loads.
 """
 
 from functools import wraps
