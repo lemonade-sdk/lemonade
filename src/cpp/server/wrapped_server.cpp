@@ -267,6 +267,7 @@ void WrappedServer::end_backend_request(BackendRequestKind kind) {
         previous = active_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);
         if (previous <= 1) {
             active_streaming_requests_.store(0, std::memory_order_release);
+            set_streaming(false);
         }
     } else {
         previous = active_non_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);

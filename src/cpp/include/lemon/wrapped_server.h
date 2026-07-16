@@ -192,7 +192,8 @@ public:
 
     void release_inference() {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        is_streaming_ = false;
+        // Note: is_streaming_ is managed by end_backend_request() which correctly
+        // clears the flag only when the last streaming request completes.
         if (--active_request_count_ == 0) {
             state_ = ModelState::READY;
             state_cv_.notify_all();
