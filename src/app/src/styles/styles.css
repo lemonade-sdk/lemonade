@@ -13772,3 +13772,153 @@ input, textarea {
   background: rgba(76, 141, 255, 0.16);
   border-color: rgba(76, 141, 255, 0.42);
 }
+
+/* Preset ordering and starter affordances */
+.zone--starters {
+  scroll-margin-top: var(--space-5);
+  outline: none;
+}
+
+/* Pull the card-width Starter strip closer to the top edge. */
+.recipe-card .starter-badge {
+  top: -4px;
+}
+
+/* Backend argument tuning */
+.cell__args-button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+.cell__args-button:hover,
+.cell__args-button:focus-visible,
+.cell__args-button.is-active {
+  border-color: var(--accent-fg);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+.cell__args-state {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.cell__args-state--optimized {
+  border-color: color-mix(in srgb, var(--accent-fg) 42%, var(--border-subtle));
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+.backend-args-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 68;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.backend-args-dialog {
+  position: fixed;
+  z-index: 69;
+  top: 50%;
+  left: 50%;
+  width: min(460px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+}
+
+.backend-args-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.backend-args-dialog__head h2 {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.backend-args-dialog__eyebrow {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.backend-args-dialog__copy,
+.backend-args-dialog__hint,
+.backend-args-dialog__notice {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+
+.backend-args-dialog__notice {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent-fg) 42%, var(--border-subtle));
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+.backend-args-dialog__textarea {
+  width: 100%;
+  min-height: 144px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.backend-args-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.backend-args-dialog__spacer { flex: 1; }
+
+.slideover--autoopt-detail .slideover__foot { flex-wrap: wrap; }
+
+@media (max-width: 560px) {
+  .backend-args-dialog {
+    top: auto;
+    bottom: 12px;
+    transform: translateX(-50%);
+    padding: var(--space-4);
+  }
+
+  .backend-args-dialog__actions { flex-wrap: wrap; }
+  .backend-args-dialog__spacer { display: none; }
+}

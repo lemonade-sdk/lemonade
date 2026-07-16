@@ -647,7 +647,6 @@ test.describe('AutoOpt rail persistence + server scoping', () => {
 });
 
 test.describe('AutoOpt run detail actions', () => {
-
   async function openCompletedRunDetail(page: Page, options: MockOptions = {}): Promise<MockCounts> {
     const counts = await mockServer(page, options);
     await seedRuns(page, [COMPLETED_RUN]);
@@ -659,65 +658,81 @@ test.describe('AutoOpt run detail actions', () => {
     return counts;
   }
 
-  test('"Create preset" writes an optimized preset and model tuning without loading', async ({ page }) => {
-    const counts = await openCompletedRunDetail(page);
-    await page.locator('[data-autoopt-create-preset]').click();
-    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('selected it for future loads');
-    expect(counts.load).toHaveLength(0);
-
-    const stored = await page.evaluate((model) => {
-      let preset: any = null;
-      let tuning: any = null;
+  async function persistedAutoOptState(page: Page) {
+    return page.evaluate((model) => {
+      const state: { userPresets: any[]; modelTuning: any | null; backendTuning: any | null } = {
+        userPresets: [],
+        modelTuning: null,
+        backendTuning: null,
+      };
       for (const key of Object.keys(localStorage)) {
         if (key.includes('user_presets')) {
           const presets = JSON.parse(localStorage.getItem(key) || '[]');
-          preset = presets.find((p: any) => p.auto_opt_run_id) || preset;
+          if (Array.isArray(presets)) state.userPresets.push(...presets);
         }
         if (key.includes('model_tunings')) {
           const tunings = JSON.parse(localStorage.getItem(key) || '{}');
           for (const [tuningKey, value] of Object.entries(tunings)) {
-            if (tuningKey.startsWith(`${model}@@`) && (value as any).source === 'optimized') tuning = value;
+            if (tuningKey.startsWith(`${model}@@`) && (value as any).source === 'optimized') {
+              state.modelTuning = value;
+            }
           }
         }
+        if (key.includes('backend_tunings')) {
+          const tunings = JSON.parse(localStorage.getItem(key) || '{}');
+          if (tunings['llamacpp:vulkan']) state.backendTuning = tunings['llamacpp:vulkan'];
+        }
       }
-      return { preset, tuning };
+      return state;
     }, CHAT_MODEL);
+  }
 
-    expect(stored.preset?.auto_opt_run_id).toBe(COMPLETED_RUN.id);
-    expect(stored.preset.name).toContain('AutoOpt');
-    expect(stored.tuning?.source).toBe('optimized');
-    expect(stored.tuning.recipe_options.llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
-    expect(stored.tuning.sampling.min_p).toBe(0.05);
-  });
-
-  test('"Create preset & apply now" also loads the model', async ({ page }) => {
+  test('saving to model tuning persists the full recommendation and creates no preset', async ({ page }) => {
     const counts = await openCompletedRunDetail(page);
-    await page.locator('[data-autoopt-create-apply]').click();
-    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('applied it to');
-    expect(counts.load).toHaveLength(1);
-    expect(counts.load[0].model_name).toBe(CHAT_MODEL);
+    await page.locator('[data-autoopt-save-model-tuning]').click();
+    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('Saved the recommendation');
+    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('next load');
+    expect(counts.load).toHaveLength(0);
+
+    const stored = await persistedAutoOptState(page);
+    expect(stored.userPresets).toHaveLength(0);
+    expect(stored.modelTuning?.source).toBe('optimized');
+    expect(stored.modelTuning?.auto_opt_run_id).toBe(COMPLETED_RUN.id);
+    expect(stored.modelTuning?.recipe_options.llamacpp_backend).toBe('vulkan');
+    expect(stored.modelTuning?.recipe_options.ctx_size).toBe(32768);
+    expect(stored.modelTuning?.recipe_options.llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
+    expect(stored.modelTuning?.sampling.min_p).toBe(0.05);
   });
 
-  test('"Create preset & apply now" keeps the created preset when the load fails', async ({ page }) => {
-    await openCompletedRunDetail(page);
-    await page.unroute('**/api/v1/load');
-    await page.route('**/api/v1/load', route => route.fulfill({ status: 500, json: { error: { message: 'llama-server failed to start' } } }));
+  test('applying on a backend replaces only that exact backend args entry and creates no preset', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
+        'llamacpp:vulkan': { args: '--old-manual-args', source: 'user' },
+        'llamacpp:rocm': { args: '--keep-rocm', source: 'user' },
+      }));
+    });
+    const counts = await openCompletedRunDetail(page);
+    await page.locator('[data-autoopt-apply-backend]').click();
+    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('replace the previous args');
+    expect(counts.load).toHaveLength(0);
 
-    await page.locator('[data-autoopt-create-apply]').click();
-    const error = page.locator('[data-autoopt-detail] .preset-error');
-    await expect(error).toContainText('was created and selected, but loading');
-    await expect(error).toContainText('llama-server failed to start');
-
-    const stored = await page.evaluate(() => {
+    const stored = await persistedAutoOptState(page);
+    expect(stored.userPresets).toHaveLength(0);
+    expect(stored.modelTuning).toBeNull();
+    expect(stored.backendTuning).toMatchObject({
+      args: '-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048',
+      source: 'optimized',
+      auto_opt_run_id: COMPLETED_RUN.id,
+    });
+    const rocm = await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) {
-        if (!key.includes('user_presets')) continue;
-        const presets = JSON.parse(localStorage.getItem(key) || '[]');
-        const preset = presets.find((p: any) => p.auto_opt_run_id);
-        if (preset) return preset;
+        if (!key.includes('backend_tunings')) continue;
+        const entries = JSON.parse(localStorage.getItem(key) || '{}');
+        if (entries['llamacpp:rocm']) return entries['llamacpp:rocm'];
       }
       return null;
     });
-    expect(stored?.name).toContain('AutoOpt');
+    expect(rocm).toMatchObject({ args: '--keep-rocm', source: 'user' });
   });
 
   test('"Try now without saving" loads a not-loaded model with the exact recommended options', async ({ page }) => {
@@ -732,86 +747,55 @@ test.describe('AutoOpt run detail actions', () => {
     expect(body.llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
     expect(body.llamacpp_backend).toBe('vulkan');
     expect(body.save_options).toBe(false);
-    const saved = await page.evaluate(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (key.includes('user_presets')) {
-          const presets = JSON.parse(localStorage.getItem(key) || '[]');
-          if (presets.some((p: any) => p.auto_opt_run_id)) return 'preset-created';
-        }
-      }
-      return 'nothing-saved';
-    });
-    expect(saved).toBe('nothing-saved');
+    const stored = await persistedAutoOptState(page);
+    expect(stored.userPresets).toHaveLength(0);
+    expect(stored.modelTuning).toBeNull();
+    expect(stored.backendTuning).toBeNull();
   });
 
-  test('"Try now without saving" RELOADS a model that is already loaded (review #2)', async ({ page }) => {
+  test('"Try now without saving" reloads a model that is already loaded', async ({ page }) => {
     const counts = await openCompletedRunDetail(page, {
       loadedModels: [{ model_name: CHAT_MODEL, type: 'llm', recipe: 'llamacpp', device: 'gpu', checkpoint: '', backend_url: '', pid: 1, last_use: Date.now() }],
     });
     await page.locator('[data-autoopt-try-now]').click();
     await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('nothing saved');
 
-    expect(counts.unload.some(b => b.model_name === CHAT_MODEL)).toBe(true);
+    expect(counts.unload.some(body => body.model_name === CHAT_MODEL)).toBe(true);
     expect(counts.load).toHaveLength(1);
     expect(counts.load[0].save_options).toBe(false);
     expect(counts.load[0].llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
   });
 
-  test('"Use this instead" swaps the CTA target to the alternative', async ({ page }) => {
+  test('"Use this instead" changes all three actions to the selected alternative', async ({ page }) => {
     const counts = await openCompletedRunDetail(page);
     await page.locator('[data-autoopt-use-alternative="Maximum quality"]').click();
     await expect(page.locator('[data-autoopt-rec-args]')).toContainText('--spec-default -b 2048 -ub 2048');
     await page.locator('[data-autoopt-try-now]').click();
-    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('nothing saved');
     expect(counts.load[0].ctx_size).toBe(16384);
   });
 
-  test('a run whose checkpoint no longer matches the model is refused on apply (review #5)', async ({ page }) => {
+  test('completed-run actions explain the persistence boundary and expose the three intended choices', async ({ page }) => {
+    await openCompletedRunDetail(page);
+    await expect(page.locator('[data-autoopt-cta-help]')).toContainText('Presets stay intent-only');
+    await expect(page.locator('[data-autoopt-try-now]')).toHaveText('Try now without saving');
+    await expect(page.locator('[data-autoopt-apply-backend]')).toHaveText('Apply on this backend');
+    await expect(page.locator('[data-autoopt-save-model-tuning]')).toHaveText("Save to this model's tuning settings");
+    await expect(page.locator('[data-autoopt-create-preset]')).toHaveCount(0);
+    await expect(page.locator('[data-autoopt-create-apply]')).toHaveCount(0);
+  });
+
+  test('a run whose checkpoint no longer matches is refused without persisting any tuning', async ({ page }) => {
     await mockServer(page);
     await seedRuns(page, [{ ...COMPLETED_RUN, checkpoint: 'org/chat-model-GGUF:OLD_QUANT' }]);
     await openPresets(page);
     await page.locator(`[data-autoopt-inspect="${COMPLETED_RUN.id}"]`).click();
     await page.waitForSelector('[data-autoopt-detail]');
 
-    await page.locator('[data-autoopt-create-preset]').click();
+    await page.locator('[data-autoopt-save-model-tuning]').click();
     await expect(page.locator('[data-autoopt-detail] .preset-error')).toContainText('different build');
-    const saved = await page.evaluate(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (key.includes('user_presets')) {
-          const presets = JSON.parse(localStorage.getItem(key) || '[]');
-          if (presets.some((p: any) => p.auto_opt_run_id)) return true;
-        }
-      }
-      return false;
-    });
-    expect(saved).toBe(false);
-  });
-
-  test('a created preset is discoverable: sorted first, flashed, and named after its model', async ({ page }) => {
-    await openCompletedRunDetail(page);
-    await page.locator('[data-autoopt-create-preset]').click();
-    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('Created preset');
-    await page.locator('[data-autoopt-detail] .slideover__close').click();
-
-    const zoneTitles = await page.locator('.recipes__body .zone__title').allTextContents();
-    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-
-    const card = page.locator('[data-recipe-grid="yours"] .recipe-card').first();
-    await expect(card).toHaveClass(/recipe-card--flash/);
-    await expect(card.locator('[data-preset-linked-models]')).toContainText(`Optimized for ${CHAT_MODEL}`);
-  });
-
-  test('preset editor links back to the producing run via the AutoOpt chip', async ({ page }) => {
-    await openCompletedRunDetail(page);
-    await page.locator('[data-autoopt-create-preset]').click();
-    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('Created preset');
-    await page.locator('[data-autoopt-detail] .slideover__close').click();
-
-    const yourCards = page.locator('[data-recipe-grid="yours"] .recipe-card');
-    await yourCards.first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-    await expect(page.locator('[data-preset-editor-linked]')).toContainText(`Optimized for ${CHAT_MODEL}`);
-    await page.locator('[data-preset-autoopt-chip]').click();
-    await expect(page.locator('[data-autoopt-detail]')).toBeVisible();
+    const stored = await persistedAutoOptState(page);
+    expect(stored.userPresets).toHaveLength(0);
+    expect(stored.modelTuning).toBeNull();
+    expect(stored.backendTuning).toBeNull();
   });
 });

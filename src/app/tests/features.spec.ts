@@ -459,7 +459,15 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Zone: Your presets is genuinely empty on first run
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or save from a model');
+    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or create a preset from scratch');
+
+    // The empty-state shortcut brings keyboard and visual position to the start of starters.
+    await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
+    await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
+
+    // Starter cards expose both flows: edit a customized copy or clone directly.
+    await expect(starterCards.first().getByRole('button', { name: 'Customize' })).toBeVisible();
+    await expect(starterCards.first().getByRole('button', { name: 'Clone' })).toBeVisible();
 
     // Click a preset card to open slide-over
     await starterCards.first().locator('.recipe-card__overlay-btn').click();
@@ -479,7 +487,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('[data-preset-intent="context"] [data-intent-value]')).toHaveCount(4);
     await expect(page.locator('[data-intent-value="smart"]')).toBeDisabled();
     await expect(page.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
-    await expect(page.locator('.slideover details.preset-advanced')).not.toHaveAttribute('open', '');
+    await expect(page.locator('.slideover details.preset-advanced')).toHaveCount(0);
     await expect(page.locator('.slideover .slider')).toHaveCount(0);
 
     // Incompatible model options are disabled with an explanation tooltip
@@ -497,10 +505,50 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
     await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
 
+    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
+    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
+    expect(zoneTitles.indexOf('Bundled starters')).toBeLessThan(zoneTitles.indexOf('Applied to models'));
+
     // New Preset button visible
     await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+  });
+
+
+  test('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('user_presets') || key.includes('applied_presets')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    const recipesView = page.locator('.recipes').last();
+    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
+
+    const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
+    await defaultCard.getByRole('button', { name: 'Clone' }).click();
+    const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
+    await expect(yourCards).toHaveCount(1);
+    await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
+    await expect(yourCards.first().locator('.recipe-card__name')).toHaveText('Default (copy)');
+    await expect(page.locator('.slideover.is-open')).toHaveCount(0);
+
+    const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
+    await balancedCard.getByRole('button', { name: 'Customize' }).click();
+    await expect(yourCards).toHaveCount(2);
+    await expect(page.locator('.slideover.is-open')).toBeVisible();
+    await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');
+    await page.locator('.slideover__close').click();
+
+    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
+    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
   });
 
   test('13b — Presets import rejects legacy schema', async ({ page }) => {

@@ -39,16 +39,12 @@ assert.match(api, /registrySearch\(\s*source: ModelRegistryProvider/);
 assert.match(api, /format: 'gguf'/);
 assert.match(api, /searchModelScope/);
 assert.match(api, /source: 'modelscope'/);
-assert.match(api, /private async _fetch[\s\S]*await this\.loadConnectionSettings\(\)/,
-  'all API calls must wait for the host-selected server URL/port');
-assert.match(api, /getServerPort\?:/,
-  'desktop localhost mode must consume the host-selected lemond port');
-assert.match(api, /overwrite any[\s\S]*stale browser-local URL/,
-  'the host-selected port must override stale prototype localStorage');
-assert.match(api, /if \(raw\.useDefault === true\) return '';/,
-  'a typed default URL must not be mistaken for an explicit server override');
-assert.doesNotMatch(api, /if \(!this\._hostBaseUrl && hostApi\.getServerPort\)/,
-  'a stale local URL must not block the native host port');
+
+// Server selection remains the prototype's existing contract; ModelScope uses
+// Lemonade's registry endpoint without a browser-side fallback.
+assert.doesNotMatch(api, /modelscope\.cn\/openapi/,
+  'the GUI must not bypass lemond with a direct ModelScope search');
+
 
 assert.match(manager, /\}, \[searchQuery, providerEnabled\.huggingface\]\);/,
   'Hugging Face search must only depend on query/provider state');

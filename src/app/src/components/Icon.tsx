@@ -13,7 +13,7 @@ export type IconName =
   | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
   | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
-  | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off';
+  | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square';
 
 interface IconProps {
   name: IconName;
@@ -113,6 +113,7 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'brain-cog': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3M15 4a3 3 0 013 3v3" /><path d="M9 4v16M15 4v6" /><circle cx="17" cy="17" r="3" /><path d="M17 12.5v1.5M17 20v1.5M12.5 17H14M20 17h1.5" /></>;
       case 'brain-circuit': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3M15 4a3 3 0 013 3v.4a3.5 3.5 0 012.5 3.6 3.5 3.5 0 01-2.5 3.4V17a3 3 0 01-3 3" /><path d="M9 4v16M15 4v16M9 9h3l2-2M9 15h3l2 2" /><circle cx="12" cy="9" r="1" /><circle cx="12" cy="15" r="1" /></>;
       case 'wrench-off': return <><path d="M14.7 6.3a4 4 0 01-2.2 5.6L7.5 17a2.1 2.1 0 01-3 3" /><path d="M15.2 11.8a4 4 0 002.5-5.5l-2.5 2.5-3-3 2.5-2.5" /><path d="M3 3l18 18" /></>;
+      case 'terminal-square': return <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3" /><path d="M13 15h4" /></>;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();

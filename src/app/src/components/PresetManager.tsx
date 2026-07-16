@@ -19,18 +19,15 @@ import {
   isCompatible,
   labelsFor,
   loadApplied,
-  loadBackendApplied,
   loadUserPresets,
   normalizePresetCapabilities,
   PRESET_STORE_EVENT,
   presetLabelsFor,
   presetParamPreviewLines,
-  presetSupportsCapability,
   sanitizePreset,
   newCustomSystemPrompt,
   systemPromptNameForPreset,
   saveApplied,
-  saveBackendApplied,
   saveUserPresets,
 } from '../presetStore';
 import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
@@ -39,79 +36,6 @@ import AutoOptRail, { openAutoOptRun } from '../features/autoOpt/AutoOptRail';
 import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
 
 const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
-
-/* ── #2432: backend-preset assignment helpers ─────────────────────────────
- * Backend presets are OPTIONAL global runtime-argument defaults that MERGE
- * with model presets (they do NOT replace them). Assignment lives here in the
- * global Presets view; the Backend view only displays an assigned preset. The
- * binding itself is client-local (localStorage, invariant #11). */
-
-const BACKEND_RECIPE_LABELS: Record<string, string> = {
-  llamacpp: 'llama.cpp',
-  flm: 'FastFlowLM',
-  'ryzenai-llm': 'RyzenAI',
-  vllm: 'vLLM',
-  'sd-cpp': 'stable-diffusion.cpp',
-  whispercpp: 'whisper.cpp',
-  moonshine: 'Moonshine',
-  kokoro: 'Kokoro',
-  acestep: 'ACE-Step',
-  thinksound: 'ThinkSound',
-  openmoss: 'OpenMOSS TTS',
-  trellis: 'TRELLIS.2',
-};
-
-interface BackendOption {
-  key: string;
-  label: string;
-  caps: Capability[];
-  /** False when the server reports this backend as `unsupported` for this host. */
-  supported: boolean;
-}
-
-function backendCapabilitiesForRecipe(recipe: string): Capability[] {
-  switch (recipe) {
-    case 'sd-cpp': return ['image'];
-    case 'whispercpp':
-    case 'moonshine': return ['transcription'];
-    case 'kokoro':
-    case 'openmoss': return ['tts'];
-    case 'acestep':
-    case 'thinksound': return ['audio-generation'];
-    case 'trellis': return ['model3d'];
-    default: return ['chat', 'code', 'vision', 'omni'];
-  }
-}
-
-function backendLabelFromKey(key: string): string {
-  const [recipe, backend] = key.split(':');
-  return `${BACKEND_RECIPE_LABELS[recipe] || recipe} · ${backend || 'auto'}`;
-}
-
-function presetCompatibleWithBackend(preset: Preset, key: string): boolean {
-  if (!key) return false;
-  const [recipe] = key.split(':');
-  return backendCapabilitiesForRecipe(recipe).some(cap => presetSupportsCapability(preset, cap));
-}
-
-function backendOptionsFromSystemInfo(info: Record<string, unknown> | null): BackendOption[] {
-  const recipes = (info?.recipes ?? null) as Record<string, { backends?: Record<string, { state?: unknown }> }> | null;
-  if (!recipes) return [];
-  const out: BackendOption[] = [];
-  for (const [recipe, recipeInfo] of Object.entries(recipes)) {
-    const backends = recipeInfo?.backends ?? null;
-    if (!backends) continue;
-    for (const [backend, backendInfo] of Object.entries(backends)) {
-      const key = `${recipe}:${backend}`;
-      // A backend the server flags `unsupported` cannot run on this host, so a
-      // global preset bound to it is meaningless (#2432 round-3). Mark it
-      // unsupported so the Presets UI disables (but still surfaces) the option.
-      const supported = String((backendInfo as { state?: unknown })?.state || '').toLowerCase() !== 'unsupported';
-      out.push({ key, label: backendLabelFromKey(key), caps: backendCapabilitiesForRecipe(recipe), supported });
-    }
-  }
-  return out.sort((a, b) => a.label.localeCompare(b.label));
-}
 
 function modelName(model: ModelInfo): string {
   return model.id || model.name || model.display_name || 'unknown';
@@ -211,26 +135,22 @@ interface PresetManagerProps {
 const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
-  const [backendPresets, setBackendPresets] = useState<Record<string, string>>(loadBackendApplied);
-  const [backendOptions, setBackendOptions] = useState<BackendOption[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<Preset | null>(null);
   const [knownModels, setKnownModels] = useState<ModelInfo[]>(api.allModels);
   const [importOpen, setImportOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [applyTarget, setApplyTarget] = useState('');
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
-  const [applyBackendTarget, setApplyBackendTarget] = useState('');
-  const [applyBackendSuccess, setApplyBackendSuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
   const [highlightPresetId, setHighlightPresetId] = useState<string | null>(null);
   const slideoverRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const startersRef = useRef<HTMLDivElement>(null);
   const userPresetsRef = useRef(userPresets);
 
   useEffect(() => { userPresetsRef.current = userPresets; }, [userPresets]);
   useEffect(() => { saveUserPresets(userPresets); }, [userPresets]);
   useEffect(() => { saveApplied(appliedPresets); }, [appliedPresets]);
-  useEffect(() => { saveBackendApplied(backendPresets); }, [backendPresets]);
 
   useEffect(() => {
     const onStoreChange = () => {
@@ -265,9 +185,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     api.models(true).then(data => { if (alive) setKnownModels(data.data || []); }).catch(() => {
       if (alive) setKnownModels(api.allModels);
     });
-    api.systemInfo().then(info => { if (alive) setBackendOptions(backendOptionsFromSystemInfo(info)); }).catch(() => {
-      if (alive) setBackendOptions(backendOptionsFromSystemInfo(api.systemInfoData));
-    });
     return () => { alive = false; };
   }, []);
 
@@ -283,7 +200,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   }, [knownModels, loadedModels, appliedPresets]);
 
   const appliedModelNames = useMemo(() => Object.keys(appliedPresets), [appliedPresets]);
-  const appliedBackendKeys = useMemo(() => Object.keys(backendPresets), [backendPresets]);
 
   const linkedModelsByPreset = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -303,8 +219,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     setSelectedPreset(preset);
     setApplyTarget('');
     setApplySuccess(null);
-    setApplyBackendTarget('');
-    setApplyBackendSuccess(null);
   }, []);
 
   useFocusTrap(slideoverRef, !!selectedPreset);
@@ -384,7 +298,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     setImportOpen(false);
   }, [importPresets]);
 
-  const handleClone = useCallback((preset: Preset) => {
+  const handleClone = useCallback((preset: Preset, openEditor = false) => {
     const clonedId = `u-${Date.now()}`;
     const cloned: Preset = {
       ...preset,
@@ -399,8 +313,21 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       tools_enabled: preset.tools_enabled !== false,
     };
     setUserPresets(prev => [cloned, ...prev]);
-    openSlideover(cloned);
-  }, [openSlideover]);
+    setHighlightPresetId(cloned.id);
+    if (openEditor) openSlideover(cloned);
+    else closeSlideover();
+  }, [closeSlideover, openSlideover]);
+
+  const handleCustomize = useCallback((preset: Preset) => {
+    handleClone(preset, true);
+  }, [handleClone]);
+
+  const scrollToStarters = useCallback(() => {
+    const target = startersRef.current;
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => target.focus({ preventScroll: true }), 350);
+  }, []);
 
   const handleExport = useCallback((preset: Preset) => {
     const { starter, ...exportable } = preset;
@@ -415,7 +342,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const handleDelete = useCallback((preset: Preset) => {
     setUserPresets(prev => prev.filter(p => p.id !== preset.id));
     setAppliedPresets(prev => Object.fromEntries(Object.entries(prev).filter(([, pid]) => pid !== preset.id)));
-    setBackendPresets(prev => Object.fromEntries(Object.entries(prev).filter(([, pid]) => pid !== preset.id)));
     closeSlideover();
   }, [closeSlideover]);
 
@@ -436,41 +362,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     });
   }, []);
 
-  // #2432: Assign a preset to a BACKEND. This is a GLOBAL backend/runtime default
-  // that merges with (does not replace) any model preset for models using that
-  // backend. Binding is client-local; it does not touch lemond.
-  const handleApplyBackend = useCallback((presetId: string, backendKey: string) => {
-    const preset = allPresets.find(p => p.id === presetId);
-    if (!preset || !presetCompatibleWithBackend(preset, backendKey)) return;
-    // #2432 round-3: never bind a preset to a backend the server reports as
-    // unsupported on this hardware. The UI disables those options; this is the
-    // defense-in-depth guard for any programmatic path.
-    const option = backendOptions.find(b => b.key === backendKey);
-    if (option && !option.supported) return;
-    // #2432 review (GAP 2): Default = the "no backend preset" state. Never store
-    // it as a real binding; assigning Default detaches any existing binding so the
-    // Backend view (which hides Default) and the "Applied to backends" zone agree.
-    if (presetId === DEFAULT_PRESET.id) {
-      setBackendPresets(prev => {
-        if (!(backendKey in prev)) return prev;
-        const next = { ...prev };
-        delete next[backendKey];
-        return next;
-      });
-      return;
-    }
-    setBackendPresets(prev => ({ ...prev, [backendKey]: presetId }));
-    setApplyBackendSuccess(`"${preset.name}" now applies globally to all models using ${backendLabelFromKey(backendKey)}.`);
-    setTimeout(() => setApplyBackendSuccess(null), 3000);
-  }, [allPresets, backendOptions]);
-
-  const handleDetachBackend = useCallback((backendKey: string) => {
-    setBackendPresets(prev => {
-      const next = { ...prev };
-      delete next[backendKey];
-      return next;
-    });
-  }, []);
 
   return (
     <>
@@ -516,19 +407,36 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             {userPresets.length > 0 ? (
               <div className="recipe-grid" data-recipe-grid="yours">
                 {userPresets.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onExport={() => handleExport(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onClone={() => handleClone(preset)} onExport={() => handleExport(preset)} />
                 ))}
               </div>
             ) : (
               <div className="empty-state--inset" data-empty="yours">
                 <p className="preset-empty-title">Your presets are empty.</p>
-                <p className="preset-empty-copy">Pick a starter, customize it, or save from a model to create one.</p>
+                <p className="preset-empty-copy">Pick a starter, customize it, or create a preset from scratch.</p>
                 <div className="preset-empty-actions">
-                  <button className="btn btn--ghost" onClick={() => openSlideover(STARTERS[0])}>Pick a starter</button>
+                  <button className="btn btn--ghost" onClick={scrollToStarters}>Pick a starter</button>
                   <button className="btn btn--ghost" onClick={handleNewPreset}>+ New Preset</button>
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="zone zone--starters" ref={startersRef} tabIndex={-1} data-starter-zone>
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--ready" />
+              <span className="zone__title">Bundled starters</span>
+              <span className="zone__count">{STARTERS.length + 1}</span>
+              <span className="zone__rule" />
+            </div>
+            <div className="recipe-grid recipe-grid--starters-combined">
+              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} onClick={() => openSlideover(DEFAULT_PRESET)} onCustomize={() => handleCustomize(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
+              <div className="recipe-grid__contents" data-recipe-grid="starters">
+                {STARTERS.map(preset => (
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} onClick={() => openSlideover(preset)} onCustomize={() => handleCustomize(preset)} onClone={() => handleClone(preset)} />
+                ))}
+              </div>
+            </div>
           </div>
 
           {appliedModelNames.length > 0 && (
@@ -564,59 +472,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             </div>
           )}
 
-          {appliedBackendKeys.length > 0 && (
-            <div className="zone">
-              <div className="zone__head">
-                <span className="zone__dot zone__dot--running" />
-                <span className="zone__title">Applied to backends</span>
-                <span className="zone__count">{appliedBackendKeys.length}</span>
-                <span className="zone__rule" />
-              </div>
-              <p className="preset-help" data-applied-backends-note>
-                Backend presets are global runtime defaults. Each one applies to all models that use that backend and merges with the model&rsquo;s own preset.
-              </p>
-              <div className="applied-list" data-applied-backend-list>
-                {appliedBackendKeys.map(key => {
-                  const preset = lookupPreset(backendPresets[key]);
-                  const backendLabel = backendLabelFromKey(key);
-                  return (
-                    <div className="applied-row" key={key} data-applied-backend-row={key}>
-                      <div className="applied-row__model">
-                        <span className="applied-row__model-icon" aria-hidden="true">{backendLabel.charAt(0)}</span>
-                        <span className="applied-row__model-name-wrap"><span className="applied-row__model-name">{backendLabel}</span></span>
-                      </div>
-                      <div className="applied-row__recipe">
-                        <PhaseGlyph />
-                        <span className="applied-row__recipe-name">{preset?.name || 'Missing preset'}</span>
-                        <span className="preset-status-chip">Global · applies to all models on this backend</span>
-                      </div>
-                      <div className="applied-row__actions">
-                        {preset && <button className="btn btn--tiny btn--ghost" onClick={() => openSlideover(preset)}>Edit</button>}
-                        <button className="btn btn--tiny btn--ghost" aria-label={`Detach preset from ${backendLabel}`} onClick={() => handleDetachBackend(key)}>Detach</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="zone">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Bundled starters</span>
-              <span className="zone__count">{STARTERS.length + 1}</span>
-              <span className="zone__rule" />
-            </div>
-            <div className="recipe-grid recipe-grid--starters-combined">
-              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} onClick={() => openSlideover(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
-              <div className="recipe-grid__contents" data-recipe-grid="starters">
-                {STARTERS.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} onClick={() => openSlideover(preset)} onClone={() => handleClone(preset)} />
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
         </div>
       </section>
@@ -639,13 +494,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onApplyTargetChange={setApplyTarget}
             onApply={handleApply}
             applySuccess={applySuccess}
-            backendOptions={backendOptions}
-            applyBackendTarget={applyBackendTarget}
-            onApplyBackendTargetChange={setApplyBackendTarget}
-            onApplyBackend={handleApplyBackend}
-            applyBackendSuccess={applyBackendSuccess}
             onSave={handleSave}
-            onClone={handleClone}
+            onClone={preset => handleClone(preset)}
+            onCustomize={handleCustomize}
             onExport={handleExport}
             onDelete={handleDelete}
             onClose={closeSlideover}
@@ -666,9 +517,10 @@ const PresetCard: React.FC<{
   highlight?: boolean;
   onClick: () => void;
   onClone?: () => void;
+  onCustomize?: () => void;
   onApply?: () => void;
   onExport?: () => void;
-}> = ({ preset, linkedModels, highlight, onClick, onClone, onApply, onExport }) => {
+}> = ({ preset, linkedModels, highlight, onClick, onClone, onCustomize, onApply, onExport }) => {
   const descId = `preset-card-desc-${preset.id}`;
   const capLabels = presetLabelsFor(preset).map(c => CAPABILITY_LABELS[c] || c).join(', ');
   const paramLines = paramsPreviewLines(preset);
@@ -715,10 +567,14 @@ const PresetCard: React.FC<{
     </div>
     <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
       {preset.starter ? (
-        <button className="recipe-card__action recipe-card__action--primary" onClick={onClone}>Customize</button>
+        <>
+          {onCustomize && <button className="recipe-card__action recipe-card__action--primary" onClick={onCustomize}>Customize</button>}
+          {onClone && <button className="recipe-card__action" onClick={onClone}>Clone</button>}
+        </>
       ) : (
         <>
-          {onApply && <button className="recipe-card__action" onClick={onApply}>Apply</button>}
+          {onApply && <button className="recipe-card__action recipe-card__action--primary" onClick={onApply}>Apply</button>}
+          {onClone && <button className="recipe-card__action" onClick={onClone}>Clone</button>}
           {onExport && <button className="recipe-card__action" onClick={onExport}>Export</button>}
         </>
       )}
@@ -756,17 +612,13 @@ const SlideoverContent: React.FC<{
   onApplyTargetChange: (v: string) => void;
   onApply: (presetId: string, model: ModelInfo) => void;
   applySuccess: string | null;
-  backendOptions: BackendOption[];
-  applyBackendTarget: string;
-  onApplyBackendTargetChange: (v: string) => void;
-  onApplyBackend: (presetId: string, backendKey: string) => void;
-  applyBackendSuccess: string | null;
   onSave: (updated: Preset) => void;
   onClone: (preset: Preset) => void;
+  onCustomize: (preset: Preset) => void;
   onExport: (preset: Preset) => void;
   onDelete: (preset: Preset) => void;
   onClose: () => void;
-}> = ({ preset, models, linkedModels, applyTarget, onApplyTargetChange, onApply, applySuccess, backendOptions, applyBackendTarget, onApplyBackendTargetChange, onApplyBackend, applyBackendSuccess, onSave, onClone, onExport, onDelete, onClose }) => {
+}> = ({ preset, models, linkedModels, applyTarget, onApplyTargetChange, onApply, applySuccess, onSave, onClone, onCustomize, onExport, onDelete, onClose }) => {
   const isReadOnly = preset.starter;
   const [name, setName] = useState(preset.name);
   const [description, setDescription] = useState(preset.description);
@@ -823,9 +675,6 @@ const SlideoverContent: React.FC<{
 
   const selectedModel = models.find(model => modelName(model) === applyTarget);
   const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
-  const selectedBackendOption = backendOptions.find(option => option.key === applyBackendTarget) || null;
-  const isDefaultBackendPreset = currentPreset.id === DEFAULT_PRESET.id;
-  const canApplyBackend = !isDefaultBackendPreset && !!selectedBackendOption && selectedBackendOption.supported && presetCompatibleWithBackend(currentPreset, selectedBackendOption.key);
   const selectedSystemPrompt = systemPromptId === NO_SYSTEM_PROMPT_ID ? null : (systemPrompts.find(prompt => prompt.id === systemPromptId) || null);
   const selectedPromptIsCustom = selectedSystemPrompt?.built_in === false;
 
@@ -1038,57 +887,18 @@ const SlideoverContent: React.FC<{
           {applySuccess && <p className="preset-success">✓ {applySuccess}</p>}
         </div>
 
-        <details className="slideover__section preset-advanced" data-backend-apply-section>
-          <summary id="preset-backend-apply-heading">Apply to a backend</summary>
-          <p className="preset-help" id="preset-backend-global-note" data-backend-global-note>
-            A backend preset applies globally to all models using this backend. It remains a lower-priority tuning layer and keeps the existing merge behavior.
-          </p>
-          {isDefaultBackendPreset && (
-            <p className="preset-help" id="preset-backend-default-note" data-backend-apply-default-note>
-              Default uses no backend preset. Choose another preset for an existing backend binding.
-            </p>
-          )}
-          <div className="field__row">
-            <select
-              className="select"
-              value={applyBackendTarget}
-              onChange={event => onApplyBackendTargetChange(event.target.value)}
-              aria-label="Backend to apply this preset to globally"
-              aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
-              disabled={isDefaultBackendPreset}
-              data-backend-apply-target
-            >
-              <option value="">— pick a backend —</option>
-              {backendOptions.map(option => {
-                const compatible = presetCompatibleWithBackend(currentPreset, option.key);
-                const assignable = option.supported && compatible;
-                const optionLabel = option.supported ? option.label : `${option.label} (unsupported)`;
-                return <option key={option.key} value={option.key} disabled={!assignable} title={!option.supported ? `${option.label} is unsupported on this server.` : (!compatible ? `${option.label} is incompatible with this preset.` : undefined)} data-backend-option-unsupported={option.supported ? undefined : 'true'}>{optionLabel}</option>;
-              })}
-            </select>
-            <button
-              className="btn btn--primary"
-              disabled={!canApplyBackend}
-              onClick={() => selectedBackendOption && onApplyBackend(currentPreset.id, selectedBackendOption.key)}
-              aria-describedby={isDefaultBackendPreset ? 'preset-backend-global-note preset-backend-default-note' : 'preset-backend-global-note'}
-              data-backend-apply-btn
-            >
-              Assign globally
-            </button>
-          </div>
-          {backendOptions.length === 0 && <p className="preset-help" data-backend-apply-empty>No backends reported by this server yet.</p>}
-          {!isDefaultBackendPreset && selectedBackendOption && !selectedBackendOption.supported && (
-            <p className="preset-error" role="status" aria-live="polite" data-backend-apply-unsupported-note>{selectedBackendOption.label} is unsupported on this server.</p>
-          )}
-          {!isDefaultBackendPreset && selectedBackendOption && selectedBackendOption.supported && !canApplyBackend && <p className="preset-error" role="tooltip">Incompatible preset for this backend.</p>}
-          <p className="preset-backend-success" role="status" aria-live="polite" aria-atomic="true" data-backend-apply-success>{applyBackendSuccess ? `✓ ${applyBackendSuccess}` : ''}</p>
-        </details>
       </div>
 
       <div className="slideover__foot">
         <button className="btn btn--ghost" onClick={() => onExport(currentPreset)}>Export</button>
-        {preset.starter ? <button className="btn btn--primary" onClick={() => onClone(preset)} data-recipe-clone>Customize</button> : (
+        {preset.starter ? (
           <>
+            <button className="btn btn--ghost" onClick={() => onClone(preset)} data-recipe-clone>Clone</button>
+            <button className="btn btn--primary" onClick={() => onCustomize(preset)} data-recipe-customize>Customize</button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn--ghost" onClick={() => onClone(currentPreset)} data-recipe-clone>Clone</button>
             <button className="btn btn--ghost" style={{ color: 'var(--danger)' }} onClick={() => onDelete(preset)} data-recipe-delete>Delete</button>
             <button className={`btn btn--primary${saved ? ' btn--saved' : ''}`} onClick={handleSave}>{saved ? '✓ Saved' : 'Save'}</button>
           </>

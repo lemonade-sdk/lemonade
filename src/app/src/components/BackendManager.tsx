@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import {
-  DEFAULT_PRESET,
   PRESET_STORE_EVENT,
-  Capability,
-  Preset,
-  STARTERS,
-  loadBackendApplied,
-  loadUserPresets,
-  presetSupportsCapability,
+  BackendTuning,
+  backendSupportsArgs,
+  loadBackendTunings,
+  resetBackendTuning,
+  saveBackendTuning,
 } from '../presetStore';
-import { Icon, PresetIcon } from './Icon';
+import { Icon } from './Icon';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
@@ -157,31 +156,6 @@ function backendProgressPercent(download: DownloadListItem): number {
   return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
 }
 
-function backendCapabilitiesForRecipe(recipe: string): Capability[] {
-  switch (recipe) {
-    case 'sd-cpp': return ['image'];
-    case 'whispercpp':
-    case 'moonshine': return ['transcription'];
-    case 'kokoro':
-    case 'openmoss': return ['tts'];
-    case 'acestep':
-    case 'thinksound': return ['audio-generation'];
-    case 'trellis': return ['model3d'];
-    case 'llamacpp':
-    case 'flm':
-    case 'ryzenai-llm':
-    case 'vllm':
-    default: return ['chat', 'code', 'vision', 'omni'];
-  }
-}
-
-function presetCompatibleWithBackend(preset: Preset, key: string): boolean {
-  if (!key) return true;
-  const [recipe] = key.split(':');
-  return backendCapabilitiesForRecipe(recipe).some(cap => presetSupportsCapability(preset, cap));
-}
-
-
 /* ── Helpers ─────────────────────────────────────────────── */
 
 function stateBadge(state: BackendInfo['state']): { label: string; cls: string } {
@@ -270,6 +244,103 @@ function canShowUninstall(info: BackendInfo): boolean {
     || info.state === 'update_available';
 }
 
+interface BackendArgsDialogProps {
+  backendKeyValue: string | null;
+  tuning: BackendTuning | null;
+  onSave: (key: string, args: string) => void;
+  onClear: (key: string) => void;
+  onClose: () => void;
+}
+
+const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
+  backendKeyValue,
+  tuning,
+  onSave,
+  onClear,
+  onClose,
+}) => {
+  const [args, setArgs] = useState('');
+  const dialogRef = useRef<HTMLElement>(null);
+  useFocusTrap(dialogRef, !!backendKeyValue);
+
+  useEffect(() => {
+    setArgs(tuning?.args || '');
+  }, [backendKeyValue, tuning?.args]);
+
+  useEffect(() => {
+    if (!backendKeyValue) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [backendKeyValue, onClose]);
+
+  if (!backendKeyValue) return null;
+  const [recipe, backend] = backendKeyValue.split(':');
+  const label = `${RECIPE_LABELS[recipe] || recipe} · ${backend || 'default'}`;
+  const hasSavedArgs = Boolean(tuning?.args);
+
+  return (
+    <>
+      <div className="backend-args-scrim" onClick={onClose} />
+      <aside
+        ref={dialogRef}
+        className="backend-args-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="backend-args-title"
+        data-backend-args-dialog={backendKeyValue}
+      >
+        <div className="backend-args-dialog__head">
+          <div>
+            <span className="backend-args-dialog__eyebrow">Backend arguments</span>
+            <h2 id="backend-args-title">{label}</h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close backend arguments">
+            <Icon name="x" size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="backend-args-dialog__copy">
+          These arguments apply to every model using this exact backend. Model tuning and explicit load options override conflicting values.
+        </p>
+        {tuning?.source === 'optimized' && (
+          <p className="backend-args-dialog__notice" role="status">
+            AutoOpt last replaced this backend entry. Saving here changes it to a manual override.
+          </p>
+        )}
+        <label className="field__label" htmlFor="backend-args-value">Arguments</label>
+        <textarea
+          id="backend-args-value"
+          className="input backend-args-dialog__textarea"
+          rows={7}
+          value={args}
+          onChange={event => setArgs(event.target.value)}
+          placeholder="--threads 8 --ctx-size 65536"
+          spellCheck={false}
+          autoFocus
+          data-backend-args-input
+        />
+        <p className="backend-args-dialog__hint">
+          One shell-style argument string. Saving replaces the previous entry for this backend.
+        </p>
+        <div className="backend-args-dialog__actions">
+          {hasSavedArgs && (
+            <button className="btn btn--ghost" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
+              Clear
+            </button>
+          )}
+          <span className="backend-args-dialog__spacer" />
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" onClick={() => onSave(backendKeyValue, args)} data-backend-args-save>
+            Save backend args
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+};
+
 /* ── Component ─────────────────────────────────────────────── */
 
 interface BackendManagerProps {
@@ -289,23 +360,21 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [showUnsupported, setShowUnsupported] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
-  const [backendPresets, setBackendPresets] = useState<Record<string, string>>(loadBackendApplied);
+  const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
+  const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
   const sysInfoRef = useRef<SystemInfoData | null>(null);
+  const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     sysInfoRef.current = sysInfo;
   }, [sysInfo]);
 
   useEffect(() => {
-    const reloadPresetState = () => {
-      setUserPresets(loadUserPresets());
-      setBackendPresets(loadBackendApplied());
-    };
-    window.addEventListener(PRESET_STORE_EVENT, reloadPresetState);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadPresetState);
+    const reloadTuningState = () => setBackendTunings(loadBackendTunings());
+    window.addEventListener(PRESET_STORE_EVENT, reloadTuningState);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadTuningState);
   }, []);
 
   /* ── Fetch system-info ────────────────────────────────── */
@@ -460,6 +529,27 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
+  const closeArgsEditor = useCallback(() => {
+    setArgsEditorKey(null);
+    window.requestAnimationFrame(() => argsTriggerRef.current?.focus());
+  }, []);
+
+  const handleSaveBackendArgs = useCallback((key: string, args: string) => {
+    saveBackendTuning(key, args, 'user');
+    setBackendTunings(loadBackendTunings());
+    closeArgsEditor();
+    toast(args.trim()
+      ? `Saved backend arguments for ${key}`
+      : `Cleared backend arguments for ${key}`);
+  }, [closeArgsEditor, toast]);
+
+  const handleClearBackendArgs = useCallback((key: string) => {
+    resetBackendTuning(key);
+    setBackendTunings(loadBackendTunings());
+    closeArgsEditor();
+    toast(`Cleared backend arguments for ${key}`);
+  }, [closeArgsEditor, toast]);
+
   /* ── Build the matrix ─────────────────────────────────── */
 
   const detectedDevices = useMemo(() => {
@@ -555,21 +645,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return count;
   }, [sysInfo]);
 
-  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
-
-  // #2432: Backend presets are OPTIONAL global runtime-argument defaults. A backend
-  // has NO preset by default — that is the normal state. The Backend view only
-  // DISPLAYS an assigned preset read-only; *assignment* lives in the global Presets
-  // view. Returns null when no compatible preset is assigned, so a backend never
-  // looks like it owns/requires a preset.
-  const assignedPresetForBackendKey = useCallback((key: string): Preset | null => {
-    const presetId = backendPresets[key];
-    if (!presetId || presetId === DEFAULT_PRESET.id) return null;
-    const preset = allPresets.find(p => p.id === presetId);
-    if (!preset) return null;
-    return presetCompatibleWithBackend(preset, key) ? preset : null;
-  }, [allPresets, backendPresets]);
-
   /* ── Device detail row ────────────────────────────────── */
 
   const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
@@ -590,7 +665,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const isInstalling = installing === cellKey;
     const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
     const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
-    const assignedPreset = assignedPresetForBackendKey(cellKey);
+    const tuning = backendTunings[cellKey] || null;
+    const supportsArgs = backendSupportsArgs(recipe);
 
     return (
       <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
@@ -600,15 +676,35 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </span>
         <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
         {showTech && info.version && <span className="cell__sha">{info.version}</span>}
-        {/* #2432: read-only display of an assigned backend preset. Assignment
-            happens in the global Presets view, not here. Absent when none. */}
-        {assignedPreset && (
-          <span className="cell__preset" data-cell-preset title="Backend preset assigned in the Presets view (applies globally)">
-            <PresetIcon preset={assignedPreset} /> {assignedPreset.name}
+        {tuning && (
+          <span
+            className={`cell__args-state cell__args-state--${tuning.source}`}
+            data-cell-backend-args={tuning.source}
+            title={tuning.source === 'optimized'
+              ? 'Backend arguments last replaced by AutoOpt'
+              : 'Manual backend arguments'}
+          >
+            <Icon name="terminal-square" size={12} aria-hidden="true" />
+            Args · {tuning.source === 'optimized' ? 'AutoOpt' : 'Manual'}
           </span>
         )}
         {showTech && info.message && <span className="cell__message">{info.message}</span>}
         <div className="cell__actions" onClick={e => e.stopPropagation()}>
+          {supportsArgs && (
+            <button
+              type="button"
+              className={`cell__args-button${tuning ? ' is-active' : ''}`}
+              onClick={event => {
+                argsTriggerRef.current = event.currentTarget;
+                setArgsEditorKey(cellKey);
+              }}
+              title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
+              aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              data-backend-args-button={cellKey}
+            >
+              <Icon name="terminal-square" size={14} aria-hidden="true" />
+            </button>
+          )}
           {(info.state === 'installable') && (
             <button
               className="cell__swap"
@@ -661,7 +757,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         )}
       </div>
     );
-  }, [assignedPresetForBackendKey, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
 
 
   /* ── Render ───────────────────────────────────────────── */
@@ -833,6 +929,14 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             )}
           </section>
         )}
+
+      <BackendArgsDialog
+        backendKeyValue={argsEditorKey}
+        tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
+        onSave={handleSaveBackendArgs}
+        onClear={handleClearBackendArgs}
+        onClose={closeArgsEditor}
+      />
 
       {/* #2351: always-present polite live region so NVDA announces toast messages */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>

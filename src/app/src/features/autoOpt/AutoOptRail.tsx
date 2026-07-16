@@ -121,7 +121,7 @@ const AutoOptRail: React.FC<{
           </div>
         </div>
         <div className="context-rail__body">
-          <p className="context-rail__hint">Benchmark a model on this machine and turn the winning configuration into a preset. Manual tuning overrides AutoOpt.</p>
+          <p className="context-rail__hint">Benchmark a model on this machine, try the winning configuration, or save it as model/backend tuning. Presets remain intent-only; model tuning overrides backend args.</p>
           <button
             type="button"
             className="btn btn--primary btn--small"
