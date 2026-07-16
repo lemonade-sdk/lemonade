@@ -29,6 +29,7 @@ export interface LemonadeRequestError extends Error {
   url?: string;
   endpoint?: string;
   userMessage?: string;
+  serverMessage?: string;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -317,14 +318,25 @@ export interface PullVariant {
   size_bytes: number;
 }
 
+export type ModelRegistryProvider = 'huggingface' | 'modelscope';
+
 export interface PullVariantsResult {
   checkpoint: string;
+  source?: ModelRegistryProvider;
   recipe: string;
   repo_kind: string;
   suggested_name: string;
   suggested_labels: string[];
   mmproj_files: string[];
   variants: PullVariant[];
+  // Newer lemond builds may expose structured metadata derived while
+  // inspecting the repository/GGUF. Keep these optional so GUI3 can consume
+  // them immediately without breaking compatibility with older servers.
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  metadata?: Record<string, unknown>;
+  gguf_metadata?: Record<string, unknown>;
 }
 
 export interface StatsData {
@@ -473,7 +485,10 @@ type HostSettingsApi = {
   getSettings?: () => Promise<unknown>;
   saveSettings?: (settings: unknown) => Promise<unknown>;
   getServerBaseUrl?: () => Promise<string | null | undefined>;
+  getServerPort?: () => Promise<number | null | undefined> | number | null | undefined;
+  discoverServerPort?: () => Promise<number | null | undefined>;
   getServerAPIKey?: () => Promise<string | null | undefined>;
+  isWebApp?: boolean;
 };
 
 function getHostSettingsApi(): HostSettingsApi | null {
@@ -518,6 +533,10 @@ function typedSettingString(settings: unknown, key: string): string {
   if (!isObject(settings)) return '';
   const raw = settings[key];
   if (!isObject(raw)) return '';
+  // Typed host settings may carry a display/default value while useDefault is
+  // true. That is not an explicit server selection and must not suppress the
+  // authoritative getServerPort()/discovery result.
+  if (raw.useDefault === true) return '';
   return typeof raw.value === 'string' ? raw.value : '';
 }
 
@@ -635,6 +654,19 @@ class LemonadeAPI {
       const hostApi = await waitForHostSettingsApi();
       if (!hostApi) return;
 
+      // When this UI is served by lemond itself, the current origin is the
+      // authoritative endpoint. This mirrors Lemonade main's ServerConfig and
+      // avoids accidentally talking to a different process on localhost:13305.
+      if (hostApi.isWebApp && typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null') {
+        this._hostBaseUrl = normalizeBaseUrl(window.location.origin);
+        safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+        if (hostApi.getServerAPIKey) {
+          const apiKey = await hostApi.getServerAPIKey();
+          this._sessionApiKey = typeof apiKey === 'string' ? apiKey : '';
+        }
+        return;
+      }
+
       if (hostApi.getSettings) {
         const settings = await hostApi.getSettings();
         const baseUrl = typedSettingString(settings, 'baseURL');
@@ -647,15 +679,38 @@ class LemonadeAPI {
         if (resolvedUrl) {
           this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          this._sessionApiKey = apiKey;
+          return;
         }
         this._sessionApiKey = apiKey;
-        return;
       }
 
       if (hostApi.getServerBaseUrl) {
         const baseUrl = await hostApi.getServerBaseUrl();
         if (typeof baseUrl === 'string' && baseUrl.trim()) {
           this._hostBaseUrl = normalizeBaseUrl(baseUrl);
+          safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          if (hostApi.getServerAPIKey) {
+            const apiKey = await hostApi.getServerAPIKey();
+            this._sessionApiKey = typeof apiKey === 'string' ? apiKey : this._sessionApiKey;
+          }
+          return;
+        }
+      }
+
+      // Desktop localhost mode normally exposes only the selected server port.
+      // The previous prototype returned early after getSettings(), leaving the
+      // API client pinned to its compile-time 13305 fallback even when Lemonade
+      // main had selected/discovered another lemond instance.
+      if (hostApi.getServerPort || hostApi.discoverServerPort) {
+        let port = hostApi.getServerPort ? await hostApi.getServerPort() : null;
+        if ((typeof port !== 'number' || !Number.isFinite(port) || port <= 0) && hostApi.discoverServerPort) {
+          port = await hostApi.discoverServerPort();
+        }
+        if (typeof port === 'number' && Number.isFinite(port) && port > 0) {
+          // The native host is authoritative here. Deliberately overwrite any
+          // stale browser-local URL left by an earlier prototype run.
+          this._hostBaseUrl = normalizeBaseUrl(`http://localhost:${Math.trunc(port)}`);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
       }
@@ -802,6 +857,12 @@ class LemonadeAPI {
   }
 
   private async _fetch(path: string, opts: LemonadeRequestInit = {}): Promise<Response> {
+    // Match Lemonade main's serverConfig.waitForInit(): every request must wait
+    // until host-provided URL/port/API-key settings are known. Without this,
+    // opening Models early could send registry/search to the wrong localhost
+    // process even though the correct main server was running.
+    await this.loadConnectionSettings();
+
     const endpoint = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${endpoint}`;
     const extraHeaders = opts.headers instanceof Headers
@@ -877,6 +938,7 @@ class LemonadeAPI {
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
+      err.serverMessage = serverMessage;
       err.userMessage = `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
@@ -1731,8 +1793,28 @@ class LemonadeAPI {
 
   // ── Pull variants (HF model file discovery) ────────────────────
 
-  async pullVariants(checkpoint: string): Promise<PullVariantsResult> {
-    return this._json(`/api/v1/pull/variants?checkpoint=${encodeURIComponent(checkpoint)}`);
+  async pullVariants(
+    checkpoint: string,
+    source: ModelRegistryProvider = 'huggingface',
+    signal?: AbortSignal,
+  ): Promise<PullVariantsResult> {
+    const params = new URLSearchParams({ checkpoint, source });
+    return this._json(`/api/v1/pull/variants?${params}`, { signal });
+  }
+
+  async registrySearch(
+    source: ModelRegistryProvider,
+    query: string,
+    limit = 14,
+    signal?: AbortSignal,
+  ): Promise<RegistrySearchResponse> {
+    const params = new URLSearchParams({
+      source,
+      query,
+      limit: String(limit),
+      format: 'gguf',
+    });
+    return this._json(`/api/v1/registry/search?${params}`, { signal });
   }
 
   // ── SSE: Pull (model download) ──────────────────────────────────
@@ -2089,6 +2171,30 @@ export default api;
 
 /* ── HuggingFace search (standalone — external API) ────────── */
 
+export interface RegistrySearchResult {
+  repository_id?: string;
+  display_name?: string;
+  source?: string;
+  description?: string;
+  tags?: string[];
+  task?: string;
+  downloads?: number;
+  likes?: number;
+  has_gguf?: boolean;
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  model_type?: string;
+  architecture?: string;
+  library_name?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RegistrySearchResponse {
+  results?: RegistrySearchResult[];
+  error?: string | { message?: string; path?: string };
+}
+
 export interface HFModelResult {
   id: string;           // e.g. "TheBloke/Llama-2-7B-GGUF"
   modelId: string;
@@ -2097,6 +2203,14 @@ export interface HFModelResult {
   tags: string[];
   createdAt?: string;
   pipeline_tag?: string;
+  source?: ModelRegistryProvider;
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  model_type?: string;
+  architecture?: string;
+  library_name?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export async function searchHuggingFace(
@@ -2122,5 +2236,55 @@ export async function searchHuggingFace(
     throw new Error(`HuggingFace search failed with HTTP ${resp.status}`);
   }
   const data = await resp.json();
-  return Array.isArray(data) ? data : [];
+  return Array.isArray(data)
+    ? data.map((item: HFModelResult) => ({ ...item, source: 'huggingface' as const }))
+    : [];
+}
+
+export async function searchModelScope(
+  query: string,
+  signal?: AbortSignal,
+): Promise<HFModelResult[]> {
+  let payload: RegistrySearchResponse;
+  try {
+    payload = await api.registrySearch('modelscope', query, 14, signal);
+  } catch (error) {
+    const requestError = error as LemonadeRequestError;
+    if (requestError.status === 404) {
+      const detail = requestError.serverMessage || 'Not Found';
+      throw new Error(`The configured lemond server returned 404 for ModelScope search: ${detail}`);
+    }
+    throw error;
+  }
+  if (payload.error) {
+    const message = typeof payload.error === 'string'
+      ? payload.error
+      : payload.error.message || 'ModelScope registry search failed';
+    throw new Error(message);
+  }
+  const deduplicated = new Map<string, HFModelResult>();
+  for (const result of Array.isArray(payload.results) ? payload.results : []) {
+    const id = typeof result.repository_id === 'string' ? result.repository_id.trim() : '';
+    const source = typeof result.source === 'string' ? result.source.toLowerCase() : 'modelscope';
+    if (!id || (source !== 'modelscope' && source !== 'ms')) continue;
+    if (!deduplicated.has(id)) {
+      deduplicated.set(id, {
+        id,
+        modelId: id,
+        likes: typeof result.likes === 'number' ? result.likes : 0,
+        downloads: typeof result.downloads === 'number' ? result.downloads : 0,
+        tags: Array.isArray(result.tags) ? result.tags : [],
+        pipeline_tag: typeof result.task === 'string' ? result.task : undefined,
+        capabilities: Array.isArray(result.capabilities) ? result.capabilities : undefined,
+        input_modalities: Array.isArray(result.input_modalities) ? result.input_modalities : undefined,
+        output_modalities: Array.isArray(result.output_modalities) ? result.output_modalities : undefined,
+        model_type: typeof result.model_type === 'string' ? result.model_type : undefined,
+        architecture: typeof result.architecture === 'string' ? result.architecture : undefined,
+        library_name: typeof result.library_name === 'string' ? result.library_name : undefined,
+        metadata: isObject(result.metadata) ? result.metadata : undefined,
+        source: 'modelscope',
+      });
+    }
+  }
+  return [...deduplicated.values()];
 }

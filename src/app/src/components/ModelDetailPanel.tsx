@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, PullVariantsResult } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult } from '../api';
 import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
@@ -654,8 +654,14 @@ const HF_DETAIL_TABS: Array<{ id: HfDetailTab; label: string }> = [
   { id: 'readme', label: 'README' },
 ];
 
+const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
+  huggingface: { label: 'Hugging Face', url: id => `https://huggingface.co/${id}` },
+  modelscope: { label: 'ModelScope', url: id => `https://modelscope.cn/models/${id}` },
+};
+
 const HfDetailView: React.FC<{
   hfModel: HFModelResult;
+  provider: ModelRegistryProvider;
   hfVariants?: PullVariantsResult;
   onFetchHfVariants?: (hfId: string) => void;
   onHfPull?: (hfId: string, variantName: string, recipe: string) => void;
@@ -663,12 +669,14 @@ const HfDetailView: React.FC<{
   onCancelHfPull?: (hfId: string) => void;
   onBack?: () => void;
   onClose?: () => void;
-}> = ({ hfModel, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
+}> = ({ hfModel, provider, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
   const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const repoName = hfModel.id;
+  const providerMeta = REMOTE_PROVIDER_META[provider];
+  const remoteDetailTabs = provider === 'huggingface' ? HF_DETAIL_TABS : HF_DETAIL_TABS.filter(tab => tab.id === 'overview');
   const pipelineTag = hfModel.pipeline_tag || '';
   const displayTags = (hfModel.tags || [])
     .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
@@ -688,20 +696,20 @@ const HfDetailView: React.FC<{
   }, [hfModel.id, hfVariants, onFetchHfVariants]);
 
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const count = HF_DETAIL_TABS.length;
+    const count = remoteDetailTabs.length;
     let next = -1;
     if (e.key === 'ArrowRight') { e.preventDefault(); next = (index + 1) % count; }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); next = (index - 1 + count) % count; }
     else if (e.key === 'Home') { e.preventDefault(); next = 0; }
     else if (e.key === 'End') { e.preventDefault(); next = count - 1; }
     if (next >= 0) {
-      setActiveTab(HF_DETAIL_TABS[next].id);
+      setActiveTab(remoteDetailTabs[next].id);
       tabRefs.current[next]?.focus();
     }
   };
 
   return (
-    <div className="model-detail-panel model-detail-panel--hf" role="region" aria-label={`HuggingFace model: ${repoName}`}>
+    <div className={`model-detail-panel model-detail-panel--hf model-detail-panel--${provider}`} role="region" aria-label={`${providerMeta.label} model: ${repoName}`}>
       {onClose && (
         <button
           type="button"
@@ -725,7 +733,7 @@ const HfDetailView: React.FC<{
 
       <div className="model-detail-panel__head model-detail-panel__head--hf">
         <div className="hf-detail__source-label">
-          <Icon name="download" size={11} aria-hidden="true" /> HuggingFace
+          <Icon name="cloud" size={11} aria-hidden="true" /> {providerMeta.label}
         </div>
         <h2
           className="model-detail-panel__name"
@@ -783,12 +791,12 @@ const HfDetailView: React.FC<{
           ) : null}
           <a
             className="model-detail-panel__hf-link"
-            href={`https://huggingface.co/${repoName}`}
+            href={providerMeta.url(repoName)}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View ${repoName} on Hugging Face (opens in new tab)`}
+            aria-label={`View ${repoName} on ${providerMeta.label} (opens in new tab)`}
           >
-            <Icon name="globe" size={12} /> Hugging Face
+            <Icon name="globe" size={12} /> {providerMeta.label}
           </a>
         </div>
       </div>
@@ -799,7 +807,7 @@ const HfDetailView: React.FC<{
         aria-label="Model details sections"
         aria-labelledby="detail-panel-heading"
       >
-        {HF_DETAIL_TABS.map((tab, i) => (
+        {remoteDetailTabs.map((tab, i) => (
           <button
             key={tab.id}
             ref={el => { tabRefs.current[i] = el; }}
@@ -817,7 +825,7 @@ const HfDetailView: React.FC<{
         ))}
       </div>
 
-      {HF_DETAIL_TABS.map(tab => (
+      {remoteDetailTabs.map(tab => (
         <div
           key={tab.id}
           id={`detail-panel-${tab.id}`}
@@ -835,7 +843,7 @@ const HfDetailView: React.FC<{
               isActive={activeTab === 'overview'}
             />
           )}
-          {tab.id === 'readme' && (
+          {tab.id === 'readme' && provider === 'huggingface' && (
             <HfReadmeTab hfId={hfModel.id} isActive={activeTab === 'readme'} />
           )}
         </div>
@@ -2082,6 +2090,8 @@ export interface ModelDetailPanelProps {
   noModelsAvailable?: boolean;
   /** HuggingFace model to show in the detail panel (alternative to a local model). */
   hfModel?: HFModelResult | null;
+  /** Registry source for the remote model. */
+  hfProvider?: ModelRegistryProvider;
   /** Pre-fetched variant data for the selected HF model. */
   hfVariants?: PullVariantsResult;
   /** Trigger fetching variants for an HF model id. */
@@ -2129,6 +2139,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onClose,
   noModelsAvailable = false,
   hfModel,
+  hfProvider = 'huggingface',
   hfVariants,
   onFetchHfVariants,
   onHfPull,
@@ -2286,6 +2297,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     return (
       <HfDetailView
         hfModel={hfModel}
+        provider={hfProvider}
         hfVariants={hfVariants}
         onFetchHfVariants={onFetchHfVariants}
         onHfPull={onHfPull}

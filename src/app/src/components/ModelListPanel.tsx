@@ -205,10 +205,12 @@ export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   const cap = capabilityFromModelInfo(m);
   if (filter === 'omni') {
     const recipe = String((m as any).recipe || '').toLowerCase();
-    return recipe === 'collection.omni' || recipe === 'collection';
+    return cap === 'omni' || recipe === 'collection.omni' || recipe === 'collection';
   }
   if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
-  if (filter === 'llm') return cap === 'chat' || cap === 'unknown';
+  // Unknown remote rows stay visible under All, but must not be presented as
+  // proven LLM/chat capability merely because they are GGUF/llama.cpp models.
+  if (filter === 'llm') return cap === 'chat';
   return (cap as string) === filter;
 }
 
@@ -313,12 +315,12 @@ export interface ModelListPanelProps {
   onTogglePin?: (name: string) => void;
   /** Lowercased set of favorited model names (distinct from pinned). Client-local. */
   favoriteNames?: Set<string>;
-  /** Optional content rendered below the model list in the shared scroll area (e.g. HF results). */
-  hfZone?: React.ReactNode;
-  /** Elevated HF zone rendered above the list when no local results match the query. */
-  hfZoneTop?: React.ReactNode;
-  /** Number of HF results for the anchor bar count (used when hfZone is at the bottom). */
-  hfResultCount?: number;
+  /** Optional remote-provider results rendered below the local model list. */
+  registryZone?: React.ReactNode;
+  /** Elevated remote-provider results rendered above the list when no local results match. */
+  registryZoneTop?: React.ReactNode;
+  /** Total visible remote-provider results for the anchor bar. */
+  registryResultCount?: number;
 }
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
@@ -344,9 +346,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   pinnedNames,
   onTogglePin,
   favoriteNames,
-  hfZone,
-  hfZoneTop,
-  hfResultCount = 0,
+  registryZone,
+  registryZoneTop,
+  registryResultCount = 0,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterPopoverStyle, setFilterPopoverStyle] = useState<FilterPopoverStyle | null>(null);
@@ -805,10 +807,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         {filterTab !== 'all' && ` (${FILTER_TABS.find(t => t.key === filterTab)?.label})`}
       </div>
 
-      {/* Scrollable area: model list + optional inline HF results zone */}
+      {/* Scrollable area: model list + optional inline registry result zones */}
       <div className="model-list-panel__scroll-area">
-      {/* Elevated HF zone: shown above list when no local results match */}
-      {hfZoneTop}
+      {/* Elevated registry zones: shown above the list when no local results match */}
+      {registryZoneTop}
       {/* Model list */}
       <ul
         ref={listRef}
@@ -899,26 +901,26 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             selected" / empty-registry placeholder now lives in the RIGHT detail
             pane (ModelDetailPanel) per fl0rianr #2424 — it must NOT leak into the
             top of the model list. */}
-        {flatList.length === 0 && searchQuery && !hfZoneTop && (
+        {flatList.length === 0 && searchQuery && !registryZoneTop && (
           <li className="model-list-panel__empty manager__empty" aria-live="polite">
             <Icon name="search" size={18} aria-hidden="true" />
             <span>No models match your search.</span>
           </li>
         )}
       </ul>
-      {hfZone && hfResultCount > 0 && flatList.length > 0 && (
+      {registryZone && registryResultCount > 0 && flatList.length > 0 && (
         <button
           type="button"
           className="hf-zone-anchor"
           onClick={() => {
-            document.querySelector(".zone--hf")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            document.querySelector(".zone--registry")?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
-          aria-label={`Scroll to ${hfResultCount} HuggingFace result${hfResultCount !== 1 ? "s" : ""}`}
+          aria-label={`Scroll to ${registryResultCount} remote model result${registryResultCount !== 1 ? "s" : ""}`}
         >
-          ↓ {hfResultCount} result{hfResultCount !== 1 ? "s" : ""} on HuggingFace
+          ↓ {registryResultCount} remote result{registryResultCount !== 1 ? "s" : ""}
         </button>
       )}
-      {hfZone}
+      {registryZone}
       </div>
     </div>
   );

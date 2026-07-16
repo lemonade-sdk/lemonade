@@ -19,7 +19,7 @@
  * download sizes where available, falling back to MOCK placeholder values.
  */
 import React, { useMemo, useState } from 'react';
-import type { ModelInfo, StorageInfo } from '../api';
+import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import {
@@ -55,6 +55,11 @@ const CATEGORY_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName 
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
 ];
 
+const MODEL_PROVIDERS: Array<{ key: ModelRegistryProvider; label: string }> = [
+  { key: 'huggingface', label: 'Hugging Face' },
+  { key: 'modelscope', label: 'ModelScope' },
+];
+
 /* ── Storage (POC) ───────────────────────────────────────────────
    Preferred source is real disk stats via `storageInfo` (api.getStorageInfo()).
    When lemond exposes no disk-usage endpoint (current POC reality), the meter
@@ -88,6 +93,9 @@ export interface ModelNavRailProps {
   onBackendFilterChange: (b: string) => void;
   tagFilter: string | null;
   onTagFilterChange: (t: string | null) => void;
+  providerEnabled: Record<ModelRegistryProvider, boolean>;
+  providerCounts: Record<ModelRegistryProvider, number>;
+  onToggleProvider: (provider: ModelRegistryProvider) => void;
   /** Real disk usage of the model-storage drive, when available (else null →
       derived fallback). Sourced from api.getStorageInfo(). */
   storageInfo?: StorageInfo | null;
@@ -110,9 +118,13 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onBackendFilterChange,
   tagFilter,
   onTagFilterChange,
+  providerEnabled,
+  providerCounts,
+  onToggleProvider,
   storageInfo,
   id = 'model-nav-rail',
 }) => {
+  const [providersOpen, setProvidersOpen] = useState(true);
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
 
@@ -213,6 +225,57 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         })}
 
       </ul>
+
+      <section className="model-nav-rail__section model-nav-rail__section--providers">
+        <h2 className="model-nav-rail__section-head">
+          <button
+            type="button"
+            className="model-nav-rail__section-toggle"
+            aria-expanded={providersOpen}
+            aria-controls="nav-model-providers"
+            onClick={() => setProvidersOpen(v => !v)}
+          >
+            <Icon name={providersOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
+            <span>Model-Provider</span>
+            {!providersOpen && (
+              <span className="model-nav-rail__section-count" aria-label={`${providerCounts.huggingface + providerCounts.modelscope} provider search results`}>
+                {providerCounts.huggingface + providerCounts.modelscope}
+              </span>
+            )}
+          </button>
+        </h2>
+        {providersOpen && (
+          <ul className="model-nav-rail__provider-list" id="nav-model-providers" role="list">
+            {MODEL_PROVIDERS.map(provider => {
+              const enabled = providerEnabled[provider.key];
+              const count = enabled ? providerCounts[provider.key] : 0;
+              const title = `${provider.label} search ${enabled ? 'enabled — click to disable' : 'disabled — click to enable'}`;
+              return (
+                <li key={provider.key}>
+                  <button
+                    type="button"
+                    className={`model-nav-rail__provider-item${enabled ? ' model-nav-rail__provider-item--enabled' : ' model-nav-rail__provider-item--disabled'}`}
+                    aria-pressed={enabled}
+                    title={title}
+                    onClick={() => onToggleProvider(provider.key)}
+                  >
+                    <span className="model-nav-rail__provider-label">{provider.label}</span>
+                    <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
+                    <Icon
+                      name={enabled ? 'cloud' : 'cloud-off'}
+                      size={14}
+                      aria-hidden="true"
+                      className="model-nav-rail__provider-status"
+                    />
+                    <span className="sr-only">{`, ${count} results, search ${enabled ? 'enabled' : 'disabled'}`}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
           <button
