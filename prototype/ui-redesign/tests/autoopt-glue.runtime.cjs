@@ -129,9 +129,9 @@ function installBrowserStorageShim() {
     assert.equal(loadOptions.ctx_size, 8192, 'optimized ctx_size must flow into load options');
     assert.equal(loadOptions.llamacpp_args, '-b 512');
 
-    // createPresetFromRun path: a recommended ctx BELOW the model maximum
-    // (e.g. clamped to 65536 on a 262144 model) maps to an editable hint and
-    // resolves the optimizer's exact ctx with source 'optimized'.
+    // Model-tuning save path: a recommended ctx BELOW the model maximum
+    // (e.g. clamped to 65536 on a 262144 model) maps into the existing
+    // intent slot and resolves the optimizer's exact ctx with source 'optimized'.
     storage.clear();
     const bigModel = {
       id: 'big-model',
@@ -146,7 +146,7 @@ function installBrowserStorageShim() {
     assert.equal(hint, 'medium', 'a below-max optimized ctx must map to an editable hint');
     const aoPreset = presets.sanitizePreset({
       id: 'u-autoopt-ctx',
-      name: 'AutoOpt · big-model',
+      name: 'Existing long-context intent',
       description: '',
       applies_to: ['chat'],
       temperature_hint: 'balanced',
@@ -156,7 +156,7 @@ function installBrowserStorageShim() {
       sampling: {},
       engine_hint: 'llamacpp',
       starter: false,
-      auto_opt_run_id: 'run-ctx',
+      auto_opt_run_id: null,
       auto_opt_enabled: true,
     });
     presets.saveUserPresets([aoPreset]);

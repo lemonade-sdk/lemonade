@@ -29,7 +29,6 @@ export interface LemonadeRequestError extends Error {
   url?: string;
   endpoint?: string;
   userMessage?: string;
-  serverMessage?: string;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -329,9 +328,6 @@ export interface PullVariantsResult {
   suggested_labels: string[];
   mmproj_files: string[];
   variants: PullVariant[];
-  // Newer lemond builds may expose structured metadata derived while
-  // inspecting the repository/GGUF. Keep these optional so GUI3 can consume
-  // them immediately without breaking compatibility with older servers.
   capabilities?: string[];
   input_modalities?: string[];
   output_modalities?: string[];
@@ -485,10 +481,7 @@ type HostSettingsApi = {
   getSettings?: () => Promise<unknown>;
   saveSettings?: (settings: unknown) => Promise<unknown>;
   getServerBaseUrl?: () => Promise<string | null | undefined>;
-  getServerPort?: () => Promise<number | null | undefined> | number | null | undefined;
-  discoverServerPort?: () => Promise<number | null | undefined>;
   getServerAPIKey?: () => Promise<string | null | undefined>;
-  isWebApp?: boolean;
 };
 
 function getHostSettingsApi(): HostSettingsApi | null {
@@ -533,10 +526,6 @@ function typedSettingString(settings: unknown, key: string): string {
   if (!isObject(settings)) return '';
   const raw = settings[key];
   if (!isObject(raw)) return '';
-  // Typed host settings may carry a display/default value while useDefault is
-  // true. That is not an explicit server selection and must not suppress the
-  // authoritative getServerPort()/discovery result.
-  if (raw.useDefault === true) return '';
   return typeof raw.value === 'string' ? raw.value : '';
 }
 
@@ -654,19 +643,6 @@ class LemonadeAPI {
       const hostApi = await waitForHostSettingsApi();
       if (!hostApi) return;
 
-      // When this UI is served by lemond itself, the current origin is the
-      // authoritative endpoint. This mirrors Lemonade main's ServerConfig and
-      // avoids accidentally talking to a different process on localhost:13305.
-      if (hostApi.isWebApp && typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null') {
-        this._hostBaseUrl = normalizeBaseUrl(window.location.origin);
-        safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
-        if (hostApi.getServerAPIKey) {
-          const apiKey = await hostApi.getServerAPIKey();
-          this._sessionApiKey = typeof apiKey === 'string' ? apiKey : '';
-        }
-        return;
-      }
-
       if (hostApi.getSettings) {
         const settings = await hostApi.getSettings();
         const baseUrl = typedSettingString(settings, 'baseURL');
@@ -679,38 +655,15 @@ class LemonadeAPI {
         if (resolvedUrl) {
           this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
-          this._sessionApiKey = apiKey;
-          return;
         }
         this._sessionApiKey = apiKey;
+        return;
       }
 
       if (hostApi.getServerBaseUrl) {
         const baseUrl = await hostApi.getServerBaseUrl();
         if (typeof baseUrl === 'string' && baseUrl.trim()) {
           this._hostBaseUrl = normalizeBaseUrl(baseUrl);
-          safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
-          if (hostApi.getServerAPIKey) {
-            const apiKey = await hostApi.getServerAPIKey();
-            this._sessionApiKey = typeof apiKey === 'string' ? apiKey : this._sessionApiKey;
-          }
-          return;
-        }
-      }
-
-      // Desktop localhost mode normally exposes only the selected server port.
-      // The previous prototype returned early after getSettings(), leaving the
-      // API client pinned to its compile-time 13305 fallback even when Lemonade
-      // main had selected/discovered another lemond instance.
-      if (hostApi.getServerPort || hostApi.discoverServerPort) {
-        let port = hostApi.getServerPort ? await hostApi.getServerPort() : null;
-        if ((typeof port !== 'number' || !Number.isFinite(port) || port <= 0) && hostApi.discoverServerPort) {
-          port = await hostApi.discoverServerPort();
-        }
-        if (typeof port === 'number' && Number.isFinite(port) && port > 0) {
-          // The native host is authoritative here. Deliberately overwrite any
-          // stale browser-local URL left by an earlier prototype run.
-          this._hostBaseUrl = normalizeBaseUrl(`http://localhost:${Math.trunc(port)}`);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
       }
@@ -857,12 +810,6 @@ class LemonadeAPI {
   }
 
   private async _fetch(path: string, opts: LemonadeRequestInit = {}): Promise<Response> {
-    // Match Lemonade main's serverConfig.waitForInit(): every request must wait
-    // until host-provided URL/port/API-key settings are known. Without this,
-    // opening Models early could send registry/search to the wrong localhost
-    // process even though the correct main server was running.
-    await this.loadConnectionSettings();
-
     const endpoint = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${endpoint}`;
     const extraHeaders = opts.headers instanceof Headers
@@ -938,7 +885,6 @@ class LemonadeAPI {
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
-      err.serverMessage = serverMessage;
       err.userMessage = `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
@@ -2245,17 +2191,7 @@ export async function searchModelScope(
   query: string,
   signal?: AbortSignal,
 ): Promise<HFModelResult[]> {
-  let payload: RegistrySearchResponse;
-  try {
-    payload = await api.registrySearch('modelscope', query, 14, signal);
-  } catch (error) {
-    const requestError = error as LemonadeRequestError;
-    if (requestError.status === 404) {
-      const detail = requestError.serverMessage || 'Not Found';
-      throw new Error(`The configured lemond server returned 404 for ModelScope search: ${detail}`);
-    }
-    throw error;
-  }
+  const payload = await api.registrySearch('modelscope', query, 14, signal);
   if (payload.error) {
     const message = typeof payload.error === 'string'
       ? payload.error

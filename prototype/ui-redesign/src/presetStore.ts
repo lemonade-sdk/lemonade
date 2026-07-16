@@ -97,6 +97,20 @@ export interface ModelTuning {
   updated_at?: string;
 }
 
+/**
+ * Runtime arguments attached to one exact recipe/backend pair.
+ *
+ * Presets intentionally remain semantic intent. Backend tuning is a separate,
+ * lower-priority runtime layer that applies to every model using that exact
+ * backend. Model tuning and explicit load options still win on conflicts.
+ */
+export interface BackendTuning {
+  args: string;
+  source: 'user' | 'optimized';
+  auto_opt_run_id?: string;
+  updated_at?: string;
+}
+
 export interface ResolvedModelTuning {
   tuning: ModelTuning;
   preset_id: string;
@@ -120,6 +134,7 @@ export interface ResolvedModelTuning {
 export const LS_USER_PRESETS = 'user_presets';
 export const LS_APPLIED_PRESETS = 'applied_presets';
 export const LS_BACKEND_PRESETS = 'backend_presets';
+export const LS_BACKEND_TUNINGS = 'backend_tunings';
 export const LS_MODEL_TUNINGS = 'model_tunings';
 // Client-local record of which preset each *currently-loaded* model is actually
 // running with. Distinct from `applied_presets` (the preset LINKED to a model):
@@ -129,6 +144,23 @@ export const LS_MODEL_TUNINGS = 'model_tunings';
 export const LS_RUNNING_PRESETS = 'running_presets';
 export const PRESET_STORE_EVENT = 'lemonade:preset-store-changed';
 export const DEFAULT_CONTEXT_SIZE = 4096;
+
+const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<PresetRecipe, keyof RecipeOptions>> = {
+  llamacpp: 'llamacpp_args',
+  'sd-cpp': 'sdcpp_args',
+  whispercpp: 'whispercpp_args',
+  moonshine: 'moonshine_args',
+  flm: 'flm_args',
+  vllm: 'vllm_args',
+};
+
+export function backendArgsFieldForRecipe(recipe: string): keyof RecipeOptions | null {
+  return BACKEND_ARGS_FIELD_BY_RECIPE[String(recipe || '').trim().toLowerCase() as PresetRecipe] || null;
+}
+
+export function backendSupportsArgs(recipe: string): boolean {
+  return backendArgsFieldForRecipe(recipe) !== null;
+}
 
 let activeStorageScope = 'guest:shared';
 
@@ -599,7 +631,7 @@ export function loadApplied(): Record<string, string> {
   return {};
 }
 
-export function loadBackendApplied(): Record<string, string> {
+function loadLegacyBackendApplied(): Record<string, string> {
   try {
     const raw = localStorage.getItem(scopedPresetKey(LS_BACKEND_PRESETS));
     if (raw) return JSON.parse(raw);
@@ -621,9 +653,114 @@ export function saveApplied(applied: Record<string, string>): void {
   emitPresetStoreEvent();
 }
 
-export function saveBackendApplied(applied: Record<string, string>): void {
-  localStorage.setItem(scopedPresetKey(LS_BACKEND_PRESETS), JSON.stringify(applied));
+function sanitizeBackendTuning(raw: Partial<BackendTuning> | null | undefined): BackendTuning | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const args = typeof raw.args === 'string' ? raw.args.trim() : '';
+  if (!args) return null;
+  return {
+    args,
+    source: raw.source === 'optimized' ? 'optimized' : 'user',
+    ...(typeof raw.auto_opt_run_id === 'string' && raw.auto_opt_run_id
+      ? { auto_opt_run_id: raw.auto_opt_run_id }
+      : {}),
+    ...(typeof raw.updated_at === 'string' && raw.updated_at
+      ? { updated_at: raw.updated_at }
+      : {}),
+  };
+}
+
+function migrateLegacyBackendPresetsToTunings(): Record<string, BackendTuning> {
+  const bindings = loadLegacyBackendApplied();
+  if (Object.keys(bindings).length === 0) return {};
+  const presets = allStoredPresets();
+  const migrated: Record<string, BackendTuning> = {};
+  for (const [key, presetId] of Object.entries(bindings)) {
+    const recipe = key.split(':')[0] || '';
+    const argsField = backendArgsFieldForRecipe(recipe);
+    if (!argsField) continue;
+    const preset = presets.find(candidate => candidate.id === presetId);
+    const args = preset?.recipe_options?.[argsField];
+    if (typeof args !== 'string' || !args.trim()) continue;
+    migrated[key] = {
+      args: args.trim(),
+      source: 'user',
+      updated_at: new Date().toISOString(),
+    };
+  }
+  return migrated;
+}
+
+export function loadBackendTunings(): Record<string, BackendTuning> {
+  try {
+    const raw = localStorage.getItem(scopedPresetKey(LS_BACKEND_TUNINGS));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const normalized: Record<string, BackendTuning> = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          const tuning = sanitizeBackendTuning(value as Partial<BackendTuning>);
+          const recipe = key.split(':')[0] || '';
+          if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
+        }
+        return normalized;
+      }
+    }
+  } catch {}
+
+  // One-way compatibility bridge for earlier GUI3 prototypes that attached
+  // concrete args to a "backend preset". Preserve the args, but move them into
+  // the dedicated backend-tuning layer so Presets remain intent-only.
+  const migrated = migrateLegacyBackendPresetsToTunings();
+  if (Object.keys(migrated).length > 0) {
+    localStorage.setItem(scopedPresetKey(LS_BACKEND_TUNINGS), JSON.stringify(migrated));
+  }
+  return migrated;
+}
+
+export function saveBackendTunings(tunings: Record<string, BackendTuning>): void {
+  const normalized: Record<string, BackendTuning> = {};
+  for (const [key, value] of Object.entries(tunings)) {
+    const recipe = key.split(':')[0] || '';
+    const tuning = sanitizeBackendTuning(value);
+    if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
+  }
+  localStorage.setItem(scopedPresetKey(LS_BACKEND_TUNINGS), JSON.stringify(normalized));
   emitPresetStoreEvent();
+}
+
+export function backendTuningForKey(key: string): BackendTuning | null {
+  return loadBackendTunings()[key] || null;
+}
+
+export function saveBackendTuning(
+  key: string,
+  args: string,
+  source: BackendTuning['source'] = 'user',
+  autoOptRunId?: string,
+): void {
+  if (!key) return;
+  const recipe = key.split(':')[0] || '';
+  if (!backendSupportsArgs(recipe)) return;
+  const next = { ...loadBackendTunings() };
+  const trimmed = String(args || '').trim();
+  if (!trimmed) {
+    delete next[key];
+  } else {
+    next[key] = {
+      args: trimmed,
+      source,
+      ...(source === 'optimized' && autoOptRunId ? { auto_opt_run_id: autoOptRunId } : {}),
+      updated_at: new Date().toISOString(),
+    };
+  }
+  saveBackendTunings(next);
+}
+
+export function resetBackendTuning(key: string): void {
+  if (!key) return;
+  const next = { ...loadBackendTunings() };
+  delete next[key];
+  saveBackendTunings(next);
 }
 
 function isBlankValue(value: unknown): boolean {
@@ -1306,11 +1443,6 @@ export function activePresetForModel(modelName: string): Preset {
   return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
 }
 
-export function activePresetForBackend(key: string): Preset {
-  const presetId = loadBackendApplied()[key] || DEFAULT_PRESET.id;
-  return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
-}
-
 /**
  * Per-recipe field in RecipeOptions that names the concrete backend the runtime
  * will bind at load time (e.g. `llamacpp_backend: 'vulkan'`). Used to resolve the
@@ -1343,10 +1475,8 @@ function recipeDefaultBackend(systemInfo: Record<string, unknown> | null | undef
 
 /**
  * Resolve the CONCRETE backend that a load for `recipe` will actually use, in
- * sensible precedence: explicit load options → model-preset recipe_options →
- * recipe default backend (from /system-info). The backend preset's own value is
- * deliberately NOT consulted here — that would be circular (we're deciding
- * whether the backend preset even applies).
+ * sensible precedence: explicit load options → model tuning recipe_options →
+ * recipe default backend (from /system-info).
  */
 function concreteBackendForRecipe(
   recipe: string,
@@ -1355,9 +1485,8 @@ function concreteBackendForRecipe(
   systemInfo: Record<string, unknown> | null | undefined,
 ): string | undefined {
   const field = BACKEND_FIELD_BY_RECIPE[recipe];
-  if (!field) return undefined;
-  return normalizeBackendValue(explicitOptions?.[field])
-    ?? normalizeBackendValue(modelPresetOptions?.[field])
+  return (field ? normalizeBackendValue(explicitOptions?.[field]) : undefined)
+    ?? (field ? normalizeBackendValue(modelPresetOptions?.[field]) : undefined)
     ?? recipeDefaultBackend(systemInfo, recipe);
 }
 
@@ -1370,27 +1499,26 @@ export interface BackendResolutionContext {
   systemInfo?: Record<string, unknown> | null;
 }
 
-/**
- * #2432 (round-3): resolve the GLOBAL backend preset that applies to a model's
- * load, if any.
- *
- * Backend presets are keyed by the EXACT `recipe:backend` pair (e.g.
- * `llamacpp:vulkan`). A binding therefore only applies when the CONCRETE backend
- * that this load will use equals the binding's backend part — NOT merely when the
- * recipe matches. We resolve the concrete backend the same way the load does
- * (explicit options → model preset → recipe default_backend) and only merge the
- * preset bound to that exact key. This keeps the semantics "all models using this
- * BACKEND" rather than the wrong "all models using this RECIPE".
- *
- * Default is treated as "no backend preset" (returns null) so it never
- * contributes args — consistent with the Backend view hiding Default.
- */
-export function activePresetForModelBackend(model?: ModelInfo | null, ctx?: BackendResolutionContext): Preset | null {
-  if (!model) return null;
-  const applied = loadBackendApplied();
-  if (Object.keys(applied).length === 0) return null;
+export interface ActiveBackendTuning {
+  key: string;
+  recipe: string;
+  backend: string;
+  tuning: BackendTuning;
+}
 
-  // Ordered list of the model's recipes (active recipe first).
+/**
+ * Resolve the backend-args layer for the exact backend a model load will use.
+ * This replaces the old backend-preset merge: only concrete args live here;
+ * semantic Preset intent never does.
+ */
+export function activeBackendTuningForModel(
+  model?: ModelInfo | null,
+  ctx?: BackendResolutionContext,
+): ActiveBackendTuning | null {
+  if (!model) return null;
+  const tunings = loadBackendTunings();
+  if (Object.keys(tunings).length === 0) return null;
+
   const recipes: string[] = [];
   const active = String((model as Record<string, unknown>).recipe || '').trim().toLowerCase();
   if (active) recipes.push(active);
@@ -1398,15 +1526,14 @@ export function activePresetForModelBackend(model?: ModelInfo | null, ctx?: Back
     const name = recipeName(recipe);
     if (name && !recipes.includes(name)) recipes.push(name);
   }
-  if (recipes.length === 0) return null;
 
   for (const recipe of recipes) {
+    if (!backendSupportsArgs(recipe)) continue;
     const backend = concreteBackendForRecipe(recipe, ctx?.explicitOptions, ctx?.modelPresetOptions, ctx?.systemInfo);
     if (!backend) continue;
-    const presetId = applied[`${recipe}:${backend}`];
-    if (!presetId || presetId === DEFAULT_PRESET.id) continue;
-    const preset = allStoredPresets().find(p => p.id === presetId);
-    if (preset) return preset;
+    const key = `${recipe}:${backend}`;
+    const tuning = tunings[key];
+    if (tuning) return { key, recipe, backend, tuning };
   }
   return null;
 }
@@ -1593,16 +1720,19 @@ export function recipeOptionsForModel(
     ? recipeOptionsForCapability(concreteTuning.recipe_options || {}, capability!)
     : (concreteTuning.recipe_options || {});
 
-  // Backend tuning stays the least-specific layer. Exact backend matching and
-  // the established precedence remain unchanged.
-  const backendPreset = activePresetForModelBackend(model, {
+  // Backend args stay the least-specific layer. They are stored independently
+  // from Preset intent and apply only to the exact concrete backend selected
+  // for this load. Model tuning and explicit load options override them.
+  const backendTuning = activeBackendTuningForModel(model, {
     explicitOptions,
     modelPresetOptions: modelTuningOptions,
     systemInfo,
   });
-  const backendOptions = backendPreset && model
-    ? recipeOptionsForCapability(backendPreset.recipe_options || {}, capability!)
-    : (backendPreset ? (backendPreset.recipe_options || {}) : {});
+  const backendOptions: RecipeOptions = {};
+  if (backendTuning) {
+    const field = backendArgsFieldForRecipe(backendTuning.recipe);
+    if (field) (backendOptions as Record<string, unknown>)[field] = backendTuning.tuning.args;
+  }
 
   const merged: RecipeOptions = { ...backendOptions, ...modelTuningOptions };
   return Object.keys(merged).length > 0 ? merged : undefined;

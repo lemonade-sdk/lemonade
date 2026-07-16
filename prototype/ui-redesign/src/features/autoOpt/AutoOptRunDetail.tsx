@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../api';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { autoOptStore, AutoOptState } from './autoOptStore';
-import { createPresetFromRun, applyRunNow } from './presetFromRun';
+import { applyRunNow, applyRunToBackend, saveRunToModelTuning } from './presetFromRun';
 import {
   AutoOptRecommendation,
   AutoOptRunRecord,
@@ -81,6 +81,7 @@ const AutoOptRunDetail: React.FC<{
   const [selectedRecIndex, setSelectedRecIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<'try' | 'backend' | 'model' | null>(null);
   const slideoverRef = useRef<HTMLElement>(null);
   const open = !!runId;
 
@@ -93,6 +94,7 @@ const AutoOptRunDetail: React.FC<{
     setSelectedRecIndex(0);
     setNotice(null);
     setActionError(null);
+    setPendingAction(null);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -117,29 +119,26 @@ const AutoOptRunDetail: React.FC<{
     return api.allModels.find(model => String((model as Record<string, unknown>).model_name || model.name || model.id || '').trim().toLowerCase() === target) || null;
   }, [run]);
 
-  const runAction = useCallback(async (action: 'create' | 'create-apply' | 'try') => {
+  const runAction = useCallback(async (action: 'try' | 'backend' | 'model') => {
     if (!run || !selectedRec) return;
     setActionError(null);
     setNotice(null);
+    setPendingAction(action);
     try {
-      if (action === 'create') {
-        const preset = createPresetFromRun(run, selectedRec, modelInfo);
-        setNotice(`Created preset "${preset.name}" and selected it for future loads of ${run.model}.`);
-      } else if (action === 'create-apply') {
-        const preset = createPresetFromRun(run, selectedRec, modelInfo);
-        try {
-          await applyRunNow(run, selectedRec, { save: true });
-        } catch (err) {
-          setActionError(`Preset "${preset.name}" was created and selected, but loading ${run.model} failed: ${err instanceof Error ? err.message : String(err)}`);
-          return;
-        }
-        setNotice(`Created preset "${preset.name}" and applied it to ${run.model}.`);
-      } else {
-        await applyRunNow(run, selectedRec, { save: false });
+      if (action === 'try') {
+        await applyRunNow(run, selectedRec);
         setNotice(`Loaded ${run.model} with the recommended settings (nothing saved).`);
+      } else if (action === 'backend') {
+        const saved = applyRunToBackend(run, selectedRec);
+        setNotice(`Saved AutoOpt args for llama.cpp · ${saved.backend}. They replace the previous args for this backend.`);
+      } else {
+        const saved = saveRunToModelTuning(run, selectedRec, modelInfo);
+        setNotice(`Saved the recommendation to ${run.model} tuning for the “${saved.presetName}” intent. It applies on the next load.`);
       }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action failed.');
+    } finally {
+      setPendingAction(null);
     }
   }, [run, selectedRec, modelInfo]);
 
@@ -326,17 +325,40 @@ const AutoOptRunDetail: React.FC<{
 
             {run.status === 'completed' && selectedRec && (
               <p className="preset-help autoopt-detail__cta-help" data-autoopt-cta-help>
-                &ldquo;Create preset&rdquo; creates the preset and selects it for this model&rsquo;s future loads.
-                &ldquo;Create preset &amp; apply now&rdquo; additionally loads the model with it right away.
-                &ldquo;Try now without saving&rdquo; loads once and saves nothing.
+                Presets stay intent-only. Try the recommendation once, replace the saved args for its exact backend,
+                or store the complete recommendation in this model&rsquo;s tuning settings.
               </p>
             )}
             <div className="slideover__foot">
               {run.status === 'completed' && selectedRec ? (
                 <>
-                  <button className="btn btn--ghost" onClick={() => void runAction('try')} title="Loads once with the recommended settings and saves nothing" data-autoopt-try-now>Try now without saving</button>
-                  <button className="btn btn--ghost" onClick={() => void runAction('create')} title="Creates the preset and selects it for this model's future loads" data-autoopt-create-preset>Create preset</button>
-                  <button className="btn btn--primary" onClick={() => void runAction('create-apply')} title="Creates the preset, selects it for this model's future loads, and loads the model with it now" data-autoopt-create-apply>Create preset &amp; apply now</button>
+                  <button
+                    className="btn btn--ghost"
+                    disabled={pendingAction !== null}
+                    onClick={() => void runAction('try')}
+                    title="Loads once with the recommended settings and saves nothing"
+                    data-autoopt-try-now
+                  >
+                    {pendingAction === 'try' ? 'Loading…' : 'Try now without saving'}
+                  </button>
+                  <button
+                    className="btn btn--ghost"
+                    disabled={pendingAction !== null || !selectedRec.llamacpp_backend || !selectedRec.llamacpp_args}
+                    onClick={() => void runAction('backend')}
+                    title="Replaces the saved arguments for this exact backend; model tuning still has higher priority"
+                    data-autoopt-apply-backend
+                  >
+                    {pendingAction === 'backend' ? 'Saving…' : 'Apply on this backend'}
+                  </button>
+                  <button
+                    className="btn btn--primary"
+                    disabled={pendingAction !== null}
+                    onClick={() => void runAction('model')}
+                    title="Saves backend, context, arguments, and sampling values to this model's tuning for its currently linked intent"
+                    data-autoopt-save-model-tuning
+                  >
+                    {pendingAction === 'model' ? 'Saving…' : "Save to this model's tuning settings"}
+                  </button>
                 </>
               ) : (
                 <>
