@@ -19,7 +19,9 @@ import argparse
 
 from openai import OpenAI
 
-LONG_PROMPT = "Summarize the following log. " + ("error timeout retry " * 260)  # > 4000 chars
+LONG_PROMPT = "Summarize the following log. " + (
+    "error timeout retry " * 260
+)  # > 4000 chars
 
 CASES = [
     {
