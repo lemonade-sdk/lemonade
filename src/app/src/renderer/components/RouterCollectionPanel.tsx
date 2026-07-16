@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useModels } from '../hooks/useModels';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 import { serverFetch } from '../utils/serverConfig';
@@ -497,6 +498,8 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   const [draft, setDraft] = useState<RouterCollectionDraft>(() => emptyDraft());
   const [error, setError] = useState<string | null>(null);
   const [previewJson, setPreviewJson] = useState<string | null>(null);
+  const [confirmAdvanced, setConfirmAdvanced] = useState(false);
+  const [confirmQuick, setConfirmQuick] = useState(false);
   const ruleSeqRef = useRef(0);
   const clfSeqRef = useRef(0);
 
@@ -648,7 +651,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         const label = `Rule #${ri + 1}`;
         if (!r.conditionTree) { setError(`${label} needs at least one condition.`); return null; }
         if (!r.routeTo) { setError(`${label} needs a target model.`); return null; }
-        const errs = validateRuleNode(r.conditionTree, new Set());
+        const errs = validateRuleNode(r.conditionTree, new Set(), []);
         if (errs.length) { setError(`${label}: ${errs[0]}`); return null; }
       }
     } else {
@@ -686,7 +689,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           setError(`${label}: target model must be a candidate.`); return null;
         }
         if (!r.conditionTree) { setError(`${label}: add at least one condition.`); return null; }
-        const treeErrors = validateRuleNode(r.conditionTree, classifierIds);
+        const treeErrors = validateRuleNode(r.conditionTree, classifierIds, draft.classifiers ?? []);
         if (treeErrors.length) { setError(`${label}: ${treeErrors[0]}`); return null; }
       }
     }
@@ -799,12 +802,26 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               <span className="settings-description">A small LLM reads your prompt and picks the best candidate.</span>
             </label>
             <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
-              <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'} onChange={() => patch({ routingMode: 'quick' })} />
+              <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'}
+                onChange={() => {
+                  if (draft.routingMode === 'rules' && (draft.rules ?? []).length > 0) {
+                    setConfirmQuick(true);
+                  } else {
+                    patch({ routingMode: 'quick', rules: [], classifiers: [] });
+                  }
+                }} />
               <strong>Quick Rules</strong>
               <span className="settings-description">Simple condition-based routing - no drag-and-drop needed.</span>
             </label>
             <label className={`router-mode-option${draft.routingMode === 'rules' ? ' router-mode-option--selected' : ''}`}>
-              <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules', rules: [], classifiers: [] })} />
+              <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'}
+                onChange={() => {
+                  if (draft.routingMode === 'quick' && (draft.rules ?? []).length > 0) {
+                    setConfirmAdvanced(true);
+                  } else {
+                    patch({ routingMode: 'rules', rules: [], classifiers: [] });
+                  }
+                }} />
               <strong>Advanced Rules</strong>
               <span className="settings-description">Visual boolean expression builder with gates and classifiers.</span>
             </label>
@@ -878,6 +895,46 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         )}
 
       </div>
+
+      {confirmQuick && createPortal(
+        <div className="confirm-overlay" onClick={() => setConfirmQuick(false)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+            <div className="confirm-title">Switch to Quick Rules?</div>
+            <div className="confirm-body">
+              Switching to Quick Rules starts with a blank slate — your Advanced Rules, classifiers, and conditions will be cleared.
+              <br /><br />
+              Quick Rules only supports simple flat conditions. Complex gates and classifiers cannot be migrated automatically.
+            </div>
+            <div className="confirm-actions">
+              <button type="button" className="settings-reset-button" onClick={() => setConfirmQuick(false)}>Cancel</button>
+              <button type="button" className="settings-save-button" onClick={() => { setConfirmQuick(false); patch({ routingMode: 'quick', rules: [], classifiers: [] }); }}>
+                Clear and Switch
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {confirmAdvanced && createPortal(
+        <div className="confirm-overlay" onClick={() => setConfirmAdvanced(false)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+            <div className="confirm-title">Switch to Advanced Rules?</div>
+            <div className="confirm-body">
+              Switching to Advanced Rules starts with a blank canvas, your Quick Rules will be cleared.
+              <br /><br />
+              To keep editing your current rules in Advanced, use <strong style={{ color: '#d69e2e' }}>Expand in Advanced →</strong> instead.
+            </div>
+            <div className="confirm-actions">
+              <button type="button" className="settings-reset-button" onClick={() => setConfirmAdvanced(false)}>Cancel</button>
+              <button type="button" className="settings-save-button" onClick={() => { setConfirmAdvanced(false); patch({ routingMode: 'rules', rules: [], classifiers: [] }); }}>
+                Clear and Switch
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {previewJson !== null && (
         <div className="router-json-preview">

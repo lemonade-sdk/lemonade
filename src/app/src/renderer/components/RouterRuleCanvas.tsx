@@ -69,9 +69,13 @@ const LeafEditor: React.FC<LeafEditorProps> = ({ leaf, classifiers, anchorEl, on
         {(val.signalType === 'min_chars' || val.signalType === 'max_chars') && (
           <>
             <label className="rtc-editor-label">{val.signalType === 'min_chars' ? 'Min' : 'Max'} chars</label>
-            <input className="form-input rtc-editor-input" autoFocus type="number" min={0}
+            <input className="form-input rtc-editor-input" autoFocus type="number" min={0} step={1}
               value={val.signalValue ?? ''}
-              onChange={e => setVal(v => ({ ...v, signalValue: e.target.value ? parseInt(e.target.value) : undefined }))} />
+              onChange={e => {
+                if (!e.target.value) { setVal(v => ({ ...v, signalValue: undefined })); return; }
+                const n = parseInt(e.target.value, 10);
+                if (!isNaN(n)) setVal(v => ({ ...v, signalValue: Math.max(0, n) }));
+              }} />
           </>
         )}
         {(val.signalType === 'has_tools' || val.signalType === 'has_images') && (
@@ -93,30 +97,42 @@ const LeafEditor: React.FC<LeafEditorProps> = ({ leaf, classifiers, anchorEl, on
               const labels = clf?.type === 'semantic_similarity'
                 ? Object.keys(clf.referencePhrases ?? {})
                 : clf?.labels ?? [];
-              return labels.length > 0 ? (
+              if (labels.length === 0) return null;
+              // Only offer "default" option if the classifier has an explicit defaultLabel
+              const hasDefault = !!clf?.defaultLabel;
+              return (
                 <>
                   <label className="rtc-editor-label" style={{ marginTop: 6 }}>Label</label>
                   <select className="form-input form-select rtc-editor-input"
                     value={val.label ?? ''}
                     onChange={e => setVal(v => ({ ...v, label: e.target.value || undefined }))}>
-                    <option value="">default</option>
+                    {hasDefault && <option value="">default ({clf!.defaultLabel})</option>}
                     {labels.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </>
-              ) : null;
+              );
             })()}
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <div style={{ flex: 1 }}>
                 <label className="rtc-editor-label">Min score</label>
                 <input className="form-input rtc-editor-input" type="number" min={0} max={val.maxScore ?? 1} step={0.05}
                   value={val.minScore ?? 0.5}
-                  onChange={e => setVal(v => ({ ...v, minScore: parseFloat(e.target.value) }))} />
+                  onChange={e => {
+                    const n = parseFloat(e.target.value);
+                    if (isNaN(n)) return;
+                    setVal(v => ({ ...v, minScore: Math.min(Math.max(0, n), v.maxScore ?? 1) }));
+                  }} />
               </div>
               <div style={{ flex: 1 }}>
                 <label className="rtc-editor-label">Max score</label>
                 <input className="form-input rtc-editor-input" type="number" min={val.minScore ?? 0} max={1} step={0.05}
                   value={val.maxScore ?? ''}
-                  onChange={e => setVal(v => ({ ...v, maxScore: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                  onChange={e => {
+                    if (!e.target.value) { setVal(v => ({ ...v, maxScore: undefined })); return; }
+                    const n = parseFloat(e.target.value);
+                    if (isNaN(n)) return;
+                    setVal(v => ({ ...v, maxScore: Math.min(Math.max(v.minScore ?? 0, n), 1) }));
+                  }}
                   placeholder="none" />
               </div>
             </div>
@@ -275,6 +291,27 @@ const DropZone: React.FC<{ path: NodePath; onDrop: TreeNodeProps['onDrop']; onRe
 };
 
 
+// ── Warning badge with click-to-open popover ─────────────────────────────
+
+const WarnBadge: React.FC<{ warnings: string[] }> = ({ warnings }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rtc-warn-anchor">
+      <span className="rtc-warn-badge" onClick={() => setOpen(v => !v)} style={{ cursor: 'pointer' }}>
+        ⚠ {warnings.length}
+      </span>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10698 }} onClick={() => setOpen(false)} />
+          <div className="rtc-warn-popover rtc-warn-popover--open">
+            {warnings.map((w, i) => <div key={i} className="rtc-warn-popover-item">⚠ {w}</div>)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const ZOOM_STEP = 0.15;
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 2.5;
@@ -383,7 +420,21 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
   };
 
   const classifierIds = new Set(classifiers.map(c => c.id));
-  const warnings = tree ? validateRuleNode(tree, classifierIds) : [];
+
+  // Classifier definition warnings — surface independently of the rule tree
+  const classifierDefWarnings: string[] = classifiers.flatMap(c => {
+    if (c.type === 'semantic_similarity') {
+      const concepts = Object.keys(c.referencePhrases ?? {});
+      if (concepts.length === 0) return [`Classifier "${c.id}" needs at least one concept before it can be used`];
+    }
+    if (!c.model) return [`Classifier "${c.id}" has no model selected`];
+    return [];
+  });
+
+  const warnings = [
+    ...classifierDefWarnings,
+    ...(tree ? validateRuleNode(tree, classifierIds, classifiers) : []),
+  ];
 
   const handleDrop = useCallback((targetPath: NodePath, data: ReturnType<typeof decodeDrag>): string | null => {
     if (!data || data.kind === 'tree-node') return null;
@@ -495,12 +546,7 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
             onClick={() => { push(tree); onChange(null); }} title="Clear expression">Clear</button>
         )}
         {warnings.length > 0 && (
-          <div className="rtc-warn-anchor">
-            <span className="rtc-warn-badge">⚠ {warnings.length}</span>
-            <div className="rtc-warn-popover">
-              {warnings.map((w, i) => <div key={i} className="rtc-warn-popover-item">⚠ {w}</div>)}
-            </div>
-          </div>
+          <WarnBadge warnings={warnings} />
         )}
         <span className="rtc-toolbar-hint">Double-click a leaf to edit</span>
         <div style={{ flex: 1 }} />

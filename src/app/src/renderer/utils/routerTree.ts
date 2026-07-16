@@ -243,8 +243,24 @@ export function matchExprToRuleNode(expr: Record<string, unknown>): RuleNode | n
 }
 
 
-export function validateRuleNode(node: RuleNode | null, classifierIds: Set<string>): string[] {
+export interface ValidatorClassifier {
+  id: string;
+  labels?: string[];
+  defaultLabel?: string;
+  referencePhrases?: Record<string, string[]>;
+  type?: string;
+}
+
+const MAX_MATCH_EXPR_DEPTH = 64;
+
+export function validateRuleNode(
+  node: RuleNode | null,
+  classifierIds: Set<string>,
+  classifiers: ValidatorClassifier[] = [],
+  depth = 0,
+): string[] {
   if (!node) return [];
+  if (depth >= MAX_MATCH_EXPR_DEPTH) return [`Condition tree is too deeply nested (max depth is ${MAX_MATCH_EXPR_DEPTH})`];
   if (isLeaf(node)) {
     if (node.signalType === 'keywords_any' || node.signalType === 'keywords_all') {
       const kws = String(node.signalValue ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -256,20 +272,48 @@ export function validateRuleNode(node: RuleNode | null, classifierIds: Set<strin
       try { new RegExp(pat); } catch { return [`Invalid regex pattern: ${pat}`]; }
       return [];
     }
-    if (node.signalType === 'min_chars' && (node.signalValue === undefined || node.signalValue === '')) return ['A min_chars condition has no value'];
-    if (node.signalType === 'max_chars' && (node.signalValue === undefined || node.signalValue === '')) return ['A max_chars condition has no value'];
+    if (node.signalType === 'min_chars') {
+      const v = node.signalValue;
+      if (v === undefined || v === '') return ['A min_chars condition has no value'];
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0) return [`min_chars must be a non-negative integer (got ${v})`];
+    }
+    if (node.signalType === 'max_chars') {
+      const v = node.signalValue;
+      if (v === undefined || v === '') return ['A max_chars condition has no value'];
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0) return [`max_chars must be a non-negative integer (got ${v})`];
+    }
     if (node.signalType === 'classifier') {
       if (!node.classifierId) return ['A classifier condition has no classifier selected'];
       if (!classifierIds.has(node.classifierId)) return [`Classifier "${node.classifierId}" is not declared`];
-      if (node.minScore !== undefined && node.maxScore !== undefined && node.minScore > node.maxScore) {
-        return [`Classifier score range is invalid: min (${node.minScore}) > max (${node.maxScore})`];
+      // Score range checks
+      const mn = node.minScore, mx = node.maxScore;
+      if (mn !== undefined && (mn < 0 || mn > 1)) return [`Min score must be between 0 and 1 (got ${mn})`];
+      if (mx !== undefined && (mx < 0 || mx > 1)) return [`Max score must be between 0 and 1 (got ${mx})`];
+      if (mn !== undefined && mx !== undefined && mn > mx) {
+        return [`Classifier score range is invalid: min (${mn}) > max (${mx})`];
+      }
+      // Label validity and defaultLabel requirement
+      const clf = classifiers.find(c => c.id === node.classifierId);
+      if (clf) {
+        const validLabels = clf.type === 'semantic_similarity'
+          ? Object.keys(clf.referencePhrases ?? {})
+          : (clf.labels ?? []);
+        if (node.label) {
+          if (validLabels.length > 0 && !validLabels.includes(node.label)) {
+            return [`Classifier "${node.classifierId}" has no label "${node.label}" - it may have been renamed`];
+          }
+        } else if (validLabels.length > 0 && !clf.defaultLabel) {
+          return [`Classifier "${node.classifierId}" has no default label - either select a label or set a default in the classifier config`];
+        }
       }
     }
     return [];
   }
   if (node.operator === 'NOT' && node.conditions.length !== 1) return ['NOT must have exactly one child'];
   if ((node.operator === 'AND' || node.operator === 'OR') && node.conditions.length < 2) return [`${node.operator} needs at least 2 children`];
-  return node.conditions.flatMap(c => validateRuleNode(c, classifierIds));
+  return node.conditions.flatMap(c => validateRuleNode(c, classifierIds, classifiers, depth + 1));
 }
 
 // Signals that may appear at most once as a direct child of any single gate

@@ -295,6 +295,8 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
         } else {
           // semantic_similarity: reference_phrases is { concept: string[] }
           base.reference_phrases = c.referencePhrases ?? {};
+          if (c.defaultLabel) base.default_label = c.defaultLabel;
+          base.on_error = c.onError ?? 'match_false';
         }
         return base;
       });
@@ -370,9 +372,18 @@ export const routingToRouterCollectionDraft = (
     };
   });
 
-  // Detect quick mode: no classifiers, every rule has a single leaf condition tree
+  // Detect quick mode: no classifiers, every rule's condition tree is either a single
+  // non-classifier leaf OR a flat AND/OR whose children are all non-classifier leaves.
+  const isQuickCompatibleTree = (tree: RouterRule['conditionTree']): boolean => {
+    if (!tree) return false;
+    if ('signalType' in tree) return tree.signalType !== 'classifier';
+    if ('operator' in tree && (tree.operator === 'AND' || tree.operator === 'OR')) {
+      return tree.conditions.every(c => 'signalType' in c && c.signalType !== 'classifier');
+    }
+    return false;
+  };
   const isQuick = classifiers.length === 0 && rules.length > 0 && rules.every(
-    r => r.conditionTree !== null && 'signalType' in r.conditionTree && r.conditionTree.signalType !== 'classifier'
+    r => isQuickCompatibleTree(r.conditionTree)
   );
 
   return {

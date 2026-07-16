@@ -66,7 +66,13 @@ const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, o
   const filteredSignals = BASE_SIGNALS.filter(t =>
     !q || SIGNAL_LABELS[t].toLowerCase().includes(q)
   );
-  const filteredClassifiers = classifiers.filter(c =>
+  // Only show classifiers that are ready to use (model set + concepts for semantic_similarity)
+  const readyClassifiers = classifiers.filter(c => {
+    if (!c.model) return false;
+    if (c.type === 'semantic_similarity') return Object.keys(c.referencePhrases ?? {}).length > 0;
+    return true;
+  });
+  const filteredClassifiers = readyClassifiers.filter(c =>
     !q || c.id.toLowerCase().includes(q) || 'classifier'.includes(q)
   );
 
@@ -76,7 +82,7 @@ const RouterToolbox: React.FC<RouterToolboxProps> = ({ classifiers, collapsed, o
     <div className={`rtb-toolbox${collapsed ? ' rtb-toolbox--collapsed' : ''}${wide ? ' rtb-toolbox--wide' : ''}`}>
       <div className="rtb-header" onClick={onToggle} title={collapsed ? 'ExpandUtilities' : 'CollapseUtilities'}>
         <span className="rtb-header-title">{collapsed ? '◀' : '▶'}Utilities</span>
-        {!collapsed && <span className="rtb-header-count">{BASE_SIGNALS.length + classifiers.length} signals</span>}
+        {!collapsed && <span className="rtb-header-count">{BASE_SIGNALS.length + readyClassifiers.length} signals</span>}
       </div>
 
       {!collapsed && (
