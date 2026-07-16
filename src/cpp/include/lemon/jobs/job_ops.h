@@ -24,10 +24,11 @@ public:
     const OpHandler* find(const std::string& name) const;
     std::set<std::string> names() const;
 
-    std::function<bool(CancelFlag*)> begin_exclusive;
+    std::function<bool(const std::string& job_id, CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;
 
-    std::function<void()> reconcile_unload;
+    std::function<void(const std::string& job_id)> reconcile_unload;
+    std::function<void(const std::string& job_id)> discard_exclusive;
 
 private:
     std::map<std::string, OpHandler> handlers_;
@@ -43,9 +44,10 @@ struct OpProviders {
     std::function<json(const json& params, CancelFlag& cancel)> unload_op;
     std::function<json(const json& params, CancelFlag& cancel)> chat_op;
 
-    std::function<bool(CancelFlag*)> begin_exclusive;
+    std::function<bool(const std::string& job_id, CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;
-    std::function<void()> reconcile_unload;
+    std::function<void(const std::string& job_id)> reconcile_unload;
+    std::function<void(const std::string& job_id)> discard_exclusive;
 };
 
 OpRegistry build_op_registry(OpProviders providers);

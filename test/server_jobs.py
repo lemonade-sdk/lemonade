@@ -1065,6 +1065,99 @@ class JobEngineTests(unittest.TestCase):
             "the pre-job model did not actually survive the job (it was reloaded)",
         )
 
+    def test_job_ownership_survives_pause_resume_interrupt(self):
+        backend = self.require_real_backend()
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 4000}},
+            {"id": "hold2", "op": "sleep", "params": {"ms": 20000}},
+        ]
+        job = self.create_job("pause-resume-interrupt", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        r = requests.post(f"{BASE}/jobs/{jid}/pause", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "paused", timeout=15)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "pause must keep the job's models resident for the resume",
+        )
+
+        r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_cursor(jid, "hold2", timeout=30)
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "interrupted", timeout=20)
+        self.assertNotEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "a pause/resume cycle re-baselined the snapshot: the interrupt "
+            "preserved a model the job itself introduced",
+        )
+
+    def test_delete_while_paused_cleans_up(self):
+        backend = self.require_real_backend()
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 4000}},
+            {"id": "hold2", "op": "sleep", "params": {"ms": 20000}},
+        ]
+        job = self.create_job("delete-while-paused", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+
+        r = requests.post(f"{BASE}/jobs/{jid}/pause", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "paused", timeout=15)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.get_job(jid).status_code, 404)
+        self.poll_gone(jid)
+
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            loaded = (
+                requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded")
+            )
+            if loaded != TEST_MODEL:
+                break
+            time.sleep(0.2)
+        self.assertNotEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "deleting a paused job skipped reconciliation and leaked the "
+            "model the job introduced",
+        )
+
     def test_bench_shaped_sweep(self):
         backend = self.require_real_backend()
 

@@ -77,16 +77,23 @@ A single worker runs one job at a time.
 - **pause** — stop *after the current step*; the job goes `paused` at the next
   step boundary and (if exclusive) releases the slot. Pausing a still-`queued`
   job takes effect immediately: it is removed from the queue and persisted as
-  `paused` before the call returns.
+  `paused` before the call returns. Pause does **not** commit the job's model
+  side-effects: models the job loaded stay resident for the resume, and the
+  job keeps owning them (see below).
 - **interrupt** — cancel the *current step now* (kills an in-flight `load`, and
   aborts an in-flight `chat` at the HTTP layer rather than waiting for the
   backend to reply); the step returns to `pending`, the job goes `interrupted`.
   Interrupting a still-`queued` job likewise dequeues and persists it as
   `interrupted` immediately. An interrupted exclusive job unloads only the
   model(s) it introduced before releasing the slot: the reconcile snapshots the
-  router's loaded models (with their pin state) when the exclusive session
-  begins, unloads `(current set − snapshot)` — including models the job pinned
-  itself — and restores the recorded pin state of surviving pre-job models.
+  router's loaded models (with their pin state) **once, the first time the job
+  acquires the exclusive slot**, and that snapshot is the job's for its whole
+  lifetime — a pause/resume cycle does not re-baseline it, so a model the job
+  loaded before pausing is still recognized as job-introduced after resume.
+  Reconcile unloads `(current set − snapshot)` — including models the job
+  pinned itself — and restores the recorded pin state of surviving pre-job
+  models. A job that ends `completed` or `failed` commits its model
+  side-effects instead (its snapshot is discarded, resident models stay).
   **Guarantee scope:** a model that was resident before the job is preserved
   only if it is *still resident* at reconcile time. If a job `load` evicted it
   (loaded-model cap) or replaced it with different options, the reconcile does
@@ -97,10 +104,12 @@ A single worker runs one job at a time.
 - **delete** — removes the job. Deleting an active job persists a deletion
   tombstone *before* the call returns, then interrupts it and defers the actual
   removal until the worker has finished cleanup (reconcile unload), so a deleted
-  exclusive job never leaks a resident model. The tombstone makes the deletion
-  durable: a crash between the acknowledgement and the final removal does not
-  resurrect the job on restart, and a tombstoned job is already invisible to
-  `GET`/list.
+  exclusive job never leaks a resident model. Deleting a `paused` or
+  `interrupted` job takes the same tombstone-then-worker-cleanup path, so a
+  model introduced before a pause is still unloaded. The tombstone makes the
+  deletion durable: a crash between the acknowledgement and the final removal
+  does not resurrect the job on restart, and a tombstoned job is already
+  invisible to `GET`/list.
 - **query** — the full job record (status, per-step state, context).
 
 Chat interrupts are genuine aborts: the chat op passes its cancel flag through

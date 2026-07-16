@@ -500,24 +500,38 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             }
             return lemon::jobs::json::parse(response.dump());
         };
-        auto exclusive_snapshot = std::make_shared<std::map<std::string, bool>>();
+        auto job_snapshots =
+            std::make_shared<std::map<std::string, std::map<std::string, bool>>>();
         auto snapshot_mutex = std::make_shared<std::mutex>();
-        providers.begin_exclusive = [this, exclusive_snapshot, snapshot_mutex](
+        providers.begin_exclusive = [this, job_snapshots, snapshot_mutex](
+                                        const std::string& job_id,
                                         lemon::jobs::CancelFlag* cancel) -> bool {
             if (!router_->begin_exclusive(cancel)) return false;
-            auto snap = router_->snapshot_loaded_models();
             std::lock_guard<std::mutex> lk(*snapshot_mutex);
-            *exclusive_snapshot = std::move(snap);
+            if (!job_snapshots->count(job_id))
+                (*job_snapshots)[job_id] = router_->snapshot_loaded_models();
             return true;
         };
         providers.end_exclusive = [this] { router_->end_exclusive(); };
-        providers.reconcile_unload = [this, exclusive_snapshot, snapshot_mutex] {
+        providers.reconcile_unload = [this, job_snapshots, snapshot_mutex](
+                                         const std::string& job_id) {
             std::map<std::string, bool> keep;
+            bool have = false;
             {
                 std::lock_guard<std::mutex> lk(*snapshot_mutex);
-                keep = *exclusive_snapshot;
+                auto it = job_snapshots->find(job_id);
+                if (it != job_snapshots->end()) {
+                    keep = std::move(it->second);
+                    job_snapshots->erase(it);
+                    have = true;
+                }
             }
-            router_->unload_models_not_in(keep);
+            if (have) router_->unload_models_not_in(keep);
+        };
+        providers.discard_exclusive = [job_snapshots, snapshot_mutex](
+                                          const std::string& job_id) {
+            std::lock_guard<std::mutex> lk(*snapshot_mutex);
+            job_snapshots->erase(job_id);
         };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
             lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));

@@ -359,6 +359,17 @@ bool JobManager::remove(const std::string& id, bool& active_out) {
                           << " (tombstoned; erased after cleanup)" << std::endl;
         return true;
     }
+    if (it->second.status == JobStatus::Paused || it->second.status == JobStatus::Interrupted) {
+        it->second.deleted = true;
+        control_for_locked(id)->delete_requested.store(true);
+        persist_locked();
+        enqueue_locked(id);
+        cv_.notify_all();
+        LOG(INFO, "Jobs") << "delete requested for " << to_string(it->second.status)
+                          << " job " << id << " (tombstoned; erased after reconcile)"
+                          << std::endl;
+        return true;
+    }
     jobs_.erase(id);
     controls_.erase(id);
     order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
@@ -373,6 +384,7 @@ void JobManager::worker_main() {
         std::string id;
         std::shared_ptr<Control> ctrl;
         bool exclusive = false;
+        bool cleanup_only = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
@@ -381,15 +393,33 @@ void JobManager::worker_main() {
             id = queue_.front();
             queue_.pop_front();
             auto it = jobs_.find(id);
-            if (it == jobs_.end() || it->second.status != JobStatus::Queued) continue;
+            if (it == jobs_.end()) continue;
             ctrl = control_for_locked(id);
-            it->second.status = JobStatus::Running;
-            if (it->second.started_at.empty()) it->second.started_at = iso_now();
-            active_id_ = id;
-            exclusive = job_needs_exclusive(it->second, registry_);
+            if (it->second.deleted) {
+                cleanup_only = true;
+            } else if (it->second.status != JobStatus::Queued) {
+                continue;
+            } else {
+                it->second.status = JobStatus::Running;
+                if (it->second.started_at.empty()) it->second.started_at = iso_now();
+                active_id_ = id;
+                exclusive = job_needs_exclusive(it->second, registry_);
+                persist_locked();
+                LOG(INFO, "Jobs") << "running job " << id << " from step '" << it->second.cursor
+                                  << "'" << std::endl;
+            }
+        }
+
+        if (cleanup_only) {
+            if (registry_.reconcile_unload) registry_.reconcile_unload(id);
+            std::lock_guard<std::mutex> lock(mutex_);
+            jobs_.erase(id);
+            controls_.erase(id);
+            order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
+            queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
             persist_locked();
-            LOG(INFO, "Jobs") << "running job " << id << " from step '" << it->second.cursor << "'"
-                              << std::endl;
+            LOG(INFO, "Jobs") << "erased deleted job " << id << " after reconcile" << std::endl;
+            continue;
         }
 
         struct ExclusiveGuard {
@@ -397,7 +427,7 @@ void JobManager::worker_main() {
             const std::string& id;
             bool held = false;
             bool begin(CancelFlag* cancel) {
-                if (reg.begin_exclusive && !reg.begin_exclusive(cancel)) return false;
+                if (reg.begin_exclusive && !reg.begin_exclusive(id, cancel)) return false;
                 held = true;
                 LOG(INFO, "Jobs") << "job " << id << " acquired exclusive slot" << std::endl;
                 return true;
@@ -421,18 +451,23 @@ void JobManager::worker_main() {
                               << " interrupted while waiting for the exclusive slot" << std::endl;
         }
         bool interrupted = false;
+        bool terminal = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = jobs_.find(id);
-            interrupted = it != jobs_.end() && it->second.status == JobStatus::Interrupted;
+            if (it != jobs_.end()) {
+                interrupted = it->second.status == JobStatus::Interrupted;
+                terminal = is_terminal(it->second.status);
+            }
             active_id_.clear();
         }
 
-        if (guard.held && interrupted && registry_.reconcile_unload) {
-            registry_.reconcile_unload();
-            LOG(INFO, "Jobs") << "job " << id << " interrupted — unloaded resident model(s)"
+        if (interrupted && registry_.reconcile_unload) {
+            registry_.reconcile_unload(id);
+            LOG(INFO, "Jobs") << "job " << id << " interrupted — reconciled job-loaded model(s)"
                               << std::endl;
         }
+        if (terminal && registry_.discard_exclusive) registry_.discard_exclusive(id);
 
         if (ctrl->delete_requested.load()) {
             std::lock_guard<std::mutex> lock(mutex_);
