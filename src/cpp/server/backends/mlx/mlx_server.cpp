@@ -227,6 +227,36 @@ const std::vector<std::string>& mlx_stop_sequences() {
     return stops;
 }
 
+std::vector<std::string> request_stop_sequences(const json& request) {
+    std::vector<std::string> stops;
+    if (!request.contains("stop") || request["stop"].is_null()) {
+        return stops;
+    }
+
+    const auto& value = request["stop"];
+    if (value.is_string()) {
+        const std::string stop = value.get<std::string>();
+        if (!stop.empty()) {
+            stops.push_back(stop);
+        }
+        return stops;
+    }
+
+    if (value.is_array()) {
+        for (const auto& item : value) {
+            if (!item.is_string()) {
+                continue;
+            }
+            const std::string stop = item.get<std::string>();
+            if (!stop.empty()) {
+                stops.push_back(stop);
+            }
+        }
+    }
+
+    return stops;
+}
+
 double seconds_since(std::chrono::steady_clock::time_point started) {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
 }
@@ -243,14 +273,26 @@ double read_double(const json& object, const char* key) {
     return object.contains(key) && json_number(object[key]) ? object[key].get<double>() : 0.0;
 }
 
-void truncate_at_stop_sequence(std::string& text) {
-    size_t first = std::string::npos;
-    for (const auto& stop : mlx_stop_sequences()) {
+void consider_stop_sequences(const std::string& text,
+                             const std::vector<std::string>& stops,
+                             size_t& first) {
+    for (const auto& stop : stops) {
+        if (stop.empty()) {
+            continue;
+        }
         const size_t pos = text.find(stop);
         if (pos != std::string::npos && (first == std::string::npos || pos < first)) {
             first = pos;
         }
     }
+}
+
+void truncate_at_stop_sequence(
+    std::string& text,
+    const std::vector<std::string>& request_stops = {}) {
+    size_t first = std::string::npos;
+    consider_stop_sequences(text, mlx_stop_sequences(), first);
+    consider_stop_sequences(text, request_stops, first);
     if (first != std::string::npos) {
         text.erase(first);
     }
@@ -308,7 +350,9 @@ void append_string_field(json& object, const char* key, const std::string& value
     }
 }
 
-void normalize_reasoning_response(json& response) {
+void normalize_reasoning_response(
+    json& response,
+    const std::vector<std::string>& request_stops = {}) {
     if (!response.contains("choices") || !response["choices"].is_array()) {
         return;
     }
@@ -321,7 +365,9 @@ void normalize_reasoning_response(json& response) {
         if (choice.contains("message") && choice["message"].is_object()) {
             auto& message = choice["message"];
             if (message.contains("content") && message["content"].is_string()) {
-                const ReasoningParts parts = split_thinking_tags(message["content"].get<std::string>());
+                std::string text = message["content"].get<std::string>();
+                truncate_at_stop_sequence(text, request_stops);
+                const ReasoningParts parts = split_thinking_tags(text);
                 message["content"] = parts.content;
                 append_string_field(message, "reasoning_content", parts.reasoning);
             }
@@ -329,7 +375,7 @@ void normalize_reasoning_response(json& response) {
 
         if (choice.contains("text") && choice["text"].is_string()) {
             std::string text = choice["text"].get<std::string>();
-            truncate_at_stop_sequence(text);
+            truncate_at_stop_sequence(text, request_stops);
             choice["text"] = text;
         }
     }
@@ -487,8 +533,11 @@ void record_mlx_telemetry(json& response, double elapsed_seconds, int prompt_tok
 
 class ReasoningStreamNormalizer {
 public:
-    explicit ReasoningStreamNormalizer(bool prefix_reasoning = false)
-        : inside_reasoning_(prefix_reasoning) {}
+    explicit ReasoningStreamNormalizer(
+        bool prefix_reasoning = false,
+        std::vector<std::string> request_stops = {})
+        : inside_reasoning_(prefix_reasoning),
+          request_stops_(std::move(request_stops)) {}
 
     std::vector<std::pair<std::string, std::string>> consume(const std::string& text) {
         pending_ += text;
@@ -586,19 +635,22 @@ private:
 
     size_t first_stop_pos(const std::string& text) const {
         size_t first = std::string::npos;
-        for (const auto& stop : mlx_stop_sequences()) {
-            const size_t pos = text.find(stop);
-            if (pos != std::string::npos && (first == std::string::npos || pos < first)) {
-                first = pos;
-            }
-        }
+        consider_stop_sequences(text, mlx_stop_sequences(), first);
+        consider_stop_sequences(text, request_stops_, first);
         return first;
     }
 
     size_t split_guard_bytes() const {
         size_t guard = std::max(std::strlen(kThinkStart), std::strlen(kThinkEnd)) - 1;
         for (const auto& stop : mlx_stop_sequences()) {
-            guard = std::max(guard, stop.size() - 1);
+            if (!stop.empty()) {
+                guard = std::max(guard, stop.size() - 1);
+            }
+        }
+        for (const auto& stop : request_stops_) {
+            if (!stop.empty()) {
+                guard = std::max(guard, stop.size() - 1);
+            }
         }
         return guard;
     }
@@ -653,6 +705,7 @@ private:
     bool stopped_ = false;
     bool emitted_any_ = false;
     bool drop_leading_assistant_prefix_ = false;
+    std::vector<std::string> request_stops_;
 };
 
 bool request_disables_thinking(const json& request) {
@@ -984,8 +1037,11 @@ private:
     std::string transcript_;
 };
 
-std::vector<json> stream_chunks_from_blocking_response(json response, bool chat_response) {
-    normalize_reasoning_response(response);
+std::vector<json> stream_chunks_from_blocking_response(
+    json response,
+    bool chat_response,
+    const std::vector<std::string>& request_stops = {}) {
+    normalize_reasoning_response(response, request_stops);
 
     std::vector<json> chunks;
     if (!response.contains("choices") || !response["choices"].is_array()) {
@@ -1283,7 +1339,7 @@ json MlxServer::chat_completion(const json& request) {
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
     json response = forward_request("/v1/chat/completions", prepared);
-    normalize_reasoning_response(response);
+    normalize_reasoning_response(response, request_stop_sequences(prepared));
     record_mlx_telemetry(
         response,
         seconds_since(started),
@@ -1295,7 +1351,7 @@ json MlxServer::completion(const json& request) {
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
     json response = forward_request("/v1/completions", prepared);
-    normalize_reasoning_response(response);
+    normalize_reasoning_response(response, request_stop_sequences(prepared));
     record_mlx_telemetry(
         response,
         seconds_since(started),
@@ -1356,7 +1412,8 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
     MlxTelemetrySnapshot telemetry;
     const std::string stream_model_ref = request_model_ref(prepared_request, loaded_model_ref_);
     ReasoningStreamNormalizer normalizer(
-        prefers_prefix_reasoning(prepared_request, loaded_model_ref_, device_type_ == DEVICE_CPU));
+        prefers_prefix_reasoning(prepared_request, loaded_model_ref_, device_type_ == DEVICE_CPU),
+        request_stop_sequences(prepared_request));
     SmallQwenRepetitionStopper repetition_stopper(is_small_qwen_model(stream_model_ref));
     json last_chunk = json::object();
 
@@ -1420,7 +1477,10 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             json response = json::parse(body);
             merge_response_telemetry(response, telemetry);
 
-            const auto chunks = stream_chunks_from_blocking_response(response, normalize_reasoning);
+            const auto chunks = stream_chunks_from_blocking_response(
+                response,
+                normalize_reasoning,
+                request_stop_sequences(prepared_request));
             if (chunks.empty()) {
                 return false;
             }
