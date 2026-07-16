@@ -16,7 +16,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_VALIDATED_LABELS = ("cpu", "vulkan", "rocm-stable")
 
 
@@ -115,12 +114,16 @@ def seconds(row: dict[str, Any]) -> float:
 
 
 def image_url(repository: str, image_ref: str, path: str) -> str:
-    quoted_path = "/".join(part.replace("#", "%23").replace(" ", "%20") for part in path.split("/"))
+    quoted_path = "/".join(
+        part.replace("#", "%23").replace(" ", "%20") for part in path.split("/")
+    )
     quoted_ref = image_ref.replace("#", "%23").replace(" ", "%20")
     return f"https://raw.githubusercontent.com/{repository}/{quoted_ref}/{quoted_path}"
 
 
-def group_summary(records: list[dict[str, Any]], labels: list[str]) -> dict[str, dict[str, Any]]:
+def group_summary(
+    records: list[dict[str, Any]], labels: list[str]
+) -> dict[str, dict[str, Any]]:
     summary: dict[str, dict[str, Any]] = {}
     for label in labels:
         summary[label] = {"total": 0, "passed": 0, "elapsed": 0.0}
@@ -134,7 +137,12 @@ def group_summary(records: list[dict[str, Any]], labels: list[str]) -> dict[str,
     return summary
 
 
-def assert_expected_images(records: list[dict[str, Any]], labels: list[str], models: list[str], sizes: list[str]) -> None:
+def assert_expected_images(
+    records: list[dict[str, Any]],
+    labels: list[str],
+    models: list[str],
+    sizes: list[str],
+) -> None:
     """Fail if any expected backend/model/size image is missing or failed."""
     if not models:
         raise SystemExit("No expected validation models were provided")
@@ -143,7 +151,11 @@ def assert_expected_images(records: list[dict[str, Any]], labels: list[str], mod
 
     rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in records:
-        key = (str(row.get("label", "")), str(row.get("model", "")), str(row.get("size", "")))
+        key = (
+            str(row.get("label", "")),
+            str(row.get("model", "")),
+            str(row.get("size", "")),
+        )
         rows[key] = row
 
     missing: list[str] = []
@@ -169,11 +181,17 @@ def assert_expected_images(records: list[dict[str, Any]], labels: list[str], mod
         if failed:
             details.append("Failed validation records:\n  - " + "\n  - ".join(failed))
         if missing_image:
-            details.append("Missing copied validation images:\n  - " + "\n  - ".join(missing_image))
-        raise SystemExit("Expected validation image evidence is incomplete.\n" + "\n".join(details))
+            details.append(
+                "Missing copied validation images:\n  - " + "\n  - ".join(missing_image)
+            )
+        raise SystemExit(
+            "Expected validation image evidence is incomplete.\n" + "\n".join(details)
+        )
 
 
-def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied: int) -> str:
+def render_body(
+    args: argparse.Namespace, records: list[dict[str, Any]], copied: int
+) -> str:
     base_backends = parse_csv(args.base_update_backends)
     cuda_backends = parse_csv(args.cuda_update_backends)
     updated = base_backends + cuda_backends
@@ -194,7 +212,8 @@ def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied:
         f"- Updated base pins: `{', '.join(base_backends)}` -> `{args.base_release}`",
         f"- Updated CUDA pins: `{', '.join(cuda_backends)}` -> `{args.cuda_release}`",
         f"- Validated backends: `{', '.join(labels)}`",
-        "- Updated but not validated here: " + (f"`{', '.join(unvalidated)}`" if unvalidated else "none"),
+        "- Updated but not validated here: "
+        + (f"`{', '.join(unvalidated)}`" if unvalidated else "none"),
         f"- Timing: `{timing_scope}`; per-image timings are listed below.",
         "",
         "CUDA assets are resolved independently from the Lemonade fork. They do not need to share the same tag as the upstream leejet release.",
@@ -212,13 +231,17 @@ def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied:
 
     for label in labels:
         item = summary.get(label, {"total": 0, "passed": 0, "elapsed": 0.0})
-        result = f"{item['passed']}/{item['total']} images" if item["total"] else "missing"
+        result = (
+            f"{item['passed']}/{item['total']} images" if item["total"] else "missing"
+        )
         elapsed = f"{item['elapsed']:.1f}s" if item["total"] else "-"
         lines.append(f"| {label} | {result} | {elapsed} | `sdcpp-validation-{label}` |")
 
     if unvalidated:
         lines.append("")
-        lines.append("Unvalidated pins are intentionally updated but not exercised in this workflow run.")
+        lines.append(
+            "Unvalidated pins are intentionally updated but not exercised in this workflow run."
+        )
 
     lines += [
         "",
@@ -228,7 +251,14 @@ def render_body(args: argparse.Namespace, records: list[dict[str, Any]], copied:
         "|---|---|---:|---:|---|",
     ]
 
-    for row in sorted(records, key=lambda r: (str(r.get("label", "")), str(r.get("model", "")), str(r.get("size", "")))):
+    for row in sorted(
+        records,
+        key=lambda r: (
+            str(r.get("label", "")),
+            str(r.get("model", "")),
+            str(r.get("size", "")),
+        ),
+    ):
         label = str(row.get("label", ""))
         model = str(row.get("model", ""))
         size = str(row.get("size", ""))
@@ -259,9 +289,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cuda-release", required=True)
     parser.add_argument("--base-update-backends", required=True)
     parser.add_argument("--cuda-update-backends", required=True)
-    parser.add_argument("--validated-labels", default=",".join(DEFAULT_VALIDATED_LABELS))
-    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "lemonade-sdk/lemonade"))
-    parser.add_argument("--image-ref", required=True, help="Branch or commit ref that will contain committed evidence images")
+    parser.add_argument(
+        "--validated-labels", default=",".join(DEFAULT_VALIDATED_LABELS)
+    )
+    parser.add_argument(
+        "--repository",
+        default=os.environ.get("GITHUB_REPOSITORY", "lemonade-sdk/lemonade"),
+    )
+    parser.add_argument(
+        "--image-ref",
+        required=True,
+        help="Branch or commit ref that will contain committed evidence images",
+    )
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--output", default="pr_body.md")
     parser.add_argument("--prompt", default=os.environ.get("SDCPP_TEST_PROMPT", ""))
@@ -279,7 +318,9 @@ def main() -> int:
     evidence_dir = Path(args.evidence_dir)
     copied = copy_images(records, evidence_dir)
 
-    assert_expected_images(records, labels, parse_csv(args.models), parse_csv(args.sizes))
+    assert_expected_images(
+        records, labels, parse_csv(args.models), parse_csv(args.sizes)
+    )
 
     body = render_body(args, records, copied)
     Path(args.output).write_text(body, encoding="utf-8")

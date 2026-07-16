@@ -149,6 +149,8 @@ struct CliConfig {
     std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
+    std::string model_source = "huggingface";
+    bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
     nlohmann::json recipe_options;
@@ -327,6 +329,23 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
+static std::optional<std::string> explicit_registry_source_from_url(const std::string& value) {
+    if (value.rfind("https://huggingface.co/", 0) == 0 ||
+        value.rfind("http://huggingface.co/", 0) == 0) {
+        return "huggingface";
+    }
+    for (const char* prefix : {
+             "https://modelscope.cn/models/",
+             "https://www.modelscope.cn/models/",
+             "http://modelscope.cn/models/",
+             "http://www.modelscope.cn/models/",
+             "https://modelscope.ai/models/",
+             "https://www.modelscope.ai/models/"}) {
+        if (value.rfind(prefix, 0) == 0) return "modelscope";
+    }
+    return std::nullopt;
+}
+
 static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
@@ -334,13 +353,36 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
     model_data["model_name"] = config.model;
     model_data["recipe"] = config.recipe;
 
+    std::optional<std::string> explicit_source;
     if (!config.checkpoints.empty()) {
         nlohmann::json checkpoints = nlohmann::json::object();
         for (const auto& [type, checkpoint] : config.checkpoints) {
-            checkpoints[type] = lemon_cli::normalize_huggingface_checkpoint_arg(checkpoint);
+            std::string detected_source;
+            checkpoints[type] = lemon_cli::normalize_registry_checkpoint_arg(
+                checkpoint, config.model_source, &detected_source);
+
+            if (auto source_from_url = explicit_registry_source_from_url(checkpoint)) {
+                if (config.model_source_explicit &&
+                    config.model_source != *source_from_url) {
+                    std::cerr
+                        << "Error: checkpoint URL uses " << *source_from_url
+                        << " but --source was set to " << config.model_source
+                        << "." << std::endl;
+                    return 1;
+                }
+
+                if (explicit_source && *explicit_source != *source_from_url) {
+                    std::cerr << "Error: all checkpoints in one model must use the same "
+                                 "remote registry." << std::endl;
+                    return 1;
+                }
+                explicit_source = *source_from_url;
+            }
         }
         model_data["checkpoints"] = std::move(checkpoints);
     }
+
+    model_data["source"] = explicit_source.value_or(config.model_source);
 
     if (!config.components.empty()) {
         model_data["components"] = config.components;
@@ -350,7 +392,7 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["labels"] = config.labels;
     }
 
-    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    // Explicit `lemonade pull`: opt into the configured registry update check.
     return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
@@ -384,19 +426,20 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
-    std::string normalized_model = lemon_cli::normalize_huggingface_checkpoint_arg(config.model);
+    std::string detected_source;
+    std::string normalized_model = lemon_cli::normalize_registry_checkpoint_arg(
+        config.model, config.model_source, &detected_source);
 
-    // If the argument looks like a Hugging Face checkpoint id (contains '/'),
-    // run the interactive HF flow that discovers variants and auto-fills the
-    // pull request. Otherwise treat it as a registered model name and pull by
-    // model_name only.
+    // Registry checkpoints use the interactive discovery flow; registered model
+    // names remain source-independent because their persisted provenance wins.
     if (normalized_model.find('/') != std::string::npos) {
-        return lemon_cli::hf_pull_flow(client, normalized_model, false);
+        return lemon_cli::registry_pull_flow(
+            client, normalized_model, false, detected_source);
     }
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    // Explicit `lemonade pull`: opt into the configured registry update check.
     return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
@@ -1209,8 +1252,10 @@ int main(int argc, char* argv[]) {
 
     // Model commands
     CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
+    CLI::App* check_updates_cmd = app.add_subcommand(
+        "check-updates", "Check downloaded models for upstream updates")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
-        "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
+        "Pull/download a model by registered name or remote registry checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
@@ -1218,7 +1263,7 @@ int main(int argc, char* argv[]) {
     CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
-    CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
+    CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in the model hub cache")->group("Model management");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
@@ -1262,9 +1307,14 @@ int main(int argc, char* argv[]) {
 
     // Pull options
     pull_cmd->add_option("model", config.model,
-        "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
+        "Registered model name, registry checkpoint (owner/repo[:variant]), or model URL")
         ->required()
         ->type_name("MODEL_OR_CHECKPOINT");
+    CLI::Option* pull_source_opt =
+        pull_cmd->add_option("--source", config.model_source,
+            "Remote registry for checkpoint pulls: huggingface or modelscope")
+            ->type_name("SOURCE")
+            ->check(CLI::IsMember({"huggingface", "modelscope"}));
     pull_cmd->add_option("--checkpoint", config.checkpoints,
         "Add a TYPE CHECKPOINT pair for a custom user.* model. Repeat for multi-file models.")
         ->group("Manual Configuration Options")
@@ -1394,6 +1444,8 @@ int main(int argc, char* argv[]) {
         return app.exit(e);
     }
 
+    config.model_source_explicit = pull_source_opt->count() > 0;
+
     if (load_cmd->count() > 0) {
         if (load_cmd->count("--pinned") > 0) {
             config.pinned = load_pinned_flag;
@@ -1455,9 +1507,11 @@ int main(int argc, char* argv[]) {
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded, config.list_filter);
+    } else if (check_updates_cmd->count() > 0) {
+        return client.check_model_updates();
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
-            std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;
+            std::cerr << "Error: 'lemonade pull' requires a model name or remote registry checkpoint." << std::endl;
             std::cerr << "       See 'lemonade pull --help'." << std::endl;
             return 1;
         }

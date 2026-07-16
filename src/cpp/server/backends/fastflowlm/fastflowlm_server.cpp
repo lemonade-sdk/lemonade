@@ -1,6 +1,7 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/flm_arg_resolver.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -143,12 +144,14 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
 }
 
 void FastFlowLMServer::load(const std::string& model_name,
-                           const ModelInfo& model_info,
-                           const RecipeOptions& options,
-                           bool do_not_upgrade) {
+                            const ModelInfo& model_info,
+                            const RecipeOptions& options,
+                            bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Loading model: " << model_name << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
+    std::string flm_args = options.get_option("flm_args");
+    FLMArgResolution flm_arg_resolution = resolve_flm_args(flm_args, ctx_size);
 
     std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
@@ -183,16 +186,14 @@ void FastFlowLMServer::load(const std::string& model_name,
             "serve",
             "--asr", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else if (model_type_ == ModelType::EMBEDDING) {
         args = {
             "serve",
             "--embed", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else {
         args = {
@@ -200,10 +201,12 @@ void FastFlowLMServer::load(const std::string& model_name,
             model_info.checkpoint(),
             "--ctx-len", std::to_string(ctx_size),
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     }
+
+    args.insert(args.end(), flm_arg_resolution.args.begin(), flm_arg_resolution.args.end());
+    args.push_back("--quiet");
 
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
