@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage } from '../api';
-import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
+import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, modelMatchesCapabilityTags, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
@@ -8,11 +8,12 @@ import { collectionComponentLabel, getCollectionComponents, isCollectionModel, i
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
-import { ModelListPanel } from './ModelListPanel';
+import { ModelListPanel, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
 import type { PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
+import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -696,6 +697,49 @@ function saveFavoriteModels(scope: string, names: string[]): void {
 /* ── Filter / search types ─────────────────────────────────── */
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+type ProviderEnabledState = Record<ModelRegistryProvider, boolean>;
+
+const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
+const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
+const MODELSCOPE_RESULT_LIMIT = 10;
+const REMOTE_VARIANT_CONCURRENCY = 4;
+
+const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
+const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
+
+const PROVIDER_META: Record<ModelRegistryProvider, { label: string; compactLabel: string; url: (id: string) => string }> = {
+  huggingface: {
+    label: 'Hugging Face',
+    compactLabel: 'HuggingFace',
+    url: id => `https://huggingface.co/${id}`,
+  },
+  modelscope: {
+    label: 'ModelScope',
+    compactLabel: 'ModelScope',
+    url: id => `https://modelscope.cn/models/${id}`,
+  },
+};
+
+function remoteSuggestedName(provider: ModelRegistryProvider, modelId: string, variants?: PullVariantsResult): string {
+  const base = variants?.suggested_name || modelId.split('/').pop() || modelId;
+  return provider === 'modelscope' ? `${base}-modelscope` : base;
+}
+
+async function loadRemoteVariants(
+  provider: ModelRegistryProvider,
+  modelId: string,
+  signal?: AbortSignal,
+): Promise<PullVariantsResult | null> {
+  const key = providerKey(provider, modelId);
+  if (REMOTE_VARIANT_CACHE.has(key)) return REMOTE_VARIANT_CACHE.get(key) ?? null;
+  try {
+    const result = await api.pullVariants(modelId, provider, signal);
+    REMOTE_VARIANT_CACHE.set(key, result);
+    return result;
+  } catch (error) {
+    throw error;
+  }
+}
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 type OmniCustomToolDraft = {
@@ -1200,16 +1244,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // HuggingFace search state
+  // Remote registry search state. Provider switches are intentionally separate
+  // from rail/category state so those UI changes never retrigger online calls.
+  const [providerEnabled, setProviderEnabled] = useState<ProviderEnabledState>({
+    huggingface: true,
+    modelscope: true,
+  });
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState<string | null>(null);
-  const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
-  const [selectedHfModel, setSelectedHfModel] = useState<HFModelResult | null>(null);
-  const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
-  const pullHfAbortRef = useRef<Record<string, AbortController>>({});
-  const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
-  const [hfVariantsLoading, setHfVariantsLoading] = useState<Record<string, boolean>>({}); // hf id → loading
+  const [modelScopeResults, setModelScopeResults] = useState<HFModelResult[]>([]);
+  const [modelScopeLoading, setModelScopeLoading] = useState(false);
+  const [modelScopeError, setModelScopeError] = useState<string | null>(null);
+  const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
+  const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
+  const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
+  const [pullingRemote, setPullingRemote] = useState<Record<string, number>>({});
+  const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
+  const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
+  const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
 
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
   const [showCustomForm, setShowCustomForm] = useState(false);
@@ -1442,27 +1495,47 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return api.onModelsChanged(() => { refresh(); });
   }, [refresh]);
 
-  /* ── HuggingFace debounced search ────────────────────────── */
+  /* ── Remote registry search ────────────────────────────────
+     Deliberately keyed ONLY by the text query and provider switch. Changing
+     categories, primary modes, backend filters, tags, or capabilities merely
+     filters cached results and never starts another online request. */
 
   useEffect(() => {
     const q = searchQuery.trim();
-    if (q.length < 2 || filterTab === 'omni') {
+    if (q.length < 2 || !providerEnabled.huggingface) {
       setHfResults([]);
       setHfLoading(false);
       setHfError(null);
-      setExpandedHfModel(null);
       return;
     }
 
+    const cacheKey = providerSearchCacheKey('huggingface', q);
+    const cached = REMOTE_SEARCH_CACHE.get(cacheKey);
+    if (cached) {
+      setHfResults(cached);
+      const cachedVariants: Record<string, PullVariantsResult> = {};
+      for (const result of cached) {
+        const key = providerKey('huggingface', result.id);
+        const variants = REMOTE_VARIANT_CACHE.get(key);
+        if (variants) cachedVariants[key] = variants;
+      }
+      if (Object.keys(cachedVariants).length > 0) {
+        setRemoteVariants(prev => ({ ...prev, ...cachedVariants }));
+      }
+      setHfLoading(false);
+      setHfError(null);
+      return;
+    }
+
+    setHfResults([]);
     setHfLoading(true);
     setHfError(null);
     const ac = new AbortController();
-
-    const timer = setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       try {
         const results = await searchHuggingFace(q, ac.signal);
+        REMOTE_SEARCH_CACHE.set(cacheKey, results);
         setHfResults(results);
-        setHfError(null);
       } catch (err) {
         if (!ac.signal.aborted) {
           setHfResults([]);
@@ -1471,13 +1544,127 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       } finally {
         if (!ac.signal.aborted) setHfLoading(false);
       }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [searchQuery, providerEnabled.huggingface]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || !providerEnabled.modelscope) {
+      setModelScopeResults([]);
+      setModelScopeLoading(false);
+      setModelScopeError(null);
+      return;
+    }
+
+    const cacheKey = providerSearchCacheKey('modelscope', q);
+    const cached = REMOTE_SEARCH_CACHE.get(cacheKey);
+    if (cached) {
+      setModelScopeResults(cached);
+      const cachedVariants: Record<string, PullVariantsResult> = {};
+      for (const result of cached) {
+        const key = providerKey('modelscope', result.id);
+        const variants = REMOTE_VARIANT_CACHE.get(key);
+        if (variants) cachedVariants[key] = variants;
+      }
+      if (Object.keys(cachedVariants).length > 0) {
+        setRemoteVariants(prev => ({ ...prev, ...cachedVariants }));
+      }
+      setModelScopeLoading(false);
+      setModelScopeError(null);
+      return;
+    }
+
+    setModelScopeResults([]);
+    setModelScopeLoading(true);
+    setModelScopeError(null);
+    const ac = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const candidates = await searchModelScope(q, ac.signal);
+        const validated: Array<{ result: HFModelResult; order: number }> = [];
+        let next = 0;
+        const publishValidated = () => {
+          const ordered = [...validated]
+            .sort((a, b) => a.order - b.order)
+            .slice(0, MODELSCOPE_RESULT_LIMIT)
+            .map(item => item.result);
+          setModelScopeResults(ordered);
+        };
+        const worker = async () => {
+          while (!ac.signal.aborted && validated.length < MODELSCOPE_RESULT_LIMIT && next < candidates.length) {
+            const order = next;
+            const candidate = candidates[next++];
+            try {
+              const variants = await loadRemoteVariants('modelscope', candidate.id, ac.signal);
+              if (!variants?.variants?.length || validated.some(item => item.result.id === candidate.id)) continue;
+              setRemoteVariants(prev => ({ ...prev, [providerKey('modelscope', candidate.id)]: variants }));
+              validated.push({ result: candidate, order });
+              publishValidated();
+            } catch {
+              // Registry metadata is only a candidate hint. Repositories without
+              // usable GGUF variants are omitted, matching Lemonade main.
+            }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(REMOTE_VARIANT_CONCURRENCY, candidates.length) }, worker));
+        if (!ac.signal.aborted) {
+          const finalResults = [...validated]
+            .sort((a, b) => a.order - b.order)
+            .slice(0, MODELSCOPE_RESULT_LIMIT)
+            .map(item => item.result);
+          REMOTE_SEARCH_CACHE.set(cacheKey, finalResults);
+          setModelScopeResults(finalResults);
+        }
+      } catch (err) {
+        if (!ac.signal.aborted) {
+          setModelScopeResults([]);
+          setModelScopeError(friendlyErrorMessage(err));
+        }
+      } finally {
+        if (!ac.signal.aborted) setModelScopeLoading(false);
+      }
     }, 400);
 
     return () => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       ac.abort();
     };
-  }, [searchQuery, filterTab]);
+  }, [searchQuery, providerEnabled.modelscope]);
+
+  // Enrich HF rows with server-derived suggested_labels/mmproj metadata. The
+  // module cache makes this a one-time probe per provider/repository, and these
+  // probes only follow a new search result set — never a local filter change.
+  useEffect(() => {
+    if (!providerEnabled.huggingface || hfResults.length === 0) return;
+    let cancelled = false;
+    let next = 0;
+    const candidates = hfResults.slice(0, 12);
+    const worker = async () => {
+      while (!cancelled && next < candidates.length) {
+        const candidate = candidates[next++];
+        const key = providerKey('huggingface', candidate.id);
+        if (remoteVariants[key]) continue;
+        try {
+          const variants = await loadRemoteVariants('huggingface', candidate.id);
+          if (variants && !cancelled) setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+        } catch {
+          // Capability enrichment is best effort; the search result remains usable.
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+    return () => { cancelled = true; };
+  }, [hfResults, providerEnabled.huggingface]);
+
+  useEffect(() => {
+    setExpandedRemoteModel(null);
+    setSelectedRemoteModel(null);
+  }, [searchQuery]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -1684,60 +1871,74 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     await api.pullModel(name, callbacks, customRegistrationOptions(model));
   };
 
-  const handleHfPull = async (hfId: string, variantName: string, recipe: string) => {
-    if (pullingHf[hfId] !== undefined) return;
-    const vdata = hfVariants[hfId];
-    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+  const handleRemotePull = async (provider: ModelRegistryProvider, modelId: string, variantName: string, recipe: string) => {
+    const key = providerKey(provider, modelId);
+    if (pullingRemote[key] !== undefined) return;
+    const vdata = remoteVariants[key];
+    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
     const modelName = `user.${suggestedName}`;
-    const checkpoint = `${hfId}:${variantName}`;
+    const checkpoint = `${modelId}:${variantName}`;
     const ac = new AbortController();
-    pullHfAbortRef.current[hfId] = ac;
-    setPullingHf(p => ({ ...p, [hfId]: 0 }));
+    pullRemoteAbortRef.current[key] = ac;
+    setPullingRemote(p => ({ ...p, [key]: 0 }));
     downloadStore.markLocal(modelName, 'downloading', 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         const item = downloadStore.upsertFromPull(modelName, data, 'model');
-        setPullingHf(p => ({ ...p, [hfId]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[hfId] ?? 0) }));
+        setPullingRemote(p => ({ ...p, [key]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[key] ?? 0) }));
       },
       onComplete: (data) => {
         downloadStore.upsertFromPull(modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
-        delete pullHfAbortRef.current[hfId];
-        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+        delete pullRemoteAbortRef.current[key];
+        setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
         refresh();
       },
       onError: (err) => {
         downloadStore.upsertFromPull(modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
-        console.error('HF pull failed:', err);
-        delete pullHfAbortRef.current[hfId];
-        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+        console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
+        delete pullRemoteAbortRef.current[key];
+        setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
       },
       signal: ac.signal,
     };
 
-    await api.pullModel(modelName, callbacks, { checkpoint, recipe });
+    const labels = new Set(vdata?.suggested_labels || []);
+    if (vdata?.mmproj_files?.length) labels.add('vision');
+    await api.pullModel(modelName, callbacks, {
+      checkpoint,
+      recipe,
+      source: provider,
+      mmproj: vdata?.mmproj_files?.[0],
+      labels: [...labels],
+      vision: labels.has('vision'),
+      embedding: labels.has('embeddings'),
+      reranking: labels.has('reranking'),
+    });
   };
 
-  const handleCancelHfPull = async (hfId: string) => {
-    pullHfAbortRef.current[hfId]?.abort();
-    const vdata = hfVariants[hfId];
-    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+  const handleCancelRemotePull = async (provider: ModelRegistryProvider, modelId: string) => {
+    const key = providerKey(provider, modelId);
+    pullRemoteAbortRef.current[key]?.abort();
+    const vdata = remoteVariants[key];
+    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
     await api.controlDownload(`model:user.${suggestedName}`, 'cancel').catch(() => undefined);
-    delete pullHfAbortRef.current[hfId];
+    delete pullRemoteAbortRef.current[key];
     downloadStore.markLocal(`user.${suggestedName}`, 'cancelled', 'model');
-    setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+    setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
   };
 
-  const fetchHfVariants = async (hfId: string) => {
-    if (hfVariants[hfId] || hfVariantsLoading[hfId]) return;
-    setHfVariantsLoading(prev => ({ ...prev, [hfId]: true }));
+  const fetchRemoteVariants = async (provider: ModelRegistryProvider, modelId: string) => {
+    const key = providerKey(provider, modelId);
+    if (remoteVariants[key] || remoteVariantsLoading[key]) return;
+    setRemoteVariantsLoading(prev => ({ ...prev, [key]: true }));
     try {
-      const result = await api.pullVariants(hfId);
-      setHfVariants(prev => ({ ...prev, [hfId]: result }));
+      const result = await loadRemoteVariants(provider, modelId);
+      if (result) setRemoteVariants(prev => ({ ...prev, [key]: result }));
     } catch (err) {
-      console.error('Failed to fetch variants for', hfId, err);
+      console.error(`Failed to fetch ${PROVIDER_META[provider].label} variants for`, modelId, err);
     }
-    setHfVariantsLoading(prev => ({ ...prev, [hfId]: false }));
+    setRemoteVariantsLoading(prev => ({ ...prev, [key]: false }));
   };
 
 
@@ -2179,19 +2380,43 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [visibleFilteredAvailable, showAllAvailable, searchQuery, filterTab]);
   const hiddenAvailableCount = visibleFilteredAvailable.length - visibleAvailable.length;
 
-  // HuggingFace results — exclude models already in local registry
-  const filteredHfResults = useMemo(() => {
-    if (hfResults.length === 0) return [];
-    // The Omni filter is collection-only. HuggingFace search returns individual
-    // GGUF checkpoints, so showing them here would leak LLMs into the Omni tab.
-    if (filterTab === 'omni') return [];
-    const localIds = new Set(allModels.map(m => modelName(m).toLowerCase()));
-    return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
-  }, [hfResults, allModels, filterTab]);
+  const localRegistryRefs = useMemo(() => {
+    const refs = new Set<string>();
+    for (const model of allModels) {
+      refs.add(modelName(model).toLowerCase());
+      const checkpoint = String((model as any).checkpoint || '').split(':')[0].trim().toLowerCase();
+      if (checkpoint) refs.add(checkpoint);
+      const mainCheckpoint = String((model as any).checkpoints?.main || '').split(':')[0].trim().toLowerCase();
+      if (mainCheckpoint) refs.add(mainCheckpoint);
+    }
+    return refs;
+  }, [allModels]);
+
+  const filterRemoteResults = useCallback((provider: ModelRegistryProvider, results: HFModelResult[]) => {
+    if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
+    return results.filter(result => {
+      if (localRegistryRefs.has(result.id.toLowerCase())) return false;
+      const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
+      if (!modelMatchesFilter(info, filterTab)) return false;
+      if (!modelMatchesCapabilityTags(info, capabilityFilter)) return false;
+      if (!modelMatchesBackend(info, backendFilter)) return false;
+      if (!modelMatchesTag(info, tagFilter)) return false;
+      return true;
+    });
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, filterTab, capabilityFilter, backendFilter, tagFilter]);
+
+  const filteredHfResults = useMemo(
+    () => filterRemoteResults('huggingface', hfResults),
+    [filterRemoteResults, hfResults],
+  );
+  const filteredModelScopeResults = useMemo(
+    () => filterRemoteResults('modelscope', modelScopeResults),
+    [filterRemoteResults, modelScopeResults],
+  );
 
   // Rough check: does any local model match the current search query?
-  // Used to decide whether to elevate the HF zone (top, prominent) or
-  // keep it inline at the bottom with an anchor bar.
+  // Used to decide whether to elevate the remote-provider zones (top, prominent)
+  // or keep them inline at the bottom with an anchor bar.
   const hasLocalMatches = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (q.length < 2) return true;
@@ -2604,48 +2829,51 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
-  const renderHfRow = (r: HFModelResult) => {
-    const isExpanded = expandedHfModel === r.id;
-    const pipelineTag = r.pipeline_tag || '';
-    const displayTags = (r.tags || [])
-      .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
-      .slice(0, 5);
-    const vdataForProgress = hfVariants[r.id];
-    const suggestedForProgress = vdataForProgress?.suggested_name || r.id.split('/').pop() || r.id;
-    const activeHfDownload = activeDownloadForModel(downloadItems, `user.${suggestedForProgress}`);
-    const hfPullPercent = activeHfDownload?.percent ?? pullingHf[r.id];
-    const isHfPulling = hfPullPercent !== undefined;
-
-    // Variant data from the server (fetched on expand)
-    const vdata = hfVariants[r.id];
-    const isLoadingVariants = hfVariantsLoading[r.id] || false;
-    const recipeBadge = vdata ? (RECIPE_BADGES[vdata.recipe] || vdata.recipe) : '';
+  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
+    const key = providerKey(provider, result.id);
+    const providerMeta = PROVIDER_META[provider];
+    const isExpanded = expandedRemoteModel === key;
+    const pipelineTag = result.pipeline_tag || '';
+    const variants = remoteVariants[key];
+    const displayTags = Array.from(new Set([
+      ...(result.tags || []),
+      ...(variants?.suggested_labels || []),
+    ]))
+      .filter(tag => !['gguf', 'transformers', 'pytorch', 'safetensors'].includes(tag.toLowerCase()))
+      .slice(0, 6);
+    const suggestedForProgress = remoteSuggestedName(provider, result.id, variants);
+    const activeRemoteDownload = activeDownloadForModel(downloadItems, `user.${suggestedForProgress}`);
+    const pullPercent = activeRemoteDownload?.percent ?? pullingRemote[key];
+    const isPulling = pullPercent !== undefined;
+    const isLoadingVariants = remoteVariantsLoading[key] || false;
+    const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
 
     const handleExpand = () => {
-      const next = isExpanded ? null : r.id;
-      setExpandedHfModel(next);
-      if (next) fetchHfVariants(r.id);
-      setSelectedHfModel(r);
+      const next = isExpanded ? null : key;
+      setExpandedRemoteModel(next);
+      if (next) void fetchRemoteVariants(provider, result.id);
+      setSelectedRemoteModel(result);
+      setSelectedRemoteProvider(provider);
       setSelectedDetailModelId(null);
       setMobileDetailOpen(true);
     };
 
     return (
-      <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
+      <div className={`row row--remote row--${provider}${isExpanded ? ' row--expanded' : ''}`} key={key}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
             <div className="row__main">
-              <div className="row__icon row__icon--hf"><Icon name="download" size={18} /></div>
+              <div className={`row__icon row__icon--${provider}`}><Icon name="cloud" size={18} /></div>
               <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{r.id}</span></span>
+                <span className="row__name-wrap"><span className="row__name">{result.id}</span></span>
                 <span className="row__sub">
                   {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
-                  {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
+                  {formatDownloads(result.downloads)} downloads · {formatDownloads(result.likes)} likes
                 </span>
                 {displayTags.length > 0 && (
                   <div className="row__labels">
-                    {displayTags.map(t => (
-                      <span key={t} className="row__label row__label--hf">{t}</span>
+                    {displayTags.map(tag => (
+                      <span key={tag} className={`row__label row__label--${provider}`}>{tag}</span>
                     ))}
                   </div>
                 )}
@@ -2654,25 +2882,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
-            <CopyInlineButton text={r.id} title={`Copy repository name: ${r.id}`} />
-            {isHfPulling ? (
+            <CopyInlineButton text={result.id} title={`Copy repository name: ${result.id}`} />
+            {isPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${hfPullPercent}%` }} />
+                  <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
                 </div>
-                <span className="row__progress-text">{hfPullPercent.toFixed(0)}%</span>
+                <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
                 <button
                   className="row__action row__action--cancel"
-                  onClick={(e) => { e.stopPropagation(); handleCancelHfPull(r.id); }}
-                  title={`Cancel download of ${r.id}`}
-                  aria-label={`Cancel download of ${r.id}`}
+                  onClick={(event) => { event.stopPropagation(); void handleCancelRemotePull(provider, result.id); }}
+                  title={`Cancel download of ${result.id}`}
+                  aria-label={`Cancel download of ${result.id}`}
                 ><Icon name="x" size={13} /></button>
               </div>
             ) : (
               <button
                 className="row__action row__action--download"
-                aria-label={`Download ${r.id}`}
-                onClick={(e) => { e.stopPropagation(); handleExpand(); }}
+                aria-label={`Download ${result.id}`}
+                onClick={(event) => { event.stopPropagation(); handleExpand(); }}
                 title="Expand to pick a variant to download"
               >
                 <Icon name="download" size={13} /> Download
@@ -2680,10 +2908,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             )}
             <a
               className="row__action row__action--hf-link"
-              href={`https://huggingface.co/${r.id}`}
+              href={providerMeta.url(result.id)}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
+              onClick={event => event.stopPropagation()}
             >
               View
             </a>
@@ -2691,12 +2919,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         </div>
 
         {isExpanded && (
-          <div className="row__detail row__detail--hf">
+          <div className={`row__detail row__detail--remote row__detail--${provider}`}>
             <div className="detail__grid">
               <div className="detail__meta">
                 <div className="detail__field">
+                  <span className="detail__label">Provider</span>
+                  <span className="detail__value">{providerMeta.label}</span>
+                </div>
+                <div className="detail__field">
                   <span className="detail__label">Repository</span>
-                  <span className="detail__value detail__value--mono">{r.id}</span>
+                  <span className="detail__value detail__value--mono">{result.id}</span>
                 </div>
                 {pipelineTag && (
                   <div className="detail__field">
@@ -2704,62 +2936,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     <span className="detail__value">{pipelineTag}</span>
                   </div>
                 )}
-                {vdata && (
+                {variants && (
                   <>
                     <div className="detail__field">
                       <span className="detail__label">Backend</span>
-                      <span className="detail__value">{RECIPE_BADGES[vdata.recipe] || vdata.recipe}</span>
+                      <span className="detail__value">{RECIPE_BADGES[variants.recipe] || variants.recipe}</span>
                     </div>
-                    {vdata.suggested_labels.length > 0 && (
+                    {variants.suggested_labels.length > 0 && (
                       <div className="detail__field">
                         <span className="detail__label">Capabilities</span>
-                        <span className="detail__value">{vdata.suggested_labels.join(', ')}</span>
+                        <span className="detail__value">{variants.suggested_labels.join(', ')}</span>
                       </div>
                     )}
                   </>
                 )}
-                {r.createdAt && (
-                  <div className="detail__field">
-                    <span className="detail__label">Created</span>
-                    <span className="detail__value">{new Date(r.createdAt).toLocaleDateString()}</span>
-                  </div>
-                )}
               </div>
               <div className="detail__source">
                 {isLoadingVariants && (
-                  <div className="detail__field">
-                    <span className="detail__label">Loading variants…</span>
-                  </div>
+                  <div className="detail__field"><span className="detail__label">Loading variants…</span></div>
                 )}
-                {vdata && vdata.variants.length > 0 && (
+                {variants && variants.variants.length > 0 && (
                   <div className="detail__field">
                     <span className="detail__label">Variants — pick one to download</span>
                     <div className="hf-detail__gguf-list">
-                      {vdata.variants.map(v => (
+                      {variants.variants.map(variant => (
                         <button
-                          key={v.name}
+                          key={variant.name}
                           className="hf-detail__gguf-btn"
-                          aria-label={`Download ${v.name} from ${r.id}`}
-                          disabled={isHfPulling}
-                          onClick={() => handleHfPull(r.id, v.name, vdata.recipe)}
+                          aria-label={`Download ${variant.name} from ${result.id}`}
+                          disabled={isPulling}
+                          onClick={() => void handleRemotePull(provider, result.id, variant.name, variants.recipe)}
                         >
                           <span className="hf-detail__gguf-name">
-                            {v.name}{v.sharded ? ' (sharded)' : ''}
+                            {variant.name}{variant.sharded ? ' (sharded)' : ''}
                           </span>
-                          <span className="hf-detail__gguf-size">{formatBytes(v.size_bytes)}</span>
+                          <span className="hf-detail__gguf-size">{formatBytes(variant.size_bytes)}</span>
                           <span className="hf-detail__gguf-action">Download</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
-                <a
-                  className="detail__hf-link"
-                  href={`https://huggingface.co/${r.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View on Hugging Face
+                <a className="detail__hf-link" href={providerMeta.url(result.id)} target="_blank" rel="noopener noreferrer">
+                  View on {providerMeta.label}
                 </a>
               </div>
             </div>
@@ -2768,7 +2987,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       </div>
     );
   };
-
 
 
   /* ── Keyboard shortcut ───────────────────────────────────── */
@@ -2784,15 +3002,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   /* ── Stats ───────────────────────────────────────────────── */
-  const showHuggingFaceZone = filterTab !== 'omni';
-  const hasHuggingFaceActivity = showHuggingFaceZone
-    && searchQuery.trim().length >= 2
-    && (hfLoading || Boolean(hfError) || filteredHfResults.length > 0);
+  const searchActive = searchQuery.trim().length >= 2;
+  const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
+  const hasModelScopeActivity = searchActive && primaryFilter === 'all' && providerEnabled.modelscope;
+  const hasRemoteActivity = hasHuggingFaceActivity || hasModelScopeActivity;
+  const remoteResultCount = filteredHfResults.length + filteredModelScopeResults.length;
+  const providerCounts: Record<ModelRegistryProvider, number> = {
+    huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
+    modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
+  };
   const showManagerEmpty = !modelsLoading
     && filteredRunning.length === 0
     && visibleFilteredDownloaded.length === 0
     && visibleFilteredAvailable.length === 0
-    && !hasHuggingFaceActivity;
+    && !hasRemoteActivity;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
@@ -2851,28 +3074,61 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
 
-  const renderHuggingFaceZone = () => !hasHuggingFaceActivity ? null : (
-    <section className="zone zone--hf" aria-label="HuggingFace search results">
-      <div className="zone__head">
-        <span className="zone__dot zone__dot--hf" aria-hidden="true" />
-        <span className="zone__title">HuggingFace</span>
-        {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
-        <span className="zone__rule" />
-      </div>
-      {hfLoading ? (
-        <div className="hf-zone__loading" role="status" aria-live="polite">
-          <span className="hf-zone__spinner" aria-hidden="true" />
-          <span>Searching HuggingFace…</span>
+  const toggleProvider = (provider: ModelRegistryProvider) => {
+    setProviderEnabled(prev => ({ ...prev, [provider]: !prev[provider] }));
+    if (selectedRemoteModel && selectedRemoteProvider === provider) {
+      setSelectedRemoteModel(null);
+      setExpandedRemoteModel(null);
+      setMobileDetailOpen(false);
+    }
+  };
+
+  const renderProviderZone = (provider: ModelRegistryProvider) => {
+    const meta = PROVIDER_META[provider];
+    const loading = provider === 'huggingface' ? hfLoading : modelScopeLoading;
+    const error = provider === 'huggingface' ? hfError : modelScopeError;
+    const results = provider === 'huggingface' ? filteredHfResults : filteredModelScopeResults;
+    const enabled = providerEnabled[provider];
+    if (!searchActive || !enabled) return null;
+    return (
+      <section
+        className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
+        aria-label={`${meta.label} search results`}
+        data-provider={provider}
+      >
+        <div className="zone__head">
+          <span className={`zone__dot zone__dot--${provider === 'huggingface' ? 'hf' : 'modelscope'}`} aria-hidden="true" />
+          <span className="zone__title">{meta.compactLabel}</span>
+          {!loading && <span className="zone__count">{results.length}</span>}
+          <span className="zone__rule" />
         </div>
-      ) : hfError ? (
-        <div className="hf-zone__empty hf-zone__empty--error">
-          <Icon name="alert" size={16} />
-          <span>HuggingFace search is unavailable: {hfError}</span>
-        </div>
-      ) : (
-        filteredHfResults.map(r => renderHfRow(r))
-      )}
-    </section>
+        {loading ? (
+          <div className="hf-zone__loading" role="status" aria-live="polite">
+            <span className="hf-zone__spinner" aria-hidden="true" />
+            <span>Searching {meta.label}…</span>
+          </div>
+        ) : error ? (
+          <div className="hf-zone__empty hf-zone__empty--error">
+            <Icon name="alert" size={16} />
+            <span>{meta.label} search is unavailable: {error}</span>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="hf-zone__empty">
+            <Icon name="cloud-off" size={16} />
+            <span>No compatible {meta.label} models match the active filters.</span>
+          </div>
+        ) : (
+          results.map(result => renderRemoteRow(provider, result))
+        )}
+      </section>
+    );
+  };
+
+  const renderRegistryZones = () => !hasRemoteActivity ? null : (
+    <div className="registry-zones" aria-label="Remote model search results">
+      {renderProviderZone('huggingface')}
+      {renderProviderZone('modelscope')}
+    </div>
   );
   return (
     <div
@@ -2905,6 +3161,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         onBackendFilterChange={setBackendFilter}
         tagFilter={tagFilter}
         onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
+        providerEnabled={providerEnabled}
+        providerCounts={providerCounts}
+        onToggleProvider={toggleProvider}
         storageInfo={storageInfo}
       />
 
@@ -2917,7 +3176,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         selectedModelId={selectedDetailModelId}
         onSelectModel={(id) => {
           setSelectedDetailModelId(id);
-          setSelectedHfModel(null);
+          setSelectedRemoteModel(null);
           setMobileDetailOpen(true);
           if (showCustomForm) closeCustomForm();
         }}
@@ -2935,9 +3194,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
         favoriteNames={favoriteNameSet}
-        hfZoneTop={hasHuggingFaceActivity && !hasLocalMatches ? renderHuggingFaceZone() : undefined}
-        hfZone={hasHuggingFaceActivity && hasLocalMatches ? renderHuggingFaceZone() : undefined}
-        hfResultCount={filteredHfResults.length}
+        registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
+        registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
+        registryResultCount={remoteResultCount}
       />
 
       <div
@@ -3233,12 +3492,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onToggleFavorite={toggleFavoriteModel}
           onEditCustomCollection={openCustomCollectionEditor}
           noModelsAvailable={allModels.length === 0}
-          hfModel={selectedHfModel}
-          hfVariants={selectedHfModel ? hfVariants[selectedHfModel.id] : undefined}
-          onFetchHfVariants={fetchHfVariants}
-          onHfPull={handleHfPull}
-          pullingHf={pullingHf}
-          onCancelHfPull={handleCancelHfPull}
+          hfModel={selectedRemoteModel}
+          hfProvider={selectedRemoteProvider}
+          hfVariants={selectedRemoteModel ? remoteVariants[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] : undefined}
+          onFetchHfVariants={(modelId) => { void fetchRemoteVariants(selectedRemoteProvider, modelId); }}
+          onHfPull={(modelId, variantName, recipe) => { void handleRemotePull(selectedRemoteProvider, modelId, variantName, recipe); }}
+          pullingHf={selectedRemoteModel && pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] !== undefined
+            ? { [selectedRemoteModel.id]: pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] }
+            : {}}
+          onCancelHfPull={(modelId) => { void handleCancelRemotePull(selectedRemoteProvider, modelId); }}
           onBack={() => {
             setMobileDetailOpen(false);
             if (selectedDetailModelId) {
@@ -3248,7 +3510,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               });
             }
           }}
-          onClose={() => { setSelectedDetailModelId(null); setSelectedHfModel(null); }}
+          onClose={() => { setSelectedDetailModelId(null); setSelectedRemoteModel(null); }}
         />
       )}
     </div>

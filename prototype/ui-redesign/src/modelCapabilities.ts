@@ -1,4 +1,4 @@
-import { LoadedModel, ModelInfo } from './api';
+import type { LoadedModel, ModelInfo } from './api';
 
 export type ModelCapability =
   | 'chat'
@@ -135,14 +135,30 @@ export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapabilit
 }
 
 export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
-  const recipeCap = capabilityFromRecipe((model as any).recipe);
-  if (preferNonChat(recipeCap)) return recipeCap;
+  const explicitCapability = capabilityFromType((model as any).capability);
+  if (explicitCapability !== 'unknown') return explicitCapability;
 
   const direct = capabilityFromType((model as any).type);
   if (preferNonChat(direct)) return direct;
 
-  const fromLabels = capabilityFromLabels(model.labels || []);
+  const declaredCapabilities = Array.isArray((model as any).capabilities)
+    ? (model as any).capabilities.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  const fromLabels = capabilityFromLabels([...(model.labels || []), ...declaredCapabilities]);
   if (preferNonChat(fromLabels)) return fromLabels;
+
+  const source = String((model as any).registry_source || (model as any).source || '').trim().toLowerCase();
+  const isRemoteRegistryModel = source === 'huggingface' || source === 'modelscope' || source === 'hf' || source === 'ms';
+  if (isRemoteRegistryModel) {
+    // Remote search rows must not become Chat merely because the repository
+    // name contains a keyword or because every GGUF uses the llamacpp recipe.
+    // Only explicit server/provider evidence is accepted.
+    if (fromLabels === 'chat' || direct === 'chat') return 'chat';
+    return 'unknown';
+  }
+
+  const recipeCap = capabilityFromRecipe((model as any).recipe);
+  if (preferNonChat(recipeCap)) return recipeCap;
 
   const nameCap = capabilityFromName(`${model.id || ''} ${model.name || ''} ${model.display_name || ''} ${String((model as any).model_name || '')} ${String((model as any).checkpoint || '')}`);
   if (preferNonChat(nameCap)) return nameCap;
@@ -289,7 +305,12 @@ const BASE_CAPABILITY_TAG: Partial<Record<ModelCapability, CapabilityTag>> = {
 };
 
 export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
-  const labels = (model.labels || []).map(l => String(l).toLowerCase().trim()).filter(Boolean);
+  const declaredCapabilities = Array.isArray((model as any).capabilities)
+    ? (model as any).capabilities.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  const labels = [...(model.labels || []), ...declaredCapabilities]
+    .map(l => String(l).toLowerCase().trim())
+    .filter(Boolean);
   const labelSet = new Set(labels);
   const found = new Set<CapabilityTag>();
   for (const tag of CAPABILITY_TAG_ORDER) {
@@ -297,7 +318,6 @@ export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   }
   const base = BASE_CAPABILITY_TAG[capabilityFromModelInfo(model)];
   if (base) found.add(base);
-  if (found.size === 0) found.add('chat');
   return CAPABILITY_TAG_ORDER.filter(tag => found.has(tag));
 }
 

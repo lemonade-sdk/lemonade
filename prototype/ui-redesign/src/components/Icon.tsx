@@ -10,7 +10,7 @@ export type IconName =
   | 'search' | 'search-check' | 'eye' | 'eye-off' | 'plus' | 'edit' | 'download' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
   | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
-  | 'star' | 'hugging-face' | 'user-round-cog'
+  | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
   | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
   | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off';
@@ -91,6 +91,8 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'pin': return <><path d="M12 17v5" /><path d="M5 17h14v-2l-4-4V5l2-2V2H7v1l2 2v6l-4 4v2z" /></>;
       case 'star': return <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.5 1.3 6.5L12 17.8 6.1 20.8l1.3-6.5-4.9-4.5 6.6-.7z" />;
       case 'hugging-face': return <><circle cx="12" cy="12" r="9" /><path d="M8.5 14a4 4 0 007 0" /><path d="M9 10h.01" /><path d="M15 10h.01" /></>;
+      case 'cloud': return <path d="M17.5 19H7a5 5 0 01-.8-9.94A7 7 0 0119.7 11.2 4 4 0 0117.5 19z" />;
+      case 'cloud-off': return <><path d="M3 3l18 18" /><path d="M9.5 5.4A7 7 0 0119.7 11.2 4 4 0 0118 18.8" /><path d="M7 19a5 5 0 01-1.6-9.74" /></>;
       case 'user-round-cog': return <><path d="M2 21a8 8 0 0 1 10.434-7.62" /><circle cx="10" cy="8" r="5" /><circle cx="18" cy="18" r="3" /><path d="m19.5 14.3-.4.9m-2.2 5.6-.4.9m5.2-.4-.9-.4m-5.6-2.2-.9-.4m7.4 0-.9.4m-5.6 2.2-.9.4m5.2 2.2-.4-.9m-2.2-5.6-.4-.9" /></>;
       case 'speech': return <><path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z" /><path d="M8 9h8" /><path d="M8 13h5" /></>;
       case 'book-open': return <><path d="M12 7v14" /><path d="M3 5.5A2.5 2.5 0 015.5 3H12v18H5.5A2.5 2.5 0 013 18.5z" /><path d="M21 5.5A2.5 2.5 0 0018.5 3H12v18h6.5a2.5 2.5 0 002.5-2.5z" /></>;
