@@ -278,5 +278,495 @@ class TestPathTests(unittest.TestCase):
             self.assertTrue(slop.TEST_PATH_RE.search(path), path)
 
 
+class CodeOfTests(unittest.TestCase):
+    def test_comments_and_blanks_are_erased_but_code_survives(self):
+        self.assertEqual(
+            slop._code_of("int x = 1;  // set x\n\n// a comment\nint y = 2;"),
+            ["int x = 1;", "int y = 2;"],
+        )
+
+    def test_rewording_a_comment_leaves_the_code_identical(self):
+        before = "// long-winded explanation\nint x = 1;"
+        after = "// terse why\nint x = 1;"
+        self.assertEqual(slop._code_of(before), slop._code_of(after))
+
+    def test_adding_code_is_visible(self):
+        before = "int x = 1;"
+        after = "if (offline()) { return; }\nint x = 1;"
+        self.assertNotEqual(slop._code_of(before), slop._code_of(after))
+
+    def test_code_hidden_after_a_url_is_still_visible(self):
+        # A regex that strips "//" anywhere eats the rest of the line from inside a URL,
+        # so a change after it compares equal -- letting a "comment cleanup" smuggle code
+        # past --assert-comments-only. That is the one false pass that must never happen.
+        before = 'auto url = "https://example.com/old";'
+        after = 'auto url = "https://example.com/new"; system("rm -rf /");'
+        self.assertNotEqual(
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+    def test_code_hidden_after_a_url_is_still_visible_in_python(self):
+        before = 'url = "https://example.com/old"'
+        after = 'url = "https://example.com/new"; os.system("rm -rf /")'
+        self.assertNotEqual(slop._code_of(before, "a.py"), slop._code_of(after, "a.py"))
+
+    def test_a_raw_string_holding_quotes_does_not_end_the_literal_early(self):
+        # Leaving R"(...)" at its first inner quote reads the rest of the JSON as code,
+        # so a genuine comment-only change to such a file reports as NOT comments-only.
+        before = '// old\nauto j = R"({"error":"nope"})";'
+        after = '// terse why\nauto j = R"({"error":"nope"})";'
+        self.assertEqual(slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp"))
+
+    def test_code_smuggled_after_a_raw_string_is_still_visible(self):
+        before = 'auto j = R"({"a":"b"})";'
+        after = 'auto j = R"({"a":"b"})"; system("rm -rf /");'
+        self.assertNotEqual(
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+    def test_a_double_slash_inside_a_char_literal_is_not_a_comment(self):
+        code = slop._code_of("char c = '\"'; int x = 1;", "a.cpp")
+        self.assertEqual(code, ["char c = '\"'; int x = 1;"])
+
+    def test_an_unterminated_string_fails_closed(self):
+        # A newline inside a string literal is ill-formed C (gcc: missing terminating ").
+        # Refuse it, rather than absorb the newline and hope a later line-split happens to
+        # expose the change -- which it does not when both sides normalise to the same text.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('auto s = "unterminated;\nint x = 1;', "a.cpp")
+
+    def test_a_raw_line_ending_change_inside_a_string_does_not_compare_equal(self):
+        # `"a\r\nb"` and `"a\nb"` are different string constants, but phase-1 line-ending
+        # normalisation collapses both to `"a\nb"` -- so absorbing the newline would certify
+        # a real change as comments-only. Both are ill-formed C, so fail closed.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('char *s = "a\r\nb";\nint x = 1;\n', "a.c")
+        with self.assertRaises(slop.GitError):
+            slop._code_of('char *s = "a\nb";\nint x = 1;\n', "a.c")
+
+    def test_a_backslash_continued_string_is_legal_and_does_not_fail_closed(self):
+        # `"a\<newline>b"` is a legal line splice inside a string; it must NOT raise.
+        self.assertEqual(
+            slop._code_of('char *s = "a\\\nb";\nint x = 1;\n', "a.c"),
+            slop._code_of('char *s = "a\\\nb";\nint x = 1;\n', "a.c"),
+        )
+
+    def test_a_backslash_newline_inside_a_raw_string_is_content_not_a_splice(self):
+        # C++ deletes a backslash-newline EXCEPT inside a raw string ([lex.phases]/2).
+        # Splicing the whole file first edits the raw string's CONTENTS, so two literals
+        # that genuinely differ compare equal -- a false pass introduced BY the fix for
+        # the line-continuation hole below.
+        before = '// old\nauto s = R"delim(\nhello \\\nworld\n)delim";\n'
+        after = '// new\nauto s = R"delim(\nhello world\n)delim";\n'
+        self.assertNotEqual(
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+    def test_a_line_continuation_in_an_ordinary_string_is_still_spliced(self):
+        # The exemption is raw strings ONLY; an ordinary string still splices.
+        self.assertEqual(
+            slop._code_of('auto s = "ab\\\ncd";\n', "a.cpp"),
+            slop._code_of('auto s = "abcd";\n', "a.cpp"),
+        )
+
+    def test_a_trigraph_continuing_a_c_comment_is_caught(self):
+        # In C, `??/` is a backslash, so `// x ??/` continues over the next line and
+        # buries live code. C++17 removed trigraphs, so only .c is affected.
+        plain = "// comment\nint x = 1;\n"
+        trigraph = "// comment ??/\nint x = 1;\n"
+        self.assertNotEqual(slop._code_of(plain, "a.c"), slop._code_of(trigraph, "a.c"))
+
+    def test_a_literal_trigraph_in_a_cpp_header_is_a_comment_change(self):
+        # A .h here is a C++ header; `??/` is three ordinary characters, so adding it to
+        # a comment is genuinely comment-only and must not be flagged.
+        plain = "// comment\nint x = 1;\n"
+        trigraph = "// comment ??/\nint x = 1;\n"
+        self.assertEqual(slop._code_of(plain, "a.h"), slop._code_of(trigraph, "a.h"))
+
+    def test_invalid_utf8_degrades_instead_of_crashing(self):
+        # run() decodes with errors="replace", so an undecodable file becomes a
+        # comparison rather than an uncaught UnicodeDecodeError.
+        self.assertIsInstance(slop.run(["printf", "\\xff\\xfe"]), str)
+
+    def test_two_different_invalid_utf8_bytes_are_distinguished(self):
+        # git output is decoded with surrogateescape, so \xff and \xfe inside a string
+        # map to distinct surrogates. errors="replace" collapsed both to U+FFFD and hid
+        # the change.
+        self.assertNotEqual(
+            slop._code_of('char m = "\udcff";\n', "a.c"),
+            slop._code_of('char m = "\udcfe";\n', "a.c"),
+        )
+
+    def test_a_raw_crlf_inside_a_python_triple_quote_is_a_code_change(self):
+        # A raw CR inside a Python triple-quoted string is a real value difference, and
+        # the Python path is not line-normalised. (The C case is ill-formed -- a raw
+        # newline in a "..." literal -- so the C scanner normalises line endings instead.)
+        self.assertNotEqual(
+            slop._code_of('h = """OK\r\n\r\n"""\n', "a.py"),
+            slop._code_of('h = """OK\n\n"""\n', "a.py"),
+        )
+
+    def test_a_star_backslash_newline_slash_closes_a_block_comment(self):
+        # `*\<newline>/` splices to `*/`, closing the comment in the compiler; the `*` and
+        # `/` are never adjacent, so the scanner must match the spliced form or it
+        # swallows the code after it as prose.
+        before = "int x = 0; /* old *\\\n/\nevil();\nint y = 1;\n"
+        after = "int x = 0; /* new *\\\n/\ngood();\nint y = 1;\n"
+        self.assertNotEqual(slop._code_of(before, "a.c"), slop._code_of(after, "a.c"))
+
+    def test_a_line_continuation_in_a_crlf_file_revives_dead_code(self):
+        # `\`+CRLF continues a // comment just as `\`+LF does, once line endings are
+        # normalised. Deleting the backslash promotes the line below from dead to live.
+        before = "// disable this \\\r\nevil();\r\nint x = 1;\r\n"
+        after = "// disable this\r\nevil();\r\nint x = 1;\r\n"
+        self.assertNotEqual(slop._code_of(before, "a.c"), slop._code_of(after, "a.c"))
+
+    def test_a_cr_only_file_gets_line_boundaries(self):
+        # An old-Mac CR-only file starting with `//` was read as one whole-file comment,
+        # hiding every code change inside it. Normalising CR to newline restores the
+        # boundaries so a change is seen.
+        self.assertNotEqual(
+            slop._code_of("// header\rint x = 1;\r", "a.c"),
+            slop._code_of("// header\rint x = 2;\r", "a.c"),
+        )
+
+    def test_a_crlf_source_file_with_a_genuine_comment_edit_still_passes(self):
+        # The fix must not flag an ordinary comment edit in a CRLF-saved file -- both
+        # sides carry the same line-ending \r, so the code compares equal.
+        self.assertEqual(
+            slop._code_of("// a\r\nint x = 1;\r\n", "a.c"),
+            slop._code_of("// b\r\nint x = 1;\r\n", "a.c"),
+        )
+
+    def test_a_block_comment_closed_by_repeated_splices_does_not_swallow_the_file(self):
+        # Phase 2 splices EVERY backslash-newline, so `*\<LF>\<LF>/` is a `*/` and the code
+        # after it is LIVE (gcc -E agrees). Matching a single splice missed this and the
+        # comment ate the rest of the file, comparing the two revisions equal.
+        for pad in ("\\\n", "\\\n\\\n", "\\\n\\\n\\\n"):
+            self.assertNotEqual(
+                slop._code_of(f"/* *{pad}/ int x = old();\n", "a.c"),
+                slop._code_of(f"/* *{pad}/ int x = new();\n", "a.c"),
+                pad,
+            )
+
+    def test_a_comment_opener_split_by_a_splice_still_opens_a_comment(self):
+        # `/\<LF>/` splices to `//`, so the text after it is a comment, not code.
+        self.assertEqual(
+            slop._code_of("/\\\n/ old\nint x = 1;\n", "a.c"),
+            slop._code_of("/\\\n/ new\nint x = 1;\n", "a.c"),
+        )
+
+    def test_whitespace_inside_a_raw_string_is_content_not_formatting(self):
+        # `R"(  x)"` and `R"(x)"` are different string constants (gcc keeps the spaces),
+        # so the final line-strip must not erase interior raw-string whitespace.
+        self.assertNotEqual(
+            slop._code_of('auto s = R"(\n  hello\n)";\nint x = 1;\n', "a.cpp"),
+            slop._code_of('auto s = R"(\nhello\n)";\nint x = 1;\n', "a.cpp"),
+        )
+
+    def test_a_blank_line_inside_a_raw_string_is_content(self):
+        # A dropped blank line inside a raw string changes the constant.
+        self.assertNotEqual(
+            slop._code_of('auto s = R"(\nx\n\ny\n)";\n', "a.cpp"),
+            slop._code_of('auto s = R"(\nx\ny\n)";\n', "a.cpp"),
+        )
+
+    def test_a_comment_edit_beside_an_unchanged_raw_string_still_passes(self):
+        # The raw-string guard must not make a genuine comment-only change fail.
+        self.assertEqual(
+            slop._code_of('// old\nauto s = R"(\n  keep\n)";\n', "a.cpp"),
+            slop._code_of('// new\nauto s = R"(\n  keep\n)";\n', "a.cpp"),
+        )
+
+    def test_a_slash_slash_inside_an_include_is_a_header_name_not_a_comment(self):
+        # `<a//b.h>` is a header-name token; gcc keeps the `//` literal, so a change to the
+        # header past the `//` is a real, different include -- not comments-only.
+        self.assertNotEqual(
+            slop._code_of(
+                "#include <boost//algorithm//string.hpp>\nint x = 1;\n", "a.cpp"
+            ),
+            slop._code_of(
+                "#include <boost//algorithm//vector.hpp>\nint x = 1;\n", "a.cpp"
+            ),
+        )
+
+    def test_slash_slash_is_literal_across_every_header_name_context(self):
+        # `//` inside `<...>` is part of the header-name token in a closed set of contexts;
+        # a change past it is a different header, not a comment. gcc keeps it literal.
+        for before, after in [
+            (
+                "#include <a//b\\\nc.h>\n",
+                "#include <a//b\\\nd.h>\n",
+            ),  # spliced multi-line
+            ("%:include <a//b.h>\n", "%:include <a//c.h>\n"),  # %: digraph for #
+            (
+                "#if __has_include(<a//b.h>)\n#endif\n",
+                "#if __has_include(<a//c.h>)\n#endif\n",
+            ),
+            ("#include_next <a//b.h>\n", "#include_next <a//c.h>\n"),  # gcc extension
+            ("#embed <a//b.bin>\n", "#embed <a//c.bin>\n"),  # C23
+        ]:
+            self.assertNotEqual(
+                slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp"), before
+            )
+
+    def test_a_spliced_header_name_joins_to_the_same_header(self):
+        # `<a//b\<LF>c.h>` and `<a//bc.h>` are the SAME header after phase-2 splicing.
+        self.assertEqual(
+            slop._code_of("#include <a//b\\\nc.h>\n", "a.cpp"),
+            slop._code_of("#include <a//bc.h>\n", "a.cpp"),
+        )
+
+    def test_a_comment_edit_on_an_include_line_still_passes(self):
+        # The header-name guard must not flag a genuine comment change after the include.
+        self.assertEqual(
+            slop._code_of("#include <vector>  // old\nint x = 1;\n", "a.cpp"),
+            slop._code_of("#include <vector>  // new\nint x = 1;\n", "a.cpp"),
+        )
+
+    def test_an_ordinary_less_than_is_not_treated_as_a_header_name(self):
+        # `<` outside an include directive is an operator: the change must be caught and a
+        # trailing comment must still be stripped.
+        self.assertNotEqual(
+            slop._code_of("int r = a < b; // c\n", "a.cpp"),
+            slop._code_of("int r = a > b; // c\n", "a.cpp"),
+        )
+        self.assertEqual(
+            slop._code_of("int r = a < b; // old\n", "a.cpp"),
+            slop._code_of("int r = a < b; // new\n", "a.cpp"),
+        )
+
+    def test_a_removed_comment_separates_tokens(self):
+        # `int/**/x` and `intx` are different programs -- a comment is a token separator, so
+        # removing it must leave a space, not nothing.
+        self.assertNotEqual(
+            slop._code_of("int/**/x = 1;\n", "a.cpp"),
+            slop._code_of("intx = 1;\n", "a.cpp"),
+        )
+        self.assertEqual(
+            slop._code_of("int/**/x = 1;\n", "a.cpp"),
+            slop._code_of("int x = 1;\n", "a.cpp"),
+        )
+
+    def test_interior_whitespace_of_a_string_literal_is_content(self):
+        # Whitespace is collapsed in code but a string literal is a constant: `"a  b"` and
+        # `"a b"` differ.
+        self.assertNotEqual(
+            slop._code_of('s = "a  b";\n', "a.cpp"),
+            slop._code_of('s = "a b";\n', "a.cpp"),
+        )
+
+    def test_reindenting_c_code_is_not_a_code_change(self):
+        # Runs of inter-token whitespace outside a literal collapse to one space, so a
+        # re-indent or a doubled space is not flagged as code.
+        self.assertEqual(
+            slop._code_of("    int  x = 1;\n", "a.cpp"),
+            slop._code_of("int x = 1;\n", "a.cpp"),
+        )
+
+    def test_moving_a_directive_to_different_code_is_a_change(self):
+        # A moved `# fmt: off` / `# type: ignore` changes behaviour though the directive set
+        # and comment-stripped code are unchanged.
+        self.assertNotEqual(
+            slop._directives_of("# fmt: off\na = 1\nb = 2\n"),
+            slop._directives_of("a = 1\n# fmt: off\nb = 2\n"),
+        )
+        self.assertNotEqual(
+            slop._directives_of("a = 1  # type: ignore\nb = 2\n"),
+            slop._directives_of("a = 1\nb = 2  # type: ignore\n"),
+        )
+
+    def test_toolchain_directives_are_matched_by_verb_not_just_name(self):
+        # The tool set is open (yapf, autopep8, cspell, sourcery, ...); matching the toggle
+        # verb catches the class. Changing such a directive is a behaviour change.
+        for before, after in [
+            ("x = 1  # yapf: disable\n", "x = 1  # yapf: enable\n"),
+            ("x = 1  # autopep8: off\n", "x = 1  # autopep8: on\n"),
+            ("x = 1  # cspell: ignore\n", "x = 1  # cspell: check\n"),
+            ("x = 1  # sourcery skip: foo\n", "x = 1  # sourcery skip: bar\n"),
+        ]:
+            self.assertNotEqual(
+                slop._directives_of(before), slop._directives_of(after), before
+            )
+
+    def test_ordinary_prose_comment_is_not_a_directive(self):
+        # `# Note: ...` / `# TODO: ...` are prose, not directives — editing them must pass.
+        self.assertEqual(slop._directives_of("x = 1  # Note: a\n"), [])
+        self.assertEqual(
+            slop._directives_of("x = 1  # TODO: old\n"),
+            slop._directives_of("x = 1  # TODO: new\n"),
+        )
+
+    def test_an_unterminated_string_literal_fails_closed(self):
+        # A literal that reaches EOF with no closing quote (and no newline, which the
+        # newline-in-string guard would catch first) is ill-formed; refuse it, consistent
+        # with the block-comment policy, rather than swallow the rest as string content.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('const char *s = "abc', "a.cpp")
+
+    def test_an_unterminated_block_comment_fails_closed(self):
+        # Not valid C. Swallowing it certified two differing revisions as equal.
+        with self.assertRaises(slop.GitError):
+            slop._code_of("/* never closed\nint evil();\n", "a.c")
+
+    def test_an_unparseable_python_file_fails_closed(self):
+        # Refuse to certify what we could not parse, rather than compare two blanks.
+        with self.assertRaises(slop.GitError):
+            slop._code_of("def f(:\n  x = 1", "a.py")
+
+    def test_moving_a_statement_into_a_block_is_not_a_comment_change(self):
+        # Same tokens, different program: bar() runs unconditionally, then only when x.
+        # A token stream that drops INDENT/DEDENT cannot see this.
+        before = "def f(x):\n    if x:\n        foo()\n    bar()\n"
+        after = "def f(x):\n    if x:\n        foo()\n        bar()\n"
+        self.assertNotEqual(slop._code_of(before, "a.py"), slop._code_of(after, "a.py"))
+
+    def test_rewording_a_comment_still_leaves_python_code_identical(self):
+        before = "# long-winded explanation\ndef f(x):\n    return x\n"
+        after = "# terse why\ndef f(x):\n    return x\n"
+        self.assertEqual(slop._code_of(before, "a.py"), slop._code_of(after, "a.py"))
+
+    def test_deleting_a_line_continuation_revives_dead_code(self):
+        # The backslash continues the // comment onto the next line, so evil() is dead.
+        # Removing it -- a change entirely inside a comment -- makes evil() live code.
+        before = "// disable this \\\nevil();\nint x = 1;\n"
+        after = "// disable this\nevil();\nint x = 1;\n"
+        self.assertNotEqual(
+            slop._code_of(before, "a.cpp"), slop._code_of(after, "a.cpp")
+        )
+
+
+class ChangedEntryTests(unittest.TestCase):
+    def _entries(self, raw):
+        slop.run = lambda *a, **k: raw  # noqa: ARG005
+        try:
+            return slop._changed_entries("A", "B")
+        finally:
+            importlib.reload(slop)
+
+    def test_a_mode_change_is_reported(self):
+        # chmod +x leaves every byte of content identical, so a content comparison sees
+        # nothing -- but the mode is part of the tree, so the change is not comments-only.
+        raw = ":100644 100755 b859599 b859599 M\0a.py\0"
+        self.assertEqual(self._entries(raw), [("a.py", "100644", "100755", "M")])
+
+    def test_a_path_containing_a_space_survives(self):
+        raw = ":100644 100644 aaa bbb M\0my file.py\0"
+        self.assertEqual(self._entries(raw)[0][0], "my file.py")
+
+    def test_a_rename_reports_the_destination(self):
+        raw = ":100644 100644 aaa bbb R100\0old.py\0new.py\0"
+        self.assertEqual(self._entries(raw), [("new.py", "100644", "100644", "R100")])
+
+
+class FileSelectionTests(unittest.TestCase):
+    def test_a_filename_containing_a_space_is_one_path(self):
+        # Splitting the file list on whitespace shatters `model.c manager.py` into two
+        # paths that both exist and are unchanged, so the real file is never examined
+        # and the change is certified as comments-only.
+        raw = ":000000 100644 0000000 aaaaaaa A\0model.c manager.py\0"
+        slop.run = lambda *a, **k: raw  # noqa: ARG005
+        try:
+            self.assertEqual(
+                slop._changed_entries("A", "B")[0][0], "model.c manager.py"
+            )
+        finally:
+            importlib.reload(slop)
+
+    def test_python_stubs_are_parsed_as_python(self):
+        # A .pyi does not end with ".py", so a suffix test that checks for it routes stub
+        # files through the C scanner.
+        self.assertEqual(
+            slop._code_of("# old\ndef f() -> int: ...\n", "a.pyi"),
+            slop._code_of("# new\ndef f() -> int: ...\n", "a.pyi"),
+        )
+        self.assertNotEqual(
+            slop._code_of("def f() -> int: ...\n", "a.pyi"),
+            slop._code_of("def f() -> str: ...\n", "a.pyi"),
+        )
+
+
+class TwoRepresentationTests(unittest.TestCase):
+    """The tree and the token stream are each blind where the other sees."""
+
+    def test_a_literal_rewritten_to_the_same_value_is_still_a_code_change(self):
+        # ast.dump keeps the VALUE and loses the written form, so the tree alone calls
+        # these equal. The token stream sees it.
+        self.assertNotEqual(
+            slop._code_of("B = 0x100000\n", "a.py"),
+            slop._code_of("B = 1048576\n", "a.py"),
+        )
+
+    def test_implicit_string_concatenation_is_still_a_code_change(self):
+        self.assertNotEqual(
+            slop._code_of("s = 'a' 'b'\n", "a.py"), slop._code_of("s = 'ab'\n", "a.py")
+        )
+
+    def test_a_statement_moved_between_scopes_is_still_a_code_change(self):
+        # The token stream loses INDENT/DEDENT, so tokens alone call these equal. The
+        # tree sees it. Neither representation is sufficient by itself.
+        self.assertNotEqual(
+            slop._code_of("def f(x):\n    if x:\n        g()\n    h()\n", "a.py"),
+            slop._code_of("def f(x):\n    if x:\n        g()\n        h()\n", "a.py"),
+        )
+
+
+class DirectiveTests(unittest.TestCase):
+    def test_a_variable_type_comment_is_obeyed_by_the_toolchain(self):
+        # `# type: int` is read by a type checker and appears in neither the tree nor
+        # the token stream, so it can only be caught here.
+        self.assertNotEqual(
+            slop._directives_of("x = c()  # type: int"),
+            slop._directives_of("x = c()  # type: str"),
+        )
+
+    def test_other_linter_directives_are_obeyed_too(self):
+        for a, b in (
+            ("import x  # pyright: ignore", "import x  # pyright: basic"),
+            ("import x  # ruff: noqa", "import x"),
+            ("import x  # isort: skip", "import x"),
+            ("x = 1  # fmt: skip", "x = 1"),
+            ("os.system(c)  # nosec", "os.system(c)"),
+            ("/* IWYU pragma: keep */", "/* IWYU pragma: export */"),
+        ):
+            self.assertNotEqual(slop._directives_of(a), slop._directives_of(b), a)
+
+    def test_a_shebang_is_obeyed_by_the_kernel(self):
+        # A shebang is a `#` comment, but the kernel reads it to exec the file; python3
+        # -> python3 -O silently disables every assert. So a shebang change is not a
+        # comment-only change.
+        self.assertNotEqual(
+            slop._directives_of("#!/usr/bin/env python3\nx = 1"),
+            slop._directives_of("#!/usr/bin/env python3 -O\nx = 1"),
+        )
+
+    def test_a_first_line_hash_that_is_not_a_shebang_is_not_a_directive(self):
+        self.assertEqual(slop._directives_of("# just a comment\nx = 1"), [])
+
+    def test_an_encoding_cookie_is_honoured_only_on_the_first_two_lines(self):
+        # PEP 263 only reads the cookie there -- and a line matching its regex IS a
+        # declaration, prose or not: CPython rejects `# the encoding: moved` with
+        # "SyntaxError: encoding problem: moved". So matching it is correct, not
+        # overconservative. Below line 2 it is inert and must not be treated as one.
+        self.assertTrue(slop._directives_of("# -*- coding: utf-8 -*-\nx = 1"))
+        self.assertFalse(slop._directives_of("x = 1\ny = 2\n# coding: utf-8 talk"))
+
+    def test_a_directive_comment_is_not_decoration(self):
+        # These read as comments but the toolchain obeys them, and they survive into
+        # neither the AST nor the stripped code -- so compare them in their own right.
+        for line in (
+            "x = f()  # type: ignore",
+            "import os  # noqa: F401",
+            "# -*- coding: latin-1 -*-",
+            "int x;  // NOLINT",
+        ):
+            self.assertTrue(slop._directives_of(line), line)
+
+    def test_ordinary_comments_are_not_directives(self):
+        self.assertEqual(
+            slop._directives_of("# why this is not obvious\n// and here"), []
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

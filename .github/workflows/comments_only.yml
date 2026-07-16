@@ -1,0 +1,47 @@
+name: Comments Only
+
+# Checks that a PR labelled `comments-only` really is one, so a reviewer can trust the
+# claim without re-reading the whole diff. It is a hardened mechanical check, not a formal
+# proof: Python is compared via the real ast/tokenizer, C/C++ via a scanner that models
+# comments, line splicing, raw strings and header names.
+#
+# The verifier is run from the BASE revision, never the PR's own copy -- otherwise a PR
+# could edit tools/check_comment_slop.py to make itself pass. It re-runs on every push and
+# on base-branch retarget while the label is applied; a check that ran only on `labeled`
+# would leave a stale green tick on a PR that afterwards changed.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  comments-only:
+    if: contains(github.event.pull_request.labels.*.name, 'comments-only')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Assert the change touches comments and blank lines only
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_SHA"
+          BASE=$(git merge-base "$BASE_SHA" HEAD)
+
+          # Run the verifier from BASE, not from the PR checkout: a PR must not be able to
+          # weaken the check by editing the checker in the same diff.
+          VERIFIER="$(mktemp)"
+          if ! git show "$BASE:tools/check_comment_slop.py" > "$VERIFIER" 2>/dev/null; then
+            echo "The comments-only verifier is absent at the base revision; cannot run a trusted check."
+            exit 1
+          fi
+          python "$VERIFIER" --assert-comments-only --from-ref "$BASE" --to-ref HEAD
