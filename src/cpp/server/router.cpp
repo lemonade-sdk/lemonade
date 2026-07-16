@@ -406,11 +406,11 @@ void Router::unload_models_not_in(const std::set<std::string>& keep) {
     std::vector<WrappedServer*> victims;
     for (const auto& server : loaded_servers_) {
         if (!server->is_backend_alive()) continue;
-        if (server->is_pinned()) continue;
         if (keep.count(server->get_model_name())) continue;
         victims.push_back(server.get());
     }
     for (auto* victim : victims) {
+        if (victim->is_pinned()) victim->set_pinned(false);
         LOG(INFO, "Router") << "Reconcile-unload of job-loaded model: "
                             << victim->get_model_name() << std::endl;
         evict_server(victim);
@@ -454,6 +454,11 @@ void Router::load_model(const std::string& model_name,
             << ", recipe: " << model_info.recipe
             << ", type: " << model_type_to_string(model_info.type)
             << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
+
+    struct LoadCancelGuard {
+        WrappedServer* server = nullptr;
+        ~LoadCancelGuard() { if (server) server->set_load_cancel_flag(nullptr); }
+    } load_cancel_guard;
 
     try {
         WrappedServer* existing_pre = find_server_by_model_name(canonical_model_name);
@@ -598,6 +603,7 @@ void Router::load_model(const std::string& model_name,
         auto load_start = std::chrono::steady_clock::now();
 
         new_server->set_load_cancel_flag(cancel_flag);
+        load_cancel_guard.server = new_server.get();
 
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
@@ -664,6 +670,7 @@ void Router::load_model(const std::string& model_name,
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
             retry_server->set_load_cancel_flag(cancel_flag);
+            load_cancel_guard.server = retry_server.get();
 
             lock.unlock();
 

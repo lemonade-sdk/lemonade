@@ -2147,6 +2147,13 @@ jobs:
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
 
+      - name: Test jobs
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
+          .venv/bin/python test/server_jobs.py --lemond-binary lemond
+
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system

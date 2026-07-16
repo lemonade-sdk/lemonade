@@ -152,7 +152,8 @@ void JobManager::persist_locked() {
         out << doc.dump(2);
     }
     std::error_code ec;
-    fs::rename(lemon::utils::path_from_utf8(tmp), lemon::utils::path_from_utf8(storage_path_), ec);
+    lemon::utils::atomic_replace_file(lemon::utils::path_from_utf8(tmp),
+                                      lemon::utils::path_from_utf8(storage_path_), ec);
     if (ec) LOG(WARNING, "Jobs") << "Could not persist jobs: " << ec.message() << std::endl;
 }
 

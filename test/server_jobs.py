@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -312,6 +313,34 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_status(jid, "completed", timeout=25)
 
+    def test_persistence_multiple_writes(self):
+        ids = []
+        for i in range(5):
+            job = self.create_job(f"multi-{i}", [{"id": "a", "op": "system_info"}])
+            jid = job["id"]
+            self.poll_status(jid, "completed")
+            ids.append(jid)
+
+        jobs_path = os.path.join(self.cache_dir, "jobs.json")
+        self.assertTrue(os.path.isfile(jobs_path), "jobs.json was not written")
+        with open(jobs_path, "r", encoding="utf-8") as f:
+            disk = json.load(f)
+        self.assertEqual(disk.get("version"), 1)
+        on_disk = {j["id"]: j for j in disk.get("jobs", [])}
+        for jid in ids:
+            self.assertIn(jid, on_disk, f"{jid} missing from persisted jobs.json")
+            self.assertEqual(on_disk[jid]["status"], "completed")
+            self.assertEqual(self.get_job(jid).json()["status"], on_disk[jid]["status"])
+
+        recreated = self.create_job("multi-final", [{"id": "a", "op": "system_info"}])
+        self.poll_status(recreated["id"], "completed")
+        with open(jobs_path, "r", encoding="utf-8") as f:
+            disk2 = json.load(f)
+        ids_on_disk = {j["id"] for j in disk2.get("jobs", [])}
+        self.assertIn(recreated["id"], ids_on_disk)
+        for jid in ids:
+            self.assertIn(jid, ids_on_disk, f"{jid} lost after further persists")
+
     def test_real_exclusive_job(self):
         backend = self.require_real_backend()
         steps = [
@@ -545,6 +574,109 @@ class JobEngineTests(unittest.TestCase):
             requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
             TEST_MODEL,
             "interrupt cleanup unloaded a model the job did not load",
+        )
+
+    def _pinned_load_steps(self, backend):
+        return [
+            {"id": "u0", "op": "unload"},
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                    "pinned": True,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+            {"id": "u", "op": "unload"},
+        ]
+
+    def _wait_model_unloaded(self, timeout=15):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if (
+                requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded")
+                is None
+            ):
+                return
+            time.sleep(0.25)
+
+    def test_delete_active_pinned_model_cleans_up(self):
+        backend = self.require_real_backend()
+        job = self.create_job("delete-active-pinned", self._pinned_load_steps(backend))
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+
+        self._wait_model_unloaded()
+        self.assertIsNone(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            "deleting an active job did not clean up a model it pinned",
+        )
+        self.poll_gone(jid)
+
+    def test_interrupt_pinned_model_cleans_up(self):
+        backend = self.require_real_backend()
+        job = self.create_job("interrupt-pinned", self._pinned_load_steps(backend))
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "interrupted", timeout=20)
+
+        self._wait_model_unloaded()
+        self.assertIsNone(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            "interrupt did not clean up a model the job pinned",
+        )
+
+    def test_preexisting_pinned_model_survives_job_interrupt(self):
+        backend = self.require_real_backend()
+        r = requests.post(
+            f"{BASE}/load",
+            json={
+                "model_name": TEST_MODEL,
+                "llamacpp_backend": backend,
+                "ctx_size": 2048,
+                "pinned": True,
+            },
+            timeout=120,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        steps = [
+            {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
+            {"id": "u", "op": "unload"},
+        ]
+        job = self.create_job("preexisting-pinned-survives", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=30)
+
+        r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.poll_status(jid, "interrupted", timeout=20)
+
+        self.assertEqual(
+            requests.get(f"{BASE}/health", timeout=5).json().get("model_loaded"),
+            TEST_MODEL,
+            "interrupt cleanup unloaded a model pinned before the job started",
         )
 
     def test_bench_shaped_sweep(self):
