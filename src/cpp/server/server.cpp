@@ -8,6 +8,7 @@
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
+#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -598,7 +599,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
+    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
+    //   require no authentication. The MCP process-launch surface is deliberately
+    //   fail-closed and requires an explicitly configured admin key.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -617,7 +620,23 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
+    const bool is_mcp_internal_route =
+        req.path == "/internal/mcp" ||
+        req.path.rfind("/internal/mcp/", 0) == 0;
+
     if (is_internal_route) {
+        // MCP server registration can launch arbitrary local processes. Do not
+        // expose that capability on a keyless server, even on loopback: permissive
+        // CORS would otherwise let an unrelated web page drive these endpoints.
+        // Apply this to OPTIONS as well so a browser preflight fails closed.
+        if (is_mcp_internal_route && admin_api_key_.empty()) {
+            res.status = 403;
+            res.set_content(
+                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
+                "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -928,6 +947,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
     });
+
+    // Server-side MCP client host foundation (admin-gated through the existing
+    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
+    // endpoints via the normal Lemonade server connection.
+    register_mcp_client_routes(web_server, cache_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -1528,9 +1552,10 @@ void Server::run() {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
-                   "control endpoints, are reachable from other machines "
-                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
-                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
+                   "control endpoints and the /internal/mcp/* process-launch endpoints, "
+                   "are reachable from other machines unauthenticated. Set "
+                   "LEMONADE_API_KEY to secure all endpoints; LEMONADE_ADMIN_API_KEY "
+                   "on its own only secures the /internal/* "
                    "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
