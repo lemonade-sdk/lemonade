@@ -18,6 +18,7 @@ import {
   capabilityLabel,
   modelDisplayName,
   modelInitial,
+  modelSupportsChatAudioInput,
   ModelCapability,
   ModelSnapshot,
   selectPreferredLoadedModel,
@@ -224,6 +225,27 @@ function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = [
   if (audioFiles.length > 0) return `Audio: ${audioFiles[0].name}`.slice(0, 50);
   if (hasImages) return 'Image conversation';
   return 'New conversation';
+}
+
+
+const ModelModeIcons: React.FC<{
+  capability: ModelCapability;
+  audioInput?: boolean;
+  size?: number;
+}> = ({ capability, audioInput = false, size = 14 }) => {
+  const showAudio = audioInput && capability === 'chat';
+  return (
+    <span className="capability-icon-pair" aria-hidden="true">
+      <CapabilityIcon capability={capability} size={size} />
+      {showAudio && <CapabilityIcon capability="audio" size={Math.max(11, size - 1)} />}
+    </span>
+  );
+};
+
+function modelModeLabel(capability: ModelCapability, audioInput = false): string {
+  return audioInput && capability === 'chat'
+    ? 'Chat + Audio'
+    : capabilityLabel(capability);
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -975,10 +997,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [currentModel, currentPreset, isOpenMossTts]);
 
   useEffect(() => {
-    if (currentCapability === 'audio') return;
+    const keepsAudioAttachments = currentCapability === 'audio'
+      || currentCapability === 'omni'
+      || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
+    if (keepsAudioAttachments) return;
     if (isOpenMossTts && openMossSettings.mode === 'clone') return;
     setPendingAudioFiles([]);
-  }, [currentCapability, isOpenMossTts, openMossSettings.mode]);
+  }, [
+    currentCapability,
+    currentKnownModelInfo,
+    currentLoadedModel,
+    isOpenMossTts,
+    openMossSettings.mode,
+  ]);
 
   useEffect(() => {
     if (!currentModel || !currentPreset) return;
@@ -997,6 +1028,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const supportsRealtimeAudio = useMemo(
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
+  );
+  const supportsChatAudioInput = useMemo(
+    () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
+    [currentKnownModelInfo, currentLoadedModel],
   );
 
   const defaultImageSettings = useMemo(
@@ -1047,6 +1082,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
     return customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(model);
   }, [customModelInfos]);
+  const audioInputForLoaded = useCallback((model: LoadedModel) => {
+    const info = findModelInfoByName(knownModelInfos, model.model_name);
+    return modelSupportsChatAudioInput(info, model);
+  }, [knownModelInfos]);
   const selectableModels = useMemo(
     () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
@@ -1055,6 +1094,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     name: string;
     capability: ModelCapability;
     loaded: boolean;
+    audioInput: boolean;
     info?: ModelInfo;
     detail: string;
   };
@@ -1074,6 +1114,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       name: model.model_name,
       capability: capabilityForLoaded(model),
       loaded: true,
+      audioInput: audioInputForLoaded(model),
       detail: `Loaded · ${model.recipe || 'runtime'}${model.device ? ` · ${model.device}` : ''}`,
     }));
 
@@ -1086,6 +1127,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         name,
         capability,
         loaded: false,
+        audioInput: modelSupportsChatAudioInput(info, null),
         info,
         detail: 'Downloaded · click to load',
       });
@@ -1093,10 +1135,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${capabilityLabel(option.capability)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${modelModeLabel(option.capability, option.audioInput)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
-  }, [capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
+  }, [audioInputForLoaded, capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
 
 
   const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
@@ -1195,7 +1237,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
   const modeSupportsTools = modeSupportsChatCompletions;
-  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || supportsRealtimeAudio;
+  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -2426,9 +2468,11 @@ ${finalText}`
     ? 'audio/wav,audio/x-wav,.wav'
     : currentCapability === 'model3d'
       ? 'image/png,image/jpeg,image/bmp,image/gif,.png,.jpg,.jpeg,.bmp,.gif'
-      : canUseAudioInput
-        ? (currentCapability === 'image' ? 'image/*' : 'image/*,audio/*')
-        : 'image/*';
+      : currentCapability === 'image'
+        ? 'image/*'
+        : canUseAudioInput
+          ? 'image/*,audio/*'
+          : 'image/*';
   const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio' && !modeSupportsChatCompletions
     ? pendingAudioFiles.length > 0
     : currentCapability === 'image'
@@ -2442,8 +2486,10 @@ ${finalText}`
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message — connect and load a model to send…'
-    : currentCapability === 'omni' || supportsRealtimeAudio
-      ? `Message ${currentModel} with text${canUseAudioInput ? ', images, or audio' : ' or images'}…`
+    : currentCapability === 'omni'
+      ? `Message ${currentModel} through the Omni collection…`
+      : currentCapability === 'chat' && supportsChatAudioInput
+        ? `Message ${currentModel} with text, images, or audio…`
       : currentCapability === 'image'
       ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
@@ -2455,10 +2501,12 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
-  const composerHint = supportsRealtimeAudio && modeSupportsChatCompletions
-    ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
+  const composerHint = supportsChatAudioInput && modeSupportsChatCompletions
+    ? (supportsRealtimeAudio
+      ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
+      : 'Chat + audio mode · attached audio is routed through chat completions')
     : currentCapability === 'omni'
-    ? 'Omni mode · text, image and audio are routed through chat completions'
+    ? 'Omni collection mode · requests are orchestrated across collection components'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
     : currentCapability === 'audio'
@@ -2773,7 +2821,7 @@ ${finalText}`
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
-                <CapabilityIcon capability={currentCapability} size={14} />
+                <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
                 <span className="composer__model-button-name">{currentModel || 'Choose model'}</span>
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
@@ -2805,10 +2853,10 @@ ${finalText}`
                           role="option"
                           aria-selected={option.name === currentModel}
                         >
-                          <CapabilityIcon capability={option.capability} size={15} />
+                          <ModelModeIcons capability={option.capability} audioInput={option.audioInput} size={15} />
                           <span className="composer__model-option-text">
                             <strong>{option.name}</strong>
-                            <span>{capabilityLabel(option.capability)} · {option.detail}</span>
+                            <span>{modelModeLabel(option.capability, option.audioInput)} · {option.detail}</span>
                           </span>
                           {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
                         </button>
@@ -2838,7 +2886,7 @@ ${finalText}`
             onClick={() => { setModelPickerOpen(true); setPresetPickerOpen(false); }}
             title="Mode follows the selected model. Open model search to change it."
           >
-            <CapabilityIcon capability={currentCapability} size={13} /> {supportsRealtimeAudio && modeSupportsChatCompletions ? 'Chat + Audio' : capabilityLabel(currentCapability)} mode
+            <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={13} /> {modelModeLabel(currentCapability, supportsChatAudioInput)} mode
           </button>
           {currentPreset && currentModel && (
             <div className="composer__preset-picker" ref={presetPickerRef}>
@@ -3378,6 +3426,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
           {loadedModels.map(m => {
             const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
             const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
+            const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
+            const modeLabel = modelModeLabel(cap, audioInput);
             const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
             const isActive = currentModel === m.model_name;
             return (
@@ -3393,13 +3443,13 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                   <span className="active-card__device">{m.device || 'device unknown'}</span>
                 </div>
                 <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><CapabilityIcon capability={cap} size={13} /> {capabilityLabel(cap)}</span>
+                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><ModelModeIcons capability={cap} audioInput={audioInput} size={13} /> {modeLabel}</span>
                 </div>
                 {isActive ? (
-                  <span className="active-card__status">● Active {capabilityLabel(cap)} mode</span>
+                  <span className="active-card__status">● Active {modeLabel} mode</span>
                 ) : selectable ? (
                   <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                    Use in {capabilityLabel(cap)} mode ▸
+                    Use in {modeLabel} mode ▸
                   </button>
                 ) : (
                   <span className="active-card__status active-card__status--muted">Utility model only</span>

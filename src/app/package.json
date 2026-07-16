@@ -15,7 +15,8 @@
     "test:autoopt-synthesize": "node tests/autoopt-synthesize.runtime.cjs",
     "test:autoopt-store-scope": "node tests/autoopt-store-scope.runtime.cjs",
     "test:model-providers": "node tests/model-provider-search.runtime.cjs",
-    "test:autoopt-actions": "node tests/autoopt-actions.runtime.cjs"
+    "test:autoopt-actions": "node tests/autoopt-actions.runtime.cjs",
+    "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

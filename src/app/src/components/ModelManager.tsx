@@ -2859,7 +2859,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     };
 
     return (
-      <div className={`row row--remote row--${provider}${isExpanded ? ' row--expanded' : ''}`} key={key}>
+      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isExpanded ? ' row--expanded' : ''}`} key={key}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
             <div className="row__main">

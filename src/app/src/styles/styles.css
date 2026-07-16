@@ -1218,6 +1218,11 @@ input, textarea {
   outline: none;
 }
 
+.composer__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .composer__input::placeholder { color: var(--text-tertiary); }
 
 .composer__send {
@@ -6758,6 +6763,18 @@ input, textarea {
 [data-theme="light"] .titlebar__nav button.is-active {
   background: var(--accent-soft);
   color: #000;
+}
+
+.capability-icon-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.capability-icon-pair > svg + svg {
+  opacity: 0.92;
 }
 
 .icon-inline,
@@ -13522,6 +13539,15 @@ input, textarea {
 
 .recipe-card__actions {
   z-index: 3;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.recipe-card__action {
+  position: relative;
+  z-index: 4;
+  pointer-events: auto;
 }
 
 .detail-tuning__intent-card--selectable {

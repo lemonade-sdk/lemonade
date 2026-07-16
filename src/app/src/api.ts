@@ -70,6 +70,10 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     pid: Number(model.pid || 0),
     type: String(model.type || 'unknown').toLowerCase(),
     last_use: Number(model.last_use || Date.now()),
+    labels: Array.isArray(model.labels) ? model.labels.filter((value): value is string => typeof value === 'string') : undefined,
+    capabilities: Array.isArray(model.capabilities) ? model.capabilities.filter((value): value is string => typeof value === 'string') : undefined,
+    input_modalities: Array.isArray(model.input_modalities) ? model.input_modalities.filter((value): value is string => typeof value === 'string') : undefined,
+    output_modalities: Array.isArray(model.output_modalities) ? model.output_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
   };
 }
@@ -131,6 +135,10 @@ export interface LoadedModel {
   pid: number;
   type: string;
   last_use: number;
+  labels?: string[];
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
   recipe_options?: Record<string, unknown>;
 }
 
