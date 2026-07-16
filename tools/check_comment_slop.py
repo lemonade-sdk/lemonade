@@ -360,10 +360,16 @@ def find_duplicates(blocks):
 
 
 def comments_only(from_ref, to_ref):
-    """True when the two revisions differ ONLY in comments and blank lines.
+    """The changed files whose code differs, or [] if only comments and blank lines do.
 
-    A change that claims to be a comment cleanup should prove it rather than ask a
-    reviewer to take it on faith.
+    A hardened mechanical check, not a formal proof. It soundly guards against a change
+    that smuggles executable code in past a "comments only" claim (Python compared as an
+    AST + token stream; C/C++ through a scanner modelling comments, splices, string/raw/
+    header-name literals). It is NOT sound for directive SCOPE: a toolchain directive
+    (`# fmt: off`, `# type: ignore`) moved between two identical code lines governs
+    different code while the executable code is byte-identical, and that move is not
+    detected. Reporting it soundly would require modelling every directive's governed
+    region, which is out of scope; a moved linter/type directive surfaces in CI anyway.
     """
     offenders = []
     for path, old_mode, new_mode, status in _changed_entries(from_ref, to_ref):
