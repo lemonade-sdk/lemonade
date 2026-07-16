@@ -770,9 +770,10 @@ if(WIN32)
             /NXCOMPAT         # Data Execution Prevention (DEP)
             /GUARD:CF         # Control Flow Guard
         )
-        # Embed manifest file
+        # Embed manifest file. /MANIFESTINPUT's path must be quoted; unquoted,
+        # a path containing a space breaks the linker with LNK1181.
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
         )
     endif()
 endif()
