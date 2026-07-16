@@ -127,14 +127,10 @@ void VTEServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled environment.
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    // Must match BackendManager::install_backend()'s own compatibility decision
-    // (made just above, at install_backend()) instead of re-deciding independently:
-    // get_therock_lib_path() only returns non-empty when BackendManager actually
-    // installed TheRock (i.e. judged the system ROCm absent or version-incompatible).
-    // Checking resolve_rocm_root() first -- an existence-only check, no version
-    // comparison -- would let an incompatible-but-present system ROCm win over a
-    // correctly-installed TheRock. Only fall back to the system root once TheRock
-    // is confirmed not needed, which is exactly when it's safe to trust it.
+    // get_therock_lib_path() only returns non-empty when BackendManager already
+    // judged the system ROCm absent or version-incompatible and installed TheRock
+    // instead (see install_backend() above). Trying resolve_rocm_root() first would
+    // let an incompatible-but-present system ROCm win over that decision.
     std::optional<fs::path> effective_root;
     std::optional<fs::path> effective_bin;
     std::string rocm_arch = SystemInfo::get_rocm_arch();
@@ -214,11 +210,9 @@ json VTEServer::completion(const json& request) {
     return forward_request("/v1/completions", normalize_vte_request(request));
 }
 
-// GGUF metadata (context length, architecture) for model listings.
-// default_backend_ops() does not read GGUF files at all, so without this
-// every VTE model's max_context_window stayed 0 (omitted from /v1/models)
-// and model_info.gguf.architecture (checked in load() above) was always
-// empty -- that check was never actually gating anything.
+// default_backend_ops() does not read GGUF files, so without this VTE model
+// listings never report max_context_window and model_info.gguf.architecture
+// (checked in load() above) stays empty.
 class VTEOps : public BackendOps {
 public:
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {

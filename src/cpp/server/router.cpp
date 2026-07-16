@@ -308,7 +308,6 @@ WrappedServer* Router::find_exclusive_gpu_server() const {
     return nullptr;
 }
 
-// Helper: Evict all GPU servers
 void Router::evict_all_gpu_servers() {
     std::vector<WrappedServer*> gpu_servers;
     for (const auto& server : loaded_servers_) {
@@ -495,13 +494,7 @@ void Router::load_model(const std::string& model_name,
         // Get max models for this type (same limit for all types)
         int max_models = config_->max_loaded_models();
 
-        // GPU EXCLUSIVITY CHECK (reverse direction). ExclusiveGpu's own case below
-        // evicts GPU peers when an exclusive backend (VTE) loads, but NPU's
-        // one-directional pattern doesn't transfer here: every NPU backend is
-        // already ExclusiveNpu/CoexistByType, so a Standard NPU load never exists
-        // to violate the invariant. Most GPU backends (llamacpp, vllm, ...) ARE
-        // Standard, so a later Standard GPU load must reciprocally evict an
-        // already-loaded ExclusiveGpu server, or the two would coexist.
+        // Reverse direction of the ExclusiveGpu case below: see find_exclusive_gpu_server().
         if ((device_type & DEVICE_GPU) &&
             slot_policy_for_recipe(model_info.recipe) != SlotPolicy::ExclusiveGpu) {
             WrappedServer* exclusive_gpu_holder = find_exclusive_gpu_server();
