@@ -71,6 +71,31 @@ export function availableMib(hw: HardwareSnapshot): number {
   return Math.max(1024, hw.host_ram_gb * 0.7 * 1024);
 }
 
+function backendMemoryVendor(hw: HardwareSnapshot, backend: string): 'nvidia' | 'amd' | 'apple' | null {
+  if (backend === 'cuda') return 'nvidia';
+  if (backend.startsWith('rocm')) return 'amd';
+  if (backend === 'metal') return 'apple';
+  if (backend === 'vulkan') {
+    if (hw.gpus.some(g => g.vendor === 'amd')) return 'amd';
+    if (hw.gpus.some(g => g.vendor === 'nvidia')) return 'nvidia';
+    return null;
+  }
+  return null;
+}
+
+export function availableMibForBackend(hw: HardwareSnapshot, backend: string): number {
+  const vendor = backendMemoryVendor(hw, backend);
+  if (vendor === 'apple') return Math.max(1024, hw.host_ram_gb * 0.9 * 1024);
+  if (vendor === 'amd' && hw.ram_is_vram) return Math.max(1024, hw.host_ram_gb * 0.9 * 1024);
+  if (vendor) {
+    const groupGb = hw.gpus
+      .filter(g => g.vendor === vendor)
+      .reduce((sum, g) => sum + (g.vram_gb || 0), 0);
+    if (groupGb > 0) return groupGb * 0.92 * 1024;
+  }
+  return Math.max(1024, hw.host_ram_gb * 0.7 * 1024);
+}
+
 export interface FitInputs {
   backend: string;
   availableMib: number;
@@ -142,6 +167,43 @@ export function fitTotalGb(fit: FitEstimate | null | undefined): number {
   return fit ? fit.total_mib / 1024 : 0;
 }
 
+function dualIdenticalNvidia(hw: HardwareSnapshot): boolean {
+  for (let i = 0; i < hw.gpus.length; i++) {
+    for (let j = i + 1; j < hw.gpus.length; j++) {
+      if (hw.gpus[i].vendor === 'nvidia' && hw.gpus[i].family === hw.gpus[j].family) return true;
+    }
+  }
+  return false;
+}
+
+export function backendLoadArgs(
+  hw: HardwareSnapshot,
+  backend: string,
+  fit: FitEstimate | null,
+  mf: ModelFacts,
+  kv: string,
+): string[] {
+  const args: string[] = [];
+  if (backend.startsWith('rocm')) args.push('--direct-io');
+  if (fit && !fit.fits_fully) {
+    if (mf.is_moe && fit.fitted_ncmoe > 0) args.push(`--n-cpu-moe ${fit.fitted_ncmoe}`);
+    else if (mf.is_moe) args.push('--cpu-moe');
+    else if (fit.fitted_ngl >= 0) args.push(`-ngl ${fit.fitted_ngl}`);
+  }
+  if (kv !== 'none') args.push(`-ctk ${kv} -ctv ${kv}`);
+  if (backend === 'cuda' && dualIdenticalNvidia(hw)) args.push('--split-mode tensor');
+  return args;
+}
+
+function isDeepPoint(p: BenchPoint): boolean {
+  return (p.params?.d ?? 0) > 0 && p.params?.ladder !== true && p.params?.spec_n === undefined;
+}
+
+function deepRunFailed(bench: BenchPoint[], backend: string): boolean {
+  const deep = bench.filter(p => p.backend === backend && isDeepPoint(p));
+  return deep.length > 0 && !deep.some(p => p.ok);
+}
+
 function representative(bench: BenchPoint[], backend: string): BenchPoint | null {
   let d0: BenchPoint | null = null;
   let deep: BenchPoint | null = null;
@@ -161,8 +223,10 @@ export function benchScore(tps: number, ttftMs: number, tpsMax: number, ttftMin:
 }
 
 function pickBackend(bench: BenchPoint[], candidates: string[]): { backend: string; rep: BenchPoint | null } {
+  const eligible = candidates.filter(c => !deepRunFailed(bench, c));
+  const pool = eligible.length > 0 ? eligible : candidates;
   const reps: Array<{ backend: string; rep: BenchPoint }> = [];
-  for (const c of candidates) {
+  for (const c of pool) {
     const rep = representative(bench, c);
     if (rep) reps.push({ backend: c, rep });
   }
@@ -236,12 +300,13 @@ export function synthesize(
     }
   }
   p.llamacpp_backend = backend;
-  const isRocm = backend.startsWith('rocm');
   const isCuda = backend === 'cuda';
   const fit = fits.find(f => f.ok && f.backend === backend) || fits.find(f => f.ok) || null;
+  const kv = ans.kv_cache_quant;
 
-  if (isRocm) {
-    args.push('--direct-io');
+  args.push(...backendLoadArgs(hw, backend, fit, mf, kv));
+
+  if (backend.startsWith('rocm')) {
     p.rationale.push('--direct-io: works around broken mmap on ROCm with faster cold loads '
       + 'than --no-mmap.');
   }
@@ -249,31 +314,31 @@ export function synthesize(
   let usedCpuMoe = false;
   if (fit && !fit.fits_fully) {
     if (mf.is_moe && fit.fitted_ncmoe > 0) {
-      args.push(`--n-cpu-moe ${fit.fitted_ncmoe}`);
       usedCpuMoe = true;
       p.rationale.push(`Model exceeds GPU memory: expert tensors of the first ${fit.fitted_ncmoe} `
         + 'layers stay on CPU (--n-cpu-moe) — attention and shared tensors keep GPU speed.');
     } else if (mf.is_moe) {
-      args.push('--cpu-moe');
       usedCpuMoe = true;
       p.rationale.push('Model exceeds GPU memory: all expert tensors on CPU (--cpu-moe); '
         + 'the GPU keeps the non-expert layers.');
     } else if (fit.fitted_ngl >= 0) {
-      args.push(`-ngl ${fit.fitted_ngl}`);
       p.rationale.push(`Model exceeds GPU memory: ${fit.fitted_ngl} of ${mf.block_count} layers `
         + 'offloaded to GPU (-ngl), the rest run on CPU (expect reduced speed).');
     }
   }
 
-  const kv = ans.kv_cache_quant;
   if (kv !== 'none') {
-    args.push(`-ctk ${kv} -ctv ${kv}`);
     const note = kv === 'q8_0'
       ? 'roughly doubles usable context with negligible quality loss'
       : (kv === 'q5_1'
         ? 'about 2.7x context capacity with a slight quality cost'
         : 'about 3.5x context capacity; quality measurably degrades on very long contexts');
     p.rationale.push(`KV cache quantized to ${kv}: ${note}.`);
+  }
+
+  if (isCuda && dualIdenticalNvidia(hw)) {
+    p.rationale.push('Two or more identical NVIDIA GPUs: tensor parallelism speeds up decode '
+      + '(prefill gets slightly slower).');
   }
   let recCtx = recommendedCtxSize(fit ? fit.fitted_ctx : 0, mf.n_ctx_train, kv);
   let loadCeilingHit = false;
@@ -366,20 +431,6 @@ export function synthesize(
       args.push('-b 2048 -ub 2048');
       p.rationale.push('Batch size 2048: unified-memory machines with ample RAM prefill much '
         + 'faster with larger batches (heuristic — run a benchmark pass to measure).');
-    }
-  }
-
-  if (isCuda) {
-    let sameFamily = 0;
-    for (let i = 0; i < hw.gpus.length; i++) {
-      for (let j = i + 1; j < hw.gpus.length; j++) {
-        if (hw.gpus[i].vendor === 'nvidia' && hw.gpus[i].family === hw.gpus[j].family) sameFamily++;
-      }
-    }
-    if (sameFamily > 0) {
-      args.push('--split-mode tensor');
-      p.rationale.push('Two or more identical NVIDIA GPUs: tensor parallelism speeds up decode '
-        + '(prefill gets slightly slower).');
     }
   }
 

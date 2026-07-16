@@ -2,7 +2,7 @@ import api, { JobRecord } from '../../api';
 import { buildBenchRecipe } from './autoOptRecipe';
 import {
   NO_GPU_BACKEND_ERROR,
-  availableMib,
+  availableMibForBackend,
   checkpointRepoId,
   computeFitEstimate,
   selectCandidates,
@@ -401,11 +401,10 @@ export async function executeAutoOptRun(
   if (candidates.length === 0) throw new Error(NO_GPU_BACKEND_ERROR);
 
   await runStage('fit_estimate', async () => {
-    const avail = availableMib(hardware);
     for (const backend of candidates) {
       const fit = computeFitEstimate({
         backend,
-        availableMib: avail,
+        availableMib: availableMibForBackend(hardware, backend),
         weightsMib: modelFacts.weights_mib,
         kvBytesPerToken: modelFacts.kv_bytes_per_token,
         blockCount: modelFacts.block_count,
@@ -419,8 +418,6 @@ export async function executeAutoOptRun(
     if (fits.length === 0) throw new Error('no GPU backend available to fit against');
   });
   throwIfAborted();
-
-  const primaryFit = fits.find(f => f.ok && f.backend === candidates[0]) || fits[0] || null;
 
   if (!withBench) {
     cb.stage('bench_job', 'skipped');
@@ -438,7 +435,7 @@ export async function executeAutoOptRun(
     return { result: result!, summary };
   }
 
-  const recipe = buildBenchRecipe(primaryFit, answers, hardware, modelFacts, request.model, request.budget, candidates);
+  const recipe = buildBenchRecipe(fits, answers, hardware, modelFacts, request.model, request.budget, candidates);
   const synth: SynthInputs = {
     hardware, facts: modelFacts, fits, sampling,
     plan: recipe.plan, step_labels: recipe.step_labels,

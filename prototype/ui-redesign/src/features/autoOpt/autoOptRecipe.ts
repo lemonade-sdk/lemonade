@@ -1,4 +1,4 @@
-import { recommendedCtxSize, roundUpCtx } from './autoOptSynthesize';
+import { backendLoadArgs, recommendedCtxSize, roundUpCtx } from './autoOptSynthesize';
 import {
   BenchParams,
   BenchPlanEntry,
@@ -44,7 +44,7 @@ interface Measurement {
 }
 
 export function buildBenchRecipe(
-  fit: FitEstimate | null,
+  fits: FitEstimate[],
   answers: WizardAnswers,
   hardware: HardwareSnapshot,
   facts: ModelFacts,
@@ -53,16 +53,19 @@ export function buildBenchRecipe(
   candidates: string[],
 ): BenchRecipe {
   const kv = answers.kv_cache_quant;
-  const baseArgs = kv !== 'none' ? `-ctk ${kv} -ctv ${kv}` : '';
-  const recCtx = recommendedCtxSize(fit ? fit.fitted_ctx : 0, facts.n_ctx_train, kv);
-
-  const depths: number[] = [0];
-  if (recCtx >= 32768) depths.push(30000);
-  else if (recCtx >= 8192) depths.push(Math.floor(0.8 * recCtx));
+  const fitFor = (backend: string): FitEstimate | null =>
+    fits.find(f => f.backend === backend) ?? null;
+  const loadArgsFor = (backend: string): string =>
+    backendLoadArgs(hardware, backend, fitFor(backend), facts, kv).join(' ').trim();
 
   const measurements: Measurement[] = [];
 
   for (const backend of candidates) {
+    const recCtx = recommendedCtxSize(fitFor(backend)?.fitted_ctx ?? 0, facts.n_ctx_train, kv);
+    const loadArgs = loadArgsFor(backend);
+    const depths: number[] = [0];
+    if (recCtx >= 32768) depths.push(30000);
+    else if (recCtx >= 8192) depths.push(Math.floor(0.8 * recCtx));
     for (const depth of depths) {
       const primary = depth <= 0 ? recCtx : ctxForDepth(depth);
       measurements.push({
@@ -72,7 +75,7 @@ export function buildBenchRecipe(
         ctxPrimary: primary,
         ctxFallback: depth <= 0 && primary > FALLBACK_CTX ? FALLBACK_CTX : null,
         ctxProbe: depth <= 0,
-        args: baseArgs,
+        args: loadArgs,
         params: { d: depth },
         depthTokens: depth,
       });
@@ -80,6 +83,7 @@ export function buildBenchRecipe(
   }
 
   const winner = candidates[0] || 'vulkan';
+  const winnerArgs = loadArgsFor(winner);
 
   if (hardware.ram_is_vram && hardware.host_ram_gb >= 32) {
     const rungs = budget === 'thorough' ? [512, 1024, 2048, 4096, 8192] : [512, 2048, 8192];
@@ -91,7 +95,7 @@ export function buildBenchRecipe(
         ctxPrimary: FALLBACK_CTX,
         ctxFallback: null,
         ctxProbe: false,
-        args: `${baseArgs} -b ${r} -ub ${r}`.trim(),
+        args: `${winnerArgs} -b ${r} -ub ${r}`.trim(),
         params: { ladder: true, b: r, ub: r, d: 0 },
         depthTokens: 0,
       });
@@ -108,7 +112,7 @@ export function buildBenchRecipe(
         ctxPrimary: FALLBACK_CTX,
         ctxFallback: null,
         ctxProbe: false,
-        args: `${baseArgs} --spec-type draft-mtp --spec-draft-n-max ${n} --spec-draft-p-min 0.75`.trim(),
+        args: `${winnerArgs} --spec-type draft-mtp --spec-draft-n-max ${n} --spec-draft-p-min 0.75`.trim(),
         params: { spec_n: n, d: 0 },
         depthTokens: 0,
       });

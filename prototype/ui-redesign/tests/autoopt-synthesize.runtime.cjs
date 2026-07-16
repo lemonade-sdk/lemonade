@@ -175,7 +175,7 @@ function check(name, ok) {
     const engine = require(modulePath);
     const {
       synthesize, checkpointRepoId, computeFitEstimate, benchScore, roundUpCtx,
-      selectCandidates, availableMib, NO_GPU_BACKEND_ERROR,
+      selectCandidates, availableMib, availableMibForBackend, backendLoadArgs, NO_GPU_BACKEND_ERROR,
     } = engine;
 
     // ── checkpoint_repo_id ────────────────────────────────────────────
@@ -482,7 +482,7 @@ function check(name, ok) {
         const ans = answers({ kv_cache_quant: 'q8_0' });
 
         const rec = synthesize(igpuHw(), mf, ans, [fit], [], undefined);
-        const recipe = buildBenchRecipe(fit, ans, igpuHw(), mf, 'org/m', 'standard', ['vulkan']);
+        const recipe = buildBenchRecipe([fit], ans, igpuHw(), mf, 'org/m', 'standard', ['vulkan']);
         const load0 = recipe.steps.find(s => s.id === 'load_vulkan_d0');
         const benchedCtx = load0 && load0.params && load0.params.ctx_size;
 
@@ -502,9 +502,76 @@ function check(name, ok) {
         };
         const capped = synthesize(igpuHw(), mf, ans, [fit], [fellBack], undefined);
         check('#1: failed quant-scaled load falls back to the loaded ctx', capped.primary.ctx_size === 2048);
+
+        // ── round-2 #2: the bench loads the SAME placement flags that get recommended ──
+        const partialFit = fitting('vulkan', 4096, { fits_fully: false, fitted_ngl: 18, fitted_ncmoe: 0, fitted_ctx: 4096 });
+        const ansNo = answers({ kv_cache_quant: 'none' });
+        const recPartial = synthesize(igpuHw(), denseModel(), ansNo, [partialFit], [], undefined);
+        const recipePartial = buildBenchRecipe([partialFit], ansNo, igpuHw(), denseModel(), 'org/m', 'standard', ['vulkan']);
+        const load0p = recipePartial.steps.find(s => s.id === 'load_vulkan_d0');
+        check('r2#2: recommendation includes -ngl placement', recPartial.primary.llamacpp_args.includes('-ngl 18'));
+        check('r2#2: benched load carries the same -ngl placement', String(load0p.params.llamacpp_args).includes('-ngl 18'));
+
+        const moeFit = fitting('vulkan', 4096, { fits_fully: false, fitted_ngl: -1, fitted_ncmoe: 10, fitted_ctx: 4096 });
+        const moeModel = { ...denseModel(), is_moe: true, expert_count: 128 };
+        const recMoe = synthesize(igpuHw(), moeModel, ansNo, [moeFit], [], undefined);
+        const recipeMoe = buildBenchRecipe([moeFit], ansNo, igpuHw(), moeModel, 'org/m', 'standard', ['vulkan']);
+        const load0m = recipeMoe.steps.find(s => s.id === 'load_vulkan_d0');
+        check('r2#2: recommendation includes --n-cpu-moe placement', recMoe.primary.llamacpp_args.includes('--n-cpu-moe 10'));
+        check('r2#2: benched load carries the same --n-cpu-moe placement', String(load0m.params.llamacpp_args).includes('--n-cpu-moe 10'));
+
+        // Per-backend load args: rocm gets --direct-io in BOTH the bench and the recommendation.
+        check('r2#2: shared builder emits rocm --direct-io',
+          backendLoadArgs(igpuHw(), 'rocm-stable', partialFit, denseModel(), 'none').includes('--direct-io'));
       } finally {
         fs.rmSync(recipeBundle.outputPath, { recursive: true, force: true });
       }
+    }
+
+    // ── round-2 #1: memory is accounted PER backend / device group ────
+    {
+      const mixed = {
+        gpus: [
+          { vendor: 'amd', name: 'APU', family: 'gfx1151', vram_gb: 100 },
+          { vendor: 'nvidia', name: 'RTX 4090', family: 'sm_89', vram_gb: 24 },
+        ],
+        has_igpu: true, ram_is_vram: false, host_ram_gb: 110,
+        installed_backends: ['vulkan', 'rocm', 'cuda'], os: 'linux',
+      };
+      check('r2#1: cuda fitted vs NVIDIA VRAM', Math.abs(availableMibForBackend(mixed, 'cuda') - 24 * 0.92 * 1024) < 1);
+      check('r2#1: rocm fitted vs AMD budget', Math.abs(availableMibForBackend(mixed, 'rocm') - 100 * 0.92 * 1024) < 1);
+      check('r2#1: vulkan follows the AMD budget when AMD present',
+        availableMibForBackend(mixed, 'vulkan') === availableMibForBackend(mixed, 'rocm'));
+      check('r2#1: cuda budget differs from rocm budget on a mixed box',
+        availableMibForBackend(mixed, 'cuda') !== availableMibForBackend(mixed, 'rocm'));
+
+      const apu = { gpus: [{ vendor: 'amd', name: 'APU', family: 'gfx1151', vram_gb: 96 }], has_igpu: true, ram_is_vram: true, host_ram_gb: 128, installed_backends: ['rocm', 'vulkan'], os: 'linux' };
+      check('r2#1: unified APU rocm uses 0.9x host RAM', Math.abs(availableMibForBackend(apu, 'rocm') - 128 * 0.9 * 1024) < 1);
+    }
+
+    // ── round-2 #3: a backend that FAILS the deep run cannot win the duel ──
+    {
+      const dp = (backend, depth, ok, tps) => ({
+        backend, label: `${backend} d${depth}`, ctx_size: depth > 0 ? 32768 : 4096, llamacpp_args: '',
+        params: { d: depth }, ttft_ms: ok ? 100 : 0, tps: ok ? tps : 0, vram_gb: ok ? 20 : -1, ok,
+      });
+      // vulkan has a HIGHER depth-0 tps but FAILS the deep (target-context) run;
+      // rocm-stable is slower at depth 0 but succeeds at depth. rocm must win.
+      const bench = [
+        dp('vulkan', 0, true, 99),
+        dp('vulkan', 30000, false, 0),
+        dp('rocm-stable', 0, true, 40),
+        dp('rocm-stable', 30000, true, 38),
+      ];
+      const r = synthesize(igpuHw(), denseModel(), answers(),
+        [fitting('vulkan', 65536), fitting('rocm-stable', 65536)], bench, undefined);
+      check('r2#3: deep-run failure disqualifies the faster-at-d0 backend', r.primary.llamacpp_backend === 'rocm-stable');
+
+      // When neither backend has a deep run (small ctx), depth-0 comparison stands.
+      const shallow = [dp('vulkan', 0, true, 99), dp('rocm-stable', 0, true, 40)];
+      const rs = synthesize(igpuHw(), denseModel(), answers(),
+        [fitting('vulkan', 65536), fitting('rocm-stable', 65536)], shallow, undefined);
+      check('r2#3: no deep runs → depth-0 winner stands', rs.primary.llamacpp_backend === 'vulkan');
     }
 
     if (failures > 0) {
