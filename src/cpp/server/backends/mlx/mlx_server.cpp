@@ -1296,10 +1296,6 @@ void MlxServer::load(const std::string& model_name,
 
     LOG(INFO, kLog) << "Starting lemon-mlx server..." << std::endl;
     const bool inherit_output = (log_level_ == "info") || is_debug();
-    launch_executable_ = executable;
-    launch_args_ = args;
-    launch_env_vars_ = env_vars;
-    launch_inherit_output_ = inherit_output;
     set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     if (!wait_for_ready("/health")) {
@@ -1323,81 +1319,6 @@ void MlxServer::unload() {
     }
 
     loaded_model_ref_.clear();
-    launch_executable_.clear();
-    launch_args_.clear();
-    launch_env_vars_.clear();
-    launch_inherit_output_ = false;
-}
-
-bool MlxServer::restart_backend_after_cancel() {
-    std::lock_guard<std::mutex> lock(backend_restart_mutex_);
-
-    if (launch_executable_.empty() || launch_args_.empty() || port_ == 0) {
-        LOG(ERROR, kLog) << "Cannot restart lemon-mlx backend: launch command is not available" << std::endl;
-        return false;
-    }
-
-    LOG(INFO, kLog) << "Restarting lemon-mlx backend to cancel in-flight generation" << std::endl;
-    stop_backend_watchdog();
-    if (has_process_handle(process_handle_)) {
-        ProcessManager::stop_process(process_handle_);
-    }
-    process_handle_ = {nullptr, 0};
-
-    try {
-        set_process_handle(ProcessManager::start_process(
-            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_));
-        if (!wait_for_ready("/health", 180)) {
-            if (has_process_handle(process_handle_)) {
-                ProcessManager::stop_process(process_handle_);
-            }
-            process_handle_ = {nullptr, 0};
-            LOG(ERROR, kLog) << "lemon-mlx backend restart failed" << std::endl;
-            return false;
-        }
-        LOG(INFO, kLog) << "lemon-mlx backend restarted" << std::endl;
-        return true;
-    } catch (const std::exception& e) {
-        process_handle_ = {nullptr, 0};
-        LOG(ERROR, kLog) << "lemon-mlx backend restart failed: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool MlxServer::ensure_backend_ready() {
-    // Always take the restart mutex before trusting process state. During a
-    // cancel-triggered restart the new process can exist before /health is
-    // ready; requests in that window must wait instead of hitting MLX early and
-    // producing an empty stream.
-    std::lock_guard<std::mutex> lock(backend_restart_mutex_);
-    if (is_process_running() && wait_for_ready("/health", 180)) {
-        return true;
-    }
-
-    if (launch_executable_.empty() || launch_args_.empty() || port_ == 0) {
-        return false;
-    }
-
-    LOG(INFO, kLog) << "lemon-mlx backend is not running; restarting before request" << std::endl;
-    try {
-        stop_backend_watchdog();
-        set_process_handle(ProcessManager::start_process(
-            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_));
-        if (!wait_for_ready("/health", 180)) {
-            if (has_process_handle(process_handle_)) {
-                ProcessManager::stop_process(process_handle_);
-            }
-            process_handle_ = {nullptr, 0};
-            LOG(ERROR, kLog) << "lemon-mlx backend restart failed" << std::endl;
-            return false;
-        }
-        LOG(INFO, kLog) << "lemon-mlx backend restarted" << std::endl;
-        return true;
-    } catch (const std::exception& e) {
-        process_handle_ = {nullptr, 0};
-        LOG(ERROR, kLog) << "lemon-mlx backend restart failed: " << e.what() << std::endl;
-        return false;
-    }
 }
 
 json MlxServer::prepare_request(const json& request) const {
@@ -1433,11 +1354,9 @@ json MlxServer::prepare_request(const json& request) const {
 }
 
 json MlxServer::chat_completion(const json& request) {
-    if (!ensure_backend_ready()) {
-        return ErrorResponse::from_exception(
-            BackendException(kRecipe, "backend is not ready")
-        );
-    }
+    return ErrorResponse::from_exception(
+        BackendException(kRecipe, "backend is not ready")
+    );
 
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
@@ -1448,11 +1367,9 @@ json MlxServer::chat_completion(const json& request) {
 }
 
 json MlxServer::completion(const json& request) {
-    if (!ensure_backend_ready()) {
-        return ErrorResponse::from_exception(
-            BackendException(kRecipe, "backend is not ready")
-        );
-    }
+    return ErrorResponse::from_exception(
+        BackendException(kRecipe, "backend is not ready")
+    );
 
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
@@ -1498,14 +1415,11 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
         WrappedServer::forward_streaming_request(endpoint, prepared_body, sink, sse, timeout_seconds, telemetry_callback);
         return;
     }
-
-    if (!ensure_backend_ready()) {
-        const std::string error_msg = "data: {\"error\":{\"message\":\"lemon-mlx backend is not ready: " + server_name_ +
-                                      "\",\"type\":\"backend_not_ready\"}}\n\n";
-        sink.write(error_msg.c_str(), error_msg.size());
-        sink.done();
-        return;
-    }
+    const std::string error_msg = "data: {\"error\":{\"message\":\"lemon-mlx backend is not ready: " + server_name_ +
+                                    "\",\"type\":\"backend_not_ready\"}}\n\n";
+    sink.write(error_msg.c_str(), error_msg.size());
+    sink.done();
+    return;
 
     BackendRequestScope request_scope(*this, BackendRequestKind::Streaming);
 
@@ -1723,7 +1637,6 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
 
     if (client_aborted) {
         sink.done();
-        restart_backend_after_cancel();
         return;
     }
 
@@ -1772,9 +1685,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
 
         sink.done();
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
-        if (locally_finished) {
-            restart_backend_after_cancel();
-        }
+
     } else {
         sink.done();
     }

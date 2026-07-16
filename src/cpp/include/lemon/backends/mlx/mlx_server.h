@@ -4,7 +4,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/wrapped_server.h"
 
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -43,15 +42,8 @@ public:
 
 private:
     json prepare_request(const json& request) const;
-    bool restart_backend_after_cancel();
-    bool ensure_backend_ready();
 
     std::string loaded_model_ref_;
-    std::string launch_executable_;
-    std::vector<std::string> launch_args_;
-    std::vector<std::pair<std::string, std::string>> launch_env_vars_;
-    bool launch_inherit_output_ = false;
-    std::mutex backend_restart_mutex_;
 };
 
 namespace mlx {

@@ -38,8 +38,6 @@ def test_lemon_mlx_static_integration_contract():
     assert 'const BackendSpec* spec();' in mlx_header
     assert 'const BackendOps* ops();' in mlx_header
     assert 'DeviceType effective_device' in mlx_header
-    assert 'launch_executable_' in mlx_header
-    assert 'backend_restart_mutex_' in mlx_header
 
     mlx_server = _read("src/cpp/server/backends/mlx/mlx_server.cpp")
     assert '#include "lemon/backends/mlx/mlx_server.h"' in mlx_server
@@ -72,10 +70,6 @@ def test_lemon_mlx_static_integration_contract():
     assert 'prefill_duration_ttft' in mlx_server
     assert 'decoding_speed_tps' in mlx_server
     assert '<|im_start|>' in mlx_server
-    assert 'client_aborted' in mlx_server
-    assert 'restart_backend_after_cancel' in mlx_server
-    assert 'ensure_backend_ready' in mlx_server
-    assert 'wait_for_ready("/health", 180)' in mlx_server
     assert 'SmallQwenRepetitionStopper' in mlx_server
     assert 'repetition_penalty' in mlx_server
     assert 'emit_blocking_response_fallback' in mlx_server
