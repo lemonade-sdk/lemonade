@@ -455,11 +455,6 @@ void Router::load_model(const std::string& model_name,
             << ", type: " << model_type_to_string(model_info.type)
             << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
 
-    struct LoadCancelGuard {
-        WrappedServer* server = nullptr;
-        ~LoadCancelGuard() { if (server) server->set_load_cancel_flag(nullptr); }
-    } load_cancel_guard;
-
     try {
         WrappedServer* existing_pre = find_server_by_model_name(canonical_model_name);
         bool final_pinned = false;
@@ -603,7 +598,6 @@ void Router::load_model(const std::string& model_name,
         auto load_start = std::chrono::steady_clock::now();
 
         new_server->set_load_cancel_flag(cancel_flag);
-        load_cancel_guard.server = new_server.get();
 
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
@@ -616,6 +610,8 @@ void Router::load_model(const std::string& model_name,
             load_success = false;
             LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         }
+
+        new_server->set_load_cancel_flag(nullptr);
 
         lock.lock();
 
@@ -670,7 +666,6 @@ void Router::load_model(const std::string& model_name,
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
             retry_server->set_load_cancel_flag(cancel_flag);
-            load_cancel_guard.server = retry_server.get();
 
             lock.unlock();
 
@@ -685,12 +680,14 @@ void Router::load_model(const std::string& model_name,
 
                 retry_server->set_state(ModelState::READY);
                 const auto retry_duration_ms = retry_server->get_load_duration_ms();
+                retry_server->set_load_cancel_flag(nullptr);
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
                 LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
+                retry_server->set_load_cancel_flag(nullptr);
                 lock.lock();
                 is_loading_ = false;
                 load_cv_.notify_all();

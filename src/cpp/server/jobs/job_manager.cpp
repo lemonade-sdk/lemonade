@@ -147,9 +147,19 @@ void JobManager::persist_locked() {
     }
     json doc = {{"version", 1}, {"jobs", arr}};
     const std::string tmp = storage_path_ + ".tmp";
+    bool write_ok = false;
     {
         std::ofstream out(lemon::utils::path_from_utf8(tmp), std::ios::trunc);
         out << doc.dump(2);
+        out.flush();
+        write_ok = out.good();
+    }
+    if (!write_ok) {
+        LOG(WARNING, "Jobs") << "Could not write jobs to " << tmp
+                             << " (keeping previous state on disk)" << std::endl;
+        std::error_code rm;
+        fs::remove(lemon::utils::path_from_utf8(tmp), rm);
+        return;
     }
     std::error_code ec;
     lemon::utils::atomic_replace_file(lemon::utils::path_from_utf8(tmp),
