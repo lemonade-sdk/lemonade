@@ -715,6 +715,34 @@ bool is_ggml_hip_plugin_available() {
             return true;
         }
     }
+    // A self-built llama.cpp resolved from PATH ships libggml-hip.so next to
+    // the binary (build tree) or in a sibling lib/ directory (installed tree).
+    // find_executable_in_path() returns the bare name on POSIX, so walk PATH
+    // here to recover the directory the binary actually lives in.
+    if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
+        std::string path_str(path_env);
+        size_t start = 0;
+        while (start <= path_str.size()) {
+            size_t end = path_str.find(':', start);
+            std::string dir = path_str.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            if (!dir.empty()) {
+                std::error_code plugin_ec;
+                fs::path bin_dir(dir);
+                fs::path llama_server = bin_dir / "llama-server";
+                if (fs::is_regular_file(llama_server, plugin_ec) &&
+                    access(llama_server.c_str(), X_OK) == 0) {
+                    plugin_ec.clear();
+                    if (fs::exists(bin_dir / "libggml-hip.so", plugin_ec) ||
+                        fs::exists(bin_dir.parent_path() / "lib" / "libggml-hip.so", plugin_ec)) {
+                        return true;
+                    }
+                    break;
+                }
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)

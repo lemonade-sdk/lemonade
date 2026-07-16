@@ -454,7 +454,8 @@ public:
         const std::vector<std::string>& args,
         OutputLineCallback on_line,
         const std::string& working_dir,
-        int timeout_seconds) override {
+        int timeout_seconds,
+        bool capture_stderr = true) override {
 
         std::string cmdline = escape_windows_arg(executable);
         for (const auto& arg : args) {
@@ -484,7 +485,7 @@ public:
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
         si.hStdOutput = stdout_write;
-        si.hStdError = stdout_write;  // Merge stderr into stdout
+        si.hStdError = capture_stderr ? stdout_write : GetStdHandle(STD_ERROR_HANDLE);
         ZeroMemory(&pi, sizeof(pi));
 
         BOOL success = CreateProcessA(

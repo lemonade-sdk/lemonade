@@ -219,12 +219,26 @@ void StreamingProxy::forward_byte_stream(
 
     bool stream_error = false;
 
+    // On a non-200 the backend body is an error description, not payload bytes:
+    // divert it here instead of the client sink, so it can be reshaped into a
+    // JSON error below rather than served as successful media.
+    int backend_status = 200;
+    std::string error_body;
+    static constexpr size_t max_error_body = 64 * 1024;
+
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &on_chunk](const char* data, size_t length) {
+        [&sink, &on_chunk, &backend_status, &error_body](const char* data, size_t length) {
             if (on_chunk) {
                 on_chunk();
+            }
+
+            if (backend_status != 200) {
+                if (error_body.size() < max_error_body) {
+                    error_body.append(data, std::min(length, max_error_body - error_body.size()));
+                }
+                return true;
             }
 
             if (!sink.write(data, length)) {
@@ -234,7 +248,8 @@ void StreamingProxy::forward_byte_stream(
             return true;
         },
         {},
-        timeout_seconds
+        timeout_seconds,
+        [&backend_status](int status) { backend_status = status; }
     );
 
     const bool transport_interrupted =
@@ -256,17 +271,34 @@ void StreamingProxy::forward_byte_stream(
         }
     }
 
-    if (result.status_code != 200) {
+    if (result.status_code != 200 || backend_status != 200) {
         stream_error = true;
-        LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
+        const int status = backend_status != 200 ? backend_status : result.status_code;
+        LOG(ERROR, "StreamingProxy") << "Backend returned error " << status
+                                     << (error_body.empty() ? "" : ": " + error_body) << std::endl;
+
+        json payload;
+        try {
+            payload = json::parse(error_body);
+        } catch (...) {
+            payload = nullptr;
+        }
+        if (!payload.is_object() || !payload.contains("error")) {
+            std::string message = error_body.empty()
+                ? "backend returned HTTP " + std::to_string(status)
+                : error_body;
+            payload = json{{"error", {{"message", message},
+                                      {"type", "backend_error"},
+                                      {"status", status}}}};
+        }
+        const std::string out = payload.dump();
+        sink.write(out.data(), out.size());
     }
 
     if (!stream_error) {
-        sink.done();
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
-    } else {
-        sink.done();
     }
+    sink.done();
 }
 
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {

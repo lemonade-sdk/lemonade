@@ -64,6 +64,7 @@ export interface LemonMlxOptions {
   lemonMlxBackend: StringOption;
   lemonMlxArgs: StringOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -106,8 +107,36 @@ export interface VLLMOptions {
   saveOptions: BooleanOption;
 }
 
+export interface ThinkSoundOptions {
+  recipe: 'thinksound';
+  thinksoundBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface AceStepOptions {
+  recipe: 'acestep';
+  acestepBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface TrellisOptions {
+  recipe: 'trellis';
+  trellisBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface OpenMossOptions {
+  recipe: 'openmoss';
+  openmossBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | LemonMlxOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | LemonMlxOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions | OpenMossOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -298,6 +327,40 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Image height in pixels',
   },
 
+  // Audio-generation backends
+  thinksoundBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'ThinkSound backend to use',
+    isBackendOption: true,
+    backendRecipe: 'thinksound',
+  },
+  acestepBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'ACE-Step backend to use',
+    isBackendOption: true,
+    backendRecipe: 'acestep',
+  },
+  trellisBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'Trellis backend to use',
+    isBackendOption: true,
+    backendRecipe: 'trellis',
+  },
+  openmossBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'OpenMOSS TTS backend to use',
+    isBackendOption: true,
+    backendRecipe: 'openmoss',
+  },
+
   // Common option - save settings
   saveOptions: {
     type: 'boolean',
@@ -319,7 +382,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'lemon-mlx' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'lemon-mlx' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -329,11 +392,15 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'moonshine': ['moonshineArgs', 'mergeArgs', 'pinned', 'saveOptions'],
-  'lemon-mlx': ['ctxSize', 'lemonMlxBackend', 'lemonMlxArgs', 'mergeArgs', 'saveOptions'],
+  'lemon-mlx': ['ctxSize', 'lemonMlxBackend', 'lemonMlxArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'flm': ['ctxSize', 'mergeArgs', 'pinned', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
+  'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
+  'trellis': ['trellisBackend', 'pinned', 'saveOptions'],
+  'openmoss': ['openmossBackend', 'pinned', 'saveOptions'],
 };
 
 /**
@@ -368,6 +435,10 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   lemonMlxBackend: 'lemon-mlx_backend',
   lemonMlxArgs: 'lemon-mlx_args',
   sdcppBackend: 'sd-cpp_backend',
+  thinksoundBackend: 'thinksound_backend',
+  acestepBackend: 'acestep_backend',
+  trellisBackend: 'trellis_backend',
+  openmossBackend: 'openmoss_backend',
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',

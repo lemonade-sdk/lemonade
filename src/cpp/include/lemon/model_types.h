@@ -7,9 +7,18 @@
 namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+constexpr const char* COLLECTION_ROUTER_MODEL_RECIPE = "collection.router";
 
-inline bool is_collection_recipe(const std::string& recipe) {
+inline bool is_omni_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+}
+
+inline bool is_router_collection_recipe(const std::string& recipe) {
+    return recipe == COLLECTION_ROUTER_MODEL_RECIPE;
+}
+
+inline bool is_model_collection_recipe(const std::string& recipe) {
+    return is_omni_collection_recipe(recipe) || is_router_collection_recipe(recipe);
 }
 
 enum class ModelState {
@@ -41,7 +50,10 @@ enum class ModelType {
     RERANKING,
     TRANSCRIPTION,
     IMAGE,
-    TTS
+    TTS,
+    AUDIO_GENERATION,  // text -> audio clip (music, sound effects)
+    CLASSIFICATION,    // text -> {label: score} (router classifier models)
+    MESH               // image -> 3D mesh (glTF-binary)
 };
 
 // Bitmask pattern for models that use multiple devices
@@ -73,6 +85,9 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::TRANSCRIPTION: return "transcription";
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
+        case ModelType::AUDIO_GENERATION: return "audio-generation";
+        case ModelType::CLASSIFICATION: return "classification";
+        case ModelType::MESH: return "mesh";
         default: return "unknown";
     }
 }
@@ -134,6 +149,15 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         }
         if (label == "tts") {
             return ModelType::TTS;
+        }
+        if (label == "audio-generation") {
+            return ModelType::AUDIO_GENERATION;
+        }
+        if (label == "classification" || label == "classifier") {
+            return ModelType::CLASSIFICATION;
+        }
+        if (label == "3d") {
+            return ModelType::MESH;
         }
     }
     return ModelType::LLM;

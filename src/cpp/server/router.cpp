@@ -439,7 +439,7 @@ void Router::load_model(const std::string& model_name,
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                LOG(INFO, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
+                LOG(DEBUG, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
                 existing->set_pinned(final_pinned);
                 existing->update_access_time();
                 is_loading_ = false;
@@ -622,11 +622,12 @@ void Router::load_model(const std::string& model_name,
                 lock.lock();
 
                 retry_server->set_state(ModelState::READY);
+                const auto retry_duration_ms = retry_server->get_load_duration_ms();
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
@@ -704,6 +705,20 @@ std::string Router::get_loaded_recipe() const {
     return server->get_recipe_options().get_recipe();
 }
 
+std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* match = nullptr;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() || server->get_model_type() != type) {
+            continue;
+        }
+        if (match) return "";  // ambiguous: caller must name the model
+        match = server.get();
+    }
+    return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
+}
+
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 
@@ -775,7 +790,8 @@ json Router::get_max_model_limits() const {
         {"reranking", max},
         {"transcription", max},
         {"image", max},
-        {"tts", max}
+        {"tts", max},
+        {"classification", max}
     };
 }
 
@@ -1330,6 +1346,47 @@ json Router::reranking(const json& request) {
     }
 }
 
+json Router::classify(const json& request) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto classification_server = dynamic_cast<IClassificationServer*>(server);
+            if (!classification_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return classification_server->classify(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                // Label scores classify user content; keep them out of telemetry.
+                span->end_with_success(nlohmann::json::object(), "");
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
 json Router::get_slots() {
     WrappedServer* server = nullptr;
     ISlotsServer* slots_server = nullptr;
@@ -1475,6 +1532,13 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     });
 }
 
+std::vector<std::string> Router::audio_speech_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
@@ -1508,6 +1572,33 @@ json Router::image_variations(const json& request) {
             );
         }
         return image_server->image_variations(request);
+    });
+}
+
+void Router::audio_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+        if (!audio_server) {
+            throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
+        }
+        audio_server->audio_generations(request, sink);
+    });
+}
+
+std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        if (!model_server) {
+            throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
+        }
+        model_server->model_3d_generations(request, sink);
     });
 }
 
@@ -2073,7 +2164,8 @@ json Router::get_pinned_model_counts() const {
         {"reranking", count_pinned_servers_by_type(ModelType::RERANKING)},
         {"transcription", count_pinned_servers_by_type(ModelType::TRANSCRIPTION)},
         {"image", count_pinned_servers_by_type(ModelType::IMAGE)},
-        {"tts", count_pinned_servers_by_type(ModelType::TTS)}
+        {"tts", count_pinned_servers_by_type(ModelType::TTS)},
+        {"classification", count_pinned_servers_by_type(ModelType::CLASSIFICATION)}
     };
 }
 

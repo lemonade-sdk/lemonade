@@ -1382,6 +1382,25 @@ footer {
     min-width: 0;
 }
 
+.registry-result-source-badge {
+    flex-shrink: 0;
+    min-width: 18px;
+    padding: 1px 4px;
+    border: 1px solid var(--border-alpha-08);
+    border-radius: 3px;
+    background: var(--bg-alpha-04);
+    color: var(--text-quaternary);
+    font-size: 0.5rem;
+    line-height: 1.1;
+    text-align: center;
+    letter-spacing: 0.25px;
+}
+
+.registry-result-source-badge.modelscope {
+    color: var(--text-secondary);
+    border-color: var(--border-alpha-1);
+}
+
 .hf-model-meta {
     font-size: 0.6rem;
     color: var(--color-5);
@@ -3411,6 +3430,20 @@ input::-webkit-calendar-picker-indicator {
     padding: 0;
 }
 
+.tts-clip-message {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 280px;
+}
+
+.tts-clip-player {
+    width: 100%;
+    height: 34px;
+    border-radius: 8px;
+    filter: invert(0.92) hue-rotate(180deg);
+}
+
 .message-play-button-container {
     position: absolute;
     bottom: -8px;
@@ -3451,6 +3484,91 @@ input::-webkit-calendar-picker-indicator {
     padding: 8px 0;
     box-sizing: border-box;
 }
+
+.model3d-source-toggle {
+.tts-openmoss-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tts-openmoss-controls .form-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.tts-mode-toggle {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    padding: 3px;
+    align-self: flex-start;
+}
+
+.model3d-source-toggle .toggle-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+    flex: 0 0 auto;
+}
+
+.tts-clone-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.tts-clone-upload {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.tts-clone-upload:hover { border-color: var(--border-5); }
+.tts-clone-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.tts-clone-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 220px;
+    flex: 0 1 auto;
+}
+
+.tts-clone-error {
+    font-size: 0.75rem;
+    color: var(--error-color);
+}
+
+.tts-clone-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.tts-clone-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.tts-clone-remove:hover { color: var(--text-primary); }
 
 .chat-input-wrapper {
     display: flex;
@@ -3526,6 +3644,115 @@ input::-webkit-calendar-picker-indicator {
 .chat-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.style-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.style-input-row .chat-input {
+    flex: 1;
+    width: auto;
+}
+
+.vocal-language-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.vocal-language-label input {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 4px 6px;
+    font-size: 13px;
+    width: 40px;
+}
+
+.vocal-language-label input:focus {
+    outline: none;
+    border-color: var(--border-5);
+}
+
+.vocal-language-label input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.lyrics-input-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    border-top: 1px solid var(--border-tertiary);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.lyrics-input {
+    overflow-y: auto;
+    max-height: 160px;
+}
+
+.lyrics-help-button {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border-secondary);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.lyrics-help-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1);
+}
+
+.lyrics-help-content {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    gap: 12px;
+}
+
+.lyrics-help-content p {
+    margin: 0;
+}
+
+.lyrics-help-content ul {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lyrics-help-content code {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+.lyrics-help-content pre {
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.85rem;
 }
 
 .chat-controls {
@@ -7631,4 +7858,67 @@ input::-webkit-calendar-picker-indicator {
     font-size: 11px;
     color: var(--text-secondary);
     margin-top: 4px;
+}
+
+.audio-duration-label input {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 6px 8px;
+    font-size: 13px;
+    width: 64px;
+}
+
+.audio-duration-label input:focus {
+    outline: none;
+    border-color: var(--border-5);
+}
+
+.audio-duration-label input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.audio-duration-label input[type="number"] {
+    text-align: center;
+}
+
+.audio-duration-label input {
+  color-scheme: dark;
+}
+
+[data-theme="light"] .audio-duration-label input {
+  color-scheme: light;
+}
+
+/* Registry search providers share one widget. Each provider owns a bounded
+ * result viewport so a long Hugging Face list can never push ModelScope out of
+ * sight. The rows remain fully available through the provider-local scrollbar. */
+.registry-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.registry-provider-group {
+    min-width: 0;
+}
+
+.registry-provider-group + .registry-provider-group {
+    padding-top: 8px;
+    border-top: 1px solid var(--border-alpha-05);
+}
+
+.registry-provider-header {
+    margin-bottom: 3px;
+}
+
+.registry-provider-results {
+    max-height: 168px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }

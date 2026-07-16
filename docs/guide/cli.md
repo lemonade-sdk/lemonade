@@ -46,7 +46,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
@@ -190,7 +190,8 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
+| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
+| `--source` | Remote registry for checkpoint pulls: `huggingface` (default) or `modelscope`; direct hub URLs are auto-detected | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
@@ -362,6 +363,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
+| `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
 
 #### Ryzen AI LLM (`ryzenai-llm` recipe)
 
@@ -384,6 +386,36 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--lemon-mlx BACKEND` | lemon-mlx backend to use | Auto-detected |
 | `--lemon-mlx-args ARGS` | Custom arguments to pass to lemon-mlx server | `""` |
+
+#### ThinkSound (`thinksound` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
+
+#### ACE-Step (`acestep` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
+
+#### ONNX Runtime (`onnxruntime` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
+
+#### TRELLIS.2 (`trellis` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+
+#### OpenMOSS TTS (`openmoss` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
@@ -756,7 +788,8 @@ Scenarios are defined in JSON files. Each file contains a `scenarios` array wher
 |-------|------|-------------|
 | `name` | string | Unique scenario name (required) |
 | `category` | string | Category label for grouping (default: `"general"`) |
-| `messages` | array | Chat messages in OpenAI format (required) |
+| `messages` | array | Chat messages in OpenAI format (required for text generation) |
+| `input` | array | Chat messages in OpenAI format (required for embedding test) |
 | `max_tokens` | int | Maximum output tokens (default: `128`) |
 | `warmup_runs` | int | Override warmup runs for this scenario (default: `0`) |
 | `measurement_runs` | int | Override measurement runs for this scenario (default: `3`) |
@@ -780,10 +813,12 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 - **Chat** — Short and long conversational turns
 - **Coding** — Code generation, explanation, and debugging
 - **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
+- **Embed** - Embeddings, converting text input into a vector
 
 You can override these with `--scenario-file` or `--scenario-dir`.
 
-**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
+**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
+
 
 ### Output
 

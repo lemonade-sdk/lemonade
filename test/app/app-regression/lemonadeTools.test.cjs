@@ -163,6 +163,23 @@ const tests = [
     },
   },
   {
+    name: 'routing rides through the router collection export/import allowlist',
+    run() {
+      const modelData = readSource('src/app/src/renderer/utils/modelData.ts');
+      assertIncludes(
+        modelData,
+        "'routing',",
+        'EXPORT_KNOWN_KEYS must include routing so collection.router policies round-trip.',
+      );
+      const recipeImport = readSource('src/cpp/cli/recipe_import.cpp');
+      assertIncludes(
+        recipeImport,
+        '"routing"',
+        'kKnownKeys (CLI side) must preserve routing during import/export.',
+      );
+    },
+  },
+  {
     name: 'custom collection draft carries an optional systemPrompt through to the pull request',
     run() {
       const customCollections = readSource('src/app/src/renderer/utils/customCollections.ts');

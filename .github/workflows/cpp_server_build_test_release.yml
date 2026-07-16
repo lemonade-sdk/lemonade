@@ -275,6 +275,7 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_process_manager
           cmake --build --preset default --target test_latest_version_fallback
           cmake --build --preset default --target test_routing_policy_contract
           cmake --build --preset default --target test_routing_policy_evaluator
@@ -282,8 +283,13 @@ jobs:
           cmake --build --preset default --target test_routing_policy_semantic
           cmake --build --preset default --target test_routing_policy_deterministic
           cmake --build --preset default --target test_routing_policy_engine
+          cmake --build --preset default --target test_routing_policy_parser
+          cmake --build --preset default --target test_routing_policy_store
+          cmake --build --preset default --target test_model_manager_collection_validation
+          cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_network_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine)Test"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -577,7 +583,6 @@ jobs:
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Run C++ unit tests
-        if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
@@ -588,8 +593,13 @@ jobs:
           cmake --build --preset default --target test_routing_policy_semantic
           cmake --build --preset default --target test_routing_policy_deterministic
           cmake --build --preset default --target test_routing_policy_engine
+          cmake --build --preset default --target test_routing_policy_parser
+          cmake --build --preset default --target test_routing_policy_store
+          cmake --build --preset default --target test_model_manager_collection_validation
+          cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_network_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine)Test"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -695,6 +705,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           HF_HOME: ${{ github.workspace }}/hf-cache
           GGML_METAL_NO_RESIDENCY: "1"
+          LEMONADE_WS_IDLE_SECONDS: "31"
         run: |
           set -e
           echo "Resetting server state before endpoint tests..."
@@ -702,6 +713,12 @@ jobs:
           echo "Running endpoint tests..."
           .venv/bin/python test/server_endpoints.py --cli-binary ./build/lemonade
           echo "Endpoint tests PASSED!"
+          echo "Running WebSocket idle test (31s regression)..."
+          .venv/bin/python test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       - name: Run web-app path traversal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -1135,16 +1152,41 @@ jobs:
             extra_args: "--wrapped-server moonshine"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
+          - name: classify-onnxruntime
+            script: server_classify.py
+            extra_args: "--wrapped-server onnxruntime"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
             backends: "cpu rocm vulkan"
+            runner: [Windows, rocm, vulkan, lemon-prod]
+          - name: audio-gen-thinksound
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server thinksound"
+            backends: "vulkan rocm"
+            runner: [Windows, rocm, vulkan, lemon-prod]
+          - name: audio-gen-acestep
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server acestep"
+            backends: "vulkan rocm"
             runner: [Windows, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
             backends: ""
             runner: [self-hosted, Windows, lemon-prod]
+          - name: 3d-trellis
+            script: server_3d.py
+            extra_args: "--wrapped-server trellis"
+            backends: "vulkan rocm"
+            runner: [Windows, rocm, vulkan, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Windows, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1423,6 +1465,16 @@ jobs:
             extra_args: ""
             backends: "cpu rocm vulkan"
             runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: audio-gen-thinksound
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server thinksound"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: audio-gen-acestep
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server acestep"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
@@ -1448,6 +1500,16 @@ jobs:
             extra_args: ""
             backends: ""
             runner: [self-hosted, Linux, lemon-prod]
+          - name: 3d-trellis
+            script: server_3d.py
+            extra_args: "--wrapped-server trellis"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1468,34 +1530,6 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
-      - name: Install FLM backend for FLM wrapped-server tests
-        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
-        run: |
-          set -e
-          FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
-          FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
-          FLM_TEMP_DIR="$RUNNER_TEMP/flm-extract"
-          mkdir -p "$FLM_TEMP_DIR"
-          echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
-          curl -L -o "$RUNNER_TEMP/fastflowlm.deb" "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
-          dpkg-deb -x "$RUNNER_TEMP/fastflowlm.deb" "$FLM_TEMP_DIR"
-          # FLM resolves xclbins under bin/xclbins in this CI layout, while the
-          # package stores them under share/flm/xclbins. Create a compat link.
-          if [ ! -e "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins" ] && [ -d "$FLM_TEMP_DIR/opt/fastflowlm/share/flm/xclbins" ]; then
-            mkdir -p "$FLM_TEMP_DIR/opt/fastflowlm/bin"
-            ln -s ../share/flm/xclbins "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins"
-          fi
-          # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
-          FLM_BIN=$(find "$FLM_TEMP_DIR" -name flm -type f | head -1)
-          FLM_CONFIG=$(find "$FLM_TEMP_DIR" -name "model_list.json" -type f | head -1)
-          chmod +x "$FLM_BIN"
-          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
-          echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
-          export PATH="$(dirname "$FLM_BIN"):$PATH"
-          export FLM_CONFIG_PATH="$FLM_CONFIG"
-          rm "$RUNNER_TEMP/fastflowlm.deb"
-          flm version
-
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
@@ -1504,6 +1538,13 @@ jobs:
           # network isolation), so the default port can be held by a concurrent
           # job. Use a job-unique free port to avoid the collision.
           port: auto
+
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        run: |
+          set -e
+          echo "Installing FLM backend for CI inference tests..."
+          lemonade backends install flm:npu
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -2046,6 +2087,12 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
           .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+          echo "Running WebSocket idle test..."
+          .venv/bin/python test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
@@ -2171,6 +2218,12 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
             echo "Running endpoint tests..."
             $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+            echo "Running WebSocket idle test..."
+            $VENV_PYTHON test/test_websocket_idle.py
+            echo "WebSocket idle test PASSED!"
+            echo "Running WebSocket auth tests..."
+            $VENV_PYTHON test/server_websocket_auth.py
+            echo "WebSocket auth tests PASSED!"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
             echo "Running Ollama API tests..."
             $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
@@ -2305,6 +2358,9 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} endpoints"
           $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+          echo "Running WebSocket idle test..."
+          $VENV_PYTHON test/test_websocket_idle.py
+          echo "WebSocket idle test PASSED!"
 
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}

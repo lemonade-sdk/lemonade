@@ -79,6 +79,11 @@ public:
     std::string get_loaded_model() const;
     std::string get_loaded_recipe() const;
 
+    // The single live model of this type, or "" when none or more than one is
+    // loaded. Endpoints that let the caller omit "model" use this so an
+    // ambiguous choice is refused rather than silently resolved.
+    std::string get_sole_loaded_model_of_type(ModelType type) const;
+
     json get_all_loaded_models() const;
 
     json get_max_model_limits() const;
@@ -108,6 +113,7 @@ public:
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
+    json classify(const json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);
@@ -115,10 +121,15 @@ public:
 
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
     json image_variations(const json& request);
+
+    void audio_generations(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
+    void model_3d_generations(const json& request, httplib::DataSink& sink);
 
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);

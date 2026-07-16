@@ -162,6 +162,24 @@ defineTest('collection export normalizes the /models/{id} object into the import
   });
 });
 
+defineTest('model export preserves remote registry provenance and drops local origins', () => {
+  const remote = modelDataUtils.normalizeModelExportPayload({
+    id: 'remote-model', recipe: 'llamacpp', checkpoint: 'org/repo:Q4_K_M',
+    checkpoints: { main: 'org/repo:Q4_K_M' }, source: 'modelscope',
+    registry_source: 'modelscope', components: [],
+  }).payload;
+  assert.equal(remote.source, 'modelscope');
+  assert.equal(remote.registry_source, 'modelscope');
+
+  const local = modelDataUtils.normalizeModelExportPayload({
+    id: 'local-model', recipe: 'llamacpp', checkpoint: 'models--local/file.gguf',
+    checkpoints: { main: 'models--local/file.gguf' }, source: 'local_upload',
+    registry_source: 'huggingface', components: [],
+  }).payload;
+  assert.ok(!('source' in local));
+  assert.ok(!('registry_source' in local));
+});
+
 defineTest('regular-model export carries no collection fields', () => {
   const raw = {
     id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',
@@ -179,6 +197,36 @@ defineTest('regular-model export carries no collection fields', () => {
   assert.ok(!('downloaded' in payload));
   assert.ok(!('suggested' in payload));
   assert.ok(!('created' in payload));
+});
+
+defineTest('router collection export preserves routing and components', () => {
+  const routing = {
+    candidates: ['local', 'remote'],
+    default_model: 'local',
+    rules: [
+      { id: 'code', match: { keywords_any: ['def '] }, route_to: 'remote' },
+    ],
+  };
+  const raw = {
+    id: 'RouterKit', object: 'model', created: 1234567890, owned_by: 'lemonade',
+    recipe: 'collection.router',
+    checkpoint: '',
+    checkpoints: { main: '' },
+    components: ['local', 'remote'],
+    labels: [],
+    recipe_options: {},
+    routing,
+    suggested: true,
+    downloaded: true,
+  };
+
+  const { filename, payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.equal(filename, 'RouterKit.json');
+  assert.equal(payload.model_name, 'user.RouterKit');
+  assert.deepEqual(payload.components, ['local', 'remote']);
+  assert.deepEqual(payload.routing, routing);
+  assert.ok(!('downloaded' in payload));
+  assert.ok(!('suggested' in payload));
 });
 
 defineTest('DEFAULT_OMNI_SYSTEM_PROMPT is the canonical default from toolDefinitions.json', () => {

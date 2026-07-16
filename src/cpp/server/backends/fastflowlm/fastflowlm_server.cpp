@@ -1,6 +1,7 @@
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/flm_arg_resolver.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -53,13 +54,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
 #ifdef _WIN32
     params.filename = "fastflowlm_" + bare_version + "_windows_amd64.zip";
 #else
-    // On Linux, FLM must be installed as a system package by the user.
-    // The FLM .deb bundles non-portable libraries (libxrt, ffmpeg) that
-    // require system-level installation. Auto-install is Windows-only.
-    throw std::runtime_error(
-        "FLM auto-install is only supported on Windows. "
-        "On Linux, install FLM manually: "
-        "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + version);
+    params.filename = "fastflowlm_" + bare_version + "_linux.tar.gz";
 #endif
 
     return params;
@@ -149,20 +144,29 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
 }
 
 void FastFlowLMServer::load(const std::string& model_name,
-                           const ModelInfo& model_info,
-                           const RecipeOptions& options,
-                           bool do_not_upgrade) {
+                            const ModelInfo& model_info,
+                            const RecipeOptions& options,
+                            bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Loading model: " << model_name << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
+    std::string flm_args = options.get_option("flm_args");
+    FLMArgResolution flm_arg_resolution = resolve_flm_args(flm_args, ctx_size);
 
     std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
-#ifdef _WIN32
-    backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
-#endif
+    if (fastflowlm::find_flm_in_path().empty()) {
+        try {
+            backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
+        } catch (const std::exception&) {
+            if (fastflowlm::find_flm_executable().empty()) {
+                throw;
+            }
+            LOG(DEBUG, "FastFlowLM") << "Using system FLM from PATH" << std::endl;
+        }
+    }
 
     std::string flm_path = get_flm_path();
     std::string validate_error;
@@ -182,16 +186,14 @@ void FastFlowLMServer::load(const std::string& model_name,
             "serve",
             "--asr", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else if (model_type_ == ModelType::EMBEDDING) {
         args = {
             "serve",
             "--embed", "1",
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     } else {
         args = {
@@ -199,10 +201,12 @@ void FastFlowLMServer::load(const std::string& model_name,
             model_info.checkpoint(),
             "--ctx-len", std::to_string(ctx_size),
             "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
+            "--host", "127.0.0.1"
         };
     }
+
+    args.insert(args.end(), flm_arg_resolution.args.begin(), flm_arg_resolution.args.end());
+    args.push_back("--quiet");
 
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
@@ -424,26 +428,13 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
-#ifdef _WIN32
-    // On Windows, use the standard install directory (auto-installed zip)
-    try {
-        std::string path = BackendUtils::get_backend_binary_path(*fastflowlm::spec(), "npu");
-        LOG(INFO, "FastFlowLM") << "Found flm at: " << path << std::endl;
-        return path;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "flm not found in install dir: " << e.what() << std::endl;
-        return "";
-    }
-#else
-    // On Linux, FLM is installed as a system package (in PATH)
     std::string flm_path = fastflowlm::find_flm_executable();
     if (!flm_path.empty()) {
         LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
     } else {
-        LOG(ERROR, "FastFlowLM") << "flm not found in PATH" << std::endl;
+        LOG(ERROR, "FastFlowLM") << "flm not found in PATH or install dir" << std::endl;
     }
     return flm_path;
-#endif
 }
 
 } // namespace backends
@@ -496,48 +487,9 @@ public:
     }
 
     InstallCheck check_install(const std::string&, bool binary_found) const override {
-        // On Linux FLM is a system package on PATH, not in the managed install dir.
-        if (!binary_found && !find_flm_executable().empty()) {
-            return {true, ""};
-        }
-        return {binary_found, ""};
+        return {!find_flm_executable().empty(), ""};
     }
 
-    std::optional<UnavailableState> classify_unavailable(
-        const std::string&, const std::string& install_error,
-        const std::string& default_install_command) const override {
-        // FLM needs richer state to guide users through manual setup (installing
-        // the .deb, xrt drivers, etc.) rather than an automatic backend install.
-        bool is_not_installed = install_error.empty()
-                             || install_error.find("not installed") != std::string::npos
-                             || install_error.find("not found") != std::string::npos;
-        bool is_version_mismatch = install_error.find("requires") != std::string::npos;
-
-        UnavailableState s;
-        if (is_not_installed) {
-            s.state = "installable";
-        } else if (is_version_mismatch) {
-            s.state = "update_required";
-        } else {
-            s.state = "action_required";
-        }
-        s.message = install_error;
-        s.attach_installed_version = !is_not_installed;
-
-#ifdef __linux__
-        (void)default_install_command;
-        s.action = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
-#elif defined(_WIN32)
-        if (!is_not_installed && !is_version_mismatch) {
-            s.action = "Visit https://lemonade-server.ai/driver_install.html";
-        } else {
-            s.action = default_install_command;
-        }
-#else
-        s.action = default_install_command;
-#endif
-        return s;
-    }
 };
 }  // namespace
 
