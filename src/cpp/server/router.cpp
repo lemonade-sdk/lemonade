@@ -508,8 +508,11 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            if (allow_reload_on_option_change &&
-                existing->get_recipe_options().to_json() != effective_options.to_json()) {
+            json existing_opts = existing->get_recipe_options().to_json();
+            json requested_opts = effective_options.to_json();
+            existing_opts.erase("pinned");
+            requested_opts.erase("pinned");
+            if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
                 // Fall through to create and load with new options

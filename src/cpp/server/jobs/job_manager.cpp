@@ -100,10 +100,19 @@ JobManager::~JobManager() {
 }
 
 void JobManager::load_from_disk() {
-    std::ifstream in(lemon::utils::path_from_utf8(storage_path_));
-    if (!in) return;
+    json doc;
+    {
+        std::ifstream in(lemon::utils::path_from_utf8(storage_path_));
+        if (!in) return;
+        try {
+            doc = json::parse(in);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Jobs") << "Could not load " << storage_path_ << ": " << e.what()
+                                 << std::endl;
+            return;
+        }
+    }
     try {
-        json doc = json::parse(in);
         int loaded = 0, recovered = 0, dropped = 0;
         for (const auto& jj : doc.value("jobs", json::array())) {
             Job job = Job::from_json(jj);
@@ -143,8 +152,8 @@ void JobManager::load_from_disk() {
             persist_locked();
         }
     } catch (const std::exception& e) {
-        LOG(WARNING, "Jobs") << "Could not load " << storage_path_ << ": " << e.what()
-                             << std::endl;
+        LOG(WARNING, "Jobs") << "Could not restore jobs from " << storage_path_ << ": "
+                             << e.what() << std::endl;
     }
 }
 

@@ -21,6 +21,7 @@ TEST_MODEL = "Tiny-Test-Model-GGUF"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LEMOND_BINARY = None
 _BACKEND_BIN_TEMPLATE = None
+_BACKEND_INSTALL_ATTEMPTED = False
 
 
 def find_lemond_binary():
@@ -170,15 +171,19 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, "failed to pull the test model")
 
     def require_real_backend(self):
-        global _BACKEND_BIN_TEMPLATE
+        global _BACKEND_BIN_TEMPLATE, _BACKEND_INSTALL_ATTEMPTED
         backend = self.installed_llamacpp_backend()
-        if not backend and _BACKEND_BIN_TEMPLATE is None:
-            r = requests.post(
-                f"{BASE}/install",
-                json={"recipe": "llamacpp", "backend": "cpu", "subscribe": False},
-                timeout=1800,
-            )
-            if r.status_code == 200:
+        if not backend and not _BACKEND_INSTALL_ATTEMPTED:
+            _BACKEND_INSTALL_ATTEMPTED = True
+            try:
+                r = requests.post(
+                    f"{BASE}/install",
+                    json={"recipe": "llamacpp", "backend": "cpu", "subscribe": False},
+                    timeout=900,
+                )
+            except requests.RequestException:
+                r = None
+            if r is not None and r.status_code == 200:
                 backend = self.installed_llamacpp_backend()
                 bin_dir = os.path.join(self.cache_dir, "bin")
                 if backend and os.path.isdir(bin_dir):
@@ -981,12 +986,15 @@ class JobEngineTests(unittest.TestCase):
             "interrupt cleanup unloaded a model pinned before the job started",
         )
 
-    def loaded_model_pinned_state(self, model):
+    def loaded_model_entry(self, model):
         health = requests.get(f"{BASE}/health", timeout=5).json()
         for entry in health.get("all_models_loaded", []):
             if entry.get("model") == model or entry.get("model_name") == model:
-                return entry.get("pinned")
+                return entry
         self.fail(f"{model} not present in all_models_loaded: {health}")
+
+    def loaded_model_pinned_state(self, model):
+        return self.loaded_model_entry(model).get("pinned")
 
     def test_pin_state_of_preexisting_model_restored_after_job(self):
         backend = self.require_real_backend()
@@ -1002,6 +1010,8 @@ class JobEngineTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(self.loaded_model_pinned_state(TEST_MODEL))
+        pid_before = self.loaded_model_entry(TEST_MODEL).get("pid")
+        self.assertTrue(pid_before)
 
         steps = [
             {
@@ -1019,9 +1029,15 @@ class JobEngineTests(unittest.TestCase):
         job = self.create_job("unpin-then-interrupt", steps)
         jid = job["id"]
         self.poll_cursor(jid, "hold", timeout=60)
+        mid = self.loaded_model_entry(TEST_MODEL)
         self.assertFalse(
-            self.loaded_model_pinned_state(TEST_MODEL),
+            mid.get("pinned"),
             "the job load did not change the surviving model's pin state",
+        )
+        self.assertEqual(
+            mid.get("pid"),
+            pid_before,
+            "a pin-only load reloaded the model instead of updating the pin in place",
         )
 
         r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
@@ -1033,9 +1049,15 @@ class JobEngineTests(unittest.TestCase):
             TEST_MODEL,
             "reconcile evicted a pre-job model",
         )
+        after = self.loaded_model_entry(TEST_MODEL)
         self.assertTrue(
-            self.loaded_model_pinned_state(TEST_MODEL),
+            after.get("pinned"),
             "reconcile did not restore the pre-job pin state of a surviving model",
+        )
+        self.assertEqual(
+            after.get("pid"),
+            pid_before,
+            "the pre-job model did not actually survive the job (it was reloaded)",
         )
 
     def test_bench_shaped_sweep(self):
