@@ -5,6 +5,12 @@ Defines which features each WrappedServer (inference backend) supports,
 organized by modality (matching test files).
 
 Tests use the skip_if_unsupported decorator to skip tests for unsupported features.
+
+Note on VTE multi_model:
+VTE has multi_model disabled because its memory model uses fixed, persistent
+HIP activation buffers and AOT-compiled kernels for RDNA3 native execution. Running
+multiple VTE models concurrently can lead to HIP driver memory allocation conflicts or
+OOM within VTE's custom SlabAllocator, even when free VRAM check is disabled.
 """
 
 from functools import wraps
@@ -147,12 +153,6 @@ CAPABILITIES = {
                 "reranking": False,
                 "tool_calls": False,
                 "tool_calls_streaming": False,
-                # False: vte-server refuses to load if free VRAM is under 80%
-                # (its own preflight, see vte/server/http_server.py), so
-                # loading VTE alongside another already-loaded GPU model is
-                # likely to fail rather than coexist. Revisit once that
-                # preflight is integrated with Lemonade's own VRAM/eviction
-                # policy instead of running as an independent, unaware check.
                 "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,

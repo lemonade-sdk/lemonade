@@ -127,34 +127,35 @@ void VTEServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled environment.
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    // VTE ships its own kernels but not amdhip64.dll itself; put TheRock's
-    // bin/ (installed above via rocm_channels) on the child's PATH, mirroring
-    // llamacpp_server.cpp's Windows block. vte-server's own DLL search
-    // (vte/bridge/dll_discovery.py) treats HIP_PATH as the SDK root and
-    // appends "bin" itself, so HIP_PATH must be therock_bin's PARENT, not
-    // therock_bin (which get_therock_lib_path already returns as the bin/
-    // dir itself) -- setting HIP_PATH to the bin/ dir directly would make it
-    // look in bin/bin/ and silently fail that lookup, falling through to the
-    // PATH-based search instead (which does work, since PATH entries are
-    // searched as-is). Both are set so the intended lookup path succeeds
-    // directly rather than by accident.
-    std::string rocm_arch = SystemInfo::get_rocm_arch();
-    if (!rocm_arch.empty()) {
-        std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
-        if (!therock_bin.empty()) {
-            fs::path therock_bin_path = fs::absolute(path_from_utf8(therock_bin));
-            std::string new_path = path_to_utf8(therock_bin_path);
-            const char* existing_path = std::getenv("PATH");
-            if (existing_path && strlen(existing_path) > 0) {
-                new_path += ";" + std::string(existing_path);
+    std::optional<fs::path> effective_root;
+    std::optional<fs::path> effective_bin;
+    if (auto system_root = BackendUtils::resolve_rocm_root()) {
+        effective_root = *system_root;
+        effective_bin = *system_root / "bin";
+    } else {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_bin.empty()) {
+                fs::path therock_bin_path = fs::absolute(path_from_utf8(therock_bin));
+                effective_bin = therock_bin_path;
+                effective_root = therock_bin_path.parent_path();
             }
-            env_vars.push_back({"PATH", new_path});
-            env_vars.push_back({"HIP_PATH", path_to_utf8(therock_bin_path.parent_path())});
-            LOG(DEBUG, "VTE") << "Using TheRock runtime at " << therock_bin << std::endl;
-        } else {
-            LOG(WARNING, "VTE") << "TheRock runtime not found for " << rocm_arch
-                                 << "; vte-server will only start if a HIP SDK is already installed." << std::endl;
         }
+    }
+    if (effective_root && effective_bin) {
+        std::string bin_path_str = path_to_utf8(*effective_bin);
+        std::string root_path_str = path_to_utf8(*effective_root);
+        std::string new_path = bin_path_str;
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        env_vars.push_back({"HIP_PATH", root_path_str});
+        LOG(DEBUG, "VTE") << "Using ROCm runtime at " << root_path_str << " (bin: " << bin_path_str << ")" << std::endl;
+    } else {
+        LOG(WARNING, "VTE") << "No ROCm runtime resolved; vte-server will only start if a HIP SDK is already in PATH." << std::endl;
     }
 
     bool inherit_output = (log_level_ == "info") || is_debug();
