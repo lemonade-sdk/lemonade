@@ -61,7 +61,16 @@ function assertSubset(actual, expected, path = '') {
   }
 }
 
-const build = collectionUtils.buildRouterCollectionPullRequest;
+const rawBuild = collectionUtils.buildRouterCollectionPullRequest;
+// The public draft API uses independent `rulesEnabled`/`llmEnabled` stage flags.
+// Fixtures below predate that split and still set a single `routingMode`; adapt
+// those legacy drafts so their coverage keeps exercising the builder unchanged.
+const adaptDraft = (draft) => {
+  if (!draft || typeof draft !== 'object' || !('routingMode' in draft)) return draft;
+  const { routingMode, ...rest } = draft;
+  return { ...rest, rulesEnabled: routingMode === 'rules', llmEnabled: routingMode === 'llm' };
+};
+const build = (draft) => rawBuild(adaptDraft(draft));
 const parse = collectionUtils.routingToRouterCollectionDraft;
 
 // ── Tree node helpers ──────────────────────────────────────────────────────
@@ -365,11 +374,11 @@ defineTest('Schema invariant — default_model must be in candidates', () => {
   }), /default model/i);
 });
 
-defineTest('Schema invariant — rules mode with zero rules throws', () => {
+defineTest('Schema invariant — rules enabled with zero rules and no LLM throws', () => {
   assert.throws(() => build({
     name: 'Empty', candidates: ['a'], defaultModel: 'a',
     routingMode: 'rules', classifiers: [], rules: [],
-  }), /at least one rule/i);
+  }), /enable rules/i);
 });
 
 defineTest('Schema invariant — llm mode with missing prompt throws', () => {
@@ -425,12 +434,35 @@ defineTest('llm classifier emits model and prompt only', () => {
   assert.ok(!('reference_phrases' in clf));
 });
 
-// ── Parser round-trips ─────────────────────────────────────────────────────
+defineTest('Rules + LLM combined — emits both routing.rules and routing.router', () => {
+  const req = build({
+    name: 'Hybrid', candidates: ['a', 'b'], defaultModel: 'a',
+    rulesEnabled: true, llmEnabled: true,
+    classifiers: [],
+    rules: [rule('big', 'b', leaf('min_chars', { signalValue: 4000 }))],
+    routerModel: 'tiny', routerPrompt: 'Pick a model.',
+  });
+  assert.ok(Array.isArray(req.routing.rules), 'rules present');
+  assert.equal(req.routing.rules[0].id, 'big');
+  assert.ok(req.routing.router && req.routing.router.type === 'llm', 'router present');
+  assert.equal(req.routing.router.model, 'tiny');
+  assert.ok(req.components.includes('tiny'));
+});
+
+defineTest('Neither rules nor LLM enabled throws', () => {
+  assert.throws(() => build({
+    name: 'None', candidates: ['a'], defaultModel: 'a',
+    rulesEnabled: false, llmEnabled: false,
+  }), /enable rules/i);
+});
+
+// ── Parser round-trips ────────────────────────────────────────────
 
 defineTest('round-trip: l0a_llm_router — NL router fields preserved', () => {
   const fix = fixture('l0a_llm_router.json');
   const draft = parse('user.Router-Auto', fix.routing, fix.components);
-  assert.equal(draft.routingMode, 'llm');
+  assert.equal(draft.llmEnabled, true);
+  assert.equal(draft.rulesEnabled, false);
   assert.deepEqual(draft.candidates, fix.routing.candidates);
   assert.equal(draft.routerModel, fix.routing.router.model);
   assert.equal(draft.routerPrompt, fix.routing.router.prompt);
@@ -439,7 +471,8 @@ defineTest('round-trip: l0a_llm_router — NL router fields preserved', () => {
 defineTest('round-trip: l1_keywords — conditionTree reconstructed', () => {
   const fix = fixture('l1_keywords.json');
   const draft = parse('user.Router-Keywords', fix.routing, fix.components);
-  assert.equal(draft.routingMode, 'rules');
+  assert.equal(draft.rulesEnabled, true);
+  assert.equal(draft.llmEnabled, false);
   assert.equal(draft.rules.length, 2);
   // First rule has conditionTree (not null)
   assert.ok(draft.rules[0].conditionTree !== null);

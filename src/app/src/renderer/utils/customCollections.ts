@@ -219,20 +219,21 @@ export interface RouterRule {
   outputs?: Record<string, unknown>;
 }
 
-export type RouterRoutingMode = 'llm' | 'rules';
-
 export interface RouterCollectionDraft {
   id?: string;
   name: string;
   createdAt?: string;
   candidates: string[];        // routing.candidates - the LLMs that answer requests
   defaultModel: string;        // routing.default_model - must be in candidates
-  routingMode: RouterRoutingMode;
-  // L0(a) fields - used when routingMode === 'llm'
+  // Fixed evaluation order: rules first, then the LLM router, then default_model.
+  // Either stage may be disabled; at least one must be enabled.
+  rulesEnabled: boolean;
+  llmEnabled: boolean;
+  // LLM router stage (routing.router)
   routerModel?: string;        // routing.router.model - the small classifier LLM (not a candidate)
   routerPrompt?: string;       // routing.router.prompt
-  // L1–L3 fields - used when routingMode === 'rules'
-  classifiers?: RouterClassifier[];  // L2/L3 declared classifiers
+  // Rules stage (routing.classifiers + routing.rules)
+  classifiers?: RouterClassifier[];
   rules?: RouterRule[];
 }
 
@@ -247,12 +248,15 @@ export interface RouterCollectionPullRequest {
 export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): RouterCollectionPullRequest => {
   const modelName = makeCollectionId(draft.id ?? draft.name);
 
-  // components = union of candidates + routerModel (L0a) + classifier models (L2/L3)
+  const rulesActive = draft.rulesEnabled && (draft.rules?.length ?? 0) > 0;
+  const llmActive = draft.llmEnabled && !!draft.routerModel;
+
+  // components = union of candidates + router model + classifier models
   const componentSet = new Set(draft.candidates);
-  if (draft.routingMode === 'llm' && draft.routerModel) {
+  if (llmActive && draft.routerModel) {
     componentSet.add(draft.routerModel);
   }
-  if (draft.routingMode !== 'llm') {
+  if (rulesActive) {
     for (const c of draft.classifiers ?? []) {
       if (c.model) componentSet.add(c.model);
     }
@@ -265,23 +269,17 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
   if (!draft.defaultModel || !draft.candidates.includes(draft.defaultModel)) {
     throw new Error('Default model must be one of the selected candidates.');
   }
+  if (!rulesActive && !llmActive) {
+    throw new Error('Enable rules, an LLM router, or both.');
+  }
 
   const routing: Record<string, unknown> = {
     candidates: draft.candidates,
     default_model: draft.defaultModel,
   };
 
-  if (draft.routingMode === 'llm') {
-    if (!draft.routerModel || !draft.routerPrompt?.trim()) {
-      throw new Error('LLM router requires a router model and a routing prompt.');
-    }
-    routing.router = { type: 'llm', model: draft.routerModel, prompt: draft.routerPrompt.trim() };
-  } else {
-    // Rules-based routing JSON (classifiers[] + rules[])
-    if (!draft.rules?.length) {
-      throw new Error('Rules router requires at least one rule.');
-    }
-
+  // Rules stage first — evaluated before the LLM router fallback.
+  if (rulesActive) {
     // Emit classifiers[] if any are declared
     if (draft.classifiers?.length) {
       routing.classifiers = draft.classifiers.map((c) => {
@@ -300,7 +298,7 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
       });
     }
 
-    routing.rules = draft.rules.map((r) => {
+    routing.rules = (draft.rules ?? []).map((r) => {
       const match: Record<string, unknown> = r.conditionTree
         ? (ruleNodeToMatchExpr(r.conditionTree) ?? {})
         : {};
@@ -308,6 +306,14 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
       if (r.outputs && Object.keys(r.outputs).length > 0) emitted.outputs = r.outputs;
       return emitted;
     });
+  }
+
+  // LLM router stage second.
+  if (llmActive) {
+    if (!draft.routerPrompt?.trim()) {
+      throw new Error('LLM router requires a routing prompt.');
+    }
+    routing.router = { type: 'llm', model: draft.routerModel, prompt: draft.routerPrompt.trim() };
   }
 
   return { version: '1', model_name: modelName, recipe: COLLECTION_ROUTER_MODEL_RECIPE, components, routing };
@@ -330,19 +336,11 @@ export const routingToRouterCollectionDraft = (
     ? routing.default_model
     : '';
 
-  // L0(a) - routing.router sugar
-  if (routing.router && typeof routing.router === 'object') {
-    const r = routing.router as Record<string, unknown>;
-    return {
-      id: collectionId, name, candidates, defaultModel,
-      routingMode: 'llm',
-      routerModel: typeof r.model === 'string' ? r.model : '',
-      routerPrompt: typeof r.prompt === 'string' ? r.prompt : '',
-      classifiers: [], rules: [],
-    };
-  }
+  // The LLM router (routing.router) and rules can coexist; reconstruct both.
+  const routerObj = (routing.router && typeof routing.router === 'object')
+    ? (routing.router as Record<string, unknown>)
+    : null;
 
-  // Rules mode - reconstruct classifiers and rules
   const rawClassifiers = Array.isArray(routing.classifiers) ? routing.classifiers : [];
   const classifiers: RouterClassifier[] = (rawClassifiers as Record<string, unknown>[]).map((c) => ({
     id: typeof c.id === 'string' ? c.id : '',
@@ -370,12 +368,14 @@ export const routingToRouterCollectionDraft = (
     };
   });
 
-  // A single rules-based mode: the panel decides per rule whether to show the
-  // simple form or the graph canvas (see isFlatMatch), so parsing never needs
-  // to pick a global "quick vs advanced" mode.
+  // Per-rule, the panel decides whether to show the simple form or the graph
+  // canvas (see isFlatMatch), so parsing never needs a global mode.
   return {
     id: collectionId, name, candidates, defaultModel,
-    routingMode: 'rules',
+    rulesEnabled: rules.length > 0,
+    llmEnabled: routerObj !== null,
+    routerModel: routerObj && typeof routerObj.model === 'string' ? routerObj.model : '',
+    routerPrompt: routerObj && typeof routerObj.prompt === 'string' ? routerObj.prompt : '',
     classifiers, rules,
   };
 };

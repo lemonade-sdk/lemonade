@@ -132,6 +132,14 @@
     overflow-y: auto;
 }
 
+/* The content is a flex column, so its children default to flex-shrink: 1 and
+   get compressed when a section is expanded. Combined with the overflow:hidden
+   on .router-stage that clips the section body, making it un-editable. Pin the
+   children to their natural height so the panel scrolls instead of squashing. */
+.router-collection-modal .settings-content > * {
+    flex-shrink: 0;
+}
+
 .router-collection-modal .settings-footer {
     flex-shrink: 0;
     padding: 10px 16px;
@@ -190,47 +198,72 @@
     color: #ffb74d;
 }
 
-.router-mode-options {
-    display: flex;
-    gap: 8px;
-}
-
-.router-mode-option {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 10px 12px;
+/* Fixed-flow router stages: Rules → LLM → Default. Each stage reads as a step
+   in an increasing-complexity progression; the first two can be toggled off. */
+.router-stage {
     border: 1.5px solid var(--border-primary);
     border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.78rem;
     background: var(--bg-secondary);
+    margin-bottom: 12px;
+    overflow: hidden;
     transition: border-color 0.12s, background 0.12s;
-    user-select: none;
 }
 
-.router-mode-option:hover {
-    border-color: var(--border-secondary, #555);
-    background: var(--bg-alpha-1);
-}
-
-.router-mode-option--selected {
+.router-stage--on {
     border-color: #60a5fa;
-    background: rgba(96, 165, 250, 0.06);
+    background: rgba(96, 165, 250, 0.04);
 }
 
-.router-mode-option input[type="radio"] {
-    display: none;
+.router-stage-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
 }
 
-.router-mode-option strong {
-    font-size: 0.78rem;
+.router-stage-step {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--bg-alpha-1);
+    border: 1.5px solid var(--border-primary);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.router-stage--on .router-stage-step {
+    background: rgba(96, 165, 250, 0.12);
+    border-color: #60a5fa;
+    color: #60a5fa;
+}
+
+.router-stage-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.router-stage-title {
+    font-size: 0.82rem;
+    font-weight: 600;
     color: var(--text-primary);
 }
 
-.router-mode-option--selected strong {
-    color: #60a5fa;
+.router-stage-toggle {
+    flex-shrink: 0;
+}
+
+.router-stage-body {
+    padding: 0 12px 12px;
+    border-top: 1px solid var(--border-primary);
+    padding-top: 12px;
 }
 
 /* @ mention picker in routing prompt */

@@ -34,7 +34,8 @@ const emptyDraft = (): RouterCollectionDraft => ({
   name: DEFAULT_ROUTER_NAME,
   candidates: [],
   defaultModel: '',
-  routingMode: 'llm',
+  rulesEnabled: false,
+  llmEnabled: false,
   routerModel: '',
   routerPrompt: DEFAULT_ROUTER_PROMPT,
   classifiers: [],
@@ -674,6 +675,38 @@ const PromptTextarea: React.FC<PromptTextareaProps> = ({ value, onChange, candid
 
 // ── Panel ─────────────────────────────────────────────────────────────────
 
+const RouterStageSection: React.FC<{
+  step: number;
+  title: string;
+  description: string;
+  enabled?: boolean;
+  onToggle?: (on: boolean) => void;
+  children: React.ReactNode;
+}> = ({ step, title, description, enabled, onToggle, children }) => {
+  const open = onToggle ? !!enabled : true;
+  return (
+    <div className={`router-stage${open ? ' router-stage--on' : ''}`}>
+      <div className="router-stage-header">
+        <span className="router-stage-step">{step}</span>
+        <div className="router-stage-heading">
+          <span className="router-stage-title">{title}</span>
+          <span className="settings-description">{description}</span>
+        </div>
+        {onToggle && (
+          <label className="toggle-switch-label router-stage-toggle">
+            <span className="toggle-label-text">{enabled ? 'On' : 'Off'}</span>
+            <span className="toggle-switch">
+              <input type="checkbox" checked={!!enabled} onChange={e => onToggle(e.target.checked)} />
+              <span className="toggle-slider" />
+            </span>
+          </label>
+        )}
+      </div>
+      {open && <div className="router-stage-body">{children}</div>}
+    </div>
+  );
+};
+
 const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   mode, collectionId, onClose, onSave, onExport,
 }) => {
@@ -729,6 +762,19 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
   const patch = (p: Partial<RouterCollectionDraft>) => {
     setDraft(prev => ({ ...prev, ...p }));
+    setError(null);
+    setPreviewJson(null);
+  };
+
+  const toggleRules = (on: boolean) => patch({ rulesEnabled: on });
+
+  const toggleLlm = (on: boolean) => {
+    setDraft(prev => ({
+      ...prev,
+      llmEnabled: on,
+      // Seed a sensible prompt the first time the stage is turned on.
+      routerPrompt: on && !prev.routerPrompt?.trim() ? DEFAULT_ROUTER_PROMPT : prev.routerPrompt,
+    }));
     setError(null);
     setPreviewJson(null);
   };
@@ -833,10 +879,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     if (!draft.candidates.includes(draft.defaultModel)) {
       setError('Default model must be one of the selected candidates.'); return null;
     }
-    if (draft.routingMode === 'llm') {
-      if (!draft.routerModel) { setError('Select a router LLM.'); return null; }
-      if (!draft.routerPrompt?.trim()) { setError('Enter a routing prompt.'); return null; }
-    } else {
+    if (!draft.rulesEnabled && !draft.llmEnabled) {
+      setError('Enable rules, an LLM router, or both.'); return null;
+    }
+    if (draft.rulesEnabled) {
       // Duplicate classifier ID check
       const clfIds = (draft.classifiers ?? []).map(c => c.id.trim()).filter(Boolean);
       const dupClf = clfIds.find((id, i) => clfIds.indexOf(id) !== i);
@@ -861,7 +907,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           }
         }
       }
-      if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
+      if (!draft.rules?.length) { setError('Add at least one rule, or turn off Rules.'); return null; }
       const classifierIds = new Set((draft.classifiers ?? []).map(c => c.id));
       for (let ri = 0; ri < draft.rules.length; ri++) {
         const r = draft.rules[ri];
@@ -874,6 +920,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         const treeErrors = validateRuleNode(r.conditionTree, classifierIds);
         if (treeErrors.length) { setError(`${label}: ${treeErrors[0]}`); return null; }
       }
+    }
+    if (draft.llmEnabled) {
+      if (!draft.routerModel) { setError('Select a router LLM, or turn off the LLM Router.'); return null; }
+      if (!draft.routerPrompt?.trim()) { setError('Enter a routing prompt.'); return null; }
     }
     return { ...draft, name };
   };
@@ -961,11 +1011,77 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           )}
         </div>
 
-        <div className="form-section">
-          <label className="form-label">
-            Default Model *
-            <span className="settings-description" style={{ marginLeft: 6 }}>- fallback when no rule matches</span>
-          </label>
+        <RouterStageSection
+          step={1}
+          title="Rules"
+          description="Deterministic condition rules, checked top to bottom — the first match wins. Optional."
+          enabled={draft.rulesEnabled}
+          onToggle={toggleRules}
+        >
+          <RouterClassifiersSection
+            classifiers={draft.classifiers ?? []}
+            candidateOptions={candidateOptions}
+            embeddingOptions={embeddingOptions}
+            displayNameWithStatus={displayNameWithStatus}
+            onAddClassifier={addClassifier}
+            onAddTemplate={addClassifierTemplate}
+            onPatchClassifier={patchClassifier}
+            onRemoveClassifier={removeClassifier}
+          />
+          <div className="form-section">
+            <RulesEditor
+              rules={draft.rules ?? []}
+              candidates={draft.candidates}
+              candidateOptions={candidateOptions}
+              classifiers={draft.classifiers ?? []}
+              displayName={displayName}
+              onChangeRules={rules => patch({ rules })}
+              onChangeDraft={p => patch({ rules: p.rules, ...(p.defaultModel !== undefined ? { defaultModel: p.defaultModel } : {}) })}
+              ruleSeqRef={ruleSeqRef}
+            />
+          </div>
+        </RouterStageSection>
+
+        <RouterStageSection
+          step={2}
+          title="LLM Router"
+          description="If no rule matched, a small LLM reads the prompt and picks a candidate. Optional."
+          enabled={draft.llmEnabled}
+          onToggle={toggleLlm}
+        >
+          <div className="form-section">
+            <label className="form-label">
+              Router LLM *
+              <span className="settings-description" style={{ marginLeft: 6 }}>- small model that reads your prompt</span>
+            </label>
+            <ModelSelect
+              options={candidateOptions.map(({ id }) => ({ id, label: displayNameWithStatus(id) }))}
+              value={draft.routerModel ?? ''}
+              onChange={id => patch({ routerModel: id })}
+              placeholder="Select a router LLM…"
+              annotate={id => draft.candidates.includes(id) ? '(also a candidate)' : null}
+            />
+          </div>
+          <div className="form-section">
+            <label className="form-label">Routing Prompt *</label>
+            <PromptTextarea
+              value={draft.routerPrompt ?? ''}
+              onChange={v => patch({ routerPrompt: v })}
+              candidates={draft.candidates}
+              displayName={displayName}
+              placeholder={DEFAULT_ROUTER_PROMPT}
+            />
+            <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
+              Tell the router LLM which model to pick and when. Type <strong>@</strong> to insert a candidate model name.
+            </span>
+          </div>
+        </RouterStageSection>
+
+        <RouterStageSection
+          step={3}
+          title="Default Model *"
+          description="The final fallback, used when no rule matched and the LLM router is off or abstains."
+        >
           <ModelSelect
             options={draft.candidates.map(id => ({ id, label: displayName(id) }))}
             value={draft.defaultModel}
@@ -973,81 +1089,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             placeholder={draft.candidates.length === 0 ? 'Select candidates first' : 'Select default model…'}
             disabled={draft.candidates.length === 0}
           />
-        </div>
-
-        <div className="form-section">
-          <label className="form-label">Routing Mode</label>
-          <div className="router-mode-options">
-            <label className={`router-mode-option${draft.routingMode === 'llm' ? ' router-mode-option--selected' : ''}`}>
-              <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'} onChange={() => patch({ routingMode: 'llm' })} />
-              <strong>NL Router</strong>
-              <span className="settings-description">A small LLM reads your prompt and picks the best candidate.</span>
-            </label>
-            <label className={`router-mode-option${draft.routingMode === 'rules' ? ' router-mode-option--selected' : ''}`}>
-              <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'} onChange={() => patch({ routingMode: 'rules' })} />
-              <strong>Rule-based Router</strong>
-              <span className="settings-description">Deterministic condition rules. Each rule stays a simple form until it needs a graph.</span>
-            </label>
-          </div>
-        </div>
-
-        {draft.routingMode === 'llm' && (
-          <>
-            <div className="form-section">
-              <label className="form-label">
-                Router LLM *
-                <span className="settings-description" style={{ marginLeft: 6 }}>- small model that reads your prompt</span>
-              </label>
-              <ModelSelect
-                options={candidateOptions.map(({ id }) => ({ id, label: displayNameWithStatus(id) }))}
-                value={draft.routerModel ?? ''}
-                onChange={id => patch({ routerModel: id })}
-                placeholder="Select a router LLM…"
-                annotate={id => draft.candidates.includes(id) ? '(also a candidate)' : null}
-              />
-            </div>
-            <div className="form-section">
-              <label className="form-label">Routing Prompt *</label>
-              <PromptTextarea
-                value={draft.routerPrompt ?? ''}
-                onChange={v => patch({ routerPrompt: v })}
-                candidates={draft.candidates}
-                displayName={displayName}
-                placeholder={DEFAULT_ROUTER_PROMPT}
-              />
-              <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
-                Tell the router LLM which model to pick and when. Type <strong>@</strong> to insert a candidate model name.
-              </span>
-            </div>
-          </>
-        )}
-
-        {draft.routingMode === 'rules' && (
-          <>
-            <RouterClassifiersSection
-              classifiers={draft.classifiers ?? []}
-              candidateOptions={candidateOptions}
-              embeddingOptions={embeddingOptions}
-              displayNameWithStatus={displayNameWithStatus}
-              onAddClassifier={addClassifier}
-              onAddTemplate={addClassifierTemplate}
-              onPatchClassifier={patchClassifier}
-              onRemoveClassifier={removeClassifier}
-            />
-            <div className="form-section">
-              <RulesEditor
-                rules={draft.rules ?? []}
-                candidates={draft.candidates}
-                candidateOptions={candidateOptions}
-                classifiers={draft.classifiers ?? []}
-                displayName={displayName}
-                onChangeRules={rules => patch({ rules })}
-                onChangeDraft={p => patch({ rules: p.rules, ...(p.defaultModel !== undefined ? { defaultModel: p.defaultModel } : {}) })}
-                ruleSeqRef={ruleSeqRef}
-              />
-            </div>
-          </>
-        )}
+        </RouterStageSection>
 
       </div>
 
