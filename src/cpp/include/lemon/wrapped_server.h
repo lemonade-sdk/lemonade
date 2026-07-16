@@ -123,7 +123,8 @@ public:
     void set_pinned(bool pinned) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         pinned_ = pinned;
-        recipe_options_.set_option("pinned", pinned);
+        if (pinned) recipe_options_.set_option("pinned", true);
+        else recipe_options_.remove_option("pinned");
     }
 
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
