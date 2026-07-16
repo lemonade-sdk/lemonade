@@ -188,7 +188,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td rowspan="1"><code>vte</code> (experimental)</td>
       <td><code>rocm</code></td>
-      <td>RDNA3 native, validated on RX 7600; RX 7700/7800/7900 series untested</td>
+      <td>RDNA3 native, validated on RX 7600 (gfx1102); the rest of the gfx110X family (RX 7700/7800/7900) is cross-compiled but untested on real hardware. On a mixed iGPU+dGPU system, vte-server (0.3.4+) enumerates every visible HIP device and auto-selects the first one matching a discrete RDNA2/RDNA3 architecture it actually supports, so an integrated GPU is never picked by accident. If a system exposes more than one discrete GPU VTE supports, it picks the first one found; there is no Lemonade-side way yet to request a specific one (see VTE_DEVICE_INDEX for a manual override on the vte-server side).</td>
       <td>Windows</td>
     </tr>
     <tr>

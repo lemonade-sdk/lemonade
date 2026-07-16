@@ -43,6 +43,20 @@ int current_process_id() {
 #endif
 }
 
+// Reads the required GPU family straight from VTE's own support row (currently
+// {"amd_gpu": {"gfx110X"}}) rather than a second hardcoded copy, so vte-server's
+// own device auto-selection can be told which generation this integration
+// validates -- a mixed RDNA2+RDNA3 system must not silently pick the RDNA2 card.
+std::string vte_target_arch_family() {
+    for (const auto& support : VTE::descriptor.support) {
+        auto it = support.devices.find("amd_gpu");
+        if (it != support.devices.end() && !it->second.empty()) {
+            return *it->second.begin();
+        }
+    }
+    return "";
+}
+
 }  // namespace
 
 InstallParams VTEServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -74,6 +88,11 @@ VTEServer::VTEServer(const std::string& log_level, ModelManager* model_manager, 
 
 VTEServer::~VTEServer() {
     unload();
+}
+
+bool VTEServer::effective_is_amd_gpu(const RecipeOptions& options) const {
+    (void)options;
+    return true;
 }
 
 void VTEServer::load(const std::string& model_name,
@@ -126,6 +145,11 @@ void VTEServer::load(const std::string& model_name,
     std::vector<std::pair<std::string, std::string>> env_vars;
     // Prevent system/user Python packages from leaking into the bundled environment.
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
+
+    std::string target_family = vte_target_arch_family();
+    if (!target_family.empty()) {
+        env_vars.push_back({"VTE_TARGET_ARCH_FAMILY", target_family});
+    }
 
     // get_therock_lib_path() only returns non-empty when BackendManager already
     // judged the system ROCm absent or version-incompatible and installed TheRock

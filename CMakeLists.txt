@@ -622,6 +622,7 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
+    src/cpp/server/gpu_exclusivity_policy.cpp
     src/cpp/server/global_vram_monitor.cpp
     src/cpp/server/eviction_engine.cpp
     src/cpp/server/cli_parser.cpp
@@ -2161,6 +2162,39 @@ if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RouteDecisionResponseTest COMMAND test_route_decision_response)
+endif()
+
+# Pure AMD-GPU-scoped ExclusiveGpu eviction decision logic (SlotPolicy::ExclusiveGpu).
+set(_GPU_EXCLUSIVITY_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_exclusivity_policy.cpp"
+)
+if(EXISTS "${_GPU_EXCLUSIVITY_POLICY_TEST_SRC}")
+    add_executable(test_gpu_exclusivity_policy
+        test/cpp/test_gpu_exclusivity_policy.cpp
+        src/cpp/server/gpu_exclusivity_policy.cpp
+    )
+    target_include_directories(test_gpu_exclusivity_policy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gpu_exclusivity_policy PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME GpuExclusivityPolicyTest COMMAND test_gpu_exclusivity_policy)
+endif()
+
+# LlamaCppServer/WhisperServer::effective_device()/effective_is_amd_gpu(): the
+# resolved-backend-variant mapping feeding the exclusivity decision above.
+set(_BACKEND_EFFECTIVE_DEVICE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_effective_device.cpp"
+)
+if(EXISTS "${_BACKEND_EFFECTIVE_DEVICE_TEST_SRC}")
+    add_executable(test_backend_effective_device test/cpp/test_backend_effective_device.cpp)
+    target_link_libraries(test_backend_effective_device PRIVATE lemonade-server-core)
+    add_dependencies(test_backend_effective_device copy_resources)
+
+    include(CTest)
+    add_test(NAME BackendEffectiveDeviceTest COMMAND test_backend_effective_device)
 endif()
 
 # ModelManager collection validation for collection.router registration:

@@ -29,6 +29,9 @@ public:
 
     void unload() override;
 
+    DeviceType effective_device(const RecipeOptions& options) const override;
+    bool effective_is_amd_gpu(const RecipeOptions& options) const override;
+
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
     json completion(const json& request) override;

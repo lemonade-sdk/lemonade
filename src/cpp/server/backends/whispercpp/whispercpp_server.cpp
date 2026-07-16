@@ -216,6 +216,18 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     }
 }
 
+DeviceType WhisperServer::effective_device(const RecipeOptions& options) const {
+    std::string backend = options.get_option("whispercpp_backend");
+    if (backend == "npu") return DEVICE_NPU;
+    if (backend == "vulkan" || backend == "metal" || backend == "rocm") return DEVICE_GPU;
+    return DEVICE_CPU;
+}
+
+bool WhisperServer::effective_is_amd_gpu(const RecipeOptions& options) const {
+    std::string backend = options.get_option("whispercpp_backend");
+    return backend == "rocm";
+}
+
 void WhisperServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         const RecipeOptions& options,
@@ -228,15 +240,7 @@ void WhisperServer::load(const std::string& model_name,
 
     RuntimeConfig::validate_backend_choice("whispercpp", whispercpp_backend);
 
-    // Update device type based on the actual backend selected.
-    // The descriptor defaults whispercpp to CPU; npu/vulkan variants use different devices.
-    if (whispercpp_backend == "npu") {
-        device_type_ = DEVICE_NPU;
-    } else if (whispercpp_backend == "vulkan" || whispercpp_backend == "metal") {
-        device_type_ = DEVICE_GPU;
-    } else {
-        device_type_ = DEVICE_CPU;
-    }
+    device_type_ = effective_device(options);
 
     backend_manager_->install_backend(whispercpp::spec()->recipe, whispercpp_backend);
 

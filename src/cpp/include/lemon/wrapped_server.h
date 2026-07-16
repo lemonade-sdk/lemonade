@@ -343,6 +343,15 @@ public:
         return descriptor_ ? descriptor_->slot_policy : SlotPolicy::Standard;
     }
 
+    // Whether this load's resolved GPU backend is AMD/ROCm, for scoping
+    // ExclusiveGpu eviction to the accelerator it actually contends over.
+    // Meaningless when effective_device() doesn't include DEVICE_GPU. Defaults
+    // to false; AMD/ROCm-variant backends override.
+    virtual bool effective_is_amd_gpu(const RecipeOptions& options) const {
+        (void)options;
+        return false;
+    }
+
     // Dynamic availability check. Returns "" if the backend can run on this
     // system, or a user-facing reason why it cannot. Defaults to "available";
     // backends with runtime-dependent availability (cloud) override.

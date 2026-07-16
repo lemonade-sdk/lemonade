@@ -26,6 +26,8 @@ public:
 
     void unload() override;
 
+    bool effective_is_amd_gpu(const RecipeOptions& options) const override;
+
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
