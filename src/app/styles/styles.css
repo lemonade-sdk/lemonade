@@ -7922,3 +7922,115 @@ input::-webkit-calendar-picker-indicator {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
 }
+
+/* Prompt Debugger panel */
+
+.prompt-debugger-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px 14px;
+}
+
+.prompt-debugger-textarea {
+    min-height: 80px;
+    max-height: 200px;
+    resize: none;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
+.prompt-debugger-file-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.prompt-debugger-file-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 0.69rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prompt-debugger-thumbnail {
+    width: 20px;
+    height: 20px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border-4);
+    flex-shrink: 0;
+}
+
+.prompt-debugger-clear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.prompt-debugger-clear-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.prompt-debugger-error {
+    padding: 8px 10px;
+    border: 1px solid var(--toast-error-border);
+    border-radius: 6px;
+    color: var(--toast-error-text);
+    font-size: 0.75rem;
+}
+
+.prompt-debugger-results {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.prompt-debugger-summary {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.decision-tree-scroll {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--border-4);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.decision-tree-modal {
+    max-width: 640px;
+}
+
+.decision-tree-svg {
+    display: block;
+}
+
+.trace-log {
+    background: var(--bg-alpha-03);
+    border: 1px solid var(--border-4);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 0.72rem;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: var(--text-primary);
+    margin: 0;
+}

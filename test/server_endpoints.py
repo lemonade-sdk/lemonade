@@ -168,6 +168,7 @@ class EndpointTests(ServerTestBase):
             "pull",
             "registry/search",
             "pull/variants",
+            "routing/validate",
             "delete",
             "load",
             "unload",
@@ -3225,6 +3226,179 @@ class EndpointTests(ServerTestBase):
             print(f"[OK] collection.router route_trace returned Decision trace")
         finally:
             self._cleanup_router_collection(canonical_name)
+
+    def test_021zj_routing_validate_deterministic_match(self):
+        """/routing/validate runs an ad-hoc (unregistered) policy document and
+        returns the matched rule plus its full trace, without requiring the
+        policy to be attached to a registered model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {
+                            "any": [
+                                {
+                                    "keywords_any": [
+                                        "def ",
+                                        "function",
+                                        "stack trace",
+                                        "compile",
+                                    ]
+                                },
+                                {"regex": "```[a-z]*"},
+                            ]
+                        },
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                    {
+                        "id": "long-context-to-big",
+                        "match": {"min_chars": 4000},
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "please write a def to reverse a list"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "code-to-big")
+        self.assertFalse(decision["default_used"])
+        trace = decision.get("trace")
+        self.assertIsInstance(trace, list)
+        self.assertTrue(trace)
+        self.assertTrue(
+            any(
+                entry.get("condition") == "keywords_any" and entry.get("result") is True
+                for entry in trace
+            ),
+            f"trace must include the matched keywords condition: {trace}",
+        )
+        print("[OK] /routing/validate matched a deterministic keyword rule")
+
+    def test_021zk_routing_validate_default_fallthrough(self):
+        """A prompt matching no rule falls through to the declared default_model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def ", "function"]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "what's the weather like today?"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+        self.assertTrue(decision["default_used"])
+        print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zl_routing_validate_bad_policy_returns_400(self):
+        """A malformed policy (missing the required 'routing' key) is rejected
+        with a 400 and a clear error message, not a crash."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())
+        print("[OK] /routing/validate rejected a malformed policy with 400")
+
+    def test_021zm_routing_validate_unimplemented_classifier_returns_400(self):
+        """An 'llm' router policy (not yet implemented by the engine) is
+        surfaced as a clean 400, not a 500 or crash."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [
+                "Qwen3-1.7B-GGUF",
+                "Qwen3-8B-GGUF",
+                "Qwen3.5-35B-A3B-GGUF",
+            ],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+                "router": {
+                    "type": "llm",
+                    "model": "Qwen3-1.7B-GGUF",
+                    "prompt": "Reply with ONLY a model name.",
+                },
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())
+        print("[OK] /routing/validate rejected an unimplemented classifier type with 400")
+
+    def test_021zn_routing_validate_has_images_flag(self):
+        """The has_images request flag flows through to a has_images match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "vision-to-big",
+                        "match": {"has_images": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_image.status_code, 200)
+        self.assertTrue(response_without_image.json()["decision"]["default_used"])
+
+        response_with_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_image.status_code, 200)
+        decision = response_with_image.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "vision-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_images flag")
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
