@@ -599,7 +599,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
+    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
+    //   require no authentication. The MCP process-launch surface is deliberately
+    //   fail-closed and requires an explicitly configured admin key.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -618,7 +620,23 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
+    const bool is_mcp_internal_route =
+        req.path == "/internal/mcp" ||
+        req.path.rfind("/internal/mcp/", 0) == 0;
+
     if (is_internal_route) {
+        // MCP server registration can launch arbitrary local processes. Do not
+        // expose that capability on a keyless server, even on loopback: permissive
+        // CORS would otherwise let an unrelated web page drive these endpoints.
+        // Apply this to OPTIONS as well so a browser preflight fails closed.
+        if (is_mcp_internal_route && admin_api_key_.empty()) {
+            res.status = 403;
+            res.set_content(
+                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
+                "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {

@@ -178,6 +178,19 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
+      - name: Run MCP client unit test on Windows
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Exercise the Windows-only process, quoting, environment-block, and
+          # pipe/handle paths that Linux and macOS cannot cover.
+          cmake --build build --config Release --target test_mcp_client_config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
         uses: actions/upload-artifact@v7

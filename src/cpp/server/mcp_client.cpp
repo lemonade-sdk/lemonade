@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
-#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cwchar>
@@ -1166,8 +1166,8 @@ private:
             if (read == 0) break;
             if (!consume_bytes(line, buffer.data(), read, callback)) return false;
         }
-        if (!line.empty()) callback(line);
-        return true;
+        return line.empty() ||
+               consume_bytes(line, "\n", 1, callback);
     }
 #else
     int stdout_read_handle() const { return stdout_read_; }
@@ -1189,8 +1189,8 @@ private:
                 return !running_.load(std::memory_order_acquire);
             }
         }
-        if (!line.empty()) callback(line);
-        return true;
+        return line.empty() ||
+               consume_bytes(line, "\n", 1, callback);
     }
 #endif
 
