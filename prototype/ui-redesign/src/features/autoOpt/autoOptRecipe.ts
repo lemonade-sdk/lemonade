@@ -152,7 +152,6 @@ export function buildBenchRecipe(
     llamacpp_backend: backend,
     ctx_size: ctx,
     llamacpp_args: args,
-    merge_args: false,
     save_options: false,
   });
 

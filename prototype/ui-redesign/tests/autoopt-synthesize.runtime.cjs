@@ -535,6 +535,20 @@ function check(name, ok) {
           deepStep.params.ctx_size === recMid.primary.ctx_size);
         check('r3#2: deep prompt depth fits inside the recommended ctx',
           deepPlan.params.d < recMid.primary.ctx_size);
+
+        // ── blocker #1: bench loads use the SAME merge path as apply ──
+        // apply/save omit merge_args (server default true), so pre-existing model /
+        // architecture / global _args are merged into the final command line. The
+        // bench must not disable that merge, or it measures a different command line
+        // than the one that gets applied.
+        const mergeRecipe = buildBenchRecipe(
+          [partialFit], ansNo, igpuHw(), denseModel(), 'org/m', 'thorough', ['vulkan', 'rocm-stable']);
+        const mergeLoads = mergeRecipe.steps.filter(s => s.op === 'load');
+        check('blocker#1: at least one bench load exists', mergeLoads.length > 0);
+        check('blocker#1: no bench load disables merge_args (same path as apply)',
+          mergeLoads.every(s => s.params.merge_args !== false));
+        check('blocker#1: bench loads still never persist options',
+          mergeLoads.every(s => s.params.save_options === false));
       } finally {
         fs.rmSync(recipeBundle.outputPath, { recursive: true, force: true });
       }
@@ -599,6 +613,22 @@ function check(name, ok) {
       const rOk = synthesize(igpuHw(), denseModel(), answers(),
         [fitting('vulkan', 8192), fitting('rocm-stable', 8192)], okDeep, undefined);
       check('r3#2: backend that runs the recommended-ctx deep run wins', rOk.primary.llamacpp_backend === 'vulkan');
+
+      // ── blocker #2: the duel is decided on a COMMON workload (d0), not on the
+      // per-backend deep runs measured at different depths. Here vulkan's deep run
+      // (shallow ~6k depth) is faster than rocm's deep run (~30k depth), but both
+      // succeed, so deep is only an eligibility check; the common d0 workload —
+      // where rocm is faster — must decide the winner.
+      const uneven = [
+        dp('vulkan', 0, true, 50), { ...dp('vulkan', 6000, true, 90), ttft_ms: 200 },
+        dp('rocm-stable', 0, true, 80), { ...dp('rocm-stable', 30000, true, 85), ttft_ms: 800 },
+      ];
+      const rUneven = synthesize(igpuHw(), denseModel(), answers(),
+        [fitting('vulkan', 65536), fitting('rocm-stable', 65536)], uneven, undefined);
+      check('blocker#2: duel decided on the common d0 workload, not unequal deep depths',
+        rUneven.primary.llamacpp_backend === 'rocm-stable');
+      check('blocker#2: winner expected reflects its own deep run, not d0',
+        rUneven.primary.expected && rUneven.primary.expected.ttft_ms === 800);
     }
 
     // ── round-3 #1: MTP/ladder tuning comes from the DUEL WINNER, not candidates[0] ──

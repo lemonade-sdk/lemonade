@@ -225,6 +225,15 @@ function representative(bench: BenchPoint[], backend: string): BenchPoint | null
   return deep || d0;
 }
 
+function duelPoint(bench: BenchPoint[], backend: string): BenchPoint | null {
+  for (const p of bench) {
+    if (!p.ok || p.backend !== backend) continue;
+    if (p.params?.ladder === true || p.params?.spec_n !== undefined) continue;
+    if ((p.params?.d ?? 0) === 0) return p;
+  }
+  return null;
+}
+
 export function benchScore(tps: number, ttftMs: number, tpsMax: number, ttftMin: number): number {
   const normTps = tpsMax > 0 ? Math.max(0, tps) / tpsMax : 0;
   const normTtft = (ttftMs > 0 && ttftMin > 0) ? ttftMin / ttftMs : 0;
@@ -234,22 +243,23 @@ export function benchScore(tps: number, ttftMs: number, tpsMax: number, ttftMin:
 function pickBackend(bench: BenchPoint[], candidates: string[]): { backend: string; rep: BenchPoint | null } {
   const eligible = candidates.filter(c => !deepRunFailed(bench, c));
   const pool = eligible.length > 0 ? eligible : candidates;
-  const reps: Array<{ backend: string; rep: BenchPoint }> = [];
+  const entries: Array<{ backend: string; duel: BenchPoint; rep: BenchPoint }> = [];
   for (const c of pool) {
-    const rep = representative(bench, c);
-    if (rep) reps.push({ backend: c, rep });
+    const duel = duelPoint(bench, c) || representative(bench, c);
+    if (!duel) continue;
+    entries.push({ backend: c, duel, rep: representative(bench, c) || duel });
   }
-  if (reps.length === 0) return { backend: '', rep: null };
-  const tpsMax = Math.max(...reps.map(r => r.rep.tps), 0);
-  const ttfts = reps.map(r => r.rep.ttft_ms).filter(v => v > 0);
+  if (entries.length === 0) return { backend: '', rep: null };
+  const tpsMax = Math.max(...entries.map(e => e.duel.tps), 0);
+  const ttfts = entries.map(e => e.duel.ttft_ms).filter(v => v > 0);
   const ttftMin = ttfts.length ? Math.min(...ttfts) : 0;
-  let best = reps[0];
+  let best = entries[0];
   let bestScore = -1;
-  for (const r of reps) {
-    const score = benchScore(r.rep.tps, r.rep.ttft_ms, tpsMax, ttftMin);
+  for (const e of entries) {
+    const score = benchScore(e.duel.tps, e.duel.ttft_ms, tpsMax, ttftMin);
     if (score > bestScore) {
       bestScore = score;
-      best = r;
+      best = e;
     }
   }
   return { backend: best.backend, rep: best.rep };
