@@ -437,14 +437,35 @@ def _directives_of(text):
     every assert. Both are `#` comments, absent from the tree and the token stream, so a
     change to one would otherwise be certified as no-code-change; compare them here.
     """
+
+    def code_part(s):
+        # The code on a line with its trailing comment dropped -- a naive cut is fine for
+        # an anchor even if a `//`/`#` sits inside a string, since it is not the trusted
+        # code comparison, only a positional fingerprint.
+        for marker in ("//", "#"):
+            k = s.find(marker)
+            if k != -1:
+                s = s[:k]
+        return s.strip()
+
+    lines = text.splitlines()
     out = []
-    for i, line in enumerate(text.splitlines()):
+    for i, line in enumerate(lines):
         if (
             DIRECTIVE_RE.search(line)
             or (i == 0 and line.startswith("#!"))
             or (i < 2 and CODING_RE.match(line))
         ):
-            out.append(line.strip())
+            anchor = code_part(line)
+            if not anchor:
+                # A standalone directive (`# fmt: off`) governs the code that FOLLOWS it,
+                # so anchor to the next code line; fall back upward only at end of file.
+                order = list(range(i + 1, len(lines))) + list(range(i - 1, -1, -1))
+                for j in order:
+                    if code_part(lines[j]):
+                        anchor = code_part(lines[j])
+                        break
+            out.append((anchor, line.strip()))
     return out
 
 
@@ -557,7 +578,7 @@ def _code_of_cish(text):
     raws = []
     out = []
     i, n = 0, len(text)
-    in_str = in_chr = in_line = in_block = False
+    in_line = in_block = False
     while i < n:
         ch = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
@@ -585,25 +606,14 @@ def _code_of_cish(text):
             if ch == "*":
                 j = _after_splices(text, i + 1)
                 if text[j : j + 1] == "/":
+                    # Phase 3 replaces a comment with ONE space, so it separates tokens:
+                    # `int/**/x` is `int x` (two tokens), not `intx`. Emit that space.
                     in_block = False
+                    out.append(" ")
                     i = j + 1
                     continue
             if ch == "\n":
                 out.append(ch)
-        elif in_str or in_chr:
-            if ch == "\n":
-                # A backslash-newline was already spliced at the top of the loop, so a bare
-                # newline inside a literal is unescaped -- ill-formed C. Phase-1 normalised
-                # any CR/CRLF here to \n, so this also catches a raw line ending mutated
-                # inside a string. Refuse rather than absorb it and compare two revisions
-                # equal (a `"a\r\nb"` -> `"a\nb"` change is a real change the compiler rejects).
-                raise GitError("newline inside a string or character literal")
-            out.append(ch)
-            if ch == "\\" and nxt:
-                out.append(nxt)
-                i += 1
-            elif (in_str and ch == '"') or (in_chr and ch == "'"):
-                in_str = in_chr = False
         elif ch == "/" and text[(j := _after_splices(text, i + 1)) : j + 1] in (
             "/",
             "*",
@@ -632,10 +642,14 @@ def _code_of_cish(text):
                     raws.append(hdr)
                     i = end
                     continue
-            if ch == '"':
-                in_str = True
-            elif ch == "'":
-                in_chr = True
+            if ch == '"' or ch == "'":
+                # Hold the literal out as an opaque blob so its interior whitespace and
+                # content survive the code-path whitespace collapse.
+                lit, end = _quoted_at(text, i)
+                out.append(f"{sent}{len(raws)}{sent}")
+                raws.append(lit)
+                i = end
+                continue
             out.append(ch)
         i += 1
     if in_block:
@@ -645,13 +659,50 @@ def _code_of_cish(text):
     # Split on \n and strip only spaces/tabs, NOT \r: a `\r` inside a string literal is
     # content (a CRLF HTTP template differs from an LF one), and splitlines()/strip()
     # would erase it, certifying a CRLF->LF change of string content as comments-only.
-    lines = [ln.strip(" \t") for ln in "".join(out).split("\n") if ln.strip(" \t")]
+    lines = [
+        c
+        for ln in "".join(out).split("\n")
+        if (c := re.sub(r"[ \t]+", " ", ln).strip())
+    ]
     if not raws:
         return lines
     return [
         re.sub(f"{sent}([0-9]+){sent}", lambda m: raws[int(m.group(1))], ln)
         for ln in lines
     ]
+
+
+def _quoted_at(text, i):
+    """The "..." or '...' literal at i, and the index just past it.
+
+    A literal is held out as one opaque token so its interior whitespace is preserved --
+    `"a  b"` and `"a b"` are different constants, and the code path collapses whitespace.
+    `\\<LF>` inside is a phase-2 splice (removed); any other `\\x` is an escape (kept); an
+    unescaped newline is ill-formed and refused.
+    """
+    q = text[i]
+    out = [q]
+    j = i + 1
+    while j < len(text):
+        c = text[j]
+        if c == "\\":
+            if text[j + 1 : j + 2] == "\n":
+                j += 2
+                continue
+            out.append(c)
+            if j + 1 < len(text):
+                out.append(text[j + 1])
+                j += 2
+            else:
+                j += 1
+            continue
+        if c == "\n":
+            raise GitError("newline inside a string or character literal")
+        out.append(c)
+        j += 1
+        if c == q:
+            return "".join(out), j
+    return "".join(out), j
 
 
 def _raw_string_at(text, i):
@@ -701,7 +752,7 @@ def main():
             for f in offenders:
                 print(f"  {f}")
             return 1
-        print("Verified: comments and blank lines only; no code changed.")
+        print("No code change detected: only comments and blank lines differ.")
         return 0
 
     # pre-commit exports these when invoked with --from-ref/--to-ref, which is how CI
