@@ -506,6 +506,15 @@ const AppContent: React.FC = () => {
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
         isDownloadManagerVisible={isDownloadManagerVisible}
         onToggleDownloadManager={handleToggleDownloadManager}
+        isPromptDebuggerActive={isModelManagerVisible && leftPanelView === 'prompt-debugger'}
+        onOpenPromptDebugger={() => {
+          if (leftPanelView === 'prompt-debugger' && isModelManagerVisible) {
+            setIsModelManagerVisible(false);
+          } else {
+            setLeftPanelView('prompt-debugger');
+            setIsModelManagerVisible(true);
+          }
+        }}
       />
       <DownloadManager
         isVisible={isDownloadManagerVisible}
