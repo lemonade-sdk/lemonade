@@ -702,7 +702,8 @@ def _quoted_at(text, i):
         j += 1
         if c == q:
             return "".join(out), j
-    return "".join(out), j
+    # Reached EOF without a closing quote: ill-formed, like an unterminated block comment.
+    raise GitError("unterminated string or character literal")
 
 
 def _raw_string_at(text, i):

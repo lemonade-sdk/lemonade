@@ -576,6 +576,13 @@ class CodeOfTests(unittest.TestCase):
             slop._directives_of("a = 1\nb = 2  # type: ignore\n"),
         )
 
+    def test_an_unterminated_string_literal_fails_closed(self):
+        # A literal that reaches EOF with no closing quote (and no newline, which the
+        # newline-in-string guard would catch first) is ill-formed; refuse it, consistent
+        # with the block-comment policy, rather than swallow the rest as string content.
+        with self.assertRaises(slop.GitError):
+            slop._code_of('const char *s = "abc', "a.cpp")
+
     def test_an_unterminated_block_comment_fails_closed(self):
         # Not valid C. Swallowing it certified two differing revisions as equal.
         with self.assertRaises(slop.GitError):
