@@ -34,7 +34,6 @@ namespace {
 
 constexpr const char* kRecipe = "lemon-mlx";
 constexpr const char* kLog = "MLX";
-constexpr const char* kRocmRuntimeSoname = "libamdhip64.so.7";
 
 bool is_linux_x64() {
 #if defined(__linux__) && (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
@@ -57,6 +56,10 @@ bool is_supported_rocm_arch(const std::string& arch) {
     // Keep this intentionally narrow until the engine publishes per-arch or
     // verified multi-arch assets.
     return arch == "gfx1151";
+}
+
+bool is_mlx_rocm_backend(const std::string& backend) {
+    return backend == "rocm" || backend == "rocm-stable";
 }
 
 std::string resolve_mlx_backend(const std::string& backend) {
@@ -109,9 +112,26 @@ std::string join_paths(const std::vector<fs::path>& paths, const char* existing_
     return joined;
 }
 
-std::string env_value(const char* name) {
-    const char* value = std::getenv(name);
-    return (value && *value) ? std::string(value) : std::string();
+fs::path resolve_mlx_rocm_root() {
+    // BackendManager installs the pinned TheRock runtime when the available
+    // system ROCm is absent or incompatible. Prefer that exact runtime when it
+    // is present so the MLX process cannot fall back to a mismatched /opt/rocm.
+    const std::string arch = SystemInfo::get_rocm_arch();
+    const std::string therock_lib =
+        arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
+    if (!therock_lib.empty()) {
+        return fs::path(therock_lib).parent_path().lexically_normal();
+    }
+
+    // If TheRock was unnecessary, use Lemonade's shared system resolution:
+    // ROCM_PATH, rocm-sdk, then the platform default such as /opt/rocm.
+    const auto system_root = BackendUtils::resolve_rocm_root();
+    if (system_root) {
+        return system_root->lexically_normal();
+    }
+
+    throw std::runtime_error(
+        "No compatible ROCm runtime is available for lemon-mlx");
 }
 
 std::string lowercase_copy(std::string value) {
@@ -119,117 +139,6 @@ std::string lowercase_copy(std::string value) {
         return static_cast<char>(std::tolower(ch));
     });
     return value;
-}
-
-bool contains_file(const fs::path& dir, const std::string& filename) {
-    std::error_code ec;
-    return fs::exists(dir / filename, ec) && !ec;
-}
-
-bool contains_rocm_runtime(const fs::path& lib_dir) {
-    return contains_file(lib_dir, kRocmRuntimeSoname);
-}
-
-bool looks_like_rocm_root(const fs::path& root) {
-    return contains_rocm_runtime(root / "lib") || contains_rocm_runtime(root / "lib64");
-}
-
-fs::path rocm_root_from_lib_dir(const fs::path& lib_dir) {
-    const auto filename = lib_dir.filename().string();
-    if (filename == "lib" || filename == "lib64") {
-        return lib_dir.parent_path();
-    }
-    return lib_dir;
-}
-
-std::vector<fs::path> rocm_library_paths(const fs::path& executable_dir) {
-    std::vector<fs::path> paths;
-    append_path(paths, executable_dir);
-
-    const auto append_root = [&paths](const fs::path& root) {
-        append_path(paths, root / "lib");
-        append_path(paths, root / "lib64");
-    };
-
-    const std::string rocm_home = env_value("ROCM_HOME");
-    const std::string rocm_path = env_value("ROCM_PATH");
-    if (!rocm_home.empty()) {
-        append_root(rocm_home);
-    }
-    if (!rocm_path.empty() && rocm_path != rocm_home) {
-        append_root(rocm_path);
-    }
-
-    const std::string arch = SystemInfo::get_rocm_arch();
-    if (!arch.empty()) {
-        try {
-            append_path(paths, BackendUtils::get_therock_lib_path(arch));
-        } catch (const std::exception& e) {
-            LOG(DEBUG, kLog) << "TheRock runtime lookup skipped: " << e.what() << std::endl;
-        }
-    }
-
-    append_path(paths, "/opt/rocm/core-7.13/lib");
-    append_path(paths, "/opt/rocm/core-7.13/lib64");
-    append_path(paths, "/opt/rocm/lib");
-    append_path(paths, "/opt/rocm/lib64");
-    append_path(paths, "/usr/lib/x86_64-linux-gnu");
-    append_path(paths, "/usr/local/lib");
-
-    return paths;
-}
-
-fs::path resolve_rocm_root(const std::vector<fs::path>& lib_paths) {
-    for (const char* var : {"ROCM_HOME", "ROCM_PATH"}) {
-        const std::string value = env_value(var);
-        if (!value.empty() && looks_like_rocm_root(value)) {
-            return fs::path(value).lexically_normal();
-        }
-    }
-
-    for (const auto& path : lib_paths) {
-        if (contains_rocm_runtime(path)) {
-            const fs::path root = rocm_root_from_lib_dir(path).lexically_normal();
-            if (looks_like_rocm_root(root)) {
-                return root;
-            }
-        }
-    }
-
-    for (const fs::path root : {fs::path("/opt/rocm/core-7.13"), fs::path("/opt/rocm")}) {
-        if (looks_like_rocm_root(root)) {
-            return root;
-        }
-    }
-
-    return {};
-}
-
-void ensure_rocm_runtime_visible(const std::vector<fs::path>& paths) {
-    for (const auto& path : paths) {
-        if (contains_rocm_runtime(path)) {
-            return;
-        }
-    }
-
-    const std::string existing = env_value("LD_LIBRARY_PATH");
-    size_t start = 0;
-    while (start <= existing.size()) {
-        size_t end = existing.find(':', start);
-        std::string item = existing.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (!item.empty() && contains_rocm_runtime(item)) {
-            return;
-        }
-        if (end == std::string::npos) {
-            break;
-        }
-        start = end + 1;
-    }
-
-    throw std::runtime_error(
-        "lemon-mlx ROCm runtime not found: missing " + std::string(kRocmRuntimeSoname) +
-        ". Reinstall the lemon-mlx ROCm backend so Lemonade installs the TheRock runtime, "
-        "or install ROCm 7.13 system-wide and ensure its lib directory is on LD_LIBRARY_PATH.");
 }
 
 std::vector<std::string> tokenize_quoted_args(const std::string& input) {
@@ -805,7 +714,8 @@ bool is_qwen35_model(const std::string& model_ref) {
 int clamp_qwen35_rocm_ctx_size(int ctx_size,
                                const std::string& model_ref,
                                const std::string& backend) {
-    if (backend != "rocm" || ctx_size <= kQwen35RocmSafeCtxSize ||
+    if (!is_mlx_rocm_backend(backend) ||
+        ctx_size <= kQwen35RocmSafeCtxSize ||
         !is_qwen35_model(model_ref)) {
         return ctx_size;
     }
@@ -1153,15 +1063,23 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
         return params;
     }
 
-    if (resolved == "rocm") {
+    if (is_mlx_rocm_backend(resolved)) {
         if (!is_linux_x64()) {
-            throw std::runtime_error("ROCm lemon-mlx requires Linux x86_64");
+            throw std::runtime_error(
+                "ROCm lemon-mlx requires Linux x86_64");
         }
+
         const std::string arch = SystemInfo::get_rocm_arch();
         if (!is_supported_rocm_arch(arch)) {
-            throw std::runtime_error(SystemInfo::get_unsupported_backend_error(kRecipe, "rocm"));
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error(
+                    kRecipe, "rocm"));
         }
-        params.filename = "mlx-engine-" + version + "-ubuntu-rocm-x64.zip";
+
+        params.filename =
+            "mlx-engine-" + version +
+            "-ubuntu-rocm-x64.zip";
+
         return params;
     }
 
@@ -1261,26 +1179,34 @@ void MlxServer::load(const std::string& model_name,
     const fs::path executable_dir = fs::path(executable).parent_path();
 
 #if defined(__linux__)
-    if (backend == "rocm") {
-        auto lib_paths = rocm_library_paths(executable_dir);
-        ensure_rocm_runtime_visible(lib_paths);
+    if (is_mlx_rocm_backend(backend)) {
+        const fs::path rocm_root = resolve_mlx_rocm_root();
 
-        const fs::path rocm_root = resolve_rocm_root(lib_paths);
-        if (rocm_root.empty()) {
-            throw std::runtime_error("lemon-mlx ROCm runtime root could not be resolved");
-        }
+        std::vector<fs::path> lib_paths;
+        append_path(lib_paths, rocm_root / "lib");
+        append_path(lib_paths, rocm_root / "lib64");
+        append_path(lib_paths, rocm_root / "lib" / "llvm" / "lib");
+        append_path(lib_paths, executable_dir);
 
         std::vector<fs::path> bin_paths;
         append_path(bin_paths, rocm_root / "bin");
         append_path(bin_paths, rocm_root / "lib" / "llvm" / "bin");
 
-        env_vars.push_back({"LD_LIBRARY_PATH", join_paths(lib_paths, std::getenv("LD_LIBRARY_PATH"))});
-        env_vars.push_back({"PATH", join_paths(bin_paths, std::getenv("PATH"))});
+        env_vars.push_back({
+            "LD_LIBRARY_PATH",
+            join_paths(lib_paths, std::getenv("LD_LIBRARY_PATH"))
+        });
+        env_vars.push_back({
+            "PATH",
+            join_paths(bin_paths, std::getenv("PATH"))
+        });
         env_vars.push_back({"ROCM_HOME", rocm_root.string()});
         env_vars.push_back({"ROCM_PATH", rocm_root.string()});
         env_vars.push_back({"HIP_PATH", rocm_root.string()});
-        env_vars.push_back({"MLX_ROCM_QMM_DEQUANT_GEMM", "0"});
-        LOG(DEBUG, kLog) << "Configured ROCm runtime root for lemon-mlx: " << rocm_root << std::endl;
+
+        LOG(DEBUG, kLog)
+            << "Configured ROCm runtime root for lemon-mlx: "
+            << rocm_root << std::endl;
     } else if (backend == "cpu") {
         std::vector<fs::path> lib_paths;
         append_path(lib_paths, executable_dir);
@@ -1354,28 +1280,26 @@ json MlxServer::prepare_request(const json& request) const {
 }
 
 json MlxServer::chat_completion(const json& request) {
-    return ErrorResponse::from_exception(
-        BackendException(kRecipe, "backend is not ready")
-    );
-
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
     json response = forward_request("/v1/chat/completions", prepared);
     normalize_reasoning_response(response);
-    record_mlx_telemetry(response, seconds_since(started), estimate_prompt_tokens(prepared));
+    record_mlx_telemetry(
+        response,
+        seconds_since(started),
+        estimate_prompt_tokens(prepared));
     return response;
 }
 
 json MlxServer::completion(const json& request) {
-    return ErrorResponse::from_exception(
-        BackendException(kRecipe, "backend is not ready")
-    );
-
     const auto started = std::chrono::steady_clock::now();
     json prepared = prepare_request(request);
     json response = forward_request("/v1/completions", prepared);
     normalize_reasoning_response(response);
-    record_mlx_telemetry(response, seconds_since(started), estimate_prompt_tokens(prepared));
+    record_mlx_telemetry(
+        response,
+        seconds_since(started),
+        estimate_prompt_tokens(prepared));
     return response;
 }
 
@@ -1415,11 +1339,6 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
         WrappedServer::forward_streaming_request(endpoint, prepared_body, sink, sse, timeout_seconds, telemetry_callback);
         return;
     }
-    const std::string error_msg = "data: {\"error\":{\"message\":\"lemon-mlx backend is not ready: " + server_name_ +
-                                    "\",\"type\":\"backend_not_ready\"}}\n\n";
-    sink.write(error_msg.c_str(), error_msg.size());
-    sink.done();
-    return;
 
     BackendRequestScope request_scope(*this, BackendRequestKind::Streaming);
 

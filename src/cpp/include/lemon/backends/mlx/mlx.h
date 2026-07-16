@@ -38,7 +38,7 @@ inline const BackendDescriptor descriptor = {
     /*modality*/        "Text generation",
     /*experimental*/    true,
     /*web_display_name*/ "MLX",
-    /*rocm_channels*/   {},
+    /*rocm_channels*/   {"stable"},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/  VersionPolicy::Exact,

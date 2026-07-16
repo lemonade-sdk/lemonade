@@ -546,7 +546,7 @@
         "size": 0.38
     },
     "Qwen3.5-0.8B-MLX": {
-        "checkpoint": "mlx-community/Qwen3.5-0.8B-8bit",
+        "checkpoint": "mlx-community/Qwen3.5-0.8B-4bit",
         "recipe": "lemon-mlx",
         "suggested": true,
         "labels": [

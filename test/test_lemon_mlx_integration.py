@@ -79,7 +79,7 @@ def test_lemon_mlx_static_integration_contract():
 def test_lemon_mlx_models_are_modern_and_sized():
     models = json.loads(_read("src/cpp/resources/server_models.json"))
     expected = {
-        "Qwen3.5-0.8B-MLX": "mlx-community/Qwen3.5-0.8B-8bit",
+        "Qwen3.5-0.8B-MLX": "mlx-community/Qwen3.5-0.8B-4bit",
         "Qwen3.6-35B-A3B-MLX": "mlx-community/Qwen3.6-35B-A3B-4bit",
         "Qwen3.6-27B-MLX": "mlx-community/Qwen3.6-27B-4bit",
     }

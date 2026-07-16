@@ -132,7 +132,7 @@
   },
   "lemon-mlx": {
     "metal": "b1046-stable",
-    "rocm": "b1046-stable",
+    "rocm-stable": "b1046-stable",
     "cpu": "b1046-stable"
   },
   "kokoro": {
