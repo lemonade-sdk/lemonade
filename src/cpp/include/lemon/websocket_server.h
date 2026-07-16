@@ -151,6 +151,7 @@ private:
 
     bool authenticate_connection(struct lws* wsi) const;
     static std::optional<std::string> get_header(struct lws* wsi, enum lws_token_indexes token);
+    static std::optional<std::string> get_protocol_credential(struct lws* wsi);
     static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);
     static std::string get_request_path(struct lws* wsi);
     std::string strip_bearer_prefix(const std::string& token) const;

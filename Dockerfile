@@ -49,8 +49,10 @@ RUN apt-get update && apt-get install -y \
     vulkan-tools \
     libvulkan1 \
     unzip \
+    xz-utils \
     libgomp1 \
     libatomic1 \
+    libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
 # Run as an unprivileged user; lemond never needs root at runtime.

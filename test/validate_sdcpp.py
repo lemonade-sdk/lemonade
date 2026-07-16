@@ -22,7 +22,6 @@ from typing import Any
 
 import requests
 
-
 DEFAULT_PORT = int(os.environ.get("LEMONADE_PORT", "13305"))
 DEFAULT_TIMEOUT = int(os.environ.get("LEMONADE_VALIDATE_SD_TIMEOUT", "3600"))
 DEFAULT_STEPS = int(os.environ.get("LEMONADE_VALIDATE_SD_STEPS", "4"))
@@ -208,7 +207,9 @@ def record_failure(
         "seed": args.seed,
         "pass": False,
         "warmup": args.warmup,
-        "timing_scope": "request_wall_s_after_warmup" if args.warmup else "request_wall_s_cold",
+        "timing_scope": (
+            "request_wall_s_after_warmup" if args.warmup else "request_wall_s_cold"
+        ),
         "error": str(exc),
         "request_elapsed_s": round(time.monotonic() - started, 3),
         # Backward-compatible alias for older PR body renderers.
@@ -261,7 +262,9 @@ def main() -> int:
 
     print(f"[INFO] Waiting for Lemonade server at {base_url}")
     wait_for_server(base_url)
-    print(f"[INFO] Configuring sd-cpp backend={args.backend} channel={args.channel or ''}")
+    print(
+        f"[INFO] Configuring sd-cpp backend={args.backend} channel={args.channel or ''}"
+    )
     configure_backend(base_url, args.backend, args.channel)
 
     for model in models:
@@ -281,7 +284,9 @@ def main() -> int:
                 overall_pass = False
                 print(f"[FAIL] warmup {model} on {label}: {exc}", file=sys.stderr)
                 for size in sizes:
-                    results.append(record_failure(args, label, model, size, time.monotonic(), exc))
+                    results.append(
+                        record_failure(args, label, model, size, time.monotonic(), exc)
+                    )
                 continue
 
         for width, height in sizes:
@@ -297,8 +302,16 @@ def main() -> int:
                 "seed": args.seed,
                 "pass": False,
                 "warmup": args.warmup,
-                "warmup_elapsed_s": round(warmup_elapsed_by_model.get(model, 0.0), 3) if args.warmup else 0.0,
-                "timing_scope": "request_wall_s_after_warmup" if args.warmup else "request_wall_s_cold",
+                "warmup_elapsed_s": (
+                    round(warmup_elapsed_by_model.get(model, 0.0), 3)
+                    if args.warmup
+                    else 0.0
+                ),
+                "timing_scope": (
+                    "request_wall_s_after_warmup"
+                    if args.warmup
+                    else "request_wall_s_cold"
+                ),
             }
             try:
                 print(f"[INFO] Generating {model} {width}x{height} on {label}")
@@ -316,7 +329,10 @@ def main() -> int:
                     raise AssertionError(
                         f"PNG dimensions are {actual_width}x{actual_height}, expected {width}x{height}"
                     )
-                image_path = images_dir / f"sdcpp-{label}-{safe_slug(model)}-{width}x{height}.png"
+                image_path = (
+                    images_dir
+                    / f"sdcpp-{label}-{safe_slug(model)}-{width}x{height}.png"
+                )
                 image_path.write_bytes(image)
                 record.update(
                     {

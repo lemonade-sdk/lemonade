@@ -889,7 +889,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
         } catch (const std::exception&) {
             res.status = 404;
             json error = {

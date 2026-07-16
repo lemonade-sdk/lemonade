@@ -14,6 +14,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
+| `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
@@ -43,6 +44,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
+| `onnxruntime` | cpu | windows | cpu (x86_64) |
+| `onnxruntime` | cpu | linux | cpu (arm64, x86_64) |
+| `onnxruntime` | cpu | macos | cpu (arm64) |
 | `openmoss` | rocm | linux, windows | amd_gpu |
 | `openmoss` | cuda | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
@@ -75,6 +79,13 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
+#### `flm` — FastFlowLM NPU
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -89,6 +100,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `moonshine_args` | `--moonshine-args` | ARGS | "" | Custom arguments to pass to moonshine-server |
+
+#### `onnxruntime` — ONNX Runtime
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `onnxruntime_args` | `--onnxruntime-args` | ARGS | "" | Custom arguments to pass to ort-server |
 
 #### `openmoss` — OpenMOSS TTS
 
@@ -252,6 +269,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
 
+#### `onnxruntime` — ONNX Runtime (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Bert-Phishing-ONNX` | 1.34 | classification |
+| `Phishing-Email-Detection-ONNX` | 0.27 | classification |
+
 #### `openmoss` — OpenMOSS TTS (2 models)
 
 | Model | Size (GB) | Labels |
@@ -372,7 +396,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `TRELLIS-3D` | 15.4 | 3d |
 
-#### `vllm` — vLLM ROCm (experimental) (7 models)
+#### `vllm` — vLLM ROCm (experimental) (11 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -382,7 +406,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.5-4B-FP16-vLLM` | 9.34 | reasoning, hot, tool-calling |
 | `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
 | `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
+| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
+| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 

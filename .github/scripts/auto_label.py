@@ -256,6 +256,7 @@ def has_write_access(login, repo):
         return False
     return data.get("permission") in WRITE_PERMISSIONS
 
+
 def is_bot_user(user):
     """Return True for GitHub bot accounts.
     Bot activity should not count as community engagement for priority labels.
@@ -265,6 +266,7 @@ def is_bot_user(user):
     login = user.get("login") or ""
     user_type = user.get("type") or ""
     return user_type == "Bot" or login.lower().endswith("[bot]")
+
 
 def _add_community_user(users, user, author_association, repo):
     if not user:

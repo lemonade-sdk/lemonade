@@ -705,6 +705,20 @@ std::string Router::get_loaded_recipe() const {
     return server->get_recipe_options().get_recipe();
 }
 
+std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* match = nullptr;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() || server->get_model_type() != type) {
+            continue;
+        }
+        if (match) return "";  // ambiguous: caller must name the model
+        match = server.get();
+    }
+    return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
+}
+
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 
@@ -776,7 +790,8 @@ json Router::get_max_model_limits() const {
         {"reranking", max},
         {"transcription", max},
         {"image", max},
-        {"tts", max}
+        {"tts", max},
+        {"classification", max}
     };
 }
 
@@ -1322,6 +1337,47 @@ json Router::reranking(const json& request) {
                     if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
                 }
                 span->end_with_success(usage_payload, response.dump());
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
+json Router::classify(const json& request) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto classification_server = dynamic_cast<IClassificationServer*>(server);
+            if (!classification_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return classification_server->classify(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                // Label scores classify user content; keep them out of telemetry.
+                span->end_with_success(nlohmann::json::object(), "");
             }
         }
         return response;
@@ -2108,7 +2164,8 @@ json Router::get_pinned_model_counts() const {
         {"reranking", count_pinned_servers_by_type(ModelType::RERANKING)},
         {"transcription", count_pinned_servers_by_type(ModelType::TRANSCRIPTION)},
         {"image", count_pinned_servers_by_type(ModelType::IMAGE)},
-        {"tts", count_pinned_servers_by_type(ModelType::TTS)}
+        {"tts", count_pinned_servers_by_type(ModelType::TTS)},
+        {"classification", count_pinned_servers_by_type(ModelType::CLASSIFICATION)}
     };
 }
 

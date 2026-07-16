@@ -162,6 +162,24 @@ defineTest('collection export normalizes the /models/{id} object into the import
   });
 });
 
+defineTest('model export preserves remote registry provenance and drops local origins', () => {
+  const remote = modelDataUtils.normalizeModelExportPayload({
+    id: 'remote-model', recipe: 'llamacpp', checkpoint: 'org/repo:Q4_K_M',
+    checkpoints: { main: 'org/repo:Q4_K_M' }, source: 'modelscope',
+    registry_source: 'modelscope', components: [],
+  }).payload;
+  assert.equal(remote.source, 'modelscope');
+  assert.equal(remote.registry_source, 'modelscope');
+
+  const local = modelDataUtils.normalizeModelExportPayload({
+    id: 'local-model', recipe: 'llamacpp', checkpoint: 'models--local/file.gguf',
+    checkpoints: { main: 'models--local/file.gguf' }, source: 'local_upload',
+    registry_source: 'huggingface', components: [],
+  }).payload;
+  assert.ok(!('source' in local));
+  assert.ok(!('registry_source' in local));
+});
+
 defineTest('regular-model export carries no collection fields', () => {
   const raw = {
     id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',

@@ -588,7 +588,8 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     std::map<std::string, std::string> headers;
 
     try {
-        auto response = utils::HttpClient::get(url, headers);
+        auto response = utils::HttpClient::get(url, headers, 0,
+                                               utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
         if (response.status_code == 200) {
