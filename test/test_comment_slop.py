@@ -536,6 +536,46 @@ class CodeOfTests(unittest.TestCase):
             slop._code_of("int r = a < b; // new\n", "a.cpp"),
         )
 
+    def test_a_removed_comment_separates_tokens(self):
+        # `int/**/x` and `intx` are different programs -- a comment is a token separator, so
+        # removing it must leave a space, not nothing.
+        self.assertNotEqual(
+            slop._code_of("int/**/x = 1;\n", "a.cpp"),
+            slop._code_of("intx = 1;\n", "a.cpp"),
+        )
+        self.assertEqual(
+            slop._code_of("int/**/x = 1;\n", "a.cpp"),
+            slop._code_of("int x = 1;\n", "a.cpp"),
+        )
+
+    def test_interior_whitespace_of_a_string_literal_is_content(self):
+        # Whitespace is collapsed in code but a string literal is a constant: `"a  b"` and
+        # `"a b"` differ.
+        self.assertNotEqual(
+            slop._code_of('s = "a  b";\n', "a.cpp"),
+            slop._code_of('s = "a b";\n', "a.cpp"),
+        )
+
+    def test_reindenting_c_code_is_not_a_code_change(self):
+        # Runs of inter-token whitespace outside a literal collapse to one space, so a
+        # re-indent or a doubled space is not flagged as code.
+        self.assertEqual(
+            slop._code_of("    int  x = 1;\n", "a.cpp"),
+            slop._code_of("int x = 1;\n", "a.cpp"),
+        )
+
+    def test_moving_a_directive_to_different_code_is_a_change(self):
+        # A moved `# fmt: off` / `# type: ignore` changes behaviour though the directive set
+        # and comment-stripped code are unchanged.
+        self.assertNotEqual(
+            slop._directives_of("# fmt: off\na = 1\nb = 2\n"),
+            slop._directives_of("a = 1\n# fmt: off\nb = 2\n"),
+        )
+        self.assertNotEqual(
+            slop._directives_of("a = 1  # type: ignore\nb = 2\n"),
+            slop._directives_of("a = 1\nb = 2  # type: ignore\n"),
+        )
+
     def test_an_unterminated_block_comment_fails_closed(self):
         # Not valid C. Swallowing it certified two differing revisions as equal.
         with self.assertRaises(slop.GitError):
