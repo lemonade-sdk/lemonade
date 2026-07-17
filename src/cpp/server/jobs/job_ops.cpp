@@ -44,13 +44,18 @@ OpRegistry build_op_registry(OpProviders providers) {
     }, false});
 
     reg.register_op("sleep", {[](const json& params, const json&, CancelFlag& cancel) -> json {
-        int64_t total = params.value("ms", (int64_t)0);
-        int64_t slept = 0;
-        while (slept < total) {
-            if (cancel.load()) break;
-            const int64_t chunk = std::min<int64_t>(50, total - slept);
-            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-            slept += chunk;
+        using clock = std::chrono::steady_clock;
+
+        const int64_t total_ms =
+            std::max<int64_t>(0, params.value("ms", int64_t{0}));
+        const auto deadline = clock::now() + std::chrono::milliseconds(total_ms);
+
+        while (!cancel.load()) {
+            const auto now = clock::now();
+            if (now >= deadline) break;
+
+            const auto next_poll = now + std::chrono::milliseconds(50);
+            std::this_thread::sleep_until(next_poll < deadline ? next_poll : deadline);
         }
         return json::object();
     }, false});
