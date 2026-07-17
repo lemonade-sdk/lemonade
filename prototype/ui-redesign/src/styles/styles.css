@@ -1092,9 +1092,16 @@ input, textarea {
 }
 
 .composer__tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  min-height: 30px;
   font-size: var(--text-xs);
   font-family: var(--font-sans);
   font-weight: var(--weight-medium);
+  line-height: 1;
   color: var(--text-tertiary);
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
@@ -2337,7 +2344,15 @@ input, textarea {
   flex: 0 0 auto;
 }
 
-.phase-glyph svg { display: block; }
+.phase-glyph__disc {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1.3px solid currentColor;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent 50%, currentColor 50%);
+}
 .phase-glyph--lg { width: 22px; height: 22px; }
 .phase-glyph--xl { width: 48px; height: 48px; color: var(--accent-fg); }
 
@@ -7401,6 +7416,15 @@ input, textarea {
   }
 }
 
+/* All UI glyphs come from lucide-react or Simple Icons. Keep their native
+   viewBox geometry intact and align the root SVG consistently across browsers. */
+.app-icon {
+  display: block;
+  flex: 0 0 auto;
+  overflow: visible;
+  vertical-align: middle;
+}
+
 /* Fix model action icon vertical alignment and bind capability icons to labels. */
 .row__action {
   display: inline-flex;
@@ -9309,6 +9333,9 @@ input, textarea {
 .model-list-item__caps .model-list-item__cap {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
 }
 
 /* Count badge */

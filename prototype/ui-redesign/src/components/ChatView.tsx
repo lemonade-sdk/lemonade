@@ -2556,11 +2556,7 @@ ${finalText}`
             onClick={handleRailToggle}
             aria-label="Toggle conversations"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-              <line x1="3" y1="4" x2="13" y2="4" />
-              <line x1="3" y1="8" x2="13" y2="8" />
-              <line x1="3" y1="12" x2="13" y2="12" />
-            </svg>
+            <Icon name="menu" size={16} />
           </button>
           <span className="rail__title">Conversations</span>
         </div>
@@ -2568,10 +2564,7 @@ ${finalText}`
         <div className="rail__new-wrap">
           <button className="rail__new" onClick={handleNewChat} aria-label="New chat">
             <span className="rail__new-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <line x1="7" y1="2.5" x2="7" y2="11.5" />
-                <line x1="2.5" y1="7" x2="11.5" y2="7" />
-              </svg>
+              <Icon name="plus" size={14} />
             </span>
             <span className="rail__new-label">New chat</span>
           </button>
@@ -2644,10 +2637,7 @@ ${finalText}`
           <div className="bottom-sheet__handle-pill" />
         </div>
         <button className="bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-            <line x1="7" y1="2.5" x2="7" y2="11.5" />
-            <line x1="2.5" y1="7" x2="11.5" y2="7" />
-          </svg>
+          <Icon name="plus" size={14} />
           New Chat
         </button>
         <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
@@ -2704,11 +2694,7 @@ ${finalText}`
           aria-label="Open conversations"
           title="Conversations"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-            <line x1="3" y1="4" x2="13" y2="4" />
-            <line x1="3" y1="8" x2="13" y2="8" />
-            <line x1="3" y1="12" x2="13" y2="12" />
-          </svg>
+          <Icon name="menu" size={16} />
           <span>Conversations</span>
         </button>
         <div className="chat__inner">

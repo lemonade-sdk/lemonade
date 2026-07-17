@@ -136,15 +136,7 @@ const CapabilityChip: React.FC<{ cap: Capability; small?: boolean; on?: boolean;
 
 const PhaseGlyph: React.FC<{ size?: 'sm' | 'lg' | 'xl' }> = ({ size }) => {
   const cls = size === 'lg' ? 'phase-glyph phase-glyph--lg' : size === 'xl' ? 'phase-glyph phase-glyph--xl' : 'phase-glyph';
-  const px = size === 'xl' ? 48 : size === 'lg' ? 22 : 14;
-  return (
-    <span className={cls} aria-hidden="true">
-      <svg width={px} height={px} viewBox="0 0 12 12" fill="none">
-        <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M6 1 A5 5 0 0 1 6 11 Z" fill="currentColor" />
-      </svg>
-    </span>
-  );
+  return <span className={cls} aria-hidden="true"><span className="phase-glyph__disc" /></span>;
 };
 
 interface PresetManagerProps {

@@ -13,8 +13,8 @@ interface MarkdownMessageProps {
   onOptionSelect?: (text: string) => void;
 }
 
-const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2-2v1"></path></svg>`;
-const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+const COPY_LABEL = 'Copy';
+const COPIED_LABEL = 'Copied';
 
 /* ── Mermaid init ──────────────────────────────────────────── */
 
@@ -171,7 +171,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         } else {
           highlighted = instance.utils.escapeHtml(str);
         }
-        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy" aria-label="Copy code">${COPY_ICON}</button></div><pre><code>${highlighted}</code></pre></div>`;
+        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy" aria-label="Copy code">${COPY_LABEL}</button></div><pre><code>${highlighted}</code></pre></div>`;
       },
     });
 
@@ -239,10 +239,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         const code = codeBlock?.querySelector('code');
         if (!code) return;
         navigator.clipboard.writeText(code.textContent || '').then(() => {
-          copyBtn.innerHTML = CHECK_ICON;
+          copyBtn.textContent = COPIED_LABEL;
           copyBtn.classList.add('copied');
           setTimeout(() => {
-            copyBtn.innerHTML = COPY_ICON;
+            copyBtn.textContent = COPY_LABEL;
             copyBtn.classList.remove('copied');
           }, 2000);
         });
