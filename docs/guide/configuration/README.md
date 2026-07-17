@@ -131,7 +131,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
         "otel_genai"
       ],
       "send_batch_size": 100
-    }
+    },
+    "trust_incoming_trace_context": false
   },
   "thinksound": {
     "backend": "auto",

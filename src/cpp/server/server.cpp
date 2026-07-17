@@ -559,6 +559,58 @@ Server::~Server() {
     stop();
 }
 
+namespace {
+
+// Parse a W3C Trace Context "traceparent" header per the spec grammar
+// (https://www.w3.org/TR/trace-context/): version "-" trace-id "-" parent-id
+// "-" trace-flags, where version is 2 lowercase hex chars, trace-id is 32,
+// parent-id is 16, and trace-flags is 2. The all-zero trace-id and parent-id
+// are invalid. On success, out_trace_id/out_parent_id receive the lowercase
+// hex ids and the function returns true; otherwise returns false.
+bool parse_traceparent(const std::string& header, std::string& out_trace_id, std::string& out_parent_id) {
+    auto is_hex = [](const std::string& s) {
+        return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        });
+    };
+    auto is_all_zero = [](const std::string& s) {
+        return s.find_first_not_of('0') == std::string::npos;
+    };
+
+    // Lowercase a copy so uppercase hex from lenient clients still validates.
+    std::string h = header;
+    std::transform(h.begin(), h.end(), h.begin(), [](unsigned char c) { return std::tolower(c); });
+
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (true) {
+        size_t dash = h.find('-', start);
+        if (dash == std::string::npos) {
+            parts.push_back(h.substr(start));
+            break;
+        }
+        parts.push_back(h.substr(start, dash - start));
+        start = dash + 1;
+    }
+
+    if (parts.size() != 4) return false;
+    const std::string& version = parts[0];
+    const std::string& trace_id = parts[1];
+    const std::string& parent_id = parts[2];
+    const std::string& flags = parts[3];
+
+    if (version.size() != 2 || !is_hex(version) || version == "ff") return false;
+    if (trace_id.size() != 32 || !is_hex(trace_id) || is_all_zero(trace_id)) return false;
+    if (parent_id.size() != 16 || !is_hex(parent_id) || is_all_zero(parent_id)) return false;
+    if (flags.size() != 2 || !is_hex(flags)) return false;
+
+    out_trace_id = trace_id;
+    out_parent_id = parent_id;
+    return true;
+}
+
+} // namespace
+
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/v0/health" && req.path != "/v1/health" &&
@@ -576,6 +628,21 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
     } else {
         telemetry::g_current_client_session_id.clear();
+    }
+
+    // Opt-in W3C Trace Context ingestion: when enabled, adopt a valid incoming
+    // "traceparent" so inference spans join the caller's distributed trace
+    // instead of starting a fresh root. Cleared otherwise so a stale thread-local
+    // never leaks across requests on a reused worker thread.
+    telemetry::g_incoming_trace_id.clear();
+    telemetry::g_incoming_parent_span_id.clear();
+    if (config_->telemetry_trust_incoming_trace_context() && req.has_header("traceparent")) {
+        std::string trace_id;
+        std::string parent_id;
+        if (parse_traceparent(req.get_header_value("traceparent"), trace_id, parent_id)) {
+            telemetry::g_incoming_trace_id = trace_id;
+            telemetry::g_incoming_parent_span_id = parent_id;
+        }
     }
 
     // Check if path requires authentication (API routes and internal endpoints).
@@ -1369,7 +1436,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, traceparent"}
     });
 
     // Handle preflight OPTIONS requests

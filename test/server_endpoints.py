@@ -4753,6 +4753,53 @@ class EndpointTests(ServerTestBase):
                         proc.wait(timeout=10)
             shutil.rmtree(cache_dir, ignore_errors=True)
 
+    def test_050_telemetry_trust_incoming_trace_context_config(self):
+        """The opt-in W3C trace-context flag round-trips and validates as boolean."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("telemetry", {})
+            .get("trust_incoming_trace_context", False)
+        )
+        try:
+            # Enable, then confirm it reads back as True.
+            resp = requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": True}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("telemetry", {})
+                .get("trust_incoming_trace_context")
+            )
+            self.assertTrue(read_back)
+
+            # A non-boolean value must be rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": "yes"}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                bad.status_code,
+                400,
+                f"expected 400 for non-boolean value, got {bad.status_code}: {bad.text}",
+            )
+        finally:
+            requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": bool(prior)}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

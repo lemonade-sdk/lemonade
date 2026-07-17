@@ -332,6 +332,10 @@ bool RuntimeConfig::telemetry_hide_thinking() const {
     return get_bool_opt(nullptr, {"telemetry", "hide_thinking"}, false);
 }
 
+bool RuntimeConfig::telemetry_trust_incoming_trace_context() const {
+    return get_bool_opt(nullptr, {"telemetry", "trust_incoming_trace_context"}, false);
+}
+
 int RuntimeConfig::telemetry_max_queue_capacity() const {
     return get_int_opt(nullptr, {"telemetry", "max_queue_capacity"}, 1000);
 }
@@ -602,7 +606,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'telemetry' must be an object");
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
-            "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "max_queue_capacity", "max_attribute_length", "otlp"
+            "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
+            "max_queue_capacity", "max_attribute_length", "otlp"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
@@ -620,6 +625,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.contains("hide_thinking") && !value["hide_thinking"].is_boolean()) {
             throw std::invalid_argument("'telemetry.hide_thinking' must be a boolean");
+        }
+        if (value.contains("trust_incoming_trace_context") && !value["trust_incoming_trace_context"].is_boolean()) {
+            throw std::invalid_argument("'telemetry.trust_incoming_trace_context' must be a boolean");
         }
         if (value.contains("max_queue_capacity")) {
             if (!value["max_queue_capacity"].is_number_integer()) {
