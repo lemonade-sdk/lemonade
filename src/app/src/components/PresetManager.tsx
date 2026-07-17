@@ -38,8 +38,23 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import AutoOptRail, { openAutoOptRun } from '../features/autoOpt/AutoOptRail';
 import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
 import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
+import { DEFAULT_TTS_VOICE, OPENMOSS_VOICE_PRESETS, TTS_VOICES } from '../features/audio/ttsSettings';
 
-const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
+const CAPABILITIES: Capability[] = ['chat', 'omni', 'vision', 'code', 'tts'];
+const VISIBLE_STARTERS = STARTERS.filter(preset => preset.applies_to.some(capability => CAPABILITIES.includes(capability)));
+type TtsPresetEngine = 'kokoro' | 'openmoss';
+
+function ttsEngineForPreset(preset: Preset): TtsPresetEngine {
+  return preset.engine_hint === 'openmoss' ? 'openmoss' : 'kokoro';
+}
+
+function ttsVoiceForPreset(preset: Preset): string {
+  const voice = String(preset.recipe_options?.voice || '').trim();
+  if (voice) return voice;
+  return ttsEngineForPreset(preset) === 'openmoss'
+    ? OPENMOSS_VOICE_PRESETS[0].id
+    : DEFAULT_TTS_VOICE;
+}
 
 function modelName(model: ModelInfo): string {
   return model.id || model.name || model.display_name || 'unknown';
@@ -192,7 +207,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     return () => { alive = false; };
   }, []);
 
-  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
+  const allPresets = useMemo(() => [DEFAULT_PRESET, ...VISIBLE_STARTERS, ...userPresets], [userPresets]);
   const lookupPreset = useCallback((id: string) => allPresets.find(p => p.id === id) || null, [allPresets]);
 
   const allModelOptions = useMemo(() => {
@@ -381,7 +396,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         <div className="recipes__head">
           <div className="recipes__title">
             <h1>Presets</h1>
-            <span className="recipes__title-sub" data-recipes-count>{STARTERS.length + 1} starters · {userPresets.length} yours</span>
+            <span className="recipes__title-sub" data-recipes-count>{VISIBLE_STARTERS.length + 1} starters · {userPresets.length} yours</span>
           </div>
           <div className="recipes__actions">
             <button className="btn btn--primary" onClick={handleNewPreset}>+ New Preset</button>
@@ -432,13 +447,13 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             <div className="zone__head">
               <span className="zone__dot zone__dot--ready" />
               <span className="zone__title">Bundled starters</span>
-              <span className="zone__count">{STARTERS.length + 1}</span>
+              <span className="zone__count">{VISIBLE_STARTERS.length + 1}</span>
               <span className="zone__rule" />
             </div>
             <div className="recipe-grid recipe-grid--starters-combined">
               <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} onClick={() => openSlideover(DEFAULT_PRESET)} onCustomize={() => handleCustomize(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
               <div className="recipe-grid__contents" data-recipe-grid="starters">
-                {STARTERS.map(preset => (
+                {VISIBLE_STARTERS.map(preset => (
                   <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} onClick={() => openSlideover(preset)} onCustomize={() => handleCustomize(preset)} onClone={() => handleClone(preset)} />
                 ))}
               </div>
@@ -635,6 +650,8 @@ const SlideoverContent: React.FC<{
   const [systemPromptId, setSystemPromptId] = useState(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
   const [systemPrompts, setSystemPrompts] = useState<PresetSystemPrompt[]>(cloneSystemPrompts(preset.system_prompts));
   const [mcpServerIds, setMcpServerIds] = useState<string[]>(presetMcpServerIds(preset));
+  const [ttsEngine, setTtsEngine] = useState<TtsPresetEngine>(() => ttsEngineForPreset(preset));
+  const [ttsVoice, setTtsVoice] = useState(() => ttsVoiceForPreset(preset));
   const [mcpServers, setMcpServers] = useState<McpServerOption[]>([LEMONADE_MCP_SERVER]);
   const [mcpLoadError, setMcpLoadError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -656,11 +673,16 @@ const SlideoverContent: React.FC<{
     setSystemPromptId(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
     setSystemPrompts(cloneSystemPrompts(preset.system_prompts));
     setMcpServerIds(presetMcpServerIds(preset));
+    setTtsEngine(ttsEngineForPreset(preset));
+    setTtsVoice(ttsVoiceForPreset(preset));
     setSaved(false);
   }, [preset]);
 
   const normalizedAppliesTo = normalizePresetCapabilities(preset.id, appliesTo);
   const hasChat = presetSupportsChatIntent({ id: preset.id, applies_to: normalizedAppliesTo });
+  const hasTts = normalizedAppliesTo.includes('tts');
+  const kokoroVoiceIsCustom = !TTS_VOICES.some(voice => voice.id === ttsVoice);
+  const openMossVoiceIsCustom = !OPENMOSS_VOICE_PRESETS.some(voice => voice.id === ttsVoice);
 
   useEffect(() => {
     let cancelled = false;
@@ -698,6 +720,8 @@ const SlideoverContent: React.FC<{
   }, [mcpServers, mcpServerIds]);
   const currentPreset = useMemo<Preset>(() => {
     if (isReadOnly) return { ...preset, applies_to: normalizePresetCapabilities(preset.id, preset.applies_to) };
+    const recipeOptions = { ...(preset.recipe_options || {}) };
+    if (hasTts) recipeOptions.voice = ttsVoice.trim() || (ttsEngine === 'openmoss' ? OPENMOSS_VOICE_PRESETS[0].id : DEFAULT_TTS_VOICE);
     return {
       ...preset,
       name,
@@ -707,17 +731,17 @@ const SlideoverContent: React.FC<{
       context_hint: hasChat ? contextHint : undefined,
       thinking_mode: hasChat ? thinkingMode : undefined,
       // Preserve legacy payloads invisibly for import/backend compatibility.
-      // New presets start empty and the editor never creates concrete values.
-      recipe_options: preset.recipe_options || {},
+      // TTS is the only capability that currently writes a concrete preset option.
+      recipe_options: recipeOptions,
       sampling: preset.sampling || {},
-      engine_hint: preset.engine_hint || 'auto',
+      engine_hint: hasTts ? ttsEngine : (preset.engine_hint || 'auto'),
       starter: false,
       system_prompt_id: hasChat ? systemPromptId : NO_SYSTEM_PROMPT_ID,
       system_prompts: hasChat ? cloneSystemPrompts(systemPrompts) : [],
       mcp_server_ids: hasChat ? mcpServerIds.slice(0, MAX_PRESET_MCP_SERVERS) : [],
       tools_enabled: hasChat && mcpServerIds.length > 0,
     };
-  }, [isReadOnly, preset, name, description, normalizedAppliesTo, hasChat, temperatureHint, contextHint, thinkingMode, systemPromptId, systemPrompts, mcpServerIds]);
+  }, [isReadOnly, preset, name, description, normalizedAppliesTo, hasChat, hasTts, temperatureHint, contextHint, thinkingMode, systemPromptId, systemPrompts, mcpServerIds, ttsEngine, ttsVoice]);
 
   const selectedModel = models.find(model => modelName(model) === applyTarget);
   const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
@@ -725,7 +749,12 @@ const SlideoverContent: React.FC<{
   const selectedPromptIsCustom = selectedSystemPrompt?.built_in === false;
 
   const toggleCap = (cap: Capability) => {
-    if (!isReadOnly) setAppliesTo([cap]);
+    if (isReadOnly) return;
+    setAppliesTo([cap]);
+    if (cap === 'tts' && !ttsVoice.trim()) {
+      setTtsEngine('kokoro');
+      setTtsVoice(DEFAULT_TTS_VOICE);
+    }
   };
 
   const updateSelectedSystemPrompt = (patch: Partial<PresetSystemPrompt>) => {
@@ -912,6 +941,78 @@ const SlideoverContent: React.FC<{
           </div>
         )}
 
+        {hasTts && (
+          <div className="slideover__section preset-tts-controls" data-preset-fields="tts-voice">
+            <div className="preset-tts-controls__head">
+              <div>
+                <h3>Speech voice</h3>
+                <p className="preset-help">The selected voice is stored with this TTS preset and used for chat speech.</p>
+              </div>
+              <Icon name="tts" size={20} aria-hidden="true" />
+            </div>
+
+            <div className="preset-tts-grid">
+              <label className="field">
+                <span className="field__label">TTS family</span>
+                <select
+                  className="select"
+                  value={ttsEngine}
+                  disabled={isReadOnly}
+                  onChange={event => {
+                    const engine = event.target.value as TtsPresetEngine;
+                    setTtsEngine(engine);
+                    setTtsVoice(engine === 'openmoss' ? OPENMOSS_VOICE_PRESETS[0].id : DEFAULT_TTS_VOICE);
+                  }}
+                >
+                  <option value="kokoro">Kokoro · English</option>
+                  <option value="openmoss">OpenMOSS · Multilingual</option>
+                </select>
+              </label>
+
+              {ttsEngine === 'kokoro' ? (
+                <label className="field">
+                  <span className="field__label">Voice</span>
+                  <select
+                    className="select"
+                    value={kokoroVoiceIsCustom ? '__custom' : ttsVoice}
+                    disabled={isReadOnly}
+                    onChange={event => setTtsVoice(event.target.value === '__custom' ? '' : event.target.value)}
+                  >
+                    {TTS_VOICES.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+                    <option value="__custom">Custom voice ID…</option>
+                  </select>
+                </label>
+              ) : (
+                <label className="field">
+                  <span className="field__label">Voice profile</span>
+                  <select
+                    className="select"
+                    value={openMossVoiceIsCustom ? '__custom' : ttsVoice}
+                    disabled={isReadOnly}
+                    onChange={event => setTtsVoice(event.target.value === '__custom' ? '' : event.target.value)}
+                  >
+                    {OPENMOSS_VOICE_PRESETS.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+                    <option value="__custom">Custom voice description…</option>
+                  </select>
+                </label>
+              )}
+            </div>
+
+            {((ttsEngine === 'kokoro' && kokoroVoiceIsCustom) || (ttsEngine === 'openmoss' && openMossVoiceIsCustom)) && (
+              <label className="field preset-tts-custom-voice">
+                <span className="field__label">{ttsEngine === 'openmoss' ? 'Voice description' : 'Voice ID'}</span>
+                <input
+                  className="input"
+                  value={ttsVoice}
+                  disabled={isReadOnly}
+                  onChange={event => setTtsVoice(event.target.value)}
+                  placeholder={ttsEngine === 'openmoss' ? 'Describe language, accent, tone and delivery…' : 'Enter a backend voice ID…'}
+                />
+              </label>
+            )}
+          </div>
+        )}
+
         {hasChat && (
           <div className="slideover__section preset-system-prompt">
             <h3>System Prompt</h3>
@@ -953,7 +1054,7 @@ const SlideoverContent: React.FC<{
         <div className="slideover__section">
           <h3>Apply to a model</h3>
           <p className="preset-help">The intent is linked now. Concrete values resolve through Model Tuning for this model × preset.</p>
-          <div className="field__row">
+          <div className="field__row preset-apply-row">
             <select className="select" value={applyTarget} onChange={event => onApplyTargetChange(event.target.value)} data-recipe-apply-target>
               <option value="">— pick a model —</option>
               {models.map(model => {

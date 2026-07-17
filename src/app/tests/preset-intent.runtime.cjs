@@ -77,7 +77,20 @@ function installBrowserStorageShim() {
 
     const codePreset = presets.STARTERS.find(preset => preset.id === 's-code');
     const creativePreset = presets.STARTERS.find(preset => preset.id === 's-creative');
-    assert.ok(codePreset && creativePreset);
+    const speechPreset = presets.STARTERS.find(preset => preset.id === 's-speech');
+    assert.ok(codePreset && creativePreset && speechPreset);
+    assert.equal(speechPreset.recipe_options.voice, 'coral');
+    assert.equal(speechPreset.engine_hint, 'kokoro');
+    assert.equal(speechPreset.tools_enabled, false);
+    assert.equal(presets.STARTERS.filter(preset => preset.applies_to.includes('tts')).length, 1);
+    assert.equal(presets.EXPERIMENTAL_IMAGE_STARTER_PRESETS_ENABLED, false);
+    assert.equal(presets.STARTERS.some(preset => preset.applies_to.includes('image')), false);
+
+    // Existing installations that linked either former TTS starter keep a
+    // valid binding after the two cards are consolidated into Speech.
+    presets.saveApplied({ legacyKokoro: 's-kokoro-english', legacyOpenMoss: 's-openmoss-multilingual' });
+    assert.deepEqual(presets.loadApplied(), { legacyKokoro: 's-speech', legacyOpenMoss: 's-speech' });
+    storage.clear();
 
     // Preset MCP migration is deterministic and bounded.
     const basePreset = {
@@ -224,7 +237,24 @@ function installBrowserStorageShim() {
 
     const transcriptionModel = { id: 'whisper', labels: ['transcription'], recipe: 'whispercpp' };
     assert.equal(presets.isCompatible(codePreset, transcriptionModel), false);
-    assert.equal(presets.presetSupportsChatIntent(presets.STARTERS.find(preset => preset.id === 's-quality')), false);
+    assert.equal(presets.presetSupportsChatIntent(speechPreset), false);
+
+    // Image presets are ignored even if an older/imported binding still exists.
+    // Concrete image defaults live under Default × Model Tuning instead.
+    const legacyImagePreset = presets.sanitizePreset({
+      id: 'legacy-image-quality',
+      name: 'Legacy image quality',
+      description: '',
+      applies_to: ['image'],
+      recipe_options: { steps: 99, cfg_scale: 9 },
+      sampling: {},
+    });
+    presets.saveUserPresets([legacyImagePreset]);
+    presets.saveApplied({ 'qwen-coder': codePreset.id, 'sd-image': legacyImagePreset.id });
+    const imageModel = { id: 'sd-image', labels: ['image'], recipe: 'sd-cpp' };
+    assert.equal(presets.recipeOptionsForModel('sd-image', imageModel), undefined);
+    presets.saveModelTuning('sd-image', { recipe_options: { steps: 12, cfg_scale: 2.5 }, sampling: {} }, presets.DEFAULT_PRESET.id);
+    assert.deepEqual(presets.recipeOptionsForModel('sd-image', imageModel), { steps: 12, cfg_scale: 2.5 });
 
     // Backend args are a dedicated lower-priority tuning layer. They are not
     // Presets and are resolved only for the exact concrete backend.

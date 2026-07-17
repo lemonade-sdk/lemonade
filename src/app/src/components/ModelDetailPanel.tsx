@@ -12,7 +12,7 @@ import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, PresetChangeKind,
-  allStoredPresets, isCompatible, loadApplied, saveApplied,
+  allStoredPresets, isCompatible, labelsFor, loadApplied, saveApplied,
   effectivePresetParamPreviewLines, activePresetForModel,
   runningPresetIdForModel, setRunningPreset, clearRunningPreset,
   classifyPresetChange,
@@ -29,6 +29,13 @@ import { getCollectionComponents, isCollectionModel } from '../features/collecti
 function mdName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   return String((m as any).model_name ?? m.name ?? m.id ?? '').trim();
+}
+
+function isImageOnlyModel(model: ModelInfo | null | undefined): boolean {
+  if (!model) return false;
+  const capabilities = labelsFor(model);
+  return capabilities.includes('image')
+    && !capabilities.some(capability => ['chat', 'omni', 'vision', 'code'].includes(capability));
 }
 
 function fmtSize(gb: number): string {
@@ -1138,6 +1145,7 @@ const ModelTuningTab: React.FC<{
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
 }> = ({ model, loadedModel, isActive, serverDefaultCtxSize, onReloadModel }) => {
   const name = mdName(model);
+  const imageOnly = isImageOnlyModel(model);
   const [storeVersion, setStoreVersion] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
@@ -1160,10 +1168,10 @@ const ModelTuningTab: React.FC<{
     return () => { alive = false; };
   }, [isActive]);
 
-  const linkedPreset = activePresetForModel(name);
+  const linkedPreset = imageOnly ? DEFAULT_PRESET : activePresetForModel(name);
   const compatiblePresets = useMemo(
-    () => allStoredPresets().filter(preset => isCompatible(preset, model)),
-    [model, storeVersion],
+    () => imageOnly ? [DEFAULT_PRESET] : allStoredPresets().filter(preset => isCompatible(preset, model)),
+    [imageOnly, model, storeVersion],
   );
   const [selectedPresetId, setSelectedPresetId] = useState(linkedPreset.id);
 
@@ -1689,16 +1697,19 @@ const ModelTuningTab: React.FC<{
       <section className="detail-tuning__intro" aria-label="Model tuning concept">
         <h3 className="detail-tuning__title">Model Tuning</h3>
         <p>
-          Presets describe intent. Model Tuning stores the concrete implementation separately for every model × preset combination.
+          {imageOnly
+            ? 'Image models use the Default baseline here. Generation and editing controls supplied with each image request override these model defaults.'
+            : 'Presets describe intent. Model Tuning stores the concrete implementation separately for every model × preset combination.'}
         </p>
       </section>
 
       <section className="detail-tuning__summary" aria-label="Effective runtime summary">
         <label className="detail-tuning__summary-card detail-tuning__preset-select">
-          <span className="detail-tuning__summary-label">Selected preset</span>
+          <span className="detail-tuning__summary-label">{imageOnly ? 'Baseline' : 'Selected preset'}</span>
           <select
             className="select"
             value={selectedPreset.id}
+            disabled={imageOnly}
             onChange={event => {
               const nextId = event.target.value;
               const nextPreset = compatiblePresets.find(preset => preset.id === nextId);
@@ -2119,6 +2130,12 @@ const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
   { id: 'files', label: 'Files' },
 ];
 
+const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = [
+  { id: 'readme', label: 'README' },
+  { id: 'tuning', label: 'Model Tuning' },
+  { id: 'files', label: 'Files' },
+];
+
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
   loadedModel,
@@ -2164,13 +2181,15 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const detailName = model ? mdName(model) : '';
   const detailLoaded = !!loadedModel;
   const isCustomCollection = Boolean(model && (model as any).custom && isCollectionModel(model));
-  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : TABS;
+  const imageOnly = isImageOnlyModel(model);
+  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
 
-  // Move focus to heading when model changes
+  // Move focus to heading when model changes. Image-only models skip the
+  // immature preset concept and open directly in concrete Model Tuning.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : 'readme');
-  }, [detailName, isCustomCollection]);
+    setActiveTab(isCustomCollection ? 'settings' : (imageOnly ? 'tuning' : 'readme'));
+  }, [detailName, isCustomCollection, imageOnly]);
 
   // Re-render when the preset store changes (applied/running/user presets).
   useEffect(() => {

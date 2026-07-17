@@ -161,11 +161,21 @@ export function starterSystemPromptsForPreset(id: string): PresetSystemPrompt[] 
 }
 
 export function defaultSystemPromptIdForPreset(id: string): string {
-  return id === 's-default' ? NO_SYSTEM_PROMPT_ID : 'general';
+  return ['s-default', 's-speech', 's-kokoro-english', 's-openmoss-multilingual'].includes(id)
+    ? NO_SYSTEM_PROMPT_ID
+    : 'general';
 }
 
 export function defaultToolsEnabledForPreset(id: string): boolean {
-  return !['s-quick-chat', 's-quality', 's-preview', 's-turbo'].includes(id);
+  return ![
+    's-quick-chat',
+    's-speech',
+    's-kokoro-english',
+    's-openmoss-multilingual',
+    's-quality',
+    's-preview',
+    's-turbo',
+  ].includes(id);
 }
 
 export function sanitizeSystemPrompts(raw: unknown, fallbackPresetId = ''): PresetSystemPrompt[] {

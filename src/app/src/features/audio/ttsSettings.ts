@@ -2,18 +2,33 @@ import { scopedStorageKey } from '../accounts/accountStore';
 import type { RecipeOptions } from '../../presetStore';
 
 export const TTS_SETTINGS_EVENT = 'lemonade:tts-settings-changed';
-export const DEFAULT_TTS_VOICE = 'alloy';
+export const DEFAULT_TTS_VOICE = 'coral';
 
+// Lemonade's Kokoro backend exposes an OpenAI-compatible speech contract. Keep
+// this list intentionally small and English-focused; users can still type a
+// custom value through imported presets.
 export const TTS_VOICES = [
   { id: 'alloy', label: 'Alloy' },
+  { id: 'ash', label: 'Ash' },
+  { id: 'ballad', label: 'Ballad' },
+  { id: 'coral', label: 'Coral' },
   { id: 'echo', label: 'Echo' },
   { id: 'fable', label: 'Fable' },
-  { id: 'onyx', label: 'Onyx' },
   { id: 'nova', label: 'Nova' },
+  { id: 'onyx', label: 'Onyx' },
+  { id: 'sage', label: 'Sage' },
   { id: 'shimmer', label: 'Shimmer' },
+  { id: 'verse', label: 'Verse' },
+];
+
+export const OPENMOSS_VOICE_PRESETS = [
+  { id: 'Natural multilingual assistant voice', label: 'Natural multilingual' },
+  { id: 'Warm multilingual narrator voice', label: 'Warm narrator' },
+  { id: 'Clear multilingual professional voice', label: 'Clear professional' },
 ];
 
 export type TtsPlaybackMode = 'demand' | 'always';
+export type TtsReadMode = 'on-demand' | 'agent' | 'agent-and-user';
 
 export interface TtsPlaybackSettings {
   modelName: string | null;
@@ -64,6 +79,26 @@ export function saveSpeakUserText(scope: string, enabled: boolean): void {
 
 export function saveTtsPlaybackMode(scope: string, mode: TtsPlaybackMode): void {
   try { localStorage.setItem(playbackModeKey(scope), normalizePlaybackMode(mode)); } catch { /* ignore */ }
+  emitTtsSettingsChanged(scope);
+}
+
+export function ttsReadModeFromSettings(settings: TtsPlaybackSettings): TtsReadMode {
+  if (settings.playbackMode !== 'always') return 'on-demand';
+  return settings.speakUserText ? 'agent-and-user' : 'agent';
+}
+
+export function saveTtsReadMode(scope: string, mode: TtsReadMode): void {
+  if (mode === 'on-demand') {
+    try {
+      localStorage.setItem(playbackModeKey(scope), 'demand');
+      localStorage.setItem(speakUserKey(scope), 'false');
+    } catch { /* ignore */ }
+  } else {
+    try {
+      localStorage.setItem(playbackModeKey(scope), 'always');
+      localStorage.setItem(speakUserKey(scope), mode === 'agent-and-user' ? 'true' : 'false');
+    } catch { /* ignore */ }
+  }
   emitTtsSettingsChanged(scope);
 }
 

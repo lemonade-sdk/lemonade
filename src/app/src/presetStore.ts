@@ -239,6 +239,18 @@ export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to
   return caps.includes(cap);
 }
 
+// Image starter presets are intentionally dormant until the image-preset model is
+// defined end to end. Keep their source here for later design work, but do not
+// expose or resolve them in the current product. Image models use Default and
+// open directly in Model Tuning; request-time image controls remain authoritative.
+export const EXPERIMENTAL_IMAGE_STARTER_PRESETS_ENABLED = false;
+
+const IMAGE_STARTER_PRESETS: Preset[] = [
+  { id: 's-quality', name: 'Quality', description: 'Crisp, deliberate image generation intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-preview', name: 'Preview', description: 'Fast image drafts and iteration intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-turbo', name: 'Turbo', description: 'Fastest image draft intent for rapid iteration.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+];
+
 const STARTER_BASE: Preset[] = [
   { id: 's-balanced', name: 'Balanced', description: 'Everyday chat with a balanced level of variation and context.', applies_to: ['chat'], temperature_hint: 'balanced', context_hint: 'medium', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], temperature_hint: 'precise', context_hint: 'large', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
@@ -246,9 +258,8 @@ const STARTER_BASE: Preset[] = [
   { id: 's-creative', name: 'Creative', description: 'Brainstorming, dialog, and divergent writing intent.', applies_to: ['chat'], temperature_hint: 'creative', context_hint: 'medium', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], temperature_hint: 'balanced', context_hint: 'max', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
   { id: 's-code', name: 'Code', description: 'Coding, refactoring, and technical review intent.', applies_to: ['chat'], temperature_hint: 'precise', context_hint: 'large', thinking_mode: 'normal', recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-quality', name: 'Quality', description: 'Crisp, deliberate image generation intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-preview', name: 'Preview', description: 'Fast image drafts and iteration intent.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
-  { id: 's-turbo', name: 'Turbo', description: 'Fastest image draft intent for rapid iteration.', applies_to: ['image'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: true },
+  { id: 's-speech', name: 'Speech', description: 'Chat speech with a selectable TTS family and voice.', applies_to: ['tts'], recipe_options: { voice: 'coral' }, sampling: {}, engine_hint: 'kokoro', starter: true },
+  ...(EXPERIMENTAL_IMAGE_STARTER_PRESETS_ENABLED ? IMAGE_STARTER_PRESETS : []),
 ];
 
 export const STARTERS: Preset[] = STARTER_BASE.map(preset => ({
@@ -665,10 +676,22 @@ export function loadUserPresets(): Preset[] {
   return [];
 }
 
+const LEGACY_STARTER_ID_ALIASES: Record<string, string> = {
+  's-kokoro-english': 's-speech',
+  's-openmoss-multilingual': 's-speech',
+};
+
+function normalizeAppliedPresetIds(applied: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(applied).map(([modelName, presetId]) => [
+    modelName,
+    LEGACY_STARTER_ID_ALIASES[presetId] || presetId,
+  ]));
+}
+
 export function loadApplied(): Record<string, string> {
   try {
     const raw = localStorage.getItem(scopedPresetKey(LS_APPLIED_PRESETS));
-    if (raw) return JSON.parse(raw);
+    if (raw) return normalizeAppliedPresetIds(JSON.parse(raw));
   } catch {}
   return {};
 }
@@ -1760,7 +1783,9 @@ export function recipeOptionsForModel(
   systemInfo?: Record<string, unknown> | null,
 ): RecipeOptions | undefined {
   const capability = model ? capabilityFromModelInfo(model) : undefined;
-  const preset = activePresetForModel(modelName);
+  // Image presets are disabled for now. Image models always load from the
+  // neutral Default baseline; per-request image-mode controls stay authoritative.
+  const preset = capability === 'image' ? DEFAULT_PRESET : activePresetForModel(modelName);
   const concreteTuning = concretePresetTuningForRequest(modelName, model, preset);
   const modelTuningOptions = model
     ? recipeOptionsForCapability(concreteTuning.recipe_options || {}, capability!)
