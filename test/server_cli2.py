@@ -26,6 +26,7 @@ import os
 import platform
 import re
 import requests
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1577,6 +1578,67 @@ sys.exit(0)
         self.assertNotEqual(result.returncode, 0)
         output = result.stdout + result.stderr
         self.assertIn("Agent binary not found", output)
+        self.assertIn("Environment variables for claude:", output)
+        self.assertIn("ANTHROPIC_BASE_URL=", output)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN=lemonade", output)
+        self.assertIn("Command:\n  claude", output)
+
+    def test_116a_launch_missing_codex_printed_command_is_shell_safe(self):
+        """Missing codex binary should print a copy-paste-safe command."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "codex", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            command = output.split("Command:\n", 1)[1].splitlines()[0].strip()
+            tokens = shlex.split(command)
+
+            provider_config = (
+                "model_providers.lemonade={ name='Lemonade', "
+                f"base_url='http://localhost:{PORT}/v1', wire_api='responses', "
+                "env_key='OPENAI_API_KEY', requires_openai_auth=false, "
+                "supports_websockets=false }"
+            )
+
+            self.assertEqual(tokens[0], "codex")
+            self.assertIn(provider_config, tokens)
+            self.assertIn('model_provider="lemonade"', tokens)
+            self.assertIn(ENDPOINT_TEST_MODEL, tokens)
+
+    def test_116b_launch_missing_config_synced_agents_print_connection_details(self):
+        """Missing opencode/pi binaries should print the local Lemonade provider URL."""
+        cases = [
+            ("opencode", "OpenCode Lemonade provider details:", "baseURL="),
+            ("pi", "Pi Lemonade provider details:", "baseUrl="),
+        ]
+
+        for agent, heading, url_key in cases:
+            with self.subTest(agent=agent):
+                with tempfile.TemporaryDirectory(
+                    prefix="lemonade-launch-stub-"
+                ) as temp_dir:
+                    env = self._build_missing_agent_env(temp_dir)
+
+                    result = run_cli_command(
+                        ["launch", agent, "--model", ENDPOINT_TEST_MODEL],
+                        timeout=TIMEOUT_DEFAULT,
+                        env=env,
+                    )
+
+                    self.assertNotEqual(result.returncode, 0)
+                    output = result.stdout + result.stderr
+                    self.assertIn("Agent binary not found", output)
+                    self.assertIn(heading, output)
+                    self.assertIn(url_key + f"http://localhost:{PORT}/v1", output)
+                    self.assertIn("provider=Lemonade", output)
+                    self.assertIn("apiKey=lemonade", output)
+                    self.assertIn("model=" + ENDPOINT_TEST_MODEL, output)
 
     def test_117_launch_opencode_with_fake_binary(self):
         """Launch should execute fake opencode binary with -m Lemonade/MODEL."""
