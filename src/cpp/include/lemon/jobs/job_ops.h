@@ -28,6 +28,7 @@ public:
     std::function<void()> end_exclusive;
 
     std::function<void(const std::string& job_id)> reconcile_unload;
+    std::function<bool(const std::string& job_id, CancelFlag*)> restore_exclusive;
     std::function<void(const std::string& job_id)> discard_exclusive;
 
 private:
@@ -47,6 +48,7 @@ struct OpProviders {
     std::function<bool(const std::string& job_id, CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;
     std::function<void(const std::string& job_id)> reconcile_unload;
+    std::function<bool(const std::string& job_id, CancelFlag*)> restore_exclusive;
     std::function<void(const std::string& job_id)> discard_exclusive;
 };
 

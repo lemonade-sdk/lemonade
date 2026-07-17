@@ -154,7 +154,10 @@ public:
     void end_exclusive();
 
     std::map<std::string, bool> snapshot_loaded_models() const;
-    void unload_models_not_in(const std::map<std::string, bool>& keep);
+    std::map<std::string, json> unload_job_models(const std::map<std::string, int>& owned_live,
+                                                  const std::map<std::string, bool>& snapshot_pins);
+    int loaded_model_pid(const std::string& model_name) const;
+    std::string canonical_model_name(const std::string& model_name) const;
 
     // Test hooks
     void simulate_vram_pressure(double pct);

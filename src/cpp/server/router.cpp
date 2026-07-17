@@ -424,17 +424,27 @@ std::map<std::string, bool> Router::snapshot_loaded_models() const {
     return models;
 }
 
-void Router::unload_models_not_in(const std::map<std::string, bool>& keep) {
+std::map<std::string, json> Router::unload_job_models(const std::map<std::string, int>& owned_live,
+                                                      const std::map<std::string, bool>& snapshot_pins) {
     std::unique_lock<std::mutex> lock(load_mutex_);
     wait_for_slot_clearance(lock);
+    std::map<std::string, int> resolved_owned;
+    for (const auto& kv : owned_live) resolved_owned[resolve_model_name(kv.first)] = kv.second;
+    std::map<std::string, json> captured;
     std::vector<WrappedServer*> victims;
     for (const auto& server : loaded_servers_) {
         if (!server->is_backend_alive()) continue;
-        auto it = keep.find(server->get_model_name());
-        if (it != keep.end()) {
-            if (server->is_pinned() != it->second) server->set_pinned(it->second);
+        const std::string name = server->get_model_name();
+        auto pin_it = snapshot_pins.find(name);
+        if (pin_it != snapshot_pins.end()) {
+            if (server->is_pinned() != pin_it->second) server->set_pinned(pin_it->second);
             continue;
         }
+        auto own_it = resolved_owned.find(name);
+        if (own_it == resolved_owned.end()) continue;
+        if (server->get_process_id() != own_it->second) continue;
+        captured[name] = {{"options", server->get_recipe_options().to_json()},
+                          {"pinned", server->is_pinned()}};
         victims.push_back(server.get());
     }
     for (auto* victim : victims) {
@@ -443,6 +453,18 @@ void Router::unload_models_not_in(const std::map<std::string, bool>& keep) {
                             << victim->get_model_name() << std::endl;
         evict_server(victim);
     }
+    return captured;
+}
+
+int Router::loaded_model_pid(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = find_server_by_model_name(resolve_model_name(model_name));
+    return server && server->is_backend_alive() ? server->get_process_id() : -1;
+}
+
+std::string Router::canonical_model_name(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return resolve_model_name(model_name);
 }
 
 void Router::load_model(const std::string& model_name,

@@ -410,6 +410,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
 
     {
         lemon::jobs::OpProviders providers;
+        struct JobModelState {
+            std::map<std::string, bool> snapshot;
+            std::map<std::string, nlohmann::json> owned;
+        };
+        auto job_states = std::make_shared<std::map<std::string, JobModelState>>();
+        auto current_job = std::make_shared<std::string>();
+        auto state_mutex = std::make_shared<std::mutex>();
         providers.system_info = [] {
             return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
         };
@@ -442,8 +449,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             if (it == models.end()) return lemon::jobs::json(nullptr);
             return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
         };
-        providers.load_op = [this](const lemon::jobs::json& params,
-                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        providers.load_op = [this, job_states, current_job, state_mutex](
+                                const lemon::jobs::json& params,
+                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
             if (!params.contains("model") || !params["model"].is_string())
                 throw lemon::jobs::JobError(400, "load requires a 'model' string");
             const std::string model = params["model"].get<std::string>();
@@ -462,6 +470,16 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             } catch (const std::exception& e) {
                 throw lemon::jobs::JobError(500, e.what());
             }
+            {
+                const std::string canonical = router_->canonical_model_name(model);
+                const int pid = router_->loaded_model_pid(model);
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                if (!current_job->empty()) {
+                    auto it = job_states->find(*current_job);
+                    if (it != job_states->end())
+                        it->second.owned[canonical] = {{"pid", pid}};
+                }
+            }
             if (cancel.load()) {
                 throw lemon::jobs::JobError(499, "interrupted");
             }
@@ -475,13 +493,26 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             if (ctx_json.is_number()) out["ctx_size"] = ctx_json.get<int64_t>();
             return out;
         };
-        providers.unload_op = [this](const lemon::jobs::json& params,
-                                     lemon::jobs::CancelFlag&) -> lemon::jobs::json {
-            if (params.contains("model") && params["model"].is_string()) {
-                const std::string model = params["model"].get<std::string>();
+        providers.unload_op = [this, job_states, current_job, state_mutex](
+                                  const lemon::jobs::json& params,
+                                  lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            std::string model;
+            if (params.contains("model") && params["model"].is_string())
+                model = params["model"].get<std::string>();
+            if (!model.empty()) {
                 if (router_->is_model_loaded(model)) router_->unload_model(model);
             } else {
                 router_->unload_model("");
+            }
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                if (!current_job->empty()) {
+                    auto it = job_states->find(*current_job);
+                    if (it != job_states->end()) {
+                        if (model.empty()) it->second.owned.clear();
+                        else it->second.owned.erase(router_->canonical_model_name(model));
+                    }
+                }
             }
             return lemon::jobs::json::object();
         };
@@ -500,38 +531,89 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             }
             return lemon::jobs::json::parse(response.dump());
         };
-        auto job_snapshots =
-            std::make_shared<std::map<std::string, std::map<std::string, bool>>>();
-        auto snapshot_mutex = std::make_shared<std::mutex>();
-        providers.begin_exclusive = [this, job_snapshots, snapshot_mutex](
+        providers.begin_exclusive = [this, job_states, current_job, state_mutex](
                                         const std::string& job_id,
                                         lemon::jobs::CancelFlag* cancel) -> bool {
             if (!router_->begin_exclusive(cancel)) return false;
-            std::lock_guard<std::mutex> lk(*snapshot_mutex);
-            if (!job_snapshots->count(job_id))
-                (*job_snapshots)[job_id] = router_->snapshot_loaded_models();
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            if (!job_states->count(job_id))
+                (*job_states)[job_id].snapshot = router_->snapshot_loaded_models();
+            *current_job = job_id;
             return true;
         };
-        providers.end_exclusive = [this] { router_->end_exclusive(); };
-        providers.reconcile_unload = [this, job_snapshots, snapshot_mutex](
-                                         const std::string& job_id) {
-            std::map<std::string, bool> keep;
-            bool have = false;
+        providers.end_exclusive = [this, current_job, state_mutex] {
             {
-                std::lock_guard<std::mutex> lk(*snapshot_mutex);
-                auto it = job_snapshots->find(job_id);
-                if (it != job_snapshots->end()) {
-                    keep = std::move(it->second);
-                    job_snapshots->erase(it);
-                    have = true;
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                current_job->clear();
+            }
+            router_->end_exclusive();
+        };
+        providers.reconcile_unload = [this, job_states, state_mutex](
+                                         const std::string& job_id) {
+            std::map<std::string, int> owned_live;
+            std::map<std::string, bool> snapshot;
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                auto it = job_states->find(job_id);
+                if (it == job_states->end()) return;
+                for (const auto& kv : it->second.owned)
+                    if (kv.second.is_object() && kv.second.contains("pid"))
+                        owned_live[kv.first] = kv.second["pid"].get<int>();
+                snapshot = it->second.snapshot;
+            }
+            if (owned_live.empty()) return;
+            auto captured = router_->unload_job_models(owned_live, snapshot);
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            auto it = job_states->find(job_id);
+            if (it == job_states->end()) return;
+            for (auto& kv : captured) it->second.owned[kv.first] = std::move(kv.second);
+        };
+        providers.restore_exclusive = [this, job_states, state_mutex](
+                                          const std::string& job_id,
+                                          lemon::jobs::CancelFlag* cancel) -> bool {
+            std::map<std::string, nlohmann::json> to_restore;
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                auto it = job_states->find(job_id);
+                if (it == job_states->end()) return true;
+                for (const auto& kv : it->second.owned)
+                    if (kv.second.is_object() && kv.second.contains("options"))
+                        to_restore[kv.first] = kv.second;
+            }
+            for (const auto& kv : to_restore) {
+                if (cancel && cancel->load()) return false;
+                if (router_->is_model_loaded(kv.first)) {
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned.erase(kv.first);
+                    continue;
+                }
+                try {
+                    auto info = model_manager_->get_model_info(kv.first);
+                    RecipeOptions options(info.recipe, kv.second.value("options", nlohmann::json::object()));
+                    std::optional<bool> pinned = std::nullopt;
+                    if (kv.second.contains("pinned") && kv.second["pinned"].is_boolean())
+                        pinned = kv.second["pinned"].get<bool>();
+                    router_->load_model(kv.first, info, options, true, true, pinned, cancel);
+                    const int pid = router_->loaded_model_pid(kv.first);
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned[kv.first] = {{"pid", pid}};
+                } catch (const std::exception& e) {
+                    if (cancel && cancel->load()) return false;
+                    LOG(WARNING, "Jobs") << "could not restore job model '" << kv.first
+                                         << "' on resume: " << e.what() << std::endl;
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned.erase(kv.first);
                 }
             }
-            if (have) router_->unload_models_not_in(keep);
+            return true;
         };
-        providers.discard_exclusive = [job_snapshots, snapshot_mutex](
+        providers.discard_exclusive = [job_states, state_mutex](
                                           const std::string& job_id) {
-            std::lock_guard<std::mutex> lk(*snapshot_mutex);
-            job_snapshots->erase(job_id);
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            job_states->erase(job_id);
         };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
             lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));

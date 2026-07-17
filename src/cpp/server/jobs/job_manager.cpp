@@ -412,6 +412,7 @@ void JobManager::worker_main() {
 
         if (cleanup_only) {
             if (registry_.reconcile_unload) registry_.reconcile_unload(id);
+            if (registry_.discard_exclusive) registry_.discard_exclusive(id);
             std::lock_guard<std::mutex> lock(mutex_);
             jobs_.erase(id);
             controls_.erase(id);
@@ -438,7 +439,10 @@ void JobManager::worker_main() {
             }
         } guard{registry_, id};
 
-        if (!exclusive || guard.begin(&ctrl->cancel)) {
+        bool ready = !exclusive || guard.begin(&ctrl->cancel);
+        if (ready && guard.held && registry_.restore_exclusive)
+            ready = registry_.restore_exclusive(id, &ctrl->cancel);
+        if (ready) {
             execute(id, ctrl);
         } else {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -470,6 +474,7 @@ void JobManager::worker_main() {
         if (terminal && registry_.discard_exclusive) registry_.discard_exclusive(id);
 
         if (ctrl->delete_requested.load()) {
+            if (registry_.discard_exclusive) registry_.discard_exclusive(id);
             std::lock_guard<std::mutex> lock(mutex_);
             jobs_.erase(id);
             controls_.erase(id);

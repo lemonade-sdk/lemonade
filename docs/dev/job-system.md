@@ -85,22 +85,41 @@ A single worker runs one job at a time.
   backend to reply); the step returns to `pending`, the job goes `interrupted`.
   Interrupting a still-`queued` job likewise dequeues and persists it as
   `interrupted` immediately. An interrupted exclusive job unloads only the
-  model(s) it introduced before releasing the slot: the reconcile snapshots the
-  router's loaded models (with their pin state) **once, the first time the job
-  acquires the exclusive slot**, and that snapshot is the job's for its whole
-  lifetime — a pause/resume cycle does not re-baseline it, so a model the job
-  loaded before pausing is still recognized as job-introduced after resume.
-  Reconcile unloads `(current set − snapshot)` — including models the job
-  pinned itself — and restores the recorded pin state of surviving pre-job
-  models. A job that ends `completed` or `failed` commits its model
-  side-effects instead (its snapshot is discarded, resident models stay).
+  model(s) it **owns**: ownership is tracked explicitly per job and is scoped
+  to the *specific residency* the job created (the backend instance its own
+  `load` op produced), not to the model name — a model the job's `unload` op
+  released, or one whose job-created instance was replaced by an external
+  client's later load of the same name, is no longer job-owned. Pre-job
+  residents are protected separately: the first slot acquisition snapshots
+  them with their pin state, and a pause/resume cycle re-baselines neither
+  ownership nor the snapshot. Models loaded by external clients — including
+  while the job is paused or interrupted and the gate is open — are never
+  touched by the job's cleanup. One caveat: an external `load` that merely
+  re-confirms the job's own still-resident instance (same model, matching
+  options — the router deduplicates instead of creating a new instance) does
+  not transfer ownership; that instance remains job-owned and is still cleaned
+  up. Clients that need a model to outlive a job should load it before the job
+  starts or after it ends. Reconcile unloads the owned instances
+  (recording their configuration for resume, see below), unpins any the job
+  pinned, and restores the recorded pin state of surviving pre-job models. A
+  job that ends `completed` or `failed` commits its model side-effects instead
+  (ownership and snapshot are discarded, resident models stay).
   **Guarantee scope:** a model that was resident before the job is preserved
   only if it is *still resident* at reconcile time. If a job `load` evicted it
   (loaded-model cap) or replaced it with different options, the reconcile does
   not reload it or restore its previous options — clients that need the exact
   prior state must reload it themselves.
 - **resume** — `paused` continues at the next step; `interrupted` re-runs the
-  pending step. Steps must be idempotent on re-run.
+  pending step. Steps must be idempotent on re-run. Before an interrupted
+  exclusive job re-runs, the engine **restores the job-owned models** that the
+  interrupt cleanup unloaded (reloading each with its recorded options and pin
+  state), so a step that depends on an earlier completed `load` — e.g. a chat
+  interrupted mid-generation — finds its model again instead of failing. If an
+  external client loaded the same model while the job was interrupted, the
+  restore *adopts* that residency instead of replacing it: the external
+  instance is left untouched (options and pin included) and stops being
+  job-owned. If a restore fails, the job still resumes and the dependent step
+  fails with its normal `on_fail` semantics.
 - **delete** — removes the job. Deleting an active job persists a deletion
   tombstone *before* the call returns, then interrupts it and defers the actual
   removal until the worker has finished cleanup (reconcile unload), so a deleted
