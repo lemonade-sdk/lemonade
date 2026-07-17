@@ -638,6 +638,10 @@ json LlamaCppServer::tokenize(const json& request_body) {
     return forward_request("/tokenize", request_body);
 }
 
+json LlamaCppServer::count_chat_tokens(const json& request_body) {
+    return forward_request("/v1/chat/completions/input_tokens", request_body);
+}
+
 json LlamaCppServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }

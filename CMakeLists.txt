@@ -1854,6 +1854,15 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # ============================================================
 # C++ Unit Tests
 # ============================================================
+set(_ANTHROPIC_API_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_api.cpp")
+if(EXISTS "${_ANTHROPIC_API_TEST_SRC}")
+    add_executable(test_anthropic_api test/cpp/test_anthropic_api.cpp)
+    target_link_libraries(test_anthropic_api PRIVATE lemonade-server-core)
+    add_dependencies(test_anthropic_api copy_resources)
+
+    include(CTest)
+    add_test(NAME AnthropicApiTest COMMAND test_anthropic_api)
+endif()
 
 # ProcessManager zombie detection and non-mutating reap contract.
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")

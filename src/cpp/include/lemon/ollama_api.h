@@ -22,6 +22,8 @@ public:
     void register_routes(httplib::Server& server);
 
 private:
+    friend class AnthropicApiTestPeer;
+
     Router* router_;
     ModelManager* model_manager_;
 
@@ -38,6 +40,7 @@ private:
     void handle_ps(const httplib::Request& req, httplib::Response& res);
     void handle_version(const httplib::Request& req, httplib::Response& res);
     void handle_anthropic_messages(const httplib::Request& req, httplib::Response& res);
+    void handle_anthropic_count_tokens(const httplib::Request& req, httplib::Response& res);
     void register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self);
 
     // Helpers
@@ -50,7 +53,7 @@ private:
     json convert_ollama_to_openai_chat(const json& ollama_request);
     json convert_ollama_to_openai_completion(const json& ollama_request);
     json convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings);
-    json convert_openai_chat_to_anthropic(const json& openai_response, const std::string& model, const std::vector<std::string>& warnings);
+    json convert_openai_chat_to_anthropic(const json& openai_response, const std::string& model, std::vector<std::string>& warnings);
     // Common SSE → NDJSON streaming adapter
     using ChunkConverter = std::function<json(const json& openai_chunk)>;
     using DoneBuilder = std::function<json(int prompt_eval_count, int eval_count)>;
@@ -63,7 +66,7 @@ private:
     void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                             httplib::DataSink& client_sink,
                                             const std::string& model,
-                                            const std::vector<std::string>& warnings,
+                                            int input_tokens,
                                             StreamFn call_router);
 };
 

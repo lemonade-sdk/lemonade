@@ -618,6 +618,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
 
+    if (auth_token.empty()) {
+        auth_token = req.get_header_value("X-Api-Key");
+    }
     telemetry::g_current_auth_token = auth_token;
 
     const bool is_mcp_internal_route =
@@ -649,7 +652,13 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         if (!api_key_.empty()) {
             if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
                 res.status = 401;
-                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                if (req.path == "/v1/messages" || req.path == "/v1/messages/count_tokens") {
+                    res.set_content(
+                        R"({"type":"error","error":{"type":"authentication_error","message":"Invalid or missing API key"}})",
+                        "application/json");
+                } else {
+                    res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                }
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
@@ -1369,7 +1378,9 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
+        {"Access-Control-Allow-Headers",
+         "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
+         "X-Api-Key, Anthropic-Version, Anthropic-Beta"}
     });
 
     // Handle preflight OPTIONS requests
