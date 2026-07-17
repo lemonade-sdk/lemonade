@@ -69,6 +69,27 @@ static bool throws_with(const json& doc, const std::string& expected) {
     return false;
 }
 
+static bool throws_with_options(const json& doc, const RoutingPolicyParseOptions& options,
+                                const std::string& expected) {
+    try {
+        lemon::parse_route_policy_collection(doc, options);
+    } catch (const std::invalid_argument& e) {
+        return std::string(e.what()).find(expected) != std::string::npos;
+    } catch (...) {
+        return false;
+    }
+    return false;
+}
+
+static bool parses_ok(const json& doc, const RoutingPolicyParseOptions& options) {
+    try {
+        lemon::parse_route_policy_collection(doc, options);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 static std::set<std::string> schema_property_keys(const json& node) {
     std::set<std::string> keys;
     for (const auto& [key, _] : node.items()) {
@@ -163,6 +184,94 @@ static void test_validation_errors_are_clear() {
           throws_with(router_sugar, "routing.router desugaring"));
 }
 
+static void test_classifier_capability_validation() {
+    using lemon::ModelType;
+
+    {
+        json doc = fixture("l3_classifier.json");
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        check("classifier accepts CLASSIFICATION and LLM model types", parses_ok(doc, options));
+    }
+    {
+        json doc = fixture("l3_classifier.json");
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::EMBEDDING;
+            return ModelType::LLM;
+        };
+        check("classifier rejects a model typed EMBEDDING",
+              throws_with_options(doc, options, "cannot serve as a classifier"));
+    }
+    {
+        json doc = fixture("l2_semantic.json");
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::EMBEDDING;
+        };
+        check("semantic_similarity accepts an EMBEDDING model type", parses_ok(doc, options));
+    }
+    {
+        json doc = fixture("l2_semantic.json");
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::LLM;
+        };
+        check("semantic_similarity rejects a model typed LLM",
+              throws_with_options(doc, options, "cannot serve semantic_similarity"));
+    }
+    {
+        json doc = fixture("l3_classifier.json");
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return std::nullopt;
+        };
+        check("unresolvable model type is rejected, not silently accepted",
+              throws_with_options(doc, options, "unresolvable type"));
+    }
+}
+
+// Regression pair from PR review (fl0rianr): an inline collection component
+// that isn't registered yet must have its type derived from its own inline
+// definition (e.g. declared `labels`), not defaulted to a fixed type — a
+// fixed-default fallback both rejects valid configs and accepts invalid ones,
+// depending on which type it defaults to. This exercises the parser's side of
+// that contract: as long as the resolver reports the inline definition's real
+// type instead of guessing, both directions behave correctly.
+static void test_inline_component_type_regression_pair() {
+    using lemon::ModelType;
+
+    json semantic_doc = fixture("l2_semantic.json");
+    semantic_doc["components"] = json::array({"Qwen3-8B-GGUF", "vllm.qwen3-32b", "inline-embedder"});
+    semantic_doc["routing"]["classifiers"][0]["model"] = "inline-embedder";
+    {
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "inline-embedder") return ModelType::EMBEDDING;
+            return ModelType::LLM;
+        };
+        check("inline semantic_similarity + inline embedding definition passes",
+              parses_ok(semantic_doc, options));
+    }
+
+    json classifier_doc = fixture("l3_classifier.json");
+    classifier_doc["components"] = json::array(
+        {"Qwen3-8B-GGUF", "vllm.qwen3-32b", "inline-embedder", "jailbreak-detector-small"});
+    classifier_doc["routing"]["classifiers"][0]["model"] = "inline-embedder";
+    {
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "inline-embedder") return ModelType::EMBEDDING;
+            return ModelType::LLM;
+        };
+        check("inline classifier + that same inline embedding definition fails",
+              throws_with_options(classifier_doc, options, "cannot serve as a classifier"));
+    }
+}
+
 static void test_schema_parser_key_parity() {
     json schema = load_json_file(ROUTING_SCHEMA_FILE);
     check_keys("root keys match schema",
@@ -192,6 +301,8 @@ int main() {
     test_parse_keywords_fixture_and_route();
     test_component_resolver_canonicalizes_policy();
     test_validation_errors_are_clear();
+    test_classifier_capability_validation();
+    test_inline_component_type_regression_pair();
     test_schema_parser_key_parity();
 
     if (g_failures == 0) {
