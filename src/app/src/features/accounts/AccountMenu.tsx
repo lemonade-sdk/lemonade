@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccountRecord, AccountSession, accountCount, clearAllAccountsAndScopedData, clearCurrentSessionData, createAccount, deleteOwnAccount, describeSession, listAccounts, signIn, signOut } from './accountStore';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface AccountMenuProps {
   session: AccountSession;
@@ -19,9 +20,28 @@ const AccountMenu: React.FC<AccountMenuProps> = ({ session, onSessionChange, onD
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const firstAccountWillBeAdmin = useMemo(() => accountCount() === 0, [open, accounts.length]);
 
   useEffect(() => { if (open) setAccounts(listAccounts()); }, [open, session]);
+
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
+  useFocusTrap(panelRef, open);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); closePanel(); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, closePanel]);
 
   const resetForm = () => { setName(''); setPassword(''); setError(null); setNotice(null); };
   const switchMode = (next: PanelMode) => { resetForm(); setMode(next); };
@@ -90,16 +110,23 @@ const AccountMenu: React.FC<AccountMenuProps> = ({ session, onSessionChange, onD
 
   return (
     <div className="account-menu">
-      <button className={`account-menu__trigger ${session.isGuest ? '' : 'account-menu__trigger--signed-in'}`} onClick={() => { setOpen(o => !o); setMode('menu'); setError(null); }} aria-haspopup="dialog" aria-expanded={open} title={describeSession(session)}>
+      <button
+        ref={triggerRef}
+        className={`account-menu__trigger ${session.isGuest ? '' : 'account-menu__trigger--signed-in'}`}
+        onClick={() => { if (open) { setOpen(false); } else { setOpen(true); setMode('menu'); setError(null); } }}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={describeSession(session)}
+      >
         <span className="account-menu__avatar">{session.isGuest ? 'G' : session.name.charAt(0).toUpperCase()}</span>
         <span className="account-menu__name">{session.isGuest ? 'Guest' : session.name}</span>
       </button>
 
       {open && (
-        <div className="account-menu__panel" role="dialog" aria-label="User settings">
+        <div ref={panelRef} className="account-menu__panel" role="dialog" aria-modal="true" aria-label="User settings">
           <div className="account-menu__header">
             <div><div className="account-menu__eyebrow">User space</div><div className="account-menu__title">{describeSession(session)}</div></div>
-            <button className="account-menu__close" onClick={() => setOpen(false)} aria-label="Close user menu">×</button>
+            <button className="account-menu__close" onClick={closePanel} aria-label="Close user menu">×</button>
           </div>
 
           {notice && <div className="account-menu__notice">{notice}</div>}

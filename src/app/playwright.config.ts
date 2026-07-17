@@ -1,7 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080';
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
+const testPort = Number(process.env.PLAYWRIGHT_PORT || '4173');
+const baseURL = externalBaseURL || `http://127.0.0.1:${testPort}`;
 const launchOptions = executablePath ? {
   executablePath,
   args: [
@@ -19,7 +21,7 @@ export default defineConfig({
   use: {
     baseURL,
     screenshot: 'on',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
   },
   projects: [
     {
@@ -31,13 +33,13 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    // Playwright runs browser-only GUI tests. Start the webpack renderer server
-    // directly instead of `tauri dev`, otherwise Linux CI tries to compile the
-    // native Tauri host and needs GTK/GLib/WebKit development packages.
-    command: 'npm run dev:renderer -- --port 8080',
-    port: 8080,
-    reuseExistingServer: true,
-    timeout: 30000,
-  },
+
+  ...(externalBaseURL ? {} : {
+    webServer: {
+      command: `npm run dev -- --host 127.0.0.1 --port ${testPort} --no-hot`,
+      url: baseURL,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+  }),
 });

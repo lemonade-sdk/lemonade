@@ -2,8 +2,9 @@ import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
 import { scopedStorageKey } from '../accounts/accountStore';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
+import { routerRegistrationOptions } from '../router/routerStore';
 
-export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding' | 'reranking'>;
+export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking'>;
 
 export interface CustomModelComponentRoles {
   llm?: string;
@@ -12,6 +13,17 @@ export interface CustomModelComponentRoles {
   edit?: string;
   transcription?: string;
   speech?: string;
+}
+
+export interface CustomOmniToolDefinition {
+  id?: string;
+  name: string;
+  description: string;
+  target_model: string;
+  system_prompt?: string;
+  prompt_template?: string;
+  parameters?: Record<string, unknown>;
+  max_tokens?: number;
 }
 
 export interface CustomModelRecord {
@@ -30,6 +42,8 @@ export interface CustomModelRecord {
   components?: string[];
   component_roles?: CustomModelComponentRoles;
   recipe_options?: Record<string, unknown>;
+  system_prompt?: string;
+  custom_tools?: CustomOmniToolDefinition[];
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +61,8 @@ export interface CustomModelDraft {
   components?: string[];
   componentRoles?: CustomModelComponentRoles;
   recipeOptions?: Record<string, unknown>;
+  system_prompt?: string;
+  customTools?: CustomOmniToolDefinition[];
 }
 
 const CUSTOM_MODELS_KEY = 'custom_models';
@@ -61,11 +77,51 @@ function normalizeComponentName(value?: string): string {
   return String(value || '').trim();
 }
 
+function normalizeToolName(value?: string): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^([^a-zA-Z_])/, '_$1')
+    .slice(0, 64);
+}
+
+function normalizeCustomTools(value?: CustomOmniToolDefinition[]): CustomOmniToolDefinition[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const tools: CustomOmniToolDefinition[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const anyRaw = raw as CustomOmniToolDefinition & { targetModel?: string; model?: string };
+    const name = normalizeToolName(anyRaw.name);
+    const targetModel = normalizeComponentName(anyRaw.target_model || anyRaw.targetModel || anyRaw.model);
+    if (!name || !targetModel || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const description = String(raw.description || `Ask ${targetModel}`).trim();
+    const parameters = isPlainObject(raw.parameters) ? { ...raw.parameters } : undefined;
+    const maxTokens = Number(raw.max_tokens);
+    tools.push({
+      id: String(raw.id || name),
+      name,
+      description: description || `Ask ${targetModel}`,
+      target_model: targetModel,
+      system_prompt: String(raw.system_prompt || '').trim() || undefined,
+      prompt_template: String(raw.prompt_template || '').trim() || undefined,
+      parameters,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
+    });
+  }
+  return tools;
+}
+
 function defaultRecipe(capability: CustomModelCapability, components?: string[]): string {
   switch (capability) {
     case 'image': return 'sd-cpp';
     case 'audio': return 'whispercpp';
+    case 'audio-generation': return 'thinksound';
     case 'tts': return 'kokoro';
+    case 'model3d': return 'trellis';
     case 'embedding': return 'llamacpp';
     case 'reranking': return 'llamacpp';
     case 'omni': return components && components.length > 0 ? COLLECTION_OMNI_RECIPE : 'llamacpp';
@@ -80,7 +136,9 @@ function labelsFor(capability: CustomModelCapability, extra: string[] = []): str
     case 'omni': base.push('omni', 'multimodal', 'vision-language'); break;
     case 'image': base.push('image'); break;
     case 'audio': base.push('audio', 'transcription'); break;
+    case 'audio-generation': base.push('audio-generation'); break;
     case 'tts': base.push('tts'); break;
+    case 'model3d': base.push('3d', 'image-to-3d'); break;
     case 'embedding': base.push('embedding'); break;
     case 'reranking': base.push('reranking'); break;
   }
@@ -114,7 +172,9 @@ function saveCustomModels(scope: string, models: CustomModelRecord[]): void {
 
 export function upsertCustomModel(scope: string, draft: CustomModelDraft): CustomModelRecord {
   const now = Date.now();
-  const normalizedComponents = Array.from(new Set((draft.components || []).map(normalizeComponentName).filter(Boolean)));
+  const customTools = normalizeCustomTools(draft.customTools);
+  const customToolComponents = customTools.map(tool => tool.target_model);
+  const normalizedComponents = Array.from(new Set([...(draft.components || []), ...customToolComponents].map(normalizeComponentName).filter(Boolean)));
   const componentRoles: CustomModelComponentRoles = {
     llm: normalizeComponentName(draft.componentRoles?.llm),
     vision: normalizeComponentName(draft.componentRoles?.vision),
@@ -150,6 +210,8 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
     components: components.length ? components : undefined,
     component_roles: Object.fromEntries(Object.entries(componentRoles).filter(([, value]) => Boolean(value))) as CustomModelComponentRoles,
     recipe_options: isPlainObject(draft.recipeOptions) && Object.keys(draft.recipeOptions).length ? { ...draft.recipeOptions } : undefined,
+    system_prompt: draft.system_prompt?.trim() || undefined,
+    custom_tools: customTools.length ? customTools : undefined,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
@@ -185,11 +247,15 @@ export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
     components: record.components,
     component_roles: record.component_roles,
     recipe_options: record.recipe_options,
+    system_prompt: record.system_prompt,
+    custom_tools: record.custom_tools,
     createdAt: new Date(record.createdAt).toISOString(),
   };
 }
 
 export function customRegistrationOptions(model: ModelInfo): Record<string, unknown> | undefined {
+  const routerOptions = routerRegistrationOptions(model);
+  if (routerOptions) return routerOptions;
   if (!(model as any).custom) return undefined;
   const checkpoint = String((model as any).checkpoint || '').trim();
   const recipe = String((model as any).recipe || '').trim();
@@ -199,6 +265,9 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   const components = Array.isArray((model as any).components) ? (model as any).components.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0) : [];
   if ((recipe === COLLECTION_OMNI_RECIPE || type === 'omni') && components.length) {
     const opts: Record<string, unknown> = { recipe: COLLECTION_OMNI_RECIPE, components };
+    const systemPrompt = String((model as any).system_prompt || '').trim();
+    if (systemPrompt) opts.system_prompt = systemPrompt;
+    if (Array.isArray((model as any).custom_tools) && (model as any).custom_tools.length) opts.custom_tools = (model as any).custom_tools;
     if (serverLabels.length) opts.labels = serverLabels;
     return opts;
   }
@@ -237,8 +306,10 @@ export const CUSTOM_CAPABILITIES: Array<{ value: CustomModelCapability; label: s
   { value: 'chat', label: 'Chat', hint: 'Text chat through /chat/completions' },
   { value: 'omni', label: 'Omni', hint: 'Multimodal model or Omni collection of existing text/vision/audio models' },
   { value: 'image', label: 'Image', hint: 'Image generation endpoint' },
-  { value: 'audio', label: 'Audio', hint: 'Audio transcription endpoint' },
+  { value: 'audio', label: 'Transcription', hint: 'Audio transcription endpoint' },
+  { value: 'audio-generation', label: 'Audio generation', hint: 'Music or sound effects through /audio/generations' },
   { value: 'tts', label: 'TTS', hint: 'Text-to-speech endpoint' },
+  { value: 'model3d', label: '3D', hint: 'Image-to-3D reconstruction through /3d/generations' },
   { value: 'embedding', label: 'Embedding', hint: 'Utility model; not selectable in composer' },
   { value: 'reranking', label: 'Reranking', hint: 'Utility model; not selectable in composer' },
 ];
@@ -280,6 +351,8 @@ function normalizeImportedCapability(raw: string, labels: string[]): CustomModel
   const lower = raw.toLowerCase().trim();
   const labelText = labels.join(' ').toLowerCase();
   if (['omni', 'multimodal', 'vlm', 'vision'].includes(lower) || labelText.includes('omni') || labelText.includes('vision-language')) return 'omni';
+  if (['3d', 'model3d', '3d-generation', 'image-to-3d'].includes(lower) || labelText.includes('image-to-3d') || labelText.includes('3d')) return 'model3d';
+  if (['audio-generation', 'music-generation', 'sound-generation', 'sfx'].includes(lower) || labelText.includes('audio-generation')) return 'audio-generation';
   if (['image', 'image-generation', 'diffusion'].includes(lower) || labelText.includes('image')) return 'image';
   if (['audio', 'transcription', 'asr', 'stt'].includes(lower) || labelText.includes('transcription')) return 'audio';
   if (['tts', 'speech', 'text-to-speech'].includes(lower) || labelText.includes('tts')) return 'tts';
@@ -309,6 +382,9 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
   const name = valueString(source, ['name', 'model_name', 'id']) || displayName;
   const recipe = valueString(source, ['recipe', 'backend']) || defaultRecipe(capability, components);
   const recipeOptions = isPlainObject(source.recipe_options) ? source.recipe_options : undefined;
+  const systemPrompt = valueString(source, ['system_prompt', 'systemPrompt']);
+  const customToolsRaw = Array.isArray(source.custom_tools) ? source.custom_tools : (Array.isArray(source.customTools) ? source.customTools : []);
+  const customTools = normalizeCustomTools(customToolsRaw as CustomOmniToolDefinition[]);
   return {
     name,
     displayName,
@@ -322,6 +398,8 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
     components,
     componentRoles,
     recipeOptions,
+    system_prompt: systemPrompt || undefined,
+    customTools,
   };
 }
 

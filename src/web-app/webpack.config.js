@@ -151,10 +151,19 @@ module.exports = (env, argv) => {
       // Keep packaging builds unminified so CI does not stall in Terser.
       minimize: false,
     },
+    // @google/model-viewer contains one optional expression-based import.
+    // It is valid in the browser; suppress only that known parser warning.
+    ignoreWarnings: [
+      warning => /Critical dependency: the request of a dependency is an expression/.test(warning.message || '')
+        && /model-viewer\.min\.js/.test(warning.module?.resource || warning.moduleName || ''),
+    ],
     plugins: [
       new HtmlWebpackPlugin({
         template: '../app/src/index.html',
         filename: 'index.html',
+      }),
+      new webpack.DefinePlugin({
+        'process.env.LEMONADE_BASE_URL': JSON.stringify(process.env.LEMONADE_BASE_URL || ''),
       }),
       ...(bufferPolyfill && processPolyfill ? [
         new webpack.ProvidePlugin({
@@ -163,6 +172,9 @@ module.exports = (env, argv) => {
         }),
       ] : []),
     ],
+    performance: {
+      hints: false,
+    },
   };
 
   // Special handling for system packages (Debian)

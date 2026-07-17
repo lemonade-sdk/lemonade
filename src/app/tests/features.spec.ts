@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-const realServerRequired = /^(06|07|08|09|10|11|21)\b/;
+const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
 
 test.beforeEach(async ({ page }, testInfo) => {
   const originalScreenshot = page.screenshot.bind(page);
@@ -116,9 +116,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.connect');
 
     // Fill in server URL (lemond should be running)
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
     await urlInput.clear();
-    await urlInput.fill('http://localhost:13305');
+    await urlInput.fill(`http://localhost:${testPort}`);
 
     // Click Connect
     await page.locator('.connect__section--server button[type="submit"]').click();
@@ -407,6 +408,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
       localStorage.removeItem('lemonade_user_presets');
       localStorage.removeItem('lemonade_applied_presets');
     });
+    // Presets fetch /models directly, while the Models view only hydrates its
+    // list after the API client has a successful health state. Keep both views
+    // on the same deterministic mock server so the image fixture remains
+    // available after navigating from Presets to Models.
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
     await page.route('**/api/v1/models**', async route => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -422,6 +430,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
+    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
 
     // Navigate to Presets
     await page.locator('.titlebar__nav').getByText('Presets').click();
@@ -433,34 +442,45 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Count subtitle visible
     await expect(page.locator('.recipes__title-sub')).toContainText('starters');
 
-    // Lede paragraph mentions recipe options and sampling
+    // Lede explains the intent-to-tuning separation.
     const lede = page.locator('.recipes__lede');
     await expect(lede).toBeVisible();
-    await expect(lede).toContainText('recipe options');
-    await expect(lede).toContainText('sampling');
+    await expect(lede).toContainText('describe how you want to use a model');
+    await expect(lede).toContainText('Model Tuning');
 
-    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones)
+    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones).
+    // User-created content sorts above the starters, so match by title.
     const recipesView = page.locator('.recipes').last();
-    const starterZone = recipesView.locator('.zone').first();
+    const starterZone = recipesView.locator('.zone').filter({ hasText: 'Bundled starters' });
     await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
 
-    // Should have 8 starter cards
+    // Six chat starters plus one configurable Speech starter.
     const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
-    await expect(starterCards).toHaveCount(9);
+    await expect(starterCards).toHaveCount(7);
 
     // Starter badge on first card
     await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
 
     // Capability chip visible on cards (v1.4 applies_to schema)
     await expect(starterCards.first().locator('.cap-chip')).toContainText('Chat');
-    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('Image');
+    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('TTS');
+    await expect(recipesView.locator('[data-recipe-id="s-speech"]')).toHaveCount(1);
+    await expect(recipesView.locator('[data-recipe-id="s-quality"], [data-recipe-id="s-preview"], [data-recipe-id="s-turbo"]')).toHaveCount(0);
 
     // Zone: Your presets is genuinely empty on first run
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, clone it, or save from a model');
+    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or create a preset from scratch');
+
+    // The empty-state shortcut brings keyboard and visual position to the start of starters.
+    await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
+    await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
+
+    // Starter cards expose both flows: edit a customized copy or clone directly.
+    await expect(starterCards.first().getByRole('button', { name: 'Customize' })).toBeVisible();
+    await expect(starterCards.first().getByRole('button', { name: 'Clone' })).toBeVisible();
 
     // Click a preset card to open slide-over
-    await starterCards.first().click();
+    await starterCards.first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
 
     // Slide-over has preset name
@@ -469,12 +489,16 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Slide-over shows capability chips
     await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
 
-    // Slide-over has primary behavior controls and closed advanced engine options
-    await expect(page.locator('.slideover h3').getByText('Behavior')).toBeVisible();
-    await expect(page.locator('.slideover details.preset-advanced')).not.toHaveAttribute('open', '');
-
-    // Slide-over has form controls (sliders for ctx_size, etc.)
-    await expect(page.locator('.slideover .slider').first()).toBeVisible();
+    // Slide-over exposes semantic intent controls and no concrete runtime controls.
+    await expect(page.locator('[data-preset-intent="temperature"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="context"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="thinking"]')).toBeVisible();
+    await expect(page.locator('[data-preset-intent="temperature"] [data-intent-value]')).toHaveCount(4);
+    await expect(page.locator('[data-preset-intent="context"] [data-intent-value]')).toHaveCount(4);
+    await expect(page.locator('[data-intent-value="smart"]')).toBeDisabled();
+    await expect(page.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
+    await expect(page.locator('.slideover details.preset-advanced')).toHaveCount(0);
+    await expect(page.locator('.slideover .slider')).toHaveCount(0);
 
     // Incompatible model options are disabled with an explanation tooltip
     const imageOption = page.locator('[data-recipe-apply-target] option[value="sd-image"]');
@@ -491,10 +515,85 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
     await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
 
+    // The single Speech starter owns both TTS-family and voice selection. Its
+    // controls align on one baseline and the Apply action stays inside the panel.
+    await recipesView.locator('[data-recipe-id="s-speech"] .recipe-card__overlay-btn').click();
+    const ttsSelects = page.locator('[data-preset-fields="tts-voice"] select');
+    await expect(ttsSelects).toHaveCount(2);
+    const ttsBoxes = await ttsSelects.evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, height: rect.height };
+    }));
+    expect(Math.abs(ttsBoxes[0].top - ttsBoxes[1].top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(ttsBoxes[0].height - ttsBoxes[1].height)).toBeLessThanOrEqual(1);
+    const applyButton = page.locator('.preset-apply-row .btn--primary');
+    await expect(applyButton).toBeVisible();
+    const applyFits = await applyButton.evaluate(button => {
+      const buttonRect = button.getBoundingClientRect();
+      const panelRect = button.closest('.slideover')!.getBoundingClientRect();
+      return buttonRect.right <= panelRect.right && buttonRect.left >= panelRect.left;
+    });
+    expect(applyFits).toBeTruthy();
+    await page.locator('.slideover__close').click();
+    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
+
+    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
+    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
+    expect(zoneTitles.indexOf('Bundled starters')).toBeLessThan(zoneTitles.indexOf('Applied to models'));
+
     // New Preset button visible
     await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+
+    // Image presets remain deliberately disabled. Selecting an image-only model
+    // skips Presets and opens the Default baseline directly in Model Tuning.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    const imageModel = page.locator('.model-list-item').filter({ hasText: 'sd-image' }).first();
+    await expect(imageModel).toBeVisible();
+    await imageModel.click();
+    await expect(page.locator('#detail-tab-presets')).toHaveCount(0);
+    await expect(page.locator('#detail-tab-tuning')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#detail-panel-tuning')).toBeVisible();
+    await expect(page.locator('[data-model-tuning-preset]')).toHaveValue('s-default');
+    await expect(page.locator('[data-model-tuning-preset]')).toBeDisabled();
+    await expect(page.locator('.detail-tuning__intro')).toContainText('image request override these model defaults');
+  });
+
+
+  test('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('user_presets') || key.includes('applied_presets')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    const recipesView = page.locator('.recipes').last();
+    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
+
+    const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
+    await defaultCard.getByRole('button', { name: 'Clone' }).click();
+    const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
+    await expect(yourCards).toHaveCount(1);
+    await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
+    await expect(yourCards.first().locator('.recipe-card__name')).toHaveText('Default (copy)');
+    await expect(page.locator('.slideover.is-open')).toHaveCount(0);
+
+    const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
+    await balancedCard.getByRole('button', { name: 'Customize' }).click();
+    await expect(yourCards).toHaveCount(2);
+    await expect(page.locator('.slideover.is-open')).toBeVisible();
+    await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');
+    await page.locator('.slideover__close').click();
+
+    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
+    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
   });
 
   test('13b — Presets import rejects legacy schema', async ({ page }) => {
@@ -798,7 +897,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
   });
 
-  test('20 — Models page shows all four zones with correct labels', async ({ page }) => {
+  test('20 — Models page shows model list panel with search', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
@@ -806,39 +905,32 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForSelector('.manager');
 
-    // HuggingFace zone should always be visible (not conditional on search)
-    const hfZone = page.locator('.zone--hf');
-    await expect(hfZone).toBeVisible();
+    // New master-detail layout: left panel with search input
+    const listPanel = page.locator('.model-list-panel');
+    await expect(listPanel).toBeVisible();
 
-    // HuggingFace zone title should say "HuggingFace" (not "Explore — HuggingFace")
-    await expect(hfZone.locator('.zone__title')).toContainText('HuggingFace');
-    await expect(hfZone.locator('.zone__title')).not.toContainText('Explore');
+    // Search input should be present and operable
+    const searchInput = page.locator('.manager__search-input');
+    await expect(searchInput).toBeVisible();
 
-    // HuggingFace should show the prompt when no search text
-    await expect(hfZone.locator('.hf-zone__empty')).toContainText('Type at least 2 characters');
-
-    // When disconnected, empty state should show appropriate message
+    // When disconnected / no models, empty state should show appropriate message
     const emptyState = page.locator('.manager__empty');
     if (await emptyState.isVisible().catch(() => false)) {
       const text = await emptyState.textContent();
-      // Should say either "Connect to a Lemonade server" or "No models found"
-      expect(text).toMatch(/Connect to a Lemonade server|No models found/);
+      expect(text).toMatch(/Connect to a Lemonade server|No models found|No models match/);
     }
 
-    // Search triggers HuggingFace search
-    const searchInput = page.locator('.manager__search-input');
-    await searchInput.fill('llama');
-    await page.waitForTimeout(1500); // debounce (400ms) + network time
+    // Model count annotation should be present (even "0 models")
+    const countEl = page.locator('.model-list-panel__count');
+    await expect(countEl).toBeVisible();
 
-    // HuggingFace zone should show results, loading spinner, or "no results" message
-    const hfEmpty = hfZone.locator('.hf-zone__empty');
-    const hfRows = hfZone.locator('.row--hf');
-    const hfLoading = hfZone.locator('.hf-zone__loading');
-    const hasResults = await hfRows.count() > 0;
-    const hasEmpty = await hfEmpty.isVisible().catch(() => false);
-    const isLoading = await hfLoading.isVisible().catch(() => false);
-    // One of these states should be true
-    expect(hasResults || hasEmpty || isLoading).toBeTruthy();
+    // Typing into search filters the list
+    await searchInput.fill('zzznotamodel');
+    await page.waitForTimeout(200);
+    // Either empty state appears, or count shows 0
+    const countText = await countEl.textContent();
+    const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
+    expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
 
     await page.screenshot({ path: 'screenshots/20-models-zones.png', fullPage: true });
   });
@@ -850,9 +942,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Connect to server first
     await page.locator('.titlebar__nav').getByText('Connect').click();
     await page.waitForSelector('.connect');
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
     await urlInput.clear();
-    await urlInput.fill('http://localhost:13305');
+    await urlInput.fill(`http://localhost:${testPort}`);
     await page.locator('.connect__section--server button[type="submit"]').click();
 
     // Wait for connection
@@ -918,4 +1011,303 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
   });
+
+  test('23 — loopback API requests resolve to IPv4 127.0.0.1 by default and respect capture setting for session headers', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'hi' } }] })
+      });
+    });
+
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requests.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.waitForTimeout(1000);
+
+    // Initial requests (capturing is OFF by default)
+    expect(requests.length).toBeGreaterThan(0);
+    for (const req of requests) {
+      expect(req.url).not.toContain('//localhost:13305');
+      expect(req.url).toContain('//127.0.0.1:13305');
+    }
+
+    // Trigger a chat completion while capturing is OFF
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    // Verify last request (chat completion) has NO session headers
+    const chatReqOff = requests.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOff).toBeDefined();
+    expect(chatReqOff!.headers['x-client-session-id']).toBeUndefined();
+    expect(chatReqOff!.headers['x-account-session-id']).toBeUndefined();
+
+    // Now toggle capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Trigger a chat completion while capturing is ON
+    const requestsAfterToggle: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requestsAfterToggle.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    const chatReqOn = requestsAfterToggle.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOn).toBeDefined();
+    expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
+    expect(chatReqOn!.headers['x-account-session-id']).toBeDefined();
+  });
+
+  test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion: reject requests with session headers, succeed without them
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      const headers = route.request().headers();
+      if (headers['x-client-session-id']) {
+        await route.abort('failed');
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] })
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Turn capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Verify sessionHeadersEnabled is true initially
+    const initialEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(initialEnabled).toBe(true);
+
+    // Call chat completion
+    const result = await page.evaluate(async () => {
+      try {
+        const resp = await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+        return resp;
+      } catch (e) {
+        return `failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    });
+
+    // Check that we got fallback success and sessionHeadersEnabled was disabled
+    expect(result).toBe('fallback-success');
+    const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(finalEnabled).toBe(false);
+  });
+
+  test('25 — Model Tuning maps every intent level while Max context stays fixed', async ({ page }) => {
+    const modelName = 'intent-map-model';
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: {
+            default_backend: 'cpu',
+            backends: { cpu: { state: 'installed', version: 'test' } },
+          },
+        },
+      },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: modelName,
+          name: modelName,
+          labels: ['llm', 'coding'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          ctx_size: 4096,
+          max_context_window: 131072,
+        }],
+      },
+    }));
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.locator('.model-list-item').first().click();
+    await page.locator('#detail-tab-tuning').click();
+
+    const temperatureInputs = page.locator('[data-model-tuning-temperature-intent]');
+    await expect(temperatureInputs).toHaveCount(4);
+    for (const hint of ['precise', 'balanced', 'exploratory', 'creative']) {
+      await expect(page.locator(`[data-model-tuning-temperature-intent="${hint}"]`)).toBeVisible();
+    }
+
+    const contextCards = page.locator('[data-model-tuning-context-intent]');
+    await expect(contextCards).toHaveCount(4);
+    for (const hint of ['small', 'medium', 'large']) {
+      await expect(page.locator(`button[data-model-tuning-context-intent="${hint}"]`)).toBeVisible();
+    }
+    const maxContext = page.locator('[data-model-tuning-context-intent="max"]');
+    await expect(maxContext).toBeVisible();
+    await expect(maxContext.locator('input')).toHaveCount(0);
+    await expect(maxContext).toContainText('128K');
+    await expect(page.locator('.detail-tuning__runtime .detail-tuning__field', { hasText: 'Context size' })).toHaveCount(0);
+
+    await page.locator('[data-model-tuning-preset]').selectOption('s-code');
+    await page.locator('[data-model-tuning-temperature-intent="precise"]').fill('0.2');
+    await page.locator('[data-model-tuning-temperature-intent="balanced"]').fill('0.6');
+    await page.locator('[data-model-tuning-temperature-intent="exploratory"]').fill('0.8');
+    await page.locator('[data-model-tuning-temperature-intent="creative"]').fill('1.0');
+
+    await page.locator('button[data-model-tuning-context-intent="small"]').click();
+    const smallSlider = page.locator('[data-model-tuning-context-slider="small"]');
+    await expect(smallSlider).toHaveAttribute('min', '1024');
+    await page.locator('[data-model-tuning-context-number="small"]').fill('5120');
+
+    await page.locator('button[data-model-tuning-context-intent="medium"]').click();
+    const mediumSlider = page.locator('[data-model-tuning-context-slider="medium"]');
+    await expect(mediumSlider).toHaveAttribute('min', '5120');
+    await page.locator('[data-model-tuning-context-number="medium"]').fill('32768');
+
+    await page.locator('button[data-model-tuning-context-intent="large"]').click();
+    const largeSlider = page.locator('[data-model-tuning-context-slider="large"]');
+    await expect(largeSlider).toHaveAttribute('min', '32768');
+    await expect(largeSlider).toHaveAttribute('max', '131072');
+    await page.locator('[data-model-tuning-context-number="large"]').fill('65536');
+    await page.getByRole('button', { name: 'Save tuning' }).click();
+
+    const saved = await page.evaluate(({ model, preset }) => {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.includes('model_tunings')) continue;
+        try {
+          const value = JSON.parse(localStorage.getItem(key) || '{}');
+          const tuning = value[`${model}@@${preset}`];
+          if (tuning) return tuning;
+        } catch { /* keep looking */ }
+      }
+      return null;
+    }, { model: modelName, preset: 's-code' });
+
+    expect(saved?.intent_values?.temperature).toEqual({
+      precise: 0.2,
+      balanced: 0.6,
+      exploratory: 0.8,
+      creative: 1.0,
+    });
+    expect(saved?.intent_values?.context).toEqual({
+      small: 5120,
+      medium: 32768,
+      large: 65536,
+    });
+    expect(saved?.intent_values?.context?.max).toBeUndefined();
+    expect(saved?.recipe_options?.ctx_size).toBeUndefined();
+  });
+
 });

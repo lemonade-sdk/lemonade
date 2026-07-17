@@ -129,7 +129,7 @@ export interface DashboardData {
 
 const POLL_INTERVAL = 2000;
 
-export function useDashboardData(): DashboardData {
+export function useDashboardData(isActive = true): DashboardData {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
@@ -232,7 +232,16 @@ export function useDashboardData(): DashboardData {
 
       let slotData: SlotData[] = [];
       const loaded = Array.isArray(h.all_models_loaded) ? h.all_models_loaded : [];
-      const supportsSlots = loaded.some(m => m.recipe === 'llamacpp' || m.recipe === 'vllm');
+      const activeModelName = String(h.model_loaded || '').trim();
+      const activeModel = activeModelName
+        ? loaded.find(m => m.model_name === activeModelName)
+        : undefined;
+      // `/slots` returns 400 (and emits a server error log) when there is no
+      // active model. Gate the request on the active health entry rather than
+      // merely on stale/all-model metadata that can briefly outlive an unload.
+      const supportsSlots = Boolean(
+        activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
+      );
       if (supportsSlots) {
         try {
           const response = await api.slots();
@@ -245,8 +254,8 @@ export function useDashboardData(): DashboardData {
           setSlotStatus(`Slot telemetry unavailable: ${friendlyErrorMessage(err)}`);
         }
       } else {
-        setSlotsUnsupported(loaded.length > 0);
-        setSlotStatus(loaded.length > 0
+        setSlotsUnsupported(Boolean(activeModel));
+        setSlotStatus(activeModel
           ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
           : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
       }
@@ -303,13 +312,41 @@ export function useDashboardData(): DashboardData {
     }
   }, [computeAggregates]);
 
+  // A manual resume starts a fresh retry window. Without resetting the
+  // consecutive-failure counter, the very next failed poll immediately pauses
+  // again, making the Resume control appear ineffective.
   useEffect(() => {
+    if (!paused) failureCountRef.current = 0;
+  }, [paused]);
+
+  // Resume polling when the global connection is re-established
+  useEffect(() => {
+    if (!isActive) return;
+    const unsub = api.onStatusChange((s) => {
+      if (s === 'connected' && paused) {
+        failureCountRef.current = 0;
+        setPaused(false);
+      }
+    });
+    return unsub;
+  }, [paused, isActive]);
+
+  useEffect(() => {
+    if (!isActive) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+      return;
+    }
+
     poll();
     if (!paused) {
       pollRef.current = setInterval(poll, POLL_INTERVAL);
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [poll, paused]);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+  }, [poll, paused, isActive]);
 
   /* ── Live throughput from log WebSocket ───────────────────── */
 
@@ -321,6 +358,7 @@ export function useDashboardData(): DashboardData {
   const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!isActive) return;
     const wsPort = health?.websocket_port;
     if (!wsPort) return;
     let cancelled = false;
@@ -397,12 +435,12 @@ export function useDashboardData(): DashboardData {
       wsReconnectRef.current = null;
       wsHandleRef.current = null;
     };
-  }, [health?.websocket_port, paused]);
+  }, [health?.websocket_port, paused, isActive]);
 
   /* ── Interpolation ticker — smooth 200ms chart updates ───── */
 
   useEffect(() => {
-    if (paused) return;
+    if (!isActive || paused) return;
 
     const ticker = setInterval(() => {
       const aTarget = targetAggRef.current;
@@ -460,7 +498,7 @@ export function useDashboardData(): DashboardData {
     }, TICK_MS);
 
     return () => clearInterval(ticker);
-  }, [paused]);
+  }, [paused, isActive]);
 
   /* ── Derived ─────────────────────────────────────────────── */
 

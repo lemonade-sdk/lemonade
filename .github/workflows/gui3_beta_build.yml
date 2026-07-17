@@ -1,12 +1,12 @@
-name: GUI3 Alpha Build
+name: GUI3 Beta Build
 
 on:
   workflow_dispatch:
     inputs:
       build_label:
-        description: "Artifact label. Keep alpha until GUI3 beta is ready."
+        description: "Artifact label: beta."
         required: false
-        default: "alpha"
+        default: "beta"
         type: string
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
 
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
-  BUILD_LABEL: ${{ inputs.build_label || 'alpha' }}
+  BUILD_LABEL: ${{ inputs.build_label || 'beta' }}
 
 jobs:
   app-lockfile-check:
@@ -50,8 +50,8 @@ jobs:
           cd src/app
           npm ci --ignore-scripts
 
-  build-alpha-windows:
-    name: Build GUI3 Alpha Windows MSI
+  build-beta-windows:
+    name: Build GUI3 Beta Windows MSI
     runs-on: windows-latest
     needs: app-lockfile-check
 
@@ -132,9 +132,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: alpha-fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
+          key: beta-fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            alpha-fetchcontent-windows-
+            beta-fetchcontent-windows-
 
       - name: Configure build environment
         shell: PowerShell
@@ -142,7 +142,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           .\setup.ps1
 
-      - name: Build unsigned alpha MSI installers
+      - name: Build unsigned beta MSI installers
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -161,15 +161,15 @@ jobs:
 
           Get-ChildItem artifacts | Format-Table Name, Length
 
-      - name: Upload Windows alpha artifacts
+      - name: Upload Windows beta artifacts
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ env.BUILD_LABEL }}-windows-x64
           path: artifacts/*
           retention-days: 14
 
-  build-alpha-macos:
-    name: Build GUI3 Alpha macOS App
+  build-beta-macos:
+    name: Build GUI3 Beta macOS App
     runs-on: macos-latest
     needs: app-lockfile-check
 
@@ -207,7 +207,7 @@ jobs:
           test -f build/lemonade
           test -d build/app/lemonade-app.app
 
-      - name: Package macOS alpha artifact
+      - name: Package macOS beta artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -224,15 +224,15 @@ jobs:
 
           ls -lh artifacts
 
-      - name: Upload macOS alpha artifact
+      - name: Upload macOS beta artifact
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ env.BUILD_LABEL }}-macos
           path: artifacts/lemonade-${{ env.BUILD_LABEL }}-macos.zip
           retention-days: 14
 
-  build-alpha-linux:
-    name: Build GUI3 Alpha Linux Bundle
+  build-beta-linux:
+    name: Build GUI3 Beta Linux Bundle
     runs-on: ubuntu-latest
     needs: app-lockfile-check
 
@@ -281,7 +281,7 @@ jobs:
           test -f build/lemonade
           test -f build/app/lemonade-app
 
-      - name: Package Linux alpha artifact
+      - name: Package Linux beta artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -295,7 +295,7 @@ jobs:
           tar -C artifacts -czf artifacts/lemonade-${BUILD_LABEL}-linux-x64.tar.gz lemonade-${BUILD_LABEL}-linux-x64
           ls -lh artifacts
 
-      - name: Upload Linux alpha artifact
+      - name: Upload Linux beta artifact
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ env.BUILD_LABEL }}-linux-x64

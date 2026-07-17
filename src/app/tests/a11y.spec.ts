@@ -33,6 +33,23 @@ async function navigateToView(page: Page, label: string): Promise<void> {
   await page.waitForTimeout(300);
 }
 
+/** Open the custom-model editor through the Models heading action. */
+async function openCustomModelEditor(
+  page: Page,
+  mode: 'model' | 'omni-collection' = 'model',
+): Promise<void> {
+  await page.goto('/');
+  await navigateToView(page, 'Models');
+  await page.waitForSelector('.manager');
+
+  await page.getByRole('button', { name: 'Open custom models' }).click();
+  await page.waitForSelector('.custom-model-form');
+
+  if (mode === 'omni-collection') {
+    await page.getByRole('button', { name: 'Omni collection', exact: true }).click();
+  }
+}
+
 /** Format axe violations into a readable string for assertion failure messages. */
 function formatViolations(
   violations: Array<{ id: string; description: string; impact?: string | null }>,
@@ -392,7 +409,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A21 — opening preset slideover moves focus inside it (useFocusTrap activates)', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const activeIsInSlideover = await page.evaluate(() => {
@@ -403,7 +420,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A22 — Tab from last focusable inside slideover wraps back to first (never escapes)', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     const count = await page.locator(
@@ -424,7 +441,7 @@ test.describe('Accessibility — focus trap (preset slideover)', () => {
   });
 
   test('A23 — pressing Escape closes the preset slideover', async ({ page }) => {
-    await page.locator('.recipe-card').first().click();
+    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
 
     await page.keyboard.press('Escape');
@@ -561,7 +578,7 @@ test.describe('Accessibility — :focus-visible rings', () => {
     expect(outlineWidth).toBe('0px');
   });
 
-  test('A30 — composer textarea gets visible focus ring on keyboard focus (Tab navigation)', async ({ page }) => {
+  test('A30 — composer keyboard focus uses the rounded shell without a rectangular textarea outline', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.composer__input');
 
@@ -570,18 +587,18 @@ test.describe('Accessibility — :focus-visible rings', () => {
       await page.keyboard.press('Tab');
       const info = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null;
+        const bar = el?.closest('.composer__bar') as HTMLElement | null;
         return {
           isComposer: el?.classList.contains('composer__input') ?? false,
-          outlineWidth: el
-            ? window.getComputedStyle(el).outlineWidth
-            : '0px',
+          inputOutlineWidth: el ? window.getComputedStyle(el).outlineWidth : '0px',
+          barHasFocus: bar?.matches(':focus-within') ?? false,
+          barBorderRadius: bar ? window.getComputedStyle(bar).borderRadius : '0px',
         };
       });
       if (info.isComposer) {
-        expect(
-          info.outlineWidth,
-          'composer__input should have a non-zero outline when reached via keyboard',
-        ).not.toBe('0px');
+        expect(info.inputOutlineWidth, 'textarea must not draw the old rectangular focus box').toBe('0px');
+        expect(info.barHasFocus, 'rounded composer shell should own the focus state').toBe(true);
+        expect(info.barBorderRadius, 'composer focus treatment should remain rounded').not.toBe('0px');
         found = true;
         break;
       }
@@ -650,5 +667,3106 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     });
     // 'none' means no translate is applied — sheet snaps rather than slides
     expect(transform).toBe('none');
+  });
+});
+
+// ─── 10. Preset intent controls — intent refactor ────────────────────────────
+
+test.describe('Accessibility — preset intent controls', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    // nth(1) skips DEFAULT_PRESET and opens the first chat starter.
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
+    await page.waitForSelector('.slideover.is-open');
+  });
+
+  test('A35 — temperature intent is grouped and exposes all four levels', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="temperature"]');
+    await expect(group.locator('legend')).toContainText('Temperature');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="precise"]')).toHaveAttribute('title', /precise/i);
+  });
+
+  test('A36 — context intent is grouped and exposes all four levels', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="context"]');
+    await expect(group.locator('legend')).toContainText('Context');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="max"]')).toBeVisible();
+  });
+
+  test('A37 — thinking modes expose native help and future modes are disabled', async ({ page }) => {
+    const group = page.locator('[data-preset-intent="thinking"]');
+    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
+    await expect(group.locator('[data-intent-value="normal"]')).toHaveAttribute('title', 'Default model thinking');
+    await expect(group.locator('[data-intent-value="smart"]')).toBeDisabled();
+    await expect(group.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
+  });
+});
+
+// ─── 11. Concrete runtime fields stay out of Presets ─────────────────────────
+
+test.describe('Accessibility — preset/runtime separation', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
+    await page.waitForSelector('.slideover.is-open');
+  });
+
+  test('A38 — preset editor does not expose concrete sampling or context inputs', async ({ page }) => {
+    await expect(page.locator('[data-recipe-temp], [data-recipe-ctx], [data-recipe-top-k], .slideover .slider')).toHaveCount(0);
+  });
+
+  test('A39 — preset editor omits backend assignment and concrete tuning inputs', async ({ page }) => {
+    await expect(page.locator('.preset-advanced')).toHaveCount(0);
+    await expect(page.locator('#preset-field-llamacpp-backend, #preset-field-llamacpp-device')).toHaveCount(0);
+  });
+});
+
+// ─── 12. Preset card accessible description — issue #2345 ────────────────────
+
+test.describe('Accessibility — preset card metadata accessible (#2345)', () => {
+  test('A40 — card button has aria-describedby pointing to metadata description', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+
+    const { descId, descText } = await page.locator('.recipe-card').first().evaluate(card => {
+      const btn = card.querySelector('.recipe-card__overlay-btn') as HTMLElement | null;
+      const id = btn?.getAttribute('aria-describedby') ?? '';
+      const descEl = id ? document.getElementById(id) : null;
+      return { descId: id, descText: descEl?.textContent?.trim() ?? '' };
+    });
+
+    expect(descId, 'card overlay button must have aria-describedby').toBeTruthy();
+    expect(descText, 'description element must have non-empty text').toBeTruthy();
+    expect(descText, 'description must include applies_to metadata').toMatch(/Applies to:/i);
+    expect(descText, 'description must include prompt metadata').toMatch(/Prompt:/i);
+    expect(descText, 'description must include MCP metadata').toMatch(/MCP:/i);
+  });
+});
+
+// ─── 13. Capability chip toggle-button semantics — issue #2350 (revised) ─────
+
+test.describe('Accessibility — capability chip toggle-button semantics (#2350)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.recipe-card');
+    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
+    await page.waitForSelector('.slideover.is-open');
+  });
+
+  test('A41 — capability chip container has role="group" with accessible label', async ({ page }) => {
+    const container = page.locator('[data-preset-capabilities]');
+    const role = await container.getAttribute('role');
+    expect(role).toBe('group');
+    const label = await container.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A42 — each capability chip is a plain button with aria-pressed', async ({ page }) => {
+    const capButtons = page.locator('[data-preset-capabilities] .preset-cap-button');
+    const count = await capButtons.count();
+    expect(count).toBeGreaterThan(0);
+
+    for (let i = 0; i < count; i++) {
+      const btn = capButtons.nth(i);
+      // Must NOT have role="radio" — plain button semantics
+      const role = await btn.getAttribute('role');
+      expect(role, 'chip must not have role="radio"').not.toBe('radio');
+      // Must expose aria-pressed as "true" or "false"
+      const pressed = await btn.getAttribute('aria-pressed');
+      expect(['true', 'false'], `aria-pressed must be "true" or "false", got "${pressed}"`).toContain(pressed);
+    }
+  });
+
+  test('A43 — exactly one capability chip has aria-pressed="true"; all others are "false"', async ({ page }) => {
+    const { trueCount, falseCount, total } = await page
+      .locator('[data-preset-capabilities] .preset-cap-button')
+      .evaluateAll(buttons => ({
+        trueCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'true').length,
+        falseCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'false').length,
+        total: buttons.length,
+      }));
+    expect(trueCount).toBe(1);
+    expect(falseCount).toBe(total - 1);
+  });
+});
+
+// ─── 14. AutoOpt run selection state — issue #2352 ───────────────────────────
+
+test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
+  const mockAutoOpt = async (page: Page) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    // AutoOpt runs are client-persisted and scoped to the server's base URL.
+    await page.addInitScript(() => {
+      const base = {
+        checkpoint: '', answers: { parallel: { mode: 'single' }, kv_cache_quant: 'none', ram_headroom: 'normal', allow_network: true },
+        allow_unload: false, stages: [], measurements: { fit: [], bench: [] },
+      };
+      localStorage.setItem('lemonade_autoopt_runs_v2::http://127.0.0.1:13305', JSON.stringify({
+        version: 2,
+        runs: [
+          { ...base, id: 'run-b', model: 'org/model-b', status: 'completed', budget: 'standard', created_at: '2026-07-02T10:00:00Z', finished_at: '2026-07-02T10:12:00Z' },
+          { ...base, id: 'run-a', model: 'org/model-a', status: 'completed', budget: 'quick', created_at: '2026-07-01T10:00:00Z', finished_at: '2026-07-01T10:01:00Z' },
+        ],
+      }));
+    });
+  };
+
+  test('A44 — AutoOpt run buttons expose selected state via aria-pressed', async ({ page }) => {
+    await mockAutoOpt(page);
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
+
+    const buttons = page.locator('.auto-run-card__main');
+    const count = await buttons.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Exactly one button should be aria-pressed="true" on initial render
+    const pressedCount = await buttons.evaluateAll(btns =>
+      btns.filter(b => b.getAttribute('aria-pressed') === 'true').length,
+    );
+    expect(pressedCount).toBe(1);
+  });
+
+  test('A45 — clicking a different AutoOpt run updates aria-pressed to true on that button', async ({ page }) => {
+    await mockAutoOpt(page);
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
+
+    const buttons = page.locator('.auto-run-card__main');
+    // Click the second button (index 1) to change selection
+    await buttons.nth(1).click();
+    await page.waitForTimeout(100);
+
+    const secondPressed = await buttons.nth(1).getAttribute('aria-pressed');
+    expect(secondPressed).toBe('true');
+
+    // First button must now be false
+    const firstPressed = await buttons.nth(0).getAttribute('aria-pressed');
+    expect(firstPressed).toBe('false');
+  });
+
+  test('A45b — AutoOpt rail exposes a polite live region for run completion announcements', async ({ page }) => {
+    await mockAutoOpt(page);
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+
+    const liveRegion = page.locator('[data-autoopt-announcement]');
+    await expect(liveRegion).toHaveAttribute('role', 'status');
+    await expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+  });
+});
+
+// ─── 14b. AutoOpt wizard dialog — semantics, focus trap, fieldsets ─────────────
+
+test.describe('Accessibility — AutoOpt wizard dialog', () => {
+  const openWizard = async (page: Page) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: { data: [{ id: 'org/chat-model', name: 'org/chat-model', labels: ['llm'], recipe: 'llamacpp', downloaded: true }] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { 'Physical Memory': '64.0 GB', recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed' } } } } },
+    }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.locator('[data-autoopt-run-optimizer]').click();
+    await page.waitForSelector('[data-autoopt-wizard]', { timeout: 5000 });
+  };
+
+  test('A46 — wizard is a modal dialog and moves focus inside', async ({ page }) => {
+    await openWizard(page);
+
+    const wizard = page.locator('[data-autoopt-wizard]');
+    await expect(wizard).toHaveAttribute('role', 'dialog');
+    await expect(wizard).toHaveAttribute('aria-modal', 'true');
+
+    const activeIsInWizard = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-autoopt-wizard]');
+      return dialog?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInWizard).toBe(true);
+  });
+
+  test('A47 — Tab never escapes the wizard dialog', async ({ page }) => {
+    await openWizard(page);
+
+    const count = await page.locator(
+      '[data-autoopt-wizard] :is(a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]))',
+    ).evaluateAll(els => els.filter(el => !el.closest('[aria-hidden="true"]')).length);
+
+    for (let i = 0; i < count + 2; i++) {
+      await page.keyboard.press('Tab');
+    }
+
+    const activeIsInWizard = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-autoopt-wizard]');
+      return dialog?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInWizard, 'Focus should stay inside the wizard after wrapping').toBe(true);
+  });
+
+  test('A48 — every wizard step is a fieldset with a legend', async ({ page }) => {
+    await openWizard(page);
+
+    await page.locator('[data-autoopt-model-select]').selectOption('org/chat-model');
+    const stepOrder = ['model', 'parallel', 'kv', 'ram', 'budget', 'review'];
+    for (const step of stepOrder) {
+      const fieldset = page.locator(`fieldset[data-autoopt-step="${step}"]`);
+      await expect(fieldset).toBeVisible();
+      await expect(fieldset.locator('legend')).toBeVisible();
+      if (step !== 'review') await page.locator('[data-autoopt-next]').click();
+    }
+  });
+
+  test('A49 — Escape closes the wizard', async ({ page }) => {
+    await openWizard(page);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-autoopt-wizard]')).toHaveCount(0);
+  });
+});
+
+// ─── 15. Backend Manager — matrix cells, action labels, live regions ──────────
+//        Covers: #2343 (keyboard-operable cells), #2344 (qualified action names),
+//                #2351 (live-region toasts/notices).
+
+test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
+  const MOCK_SYSTEM_INFO = {
+    lemonade_version: '1.0.0',
+    os_version: 'Test OS',
+    devices: { cpu: { name: 'Test CPU', available: true } },
+    recipes: {
+      llamacpp: {
+        default_backend: 'cpu',
+        backends: {
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
+          cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
+        },
+      },
+    },
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/system-info**', route =>
+      route.fulfill({ json: MOCK_SYSTEM_INFO }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+  });
+
+  // ── #2432 — Backend view no longer behaves like a model (preset rail/picker removed) ──
+  // The cell-selection affordance and preset rail were removed; coverage lives in
+  // the #2432 describe block below (A167+).
+
+  // ── #2344 — action buttons have qualified accessible names ─────────────────
+
+  test('A55 — Install button aria-label includes recipe and backend identifiers', async ({ page }) => {
+    const installBtn = page.locator('[data-cell="llamacpp:vulkan"] button.cell__swap');
+    await expect(installBtn).toBeVisible();
+    const label = await installBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('install');
+    expect(label!.toLowerCase()).toContain('llama');
+    expect(label!.toLowerCase()).toContain('vulkan');
+  });
+
+  test('A56 — Uninstall button aria-label includes recipe and backend identifiers', async ({ page }) => {
+    const uninstallBtn = page.locator('[data-cell="llamacpp:cpu"] button.cell__swap--danger');
+    await expect(uninstallBtn).toBeVisible();
+    const label = await uninstallBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('uninstall');
+    expect(label!.toLowerCase()).toContain('llama');
+    expect(label!.toLowerCase()).toContain('cpu');
+  });
+
+  // ── #2351 — persistent polite live region for toasts ───
+
+  test('A57 — backends view has a persistent role="status" live region for toast messages', async ({ page }) => {
+    const liveRegion = page.locator('[data-backends-toast-live]');
+    await expect(liveRegion).toHaveCount(1);
+    expect(await liveRegion.getAttribute('role')).toBe('status');
+    expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
+    expect(await liveRegion.getAttribute('aria-atomic')).toBe('true');
+  });
+});
+
+// ─── Backend Manager — refresh hidden mounted view on activation ─────────────
+
+test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () => {
+  function backendInfo(state: 'installed' | 'installable') {
+    return {
+      lemonade_version: '1.0.0',
+      os_version: 'Test OS',
+      devices: { cpu: { name: 'Test CPU', available: true } },
+      recipes: {
+        llamacpp: {
+          default_backend: 'cpu',
+          backends: {
+            vulkan: {
+              state,
+              version: 'b1234',
+              message: '',
+              action: '',
+              can_uninstall: state === 'installed',
+            },
+          },
+        },
+      },
+    };
+  }
+
+  test('A58 — opening Backends refreshes backend status from system-info', async ({ page }) => {
+    let currentSystemInfo = backendInfo('installable');
+
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lemonade_current_view', 'chat'); } catch {}
+    });
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/models**', route =>
+      route.fulfill({ json: { data: [] } }),
+    );
+    await page.route('**/api/v1/system-info**', route =>
+      route.fulfill({ json: currentSystemInfo }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // The Backends view is mounted but hidden in App.tsx. Before navigating to
+    // it, simulate a backend status change that should be visible immediately
+    // after opening the view without a browser reload.
+    currentSystemInfo = backendInfo('installed');
+
+    await navigateToView(page, 'Backends');
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] .cell__badge')).toHaveText('Installed');
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] button.cell__swap--danger')).toBeVisible();
+  });
+});
+
+// ─── Backend argument tuning dialog ─────────────────────────────────────────
+
+test.describe('Accessibility — backend argument tuning', () => {
+  const MOCK_SYSTEM_INFO = {
+    lemonade_version: '1.0.0',
+    os_version: 'Test OS',
+    devices: { cpu: { name: 'Test CPU', available: true } },
+    recipes: {
+      llamacpp: {
+        default_backend: 'cpu',
+        backends: {
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
+          cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
+          cuda: { state: 'unsupported', version: '', message: 'No NVIDIA GPU detected', action: '' },
+        },
+      },
+      kokoro: {
+        default_backend: 'cpu',
+        backends: {
+          cpu: { state: 'installed', version: 'b1234', message: '', action: '' },
+        },
+      },
+    },
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        for (const key of Object.keys(localStorage)) {
+          if (key.includes('backend_tunings') || key.includes('backend_presets')) localStorage.removeItem(key);
+        }
+      } catch {}
+    });
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({ json: MOCK_SYSTEM_INFO }));
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+  });
+
+  async function gotoBackends(page: Page): Promise<void> {
+    await navigateToView(page, 'Backends');
+    await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
+  }
+
+  test('A167 — args-capable backends expose a small qualified action without restoring the old preset rail', async ({ page }) => {
+    await gotoBackends(page);
+    await expect(page.locator('.context-rail--presets')).toHaveCount(0);
+    await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toBeVisible();
+    await expect(page.locator('[data-backend-args-button="llamacpp:vulkan"]')).toBeVisible();
+    await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toHaveAttribute(
+      'aria-label',
+      /Add backend arguments for llama\.cpp \(cpu\)/,
+    );
+    // Kokoro has no free-form backend args field in the load contract.
+    await expect(page.locator('[data-backend-args-button="kokoro:cpu"]')).toHaveCount(0);
+  });
+
+  test('A168 — opening the editor announces the exact backend, labels the textarea, and focuses it', async ({ page }) => {
+    await gotoBackends(page);
+    const trigger = page.locator('[data-backend-args-button="llamacpp:cpu"]');
+    await trigger.click();
+
+    const dialog = page.locator('[data-backend-args-dialog="llamacpp:cpu"]');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('role', 'dialog');
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await expect(dialog.getByRole('heading', { name: 'llama.cpp · cpu' })).toBeVisible();
+    await expect(dialog).toContainText('every model using this exact backend');
+    const input = dialog.locator('[data-backend-args-input]');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAccessibleName('Arguments');
+  });
+
+  test('A169 — a keyboard save replaces the exact entry, marks it Manual, and returns focus to the trigger', async ({ page }) => {
+    await gotoBackends(page);
+    const trigger = page.locator('[data-backend-args-button="llamacpp:cpu"]');
+    await trigger.click();
+    const input = page.locator('[data-backend-args-input]');
+    await input.fill('--threads 8 --ctx-size 65536');
+    await page.locator('[data-backend-args-save]').focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[data-backend-args-dialog]')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="user"]')).toContainText('Args · Manual');
+
+    const stored = await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.includes('backend_tunings')) continue;
+        const entries = JSON.parse(localStorage.getItem(key) || '{}');
+        if (entries['llamacpp:cpu']) return entries['llamacpp:cpu'];
+      }
+      return null;
+    });
+    expect(stored).toMatchObject({ args: '--threads 8 --ctx-size 65536', source: 'user' });
+    expect(stored?.auto_opt_run_id).toBeUndefined();
+  });
+
+  test('A170 — editing an AutoOpt-owned entry clearly warns and converts it to a manual override', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
+        'llamacpp:cpu': {
+          args: '--autoopt-old',
+          source: 'optimized',
+          auto_opt_run_id: 'run-123',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      }));
+    });
+    await gotoBackends(page);
+    await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="optimized"]')).toContainText('Args · AutoOpt');
+    await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
+    const dialog = page.locator('[data-backend-args-dialog="llamacpp:cpu"]');
+    await expect(dialog.getByRole('status')).toContainText('AutoOpt last replaced this backend entry');
+    await dialog.locator('[data-backend-args-input]').fill('--manual-replacement');
+    await dialog.locator('[data-backend-args-save]').click();
+
+    const stored = await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.includes('backend_tunings')) continue;
+        const entries = JSON.parse(localStorage.getItem(key) || '{}');
+        if (entries['llamacpp:cpu']) return entries['llamacpp:cpu'];
+      }
+      return null;
+    });
+    expect(stored).toMatchObject({ args: '--manual-replacement', source: 'user' });
+    expect(stored?.auto_opt_run_id).toBeUndefined();
+  });
+
+  test('A171 — Escape closes the modal editor and restores focus to its backend action', async ({ page }) => {
+    await gotoBackends(page);
+    const trigger = page.locator('[data-backend-args-button="llamacpp:vulkan"]');
+    await trigger.click();
+    await expect(page.locator('[data-backend-args-dialog="llamacpp:vulkan"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-backend-args-dialog]')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
+  test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
+        'llamacpp:cpu': { args: '--cpu', source: 'user' },
+        'llamacpp:vulkan': { args: '--vulkan', source: 'user' },
+      }));
+    });
+    await gotoBackends(page);
+    await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
+    await page.locator('[data-backend-args-clear]').click();
+    await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args]')).toHaveCount(0);
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] [data-cell-backend-args="user"]')).toBeVisible();
+  });
+
+  test('A173 — the open backend args editor passes a WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await gotoBackends(page);
+    await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .include('[data-backend-args-dialog]')
+      .analyze();
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toEqual([]);
+  });
+});
+
+
+// ─── 15. Model row action qualified accessible names (#2341) ─────────────────
+
+test.describe('Accessibility — model row action qualified names (#2341)', () => {
+  /**
+   * Simulate a connected server returning two test models:
+   *   Llama-3.1-8B  (downloaded: true)  → Downloaded zone → Load + Delete buttons
+   *   Qwen2.5-7B    (downloaded: false) → Registry zone   → Download + Get & Load buttons
+   *
+   * Both buttons of the same action type (e.g. "Load") must carry model-qualified
+   * accessible names so NVDA/JAWS users can distinguish them when navigating by
+   * button role (pressing 'B' in NVDA browse mode).
+   */
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager');
+    // Wait for model list items to render from the mocked API response
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  });
+
+  test('A46 — downloaded model row: Load button accessible name includes model name', async ({ page }) => {
+    // Click on Llama-3.1-8B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.waitForTimeout(200);
+    // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in
+    // a list of multiple loaded models when navigating by button role.
+    await expect(
+      page.getByRole('button', { name: /Load Llama-3\.1-8B/ }),
+    ).toBeVisible();
+  });
+
+  test('A47 — downloaded model row: Delete button accessible name includes model name', async ({ page }) => {
+    // Click on Llama-3.1-8B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.waitForTimeout(200);
+    // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is
+    // not announced as a nameless button to screen reader users.
+    await expect(
+      page.getByRole('button', { name: /Delete.*Llama-3\.1-8B/ }),
+    ).toBeVisible();
+  });
+
+  test('A48 — registry model row: Download button accessible name includes model name', async ({ page }) => {
+    // Click on Qwen2.5-7B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.waitForTimeout(200);
+    await expect(
+      page.getByRole('button', { name: /Download Qwen2\.5-7B/ }),
+    ).toBeVisible();
+  });
+
+  test('A49 — registry model row: "Get and load" button accessible name includes model name', async ({ page }) => {
+    // Click on Qwen2.5-7B in the list to open the detail panel
+    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.waitForTimeout(200);
+    await expect(
+      page.getByRole('button', { name: /Get and load Qwen2\.5-7B/i }),
+    ).toBeVisible();
+  });
+
+  test('A50 — no model action button in the detail panel carries a bare unqualified accessible name', async ({ page }) => {
+    // Buttons whose accessible name is just "Load", "Download", "Delete", etc.
+    // cause collision when multiple model rows are rendered — NVDA hears
+    // "Load, Load, Load…" with no way to distinguish targets.
+    // In the new master-detail layout, action buttons are in the detail panel.
+    const genericExact = new Set([
+      'Load', 'Download', 'Delete', 'Unload', 'Get & Load', 'Cancel download',
+      'Pin model', 'Unpin model', 'Copy model name', 'Copy repository name',
+    ]);
+    // Click each model to check its action buttons
+    const items = page.locator('.model-list-item');
+    const count = await items.count();
+    for (let i = 0; i < count; i++) {
+      await items.nth(i).click();
+      await page.waitForTimeout(100);
+      const labels = await page.locator('.model-detail-panel__actions button').evaluateAll(
+        (btns: HTMLElement[]) =>
+          btns.map(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()),
+      );
+      for (const label of labels) {
+        if (!label) continue;
+        expect(
+          genericExact.has(label),
+          `Detail panel action button carries bare generic accessible name: "${label}"`,
+        ).toBe(false);
+      }
+    }
+  });
+});
+
+// ─── 16. Download progress bar semantics (#2342) ──────────────────────────────
+
+test.describe('Accessibility — download progress bar semantics', () => {
+  // A valid DownloadListItem for a 42%-complete model download.
+  // Passed to addInitScript so the singleton DownloadStore reads it from
+  // localStorage before any React code runs (avoids poll-timing flakiness).
+  const MOCK_DOWNLOAD = {
+    id: 'model:Llama-3.1-8B',
+    downloadType: 'model',
+    modelName: 'Llama-3.1-8B',
+    fileName: 'Llama-3.1-8B.gguf',
+    fileIndex: 1,
+    totalFiles: 1,
+    bytesDownloaded: 420_000_000,
+    bytesTotal: 1_000_000_000,
+    bytesTotalIsLowerBound: false,
+    percent: 42,
+    status: 'downloading',
+    startTime: 1_000_000_000_000,
+    bytesResumed: 0,
+    running: true,
+    speedBytesPerSecond: 5_000_000,
+    updatedAt: Date.now(),
+  };
+
+  test.beforeEach(async ({ page }) => {
+    // Pre-populate localStorage so the DownloadStore singleton (read at module init)
+    // has an active downloading item before React renders anything.
+    await page.addInitScript((item: unknown) => {
+      localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([item]));
+    }, MOCK_DOWNLOAD);
+
+    await page.route('/api/v1/health', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
+    );
+    // Return empty from the server so the mock item is not overwritten by polling.
+    await page.route('/api/v1/downloads**', route =>
+      route.fulfill({ json: { downloads: [] } }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    // Open the download manager via its titlebar toggle button.
+    await page.locator('.titlebar__download-toggle').click();
+    await page.waitForSelector('.download-manager__panel');
+    // Ensure the download item row is rendered before we start asserting.
+    await page.waitForSelector('.download-item--downloading', { timeout: 5000 });
+  });
+
+  test('A59 — active download progress element has role="progressbar"', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    await expect(progressBar).toBeVisible();
+  });
+
+  test('A60 — progressbar has aria-valuenow matching percent, aria-valuemin=0, aria-valuemax=100', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    const valuenow = await progressBar.getAttribute('aria-valuenow');
+    const valuemin = await progressBar.getAttribute('aria-valuemin');
+    const valuemax = await progressBar.getAttribute('aria-valuemax');
+    expect(Number(valuenow)).toBe(42);
+    expect(Number(valuemin)).toBe(0);
+    expect(Number(valuemax)).toBe(100);
+  });
+
+  test('A61 — progressbar aria-label includes the model name', async ({ page }) => {
+    const progressBar = page.locator('.download-manager__panel [role="progressbar"]').first();
+    const label = await progressBar.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label).toContain('Llama-3.1-8B');
+  });
+
+  test('A62 — sr-only polite status live region is present inside the download manager panel', async ({ page }) => {
+    const liveRegion = page.locator(
+      '.download-manager__panel [role="status"][aria-live="polite"]',
+    );
+    await expect(liveRegion).toBeAttached();
+  });
+});
+
+// ─── 17. Conversation rail — listbox keyboard navigation ──────────────────────
+
+test.describe('Accessibility — conversation rail listbox', () => {
+  const RAIL_CONVOS = [
+    { id: 'rc1', title: 'Alpha conversation', model: null, messages: [], updatedAt: Date.now(), schemaVersion: 3 },
+    { id: 'rc2', title: 'Beta conversation', model: null, messages: [], updatedAt: Date.now() - 1000, schemaVersion: 3 },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript((data: { persistKey: string; convKey: string; activeKey: string; convos: typeof RAIL_CONVOS }) => {
+      localStorage.setItem(data.persistKey, 'true');
+      localStorage.setItem(data.convKey, JSON.stringify({ version: 3, conversations: data.convos }));
+      localStorage.setItem(data.activeKey, 'rc1');
+    }, {
+      persistKey: 'lemonade:guest:shared:persist_conversations',
+      convKey: 'lemonade:guest:shared:conversations',
+      activeKey: 'lemonade:guest:shared:active_conversation',
+      convos: RAIL_CONVOS,
+    });
+    await page.goto('/');
+    await page.waitForSelector('.rail__list');
+  });
+
+  test('A63 — rail__list has role="listbox" with an accessible aria-label', async ({ page }) => {
+    const list = page.locator('.rail__list').first();
+    expect(await list.getAttribute('role')).toBe('listbox');
+    const label = await list.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A64 — selected conversation option has aria-selected="true" and tabIndex=0', async ({ page }) => {
+    const activeOption = page.locator('.rail__list [role="option"][aria-selected="true"]').first();
+    await expect(activeOption).toBeVisible();
+    const tabIndex = await activeOption.getAttribute('tabindex');
+    expect(tabIndex).toBe('0');
+  });
+
+  test('A65 — ArrowDown moves keyboard focus to the next conversation option', async ({ page }) => {
+    await page.locator('#rail-conv-rc1').focus();
+    await page.keyboard.press('ArrowDown');
+
+    const focusedId = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.id ?? '',
+    );
+    expect(focusedId).toBe('rail-conv-rc2');
+  });
+
+  test('A66 — delete button accessible name includes the conversation title', async ({ page }) => {
+    const deleteBtn = page.locator('.rail__list .rail__item-delete').first();
+    const label = await deleteBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('delete');
+    expect(label).toContain('Alpha conversation');
+  });
+});
+
+// ─── 18. Account menu — modal dialog semantics ────────────────────────────────
+
+test.describe('Accessibility — account menu dialog', () => {
+  test('A67 — account menu trigger has aria-haspopup="dialog" and aria-expanded="false" on load', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    const trigger = page.locator('.account-menu__trigger');
+    expect(await trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(await trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('A68 — opening account menu: panel has role="dialog" + aria-modal="true", trigger aria-expanded="true"', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    const panel = page.locator('.account-menu__panel');
+    expect(await panel.getAttribute('role')).toBe('dialog');
+    expect(await panel.getAttribute('aria-modal')).toBe('true');
+
+    const trigger = page.locator('.account-menu__trigger');
+    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('A69 — opening account menu moves focus inside the panel (useFocusTrap activates)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    const activeIsInPanel = await page.evaluate(() => {
+      const panel = document.querySelector('.account-menu__panel');
+      return panel?.contains(document.activeElement) ?? false;
+    });
+    expect(activeIsInPanel).toBe(true);
+  });
+
+  test('A70 — Escape closes account menu and restores focus to the trigger', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.account-menu__trigger');
+
+    await page.locator('.account-menu__trigger').click();
+    await page.waitForSelector('.account-menu__panel');
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100); // allow rAF focus restore
+
+    await expect(page.locator('.account-menu__panel')).not.toBeVisible({ timeout: 3000 });
+
+    const activeClass = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.className ?? '',
+    );
+    expect(activeClass).toContain('account-menu__trigger');
+
+  });
+});
+
+// ─── 19. Group F — Omni picker combobox semantics ─────────────────────────────
+
+test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => {
+  async function openOmniCollectionForm(page: Page): Promise<void> {
+    await openCustomModelEditor(page, 'omni-collection');
+    await page.waitForSelector('.omni-component-picker');
+  }
+
+  test('A71 — Omni picker input has role=combobox and aria-expanded=false when closed', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+    await expect(input).toHaveAttribute('role', 'combobox');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await expect(input).toHaveAttribute('aria-controls');
+    await expect(input).toHaveAttribute('aria-autocomplete', 'list');
+  });
+
+  test('A72 — Omni picker opens on focus (aria-expanded=true) and Escape closes it (aria-expanded=false)', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+
+    await input.focus();
+    await expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    const listbox = page.locator('.omni-component-picker [role="listbox"]').first();
+    await expect(listbox).toBeVisible();
+
+    await input.press('Escape');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('A73 — Omni picker ArrowDown opens popup; aria-activedescendant tracks active option when options exist', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const input = page.locator('.omni-component-picker input').first();
+    await input.press('Escape');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+
+    await input.press('ArrowDown');
+    await expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    const hasOptions = await page.locator('[role="option"]').count() > 0;
+    if (hasOptions) {
+      const activeDesc = await input.getAttribute('aria-activedescendant');
+      expect(activeDesc).toBeTruthy();
+      if (activeDesc) {
+        await expect(page.locator(`[id="${activeDesc}"]`)).toBeAttached();
+      }
+    }
+  });
+
+  test('A74 — Omni picker label is associated with input via htmlFor/id (for=id pair)', async ({ page }) => {
+    await openOmniCollectionForm(page);
+
+    const firstLabel = page.locator('.omni-component-picker label').first();
+    const forAttr = await firstLabel.getAttribute('for');
+    expect(forAttr).toMatch(/^omni-picker-input-/);
+
+    if (forAttr) {
+      await expect(page.locator(`[id="${forAttr}"]`)).toHaveCount(1);
+    }
+  });
+});
+
+// ─── 20. Group F — Connect / cloud form durable labels (#2349) ─────────────────
+
+test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
+  test('A75 — Cloud provider form fields have programmatic labels (no placeholder-only)', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('.connect');
+
+    await expect(page.getByLabel('Provider name')).toBeVisible();
+    await expect(page.getByLabel('Base URL')).toBeVisible();
+    await expect(page.getByLabel('Provider API key (optional)')).toBeVisible();
+  });
+
+  test('A76 — Marketplace search has accessible name', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('.connect');
+
+    const searchInput = page.locator('.connect__marketplace-search');
+    const ariaLabel = await searchInput.getAttribute('aria-label');
+    expect(ariaLabel).toBeTruthy();
+    expect(ariaLabel).toBe('Search marketplace apps');
+  });
+});
+
+// ─── 21. Group F — Icon-only / title-only controls have reliable names (#2353) ─
+
+test.describe('Accessibility — icon-button accessible names (#2353)', () => {
+  test('A77 — LogViewer search input has an accessible name (not placeholder-only)', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Logs');
+    await page.waitForSelector('.logs-view');
+
+    const searchInput = page.locator('.logs-search');
+    const ariaLabel = await searchInput.getAttribute('aria-label');
+    expect(ariaLabel).toBeTruthy();
+    expect(ariaLabel).toBe('Filter logs');
+  });
+
+  test('A78 — LogViewer Clear button has an aria-label with full action name', async ({ page }) => {
+    await page.goto('/');
+    await navigateToView(page, 'Logs');
+    await page.waitForSelector('.logs-view');
+
+    const clearBtn = page.locator('.logs-btn').filter({ hasNotText: 'Reconnect' }).first();
+    const ariaLabel = await clearBtn.getAttribute('aria-label');
+    expect(ariaLabel).toBe('Clear log output');
+  });
+
+  test('A79 — Omni picker clear button has aria-label naming target', async ({ page }) => {
+    await openCustomModelEditor(page, 'omni-collection');
+    await page.waitForSelector('.omni-component-picker');
+
+    const clearBtns = page.locator('.omni-component-picker__clear');
+    const count = await clearBtns.count();
+    if (count > 0) {
+      const ariaLabel = await clearBtns.first().getAttribute('aria-label');
+      expect(ariaLabel).toBeTruthy();
+      expect(ariaLabel).toMatch(/^Clear /);
+    }
+    expect(count).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ─── 22. MCP Gateway panel (ConnectView) — Phase A (read-only dashboard) ──────
+//        Covers: #2417 (endpoint visibility, copy, status, tools list)
+
+test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
+  const MCP_TOOLS = [
+    { name: 'lemonade_list_models', description: 'List all models available on this lemonade server.' },
+    { name: 'lemonade_chat', description: 'Send a chat completion request to a lemonade LLM model.' },
+    { name: 'lemonade_transcribe_audio', description: 'Transcribe audio to text.' },
+    { name: 'lemonade_generate_image', description: 'Generate an image from a text prompt.' },
+    { name: 'lemonade_omni', description: 'Multi-modal omni tool.' },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    // The Connect view also queries the separate stdio-host administration API.
+    // Keep that request deterministic and, crucially, outside the public /mcp mock.
+    await page.route('**/internal/mcp/servers', route =>
+      route.fulfill({ json: { servers: [] } }),
+    );
+  });
+
+  /** Mock health + MCP so the panel shows connected with a tools list. */
+  async function setupWithMcp(page: import('@playwright/test').Page): Promise<void> {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    // Both initialize (id:1) and tools/list (id:2) go to /mcp
+    let callIndex = 0;
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
+      const body = route.request().postDataJSON() as { method?: string; id?: number };
+      if (body?.method === 'initialize') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            result: {
+              protocolVersion: '2025-06-18',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'lemonade-mcp', version: '1.0.0' },
+            },
+          }),
+        });
+      } else if (body?.method === 'notifications/initialized') {
+        await route.fulfill({ status: 202, body: '' });
+      } else if (body?.method === 'tools/list') {
+        callIndex++;
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: MCP_TOOLS } }),
+        });
+      } else {
+        await route.fulfill({ status: 400, json: { error: 'Unexpected MCP request' } });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
+    void callIndex; // suppress unused warning
+  }
+
+  test('A80 — MCP panel is present in ConnectView with correct heading', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
+
+    const heading = page.locator('#mcp-section-title');
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveText('MCP Gateway');
+  });
+
+  test('A81 — MCP endpoint URL input contains /mcp path and is read-only', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]');
+
+    const input = page.locator('#mcp-endpoint-display');
+    await expect(input).toBeVisible();
+    const value = await input.inputValue();
+    expect(value).toMatch(/\/mcp$/);
+    expect(await input.getAttribute('readonly')).not.toBeNull();
+  });
+
+  test('A82 — Copy button has a qualifying aria-label mentioning clipboard', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]');
+
+    const copyBtn = page.locator('.mcp-panel__copy-btn');
+    await expect(copyBtn).toBeVisible();
+    const label = await copyBtn.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+    expect(label!.toLowerCase()).toContain('copy');
+    expect(label!.toLowerCase()).toContain('clipboard');
+  });
+
+  test('A83 — copy-confirmation live region is always present in DOM (not conditionally mounted)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]');
+
+    const liveRegion = page.locator('[data-mcp-copy-live]');
+    await expect(liveRegion).toHaveCount(1);
+    expect(await liveRegion.getAttribute('role')).toBe('status');
+    expect(await liveRegion.getAttribute('aria-live')).toBe('polite');
+    expect(await liveRegion.getAttribute('aria-atomic')).toBe('true');
+  });
+
+  test('A84 — health/status indicator has role="status" and aria-live="polite"', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]');
+
+    const statusEl = page.locator('[data-mcp-status]');
+    await expect(statusEl).toHaveCount(1);
+    expect(await statusEl.getAttribute('role')).toBe('status');
+    expect(await statusEl.getAttribute('aria-live')).toBe('polite');
+    expect(await statusEl.getAttribute('aria-atomic')).toBe('true');
+  });
+
+  test('A85 — with mocked MCP server, tools list renders with expected tool names', async ({ page }) => {
+    await setupWithMcp(page);
+    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+
+    const toolList = page.locator('[data-mcp-tools-list]');
+    await expect(toolList).toBeVisible();
+
+    const items = toolList.locator('.mcp-panel__tool-name');
+    const count = await items.count();
+    expect(count).toBe(MCP_TOOLS.length);
+
+    // Verify first expected tool name is present
+    await expect(toolList.getByText('lemonade_list_models')).toBeVisible();
+    await expect(toolList.getByText('lemonade_chat')).toBeVisible();
+  });
+
+  test('A86 — tools list element has accessible aria-label', async ({ page }) => {
+    await setupWithMcp(page);
+    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+
+    const toolList = page.locator('[data-mcp-tools-list]');
+    const label = await toolList.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A87 — Refresh button has aria-label and is a <button>', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]');
+
+    const refreshBtn = page.locator('[data-mcp-panel] button[aria-label="Refresh MCP tools list"]');
+    await expect(refreshBtn).toBeVisible();
+    const tag = await refreshBtn.evaluate(el => el.tagName.toLowerCase());
+    expect(tag).toBe('button');
+  });
+
+  test('A88 — ConnectView with MCP panel passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
+      const body = route.request().postDataJSON() as { method?: string; id?: number };
+      if (body?.method === 'initialize') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-mcp', version: '1.0.0' } },
+          }),
+        });
+      } else if (body?.method === 'notifications/initialized') {
+        await route.fulfill({ status: 202, body: '' });
+      } else if (body?.method === 'tools/list') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: MCP_TOOLS } }),
+        });
+      } else {
+        await route.fulfill({ status: 400, json: { error: 'Unexpected MCP request' } });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    // Wait for MCP panel and give tools list time to populate
+    await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
+    await page.waitForTimeout(500);
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .disableRules(['color-contrast'])
+      .analyze();
+
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toHaveLength(0);
+  });
+
+  test('A89 — MCP handshake: initialize→notifications/initialized→tools/list in order with correct params and MCP-Protocol-Version + Mcp-Session-Id headers', async ({ page }) => {
+    // Capture all /mcp requests in order so we can assert the sequence.
+    type CapturedRequest = {
+      method: string;
+      headers: Record<string, string>;
+      body: Record<string, unknown>;
+    };
+    const captured: CapturedRequest[] = [];
+
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
+      const body = route.request().postDataJSON() as {
+        method?: string; id?: number; params?: Record<string, unknown>;
+      };
+      const headers = route.request().headers();
+      captured.push({ method: body?.method ?? '', headers, body: body ?? {} });
+
+      if (body?.method === 'initialize') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          // Expose header so the cross-origin fetch can read it via Response.headers.get()
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Mcp-Session-Id',
+            'Mcp-Session-Id': 'sess-abc-123',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-mcp', version: '1.0.0' } },
+          }),
+        });
+      } else if (body?.method === 'notifications/initialized') {
+        // Notifications return 202 with empty body per Streamable HTTP spec.
+        await route.fulfill({ status: 202, body: '' });
+      } else {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body?.id, result: { tools: MCP_TOOLS } }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+
+    // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
+    expect(captured.length).toBeGreaterThanOrEqual(3);
+
+    // (a) initialize is first with correct params
+    const initReq = captured[0];
+    expect(initReq.method).toBe('initialize');
+    const initParams = (initReq.body as { params?: Record<string, unknown> }).params ?? {};
+    expect(initParams['protocolVersion']).toBe('2025-06-18');
+    expect(initParams['capabilities']).toMatchObject({ tools: {} });
+    const clientInfo = initParams['clientInfo'] as Record<string, string> | undefined;
+    expect(clientInfo?.['name']).toBe('lemonade-gui3');
+    expect(typeof clientInfo?.['version']).toBe('string');
+
+    // (b) notifications/initialized is second (no id field — it is a notification)
+    const notifReq = captured[1];
+    expect(notifReq.method).toBe('notifications/initialized');
+    expect((notifReq.body as { id?: unknown }).id).toBeUndefined();
+
+    // (c) tools/list is third
+    const toolsReq = captured[2];
+    expect(toolsReq.method).toBe('tools/list');
+
+    // (d) subsequent requests carry MCP-Protocol-Version and Mcp-Session-Id headers
+    // (HTTP headers are lowercased by the browser/node fetch internals)
+    expect(notifReq.headers['mcp-protocol-version']).toBe('2025-06-18');
+    expect(notifReq.headers['mcp-session-id']).toBe('sess-abc-123');
+    expect(toolsReq.headers['mcp-protocol-version']).toBe('2025-06-18');
+    expect(toolsReq.headers['mcp-session-id']).toBe('sess-abc-123');
+  });
+
+  test('A90 — MCP initialize failure: accessible error state shown, tools list absent, status not Connected', async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
+    );
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
+      const body = route.request().postDataJSON() as { method?: string; id?: number };
+      if (body?.method === 'initialize') {
+        // Server rejects with a JSON-RPC error in the response body.
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            error: { code: -32600, message: 'Unsupported protocol version' },
+          }),
+        });
+      } else {
+        // Should not be reached; fulfil defensively.
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body?.id, result: { tools: [] } }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Connect');
+    await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
+    // Allow async flow to settle
+    await page.waitForTimeout(600);
+
+    // Accessible error alert is visible and contains the server error message.
+    const errorEl = page.locator('[data-mcp-tools-error]');
+    await expect(errorEl).toBeVisible();
+    await expect(errorEl).toContainText('Unsupported protocol version');
+
+    // Tools list must NOT be rendered.
+    await expect(page.locator('[data-mcp-tools-list]')).toHaveCount(0);
+
+    // Status indicator must not claim 'Connected'.
+    const statusEl = page.locator('[data-mcp-status]');
+    await expect(statusEl).not.toContainText('Connected');
+  });
+});
+
+// ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
+//
+// Covers: model list panel, detail panel tablist, funnel filter button,
+// preset attach flow, and keyboard navigation — all added in Slice 1.
+// Range: A91–A105.
+
+test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
+  /** Navigate to Models view and wait for the master-detail layout to mount. */
+  async function goToModels(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+  }
+
+  /** Navigate to Models with mock API data of two models. */
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── Layout landmarks ─────────────────────────────────────────────────────────
+
+  test('A91 — manager--detail layout renders list panel and detail panel regions', async ({ page }) => {
+    await goToModels(page);
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+    await expect(page.locator('.model-detail-panel, .manager__detail-form-panel')).toBeAttached();
+  });
+
+  test('A92 — model list panel has an h1 heading "Models"', async ({ page }) => {
+    await goToModels(page);
+    await expect(page.locator('.manager__title h1')).toContainText('Models');
+  });
+
+  // ── Search input ─────────────────────────────────────────────────────────────
+
+  test('A93 — model list search input is associated with a label', async ({ page }) => {
+    await goToModels(page);
+    const input = page.locator('#model-list-search');
+    await expect(input).toBeVisible();
+    // label must exist with for="model-list-search"
+    const label = page.locator('label[for="model-list-search"]');
+    await expect(label).toBeAttached();
+  });
+
+  test('A94 — typing in search input filters the model list (aria-live count updates)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const search = page.locator('#model-list-search');
+    await search.fill('zzznotamodel');
+    await page.waitForTimeout(200);
+    // Either empty state is visible or count shows 0 models
+    const countText = await page.locator('.model-list-panel__count').textContent();
+    const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
+    expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
+  });
+
+  // ── Funnel filter ────────────────────────────────────────────────────────────
+
+  test('A95 — funnel filter button has aria-expanded and aria-haspopup', async ({ page }) => {
+    await goToModels(page);
+    const btn = page.locator('[aria-haspopup="dialog"]').filter({ has: page.locator('[aria-label*="filter" i], [aria-label*="Filter" i]') }).first();
+    // Fallback: any button with the funnel SVG class or the filter popover trigger
+    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
+    await expect(filterBtn).toBeAttached();
+    await expect(filterBtn).toHaveAttribute('aria-expanded');
+  });
+
+  test('A96 — funnel filter popover opens on button click and has role=dialog', async ({ page }) => {
+    await goToModels(page);
+    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
+    await filterBtn.click();
+    const popover = page.locator('[role="dialog"]').first();
+    await expect(popover).toBeVisible();
+    await expect(filterBtn).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  // ── List keyboard navigation ─────────────────────────────────────────────────
+
+  test('A97 — model list container has role=listbox with accessible label', async ({ page }) => {
+    await goToModels(page);
+    const listbox = page.getByRole('listbox', { name: 'Model list' });
+    await expect(listbox).toBeAttached();
+    const label = await listbox.getAttribute('aria-label');
+    expect(label).toBeTruthy();
+  });
+
+  test('A98 — model list items have role=option with aria-selected', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const items = page.locator('[role="option"]');
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < Math.min(count, 3); i++) {
+      await expect(items.nth(i)).toHaveAttribute('aria-selected');
+    }
+  });
+
+  test('A99 — ArrowDown/ArrowUp keyboard navigation moves selection in model list', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const listbox = page.getByRole('listbox', { name: 'Model list' });
+    await listbox.focus();
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(100);
+    // At least one option should now be selected
+    const selectedCount = await page.locator('[role="option"][aria-selected="true"]').count();
+    expect(selectedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Detail panel tablist ─────────────────────────────────────────────────────
+
+  test('A100 — detail panel tablist has correct ARIA structure (role=tablist, tabs, tabpanels)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select a model to open the detail panel
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const tablist = page.locator('[role="tablist"]');
+    await expect(tablist).toBeVisible();
+
+    const tabs = page.locator('[role="tab"]');
+    const tabCount = await tabs.count();
+    expect(tabCount).toBeGreaterThanOrEqual(2); // README + Presets at minimum
+
+    // Each tab must have aria-selected
+    for (let i = 0; i < tabCount; i++) {
+      await expect(tabs.nth(i)).toHaveAttribute('aria-selected');
+    }
+
+    // Exactly one tab should be selected
+    const selectedTabs = await page.locator('[role="tab"][aria-selected="true"]').count();
+    expect(selectedTabs).toBe(1);
+
+    // Active tabpanel must be visible
+    const activePanel = page.locator('[role="tabpanel"]:visible');
+    await expect(activePanel).toBeVisible();
+  });
+
+  test('A101 — tab keyboard navigation (ArrowLeft/ArrowRight) moves focus between tabs', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const tabs = page.locator('[role="tab"]');
+    await tabs.first().focus();
+    const initialLabel = await tabs.first().getAttribute('aria-label') ?? await tabs.first().textContent();
+
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(100);
+
+    // Second tab should now have focus / be selected
+    const secondSelected = await page.locator('[role="tab"][aria-selected="true"]').textContent();
+    expect(secondSelected).not.toBe(initialLabel?.trim());
+  });
+
+  // ── Preset tab attach flow ────────────────────────────────────────────────────
+
+  test('A102 — Presets tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await expect(presetsTab).toBeVisible();
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+    await expect(presetsTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('A103 — Presets tab panel has accessible heading or label', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    const tabpanel = page.locator('[role="tabpanel"]:visible');
+    await expect(tabpanel).toBeVisible();
+    // Panel should have aria-labelledby referencing the tab
+    const labelledBy = await tabpanel.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+  });
+
+  // ── Custom model management ───────────────────────────────────────────────────
+
+  test('A104 — custom-model heading action opens an accessible model-type switch', async ({ page }) => {
+    await goToModels(page);
+
+    const openCustomModels = page.getByRole('button', { name: 'Open custom models' });
+    await expect(openCustomModels).toBeVisible();
+    await expect(openCustomModels).toHaveRole('button');
+    await openCustomModels.click();
+
+    const typeGroup = page.getByRole('group', { name: 'Custom model type' });
+    const customBtn = typeGroup.getByRole('button', { name: 'Custom model', exact: true });
+    const omniBtn = typeGroup.getByRole('button', { name: 'Omni collection', exact: true });
+    await expect(typeGroup).toBeVisible();
+    await expect(customBtn).toBeVisible();
+    await expect(omniBtn).toBeVisible();
+    await expect(customBtn).toHaveRole('button');
+    await expect(omniBtn).toHaveRole('button');
+    await expect(customBtn).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('A105 — master-detail Models view passes WCAG 2.1 AA axe-core scan with mock data', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select first model to populate the detail panel
+    const items = page.locator('.model-list-item');
+    if (await items.count() > 0) {
+      await items.first().click();
+      await page.waitForTimeout(200);
+    }
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── 24. #2355 Slice 1 reconciliation — sort, responsive, README derivation, preset change ──
+//
+// Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications:
+//   A: README checkpoint derivation (tightened regex + checkpoints.main fallback)
+//   B: Sort controls (labeled select with 4 options)
+//   C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
+//   D: Presets tab Change inline chooser (attach + detach already present)
+// Range: A106–A115.
+
+test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarifications)', () => {
+  async function goToModels(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+  }
+
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+              checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── B: Sort controls ─────────────────────────────────────────────────────────
+
+  test('A106 — sort control is a labelled <select> with accessible name', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toBeVisible();
+    await expect(sortSelect).toHaveRole('combobox');
+
+    // Label must reference the select
+    const label = page.locator('label[for="model-list-sort"]');
+    await expect(label).toBeVisible();
+  });
+
+  test('A107 — sort control offers Name, Size, Last used, Download count options', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toBeVisible();
+
+    const opts = await sortSelect.locator('option').allTextContents();
+    expect(opts.some(t => /name/i.test(t))).toBe(true);
+    expect(opts.some(t => /size/i.test(t))).toBe(true);
+    expect(opts.some(t => /last.used/i.test(t))).toBe(true);
+    expect(opts.some(t => /download/i.test(t))).toBe(true);
+  });
+
+  test('A108 — sort select default value is Name (alphabetical)', async ({ page }) => {
+    await goToModels(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await expect(sortSelect).toHaveValue('name');
+  });
+
+  test('A109 — sort select is keyboard-operable (can change value via keyboard)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const sortSelect = page.locator('#model-list-sort');
+    await sortSelect.focus();
+    await sortSelect.selectOption('size');
+    await expect(sortSelect).toHaveValue('size');
+    // Revert
+    await sortSelect.selectOption('name');
+    await expect(sortSelect).toHaveValue('name');
+  });
+
+  // ── C: Responsive list-first ──────────────────────────────────────────────────
+
+  test('A110 — on narrow viewport (640px), detail panel is hidden until model selected', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    // Detail panel should not be visible before selection
+    const detailPanel = page.locator('.model-detail-panel');
+    await expect(detailPanel).not.toBeVisible();
+
+    // List should be visible
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+  });
+
+  test('A111 — on narrow viewport, selecting a model shows the detail panel and hides the list', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    // Detail visible, list hidden
+    await expect(page.locator('.model-detail-panel')).toBeVisible();
+    await expect(page.locator('.model-list-panel')).not.toBeVisible();
+  });
+
+  test('A112 — narrow viewport detail view has a "Back to models" button with accessible label', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const backBtn = page.locator('.model-detail-panel__back-btn');
+    await expect(backBtn).toBeVisible();
+    await expect(backBtn).toHaveRole('button');
+    const label = await backBtn.getAttribute('aria-label');
+    expect(label).toMatch(/back.+model/i);
+  });
+
+  test('A113 — Back button returns to list view and restores list visibility', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await goToModelsWithMock(page);
+
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const backBtn = page.locator('.model-detail-panel__back-btn');
+    await backBtn.click();
+    await page.waitForTimeout(200);
+
+    // List back, detail hidden
+    await expect(page.locator('.model-list-panel')).toBeVisible();
+    await expect(page.locator('.model-detail-panel')).not.toBeVisible();
+  });
+
+  // ── D: Preset Change inline chooser ──────────────────────────────────────────
+
+  test('A114 — preset Change button has aria-expanded and aria-haspopup="dialog"', async ({ page }) => {
+    // Inject a user preset via localStorage before page load
+    await page.addInitScript(() => {
+      // Seed a user preset compatible with LLM (chat), using scoped key
+      const preset = {
+        id: 'test-preset-1',
+        name: 'Test Chat Preset',
+        description: 'Seed preset for testing',
+        applies_to: ['chat'],
+        recipe_options: {},
+        sampling: {},
+        engine_hint: 'auto',
+        starter: false,
+        auto_opt_run_id: null,
+        auto_opt_enabled: true,
+        system_prompt_id: 'none',
+        system_prompts: [],
+        tools_enabled: false,
+      };
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
+      // Link the preset to Llama-3.1-8B
+      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-1' }));
+    });
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    // Navigate to Presets tab
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    // Change button should be visible (non-default preset is linked)
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await expect(changeBtn).toBeVisible();
+    await expect(changeBtn).toHaveAttribute('aria-haspopup', 'dialog');
+    const expanded = await changeBtn.getAttribute('aria-expanded');
+    expect(expanded).toBe('false');
+  });
+
+  test('A115 — preset Change chooser opens as role=dialog when Change clicked', async ({ page }) => {
+    await page.addInitScript(() => {
+      const preset = {
+        id: 'test-preset-2',
+        name: 'Alt Chat Preset',
+        description: 'Another preset',
+        applies_to: ['chat'],
+        recipe_options: {},
+        sampling: {},
+        engine_hint: 'auto',
+        starter: false,
+        auto_opt_run_id: null,
+        auto_opt_enabled: true,
+        system_prompt_id: 'none',
+        system_prompts: [],
+        tools_enabled: false,
+      };
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
+      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-2' }));
+    });
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await goToModels(page);
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await changeBtn.click();
+    await page.waitForTimeout(100);
+
+    // Chooser dialog should be visible
+    const chooser = page.locator('.detail-presets__change-chooser');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('role', 'dialog');
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
+
+    // Close chooser
+    const closeBtn = page.locator('.detail-presets__chooser-close');
+    await closeBtn.click();
+    await page.waitForTimeout(100);
+    await expect(chooser).not.toBeVisible();
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+// ─── 25. Model README raw-HTML rendering (#2355 README tab fix) ───────────────
+//
+// HF model READMEs commonly embed raw HTML (<div align="center">, <img>, badges,
+// tables). The README tab previously used markdown-it { html: false }, which
+// ESCAPED that markup so it appeared as literal text. Fix: html:true behind the
+// existing strict DOMPurify allowlist + a leading YAML frontmatter strip.
+// Range: A116–A117.
+
+test.describe('Accessibility — model README raw-HTML rendering (#2355)', () => {
+  async function goToModelsWithReadme(page: Page, readmeBody: string): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+              checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
+          ],
+        }),
+      }),
+    );
+    // Mock the Hugging Face README fetch the component performs against
+    // https://huggingface.co/${hfRepo}/raw/main/README.md
+    await page.route('**/huggingface.co/**/raw/main/README.md', async route =>
+      route.fulfill({ contentType: 'text/plain', body: readmeBody }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    // README is the default tab; wait for the rendered container.
+    await page.waitForSelector('.detail-readme', { timeout: 5000 });
+    await page.waitForTimeout(200);
+  }
+
+  test('A116 — raw HTML in README renders as real DOM elements, not escaped text', async ({ page }) => {
+    const readme = [
+      '# Model Card',
+      '',
+      '<div align="center"><strong>Centered Heading</strong></div>',
+      '',
+      '<img src="https://example.com/badge.svg" alt="build badge">',
+      '',
+      'Some normal markdown text.',
+    ].join('\n');
+
+    await goToModelsWithReadme(page, readme);
+
+    const container = page.locator('.detail-readme');
+    await expect(container).toBeVisible();
+
+    // Raw HTML must materialise as actual elements inside the README container.
+    await expect(container.locator('div[align="center"]')).toHaveCount(1);
+    await expect(container.locator('strong', { hasText: 'Centered Heading' })).toHaveCount(1);
+    await expect(container.locator('img[alt="build badge"]')).toHaveCount(1);
+
+    // And it must NOT appear as literal/escaped text.
+    const text = (await container.innerText()).toLowerCase();
+    expect(text).not.toContain('<div');
+    expect(text).not.toContain('&lt;div');
+    expect(text).not.toContain('<strong');
+    expect(text).not.toContain('<img');
+  });
+
+  test('A117 — leading YAML frontmatter block is stripped before rendering', async ({ page }) => {
+    const readme = [
+      '---',
+      'license: apache-2.0',
+      'pipeline_tag: text-generation',
+      'tags:',
+      '  - text-generation',
+      '---',
+      '',
+      '# Real Heading',
+      '',
+      'Body content goes here.',
+    ].join('\n');
+
+    await goToModelsWithReadme(page, readme);
+
+    const container = page.locator('.detail-readme');
+    await expect(container).toBeVisible();
+
+    // The real heading must render.
+    await expect(container.locator('h1', { hasText: 'Real Heading' })).toHaveCount(1);
+
+    // Frontmatter keys must NOT be visible as dumped text.
+    const text = await container.innerText();
+    expect(text).not.toContain('license: apache-2.0');
+    expect(text).not.toContain('pipeline_tag');
+  });
+});
+
+// ─── 26. #2355 left-rail parity — pin / favorite (client-local) ───────────────
+//
+// fl0rianr feedback (2026-06-25): the master-detail rail dropped the original
+// rail's pin/favorite affordance. Re-wired the existing client-local pin store
+// (localStorage `pinned_models`, no lemond) into ModelListPanel. Pinned models
+// float to the top; the affordance is a non-button span (so it does not nest an
+// interactive control inside role="option"), and keyboard/AT users toggle via
+// the "P" shortcut on the focused row, with pinned state in the row aria-label.
+// Range: A118–A123.
+
+test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
+  async function goToModelsWithMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  test('A118 — each model row exposes a pin affordance with an accessible title', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const pins = page.locator('.model-list-item__pin');
+    const count = await pins.count();
+    expect(count).toBeGreaterThan(0);
+    // Title communicates the pin action to pointer users.
+    const title = await pins.first().getAttribute('title');
+    expect((title ?? '').toLowerCase()).toContain('pin');
+  });
+
+  test('A119 — pin affordance is NOT a nested interactive button inside role="option"', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const pin = page.locator('.model-list-item__pin').first();
+    // It must be a span (not a button/anchor/input) so role=option does not nest
+    // an interactive control (axe nested-interactive).
+    const tag = await pin.evaluate(el => el.tagName.toLowerCase());
+    expect(tag).toBe('span');
+    // No button inside any option row.
+    expect(await page.locator('[role="option"] button').count()).toBe(0);
+  });
+
+  test('A120 — clicking the pin toggles the row pinned state and aria-label', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const row = page.locator('.model-list-item').first();
+    const pin = row.locator('.model-list-item__pin');
+    await pin.click();
+    await page.waitForTimeout(100);
+    // The (now-pinned) model floats to the top; assert the first row is pinned.
+    const firstRow = page.locator('.model-list-item').first();
+    await expect(firstRow).toHaveClass(/model-list-item--pinned/);
+    const label = await firstRow.getAttribute('aria-label');
+    expect((label ?? '').toLowerCase()).toContain('pinned');
+    // Unpin and verify the pinned class is removed.
+    await firstRow.locator('.model-list-item__pin').click();
+    await page.waitForTimeout(100);
+    expect(await page.locator('.model-list-item--pinned').count()).toBe(0);
+  });
+
+  test('A121 — selected row is keyboard-operable: "P" toggles pin (aria-keyshortcuts)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    // Select a model (focus moves to the detail panel in master-detail), then
+    // return focus to the now-focusable selected row (tabIndex 0) — the path a
+    // keyboard user takes via Shift+Tab — and press the advertised "P" shortcut.
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    const selected = page.locator('.model-list-item--selected');
+    // The shortcut must be advertised to assistive tech.
+    expect(await selected.getAttribute('aria-keyshortcuts')).toBe('P');
+    await selected.focus();
+    await page.keyboard.press('p');
+    await page.waitForTimeout(100);
+    const pinnedCount = await page.locator('.model-list-item--pinned').count();
+    expect(pinnedCount).toBe(1);
+    const label = await page.locator('.model-list-item--pinned').first().getAttribute('aria-label');
+    expect((label ?? '').toLowerCase()).toContain('pinned');
+  });
+
+  test('A122 — pinned state persists client-locally to localStorage (no lemond)', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.waitForTimeout(100);
+    const persisted = await page.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.endsWith('pinned_models')) return localStorage.getItem(key);
+      }
+      return null;
+    });
+    expect(persisted, 'a *pinned_models localStorage key should exist').toBeTruthy();
+    expect((persisted ?? '').length).toBeGreaterThan(2); // non-empty JSON array
+  });
+
+  test('A123 — model list with a pinned row passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsWithMock(page);
+    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.waitForTimeout(150);
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── Left navigation rail — three-pane model view (#2355 follow-up) ──────────
+//
+// fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
+// rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
+// (right). The left rail surfaces filter dimensions — primary nav (All/
+// Downloaded/My Models/Favorites), collapsible Categories, a Backends select,
+// collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
+// list (no lemond). Selecting any of them filters the middle list.
+// Range: A124–A136.
+
+test.describe('Accessibility — left navigation rail (#2355 three-pane)', () => {
+  async function goToModelsWithNavMock(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.model-nav-rail', { state: 'attached' });
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── Landmark & structure ─────────────────────────────────────────────────
+
+  test('A124 — left rail is a <nav> landmark with an accessible name', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const rail = page.locator('nav.model-nav-rail');
+    await expect(rail).toBeVisible();
+    expect(await rail.getAttribute('aria-label')).toBeTruthy();
+  });
+
+  // ── Primary nav ──────────────────────────────────────────────────────────
+
+  test('A125 — primary nav items are buttons with counts that are not the only signal', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const allBtn = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'All Models' });
+    await expect(allBtn).toBeVisible();
+    // Visible count chip plus an sr-only "N models" phrase so the count is not
+    // conveyed by the digit alone.
+    const accName = (await allBtn.getAttribute('aria-label')) ?? (await allBtn.textContent()) ?? '';
+    expect(accName.toLowerCase()).toContain('models');
+  });
+
+  test('A126 — selecting a primary nav item exposes selected state via aria-current and filters the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const before = await page.locator('.model-list-item').count();
+    const downloaded = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Downloaded' });
+    await downloaded.click();
+    await page.waitForTimeout(150);
+    expect(await downloaded.getAttribute('aria-current')).toBe('true');
+    const after = await page.locator('.model-list-item').count();
+    // Two of four mock models are downloaded.
+    expect(after).toBeLessThan(before);
+    expect(after).toBe(2);
+  });
+
+  test('A127 — primary nav is keyboard operable (focus + Enter selects)', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
+    await fav.focus();
+    await expect(fav).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(120);
+    expect(await fav.getAttribute('aria-current')).toBe('true');
+  });
+
+  // ── Categories (collapsible) ─────────────────────────────────────────────
+
+  test('A128 — Categories section header is a button with aria-expanded that toggles the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Categories' });
+    expect(await toggle.getAttribute('aria-expanded')).toBe('true');
+    await expect(page.locator('#nav-categories')).toBeVisible();
+    await toggle.click();
+    await page.waitForTimeout(100);
+    expect(await toggle.getAttribute('aria-expanded')).toBe('false');
+    await expect(page.locator('#nav-categories')).toBeHidden();
+  });
+
+  test('A129 — selecting a category filters the middle list (Audio → whisper only)', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const audio = page.locator('.model-nav-rail__cat-item').filter({ hasText: 'Audio' });
+    await audio.click();
+    await page.waitForTimeout(150);
+    expect(await audio.getAttribute('aria-current')).toBe('true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Whisper');
+  });
+
+  // ── Backends select ──────────────────────────────────────────────────────
+
+  test('A130 — Backends select is labelled and filters the list by recipe', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const select = page.locator('#nav-backend-select');
+    // Associated label.
+    const labelText = await page.locator('label[for="nav-backend-select"]').textContent();
+    expect((labelText ?? '').toLowerCase()).toContain('backend');
+    await select.selectOption('whispercpp');
+    await page.waitForTimeout(150);
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+  });
+
+  // ── Tags (collapsible chips) ─────────────────────────────────────────────
+
+  test('A131 — Tags section uses aria-pressed chips that filter the list', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const llamaTag = page.locator('.model-nav-rail__tag').filter({ hasText: /^Llama$/ });
+    await expect(llamaTag).toBeVisible();
+    expect(await llamaTag.getAttribute('aria-pressed')).toBe('false');
+    await llamaTag.click();
+    await page.waitForTimeout(150);
+    expect(await llamaTag.getAttribute('aria-pressed')).toBe('true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Llama');
+  });
+
+  // ── Storage meter ────────────────────────────────────────────────────────
+
+  test('A132 — Storage meter is a role=progressbar with value range and accessible name', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const bar = page.locator('.model-nav-rail__storage-bar');
+    await expect(bar).toHaveAttribute('role', 'progressbar');
+    expect(await bar.getAttribute('aria-valuenow')).toBeTruthy();
+    expect(await bar.getAttribute('aria-valuemin')).toBe('0');
+    const max = await bar.getAttribute('aria-valuemax');
+    expect(Number(max)).toBeGreaterThan(0);
+    // Accessible name via aria-label.
+    expect((await bar.getAttribute('aria-label')) ?? '').not.toBe('');
+  });
+
+  // ── Custom-model heading action ───────────────────────────────────────────
+
+  test('A133 — custom-model action is grouped with the Models heading and keyboard reachable', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+
+    const title = page.locator('.model-list-panel__title');
+    const heading = title.getByRole('heading', { name: 'Models' });
+    const customModelsBtn = title.getByRole('button', { name: 'Open custom models' });
+    await expect(title).toBeVisible();
+    await expect(heading).toBeVisible();
+    await expect(customModelsBtn).toBeVisible();
+
+    await customModelsBtn.focus();
+    await expect(customModelsBtn).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.custom-model-form')).toBeVisible();
+
+    // The heading action remains grounded above the model list.
+    const titleBox = await title.boundingBox();
+    const listBox = await page.locator('.model-list-panel__list').boundingBox();
+    expect(titleBox && listBox && titleBox.y < listBox.y).toBeTruthy();
+  });
+
+  // ── Responsive nav toggle ────────────────────────────────────────────────
+
+  test('A134 — on narrow viewport the nav toggle controls the rail and is keyboard reachable', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 900 });
+    await goToModelsWithNavMock(page);
+    const toggle = page.locator('.manager__nav-toggle');
+    await expect(toggle).toBeVisible();
+    expect(await toggle.getAttribute('aria-controls')).toBe('model-nav-rail');
+    expect(await toggle.getAttribute('aria-expanded')).toBe('false');
+    // Rail hidden until toggled.
+    await expect(page.locator('.model-nav-rail')).toBeHidden();
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(150);
+    expect(await toggle.getAttribute('aria-expanded')).toBe('true');
+    await expect(page.locator('.model-nav-rail')).toBeVisible();
+  });
+
+  // ── Axe scan ─────────────────────────────────────────────────────────────
+
+  test('A135 — three-pane model view with the left rail passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+
+  test('A136 — preset quick-search and "+ New" are removed from the nav rail (#2424)', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    await expect(page.locator('.model-nav-rail')).toBeVisible();
+    // The preset search box and "+ New" button no longer belong in the rail.
+    await expect(page.locator('#nav-preset-search')).toHaveCount(0);
+    await expect(page.locator('.model-nav-rail__preset-row')).toHaveCount(0);
+    await expect(page.locator('.model-nav-rail__new-btn')).toHaveCount(0);
+  });
+});
+
+// ─── 28. Model-detail Presets tab — neat compact card grid (#2424 fl0rianr) ───
+//
+// fl0rianr asked for the model-detail Presets tab to render presets as a neat
+// grid of small focused cards (matching the global Presets-page cards), not
+// full-width stacked rows. The linked preset sits above as a single highlighted
+// card; recommended presets render in a responsive grid. Each Attach/Switch
+// button names its preset, linked/active state is exposed via text + aria (not
+// color only), and the inline Change dialog still works.
+// Range: A137–A141.
+
+test.describe('Accessibility — model-detail Presets card grid (#2424)', () => {
+  async function goToPresetsTab(
+    page: Page,
+    opts: { applied?: Record<string, string> } = {},
+  ): Promise<void> {
+    const applied = opts.applied ?? {};
+    await page.addInitScript((appliedJson: string) => {
+      const presets = [
+        {
+          id: 'p-balanced', name: 'Balanced', description: 'Reliable defaults for everyday chat and general use.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
+        },
+        {
+          id: 'p-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, and debugging.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
+        },
+        {
+          id: 'p-creative', name: 'Creative', description: 'Higher creativity for brainstorming and writing.',
+          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
+          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: false,
+        },
+      ];
+      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+      localStorage.setItem('lemonade:guest:shared:applied_presets', appliedJson);
+    }, JSON.stringify(applied));
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(150);
+  }
+
+  test('A137 — recommended presets render as a grid of compact cards (not full-width rows)', async ({ page }) => {
+    await goToPresetsTab(page);
+    // The old row container is gone; the new grid is present.
+    await expect(page.locator('.detail-presets__preset-list')).toHaveCount(0);
+    const grid = page.locator('.detail-presets__preset-grid');
+    await expect(grid).toBeVisible();
+    await expect(grid).toHaveAttribute('role', 'list');
+    // Multiple compact cards rendered as a grid.
+    const cards = grid.locator('.detail-presets__preset-card');
+    expect(await cards.count()).toBeGreaterThanOrEqual(2);
+    const display = await grid.evaluate(el => getComputedStyle(el).display);
+    expect(display).toBe('grid');
+  });
+
+  test('A138 — each Attach/Switch button has an accessible name that includes its preset name', async ({ page }) => {
+    await goToPresetsTab(page);
+    const attachButtons = page.locator('.detail-presets__attach-btn');
+    const count = await attachButtons.count();
+    expect(count).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i < count; i++) {
+      const label = await attachButtons.nth(i).getAttribute('aria-label');
+      expect(label).toMatch(/(Attach|Switch to) preset ".+" for /);
+    }
+  });
+
+  test('A139 — linked/active state is exposed via text + aria, not color alone', async ({ page }) => {
+    // Link "Balanced" so it is both the active linked card and the selected option.
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+
+    // Linked card above carries aria-current + visible "Active" badge text.
+    const linkedCard = page.locator('.detail-presets__linked-card');
+    await expect(linkedCard).toHaveAttribute('aria-current', 'true');
+    await expect(linkedCard.locator('.detail-presets__card-badge--linked')).toHaveText(/Active/i);
+
+    // The matching card in the grid exposes aria-current + a text "Linked" badge.
+    const selected = page.locator('.detail-presets__preset-card--selected');
+    await expect(selected).toHaveAttribute('aria-current', 'true');
+    await expect(selected).toContainText(/Linked/i);
+    // Selected card shows a text note instead of an Attach button (state not by color only).
+    await expect(selected.locator('.detail-presets__card-linked-note')).toBeVisible();
+  });
+
+  test('A140 — Change dialog still opens from the linked card and closes', async ({ page }) => {
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+    const changeBtn = page.locator('.detail-presets__change-btn');
+    await expect(changeBtn).toBeVisible();
+    await changeBtn.click();
+    await page.waitForTimeout(100);
+    const chooser = page.locator('.detail-presets__change-chooser');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('role', 'dialog');
+    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('.detail-presets__chooser-close').click();
+    await page.waitForTimeout(100);
+    await expect(chooser).not.toBeVisible();
+  });
+
+  test('A141 — the Presets card grid passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
+    await expect(page.locator('.detail-presets__preset-grid')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── PR #2424 maintainer refinements (fl0rianr 2026-06-25) ──────────────────
+//
+// Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
+// reuses the existing client-local pin store and updates the Favorites nav
+// count; (2) the preset search + "+ New" removed from the left rail (covered by
+// the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
+// (4) the funnel filter scoped to CAPABILITIES with a solid opaque popover
+// background; (5) the left rail scrolls independently instead of clipping the
+// lower part of the screen when its sections are expanded.
+// Range: A142–A148.
+
+test.describe('Accessibility — model view refinements (#2424)', () => {
+  async function goToModelsRefined(page: Page): Promise<void> {
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    // Keep the storage-meter tests deterministic: this helper intentionally
+    // exercises the fallback estimate path instead of inheriting whatever disk
+    // shape a local dev server may expose today.
+    await page.route('**/api/v1/system-info**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({}),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
+  // ── 1. Favorite star toggle in the detail panel ──────────────────────────
+
+  test('A142 — detail panel favorite star is an aria-pressed toggle naming the model', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    const star = page.locator('.model-detail-panel__fav-btn');
+    await expect(star).toBeVisible();
+    await expect(star).toHaveRole('button');
+    // Off state: not pressed, label invites adding to favorites and names the model.
+    expect(await star.getAttribute('aria-pressed')).toBe('false');
+    const offLabel = (await star.getAttribute('aria-label')) ?? '';
+    expect(offLabel.toLowerCase()).toContain('favorite');
+    expect(offLabel).toContain('Llama-3.1-8B');
+    // Toggle on.
+    await star.click();
+    await page.waitForTimeout(120);
+    expect(await star.getAttribute('aria-pressed')).toBe('true');
+    expect(((await star.getAttribute('aria-label')) ?? '').toLowerCase()).toContain('remove');
+  });
+
+  test('A143 — favoriting in the detail panel updates the Favorites nav count and persists to a DISTINCT favorites store', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    await page.locator('.model-detail-panel__fav-btn').click();
+    await page.waitForTimeout(150);
+
+    // Favorites primary-nav entry now reports one model (via its sr-only phrase).
+    const fav = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Favorites' });
+    await expect(fav).toContainText('1');
+
+    // Favorites is a DISTINCT concept from Pinned (#2424): it must persist to a
+    // SEPARATE favorite_models key, NOT the pinned_models store.
+    const stores = await page.evaluate(() => {
+      let favorite: string | null = null;
+      let pinned: string | null = null;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.endsWith('favorite_models')) favorite = localStorage.getItem(key);
+        if (key.endsWith('pinned_models')) pinned = localStorage.getItem(key);
+      }
+      return { favorite, pinned };
+    });
+    expect(stores.favorite, 'favorite must persist to a separate favorite_models store').toBeTruthy();
+    expect((stores.favorite ?? '').toLowerCase()).toContain('llama-3.1-8b');
+    // The pinned store must NOT have been touched by favoriting.
+    expect((stores.pinned ?? '').toLowerCase()).not.toContain('llama-3.1-8b');
+  });
+
+  // ── 3. "Back to models" only on narrow viewports ─────────────────────────
+
+  test('A144 — "Back to models" is hidden on desktop widths', async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await goToModelsRefined(page);
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    // Present in the DOM but visually hidden on desktop.
+    await expect(page.locator('.model-detail-panel__back-btn')).toBeHidden();
+  });
+
+  // ── 4. Funnel filter: capabilities only + opaque background ───────────────
+
+  test('A145 — the funnel filter popover filters by functional capability tags and has a solid background', async ({ page }) => {
+    await goToModelsRefined(page);
+    const filterBtn = page.locator('.model-list-panel__filter-btn');
+    await filterBtn.click();
+    await page.waitForTimeout(120);
+    const popover = page.locator('.model-list-panel__filter-popover');
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(/capabilit/i);
+
+    // Options are the functional capability tags PRESENT in the data — the four
+    // mock models expose Chat, Tool use, Audio and Image (multi-select toggles).
+    const options = popover.locator('.model-list-panel__filter-option');
+    await expect(options).toHaveCount(4);
+    await expect(popover).toContainText(/Tool use/i);
+    await expect(popover).toContainText(/Audio/i);
+
+    // Background must be opaque (not transparent) so list content does not bleed through.
+    const bg = await popover.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+    expect(bg).not.toBe('transparent');
+  });
+
+  test('A146 — toggling a capability in the funnel popover filters the list (multi-select)', async ({ page }) => {
+    await goToModelsRefined(page);
+    await page.locator('.model-list-panel__filter-btn').click();
+    await page.waitForTimeout(120);
+    const audio = page.locator('.model-list-panel__filter-option').filter({ hasText: /Audio/ });
+    await audio.click();
+    await page.waitForTimeout(150);
+    // The toggle reports its pressed state (multi-select stays open).
+    await expect(audio).toHaveAttribute('aria-pressed', 'true');
+    const rows = page.locator('.model-list-item');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Whisper');
+  });
+
+  // ── 5. Left rail scrolls instead of clipping ─────────────────────────────
+
+  test('A147 — the left nav rail is independently scrollable and reaches the Storage meter', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 600 });
+    await goToModelsRefined(page);
+    const rail = page.locator('.model-nav-rail');
+    await expect(rail).toBeVisible();
+    // The rail must own its own scroll area …
+    const overflowY = await rail.evaluate(el => getComputedStyle(el).overflowY);
+    expect(overflowY).toBe('auto');
+    // … and must not exceed the viewport height (no clipping past the screen).
+    const box = await rail.boundingBox();
+    expect(box, 'rail bounding box').toBeTruthy();
+    expect((box!.y + box!.height)).toBeLessThanOrEqual(601);
+    // The Storage meter stays reachable by scrolling within the rail.
+    const storage = page.locator('.model-nav-rail__storage');
+    await storage.scrollIntoViewIfNeeded();
+    await expect(storage).toBeVisible();
+  });
+
+  // ── 6. Capability icons on rows + empty-state in detail pane (#2424) ──────
+
+  test('A149 — middle-list rows show multiple capability icons with an accessible label', async ({ page }) => {
+    await goToModelsRefined(page);
+    // The Llama row exposes both Chat and Tool-use capabilities → ≥2 icons.
+    const llamaRow = page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' });
+    const caps = llamaRow.locator('.model-list-item__caps');
+    await expect(caps).toHaveAttribute('role', 'img');
+    const label = (await caps.getAttribute('aria-label')) ?? '';
+    expect(label.toLowerCase()).toContain('capabilities');
+    expect(label).toMatch(/Tool use/i);
+    // Multiple capability icon slots rendered for this multi-capability model.
+    const iconCount = await caps.locator('.model-list-item__cap').count();
+    expect(iconCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test('A150 — the "no model selected" empty state lives in the detail pane, NOT the middle list', async ({ page }) => {
+    await goToModelsRefined(page);
+    // Nothing selected yet: the middle list must NOT render an empty placeholder…
+    await expect(page.locator('.model-list-panel__empty')).toHaveCount(0);
+    // …and the model rows are still present (the list is populated).
+    expect(await page.locator('.model-list-item').count()).toBeGreaterThan(0);
+    // The empty/placeholder message belongs to the RIGHT detail pane.
+    const placeholder = page.locator('.model-detail-panel__placeholder');
+    await expect(placeholder).toBeVisible();
+    await expect(placeholder).toContainText(/no model selected/i);
+  });
+
+  // ── 7. Storage meter uses derived data, not the 32/512 mock (#2424) ───────
+
+  test('A151 — Storage meter derives from data (no hardcoded 512 GB) and labels fallback estimates', async ({ page }) => {
+    await goToModelsRefined(page);
+    const value = page.locator('.model-nav-rail__storage-value');
+    const text = (await value.textContent()) ?? '';
+    // Downloaded mock sizes total 11 GB → the fallback capacity is derived from
+    // the data (32 GB), never the old 512 GB literal. If a real storage source
+    // is available in the test/browser environment, this assertion still guards
+    // against regressing to the hardcoded mock.
+    expect(text).not.toContain('512');
+    const match = text.match(/(\d+)\s*GB\s*\/\s*(\d+)\s*GB/i);
+    expect(match).not.toBeNull();
+
+    const bar = page.locator('.model-nav-rail__storage-bar');
+    const ariaLabel = ((await bar.getAttribute('aria-label')) ?? '').toLowerCase();
+    const ariaValueText = ((await bar.getAttribute('aria-valuetext')) ?? '').toLowerCase();
+    const ariaValueMax = Number(await bar.getAttribute('aria-valuemax'));
+    const visibleTotal = Number(match?.[2] ?? NaN);
+
+    expect(ariaLabel).toContain('model storage used');
+    expect(ariaValueMax).toBe(visibleTotal);
+    expect(ariaValueMax).not.toBe(512);
+
+    const labelText = ((await page.locator('.model-nav-rail__storage-label').textContent()) ?? '').toLowerCase();
+    expect(labelText).toContain('est');
+    expect(ariaLabel).toContain('estimat');
+    expect(ariaValueText).toContain('estimat');
+  });
+
+  // ── 8. HuggingFace inline zone in the model list panel (#2564) ──────────────
+
+  async function goToModelsRefinedWithHf(page: Page): Promise<void> {
+    await page.route('**huggingface.co/api/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'org/Mistral-7B-GGUF', modelId: 'org/Mistral-7B-GGUF', likes: 10, downloads: 999, tags: ['gguf', 'text-generation'], pipeline_tag: 'text-generation' },
+          { id: 'org/Phi-3-GGUF', modelId: 'org/Phi-3-GGUF', likes: 5, downloads: 500, tags: ['gguf'], pipeline_tag: 'text-generation' },
+        ]),
+      }),
+    );
+    await goToModelsRefined(page);
+  }
+
+  test('A152 — HuggingFace results appear inline in the model list panel on search and clear when search is cleared', async ({ page }) => {
+    await goToModelsRefinedWithHf(page);
+    const search = page.locator('#model-list-search');
+    await search.fill('mistral');
+    // Allow the debounced HF search (400ms) + render to settle.
+    await page.waitForTimeout(900);
+
+    // No nav rail HF entry — results are inline in the list panel.
+    await expect(page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Hugging Face' })).toHaveCount(0);
+
+    // HF zone is visible (elevated at top since no local models match "mistral").
+    const hfZone = page.locator('.zone--hf');
+    await expect(hfZone).toBeVisible();
+    await expect(hfZone).toContainText('HuggingFace');
+
+    // HF result cards are present in the zone.
+    const hfRows = page.locator('.zone--hf .row--hf');
+    await expect(hfRows).toHaveCount(2);
+
+    // Clearing the search removes the HF zone entirely.
+    await search.fill('');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.zone--hf')).toHaveCount(0);
+  });
+
+  test('A153 — the model view with an active HuggingFace search passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsRefinedWithHf(page);
+    await page.locator('#model-list-search').fill('mistral');
+    await page.waitForTimeout(900);
+    // HF zone is now inline in the list panel; no nav rail click needed.
+    await expect(page.locator('.zone--hf')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+
+// ─── 31. Update preset while a model is loaded (#2356, simplified) ────────────
+//
+// When a model is loaded and a DIFFERENT preset is linked to it, an
+// "Apply preset" / "Reload to apply preset" button appears next to "Unload".
+// Simplified design (no update-preset endpoint, no client `mode` param):
+//   • Live changes (sampling / system prompt / tools) are a pure client-local
+//     rebind — NO network call, applied by request composition next request.
+//   • Load-time changes (recipe_options) perform a real reload = unload + load
+//     (api.reloadModel). The active-preset binding persists across the reload.
+// Range: A154–A166.
+
+test.describe('Accessibility — update preset while loaded (#2356)', () => {
+  const MODEL = 'Llama-3.1-8B';
+
+  function preset(id: string, name: string, extra: Record<string, unknown> = {}) {
+    return {
+      id, name,
+      description: `${name} preset`,
+      applies_to: ['chat'],
+      recipe_options: { ctx_size: 4096 },
+      sampling: { temperature: 0.7, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 },
+      engine_hint: 'auto',
+      starter: false,
+      auto_opt_run_id: null,
+      auto_opt_enabled: true,
+      system_prompt_id: 'none',
+      system_prompts: [],
+      tools_enabled: false,
+      ...extra,
+    };
+  }
+
+  // p-base: running baseline. p-live: only sampling differs (live).
+  // p-reload: recipe_options differ (reload).
+  const PRESETS = [
+    preset('p-base', 'Base'),
+    preset('p-live', 'Live Tweaks', { sampling: { temperature: 0.2, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 } }),
+    preset('p-reload', 'Big Context', { recipe_options: { ctx_size: 8192 } }),
+  ];
+
+  type ReloadCall = { kind: 'unload' | 'load'; model_name?: string };
+
+  /**
+   * Seed presets, mark the model loaded (health.all_models_loaded), capture
+   * unload/load calls (the only server round-trip — for load-time reloads),
+   * navigate to Models, and select the loaded model.
+   * Returns the captured-calls array (mutated as requests arrive).
+   */
+  async function setup(page: Page, appliedPresetId: string): Promise<ReloadCall[]> {
+    const calls: ReloadCall[] = [];
+    await page.addInitScript(
+      ({ presets, applied, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: applied }));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: PRESETS, applied: appliedPresetId, model: MODEL },
+    );
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok', version: 'test',
+          all_models_loaded: [
+            { model_name: MODEL, recipe: 'llamacpp', device: 'gpu', type: 'llm', backend_url: 'http://x', pid: 1 },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }),
+      }),
+    );
+    await page.route('**/api/v1/unload', async route => {
+      let model_name: string | undefined;
+      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
+      calls.push({ kind: 'unload', model_name });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+    await page.route('**/api/v1/load', async route => {
+      let model_name: string | undefined;
+      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
+      calls.push({ kind: 'load', model_name });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    return calls;
+  }
+
+  /** Switch the linked preset via the Presets-tab Change chooser. */
+  async function switchLinkedPreset(page: Page, presetName: string): Promise<void> {
+    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
+    await presetsTab.click();
+    await page.waitForTimeout(100);
+    await page.locator('.detail-presets__change-btn').click();
+    await page.waitForTimeout(100);
+    await page.locator(`.detail-presets__chooser-option[aria-label*="${presetName}"]`).click();
+    await page.waitForTimeout(150);
+  }
+
+  const updateBtn = '.model-detail-panel__update-preset-btn';
+
+  test('A154 — no Apply preset button when the loaded model already runs its linked preset', async ({ page }) => {
+    await setup(page, 'p-base');
+    // Model is loaded (Unload button present); linked == running (p-base).
+    await expect(page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i })).toBeVisible();
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A155 — switching to a live-only preset reveals "Apply preset" next to Unload', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const btn = page.locator(updateBtn);
+    await expect(btn).toBeVisible();
+    // Sits in the same actions group as Unload.
+    await expect(page.locator('.model-detail-panel__actions').locator(updateBtn)).toBeVisible();
+    await expect(btn).toContainText(/apply preset/i);
+    const label = await btn.getAttribute('aria-label');
+    expect(label).toMatch(/apply preset/i);
+    expect(label).not.toMatch(/reload/i);
+  });
+
+  test('A156 — clicking Apply preset (live) is a pure rebind: no reload call, announces no reload', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(300);
+    // Live op makes NO server round-trip (no unload/load).
+    expect(calls.length).toBe(0);
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toContainText(/applied live|no reload/i);
+    // Button disappears once running == linked again.
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A157 — switching to a reload-requiring preset labels the button as reloading', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    const btn = page.locator(updateBtn);
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText(/reload to apply preset/i);
+    const label = await btn.getAttribute('aria-label');
+    expect(label).toMatch(/reload/i);
+  });
+
+  test('A158 — clicking Reload to apply preset performs a real reload (unload + load) and announces it', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(500);
+    // Reload = unload followed by load, both targeting the model.
+    expect(calls.map(c => c.kind)).toEqual(['unload', 'load']);
+    expect(calls.every(c => c.model_name === MODEL)).toBe(true);
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toContainText(/reload/i);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A159 — Apply preset button is keyboard operable (Enter triggers the rebind)', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const btn = page.locator(updateBtn);
+    await btn.focus();
+    await expect(btn).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    // Live rebind: no reload call; affordance clears.
+    expect(calls.length).toBe(0);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A160 — preset update feedback is a polite live region', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const status = page.locator('.model-detail-panel__preset-update');
+    await expect(status).toHaveAttribute('role', 'status');
+    await expect(status).toHaveAttribute('aria-live', 'polite');
+  });
+
+  test('A161 — no Apply preset button for a non-loaded model even with a non-default preset linked', async ({ page }) => {
+    // Model NOT in all_models_loaded → not loaded.
+    await page.addInitScript(
+      ({ presets, model }) => {
+        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
+        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: 'p-live' }));
+        localStorage.removeItem('lemonade:guest:shared:running_presets');
+      },
+      { presets: PRESETS, model: MODEL },
+    );
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }) }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(200);
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+  });
+
+  test('A162 — Apply/Reload preset visible state passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await expect(page.locator(updateBtn)).toBeVisible();
+    const results = await new AxeBuilder({ page }).withTags([...WCAG_TAGS]).analyze();
+    const critical = results.violations.filter(v => v.impact === 'critical' || v.impact === 'serious');
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+
+  test('A163 — after a live apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    await page.locator(updateBtn).click();
+    await page.waitForTimeout(300);
+    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
+    await expect(unload).toBeFocused();
+  });
+
+  test('A164 — live Apply preset button accessible name names the target model', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Live Tweaks');
+    const label = await page.locator(updateBtn).getAttribute('aria-label');
+    expect(label).toMatch(new RegExp(`apply preset for ${MODEL}`, 'i'));
+  });
+
+  test('A165 — reload Apply preset button accessible name names the target model', async ({ page }) => {
+    await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    const label = await page.locator(updateBtn).getAttribute('aria-label');
+    expect(label).toMatch(new RegExp(`reload ${MODEL} to apply preset`, 'i'));
+  });
+
+  test('A166 — after a reload apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
+    const calls = await setup(page, 'p-base');
+    await switchLinkedPreset(page, 'Big Context');
+    await page.locator(updateBtn).click();
+
+    // Wait for the actual reload contract instead of relying on a fixed delay.
+    await expect.poll(() => calls.map(c => c.kind).join(','), { timeout: 5000 }).toBe('unload,load');
+    await expect(page.locator(updateBtn)).toHaveCount(0);
+
+    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
+    await expect(unload).toBeEnabled();
+    await expect(unload).toBeFocused();
+  });
+});
+
+// ─── 29. Model-detail Files tab — model file listing (#2428 Slice 2) ──────────
+//
+// Slice 2 wires the Files tab to the new GET /api/v1/models/{id}/files endpoint
+// (PR #2437). The tab renders the physical files backing a model — filename,
+// role badge, human-readable size, and download status — in an accessible
+// <table> with column headers and a caption. Empty/error/loading states are
+// covered too. Range: A180–A184.
+
+test.describe('Accessibility — model-detail Files tab (#2428)', () => {
+  const SAMPLE_FILES = [
+    { name: 'Llama-3.1-8B-Q4_K_M.gguf', role: 'main', size_bytes: 4294967296, exists: true },
+    { name: 'mmproj-Llama-3.1-8B.gguf', role: 'mmproj', size_bytes: 524288000, exists: true },
+    { name: 'tokenizer.json', role: 'tokenizer', size_bytes: 0, exists: false },
+  ];
+
+  async function goToFilesTab(
+    page: Page,
+    opts: { files?: Array<Record<string, unknown>>; filesStatus?: number } = {},
+  ): Promise<void> {
+    const files = opts.files ?? SAMPLE_FILES;
+    const filesStatus = opts.filesStatus ?? 200;
+
+    await page.route('**/api/v1/health', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    // Registered AFTER the generic /models** route so this more specific handler
+    // wins (Playwright matches routes in reverse registration order).
+    await page.route('**/api/v1/models/*/files', async route =>
+      route.fulfill({
+        status: filesStatus,
+        contentType: 'application/json',
+        body: JSON.stringify({ model_id: 'Llama-3.1-8B', files }),
+      }),
+    );
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Models');
+    await page.waitForSelector('.manager--detail');
+    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-item').first().click();
+    await page.waitForTimeout(150);
+    await page.locator('[role="tab"]').filter({ hasText: /Files/i }).click();
+    await page.waitForTimeout(200);
+  }
+
+  test('A180 — Files tab renders a table with accessible column headers', async ({ page }) => {
+    await goToFilesTab(page);
+    const table = page.locator('.detail-files__table');
+    await expect(table).toBeVisible();
+    // Column headers expose scope="col" so screen readers announce them.
+    const headers = table.locator('th[scope="col"]');
+    expect(await headers.count()).toBe(4);
+    await expect(table.locator('caption')).toHaveText(/Files backing/i);
+    // One body row per file returned by the endpoint.
+    await expect(table.locator('tbody tr')).toHaveCount(SAMPLE_FILES.length);
+  });
+
+  test('A181 — file rows show name, role badge, size, and download status', async ({ page }) => {
+    await goToFilesTab(page);
+    const firstRow = page.locator('.detail-files__table tbody tr').first();
+    await expect(firstRow.locator('.detail-files__name')).toContainText('Llama-3.1-8B-Q4_K_M.gguf');
+    await expect(firstRow.locator('.detail-files__role-badge')).toHaveText(/Main/i);
+    // 4294967296 bytes == 4.00 GB (binary units).
+    await expect(firstRow.locator('.detail-files__col-size')).toContainText('GB');
+    await expect(firstRow.locator('.detail-files__status--present')).toContainText(/Downloaded/i);
+
+    // A not-yet-downloaded file surfaces the missing state (not by color alone).
+    const missingRow = page.locator('.detail-files__table tbody tr').last();
+    await expect(missingRow.locator('.detail-files__status--missing')).toContainText(/Not downloaded/i);
+  });
+
+  test('A182 — empty file list shows an accessible empty state', async ({ page }) => {
+    await goToFilesTab(page, { files: [] });
+    await expect(page.locator('.detail-files__table')).toHaveCount(0);
+    const empty = page.locator('.detail-files--empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(/No files found/i);
+  });
+
+  test('A183 — a failed files request shows an error state, not a broken table', async ({ page }) => {
+    await goToFilesTab(page, { filesStatus: 500 });
+    await expect(page.locator('.detail-files__table')).toHaveCount(0);
+    await expect(page.locator('.detail-files--empty')).toContainText(/Unable to load files/i);
+  });
+
+  test('A184 — the Files tab passes a WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToFilesTab(page);
+    await expect(page.locator('.detail-files__table')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── MCP failure recovery ────────────────────────────────────────────────────
+
+test.describe('MCP failure recovery', () => {
+  test('MCP list errors never block selecting No MCP in an editable preset', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
+    await page.route('**/internal/mcp/servers**', route => route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY' }),
+    }));
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.getByRole('button', { name: '+ New Preset' }).first().click();
+
+    const none = page.locator('[data-preset-mcp-none]');
+    await expect(none).toBeVisible();
+    await expect(none).toBeEnabled();
+    await none.click();
+    await expect(none).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText(/You can still select No MCP or Lemonade/)).toBeVisible();
   });
 });

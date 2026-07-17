@@ -1,12 +1,33 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
-import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
+import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, modelMatchesCapabilityTags, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
+import { ModelListPanel, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
+import type { PrimaryFilter } from './ModelListPanel';
+import { ModelNavRail } from './ModelNavRail';
+import { ModelDetailPanel } from './ModelDetailPanel';
+import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
+import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
+import RouterEditorPanel from './RouterEditorPanel';
+import GlobalModelSettingsPanel, { type UpdateAllModelsResult } from './GlobalModelSettingsPanel';
+import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
+import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
+import {
+  GLOBAL_MODEL_SETTINGS_EVENT,
+  automaticUpdateIsDue,
+  loadGlobalModelSettings,
+  loadPinnedModelNames,
+  loadWithGlobalModelPolicy,
+  saveGlobalModelSettings,
+  savePinnedModelNames,
+  type GlobalModelSettings,
+} from '../features/modelSettings/globalModelSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -83,7 +104,12 @@ function recipeBadgeText(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS';
+    case 'trellis': return 'TRELLIS';
     case 'collection.omni': return 'Omni';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Backend';
   }
@@ -100,7 +126,12 @@ function recipeColor(recipe: string): string {
     case 'whispercpp': return '#38bdf8';
     case 'moonshine': return '#22d3ee';
     case 'kokoro': return '#f472b6';
+    case 'acestep': return '#fb7185';
+    case 'thinksound': return '#2dd4bf';
+    case 'openmoss': return '#f9a8d4';
+    case 'trellis': return '#818cf8';
     case 'collection.omni': return '#a78bfa';
+    case 'collection.router': return '#22d3ee';
     case 'collection': return '#94a3b8';
     default: return 'var(--text-tertiary)';
   }
@@ -131,7 +162,12 @@ function recipeLabel(recipe: string): string {
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro TTS';
+    case 'acestep': return 'ACE-Step';
+    case 'thinksound': return 'ThinkSound';
+    case 'openmoss': return 'OpenMOSS TTS';
+    case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni Collection';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
   }
@@ -166,6 +202,9 @@ function labelDisplay(label: string): string {
     'reranker': 'Reranking',
     'reranking': 'Reranking',
     'audio': 'Audio',
+    'audio-generation': 'Audio generation',
+    'music-generation': 'Music generation',
+    'sound-generation': 'Sound generation',
     'asr': 'ASR',
     'stt': 'STT',
     'speech-to-text': 'Speech to Text',
@@ -177,6 +216,10 @@ function labelDisplay(label: string): string {
     'text-to-speech': 'Text to Speech',
     'image': 'Image',
     'image-generation': 'Image',
+    '3d': '3D',
+    '3d-generation': '3D',
+    'image-to-3d': 'Image to 3D',
+    'model3d': '3D',
     'diffusion': 'Image',
     'edit': 'Edit',
     'image-edit': 'Edit',
@@ -202,8 +245,10 @@ function iconForCapabilityLabel(label: string): CapabilityIconTarget {
   if (['vision', 'image-input', 'vlm', 'vision-language'].includes(key)) return 'vision';
   if (['coding', 'code'].includes(key)) return 'code';
   if (['image', 'image-generation', 'diffusion', 'edit', 'image-edit', 'image-editing', 'upscaling'].includes(key)) return 'image';
+  if (['audio-generation', 'music-generation', 'sound-generation', 'sfx'].includes(key)) return 'audio-generation';
   if (['audio', 'transcription', 'realtime-transcription', 'chat-transcription', 'asr', 'stt', 'speech-to-text'].includes(key)) return 'transcription';
-  if (['tts', 'speech', 'text-to-speech'].includes(key)) return 'tts';
+  if (['tts', 'speech', 'text-to-speech', 'voice-design'].includes(key)) return 'tts';
+  if (['3d', '3d-generation', 'image-to-3d', 'model3d'].includes(key)) return 'model3d';
   if (['embedding', 'embeddings'].includes(key)) return 'embedding';
   if (['reranking', 'reranker', 'rerank'].includes(key)) return 'reranking';
   return 'unknown';
@@ -215,7 +260,9 @@ function labelFromCapability(capability: ModelCapability): string | null {
     case 'omni': return 'omni';
     case 'image': return 'image';
     case 'audio': return 'transcription';
+    case 'audio-generation': return 'audio-generation';
     case 'tts': return 'tts';
+    case 'model3d': return '3d';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
     default: return null;
@@ -353,8 +400,13 @@ const RECIPE_BADGES: Record<string, string> = {
   llamacpp: 'llama.cpp',
   vllm: 'vLLM',
   moonshine: 'Moonshine',
+  acestep: 'ACE-Step',
+  thinksound: 'ThinkSound',
+  openmoss: 'OpenMOSS',
+  trellis: 'TRELLIS.2',
   'ryzenai-llm': 'RyzenAI',
   'collection.omni': 'Omni Collection',
+  'collection.router': 'Router',
 };
 
 type CustomRecipeOption = { value: string; recipe: string; backend?: string; label: string; hint: string };
@@ -422,14 +474,28 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
     checkpoint: 'mikkoph/kokoro-onnx',
     note: 'Kokoro ONNX model repository or local model path.',
   },
+  acestep: {
+    checkpoint: 'Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf',
+    note: 'ACE-Step checkpoint for music generation.',
+  },
+  thinksound: {
+    checkpoint: 'ilintar/thinksound-gguf',
+    note: 'ThinkSound checkpoint for prompt-driven sound effects.',
+  },
+  openmoss: {
+    checkpoint: 'ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf',
+    note: 'OpenMOSS checkpoint for speech synthesis or voice design.',
+  },
+  trellis: {
+    checkpoint: 'ilintar/trellis2-gguf',
+    note: 'TRELLIS.2 checkpoint for image-to-3D reconstruction.',
+  },
 };
 
-const CheckpointExampleCard: React.FC<{ title: string; checkpoint: string; note?: string }> = ({ title, checkpoint, note }) => (
-  <div className="custom-model-form__checkpoint-example" aria-label={title}>
-    <strong>{title}</strong>
-    <span><code title={checkpoint}>{checkpoint}</code></span>
-    {note ? <small>{note}</small> : <small aria-hidden="true">&nbsp;</small>}
-  </div>
+const InlineCheckpointExample: React.FC<{ checkpoint: string; note?: string }> = ({ checkpoint, note }) => (
+  <span className="custom-model-form__inline-example" title={note || checkpoint}>
+    Example: <code>{checkpoint}</code>
+  </span>
 );
 
 function optionValue(recipe: string, backend?: string): string {
@@ -459,7 +525,15 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
     customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
   ],
-  tts: [customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend')],
+  'audio-generation': [
+    customRecipeOption('acestep', 'ACE-Step', 'Music generation backend'),
+    customRecipeOption('thinksound', 'ThinkSound', 'Sound-effect generation backend'),
+  ],
+  tts: [
+    customRecipeOption('openmoss', 'OpenMOSS TTS', 'OpenMOSS speech and voice-design backend'),
+    customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend'),
+  ],
+  model3d: [customRecipeOption('trellis', 'TRELLIS.2', 'Image-to-3D reconstruction backend')],
   embedding: [customRecipeOption('llamacpp', 'llama.cpp', 'Embedding through llama.cpp-compatible model')],
   reranking: [customRecipeOption('llamacpp', 'llama.cpp', 'Reranking through llama.cpp-compatible model')],
 };
@@ -492,21 +566,29 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   whispercpp: ['audio'],
   moonshine: ['audio'],
   kokoro: ['tts'],
+  openmoss: ['tts'],
+  acestep: ['audio-generation'],
+  thinksound: ['audio-generation'],
+  trellis: ['model3d'],
 };
 
 function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
   const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
   if (explicit) return explicit;
   const key = recipe.toLowerCase();
+  if (key.includes('trellis') || key.includes('3d')) return ['model3d'];
+  if (key.includes('acestep') || key.includes('ace-step') || key.includes('thinksound') || key.includes('sound-generation') || key.includes('music-generation')) return ['audio-generation'];
   if (key.includes('sd') || key.includes('diffusion') || key.includes('image')) return ['image'];
   if (key.includes('whisper') || key.includes('moonshine') || key.includes('transcrib') || key.includes('speech-to-text')) return ['audio'];
-  if (key.includes('kokoro') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
+  if (key.includes('kokoro') || key.includes('openmoss') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
   if (key.includes('embed')) return ['embedding'];
   if (key.includes('rerank')) return ['reranking'];
   const backendText = backendNames.join(' ').toLowerCase();
+  if (backendText.includes('trellis') || backendText.includes('3d')) return ['model3d'];
+  if (backendText.includes('acestep') || backendText.includes('thinksound')) return ['audio-generation'];
   if (backendText.includes('sd') || backendText.includes('diffusion')) return ['image'];
   if (backendText.includes('whisper') || backendText.includes('moonshine')) return ['audio'];
-  if (backendText.includes('kokoro') || backendText.includes('tts')) return ['tts'];
+  if (backendText.includes('kokoro') || backendText.includes('openmoss') || backendText.includes('tts')) return ['tts'];
   return ['chat', 'omni'];
 }
 
@@ -590,29 +672,86 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
   return result;
 }
 
-function pinnedModelsKey(scope: string): string {
-  return scopedStorageKey(scope, 'pinned_models');
+// Favorites are a DISTINCT client-local concept from Pinned (fl0rianr #2424).
+// Pinned models float to the top of the middle list; favorites is a separate
+// filter/count surfaced by the left-rail "Favorites" (star) entry. Stored under
+// a separate `favorite_models` key so the two never alias.
+function favoriteModelsKey(scope: string): string {
+  return scopedStorageKey(scope, 'favorite_models');
 }
 
-function loadPinnedModels(scope: string): string[] {
+function loadFavoriteModels(scope: string): string[] {
   try {
-    const raw = localStorage.getItem(pinnedModelsKey(scope));
+    const raw = localStorage.getItem(favoriteModelsKey(scope));
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.map(v => String(v).trim()).filter(Boolean) : [];
   } catch { return []; }
 }
 
-function savePinnedModels(scope: string, names: string[]): void {
+function saveFavoriteModels(scope: string, names: string[]): void {
   try {
-    localStorage.setItem(pinnedModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
+    localStorage.setItem(favoriteModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
   } catch {}
 }
 
 /* ── Filter / search types ─────────────────────────────────── */
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+type ProviderEnabledState = Record<ModelRegistryProvider, boolean>;
+
+const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
+const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
+const MODELSCOPE_RESULT_LIMIT = 10;
+const REMOTE_VARIANT_CONCURRENCY = 4;
+
+const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
+const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
+
+const PROVIDER_META: Record<ModelRegistryProvider, { label: string; compactLabel: string; url: (id: string) => string }> = {
+  huggingface: {
+    label: 'Hugging Face',
+    compactLabel: 'HuggingFace',
+    url: id => `https://huggingface.co/${id}`,
+  },
+  modelscope: {
+    label: 'ModelScope',
+    compactLabel: 'ModelScope',
+    url: id => `https://modelscope.cn/models/${id}`,
+  },
+};
+
+function remoteSuggestedName(provider: ModelRegistryProvider, modelId: string, variants?: PullVariantsResult): string {
+  const base = variants?.suggested_name || modelId.split('/').pop() || modelId;
+  return provider === 'modelscope' ? `${base}-modelscope` : base;
+}
+
+async function loadRemoteVariants(
+  provider: ModelRegistryProvider,
+  modelId: string,
+  signal?: AbortSignal,
+): Promise<PullVariantsResult | null> {
+  const key = providerKey(provider, modelId);
+  if (REMOTE_VARIANT_CACHE.has(key)) return REMOTE_VARIANT_CACHE.get(key) ?? null;
+  try {
+    const result = await api.pullVariants(modelId, provider, signal);
+    REMOTE_VARIANT_CACHE.set(key, result);
+    return result;
+  } catch (error) {
+    throw error;
+  }
+}
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
+type OmniCustomToolDraft = {
+  id: string;
+  name: string;
+  description: string;
+  targetModel: string;
+  systemPrompt: string;
+  promptTemplate: string;
+  parametersJson: string;
+  maxTokens: string;
+};
 type CustomModelDraftState = {
   name: string;
   displayName: string;
@@ -631,7 +770,82 @@ type CustomModelDraftState = {
   editComponent: string;
   transcriptionComponent: string;
   speechComponent: string;
+  omniSystemPrompt: string;
+  omniCustomTools: OmniCustomToolDraft[];
 };
+
+
+const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS = {
+  type: 'object',
+  properties: {
+    task: { type: 'string', description: 'The focused task to delegate to the target model.' },
+    context: { type: 'string', description: 'Optional context, constraints, code, or review material for the target model.' },
+  },
+  required: ['task'],
+  additionalProperties: false,
+};
+
+const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON = JSON.stringify(DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS, null, 2);
+
+function sanitizeOmniToolName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^([^a-zA-Z_])/, '_$1')
+    .slice(0, 64);
+}
+
+function nextOmniToolName(existing: OmniCustomToolDraft[], base: string): string {
+  const used = new Set(existing.map(tool => tool.name.trim().toLowerCase()).filter(Boolean));
+  let candidate = sanitizeOmniToolName(base) || 'ask_model';
+  if (!used.has(candidate.toLowerCase())) return candidate;
+  let i = 2;
+  while (used.has(`${candidate}_${i}`.toLowerCase())) i += 1;
+  return `${candidate}_${i}`;
+}
+
+function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset: 'generic' | 'coder' | 'reviewer' = 'generic', targetModel = ''): OmniCustomToolDraft {
+  const id = `custom-tool-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  if (preset === 'coder') {
+    const name = nextOmniToolName(existing, 'ask_coder');
+    return {
+      id,
+      name,
+      description: 'Delegate a focused implementation task to a coding model.',
+      targetModel,
+      systemPrompt: 'You are a focused coding assistant. Implement small, well-scoped tasks. Prefer concrete code and mention important assumptions or edge cases briefly.',
+      promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn the implementation guidance or code the planner should use.',
+      parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  if (preset === 'reviewer') {
+    const name = nextOmniToolName(existing, 'ask_reviewer');
+    return {
+      id,
+      name,
+      description: 'Ask a reviewer model to check code, plans, or patches for bugs and regressions.',
+      targetModel,
+      systemPrompt: 'You are a strict but practical code reviewer. Look for correctness bugs, regressions, missing tests, and risky assumptions. Be concise and actionable.',
+      promptTemplate: 'Review task:\n{task}\n\nMaterial to review:\n{context}\n\nReturn findings grouped by severity, plus a short verdict.',
+      parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  const name = nextOmniToolName(existing, 'ask_model');
+  return {
+    id,
+    name,
+    description: 'Delegate a focused task to another local LLM and return its result to the planner.',
+    targetModel,
+    systemPrompt: 'You are a focused internal assistant tool. Complete the delegated task and return concise, actionable results.',
+    promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn a concise result for the planner model.',
+    parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+    maxTokens: '',
+  };
+}
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all' }[] = [
   { key: 'all', label: 'All', icon: 'all' },
@@ -639,7 +853,9 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all
   { key: 'omni', label: 'Omni', icon: 'omni' },
   { key: 'image', label: 'Image', icon: 'image' },
   { key: 'audio', label: 'Audio', icon: 'audio' },
+  { key: 'audio-generation', label: 'Music & SFX', icon: 'audio-generation' },
   { key: 'tts', label: 'TTS', icon: 'tts' },
+  { key: 'model3d', label: '3D', icon: 'model3d' },
   { key: 'embedding', label: 'Embed', icon: 'embedding' },
 ];
 
@@ -663,6 +879,48 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     editComponent: '',
     transcriptionComponent: '',
     speechComponent: '',
+    omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE,
+    omniCustomTools: [],
+  };
+}
+
+function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
+  const checkpoints = objectRecord((model as any).checkpoints);
+  const roles = objectRecord((model as any).component_roles);
+  const rawTools = Array.isArray((model as any).custom_tools) ? (model as any).custom_tools as CustomOmniToolDefinition[] : [];
+  const components = getCollectionComponents(model);
+  const capability = String((model as any).type || 'chat') as CustomModelCapability;
+  const collection = isCollectionModel(model);
+  const structuralLabels = new Set(['custom', 'omni', 'multimodal', 'vision-language']);
+  return {
+    name: modelName(model),
+    displayName: String(model.display_name || modelName(model)),
+    checkpoint: String((model as any).checkpoint || checkpoints.main || ''),
+    mmproj: String((model as any).mmproj || checkpoints.mmproj || ''),
+    imageTextEncoder: String(checkpoints.text_encoder || ''),
+    imageVae: String(checkpoints.vae || ''),
+    recipe: String((model as any).recipe || (collection ? 'collection.omni' : 'llamacpp')),
+    capability,
+    maxContextWindow: String((model as any).max_context_window || ''),
+    labels: modelLabels(model).filter(label => !structuralLabels.has(label.toLowerCase())).join(', '),
+    omniSource: collection ? 'collection' : 'single',
+    llmComponent: String(roles.llm || components[0] || ''),
+    visionComponent: String(roles.vision || ''),
+    imageComponent: String(roles.image || ''),
+    editComponent: String(roles.edit || ''),
+    transcriptionComponent: String(roles.transcription || ''),
+    speechComponent: String(roles.speech || ''),
+    omniSystemPrompt: String((model as any).system_prompt || DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE),
+    omniCustomTools: rawTools.map((tool, index) => ({
+      id: String(tool.id || `custom-tool-${index + 1}`),
+      name: String(tool.name || ''),
+      description: String(tool.description || ''),
+      targetModel: String(tool.target_model || ''),
+      systemPrompt: String(tool.system_prompt || ''),
+      promptTemplate: String(tool.prompt_template || ''),
+      parametersJson: JSON.stringify(tool.parameters || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS, null, 2),
+      maxTokens: tool.max_tokens ? String(tool.max_tokens) : '',
+    })),
   };
 }
 
@@ -731,6 +989,25 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
 };
 
 const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'embeddings', 'embedding', 'reranking', 'reranker']);
+
+const MODEL_LIST_WIDTH_KEY = 'model_list_panel_width';
+const MODEL_LIST_DEFAULT_WIDTH = 360;
+const MODEL_LIST_MIN_WIDTH = 300;
+const MODEL_LIST_MAX_WIDTH = 620;
+
+function clampModelListWidth(width: number): number {
+  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, Math.round(width)));
+}
+
+function loadModelListWidth(): number {
+  if (typeof window === 'undefined') return MODEL_LIST_DEFAULT_WIDTH;
+  try {
+    const stored = Number(window.localStorage.getItem(MODEL_LIST_WIDTH_KEY));
+    return Number.isFinite(stored) ? clampModelListWidth(stored) : MODEL_LIST_DEFAULT_WIDTH;
+  } catch {
+    return MODEL_LIST_DEFAULT_WIDTH;
+  }
+}
 
 function lowerLabels(m: ModelInfo): string[] {
   return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
@@ -807,6 +1084,10 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
   const config = OMNI_COMPONENT_ROLE_CONFIG[role];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const inputId = `omni-picker-input-${role}`;
+  const listboxId = `omni-picker-listbox-${role}`;
+  const optionId = (index: number) => `omni-picker-option-${role}-${index}`;
   const selected = options.find(option => option.id === value);
   const queryText = query.trim().toLowerCase();
   const visibleOptions = useMemo(() => {
@@ -818,23 +1099,58 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
       : options;
     return filtered.slice(0, 40);
   }, [options, queryText]);
+
+  // Reset active index when the option list changes
+  useEffect(() => { setActiveIndex(-1); }, [visibleOptions]);
+
   const groups: Array<{ source: OmniComponentOptionSource; label: string; options: OmniComponentOption[] }> = [
     { source: 'custom' as OmniComponentOptionSource, label: 'Custom models', options: visibleOptions.filter(option => option.source === 'custom') },
     { source: 'downloaded' as OmniComponentOptionSource, label: 'Downloaded locally', options: visibleOptions.filter(option => option.source === 'downloaded') },
     { source: 'registered' as OmniComponentOptionSource, label: 'Registered registry models', options: visibleOptions.filter(option => option.source === 'registered') },
   ].filter(group => group.options.length > 0);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const count = visibleOptions.length;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) { setOpen(true); setActiveIndex(count > 0 ? 0 : -1); return; }
+      setActiveIndex(prev => count > 0 ? (prev + 1) % count : -1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { setOpen(true); setActiveIndex(count > 0 ? count - 1 : -1); return; }
+      setActiveIndex(prev => count > 0 ? (prev <= 0 ? count - 1 : prev - 1) : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && activeIndex >= 0 && visibleOptions[activeIndex]) {
+        onChange(visibleOptions[activeIndex].id);
+        setQuery('');
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  };
+
   return (
     <div className="omni-component-picker">
-      <label className="omni-component-picker__label" title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
+      <label className="omni-component-picker__label" htmlFor={inputId} title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
       <div className="omni-component-picker__control">
         <input
+          id={inputId}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-activedescendant={open && activeIndex >= 0 && visibleOptions[activeIndex] ? optionId(activeIndex) : undefined}
+          aria-autocomplete="list"
           value={open ? query : (selected ? selected.label : '')}
           onFocus={() => { setOpen(true); setQuery(''); }}
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setActiveIndex(-1); }}
+          onBlur={() => window.setTimeout(() => { setOpen(false); setActiveIndex(-1); }, 120)}
+          onKeyDown={handleKeyDown}
           placeholder={config.placeholder}
-          aria-label={`${config.label} component`}
           autoComplete="off"
         />
         {value && !config.required && (
@@ -844,49 +1160,54 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
             onMouseDown={e => e.preventDefault()}
             onClick={() => onChange('')}
             title={`Clear ${config.label}`}
+            aria-label={`Clear ${config.label}`}
           >×</button>
         )}
-        <span className="omni-component-picker__chevron">⌄</span>
+        <span className="omni-component-picker__chevron" aria-hidden="true">⌄</span>
         {open && (
-          <div className="omni-component-picker__menu" role="listbox">
-            {groups.length > 0 ? groups.map(group => (
-              <div className="omni-component-picker__group" key={group.source}>
-                <div className="omni-component-picker__group-label">{group.label}</div>
-                {group.options.map(option => (
-                  <button
-                    type="button"
-                    key={option.id}
-                    className={`omni-component-picker__option${option.id === value ? ' omni-component-picker__option--selected' : ''}`}
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => { onChange(option.id); setQuery(''); setOpen(false); }}
-                    role="option"
-                    aria-selected={option.id === value}
-                  >
-                    <span className="omni-component-picker__option-name">{option.label}</span>
-                    <span className="omni-component-picker__option-id">{option.id}</span>
-                    <span className="omni-component-picker__option-detail">{option.detail}</span>
-                  </button>
-                ))}
-              </div>
-            )) : (
-              <div className="omni-component-picker__empty">
-                No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
-              </div>
-            )}
+          <div className="omni-component-picker__menu">
+            <div role="listbox" id={listboxId} aria-label={`${config.label} options`}>
+              {groups.length > 0 ? groups.map(group => (
+                <div className="omni-component-picker__group" key={group.source} role="group" aria-label={group.label}>
+                  <div className="omni-component-picker__group-label" aria-hidden="true">{group.label}</div>
+                  {group.options.map(option => {
+                    const flatIdx = visibleOptions.indexOf(option);
+                    return (
+                      <div
+                        key={option.id}
+                        id={optionId(flatIdx)}
+                        className={`omni-component-picker__option${option.id === value ? ' omni-component-picker__option--selected' : ''}${flatIdx === activeIndex ? ' omni-component-picker__option--focused' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { onChange(option.id); setQuery(''); setOpen(false); setActiveIndex(-1); }}
+                        role="option"
+                        aria-selected={option.id === value}
+                      >
+                        <span className="omni-component-picker__option-name">{option.label}</span>
+                        <span className="omni-component-picker__option-id">{option.id}</span>
+                        <span className="omni-component-picker__option-detail">{option.detail}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )) : (
+                <div className="omni-component-picker__empty">
+                  No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+                </div>
+              )}
+            </div>
             {queryText.length >= 2 && onHuggingFaceSearch && (
               <button
                 type="button"
                 className="omni-component-picker__hf-search"
                 onMouseDown={e => e.preventDefault()}
-                onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); }}
+                onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); setActiveIndex(-1); }}
               >
-                Search HuggingFace for “{query.trim()}”
+                Search HuggingFace for "{query.trim()}"
               </button>
             )}
           </div>
         )}
       </div>
-      <div className="omni-component-picker__help">{selected ? selected.detail : config.help}</div>
     </div>
   );
 };
@@ -906,51 +1227,144 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
-  const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
+  const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
+  const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  // Left nav-rail filter dimensions (client-local, derived from the model list).
+  const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
+  const [backendFilter, setBackendFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [navRailOpen, setNavRailOpen] = useState(false);
+  const [modelListWidth, setModelListWidth] = useState(loadModelListWidth);
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // HuggingFace search state
+  // Remote registry search state. Provider switches are intentionally separate
+  // from rail/category state so those UI changes never retrigger online calls.
+  const [providerEnabled, setProviderEnabled] = useState<ProviderEnabledState>({
+    huggingface: true,
+    modelscope: true,
+  });
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState<string | null>(null);
-  const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
-  const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
-  const pullHfAbortRef = useRef<Record<string, AbortController>>({});
-  const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
-  const [hfVariantsLoading, setHfVariantsLoading] = useState<Record<string, boolean>>({}); // hf id → loading
+  const [modelScopeResults, setModelScopeResults] = useState<HFModelResult[]>([]);
+  const [modelScopeLoading, setModelScopeLoading] = useState(false);
+  const [modelScopeError, setModelScopeError] = useState<string | null>(null);
+  const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
+  const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
+  const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
+  const [pullingRemote, setPullingRemote] = useState<Record<string, number>>({});
+  const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
+  const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
+  const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
 
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
+  const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
+  const [showRouterEditor, setShowRouterEditor] = useState(false);
+  const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
+  const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
   const [customJsonNotice, setCustomJsonNotice] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
-  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModels(accountSession.storageScope));
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames(accountSession.storageScope));
+  const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels(accountSession.storageScope));
+  // Multi-select functional capability filter driven by the funnel popover.
+  const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
+  // Real disk usage for the storage meter (null until/unless lemond exposes it).
+  const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
+  const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings(accountSession.storageScope));
+  const automaticUpdateStartedRef = useRef(false);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
-  const [presetRailCollapsed, setPresetRailCollapsed] = useState(false);
-  const [selectedRailPresetId, setSelectedRailPresetId] = useState<string>(DEFAULT_PRESET.id);
-  const [presetRailHovered, setPresetRailHovered] = useState(false);
-  const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
   const hasVisibleModelsRef = useRef(false);
   const modelsSnapshotRef = useRef<string>('');
   const loadedSnapshotRef = useRef<string>('');
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODEL_LIST_WIDTH_KEY, String(modelListWidth));
+    } catch {
+      // Non-critical: width persistence is best-effort only.
+    }
+  }, [modelListWidth]);
+
+  const modelDetailLayoutStyle = useMemo(() => ({
+    '--model-list-panel-width': `${modelListWidth}px`,
+  } as React.CSSProperties), [modelListWidth]);
+
+  const handleModelListResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 700) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = modelListWidth;
+    const handle = event.currentTarget;
+    try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+
+    const maxWidthForViewport = () => {
+      // Keep a usable detail pane even on medium desktops. The fixed rail is
+      // 232px in the desktop grid; the detail pane should keep at least ~420px.
+      const viewportMax = window.innerWidth - 232 - 420;
+      return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, viewportMax));
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampModelListWidth(Math.min(maxWidthForViewport(), startWidth + moveEvent.clientX - startX));
+      setModelListWidth(nextWidth);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.classList.remove('is-resizing-model-list');
+      try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    };
+
+    document.body.classList.add('is-resizing-model-list');
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize, { once: true });
+    window.addEventListener('pointercancel', stopResize, { once: true });
+  }, [modelListWidth]);
+
+  const handleModelListResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const largeStep = event.shiftKey ? 40 : 16;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setModelListWidth(width => clampModelListWidth(width - largeStep));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setModelListWidth(width => clampModelListWidth(width + largeStep));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setModelListWidth(MODEL_LIST_MIN_WIDTH);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setModelListWidth(MODEL_LIST_MAX_WIDTH);
+    }
+  }, []);
+
 
   useEffect(() => {
-    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0;
-  }, [models.length, loadedModels.length, customModels.length]);
+    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0 || routerModels.length > 0;
+  }, [models.length, loadedModels.length, customModels.length, routerModels.length]);
+
+  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
   const reloadCustomModels = useCallback(() => {
     setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
@@ -958,16 +1372,42 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
+  const reloadRouterModels = useCallback(() => {
+    setRouterModels(loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
+  }, [accountSession.storageScope]);
+
+  useEffect(() => { reloadRouterModels(); }, [reloadRouterModels]);
+
 
   useEffect(() => {
-    setPinnedModels(loadPinnedModels(accountSession.storageScope));
+    setPinnedModels(loadPinnedModelNames(accountSession.storageScope));
+    setFavoriteModels(loadFavoriteModels(accountSession.storageScope));
   }, [accountSession.storageScope]);
+
+  // Fetch real model-storage disk stats. Returns null in the POC (lemond has no
+  // disk endpoint yet) → the rail derives a graceful fallback. Re-runs when the
+  // model set changes so the meter refreshes as downloads complete.
+  useEffect(() => {
+    let cancelled = false;
+    api.getStorageInfo()
+      .then(info => { if (!cancelled) setStorageInfo(info); })
+      .catch(() => { if (!cancelled) setStorageInfo(null); });
+    return () => { cancelled = true; };
+  }, [models.length]);
 
   useEffect(() => {
     const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
     reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+  }, [accountSession.storageScope]);
+
+  useEffect(() => {
+    const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings(accountSession.storageScope));
+    automaticUpdateStartedRef.current = false;
+    reloadGlobalSettings();
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
   }, [accountSession.storageScope]);
 
   const refreshCustomRecipeAvailability = useCallback(async () => {
@@ -1075,72 +1515,47 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return api.onModelsChanged(() => { refresh(); });
   }, [refresh]);
 
-  const applyServerDownloads = useCallback((downloads: DownloadProgressEvent[]) => {
-    const active: Record<string, number> = {};
-    let sawCompletedModel = false;
-    downloads.forEach(download => {
-      const type = String(download.type || '').toLowerCase();
-      const id = String(download.id || '');
-      if (type && type !== 'model') return;
-      if (!type && id && !id.startsWith('model:')) return;
-      const name = String(download.model_name || download.name || (id.startsWith('model:') ? id.slice('model:'.length) : '')).trim();
-      if (!name) return;
-      const status = String(download.status || '').toLowerCase();
-      const isActive = download.running === true || status === 'downloading' || status === 'paused';
-      if (isActive) active[name] = typeof download.percent === 'number' ? download.percent : 0;
-      if (download.complete || status === 'completed' || status === 'error' || status === 'cancelled') sawCompletedModel = true;
-    });
-    setPulling(prev => {
-      const next: Record<string, number> = {};
-      Object.entries(prev).forEach(([name, value]) => {
-        if (pullAbortRef.current[name]) next[name] = value;
-      });
-      return { ...next, ...active };
-    });
-    if (sawCompletedModel) refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (connectionStatus !== 'connected') return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        applyServerDownloads(await api.downloads());
-      } catch {
-        // Older servers might not expose /downloads; normal SSE fallback still works.
-      }
-      if (!cancelled) timer = setTimeout(tick, 2000);
-    };
-    tick();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [applyServerDownloads, connectionStatus]);
-
-  /* ── HuggingFace debounced search ────────────────────────── */
+  /* ── Remote registry search ────────────────────────────────
+     Deliberately keyed ONLY by the text query and provider switch. Changing
+     categories, primary modes, backend filters, tags, or capabilities merely
+     filters cached results and never starts another online request. */
 
   useEffect(() => {
     const q = searchQuery.trim();
-    if (q.length < 2 || filterTab === 'omni') {
+    if (q.length < 2 || !providerEnabled.huggingface) {
       setHfResults([]);
       setHfLoading(false);
       setHfError(null);
-      setExpandedHfModel(null);
       return;
     }
 
+    const cacheKey = providerSearchCacheKey('huggingface', q);
+    const cached = REMOTE_SEARCH_CACHE.get(cacheKey);
+    if (cached) {
+      setHfResults(cached);
+      const cachedVariants: Record<string, PullVariantsResult> = {};
+      for (const result of cached) {
+        const key = providerKey('huggingface', result.id);
+        const variants = REMOTE_VARIANT_CACHE.get(key);
+        if (variants) cachedVariants[key] = variants;
+      }
+      if (Object.keys(cachedVariants).length > 0) {
+        setRemoteVariants(prev => ({ ...prev, ...cachedVariants }));
+      }
+      setHfLoading(false);
+      setHfError(null);
+      return;
+    }
+
+    setHfResults([]);
     setHfLoading(true);
     setHfError(null);
     const ac = new AbortController();
-
-    const timer = setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       try {
         const results = await searchHuggingFace(q, ac.signal);
+        REMOTE_SEARCH_CACHE.set(cacheKey, results);
         setHfResults(results);
-        setHfError(null);
       } catch (err) {
         if (!ac.signal.aborted) {
           setHfResults([]);
@@ -1149,13 +1564,127 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       } finally {
         if (!ac.signal.aborted) setHfLoading(false);
       }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [searchQuery, providerEnabled.huggingface]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || !providerEnabled.modelscope) {
+      setModelScopeResults([]);
+      setModelScopeLoading(false);
+      setModelScopeError(null);
+      return;
+    }
+
+    const cacheKey = providerSearchCacheKey('modelscope', q);
+    const cached = REMOTE_SEARCH_CACHE.get(cacheKey);
+    if (cached) {
+      setModelScopeResults(cached);
+      const cachedVariants: Record<string, PullVariantsResult> = {};
+      for (const result of cached) {
+        const key = providerKey('modelscope', result.id);
+        const variants = REMOTE_VARIANT_CACHE.get(key);
+        if (variants) cachedVariants[key] = variants;
+      }
+      if (Object.keys(cachedVariants).length > 0) {
+        setRemoteVariants(prev => ({ ...prev, ...cachedVariants }));
+      }
+      setModelScopeLoading(false);
+      setModelScopeError(null);
+      return;
+    }
+
+    setModelScopeResults([]);
+    setModelScopeLoading(true);
+    setModelScopeError(null);
+    const ac = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const candidates = await searchModelScope(q, ac.signal);
+        const validated: Array<{ result: HFModelResult; order: number }> = [];
+        let next = 0;
+        const publishValidated = () => {
+          const ordered = [...validated]
+            .sort((a, b) => a.order - b.order)
+            .slice(0, MODELSCOPE_RESULT_LIMIT)
+            .map(item => item.result);
+          setModelScopeResults(ordered);
+        };
+        const worker = async () => {
+          while (!ac.signal.aborted && validated.length < MODELSCOPE_RESULT_LIMIT && next < candidates.length) {
+            const order = next;
+            const candidate = candidates[next++];
+            try {
+              const variants = await loadRemoteVariants('modelscope', candidate.id, ac.signal);
+              if (!variants?.variants?.length || validated.some(item => item.result.id === candidate.id)) continue;
+              setRemoteVariants(prev => ({ ...prev, [providerKey('modelscope', candidate.id)]: variants }));
+              validated.push({ result: candidate, order });
+              publishValidated();
+            } catch {
+              // Registry metadata is only a candidate hint. Repositories without
+              // usable GGUF variants are omitted, matching Lemonade main.
+            }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(REMOTE_VARIANT_CONCURRENCY, candidates.length) }, worker));
+        if (!ac.signal.aborted) {
+          const finalResults = [...validated]
+            .sort((a, b) => a.order - b.order)
+            .slice(0, MODELSCOPE_RESULT_LIMIT)
+            .map(item => item.result);
+          REMOTE_SEARCH_CACHE.set(cacheKey, finalResults);
+          setModelScopeResults(finalResults);
+        }
+      } catch (err) {
+        if (!ac.signal.aborted) {
+          setModelScopeResults([]);
+          setModelScopeError(friendlyErrorMessage(err));
+        }
+      } finally {
+        if (!ac.signal.aborted) setModelScopeLoading(false);
+      }
     }, 400);
 
     return () => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       ac.abort();
     };
-  }, [searchQuery, filterTab]);
+  }, [searchQuery, providerEnabled.modelscope]);
+
+  // Enrich HF rows with server-derived suggested_labels/mmproj metadata. The
+  // module cache makes this a one-time probe per provider/repository, and these
+  // probes only follow a new search result set — never a local filter change.
+  useEffect(() => {
+    if (!providerEnabled.huggingface || hfResults.length === 0) return;
+    let cancelled = false;
+    let next = 0;
+    const candidates = hfResults.slice(0, 12);
+    const worker = async () => {
+      while (!cancelled && next < candidates.length) {
+        const candidate = candidates[next++];
+        const key = providerKey('huggingface', candidate.id);
+        if (remoteVariants[key]) continue;
+        try {
+          const variants = await loadRemoteVariants('huggingface', candidate.id);
+          if (variants && !cancelled) setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+        } catch {
+          // Capability enrichment is best effort; the search result remains usable.
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+    return () => { cancelled = true; };
+  }, [hfResults, providerEnabled.huggingface]);
+
+  useEffect(() => {
+    setExpandedRemoteModel(null);
+    setSelectedRemoteModel(null);
+  }, [searchQuery]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -1213,13 +1742,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     visited.delete(key);
   };
 
+  const loadWithGlobalPolicy = async (model: ModelInfo): Promise<void> => {
+    await loadWithGlobalModelPolicy({
+      loadedModels,
+      allModels,
+      target: model,
+      pinnedNames: pinnedModels,
+      settings: globalModelSettings,
+      unload: name => api.unloadModel(name),
+      load: () => loadModelRuntime(model),
+    });
+  };
+
   const handleLoad = async (model: ModelInfo) => {
     if (loadingModel) return;
     const name = modelName(model);
     setLoadError(null);
     setLoadingModel(name);
     try {
-      await loadModelRuntime(model);
+      await loadWithGlobalPolicy(model);
       await refresh();
       onModelSelect(name);
     } catch (err) {
@@ -1245,8 +1786,39 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setLoadingModel(null);
   };
 
+  // #2356 (simplified): a load-time preset change needs a real reload. The
+  // detail panel already classifies live-vs-reload and rebinds the active
+  // preset; here we just perform the reload (unload + load via api.reloadModel)
+  // and refresh so the loaded-model snapshot reflects the reinitialization.
+  // Live (request-time) changes never reach here — they are a pure client-local
+  // rebind handled entirely in the panel (no server round-trip).
+  const handleReloadModel = async (
+    model: LoadedModel,
+    recipeOptions?: Record<string, unknown>,
+  ) => {
+    const info = allModels.find(m => modelName(m) === model.model_name) ?? null;
+    await api.reloadModel(model.model_name, recipeOptions, info);
+    await refresh();
+  };
+
+  const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
+    if (api.isConnected) await api.deleteModel(name);
+    deleteRouterRecord(accountSession.storageScope, name);
+    reloadRouterModels();
+    if (selectedDetailModelId === name) setSelectedDetailModelId(null);
+  };
+
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if ((model as any).custom && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
+      if (!confirm(`Delete router definition "${model.display_name || name}"?`)) return;
+      try {
+        await handleDeleteRouterDefinition(name);
+      } catch (err) {
+        console.error('Router delete failed:', err);
+      }
+      return;
+    }
     if ((model as any).custom) {
       if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
       deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
@@ -1270,21 +1842,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
+    downloadStore.markLocal(name, 'downloading', 'model');
 
     await ensureCustomCollectionComponentsRegistered(model);
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPulling(p => ({ ...p, [name]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(name, data, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
       },
-      onComplete: () => {
+      onComplete: (data) => {
+        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         refresh();
       },
-      onError: () => {
+      onError: (err) => {
+        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1298,6 +1872,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     pullAbortRef.current[name]?.abort();
     await api.controlDownload(`model:${name}`, 'cancel').catch(() => undefined);
     delete pullAbortRef.current[name];
+    downloadStore.markLocal(name, 'cancelled', 'model');
     setPulling(p => { const next = { ...p }; delete next[name]; return next; });
   };
 
@@ -1306,16 +1881,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
+    downloadStore.markLocal(name, 'downloading', 'model');
 
     await ensureCustomCollectionComponentsRegistered(model);
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPulling(p => ({ ...p, [name]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(name, data, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
       },
-      onComplete: async () => {
+      onComplete: async (data) => {
+        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
@@ -1332,7 +1908,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }
         setLoadingModel(null);
       },
-      onError: () => {
+      onError: (err) => {
+        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1342,57 +1919,74 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     await api.pullModel(name, callbacks, customRegistrationOptions(model));
   };
 
-  const handleHfPull = async (hfId: string, variantName: string, recipe: string) => {
-    if (pullingHf[hfId] !== undefined) return;
-    const vdata = hfVariants[hfId];
-    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+  const handleRemotePull = async (provider: ModelRegistryProvider, modelId: string, variantName: string, recipe: string) => {
+    const key = providerKey(provider, modelId);
+    if (pullingRemote[key] !== undefined) return;
+    const vdata = remoteVariants[key];
+    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
     const modelName = `user.${suggestedName}`;
-    const checkpoint = `${hfId}:${variantName}`;
+    const checkpoint = `${modelId}:${variantName}`;
     const ac = new AbortController();
-    pullHfAbortRef.current[hfId] = ac;
-    setPullingHf(p => ({ ...p, [hfId]: 0 }));
+    pullRemoteAbortRef.current[key] = ac;
+    setPullingRemote(p => ({ ...p, [key]: 0 }));
+    downloadStore.markLocal(modelName, 'downloading', 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        if (data.percent !== undefined) {
-          setPullingHf(p => ({ ...p, [hfId]: data.percent! }));
-        }
+        const item = downloadStore.upsertFromPull(modelName, data, 'model');
+        setPullingRemote(p => ({ ...p, [key]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[key] ?? 0) }));
       },
-      onComplete: () => {
-        delete pullHfAbortRef.current[hfId];
-        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+      onComplete: (data) => {
+        downloadStore.upsertFromPull(modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
+        delete pullRemoteAbortRef.current[key];
+        setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
         refresh();
       },
       onError: (err) => {
-        console.error('HF pull failed:', err);
-        delete pullHfAbortRef.current[hfId];
-        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+        downloadStore.upsertFromPull(modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
+        console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
+        delete pullRemoteAbortRef.current[key];
+        setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
       },
       signal: ac.signal,
     };
 
-    await api.pullModel(modelName, callbacks, { checkpoint, recipe });
+    const labels = new Set(vdata?.suggested_labels || []);
+    if (vdata?.mmproj_files?.length) labels.add('vision');
+    await api.pullModel(modelName, callbacks, {
+      checkpoint,
+      recipe,
+      source: provider,
+      mmproj: vdata?.mmproj_files?.[0],
+      labels: [...labels],
+      vision: labels.has('vision'),
+      embedding: labels.has('embeddings'),
+      reranking: labels.has('reranking'),
+    });
   };
 
-  const handleCancelHfPull = async (hfId: string) => {
-    pullHfAbortRef.current[hfId]?.abort();
-    const vdata = hfVariants[hfId];
-    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+  const handleCancelRemotePull = async (provider: ModelRegistryProvider, modelId: string) => {
+    const key = providerKey(provider, modelId);
+    pullRemoteAbortRef.current[key]?.abort();
+    const vdata = remoteVariants[key];
+    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
     await api.controlDownload(`model:user.${suggestedName}`, 'cancel').catch(() => undefined);
-    delete pullHfAbortRef.current[hfId];
-    setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+    delete pullRemoteAbortRef.current[key];
+    downloadStore.markLocal(`user.${suggestedName}`, 'cancelled', 'model');
+    setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
   };
 
-  const fetchHfVariants = async (hfId: string) => {
-    if (hfVariants[hfId] || hfVariantsLoading[hfId]) return;
-    setHfVariantsLoading(prev => ({ ...prev, [hfId]: true }));
+  const fetchRemoteVariants = async (provider: ModelRegistryProvider, modelId: string) => {
+    const key = providerKey(provider, modelId);
+    if (remoteVariants[key] || remoteVariantsLoading[key]) return;
+    setRemoteVariantsLoading(prev => ({ ...prev, [key]: true }));
     try {
-      const result = await api.pullVariants(hfId);
-      setHfVariants(prev => ({ ...prev, [hfId]: result }));
+      const result = await loadRemoteVariants(provider, modelId);
+      if (result) setRemoteVariants(prev => ({ ...prev, [key]: result }));
     } catch (err) {
-      console.error('Failed to fetch variants for', hfId, err);
+      console.error(`Failed to fetch ${PROVIDER_META[provider].label} variants for`, modelId, err);
     }
-    setHfVariantsLoading(prev => ({ ...prev, [hfId]: false }));
+    setRemoteVariantsLoading(prev => ({ ...prev, [key]: false }));
   };
 
 
@@ -1402,7 +1996,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const openCustomForm = (mode: CustomFormMode = 'model') => {
+    setShowRouterEditor(false);
+    setShowGlobalSettings(false);
+    setRouterEditorModel(null);
+    setEditingCustomModelName(null);
     setCustomDraft(createEmptyCustomDraft(mode));
+    setCustomError(null);
+    setShowCustomForm(true);
+    void refreshCustomRecipeAvailability();
+  };
+
+  const openCustomCollectionEditor = (model: ModelInfo) => {
+    setShowRouterEditor(false);
+    setShowGlobalSettings(false);
+    setRouterEditorModel(null);
+    setEditingCustomModelName(modelName(model));
+    setCustomDraft(customDraftFromModel(model));
     setCustomError(null);
     setShowCustomForm(true);
     void refreshCustomRecipeAvailability();
@@ -1410,7 +2019,85 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const closeCustomForm = () => {
     setShowCustomForm(false);
+    setEditingCustomModelName(null);
     setCustomError(null);
+  };
+
+  const openRouterEditor = (model?: ModelInfo | null) => {
+    closeCustomForm();
+    setShowGlobalSettings(false);
+    const routerModel = model && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE ? model : null;
+    setRouterEditorModel(routerModel);
+    setShowRouterEditor(true);
+    setMobileDetailOpen(true);
+  };
+
+  const closeRouterEditor = () => {
+    setShowRouterEditor(false);
+    setRouterEditorModel(null);
+  };
+
+  const openGlobalSettings = () => {
+    closeCustomForm();
+    closeRouterEditor();
+    setShowGlobalSettings(true);
+    setMobileDetailOpen(true);
+  };
+
+  const closeGlobalSettings = () => {
+    setShowGlobalSettings(false);
+  };
+
+  const pullRegistrationOrThrow = async (
+    modelNameValue: string,
+    options: Record<string, unknown> | undefined,
+  ): Promise<void> => {
+    let failure: unknown = null;
+    await api.pullModel(modelNameValue, {
+      onError: errorValue => { failure = errorValue; },
+    }, options);
+    if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
+  };
+
+  const handleRegisterRouter = async (request: RouterPullRequest): Promise<void> => {
+    const registered = new Set<string>();
+    const registering = new Set<string>();
+    const registerCustomDependency = async (component: ModelInfo): Promise<void> => {
+      const name = modelName(component);
+      const key = name.toLowerCase();
+      if (!name || registered.has(key) || !(component as any).custom) return;
+      if (registering.has(key)) throw new Error(`Circular custom component reference: ${name}`);
+      registering.add(key);
+      if (isCollectionModel(component)) {
+        for (const nestedName of getCollectionComponents(component)) {
+          const nested = findCurrentModel(nestedName);
+          if (nested) await registerCustomDependency(nested);
+        }
+      }
+      await pullRegistrationOrThrow(name, customRegistrationOptions(component));
+      registering.delete(key);
+      registered.add(key);
+    };
+
+    for (const componentName of request.components) {
+      const component = findCurrentModel(componentName);
+      if (component) await registerCustomDependency(component);
+    }
+    await pullRegistrationOrThrow(request.model_name, {
+      version: request.version,
+      recipe: request.recipe,
+      components: request.components,
+      routing: request.routing,
+    });
+    await refresh();
+  };
+
+  const handleRouterSaved = (model: ModelInfo) => {
+    reloadRouterModels();
+    setRouterEditorModel(model);
+    setPrimaryFilter('my-models');
+    setSearchQuery('');
+    setSelectedDetailModelId(modelName(model));
   };
 
   const recipeOptionsForDraft = useCallback((capability: CustomModelCapability, omniSource: 'single' | 'collection') => {
@@ -1461,7 +2148,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setPinnedModels(prev => {
       const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
       const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
-      savePinnedModels(accountSession.storageScope, next);
+      savePinnedModelNames(accountSession.storageScope, next);
+      return next;
+    });
+  };
+
+  const toggleFavoriteModel = (name: string) => {
+    setFavoriteModels(prev => {
+      const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
+      const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
+      saveFavoriteModels(accountSession.storageScope, next);
       return next;
     });
   };
@@ -1490,8 +2186,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         type="button"
         className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
         onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
-        title={isPinned ? 'Unpin model' : 'Pin model'}
-        aria-label={isPinned ? 'Unpin model' : 'Pin model'}
+        title={isPinned ? `Unpin ${name}` : `Pin ${name}`}
+        aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
         aria-pressed={isPinned}
       ><Icon name="pin" size={13} /></button>
     );
@@ -1505,8 +2201,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           type="button"
           className={`row__speech${isSpeechActive ? ' row__speech--active' : ''}`}
           onClick={(e) => { e.stopPropagation(); toggleTtsSpeechModel(name); }}
-          title={isSpeechActive ? 'Stop using this model for spoken replies' : 'Read assistant chat messages with this model'}
-          aria-label={isSpeechActive ? 'Disable spoken replies for this TTS model' : 'Use this TTS model for spoken replies'}
+          title={isSpeechActive ? `Stop using ${name} for spoken replies` : `Read assistant chat messages with ${name}`}
+          aria-label={isSpeechActive ? `Disable spoken replies using ${name}` : `Use ${name} for spoken replies`}
           aria-pressed={isSpeechActive}
         ><Icon name="speech" size={13} /></button>
       </span>
@@ -1523,6 +2219,43 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       if (customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && !customDraft.llmComponent.trim()) {
         throw new Error('Select a planner LLM for the Omni collection.');
       }
+      const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
+      const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
+      const seenCustomToolNames = new Set<string>();
+      const customTools = isOmniCollection
+        ? customDraft.omniCustomTools.map((tool, index): CustomOmniToolDefinition | null => {
+          const hasAnyValue = [tool.name, tool.description, tool.targetModel, tool.systemPrompt, tool.promptTemplate, tool.parametersJson, tool.maxTokens].some(value => String(value || '').trim());
+          if (!hasAnyValue) return null;
+          const name = sanitizeOmniToolName(tool.name);
+          if (!name) throw new Error(`Custom tool ${index + 1}: enter a tool name.`);
+          if (builtinToolNames.has(name)) throw new Error(`Custom tool ${name} conflicts with a built-in Omni tool.`);
+          if (seenCustomToolNames.has(name.toLowerCase())) throw new Error(`Custom tool ${name} is duplicated.`);
+          seenCustomToolNames.add(name.toLowerCase());
+          const targetModel = tool.targetModel.trim();
+          if (!targetModel) throw new Error(`Custom tool ${name}: select a target LLM.`);
+          const description = tool.description.trim();
+          if (!description) throw new Error(`Custom tool ${name}: enter a description so the planner knows when to call it.`);
+          let parameters: Record<string, unknown>;
+          try {
+            const parsed = JSON.parse(tool.parametersJson || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schema must be a JSON object');
+            parameters = parsed as Record<string, unknown>;
+          } catch (err) {
+            throw new Error(`Custom tool ${name}: invalid JSON parameter schema (${err instanceof Error ? err.message : String(err)}).`);
+          }
+          const maxTokens = Number(tool.maxTokens);
+          return {
+            id: tool.id,
+            name,
+            description,
+            target_model: targetModel,
+            system_prompt: tool.systemPrompt.trim() || undefined,
+            prompt_template: tool.promptTemplate.trim() || undefined,
+            parameters,
+            max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
+          };
+        }).filter((tool): tool is CustomOmniToolDefinition => tool !== null)
+        : [];
       const componentRoles = {
         llm: customDraft.llmComponent,
         vision: customDraft.visionComponent,
@@ -1531,9 +2264,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         transcription: customDraft.transcriptionComponent,
         speech: customDraft.speechComponent,
       };
+      const customToolTargets = customTools.map(tool => tool.target_model);
       const components = customDraft.omniSource === 'collection'
-        ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
+        ? Array.from(new Set([...Object.values(componentRoles), ...customToolTargets].map(v => v.trim()).filter(Boolean)))
         : [];
+      const omniSystemPrompt = customDraft.omniSystemPrompt.trim();
       const availableRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
         || availableRecipeOptions[0];
@@ -1555,22 +2290,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
       const saved = upsertCustomModel(accountSession.storageScope, {
-        name: implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
+        name: editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
         displayName: customDraft.displayName,
         checkpoint,
         checkpoints,
         mmproj: selectedRecipe === 'llamacpp' ? customDraft.mmproj : undefined,
         recipe: selectedRecipe || customDraft.recipe,
         recipeOptions: undefined,
+        system_prompt: isOmniCollection && omniSystemPrompt && omniSystemPrompt !== DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE
+          ? omniSystemPrompt
+          : undefined,
         capability: customDraft.capability,
         maxContextWindow: undefined,
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
         components,
         componentRoles,
+        customTools,
       });
       reloadCustomModels();
       setShowCustomForm(false);
-      setSearchQuery(saved.display_name || saved.name);
+      setEditingCustomModelName(null);
+      setPrimaryFilter('my-models');
+      setSearchQuery('');
+      setSelectedDetailModelId(saved.name);
+      setMobileDetailOpen(true);
       setCustomDraft(createEmptyCustomDraft());
     } catch (err) {
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
@@ -1582,20 +2325,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const allModels = useMemo(() => {
     const seen = new Set<string>();
     const merged: ModelInfo[] = [];
+    for (const m of routerModels) {
+      const name = modelName(m).toLowerCase();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      merged.push(m);
+    }
     for (const m of customModels) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
       seen.add(name);
       merged.push(m);
     }
+    const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
     for (const m of models) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
+      // Hide models explicitly marked as not suggested, unless they are downloaded or loaded
+      if ((m as any).suggested === false && !(m as any).downloaded && !loadedNames.has(name)) continue;
       seen.add(name);
       merged.push(m);
     }
     return merged;
-  }, [customModels, models]);
+  }, [routerModels, customModels, models, loadedModels]);
 
   const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
 
@@ -1612,32 +2364,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return withLoadedRecipeOptions(info, loaded);
   }, [allModels, focusedModelName, loadedModels]);
   const focusedPreset = focusedModelName ? activePresetForName(focusedModelName) : null;
-  const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
-  const railSummaryPreset = (focusedModelName && focusedPreset) ? focusedPreset : selectedRailPreset;
-  const highlightedPresetId = presetRailHovered ? (hoveredRailPresetId || selectedRailPreset.id) : null;
-  const assignedToRailSummaryPreset = useMemo(
-    () => allModels.filter(m => canShowPresetHighlight(m) && activePresetForName(modelName(m)).id === railSummaryPreset.id),
-    [allModels, activePresetForName, railSummaryPreset.id],
-  );
-
-  const handlePresetRailPick = useCallback((preset: Preset) => {
-    setSelectedRailPresetId(preset.id);
-    if (!focusedModelInfo || !focusedModelName) return;
-    if (preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo)) {
-      setPresetNotice(`“${preset.name}” is not compatible with ${focusedModelName}.`);
-      window.setTimeout(() => setPresetNotice(null), 2800);
-      return;
-    }
-    setAppliedPresets(prev => {
-      const next = { ...prev };
-      if (preset.id === DEFAULT_PRESET.id) delete next[focusedModelName];
-      else next[focusedModelName] = preset.id;
-      saveApplied(next);
-      return next;
-    });
-    setPresetNotice(`${focusedModelName} → ${preset.name}`);
-    window.setTimeout(() => setPresetNotice(null), 2200);
-  }, [focusedModelInfo, focusedModelName]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
@@ -1672,6 +2398,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return roles;
   }, [allModels]);
 
+  const addOmniCustomTool = (preset: 'generic' | 'coder' | 'reviewer' = 'generic') => {
+    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
+    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, preset, targetModel);
+    handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, next] });
+  };
+
+  const addCoderReviewerPair = () => {
+    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
+    const coder = createOmniCustomToolDraft(customDraft.omniCustomTools, 'coder', targetModel);
+    const reviewer = createOmniCustomToolDraft([...customDraft.omniCustomTools, coder], 'reviewer', targetModel);
+    handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, coder, reviewer] });
+  };
+
+  const updateOmniCustomTool = (id: string, patch: Partial<OmniCustomToolDraft>) => {
+    handleCustomDraftChange({
+      omniCustomTools: customDraft.omniCustomTools.map(tool => tool.id === id ? { ...tool, ...patch } : tool),
+    });
+  };
+
+  const removeOmniCustomTool = (id: string) => {
+    handleCustomDraftChange({ omniCustomTools: customDraft.omniCustomTools.filter(tool => tool.id !== id) });
+  };
+
   const displayLoadedModels = useMemo(
     () => withVirtualLoadedCollections(loadedModels, allModels),
     [loadedModels, allModels]
@@ -1684,6 +2433,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
 
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
+  const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
   const { downloaded, available } = useMemo(() => {
     const dl: ModelInfo[] = [];
@@ -1699,6 +2449,47 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     }
     return { downloaded: dl, available: av };
   }, [allModels, loadedNames]);
+
+  const handleUpdateAllModels = useCallback(async (): Promise<UpdateAllModelsResult> => {
+    const candidates = allModels.filter(model => {
+      const name = modelName(model);
+      if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
+      return loadedNames.has(name)
+        || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
+    });
+
+    let started = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (const model of candidates) {
+      const name = modelName(model);
+      if (pulling[name] !== undefined) {
+        skipped += 1;
+        continue;
+      }
+      started += 1;
+      // Queue all pulls without holding the settings panel open for potentially
+      // multi-gigabyte downloads. Progress and terminal failures stay visible in
+      // the normal download manager and model rows.
+      void handlePull(model).catch(error => {
+        console.error(`Could not start update for ${name}:`, error);
+      });
+    }
+    return { started, skipped, errors };
+  }, [allModels, loadedNames, pulling]);
+
+  useEffect(() => {
+    if (automaticUpdateStartedRef.current || !api.isConnected || modelsLoading) return;
+    if (!automaticUpdateIsDue(globalModelSettings)) return;
+    automaticUpdateStartedRef.current = true;
+    void handleUpdateAllModels().finally(() => {
+      const next = saveGlobalModelSettings(accountSession.storageScope, {
+        ...loadGlobalModelSettings(accountSession.storageScope),
+        lastAutomaticUpdateAt: new Date().toISOString(),
+      });
+      setGlobalModelSettings(next);
+    });
+  }, [accountSession.storageScope, globalModelSettings, handleUpdateAllModels, modelsLoading]);
 
   const applyFilter = useCallback((list: ModelInfo[]) => {
     let filtered = list;
@@ -1767,15 +2558,70 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [visibleFilteredAvailable, showAllAvailable, searchQuery, filterTab]);
   const hiddenAvailableCount = visibleFilteredAvailable.length - visibleAvailable.length;
 
-  // HuggingFace results — exclude models already in local registry
-  const filteredHfResults = useMemo(() => {
-    if (hfResults.length === 0) return [];
-    // The Omni filter is collection-only. HuggingFace search returns individual
-    // GGUF checkpoints, so showing them here would leak LLMs into the Omni tab.
-    if (filterTab === 'omni') return [];
-    const localIds = new Set(allModels.map(m => modelName(m).toLowerCase()));
-    return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
-  }, [hfResults, allModels, filterTab]);
+  const localRegistryRefs = useMemo(() => {
+    const refs = new Set<string>();
+    for (const model of allModels) {
+      refs.add(modelName(model).toLowerCase());
+      const checkpoint = String((model as any).checkpoint || '').split(':')[0].trim().toLowerCase();
+      if (checkpoint) refs.add(checkpoint);
+      const mainCheckpoint = String((model as any).checkpoints?.main || '').split(':')[0].trim().toLowerCase();
+      if (mainCheckpoint) refs.add(mainCheckpoint);
+    }
+    return refs;
+  }, [allModels]);
+
+  const filterRemoteResults = useCallback((provider: ModelRegistryProvider, results: HFModelResult[]) => {
+    if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
+    return results.filter(result => {
+      if (localRegistryRefs.has(result.id.toLowerCase())) return false;
+      const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
+      if (!modelMatchesFilter(info, filterTab)) return false;
+      if (!modelMatchesCapabilityTags(info, capabilityFilter)) return false;
+      if (!modelMatchesBackend(info, backendFilter)) return false;
+      if (!modelMatchesTag(info, tagFilter)) return false;
+      return true;
+    });
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, filterTab, capabilityFilter, backendFilter, tagFilter]);
+
+  const filteredHfResults = useMemo(
+    () => filterRemoteResults('huggingface', hfResults),
+    [filterRemoteResults, hfResults],
+  );
+  const filteredModelScopeResults = useMemo(
+    () => filterRemoteResults('modelscope', modelScopeResults),
+    [filterRemoteResults, modelScopeResults],
+  );
+
+  // Rough check: does any local model match the current search query?
+  // Used to decide whether to elevate the remote-provider zones (top, prominent)
+  // or keep them inline at the bottom with an anchor bar.
+  const hasLocalMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return true;
+    return allModels.some(m => {
+      const mName = modelName(m).toLowerCase();
+      const disp = String(m.display_name || '').toLowerCase();
+      const recipe = String((m as any).recipe || '').toLowerCase();
+      const labels = (m.labels || []).join(' ').toLowerCase();
+      return `${mName} ${disp} ${recipe} ${labels}`.includes(q);
+    });
+  }, [allModels, searchQuery]);
+  const selectedDetailModel = selectedDetailModelId
+    ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
+    : null;
+  const selectedDetailIsCustom = Boolean(selectedDetailModel && (selectedDetailModel as any).custom);
+  const showCustomEditor = showCustomForm || (primaryFilter === 'my-models' && !selectedDetailIsCustom);
+
+  const handlePrimaryFilterChange = (next: PrimaryFilter) => {
+    setPrimaryFilter(next);
+    setNavRailOpen(false);
+    if (next === 'my-models') {
+      if (!selectedDetailIsCustom) openCustomForm('model');
+      else closeCustomForm();
+      return;
+    }
+    closeCustomForm();
+  };
 
   /* ── Toggle detail ───────────────────────────────────────── */
   const toggleDetail = (name: string) => {
@@ -1970,14 +2816,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       ? (positiveNumber(m.recipe_options?.ctx_size) ?? (info ? contextSizeForDisplay(info, undefined, serverDefaultCtxSize) : serverDefaultCtxSize))
       : undefined;
     const isActive = selectedModel === m.model_name;
-    const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
+    const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
     const activePreset = activePresetForName(m.model_name);
     const isPinned = pinnedNameSet.has(m.model_name.toLowerCase());
-    const isPresetHighlighted = Boolean(highlightedPresetId
-      && activePreset.id === highlightedPresetId
-      && (info ? canShowPresetHighlight(info) : !loadedIsVirtualOmniCollection(m)));
     return (
-      <div className={`row row--running${isActive ? ' row--active' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={m.model_name}>
+      <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={() => toggleDetail(m.model_name)} aria-expanded={expandedModel === m.model_name}>
             <div className="row__main">
@@ -1997,17 +2840,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </button>
           <div className="row__right">
             {renderPinAndSpeechControl(m.model_name, isPinned, cap)}
-            <CopyInlineButton text={m.model_name} />
+            <CopyInlineButton text={m.model_name} title={`Copy model ID: ${m.model_name}`} />
             <span className="row__status-pill row__status-pill--running">
               <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
             </span>
             {selectable && !isActive && (
-              <button className="row__action" onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
+              <button className="row__action" aria-label={`Use ${m.model_name} in ${capabilityLabel(cap)} mode`} onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
                 Use in {capabilityLabel(cap)} mode
               </button>
             )}
             <button
               className="row__action row__action--unload"
+              aria-label={loadingModel === m.model_name ? `Working on ${m.model_name}…` : `Unload ${m.model_name}`}
               onClick={(e) => { e.stopPropagation(); handleUnload(m); }}
               disabled={loadingModel === m.model_name}
             >
@@ -2022,6 +2866,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               }}
               disabled={loadingModel === m.model_name}
               title={info && (info as any).custom ? 'Delete custom model definition' : 'Delete model files'}
+              aria-label={`Delete ${m.model_name}`}
             >
               <Icon name="x" size={14} />
             </button>
@@ -2064,18 +2909,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     if (!name) return null;
     const isCollection = isCollectionModel(m);
     const isLoading = loadingModel === name;
-    const pullPercent = pulling[name];
+    const activeDownload = activeDownloadForModel(downloadItems, name);
+    const pullPercent = activeDownload?.percent ?? pulling[name];
     const isPulling = pullPercent !== undefined;
     const activePreset = activePresetForName(name);
     const cap = capabilityFromModelInfo(m);
     const isPinned = pinnedNameSet.has(name.toLowerCase());
     const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
-    const isPresetHighlighted = Boolean(highlightedPresetId
-      && activePreset.id === highlightedPresetId
-      && canShowPresetHighlight(m));
 
     return (
-      <div className={`row${expandedModel === name ? ' row--expanded' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={name}>
+      <div className={`row${expandedModel === name ? ' row--expanded' : ''}`} key={name}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={() => toggleDetail(name)} aria-expanded={expandedModel === name}>
             <div className="row__main">
@@ -2096,7 +2939,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </button>
           <div className="row__right">
             {renderPinAndSpeechControl(name, isPinned, cap)}
-            <CopyInlineButton text={name} />
+            <CopyInlineButton text={name} title={`Copy model ID: ${name}`} />
             {isPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -2106,7 +2949,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <button
                   className="row__action row__action--cancel"
                   onClick={(e) => { e.stopPropagation(); handleCancelPull(name); }}
-                  title="Cancel download"
+                  title={`Cancel download of ${name}`}
+                  aria-label={`Cancel download of ${name}`}
                 ><Icon name="x" size={13} /></button>
               </div>
             ) : isDownloaded ? (
@@ -2114,6 +2958,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="row__status-pill row__status-pill--ready">Ready</span>
                 <button
                   className="row__action"
+                  aria-label={isLoading ? `Loading ${name}…` : `Load ${name}`}
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
                   disabled={isLoading}
                 >
@@ -2124,6 +2969,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
                   disabled={isLoading}
                   title={(m as any).custom ? 'Delete custom model definition' : 'Delete model files'}
+                  aria-label={`Delete ${name}`}
                 >
                   <Icon name="x" size={14} />
                 </button>
@@ -2132,6 +2978,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <>
                 <button
                   className="row__action row__action--download"
+                  aria-label={`Download ${name}`}
                   onClick={(e) => { e.stopPropagation(); handlePull(m); }}
                   disabled={isPulling}
                 >
@@ -2139,6 +2986,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </button>
                 <button
                   className="row__action"
+                  aria-label={`Get and load ${name}`}
                   onClick={(e) => { e.stopPropagation(); handlePullAndLoad(m); }}
                   disabled={isPulling}
                 >
@@ -2159,42 +3007,51 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
-  const renderHfRow = (r: HFModelResult) => {
-    const isExpanded = expandedHfModel === r.id;
-    const pipelineTag = r.pipeline_tag || '';
-    const displayTags = (r.tags || [])
-      .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
-      .slice(0, 5);
-    const hfPullPercent = pullingHf[r.id];
-    const isHfPulling = hfPullPercent !== undefined;
-
-    // Variant data from the server (fetched on expand)
-    const vdata = hfVariants[r.id];
-    const isLoadingVariants = hfVariantsLoading[r.id] || false;
-    const recipeBadge = vdata ? (RECIPE_BADGES[vdata.recipe] || vdata.recipe) : '';
+  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
+    const key = providerKey(provider, result.id);
+    const providerMeta = PROVIDER_META[provider];
+    const isExpanded = expandedRemoteModel === key;
+    const pipelineTag = result.pipeline_tag || '';
+    const variants = remoteVariants[key];
+    const displayTags = Array.from(new Set([
+      ...(result.tags || []),
+      ...(variants?.suggested_labels || []),
+    ]))
+      .filter(tag => !['gguf', 'transformers', 'pytorch', 'safetensors'].includes(tag.toLowerCase()))
+      .slice(0, 6);
+    const suggestedForProgress = remoteSuggestedName(provider, result.id, variants);
+    const activeRemoteDownload = activeDownloadForModel(downloadItems, `user.${suggestedForProgress}`);
+    const pullPercent = activeRemoteDownload?.percent ?? pullingRemote[key];
+    const isPulling = pullPercent !== undefined;
+    const isLoadingVariants = remoteVariantsLoading[key] || false;
+    const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
 
     const handleExpand = () => {
-      const next = isExpanded ? null : r.id;
-      setExpandedHfModel(next);
-      if (next) fetchHfVariants(r.id);
+      const next = isExpanded ? null : key;
+      setExpandedRemoteModel(next);
+      if (next) void fetchRemoteVariants(provider, result.id);
+      setSelectedRemoteModel(result);
+      setSelectedRemoteProvider(provider);
+      setSelectedDetailModelId(null);
+      setMobileDetailOpen(true);
     };
 
     return (
-      <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
+      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isExpanded ? ' row--expanded' : ''}`} key={key}>
         <div className="row__summary">
           <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
             <div className="row__main">
-              <div className="row__icon row__icon--hf"><Icon name="download" size={18} /></div>
+              <div className={`row__icon row__icon--${provider}`}><Icon name="cloud" size={18} /></div>
               <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{r.id}</span></span>
+                <span className="row__name-wrap"><span className="row__name">{result.id}</span></span>
                 <span className="row__sub">
                   {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
-                  {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
+                  {formatDownloads(result.downloads)} downloads · {formatDownloads(result.likes)} likes
                 </span>
                 {displayTags.length > 0 && (
                   <div className="row__labels">
-                    {displayTags.map(t => (
-                      <span key={t} className="row__label row__label--hf">{t}</span>
+                    {displayTags.map(tag => (
+                      <span key={tag} className={`row__label row__label--${provider}`}>{tag}</span>
                     ))}
                   </div>
                 )}
@@ -2203,23 +3060,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
-            <CopyInlineButton text={r.id} title="Copy repository name" />
-            {isHfPulling ? (
+            <CopyInlineButton text={result.id} title={`Copy repository name: ${result.id}`} />
+            {isPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${hfPullPercent}%` }} />
+                  <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
                 </div>
-                <span className="row__progress-text">{hfPullPercent.toFixed(0)}%</span>
+                <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
                 <button
                   className="row__action row__action--cancel"
-                  onClick={(e) => { e.stopPropagation(); handleCancelHfPull(r.id); }}
-                  title="Cancel download"
+                  onClick={(event) => { event.stopPropagation(); void handleCancelRemotePull(provider, result.id); }}
+                  title={`Cancel download of ${result.id}`}
+                  aria-label={`Cancel download of ${result.id}`}
                 ><Icon name="x" size={13} /></button>
               </div>
             ) : (
               <button
                 className="row__action row__action--download"
-                onClick={(e) => { e.stopPropagation(); handleExpand(); }}
+                aria-label={`Download ${result.id}`}
+                onClick={(event) => { event.stopPropagation(); handleExpand(); }}
                 title="Expand to pick a variant to download"
               >
                 <Icon name="download" size={13} /> Download
@@ -2227,10 +3086,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             )}
             <a
               className="row__action row__action--hf-link"
-              href={`https://huggingface.co/${r.id}`}
+              href={providerMeta.url(result.id)}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
+              onClick={event => event.stopPropagation()}
             >
               View
             </a>
@@ -2238,12 +3097,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         </div>
 
         {isExpanded && (
-          <div className="row__detail row__detail--hf">
+          <div className={`row__detail row__detail--remote row__detail--${provider}`}>
             <div className="detail__grid">
               <div className="detail__meta">
                 <div className="detail__field">
+                  <span className="detail__label">Provider</span>
+                  <span className="detail__value">{providerMeta.label}</span>
+                </div>
+                <div className="detail__field">
                   <span className="detail__label">Repository</span>
-                  <span className="detail__value detail__value--mono">{r.id}</span>
+                  <span className="detail__value detail__value--mono">{result.id}</span>
                 </div>
                 {pipelineTag && (
                   <div className="detail__field">
@@ -2251,61 +3114,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     <span className="detail__value">{pipelineTag}</span>
                   </div>
                 )}
-                {vdata && (
+                {variants && (
                   <>
                     <div className="detail__field">
                       <span className="detail__label">Backend</span>
-                      <span className="detail__value">{RECIPE_BADGES[vdata.recipe] || vdata.recipe}</span>
+                      <span className="detail__value">{RECIPE_BADGES[variants.recipe] || variants.recipe}</span>
                     </div>
-                    {vdata.suggested_labels.length > 0 && (
+                    {variants.suggested_labels.length > 0 && (
                       <div className="detail__field">
                         <span className="detail__label">Capabilities</span>
-                        <span className="detail__value">{vdata.suggested_labels.join(', ')}</span>
+                        <span className="detail__value">{variants.suggested_labels.join(', ')}</span>
                       </div>
                     )}
                   </>
                 )}
-                {r.createdAt && (
-                  <div className="detail__field">
-                    <span className="detail__label">Created</span>
-                    <span className="detail__value">{new Date(r.createdAt).toLocaleDateString()}</span>
-                  </div>
-                )}
               </div>
               <div className="detail__source">
                 {isLoadingVariants && (
-                  <div className="detail__field">
-                    <span className="detail__label">Loading variants…</span>
-                  </div>
+                  <div className="detail__field"><span className="detail__label">Loading variants…</span></div>
                 )}
-                {vdata && vdata.variants.length > 0 && (
+                {variants && variants.variants.length > 0 && (
                   <div className="detail__field">
                     <span className="detail__label">Variants — pick one to download</span>
                     <div className="hf-detail__gguf-list">
-                      {vdata.variants.map(v => (
+                      {variants.variants.map(variant => (
                         <button
-                          key={v.name}
+                          key={variant.name}
                           className="hf-detail__gguf-btn"
-                          disabled={isHfPulling}
-                          onClick={() => handleHfPull(r.id, v.name, vdata.recipe)}
+                          aria-label={`Download ${variant.name} from ${result.id}`}
+                          disabled={isPulling}
+                          onClick={() => void handleRemotePull(provider, result.id, variant.name, variants.recipe)}
                         >
                           <span className="hf-detail__gguf-name">
-                            {v.name}{v.sharded ? ' (sharded)' : ''}
+                            {variant.name}{variant.sharded ? ' (sharded)' : ''}
                           </span>
-                          <span className="hf-detail__gguf-size">{formatBytes(v.size_bytes)}</span>
+                          <span className="hf-detail__gguf-size">{formatBytes(variant.size_bytes)}</span>
                           <span className="hf-detail__gguf-action">Download</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
-                <a
-                  className="detail__hf-link"
-                  href={`https://huggingface.co/${r.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View on Hugging Face
+                <a className="detail__hf-link" href={providerMeta.url(result.id)} target="_blank" rel="noopener noreferrer">
+                  View on {providerMeta.label}
                 </a>
               </div>
             </div>
@@ -2314,59 +3165,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       </div>
     );
   };
-
-  const renderPresetRail = () => (
-    <aside
-      className={`context-rail context-rail--presets${presetRailCollapsed ? ' is-collapsed' : ''}`}
-      aria-label="Preset rail"
-      onMouseEnter={() => setPresetRailHovered(true)}
-      onMouseLeave={() => { setPresetRailHovered(false); setHoveredRailPresetId(null); }}
-    >
-      <div className="context-rail__head">
-        <button type="button" className="context-rail__toggle" onClick={() => setPresetRailCollapsed(v => !v)} aria-label="Toggle preset rail">☰</button>
-        <div className="context-rail__title-wrap">
-          <span className="context-rail__eyebrow">By model</span>
-          <strong className="context-rail__title">{focusedModelName ? `For ${focusedModelName}` : 'Presets'}</strong>
-        </div>
-      </div>
-      <div className="context-rail__body">
-        <div className="preset-rail-summary">
-          <span className="preset-rail-summary__label">Selected preset</span>
-          <strong><PresetIcon preset={railSummaryPreset} /> {railSummaryPreset.name}</strong>
-          <span>{focusedModelName ? 'Active for this model' : `${assignedToRailSummaryPreset.length} model${assignedToRailSummaryPreset.length === 1 ? '' : 's'} assigned`}</span>
-          <span className="preset-param-lines">{effectivePresetParamPreviewLines(railSummaryPreset, focusedModelInfo, focusedModelInfo ? contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize) : serverDefaultCtxSize).map(line => <span key={line}>{line}</span>)}</span>
-        </div>
-        <p className="context-rail__hint">
-          {focusedModelName ? 'Click a preset to assign it to this model. Backend selection stays automatic.' : 'Hover or pick a preset to outline matching models.'}
-        </p>
-        <div className="preset-rail-list">
-          {allPresets.map(preset => {
-            const isActive = focusedModelName ? focusedPreset?.id === preset.id : selectedRailPreset.id === preset.id;
-            const disabled = Boolean(focusedModelInfo && preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo));
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                className={`preset-rail-card${isActive ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}`}
-                onClick={() => handlePresetRailPick(preset)}
-                onMouseEnter={() => setHoveredRailPresetId(preset.id)}
-                onFocus={() => setHoveredRailPresetId(preset.id)}
-                onBlur={() => setHoveredRailPresetId(null)}
-                title={disabled ? 'Incompatible with selected model' : preset.description}
-              >
-                <span className="preset-rail-card__icon">{isActive ? <Icon name="check" size={13} /> : <PresetIcon preset={preset} />}</span>
-                <span className="preset-rail-card__text">
-                  <strong>{preset.name}</strong>
-                  <span className="preset-rail-card__params preset-param-lines">{(focusedModelInfo ? effectivePresetParamPreviewLines(preset, focusedModelInfo, contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize)) : presetParamPreviewLines(preset, undefined, serverDefaultCtxSize)).map(line => <span key={line}>{line}</span>)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
-      </div>
-    </aside>
-  );
 
 
   /* ── Keyboard shortcut ───────────────────────────────────── */
@@ -2382,17 +3180,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   /* ── Stats ───────────────────────────────────────────────── */
-  const showHuggingFaceZone = filterTab !== 'omni';
-  const hasHuggingFaceActivity = showHuggingFaceZone
-    && searchQuery.trim().length >= 2
-    && (hfLoading || Boolean(hfError) || filteredHfResults.length > 0);
+  const searchActive = searchQuery.trim().length >= 2;
+  const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
+  const hasModelScopeActivity = searchActive && primaryFilter === 'all' && providerEnabled.modelscope;
+  const hasRemoteActivity = hasHuggingFaceActivity || hasModelScopeActivity;
+  const remoteResultCount = filteredHfResults.length + filteredModelScopeResults.length;
+  const providerCounts: Record<ModelRegistryProvider, number> = {
+    huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
+    modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
+  };
   const showManagerEmpty = !modelsLoading
     && filteredRunning.length === 0
     && visibleFilteredDownloaded.length === 0
     && visibleFilteredAvailable.length === 0
-    && !hasHuggingFaceActivity;
+    && !hasRemoteActivity;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
-  const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
+  const customFormTitle = editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
@@ -2413,7 +3216,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       .filter((m): m is ModelInfo => Boolean(m) && !loadedNames.has(modelName(m)));
   }, [allModels, pinnedModels, loadedNames]);
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
-  const totalPulling = Object.keys(pulling).length;
+  const totalPulling = new Set([
+    ...Object.keys(pulling),
+    ...downloadItems.filter(item => item.downloadType === 'model' && (item.status === 'downloading' || item.status === 'paused' || item.running === true)).map(item => item.modelName),
+  ]).size;
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
@@ -2446,110 +3252,176 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
 
-  const shouldPinHuggingFaceZone = showHuggingFaceZone && searchQuery.trim().length >= 2;
-  const renderHuggingFaceZone = () => !showHuggingFaceZone ? null : (
-    <section className="zone zone--hf zone--hf-compact">
-      <div className="zone__head">
-        <span className="zone__dot zone__dot--hf" />
-        <span className="zone__title">HuggingFace</span>
-        {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
-        <span className="zone__rule" />
-      </div>
-      {hfLoading ? (
-        <div className="hf-zone__loading">
-          <span className="hf-zone__spinner" />
-          <span>Searching HuggingFace…</span>
+  const toggleProvider = (provider: ModelRegistryProvider) => {
+    setProviderEnabled(prev => ({ ...prev, [provider]: !prev[provider] }));
+    if (selectedRemoteModel && selectedRemoteProvider === provider) {
+      setSelectedRemoteModel(null);
+      setExpandedRemoteModel(null);
+      setMobileDetailOpen(false);
+    }
+  };
+
+  const renderProviderZone = (provider: ModelRegistryProvider) => {
+    const meta = PROVIDER_META[provider];
+    const loading = provider === 'huggingface' ? hfLoading : modelScopeLoading;
+    const error = provider === 'huggingface' ? hfError : modelScopeError;
+    const results = provider === 'huggingface' ? filteredHfResults : filteredModelScopeResults;
+    const enabled = providerEnabled[provider];
+    if (!searchActive || !enabled) return null;
+    return (
+      <section
+        className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
+        aria-label={`${meta.label} search results`}
+        data-provider={provider}
+      >
+        <div className="zone__head">
+          <span className={`zone__dot zone__dot--${provider === 'huggingface' ? 'hf' : 'modelscope'}`} aria-hidden="true" />
+          <span className="zone__title">{meta.compactLabel}</span>
+          {!loading && <span className="zone__count">{results.length}</span>}
+          <span className="zone__rule" />
         </div>
-      ) : hfError ? (
-        <div className="hf-zone__empty hf-zone__empty--error">
-          <Icon name="alert" size={16} />
-          <span>HuggingFace search is unavailable: {hfError}</span>
-        </div>
-      ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
-        filteredHfResults.map(r => renderHfRow(r))
-      ) : (
-        <div className="hf-zone__empty">
-          <Icon name="download" size={16} />
-          <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
-        </div>
-      )}
-    </section>
+        {loading ? (
+          <div className="hf-zone__loading" role="status" aria-live="polite">
+            <span className="hf-zone__spinner" aria-hidden="true" />
+            <span>Searching {meta.label}…</span>
+          </div>
+        ) : error ? (
+          <div className="hf-zone__empty hf-zone__empty--error">
+            <Icon name="alert" size={16} />
+            <span>{meta.label} search is unavailable: {error}</span>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="hf-zone__empty">
+            <Icon name="cloud-off" size={16} />
+            <span>No compatible {meta.label} models match the active filters.</span>
+          </div>
+        ) : (
+          results.map(result => renderRemoteRow(provider, result))
+        )}
+      </section>
+    );
+  };
+
+  const renderRegistryZones = () => !hasRemoteActivity ? null : (
+    <div className="registry-zones" aria-label="Remote model search results">
+      {renderProviderZone('huggingface')}
+      {renderProviderZone('modelscope')}
+    </div>
   );
   return (
-    <div className={`manager manager--with-rail${presetRailCollapsed ? ' context-rail-collapsed' : ''}`}>
-      {renderPresetRail()}
-      <div className="manager__main">
-      <div className="manager__head">
-        <div className="manager__title">
-          <h1>Models</h1>
-          <div className="manager__stats">
-            <span className="manager__stat">
-              <span className="manager__stat-num">{displayLoadedModels.length}</span> running
-            </span>
-            <span className="manager__stat-sep">·</span>
-            <span className="manager__stat">
-              <span className="manager__stat-num">{totalDownloaded}</span> downloaded
-            </span>
-            <span className="manager__stat-sep">·</span>
-            <span className="manager__stat">
-              <span className="manager__stat-num">{allModels.length}</span> available
-            </span>
-            {totalPulling > 0 && (
-              <>
-                <span className="manager__stat-sep">·</span>
-                <span className="manager__stat manager__stat--active">
-                  <span className="manager__stat-num">{totalPulling}</span> downloading
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+    <div
+      className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${navRailOpen ? ' manager--nav-open' : ''}`}
+      style={modelDetailLayoutStyle}
+    >
+      {/* Responsive: toggle the left nav rail on narrow viewports */}
+      <button
+        type="button"
+        className="manager__nav-toggle"
+        aria-expanded={navRailOpen}
+        aria-controls="model-nav-rail"
+        onClick={() => setNavRailOpen(v => !v)}
+      >
+        <Icon name="sliders-horizontal" size={15} aria-hidden="true" />
+        <span>Filters</span>
+      </button>
 
-        {/* Search & filter bar */}
-        <div className="manager__toolbar">
-          <div className="manager__search">
-            <span className="manager__search-icon">⌕</span>
-            <input
-              ref={searchRef}
-              className="manager__search-input"
-              type="text"
-              placeholder="Search models… (Ctrl+K)"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="manager__search-clear" onClick={() => setSearchQuery('')}>×</button>
-            )}
-          </div>
-          <div className="manager__custom-actions">
-            <button className="btn btn--ghost manager__custom-btn" onClick={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}>+ Custom model</button>
-            <button className="btn btn--ghost manager__custom-btn manager__custom-btn--omni" onClick={() => openCustomForm('omni-collection')}>+ Omni collection</button>
-            <input
-              ref={customJsonInputRef}
-              className="hidden-file-input"
-              type="file"
-              accept="application/json,.json"
-              onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
-            />
-          </div>
-          <div className="manager__filters">
-            {FILTER_TABS.map(tab => (
-              <button
-                key={tab.key}
-                className={`manager__filter${filterTab === tab.key ? ' manager__filter--active' : ''}`}
-                onClick={() => setFilterTab(tab.key)}
-              >
-                <span className="manager__filter-icon"><CapabilityIcon capability={tab.icon} size={13} /></span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Left rail: navigation / filter dimensions */}
+      <ModelNavRail
+        allModels={allModels}
+        loadedNames={loadedNames}
+        pinnedNames={pinnedNameSet}
+        favoriteNames={favoriteNameSet}
+        primaryFilter={primaryFilter}
+        onPrimaryFilterChange={handlePrimaryFilterChange}
+        categoryFilter={filterTab}
+        onCategoryFilterChange={(f) => { setFilterTab(f); setNavRailOpen(false); }}
+        backendFilter={backendFilter}
+        onBackendFilterChange={setBackendFilter}
+        tagFilter={tagFilter}
+        onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
+        providerEnabled={providerEnabled}
+        providerCounts={providerCounts}
+        onToggleProvider={toggleProvider}
+        storageInfo={storageInfo}
+      />
 
-      <div className="manager__body">
-        {showCustomForm && (
-          <section className="zone custom-model-form" aria-label={`Add ${customFormTitle}`}>
+      {/* Middle panel: searchable/filterable model list */}
+      <ModelListPanel
+        allModels={allModels}
+        loadedNames={loadedNames}
+        pulling={pulling}
+        downloadItems={downloadItems}
+        selectedModelId={selectedDetailModelId}
+        onSelectModel={(id) => {
+          setSelectedDetailModelId(id);
+          setSelectedRemoteModel(null);
+          setMobileDetailOpen(true);
+          if (showCustomForm) closeCustomForm();
+          if (showRouterEditor) closeRouterEditor();
+          if (showGlobalSettings) closeGlobalSettings();
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filterTab={filterTab}
+        onFilterChange={setFilterTab}
+        capabilityFilter={capabilityFilter}
+        onCapabilityFilterChange={setCapabilityFilter}
+        primaryFilter={primaryFilter}
+        backendFilter={backendFilter}
+        tagFilter={tagFilter}
+        searchInputRef={searchRef}
+        onOpenRouter={() => openRouterEditor(selectedDetailModel)}
+        onOpenGlobalSettings={openGlobalSettings}
+        onOpenCustomModels={() => openCustomForm('model')}
+        pinnedNames={pinnedNameSet}
+        onTogglePin={togglePinnedModel}
+        favoriteNames={favoriteNameSet}
+        registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
+        registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
+        registryResultCount={remoteResultCount}
+      />
+
+      <div
+        className="manager__model-list-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize model list panel"
+        aria-valuemin={MODEL_LIST_MIN_WIDTH}
+        aria-valuemax={MODEL_LIST_MAX_WIDTH}
+        aria-valuenow={modelListWidth}
+        tabIndex={0}
+        onPointerDown={handleModelListResizeStart}
+        onKeyDown={handleModelListResizeKeyDown}
+      />
+
+      {/* Right panel: global settings, router editor, custom form, or model detail */}
+      {showGlobalSettings ? (
+        <div className="manager__detail-form-panel manager__detail-form-panel--global-settings">
+          <GlobalModelSettingsPanel
+            scope={accountSession.storageScope}
+            models={allModels}
+            loadedModels={loadedModels}
+            pinnedModels={pinnedModels}
+            onTogglePin={togglePinnedModel}
+            onUpdateAllModels={handleUpdateAllModels}
+            onClose={closeGlobalSettings}
+          />
+        </div>
+      ) : showRouterEditor ? (
+        <div className="manager__detail-form-panel manager__detail-form-panel--router">
+          <RouterEditorPanel
+            models={allModels}
+            scope={accountSession.storageScope}
+            initialModel={routerEditorModel}
+            onRegister={handleRegisterRouter}
+            onSaved={handleRouterSaved}
+            onDeleted={handleDeleteRouterDefinition}
+            onClose={closeRouterEditor}
+          />
+        </div>
+      ) : showCustomEditor ? (
+        <div className="manager__detail-form-panel">
+          <section className="zone custom-model-form" aria-label={customFormTitle}>
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
               <span className="zone__title">{customFormTitle}</span>
@@ -2557,122 +3429,125 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span className="zone__rule" />
             </div>
             <div className="custom-model-form__toolbar">
-              <button className="btn btn--ghost btn--tiny" type="button" onClick={handleExportCustomModels}>Export JSON</button>
-              <button className="btn btn--ghost btn--tiny" type="button" onClick={() => customJsonInputRef.current?.click()}>Import JSON</button>
+              {editingCustomModelName ? (
+                <span className="custom-model-form__editing-badge">Editing saved collection</span>
+              ) : (
+                <div className="custom-model-form__mode-switch" role="group" aria-label="Custom model type">
+                  <button
+                    type="button"
+                    className={!isCustomOmniCollectionDraft ? 'is-active' : ''}
+                    aria-pressed={!isCustomOmniCollectionDraft}
+                    onClick={() => openCustomForm('model')}
+                  >
+                    Custom model
+                  </button>
+                  <button
+                    type="button"
+                    className={isCustomOmniCollectionDraft ? 'is-active' : ''}
+                    aria-pressed={isCustomOmniCollectionDraft}
+                    onClick={() => openCustomForm('omni-collection')}
+                  >
+                    Omni collection
+                  </button>
+                </div>
+              )}
+              <div className="custom-model-form__io-actions">
+                <button className="btn btn--ghost btn--tiny" type="button" onClick={handleExportCustomModels}>Export JSON</button>
+                <button className="btn btn--ghost btn--tiny" type="button" onClick={() => customJsonInputRef.current?.click()}>Import JSON</button>
+              </div>
             </div>
             <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
               <label className="custom-model-form__field">Name
-                <input value={customDraft.displayName} onChange={e => handleCustomDraftChange({ displayName: e.target.value })} placeholder="My custom model" />
-                <span className="custom-model-form__field-hint">Display name for the registered user model.</span>
-              </label>
-              <label className="custom-model-form__field">Capability
-                <select value={customDraft.capability} onChange={e => {
-                  const nextCapability = e.target.value as CustomModelCapability;
-                  handleCustomDraftChange({
-                    capability: nextCapability,
-                    omniSource: nextCapability === 'omni' ? customDraft.omniSource : 'single',
-                    recipe: defaultRecipeForCapability(nextCapability, nextCapability === 'omni' ? customDraft.omniSource : 'single'),
-                  });
-                }}>
-                  {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label} — {c.hint}</option>)}
-                </select>
-                <span className="custom-model-form__field-hint">Determines which compatible recipe/backend options are shown.</span>
-              </label>
-              <label className="custom-model-form__field">Recipe/backend
-                <select value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
-                  {customRecipeOptions.length === 0
-                    ? <option value="">No compatible recipe/backend available</option>
-                    : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <span className="custom-model-form__field-hint">{selectedCustomRecipe?.hint || 'Backend used to register and download this custom model.'}</span>
+                <input
+                  value={customDraft.displayName}
+                  onChange={e => handleCustomDraftChange({ displayName: e.target.value })}
+                  placeholder={isCustomOmniCollectionDraft ? 'My Omni collection' : 'My custom model'}
+                />
               </label>
               <label className="custom-model-form__field">Extra labels
                 <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
-                <span className="custom-model-form__field-hint">Optional comma-separated tags added to the model.</span>
               </label>
-              {customDraft.capability === 'omni' && (
+
+              {!isCustomOmniCollectionDraft && (
                 <>
-                  <label className="custom-model-form__field">Omni type
-                    <select value={customDraft.omniSource} onChange={e => {
-                      const omniSource = e.target.value as 'single' | 'collection';
-                      handleCustomDraftChange({ omniSource, recipe: defaultRecipeForCapability('omni', omniSource) });
+                  <label className="custom-model-form__field">Capability
+                    <select value={customDraft.capability} onChange={e => {
+                      const nextCapability = e.target.value as CustomModelCapability;
+                      handleCustomDraftChange({
+                        capability: nextCapability,
+                        omniSource: 'single',
+                        recipe: defaultRecipeForCapability(nextCapability, 'single'),
+                      });
                     }}>
-                      <option value="single">Single multimodal checkpoint</option>
-                      <option value="collection">Collection wrapper from existing components</option>
+                      {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
-                    <span className="custom-model-form__field-hint">Choose a direct checkpoint or a wrapper around component models.</span>
                   </label>
-                  <div className="custom-model-form__field-spacer" aria-hidden="true" />
+                  <label className="custom-model-form__field">Recipe/backend
+                    <select value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
+                      {customRecipeOptions.length === 0
+                        ? <option value="">No compatible backend available</option>
+                        : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="custom-model-form__field custom-model-form__wide">Checkpoint, Hugging Face repo, or local path
+                    {selectedCustomRecipeSuggestion && (
+                      <InlineCheckpointExample
+                        checkpoint={selectedCustomRecipeSuggestion.checkpoint}
+                        note={selectedCustomRecipeSuggestion.note}
+                      />
+                    )}
+                    <input
+                      value={customDraft.checkpoint}
+                      onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })}
+                      placeholder={primaryCheckpointPlaceholder}
+                    />
+                  </label>
+                  {showLlamacppMmprojField && (
+                    <label className="custom-model-form__field custom-model-form__wide">Vision projector (mmproj)
+                      <InlineCheckpointExample
+                        checkpoint={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
+                        note={mmprojCheckpointExample?.note}
+                      />
+                      <input
+                        value={customDraft.mmproj}
+                        onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
+                        placeholder="Optional"
+                      />
+                    </label>
+                  )}
+                  {showImageExtraCheckpointFields && (
+                    <>
+                      <label className="custom-model-form__field">Text encoder checkpoint
+                        <InlineCheckpointExample
+                          checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
+                          note={textEncoderCheckpointExample?.note}
+                        />
+                        <input
+                          value={customDraft.imageTextEncoder}
+                          onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
+                          placeholder="Optional"
+                        />
+                      </label>
+                      <label className="custom-model-form__field">VAE checkpoint
+                        <InlineCheckpointExample
+                          checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
+                          note={vaeCheckpointExample?.note}
+                        />
+                        <input
+                          value={customDraft.imageVae}
+                          onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
+                          placeholder="Optional"
+                        />
+                      </label>
+                    </>
+                  )}
                 </>
               )}
-              <label className="custom-model-form__field">{isCustomOmniCollectionDraft ? 'Optional collection checkpoint/alias' : 'Checkpoint, HF repo, or local path'}
-                <input
-                  value={customDraft.checkpoint}
-                  onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })}
-                  placeholder={isCustomOmniCollectionDraft ? 'Optional; first component is used when left empty' : primaryCheckpointPlaceholder}
-                />
-                <span className="custom-model-form__field-hint">{isCustomOmniCollectionDraft ? 'Optional alias for collection wrappers.' : 'Hugging Face id, quantized variant, or absolute local path.'}</span>
-              </label>
-              {isCustomOmniCollectionDraft ? (
-                <div className="custom-model-form__field-spacer" aria-hidden="true" />
-              ) : selectedCustomRecipeSuggestion && (
-                <CheckpointExampleCard
-                  title={`${recipeLabel(selectedCustomRecipeName)} checkpoint format example`}
-                  checkpoint={selectedCustomRecipeSuggestion.checkpoint}
-                  note={selectedCustomRecipeSuggestion.note}
-                />
-              )}
-              {showLlamacppMmprojField && (
-                <>
-                  <label className="custom-model-form__field">Vision projector (mmproj)
-                    <input
-                      value={customDraft.mmproj}
-                      onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
-                      placeholder={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
-                    />
-                    <span className="custom-model-form__field-hint">Optional extra checkpoint for llama.cpp vision models; leave empty for text-only models.</span>
-                  </label>
-                  <CheckpointExampleCard
-                    title="Vision projector checkpoint format example"
-                    checkpoint={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
-                    note={mmprojCheckpointExample?.note}
-                  />
-                </>
-              )}
-              {showImageExtraCheckpointFields && (
-                <>
-                  <label className="custom-model-form__field">Text encoder checkpoint
-                    <input
-                      value={customDraft.imageTextEncoder}
-                      onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
-                      placeholder={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
-                    />
-                    <span className="custom-model-form__field-hint">Optional for image pipelines that split text encoder weights from the main checkpoint.</span>
-                  </label>
-                  <CheckpointExampleCard
-                    title="Text encoder checkpoint format example"
-                    checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
-                    note={textEncoderCheckpointExample?.note}
-                  />
-                  <label className="custom-model-form__field">VAE checkpoint
-                    <input
-                      value={customDraft.imageVae}
-                      onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
-                      placeholder={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
-                    />
-                    <span className="custom-model-form__field-hint">Optional for image pipelines that split VAE weights from the main checkpoint.</span>
-                  </label>
-                  <CheckpointExampleCard
-                    title="VAE checkpoint format example"
-                    checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
-                    note={vaeCheckpointExample?.note}
-                  />
-                </>
-              )}
-              {customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && (
+
+              {isCustomOmniCollectionDraft && (
                 <>
                   <div className="custom-model-form__hint custom-model-form__wide">
-                    Build a visible Omni collection from downloaded, registered, or custom models. Pick components from the searchable dropdowns; use the HuggingFace zone to download/register new components before selecting them here.
+                    Choose the models that make up this collection. Only the planner LLM is required.
                   </div>
                   <OmniComponentPicker role="llm" value={customDraft.llmComponent} options={omniComponentOptions.llm} onChange={value => updateOmniComponent('llm', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="vision" value={customDraft.visionComponent} options={omniComponentOptions.vision} onChange={value => updateOmniComponent('vision', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
@@ -2680,6 +3555,110 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <OmniComponentPicker role="edit" value={customDraft.editComponent} options={omniComponentOptions.edit} onChange={value => updateOmniComponent('edit', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="transcription" value={customDraft.transcriptionComponent} options={omniComponentOptions.transcription} onChange={value => updateOmniComponent('transcription', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="speech" value={customDraft.speechComponent} options={omniComponentOptions.speech} onChange={value => updateOmniComponent('speech', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+
+                  <details className="custom-model-form__advanced custom-model-form__wide">
+                    <summary>
+                      <span>Advanced settings</span>
+                      <small>System prompt and custom LLM tools</small>
+                    </summary>
+                    <div className="custom-model-form__advanced-body">
+                      <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
+                        <textarea
+                          value={customDraft.omniSystemPrompt}
+                          onChange={e => handleCustomDraftChange({ omniSystemPrompt: e.target.value })}
+                          rows={8}
+                          spellCheck={false}
+                        />
+                      </label>
+                      <div className="custom-model-form__prompt-actions custom-model-form__wide">
+                        <button className="btn btn--ghost btn--tiny" type="button" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</button>
+                      </div>
+                      <div className="custom-model-form__tools custom-model-form__wide">
+                        <div className="custom-model-form__section-head">
+                          <div>
+                            <strong>Custom LLM tools</strong>
+                            <span>Optional planner-callable helper models.</span>
+                          </div>
+                          <div className="custom-model-form__section-actions">
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('generic')}>+ LLM tool</button>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={addCoderReviewerPair}>+ Coder/reviewer pair</button>
+                          </div>
+                        </div>
+                        {customDraft.omniCustomTools.length === 0 ? (
+                          <div className="custom-model-form__empty-tools">No custom LLM tools configured.</div>
+                        ) : customDraft.omniCustomTools.map((tool, index) => {
+                          const targetListId = `omni-custom-tool-targets-${tool.id}`;
+                          return (
+                            <div className="custom-model-form__tool-card" key={tool.id}>
+                              <div className="custom-model-form__tool-card-head">
+                                <strong>Tool {index + 1}</strong>
+                                <button className="btn btn--ghost btn--tiny" type="button" onClick={() => removeOmniCustomTool(tool.id)}>Remove</button>
+                              </div>
+                              <label className="custom-model-form__field">Tool name
+                                <input
+                                  value={tool.name}
+                                  onChange={e => updateOmniCustomTool(tool.id, { name: sanitizeOmniToolName(e.target.value) })}
+                                  placeholder="ask_coder"
+                                />
+                              </label>
+                              <label className="custom-model-form__field">Target LLM
+                                <input
+                                  value={tool.targetModel}
+                                  list={targetListId}
+                                  onChange={e => updateOmniCustomTool(tool.id, { targetModel: e.target.value })}
+                                  placeholder="Select or type a model id"
+                                />
+                                <datalist id={targetListId}>
+                                  {omniComponentOptions.llm.map(option => (
+                                    <option key={option.id} value={option.id}>{option.label}</option>
+                                  ))}
+                                </datalist>
+                              </label>
+                              <label className="custom-model-form__field custom-model-form__wide">Description
+                                <input
+                                  value={tool.description}
+                                  onChange={e => updateOmniCustomTool(tool.id, { description: e.target.value })}
+                                  placeholder="When should the planner use this tool?"
+                                />
+                              </label>
+                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool system prompt
+                                <textarea
+                                  value={tool.systemPrompt}
+                                  onChange={e => updateOmniCustomTool(tool.id, { systemPrompt: e.target.value })}
+                                  rows={4}
+                                  spellCheck={false}
+                                />
+                              </label>
+                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">User prompt template
+                                <textarea
+                                  value={tool.promptTemplate}
+                                  onChange={e => updateOmniCustomTool(tool.id, { promptTemplate: e.target.value })}
+                                  rows={4}
+                                  spellCheck={false}
+                                />
+                              </label>
+                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool argument schema JSON
+                                <textarea
+                                  value={tool.parametersJson}
+                                  onChange={e => updateOmniCustomTool(tool.id, { parametersJson: e.target.value })}
+                                  rows={5}
+                                  spellCheck={false}
+                                />
+                              </label>
+                              <label className="custom-model-form__field">Max tokens
+                                <input
+                                  value={tool.maxTokens}
+                                  inputMode="numeric"
+                                  onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
+                                  placeholder="Optional"
+                                />
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </details>
                 </>
               )}
               {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
@@ -2689,93 +3668,57 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </div>
             </form>
           </section>
-        )}
-
-        {modelsLoading && (
-          <section className="zone" aria-label="Loading models">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Loading models…</span>
-              <span className="zone__rule" />
-            </div>
-            <div className="manager__loading">Refreshing Lemonade model registry…</div>
-          </section>
-        )}
-
-        {shouldPinHuggingFaceZone && renderHuggingFaceZone()}
-
-        {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
-
-        {pinnedVisibleModels.length > 0 && (
-          <section className="zone zone--pinned">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Pinned Models</span>
-              <span className="zone__count">{pinnedVisibleModels.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {pinnedVisibleModels.map(m => renderModelRow(m, downloaded.some(d => modelName(d).toLowerCase() === modelName(m).toLowerCase())))}
-          </section>
-        )}
-
-        {/* Running zone */}
-        {filteredRunning.length > 0 && (
-          <section className="zone zone--running">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--running" />
-              <span className="zone__title">Loaded Models</span>
-              <span className="zone__count">{filteredRunning.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {filteredRunning.map(m => renderRunningModel(m))}
-          </section>
-        )}
-
-        {/* Downloaded / Ready zone */}
-        {visibleFilteredDownloaded.length > 0 && (
-          <section className="zone zone--downloaded">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Downloaded</span>
-              <span className="zone__count">{visibleFilteredDownloaded.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {visibleFilteredDownloaded.map(m => renderModelRow(m, true))}
-          </section>
-        )}
-
-        {/* Available zone */}
-        {visibleFilteredAvailable.length > 0 && (
-          <section className="zone">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Lemonade Registry</span>
-              <span className="zone__count">{visibleFilteredAvailable.length}</span>
-              <span className="zone__rule" />
-            </div>
-            {visibleAvailable.map(m => renderModelRow(m, false))}
-            {hiddenAvailableCount > 0 && (
-              <button
-                className="zone__show-more"
-                onClick={() => setShowAllAvailable(true)}
-              >
-                Show {hiddenAvailableCount} more models
-              </button>
-            )}
-          </section>
-        )}
-
-        {!shouldPinHuggingFaceZone && renderHuggingFaceZone()}
-
-        <div className={`manager__empty${showManagerEmpty ? '' : ' manager__empty--hidden'}`} aria-hidden={!showManagerEmpty}>
-          <span className="manager__empty-icon">{api.isConnected ? <Icon name="box" size={42} /> : <Icon name="plug" size={42} />}</span>
-          <p>{api.isConnected
-            ? 'No models found matching your search.'
-            : 'Connect to a Lemonade server to see models.'
-          }</p>
+          <input
+            ref={customJsonInputRef}
+            className="hidden-file-input"
+            type="file"
+            accept="application/json,.json"
+            onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
+          />
+          {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
         </div>
-      </div>
-      </div>
+      ) : (
+        <ModelDetailPanel
+          model={selectedDetailModel}
+          loadedModel={selectedDetailModelId
+            ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
+            : null}
+          loadingModel={loadingModel}
+          pulling={pulling}
+          loadError={loadError}
+          onLoad={handleLoad}
+          onUnload={handleUnload}
+          onReloadModel={handleReloadModel}
+          onPull={handlePull}
+          onPullAndLoad={handlePullAndLoad}
+          onDelete={handleDelete}
+          onCancelPull={handleCancelPull}
+          serverDefaultCtxSize={serverDefaultCtxSize}
+          isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
+          onToggleFavorite={toggleFavoriteModel}
+          onEditCustomCollection={openCustomCollectionEditor}
+          noModelsAvailable={allModels.length === 0}
+          hfModel={selectedRemoteModel}
+          hfProvider={selectedRemoteProvider}
+          hfVariants={selectedRemoteModel ? remoteVariants[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] : undefined}
+          onFetchHfVariants={(modelId) => { void fetchRemoteVariants(selectedRemoteProvider, modelId); }}
+          onHfPull={(modelId, variantName, recipe) => { void handleRemotePull(selectedRemoteProvider, modelId, variantName, recipe); }}
+          pullingHf={selectedRemoteModel && pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] !== undefined
+            ? { [selectedRemoteModel.id]: pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] }
+            : {}}
+          onCancelHfPull={(modelId) => { void handleCancelRemotePull(selectedRemoteProvider, modelId); }}
+          onBack={() => {
+            setMobileDetailOpen(false);
+            if (selectedDetailModelId) {
+              requestAnimationFrame(() => {
+                const sel = document.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(selectedDetailModelId)}"]`);
+                sel?.focus();
+              });
+            }
+          }}
+          onClose={() => { setSelectedDetailModelId(null); setSelectedRemoteModel(null); }}
+        />
+      )}
     </div>
   );
 };

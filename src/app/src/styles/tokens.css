@@ -48,6 +48,9 @@
   --primary-yellow: var(--accent);
   --on-primary: var(--accent-on);
 
+  --warning: var(--warn);
+  --warning-soft: var(--warn-soft);
+
   /* ---------- Typography ---------- */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
                "Segoe UI", system-ui, "Inter", "Helvetica Neue", sans-serif;
@@ -56,6 +59,7 @@
 
   --text-xs:   11px;
   --text-sm:   12.5px;
+  --text-md:   13.5px;
   --text-base: 14px;
   --text-lg:   15px;
   --text-xl:   18px;
@@ -139,37 +143,41 @@
 
 /* ---------- Light theme overrides ---------- */
 [data-theme="light"] {
-  --surface-base:   #FFFFFF;
-  --surface-1:      #FFFFFF;
-  --surface-2:      #F6F6F6;
-  --surface-3:      #EFEDE0;
-  --surface-raised: #FFFFFF;
-  --surface-glass:  rgba(255, 255, 255, 0.78);
+  --surface-base:   #fdfbf6;
+  --surface-1:      #fdfbf6;
+  --surface-2:      #f5f2ec;
+  --surface-3:      #fdfbf6;
+  --surface-raised: #fdfbf6;
+  --surface-glass:  #fdfbf6;
+  --surface-titlebar: #efebe1;
+
+  --surface-alpha-1: rgba(0, 0, 0, 0.1);
+  --surface-alpha-05: rgba(0, 0, 0, 0.05);
 
   --text-primary:   #000000;
   --text-secondary: #2D2F2F;
   --text-tertiary:  #52525B;
   --text-disabled:  #767676;
 
-  --accent:         #FCD846;
-  --accent-hover:   #FAF972;
+  --accent:         rgba(252, 216, 70, 0.58);
+  --accent-hover:   rgba(252, 216, 70, 0.58);
   --accent-deep:    #5C4B00;
   --accent-fg:      var(--accent-deep);
   --accent-soft:    rgba(252, 216, 70, 0.18);
-  --accent-strong:  rgba(252, 216, 70, 0.32);
+  --accent-strong:  rgba(252, 216, 70, 0.58);
   --accent-on:      #000000;
 
-  --success:        #3C6531;
+  --success:        #4CAF50;
   --success-soft:   rgba(60, 101, 49, 0.10);
-  --warn:           #9A6A00;
+  --warn:           #ffb74d;
   --warn-soft:      rgba(252, 216, 70, 0.20);
-  --danger:         #B94A3D;
+  --danger:         #f44336;
   --danger-soft:    rgba(185, 74, 61, 0.10);
-  --info:           #306EA8;
+  --info:           #2196F3;
   --info-soft:      rgba(48, 110, 168, 0.10);
 
-  --border:         rgba(0, 0, 0, 0.10);
-  --border-subtle:  rgba(0, 0, 0, 0.07);
+  --border:         rgba(0, 0, 0, 0.16);
+  --border-subtle:  rgba(92, 75, 0, 0.18);
   --border-strong:  rgba(92, 75, 0, 0.18);
 
   --shadow-sm:

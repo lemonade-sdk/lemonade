@@ -3,7 +3,7 @@
  * Exposes lemonade server management as OpenAI-compatible function calling tools.
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
-import { allStoredPresets, isCompatible, loadApplied, saveApplied, type Preset } from '../presetStore';
+import { allStoredPresets, isCompatible, loadApplied, saveApplied, classifyPresetChange, runningPresetIdForModel, setRunningPreset, activePresetForModel, type Preset } from '../presetStore';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
@@ -28,7 +28,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
         properties: {
           query: { type: 'string', description: 'Optional case-insensitive model-name filter. Use when the user mentions a model family/name such as Flux, Gemma, Qwen, Llama, Whisper, or SD.' },
           status: { type: 'string', enum: ['local', 'loaded', 'downloaded', 'registry', 'all'], description: 'Which models to return. Default: local. Use registry/all only when the user explicitly asks what can be downloaded.' },
-          capability: { type: 'string', description: 'Optional capability filter: chat, image, audio, tts, embedding, reranking, omni.' },
+          capability: { type: 'string', description: 'Optional capability filter: chat, image, audio/transcription, audio-generation, tts, model3d, embedding, reranking, omni.' },
           limit: { type: 'number', description: 'Maximum returned items per section. Default 30.' },
         },
         required: [],
@@ -68,6 +68,23 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
           preset_name: { type: 'string', description: 'Optional exact preset name to assign before loading.' },
         },
         required: ['model_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'change_preset',
+      description: 'Change the active preset of an already-LOADED model (#2356). Use this when the user asks to switch/apply a different preset to a model that is currently loaded (e.g. "use the Creative preset", "make it more deterministic", "give it a bigger context window"). Request-time changes (system prompt, sampling/temperature, tools) apply live on the next message with NO reload. Load-time changes (ctx_size, backend, device, model args) require a reload, which this tool performs automatically (unload + load). Specify the preset via preset, preset_id, or preset_name. If model_name is omitted, the most recently loaded model is used.',
+      parameters: {
+        type: 'object',
+        properties: {
+          model_name: { type: 'string', description: 'The loaded model to re-preset. Optional — uses the most recently loaded model if omitted.' },
+          preset: { type: 'string', description: 'Preset id or name to bind. Examples: Default, Balanced, Quality, Fast, Creative, Long Context, Code.' },
+          preset_id: { type: 'string', description: 'Optional exact preset id to bind.' },
+          preset_name: { type: 'string', description: 'Optional exact preset name to bind.' },
+        },
+        required: [],
       },
     },
   },
@@ -158,7 +175,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       parameters: {
         type: 'object',
         properties: {
-          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "moonshine", "sd-cpp", "kokoro", "flm", "vllm").' },
+          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "sd-cpp", "acestep", "thinksound", "openmoss", "trellis", "flm", "vllm").' },
           backend: { type: 'string', description: 'The backend to install (e.g. "vulkan", "rocm", "cpu", "metal", "npu").' },
         },
         required: ['recipe', 'backend'],
@@ -203,7 +220,7 @@ export interface ToolResult {
   role: 'tool';
   content: string;
   displayResult?: string;
-  artifacts?: Array<{ type: 'image' | 'audio'; url: string; name?: string; mime?: string }>;
+  artifacts?: Array<{ type: 'image' | 'audio' | 'model3d'; url: string; name?: string; mime?: string }>;
   error?: boolean;
 }
 
@@ -273,14 +290,28 @@ function recipeNames(model: AnyModel | null | undefined): string[] {
   return Array.from(new Set(names));
 }
 
+function normalizeCapabilityFilter(value: unknown): string {
+  const raw = asString(value).toLowerCase();
+  if (['audio/transcription', 'transcription', 'stt', 'asr', 'speech-to-text'].includes(raw)) return 'audio';
+  if (['music', 'sfx', 'music-and-sfx', 'music & sfx', 'audio_generation'].includes(raw)) return 'audio-generation';
+  if (['3d', '3d-generation', 'image-to-3d'].includes(raw)) return 'model3d';
+  if (['speech', 'text-to-speech'].includes(raw)) return 'tts';
+  return raw;
+}
+
 function capabilityForModel(model: AnyModel | null | undefined): string {
   const labels = lowerLabels(model);
   const type = asString(model?.type).toLowerCase();
-  const haystack = `${type} ${labels.join(' ')} ${asString(model?.recipe).toLowerCase()} ${modelName(model).toLowerCase()}`;
+  const recipe = asString(model?.recipe).toLowerCase();
+  const name = modelName(model).toLowerCase();
+  const haystack = `${type} ${labels.join(' ')} ${recipe} ${name}`;
+
   if (haystack.includes('omni') || haystack.includes('collection')) return 'omni';
-  if (labels.some(label => ['image', 'image-generation', 'diffusion', 'image-edit', 'upscaling'].includes(label)) || type === 'image') return 'image';
-  if (labels.some(label => ['audio', 'transcription', 'stt', 'speech-to-text', 'realtime-transcription'].includes(label)) || type === 'audio') return 'audio';
-  if (labels.some(label => ['tts', 'speech', 'text-to-speech'].includes(label)) || type === 'tts') return 'tts';
+  if (['trellis', 'image-to-3d', '3d-generation', 'model3d'].some(token => haystack.includes(token)) || type === '3d') return 'model3d';
+  if (['acestep', 'ace-step', 'thinksound', 'audio-generation', 'music-generation', 'sound-generation', 'sfx'].some(token => haystack.includes(token))) return 'audio-generation';
+  if (['openmoss', 'moss-tts', 'voicegen', 'kokoro', 'text-to-speech', 'voice-design'].some(token => haystack.includes(token)) || type === 'tts') return 'tts';
+  if (labels.some(label => ['image', 'image-generation', 'diffusion', 'image-edit', 'upscaling'].includes(label)) || type === 'image' || recipe === 'sd-cpp') return 'image';
+  if (labels.some(label => ['audio', 'transcription', 'stt', 'speech-to-text', 'realtime-transcription'].includes(label)) || type === 'audio' || ['whispercpp', 'moonshine'].includes(recipe)) return 'audio';
   if (labels.includes('embedding') || type === 'embedding') return 'embedding';
   if (labels.includes('reranking') || type === 'reranking' || type === 'rerank') return 'reranking';
   return 'chat';
@@ -577,7 +608,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const loadedNames = new Set(loaded.map(model => asString(model.model_name).toLowerCase()).filter(Boolean));
         const query = asString(args.query);
         const status = (asString(args.status) || 'local').toLowerCase();
-        const capability = asString(args.capability).toLowerCase();
+        const capability = normalizeCapabilityFilter(args.capability);
         const limit = Math.max(1, Math.min(100, Math.round(asNumber(args.limit) || 30)));
         const all = (data.data as AnyModel[]).filter(model => {
           if (!includesQuery(model, query)) return false;
@@ -740,6 +771,14 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             opts.vllm_backend = backend;
           } else if (recipe.includes('sd-cpp')) {
             opts.sd_cpp_backend = backend;
+          } else if (recipe.includes('acestep') || recipe.includes('ace-step')) {
+            opts.acestep_backend = backend;
+          } else if (recipe.includes('thinksound')) {
+            opts.thinksound_backend = backend;
+          } else if (recipe.includes('openmoss')) {
+            opts.openmoss_backend = backend;
+          } else if (recipe.includes('trellis')) {
+            opts.trellis_backend = backend;
           }
         }
         if (args.n_ctx) opts.n_ctx = args.n_ctx;
@@ -757,6 +796,104 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         };
         const presetText = appliedPreset ? ` using preset ${appliedPreset.name}` : '';
         return toolPayload(call, result, `Loaded ${targetModelName}${presetText}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
+      }
+
+      case 'change_preset': {
+        // #2356 (simplified): re-preset an already-loaded model with the same
+        // primitives as the UI button. No update-preset endpoint, no `mode`
+        // parameter — request-time changes are a pure client-local rebind;
+        // load-time changes go through reloadModel (= unload + load).
+        const health = await api.health().catch(() => null);
+        const loaded = health?.all_models_loaded || [];
+        if (loaded.length === 0) {
+          return toolPayload(call, {
+            error: 'No model is loaded. Load a model first, then change its preset.',
+            answer_instruction: 'Tell the user no model is loaded, so there is nothing to re-preset. Suggest load_model.',
+          }, 'No model loaded', true);
+        }
+        const data = await api.models(true).catch(() => ({ data: [] as AnyModel[] }));
+        // Resolve the target; default to the most-recently-loaded model (last entry).
+        const resolved = args.model_name
+          ? resolveModel(data.data as AnyModel[], loaded, args.model_name)
+          : (data.data as AnyModel[]).find(m => modelName(m).toLowerCase() === asString(loaded[loaded.length - 1]?.model_name).toLowerCase()) || null;
+        const targetModelName = resolved
+          ? modelName(resolved)
+          : (asString(args.model_name) || asString(loaded[loaded.length - 1]?.model_name));
+        if (!targetModelName) {
+          return toolPayload(call, { error: 'Could not determine which loaded model to re-preset.' }, 'Error: missing model name', true);
+        }
+        const loadedTarget = loaded.find(m => asString(m.model_name).toLowerCase() === targetModelName.toLowerCase());
+        if (!loadedTarget) {
+          return toolPayload(call, {
+            error: `Model ${targetModelName} is not currently loaded.`,
+            answer_instruction: 'Tell the user that model is not loaded, so its preset cannot be changed live. Suggest load_model with the preset instead.',
+          }, `Model ${targetModelName} is not loaded`, true);
+        }
+
+        const requestedPreset = presetSpecifier(args);
+        if (!requestedPreset) {
+          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
+          return toolPayload(call, {
+            error: 'Missing preset. Specify a preset to bind.',
+            available_presets: choices,
+            answer_instruction: 'Ask the user which preset to apply, listing the available presets.',
+          }, 'Error: missing preset', true);
+        }
+        const nextPreset = resolvePreset(requestedPreset);
+        if (!nextPreset) {
+          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
+          return toolPayload(call, {
+            error: `Preset not found: ${requestedPreset}`,
+            available_presets: choices,
+            answer_instruction: 'Tell the user the requested preset was not found and ask them to choose one of the available presets.',
+          }, `Preset not found: ${requestedPreset}`, true);
+        }
+        if (resolved && !isCompatible(nextPreset, resolved as any)) {
+          return toolPayload(call, {
+            error: `Preset ${nextPreset.name} is not compatible with ${targetModelName}`,
+            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+            answer_instruction: 'Tell the user the preset is incompatible with the loaded model and ask for a compatible preset.',
+          }, `Preset ${nextPreset.name} is not compatible with ${targetModelName}`, true);
+        }
+
+        // Determine the running preset (what the model is actually running) BEFORE
+        // rebinding, so we can classify the change correctly.
+        const runId = runningPresetIdForModel(targetModelName);
+        const running = runId ? (allStoredPresets().find(p => p.id === runId) ?? null) : (activePresetForModel(targetModelName) ?? null);
+        const kind = classifyPresetChange(running, nextPreset);
+
+        // Rebind the active preset (client-local — invariant #11). For live
+        // changes this is the entire operation; request composition carries the
+        // new values on the next request. The binding PERSISTS across a reload.
+        applyPresetBinding(targetModelName, nextPreset);
+
+        if (kind === 'reload') {
+          await api.reloadModel(targetModelName, nextPreset.recipe_options as Record<string, unknown> | undefined, resolved as any || null);
+          setRunningPreset(targetModelName, nextPreset.id);
+          const result = {
+            status: 'reloaded',
+            model: targetModelName,
+            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+            change: 'reload',
+            answer_instruction: 'Tell the user the preset was applied and the model was reloaded (load-time settings such as context size/backend require a reload).',
+          };
+          return toolPayload(call, result, `Reloaded ${targetModelName} with preset ${nextPreset.name}`);
+        }
+
+        // 'live' or 'none' — no server round-trip.
+        setRunningPreset(targetModelName, nextPreset.id);
+        const result = {
+          status: kind === 'live' ? 'applied_live' : 'no_change',
+          model: targetModelName,
+          preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
+          change: kind,
+          answer_instruction: kind === 'live'
+            ? 'Tell the user the preset was applied live — it takes effect on the next message, no reload needed.'
+            : 'Tell the user the preset was already effectively in use, so nothing changed.',
+        };
+        return toolPayload(call, result, kind === 'live'
+          ? `Applied preset ${nextPreset.name} to ${targetModelName} (live, no reload)`
+          : `Preset ${nextPreset.name} already active on ${targetModelName}`);
       }
 
       case 'unload_model': {

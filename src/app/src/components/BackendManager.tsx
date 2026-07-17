@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import {
-  DEFAULT_PRESET,
   PRESET_STORE_EVENT,
-  Capability,
-  Preset,
-  STARTERS,
-  loadBackendApplied,
-  loadUserPresets,
-  presetParamPreviewLines,
-  presetSupportsCapability,
-  saveBackendApplied,
+  BackendTuning,
+  backendSupportsArgs,
+  loadBackendTunings,
+  resetBackendTuning,
+  saveBackendTuning,
 } from '../presetStore';
-import { Icon, PresetIcon } from './Icon';
+import { Icon } from './Icon';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -72,6 +70,10 @@ const RECIPE_LABELS: Record<string, string> = {
   flm:            'FastFlowLM',
   'ryzenai-llm':  'RyzenAI',
   vllm:           'vLLM',
+  acestep:         'ACE-Step',
+  thinksound:      'ThinkSound',
+  openmoss:        'OpenMOSS TTS',
+  trellis:         'TRELLIS.2',
 };
 
 /** Recipe → capability column for the matrix */
@@ -84,6 +86,10 @@ const RECIPE_CAPABILITY: Record<string, string> = {
   flm:            'LLM',
   'ryzenai-llm':  'LLM',
   vllm:           'LLM',
+  acestep:         'Audio',
+  thinksound:      'Audio',
+  openmoss:        'TTS',
+  trellis:         '3D',
 };
 
 /** Device display order */
@@ -123,7 +129,7 @@ const BACKEND_DEVICE: Record<string, DeviceKey> = {
 };
 
 /** Capability columns */
-const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS'] as const;
+const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
@@ -132,30 +138,22 @@ function backendKey(recipe: string, backend: string): string {
   return `${recipe}:${backend}`;
 }
 
-function backendCapabilitiesForRecipe(recipe: string): Capability[] {
-  switch (recipe) {
-    case 'sd-cpp': return ['image'];
-    case 'whispercpp':
-    case 'moonshine': return ['transcription'];
-    case 'kokoro': return ['tts'];
-    case 'llamacpp':
-    case 'flm':
-    case 'ryzenai-llm':
-    case 'vllm':
-    default: return ['chat', 'code', 'vision', 'omni'];
-  }
+function backendDownloadId(recipe: string, backend: string): string {
+  return `backend:${backendKey(recipe, backend)}`;
 }
 
-function presetCompatibleWithBackend(preset: Preset, key: string): boolean {
-  if (!key) return true;
-  const [recipe] = key.split(':');
-  return backendCapabilitiesForRecipe(recipe).some(cap => presetSupportsCapability(preset, cap));
+function backendDownloadName(recipe: string, backend: string): string {
+  return backendKey(recipe, backend);
 }
 
+function backendDownloadMatches(download: DownloadListItem, recipe: string, backend: string): boolean {
+  const name = backendDownloadName(recipe, backend);
+  return download.downloadType === 'backend'
+    && (download.id === backendDownloadId(recipe, backend) || download.modelName === name);
+}
 
-function backendLabelFromKey(key: string): string {
-  const [recipe, backend] = key.split(':');
-  return `${RECIPE_LABELS[recipe] || recipe} · ${backend || 'auto'}`;
+function backendProgressPercent(download: DownloadListItem): number {
+  return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -246,38 +244,156 @@ function canShowUninstall(info: BackendInfo): boolean {
     || info.state === 'update_available';
 }
 
+interface BackendArgsDialogProps {
+  backendKeyValue: string | null;
+  tuning: BackendTuning | null;
+  onSave: (key: string, args: string) => void;
+  onClear: (key: string) => void;
+  onClose: () => void;
+}
+
+const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
+  backendKeyValue,
+  tuning,
+  onSave,
+  onClear,
+  onClose,
+}) => {
+  const [args, setArgs] = useState('');
+  const dialogRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useFocusTrap(dialogRef, !!backendKeyValue);
+
+  useEffect(() => {
+    setArgs(tuning?.args || '');
+  }, [backendKeyValue, tuning?.args]);
+
+  useEffect(() => {
+    if (!backendKeyValue) return;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [backendKeyValue]);
+
+  useEffect(() => {
+    if (!backendKeyValue) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [backendKeyValue, onClose]);
+
+  if (!backendKeyValue) return null;
+  const [recipe, backend] = backendKeyValue.split(':');
+  const label = `${RECIPE_LABELS[recipe] || recipe} · ${backend || 'default'}`;
+  const hasSavedArgs = Boolean(tuning?.args);
+
+  return (
+    <>
+      <div className="backend-args-scrim" onClick={onClose} />
+      <aside
+        ref={dialogRef}
+        className="backend-args-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="backend-args-title"
+        data-backend-args-dialog={backendKeyValue}
+      >
+        <div className="backend-args-dialog__head">
+          <div>
+            <span className="backend-args-dialog__eyebrow">Backend arguments</span>
+            <h2 id="backend-args-title">{label}</h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close backend arguments">
+            <Icon name="x" size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="backend-args-dialog__copy">
+          These arguments apply to every model using this exact backend. Model tuning and explicit load options override conflicting values.
+        </p>
+        {tuning?.source === 'optimized' && (
+          <p className="backend-args-dialog__notice" role="status">
+            AutoOpt last replaced this backend entry. Saving here changes it to a manual override.
+          </p>
+        )}
+        <label className="field__label" htmlFor="backend-args-value">Arguments</label>
+        <textarea
+          ref={inputRef}
+          id="backend-args-value"
+          className="input backend-args-dialog__textarea"
+          rows={7}
+          value={args}
+          onChange={event => setArgs(event.target.value)}
+          placeholder="--threads 8 --ctx-size 65536"
+          spellCheck={false}
+          autoFocus
+          data-backend-args-input
+        />
+        <p className="backend-args-dialog__hint">
+          One shell-style argument string. Saving replaces the previous entry for this backend.
+        </p>
+        <div className="backend-args-dialog__actions">
+          {hasSavedArgs && (
+            <button className="btn btn--ghost" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
+              Clear
+            </button>
+          )}
+          <span className="backend-args-dialog__spacer" />
+          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" onClick={() => onSave(backendKeyValue, args)} data-backend-args-save>
+            Save backend args
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+};
+
 /* ── Component ─────────────────────────────────────────────── */
 
-const BackendManager: React.FC = () => {
+interface BackendManagerProps {
+  /**
+   * The app keeps views mounted and hides inactive views with CSS. Refresh
+   * system-info when the Backends view becomes active so status changes made
+   * elsewhere are visible without a full page reload.
+   */
+  isActive?: boolean;
+}
+
+const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
+  const [showUnsupported, setShowUnsupported] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
-  const [backendPresets, setBackendPresets] = useState<Record<string, string>>(loadBackendApplied);
-  const [presetRailCollapsed, setPresetRailCollapsed] = useState(false);
-  const [selectedBackendKey, setSelectedBackendKey] = useState('');
-  const [selectedRailPresetId, setSelectedRailPresetId] = useState(DEFAULT_PRESET.id);
-  const [presetRailHovered, setPresetRailHovered] = useState(false);
-  const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
-  const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
+  const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
+  const sysInfoRef = useRef<SystemInfoData | null>(null);
+  const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    const reloadPresetState = () => {
-      setUserPresets(loadUserPresets());
-      setBackendPresets(loadBackendApplied());
-    };
-    window.addEventListener(PRESET_STORE_EVENT, reloadPresetState);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadPresetState);
+    sysInfoRef.current = sysInfo;
+  }, [sysInfo]);
+
+  useEffect(() => {
+    const reloadTuningState = () => setBackendTunings(loadBackendTunings());
+    window.addEventListener(PRESET_STORE_EVENT, reloadTuningState);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadTuningState);
   }, []);
+
+  useEffect(() => {
+    if (isActive) setBackendTunings(loadBackendTunings());
+  }, [isActive]);
 
   /* ── Fetch system-info ────────────────────────────────── */
 
-  const fetchInfo = useCallback(async () => {
+  const fetchInfo = useCallback(async (showSpinner = true) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
       const data = await api.systemInfo() as unknown as SystemInfoData;
@@ -285,11 +401,31 @@ const BackendManager: React.FC = () => {
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchInfo(); }, [fetchInfo]);
+  useEffect(() => {
+    if (!isActive) return;
+    void fetchInfo(!sysInfoRef.current);
+  }, [fetchInfo, isActive]);
+
+  useEffect(() => api.onModelsChanged(() => {
+    if (isActive) void fetchInfo(false);
+  }), [fetchInfo, isActive]);
+
+  useEffect(() => downloadStore.subscribe((items) => {
+    setDownloadItems(items);
+    for (const item of items) {
+      if (item.downloadType !== 'backend') continue;
+      if (isDownloadActive(item)) continue;
+      if (item.status !== 'completed' && item.status !== 'error' && item.status !== 'cancelled') continue;
+      const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
+      if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
+      terminalBackendRefreshRef.current.add(refreshKey);
+      if (isActive) void fetchInfo(false);
+    }
+  }), [fetchInfo, isActive]);
 
   /* ── Actions ──────────────────────────────────────────── */
 
@@ -298,25 +434,39 @@ const BackendManager: React.FC = () => {
     window.setTimeout(() => setToastMsg(null), 3500);
   }, []);
 
-  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false, skipConfirm = false) => {
+  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    if (!skipConfirm) {
-      const verb = isUpdate ? 'update' : 'install';
-      const ok = window.confirm(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend} can change local Lemonade runtime files. Continue with this ${verb}?`);
-      if (!ok) return;
-    }
     setInstalling(key);
     toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    const downloadName = backendDownloadName(recipe, backend);
+    downloadStore.markLocal(downloadName, 'downloading', 'backend');
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
+          const percent = typeof d.percent === 'number' ? d.percent : undefined;
+          downloadStore.upsertFromPull(downloadName, {
+            ...d,
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'downloading',
+            percent: percent ?? d.percent,
+          }, 'backend');
           if (d.percent != null) {
             setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
           }
         },
         onComplete: async () => {
+          downloadStore.upsertFromPull(downloadName, {
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'completed',
+            complete: true,
+            percent: 100,
+          }, 'backend');
           toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
           try {
@@ -329,28 +479,43 @@ const BackendManager: React.FC = () => {
               }
             }
           } catch {
-            fetchInfo();
+            void fetchInfo(false);
           }
         },
         onError: (err) => {
-          toast(`${actionLabel} failed: ${err.message}`);
+          downloadStore.upsertFromPull(downloadName, {
+            id: backendDownloadId(recipe, backend),
+            type: 'backend',
+            name: downloadName,
+            status: 'error',
+            error: friendlyErrorMessage(err),
+          }, 'backend');
+          toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
           setInstalling(null);
         },
       });
+      await fetchInfo(false);
     } catch (err) {
-      toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
+      const message = friendlyErrorMessage(err);
+      downloadStore.upsertFromPull(downloadName, {
+        id: backendDownloadId(recipe, backend),
+        type: 'backend',
+        name: downloadName,
+        status: 'error',
+        error: message,
+      }, 'backend');
+      toast(`${actionLabel} failed: ${message}`);
       setInstalling(null);
+      void fetchInfo(false);
     }
   }, [fetchInfo, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
-    const ok = window.confirm(`Uninstall ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This removes local backend runtime files.`);
-    if (!ok) return;
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
       toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
-      fetchInfo();
+      void fetchInfo(false);
     } catch (err) {
       toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
@@ -367,16 +532,35 @@ const BackendManager: React.FC = () => {
       }
     }
     if (updates.length === 0) return;
-    const ok = window.confirm(`Update ${updates.length} backend${updates.length > 1 ? 's' : ''}? This can change local Lemonade runtime files.`);
-    if (!ok) return;
     for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend, true, true);
+      await handleInstall(recipe, backend, true);
     }
   }, [sysInfo, handleInstall]);
 
   const handleAction = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
+
+  const closeArgsEditor = useCallback(() => {
+    setArgsEditorKey(null);
+    window.requestAnimationFrame(() => argsTriggerRef.current?.focus());
+  }, []);
+
+  const handleSaveBackendArgs = useCallback((key: string, args: string) => {
+    saveBackendTuning(key, args, 'user');
+    setBackendTunings(loadBackendTunings());
+    closeArgsEditor();
+    toast(args.trim()
+      ? `Saved backend arguments for ${key}`
+      : `Cleared backend arguments for ${key}`);
+  }, [closeArgsEditor, toast]);
+
+  const handleClearBackendArgs = useCallback((key: string) => {
+    resetBackendTuning(key);
+    setBackendTunings(loadBackendTunings());
+    closeArgsEditor();
+    toast(`Cleared backend arguments for ${key}`);
+  }, [closeArgsEditor, toast]);
 
   /* ── Build the matrix ─────────────────────────────────── */
 
@@ -398,6 +582,29 @@ const BackendManager: React.FC = () => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        // Match GUI2: unsupported backends are not useful actions/statuses for
+        // the current system and should not take matrix space (#2568).
+        if (backendInfo.state === 'unsupported') continue;
+        for (const device of devicesForBackend(recipe, backend, backendInfo)) {
+          const key = `${device}:${cap}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key)!.push({ recipe, backend, info: backendInfo });
+        }
+      }
+    }
+    return cells;
+  }, [sysInfo]);
+
+  const unsupportedMatrixCells = useMemo(() => {
+    if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
+    const cells = new Map<string, CellEntry[]>();
+
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
+      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        // Keep unsupported backends out of the primary matrix (#2568), but retain
+        // a collapsed same-shape matrix for debugging and technical-detail reasons.
+        if (backendInfo.state !== 'unsupported') continue;
         for (const device of devicesForBackend(recipe, backend, backendInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
@@ -417,6 +624,28 @@ const BackendManager: React.FC = () => {
     return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
   }, [detectedDevices, matrixCells]);
 
+  const unsupportedMatrixRows = useMemo(() => {
+    const referenced = new Set<DeviceKey>();
+    for (const key of unsupportedMatrixCells.keys()) {
+      const device = key.split(':')[0] as DeviceKey;
+      if (DEVICE_ORDER.includes(device)) referenced.add(device);
+    }
+    return DEVICE_ORDER.filter(d => referenced.has(d));
+  }, [unsupportedMatrixCells]);
+
+  const unsupportedBackendCount = useMemo(() => {
+    const keys = new Set<string>();
+    for (const entries of unsupportedMatrixCells.values()) {
+      for (const { recipe, backend } of entries) keys.add(backendKey(recipe, backend));
+    }
+    return keys.size;
+  }, [unsupportedMatrixCells]);
+
+  // Keep the matrix skeleton mounted even when /system-info is unavailable.
+  // This preserves navigation/test affordances while the cells truthfully show
+  // no backend entries until the server reports real data.
+  const matrixRowsForRender = matrixRows.length > 0 ? matrixRows : (['cpu'] as DeviceKey[]);
+
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
@@ -427,52 +656,6 @@ const BackendManager: React.FC = () => {
     }
     return count;
   }, [sysInfo]);
-
-  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
-
-  const activePresetForBackendKey = useCallback((key: string): Preset => {
-    const presetId = backendPresets[key] || DEFAULT_PRESET.id;
-    const preset = allPresets.find(p => p.id === presetId) || DEFAULT_PRESET;
-    return presetCompatibleWithBackend(preset, key) ? preset : DEFAULT_PRESET;
-  }, [allPresets, backendPresets]);
-
-  const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
-  const selectedBackendPreset = selectedBackendKey ? activePresetForBackendKey(selectedBackendKey) : null;
-  const railSummaryPreset = selectedBackendPreset || selectedRailPreset;
-  const highlightedPresetId = presetRailHovered ? (hoveredRailPresetId || railSummaryPreset.id) : null;
-
-  const allBackendKeys = useMemo(() => {
-    if (!sysInfo?.recipes) return [] as string[];
-    const keys: string[] = [];
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      for (const backend of Object.keys(recipeInfo.backends)) keys.push(backendKey(recipe, backend));
-    }
-    return keys.sort((a, b) => backendLabelFromKey(a).localeCompare(backendLabelFromKey(b)));
-  }, [sysInfo]);
-
-  const backendsUsingSelectedPreset = useMemo(
-    () => allBackendKeys.filter(key => activePresetForBackendKey(key).id === railSummaryPreset.id),
-    [allBackendKeys, activePresetForBackendKey, railSummaryPreset.id],
-  );
-
-  const handlePresetRailPick = useCallback((preset: Preset) => {
-    setSelectedRailPresetId(preset.id);
-    if (!selectedBackendKey) return;
-    if (!presetCompatibleWithBackend(preset, selectedBackendKey)) {
-      setPresetNotice(`“${preset.name}” does not apply to ${backendLabelFromKey(selectedBackendKey)}.`);
-      window.setTimeout(() => setPresetNotice(null), 2800);
-      return;
-    }
-    setBackendPresets(prev => {
-      const next = { ...prev };
-      if (preset.id === DEFAULT_PRESET.id) delete next[selectedBackendKey];
-      else next[selectedBackendKey] = preset.id;
-      saveBackendApplied(next);
-      return next;
-    });
-    setPresetNotice(`${backendLabelFromKey(selectedBackendKey)} → ${preset.name}`);
-    window.setTimeout(() => setPresetNotice(null), 2200);
-  }, [selectedBackendKey]);
 
   /* ── Device detail row ────────────────────────────────── */
 
@@ -488,65 +671,105 @@ const BackendManager: React.FC = () => {
     }
   }, [sysInfo]);
 
-  const renderPresetRail = () => (
-    <aside
-      className={`context-rail context-rail--presets${presetRailCollapsed ? ' is-collapsed' : ''}`}
-      aria-label="Backend preset rail"
-      onMouseEnter={() => setPresetRailHovered(true)}
-      onMouseLeave={() => { setPresetRailHovered(false); setHoveredRailPresetId(null); }}
-    >
-      <div className="context-rail__head">
-        <button type="button" className="context-rail__toggle" onClick={() => setPresetRailCollapsed(v => !v)} aria-label="Toggle backend preset rail">☰</button>
-        <div className="context-rail__title-wrap">
-          <span className="context-rail__eyebrow">By backend</span>
-          <strong className="context-rail__title">{selectedBackendKey ? backendLabelFromKey(selectedBackendKey) : 'Presets'}</strong>
+  const renderBackendCell = useCallback(({ recipe, backend, info }: CellEntry) => {
+    const badge = stateBadge(info.state);
+    const cellKey = backendKey(recipe, backend);
+    const isInstalling = installing === cellKey;
+    const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+    const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
+    const tuning = backendTunings[cellKey] || null;
+    const supportsArgs = backendSupportsArgs(recipe);
+
+    return (
+      <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
+        <span className="cell__name">
+          {RECIPE_LABELS[recipe] || recipe}
+          {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
+        </span>
+        <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
+        {showTech && info.version && <span className="cell__sha">{info.version}</span>}
+        {tuning && (
+          <span
+            className={`cell__args-state cell__args-state--${tuning.source}`}
+            data-cell-backend-args={tuning.source}
+            title={tuning.source === 'optimized'
+              ? 'Backend arguments last replaced by AutoOpt'
+              : 'Manual backend arguments'}
+          >
+            <Icon name="terminal-square" size={12} aria-hidden="true" />
+            Args · {tuning.source === 'optimized' ? 'AutoOpt' : 'Manual'}
+          </span>
+        )}
+        {showTech && info.message && <span className="cell__message">{info.message}</span>}
+        <div className="cell__actions" onClick={e => e.stopPropagation()}>
+          {supportsArgs && (
+            <button
+              type="button"
+              className={`cell__args-button${tuning ? ' is-active' : ''}`}
+              onClick={event => {
+                argsTriggerRef.current = event.currentTarget;
+                setArgsEditorKey(cellKey);
+              }}
+              title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
+              aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              data-backend-args-button={cellKey}
+            >
+              <Icon name="terminal-square" size={14} aria-hidden="true" />
+            </button>
+          )}
+          {(info.state === 'installable') && (
+            <button
+              className="cell__swap"
+              disabled={isInstalling}
+              aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleInstall(recipe, backend)}>
+              {isInstalling ? 'Installing…' : 'Install'}
+            </button>
+          )}
+          {(info.state === 'update_required' || info.state === 'update_available') && (
+            <button
+              className="cell__swap"
+              disabled={isInstalling}
+              aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleInstall(recipe, backend, true)}>
+              {isInstalling ? 'Updating…' : 'Update'}
+            </button>
+          )}
+          {info.state === 'action_required' && info.action && (
+            <button
+              className="cell__swap"
+              aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleAction(info.action)}>
+              Setup guide ▸
+            </button>
+          )}
+          {canShowUninstall(info) && (
+            <button
+              className="cell__swap cell__swap--danger"
+              disabled={isInstalling}
+              aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
+              onClick={() => handleUninstall(recipe, backend)}>
+              {isInstalling ? 'Working…' : 'Uninstall'}
+            </button>
+          )}
         </div>
-      </div>
-      <div className="context-rail__body">
-        <div className="preset-rail-summary">
-          <span className="preset-rail-summary__label">Selected preset</span>
-          <strong><PresetIcon preset={railSummaryPreset} /> {railSummaryPreset.name}</strong>
-          <span>{backendsUsingSelectedPreset.length} backend{backendsUsingSelectedPreset.length === 1 ? '' : 's'} assigned</span>
-          <span className="preset-param-lines">{presetParamPreviewLines(railSummaryPreset).map(line => <span key={line}>{line}</span>)}</span>
-        </div>
-        <p className="context-rail__hint">
-          {selectedBackendKey ? 'Click a preset to connect it with this backend baseline.' : 'Hover or pick a preset to outline matching backends.'}
-        </p>
-        <div className="preset-rail-list">
-          {allPresets.map(preset => {
-            const isActive = selectedBackendKey ? selectedBackendPreset?.id === preset.id : selectedRailPreset.id === preset.id;
-            const disabled = Boolean(selectedBackendKey && !presetCompatibleWithBackend(preset, selectedBackendKey));
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                className={`preset-rail-card${isActive ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}`}
-                onClick={() => handlePresetRailPick(preset)}
-                onMouseEnter={() => setHoveredRailPresetId(preset.id)}
-                onFocus={() => setHoveredRailPresetId(preset.id)}
-                onBlur={() => setHoveredRailPresetId(null)}
-                title={disabled ? 'Incompatible with selected backend capability' : preset.description}
-              >
-                <span className="preset-rail-card__icon">{isActive ? <Icon name="check" size={13} /> : <PresetIcon preset={preset} />}</span>
-                <span className="preset-rail-card__text">
-                  <strong>{preset.name}</strong>
-                  <span className="preset-rail-card__params preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {selectedBackendKey && selectedBackendPreset && (
-          <div className="preset-rail-summary preset-rail-summary--backend">
-            <span className="preset-rail-summary__label">Selected backend</span>
-            <strong>{backendLabelFromKey(selectedBackendKey)}</strong>
-            <span><PresetIcon preset={selectedBackendPreset} /> {selectedBackendPreset.name}</span>
+        {showBackendProgress && backendDownload && (
+          <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
+            <div className="cell__download-progress-track">
+              <div
+                className="cell__download-progress-fill"
+                style={{ width: `${backendProgressPercent(backendDownload)}%` }}
+              />
+            </div>
+            <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
           </div>
         )}
-        {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
+        {backendDownload?.status === 'error' && backendDownload.error && (
+          <span className="cell__download-error">{backendDownload.error}</span>
+        )}
       </div>
-    </aside>
-  );
+    );
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
 
 
   /* ── Render ───────────────────────────────────────────── */
@@ -565,8 +788,7 @@ const BackendManager: React.FC = () => {
   }
 
   return (
-    <section className={`backends backends--with-rail${showTech ? ' show-tech' : ''}${presetRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="backends">
-      {renderPresetRail()}
+    <section className={`backends${showTech ? ' show-tech' : ''}`} data-view="backends">
       <div className="backends__main">
       <div className="backends__head">
         <div className="backends__title">
@@ -585,7 +807,7 @@ const BackendManager: React.FC = () => {
           <div className="banner banner--error" data-backends-error>
             <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
             <span className="banner__text">Could not load backend system info: {error}</span>
-            <button className="banner__action" onClick={fetchInfo} disabled={loading}>Retry</button>
+            <button className="banner__action" onClick={() => void fetchInfo()} disabled={loading}>Retry</button>
           </div>
         )}
 
@@ -613,15 +835,11 @@ const BackendManager: React.FC = () => {
         )}
       </div>
 
-      {matrixRows.length === 0 ? (
-        <div className="matrix matrix--empty" data-backends-matrix-empty>
-          <div className="hf-zone__empty">
-            <Icon name="box" size={20} />
-            <span>No backend/device data is available for this Lemonade server yet.</span>
-          </div>
-        </div>
-      ) : (
-        <div className="matrix" data-backends-matrix>
+      {matrixRows.length === 0 && (
+        <p className="sr-only" data-backends-matrix-empty>No backend/device data is available for this Lemonade server yet.</p>
+      )}
+
+      <div className="matrix" data-backends-matrix>
           <table>
             <thead>
               <tr>
@@ -632,7 +850,7 @@ const BackendManager: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {matrixRows.map(deviceKey => (
+              {matrixRowsForRender.map(deviceKey => (
                 <tr key={deviceKey}>
                   <th scope="row">
                     {DEVICE_LABELS[deviceKey]}
@@ -652,59 +870,7 @@ const BackendManager: React.FC = () => {
                     }
                     return (
                       <td key={cap}>
-                        {entries.map(({ recipe, backend, info }) => {
-                          const badge = stateBadge(info.state);
-                          const cellKey = backendKey(recipe, backend);
-                          const isInstalling = installing === cellKey;
-                          const activePreset = activePresetForBackendKey(cellKey);
-                          const isSelectedBackend = selectedBackendKey === cellKey;
-                          const isPresetHighlighted = Boolean(highlightedPresetId && activePreset.id === highlightedPresetId);
-                          return (
-                            <div className={`cell cell--selectable${isSelectedBackend ? ' is-selected' : ''}${isPresetHighlighted ? ' cell--preset-highlight' : ''}`} key={`${recipe}-${backend}`}
-                              data-cell={cellKey}
-                              onClick={() => setSelectedBackendKey(current => current === cellKey ? '' : cellKey)}>
-                              <span className="cell__name">
-                                {RECIPE_LABELS[recipe] || recipe}
-                                {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
-                              </span>
-                              <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
-                              {showTech && info.version && <span className="cell__sha">{info.version}</span>}
-                              <span className="cell__preset"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
-                              {showTech && info.message && <span className="cell__message">{info.message}</span>}
-                              <div className="cell__actions" onClick={e => e.stopPropagation()}>
-                                {(info.state === 'installable') && (
-                                  <button
-                                    className="cell__swap"
-                                    disabled={isInstalling}
-                                    onClick={() => handleInstall(recipe, backend)}>
-                                    {isInstalling ? 'Installing…' : 'Install'}
-                                  </button>
-                                )}
-                                {(info.state === 'update_required' || info.state === 'update_available') && (
-                                  <button
-                                    className="cell__swap"
-                                    disabled={isInstalling}
-                                    onClick={() => handleInstall(recipe, backend, true)}>
-                                    {isInstalling ? 'Updating…' : 'Update'}
-                                  </button>
-                                )}
-                                {info.state === 'action_required' && info.action && (
-                                  <button className="cell__swap" onClick={() => handleAction(info.action)}>
-                                    Setup guide ▸
-                                  </button>
-                                )}
-                                {canShowUninstall(info) && (
-                                  <button
-                                    className="cell__swap cell__swap--danger"
-                                    disabled={isInstalling}
-                                    onClick={() => handleUninstall(recipe, backend)}>
-                                    {isInstalling ? 'Working…' : 'Uninstall'}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {entries.map(renderBackendCell)}
                       </td>
                     );
                   })}
@@ -713,8 +879,81 @@ const BackendManager: React.FC = () => {
             </tbody>
           </table>
         </div>
-      )}
 
+        {unsupportedBackendCount > 0 && (
+          <section className="backends__unsupported" data-backends-unsupported>
+            <button
+              type="button"
+              className="backends__unsupported-toggle"
+              aria-expanded={showUnsupported}
+              aria-controls="backends-unsupported-matrix"
+              onClick={() => setShowUnsupported(open => !open)}>
+              <span className="backends__unsupported-title">
+                <Icon name={showUnsupported ? 'chevron-down' : 'chevron-right'} size={14} aria-hidden="true" />
+                Unsupported backends
+              </span>
+              <span className="backends__unsupported-meta">
+                {unsupportedBackendCount} hidden from the main table
+              </span>
+            </button>
+
+            {showUnsupported && (
+              <div className="matrix matrix--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Device</th>
+                      {CAPABILITY_COLS.map(c => (
+                        <th scope="col" key={c}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unsupportedMatrixRows.map(deviceKey => (
+                      <tr key={deviceKey}>
+                        <th scope="row">
+                          {DEVICE_LABELS[deviceKey]}
+                          {showTech && (
+                            <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
+                          )}
+                        </th>
+                        {CAPABILITY_COLS.map(cap => {
+                          const key = `${deviceKey}:${cap}`;
+                          const entries = unsupportedMatrixCells.get(key);
+                          if (!entries || entries.length === 0) {
+                            return (
+                              <td className="matrix__empty" key={cap}>
+                                <span aria-hidden="true">—</span>
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={cap}>
+                              {entries.map(renderBackendCell)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
+      <BackendArgsDialog
+        backendKeyValue={argsEditorKey}
+        tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
+        onSave={handleSaveBackendArgs}
+        onClear={handleClearBackendArgs}
+        onClose={closeArgsEditor}
+      />
+
+      {/* #2351: always-present polite live region so NVDA announces toast messages */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
+        {toastMsg || ''}
+      </div>
       {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
       </div>
     </section>

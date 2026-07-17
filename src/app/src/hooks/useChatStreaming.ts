@@ -13,7 +13,7 @@ const TOOL_FOLLOWUP_PROMPT = [
 ].join(' ');
 
 export interface ToolArtifact {
-  type: 'image' | 'audio';
+  type: 'image' | 'audio' | 'model3d';
   url: string;
   name?: string;
   mime?: string;
@@ -160,9 +160,7 @@ export function useChatStreaming(
     const controller = new AbortController();
     controllersRef.current.set(convoId, controller);
 
-    let fullMessages = runtime?.systemPrompt
-      ? [{ role: 'system' as const, content: runtime.systemPrompt }, ...messages]
-      : [...messages];
+    let fullMessages = [...messages];
 
     let toolRound = 0;
     const allToolCalls: ToolCallEntry[] = [];

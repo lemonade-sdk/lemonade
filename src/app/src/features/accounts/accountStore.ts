@@ -21,6 +21,7 @@ export interface AccountSession {
 
 const ACCOUNTS_KEY = 'lemonade_accounts_v1';
 const SESSION_KEY = 'lemonade_account_session_v1';
+export const ACCOUNT_SESSION_CHANGED_EVENT = 'lemonade:account-session-changed';
 const STORAGE_PREFIX = 'lemonade:';
 const GUEST_SCOPE = 'guest:shared';
 const LEGACY_GLOBAL_KEYS = [
@@ -123,7 +124,7 @@ export function accountCount(): number { return readAccounts().length; }
 
 export function currentSession(): AccountSession {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
     if (!raw) return guestSession();
     const parsed = JSON.parse(raw) as { id?: string };
     if (!parsed.id) return guestSession();
@@ -132,11 +133,36 @@ export function currentSession(): AccountSession {
   } catch { return guestSession(); }
 }
 
+function notifySessionChanged(session: AccountSession): void {
+  try {
+    window.dispatchEvent(new CustomEvent(ACCOUNT_SESSION_CHANGED_EVENT, { detail: session }));
+  } catch { /* ignore non-browser callers */ }
+}
+
 function saveSession(session: AccountSession): void {
   try {
-    if (session.isGuest) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ id: session.id }));
+    if (session.isGuest) localStorage.removeItem(SESSION_KEY);
+    else localStorage.setItem(SESSION_KEY, JSON.stringify({ id: session.id }));
+    sessionStorage.removeItem(SESSION_KEY);
   } catch { /* ignore */ }
+  notifySessionChanged(session);
+}
+
+export function subscribeAccountSessionChanges(listener: (session: AccountSession) => void): () => void {
+  const notifyCurrent = () => listener(currentSession());
+  const onCustom = (event: Event) => {
+    const next = (event as CustomEvent<AccountSession>).detail || currentSession();
+    listener(next);
+  };
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === SESSION_KEY || event.key === ACCOUNTS_KEY) notifyCurrent();
+  };
+  window.addEventListener(ACCOUNT_SESSION_CHANGED_EVENT, onCustom as EventListener);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(ACCOUNT_SESSION_CHANGED_EVENT, onCustom as EventListener);
+    window.removeEventListener('storage', onStorage);
+  };
 }
 
 export async function createAccount(name: string, password: string): Promise<AccountSession> {
@@ -208,7 +234,9 @@ export function clearAllAccountsAndScopedData(): AccountSession {
       .filter(k => k === ACCOUNTS_KEY || k === SESSION_KEY || k.startsWith(STORAGE_PREFIX) || LEGACY_GLOBAL_KEYS.includes(k))
       .forEach(k => store.removeItem(k));
   }
-  return guestSession();
+  const guest = guestSession();
+  notifySessionChanged(guest);
+  return guest;
 }
 
 export function clearCurrentSessionData(session: AccountSession): void {

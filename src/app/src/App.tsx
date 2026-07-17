@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import AccountMenu from './features/accounts/AccountMenu';
-import { AccountSession, currentSession } from './features/accounts/accountStore';
+import { AccountSession, currentSession, subscribeAccountSessionChanges } from './features/accounts/accountStore';
 import { setPresetStorageScope } from './presetStore';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
@@ -13,9 +13,12 @@ import PresetManager from './components/PresetManager';
 import BackendManager from './components/BackendManager';
 import Dashboard from './components/Dashboard';
 import LogViewer from './components/LogViewer';
+import DownloadManager from './components/DownloadManager';
+import InspectView from './components/InspectView';
 import { Icon } from './components/Icon';
+import { DownloadListItem, downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect';
+type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect' | 'inspect';
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -58,7 +61,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'];
+const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect', 'inspect'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -170,9 +173,20 @@ const App: React.FC = () => {
     return session;
   });
   const [accountResetNonce, setAccountResetNonce] = useState(0);
+  const accountSessionRef = useRef(accountSession);
+  const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   useEffect(() => {
+    accountSessionRef.current = accountSession;
     setPresetStorageScope(accountSession.storageScope);
-  }, [accountSession.storageScope]);
+  }, [accountSession]);
+
+  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+
+  const activeDownloadCount = useMemo(
+    () => downloadItems.filter(isDownloadActive).length,
+    [downloadItems],
+  );
 
   const handleAccountSessionChange = useCallback((next: AccountSession) => {
     setPresetStorageScope(next.storageScope);
@@ -182,6 +196,15 @@ const App: React.FC = () => {
   const handleAccountDataReset = useCallback(() => {
     setAccountResetNonce(n => n + 1);
   }, []);
+
+  useEffect(() => subscribeAccountSessionChanges((next) => {
+    const prev = accountSessionRef.current;
+    const changed = prev.id !== next.id || prev.name !== next.name || prev.role !== next.role || prev.storageScope !== next.storageScope;
+    if (!changed) return;
+    accountSessionRef.current = next;
+    setAccountSession(next);
+    setAccountResetNonce(n => n + 1);
+  }), []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -210,13 +233,13 @@ const App: React.FC = () => {
       const info = findModelInfoByName(customInfos, name);
       if (!info) return false;
       const cap = capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     const infoSelectable = (name: string) => {
       const info = findModelInfoByName(knownInfos, name);
       if (!info) return false;
       const cap = capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     setLoadedModels(enriched);
     setCurrentModel(current => {
@@ -294,6 +317,18 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // Client-local in-app deep-link: components dispatch
+  // `lemonade:navigate` with { view } to switch views without involving lemond.
+  useEffect(() => {
+    const onAppNavigate = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { view?: string } | undefined;
+      const target = detail?.view;
+      if (target && (VALID_VIEWS as string[]).includes(target)) setView(target as View);
+    };
+    window.addEventListener('lemonade:navigate', onAppNavigate as EventListener);
+    return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
+  }, [setView]);
+
   useEffect(() => {
     const unsubStatus = api.onStatusChange(setStatus);
     const refreshGlobalModels = () => {
@@ -360,6 +395,14 @@ const App: React.FC = () => {
             </defs>
           </svg>
           <span>lemonade</span>
+          <span className={`titlebar__status-dot titlebar__status-dot--brand ${
+            status === 'connected' ? 'titlebar__status-dot--connected' :
+            status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
+          }`}
+            role="status"
+            aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+            title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+          />
         </div>
 
         <nav className="titlebar__nav" aria-label="Primary">
@@ -369,6 +412,7 @@ const App: React.FC = () => {
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
             { id: 'dashboard', label: 'Dashboard',  icon: 'gauge'              },
+            { id: 'inspect',   label: 'Inspect',   icon: 'search-check'       },
             { id: 'logs',      label: 'Logs',      icon: 'logs'               },
             { id: 'connect',   label: 'Connect',   icon: 'plug'               },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
@@ -394,16 +438,20 @@ const App: React.FC = () => {
           <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
           </button>
-          <span className={`titlebar__status-dot ${
-            status === 'connected' ? 'titlebar__status-dot--connected' :
-            status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
-          }`}
-            role="status"
-            aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
-            title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
-          />
+          <button
+            className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
+            onClick={() => setDownloadManagerOpen(open => !open)}
+            aria-label="Open download manager"
+            aria-expanded={downloadManagerOpen}
+            title="Download manager"
+          >
+            <Icon name="download" size={16} />
+            {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
+          </button>
         </div>
       </header>
+
+      <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
 
       <main id="main-content" tabIndex={-1} className="view-container">
         <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
@@ -434,12 +482,12 @@ const App: React.FC = () => {
         </div>
         <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="backends">
-            <BackendManager />
+            <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="dashboard">
-            <Dashboard />
+            <Dashboard isActive={view === 'dashboard'} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
@@ -447,10 +495,16 @@ const App: React.FC = () => {
             <LogViewer />
           </ViewErrorBoundary>
         </div>
+        <div style={{ display: view === 'inspect' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="inspect">
+            <InspectView accountSession={accountSession} />
+          </ViewErrorBoundary>
+        </div>
         <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="connect">
             <ConnectView
               status={status}
+              isActive={view === 'connect'}
               accountSession={accountSession}
               onLocalDataReset={handleAccountDataReset}
               onSessionChange={handleAccountSessionChange}

@@ -4,9 +4,23 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel } from './presetStore';
+import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
+import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
-const DEFAULT_BASE_URL = 'http://localhost:13305';
+function detectDefaultBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    // When served by lemond at /app, window.location.origin IS the API server.
+    // Detect this by checking for the lemond-injected window.api shim or /app path.
+    const servedByLemond = window.location.pathname.startsWith('/app')
+      || (window as any).api?.getServerPort;
+    if (servedByLemond && window.location.port) {
+      return `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
+    }
+  }
+  return 'http://127.0.0.1:13305';
+}
+
+const DEFAULT_BASE_URL = process.env.LEMONADE_BASE_URL || detectDefaultBaseUrl();
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
 
@@ -56,6 +70,10 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     pid: Number(model.pid || 0),
     type: String(model.type || 'unknown').toLowerCase(),
     last_use: Number(model.last_use || Date.now()),
+    labels: Array.isArray(model.labels) ? model.labels.filter((value): value is string => typeof value === 'string') : undefined,
+    capabilities: Array.isArray(model.capabilities) ? model.capabilities.filter((value): value is string => typeof value === 'string') : undefined,
+    input_modalities: Array.isArray(model.input_modalities) ? model.input_modalities.filter((value): value is string => typeof value === 'string') : undefined,
+    output_modalities: Array.isArray(model.output_modalities) ? model.output_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
   };
 }
@@ -117,6 +135,10 @@ export interface LoadedModel {
   pid: number;
   type: string;
   last_use: number;
+  labels?: string[];
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
   recipe_options?: Record<string, unknown>;
 }
 
@@ -132,6 +154,26 @@ export interface ModelInfo {
 
 export interface ModelsData {
   data: ModelInfo[];
+}
+
+/** One physical file backing a model (from GET /api/v1/models/{id}/files). */
+export interface ModelFileInfo {
+  name: string;
+  role: string;
+  size_bytes: number;
+  exists: boolean;
+}
+
+/** Response shape of GET /api/v1/models/{id}/files. */
+export interface ModelFilesResponse {
+  model_id: string;
+  files: ModelFileInfo[];
+}
+
+/** Real disk usage for the model-storage drive (bytes). */
+export interface StorageInfo {
+  usedBytes: number;
+  totalBytes: number;
 }
 
 export interface CloudProviderRow {
@@ -195,6 +237,12 @@ export interface DownloadProgressEvent {
   name?: string;
   status?: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | string;
   running?: boolean;
+  created_at?: number | string;
+  createdAt?: number | string;
+  started_at?: number | string;
+  startedAt?: number | string;
+  start_time?: number | string;
+  startTime?: number | string;
   file?: string;
   file_index?: number;
   total_files?: number;
@@ -210,6 +258,65 @@ export interface DownloadProgressEvent {
   [key: string]: unknown;
 }
 
+function downloadPayloadStatus(data: unknown): string {
+  if (!isObject(data)) return '';
+  return String(data.status || '').toLowerCase();
+}
+
+function downloadPayloadErrorMessage(data: unknown): string | null {
+  if (!isObject(data)) return null;
+  const status = downloadPayloadStatus(data);
+  const message = data.message || data.detail;
+  const statusCode = Number(
+    data.status_code
+    ?? data.statusCode
+    ?? data.http_status
+    ?? data.httpStatus
+    ?? data.code
+    ?? data.error_code
+    ?? data.errorCode
+    ?? (/^\d{3}$/.test(status) ? status : NaN),
+  );
+  const messageText = typeof message === 'string' ? message.trim() : '';
+
+  const rawError = data.error;
+  let errorText = '';
+  if (typeof rawError === 'string' && rawError.trim()) {
+    errorText = rawError.trim();
+  } else if (isObject(rawError)) {
+    const nested = rawError.message || rawError.error || rawError.detail;
+    if (typeof nested === 'string' && nested.trim()) errorText = nested.trim();
+  }
+
+  const textLooksLike404 = /(^|\D)404(\D|$)|not[ _-]?found/i.test(`${status} ${messageText} ${errorText}`);
+  const failed = Boolean(errorText)
+    || status === 'error'
+    || status === 'failed'
+    || status === 'failure'
+    || status === 'not_found'
+    || status === 'not-found'
+    || data.ok === false
+    || (Number.isFinite(statusCode) && statusCode >= 400)
+    || textLooksLike404;
+
+  if (!failed) return null;
+  const detail = errorText || messageText;
+  if (Number.isFinite(statusCode) && statusCode >= 400) {
+    if (detail && !new RegExp(`(^|\\D)${statusCode}(\\D|$)`).test(detail)) {
+      return `HTTP ${statusCode}: ${detail}`;
+    }
+    return detail || `Download failed with HTTP ${statusCode}.`;
+  }
+  return detail || 'Download failed.';
+}
+
+function downloadPayloadCompleted(data: unknown): boolean {
+  if (!isObject(data)) return false;
+  if (downloadPayloadErrorMessage(data)) return false;
+  const status = downloadPayloadStatus(data);
+  return data.complete === true || status === 'completed' || status === 'complete' || status === 'success' || status === 'done';
+}
+
 export interface PullVariant {
   name: string;
   primary_file: string;
@@ -218,14 +325,22 @@ export interface PullVariant {
   size_bytes: number;
 }
 
+export type ModelRegistryProvider = 'huggingface' | 'modelscope';
+
 export interface PullVariantsResult {
   checkpoint: string;
+  source?: ModelRegistryProvider;
   recipe: string;
   repo_kind: string;
   suggested_name: string;
   suggested_labels: string[];
   mmproj_files: string[];
   variants: PullVariant[];
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  metadata?: Record<string, unknown>;
+  gguf_metadata?: Record<string, unknown>;
 }
 
 export interface StatsData {
@@ -254,6 +369,28 @@ export interface SlotTimings {
   predicted_ms: number;
   predicted_per_token_ms: number;
   predicted_per_second: number;
+}
+
+export type JobStatus = 'queued' | 'running' | 'paused' | 'interrupted' | 'completed' | 'failed';
+
+export interface JobStep {
+  id: string;
+  op: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+  duration_ms?: number;
+  error?: string;
+  output?: unknown;
+}
+
+export interface JobRecord {
+  id: string;
+  name: string;
+  status: JobStatus;
+  inputs?: Record<string, unknown>;
+  context: Record<string, unknown>;
+  cursor?: string;
+  steps: JobStep[];
+  created_at?: string;
 }
 
 export interface SlotData {
@@ -321,7 +458,62 @@ export interface RealtimeTranscriptionHandle {
   isConnected: () => boolean;
 }
 
-export type LemonadeRequestInit = Omit<RequestInit, 'body'> & { body?: unknown };
+
+export type McpTransport = 'stdio' | 'builtin';
+
+export interface McpToolDefinition {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  working_dir?: string;
+  timeout_ms?: number;
+  enabled?: boolean;
+}
+
+export interface McpServerState extends McpServerConfig {
+  status: string;
+  connected: boolean;
+  last_error?: string;
+  protocol_version?: string;
+  server_info?: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  tools?: McpToolDefinition[];
+}
+
+export interface McpToolCatalogEntry {
+  server_id: string;
+  server_name: string;
+  name: string;
+  chat_name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  tool?: McpToolDefinition;
+  openai_tool?: Record<string, unknown>;
+}
+
+export interface McpToolCallResponse {
+  server_id: string;
+  tool: string;
+  result: Record<string, unknown>;
+}
+
+export type LemonadeRequestInit = Omit<RequestInit, 'body'> & {
+  body?: unknown;
+  includeSessionHeaders?: boolean;
+  /** Select which Lemonade credential is sent. Internal control routes use admin auth. */
+  auth?: 'api' | 'admin' | 'none';
+};
 
 export type LemonadeContextDefault = number | 'auto';
 
@@ -449,8 +641,14 @@ class LemonadeAPI {
   private _systemInfoData: Record<string, unknown> | null = null;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
+  private _sessionAdminApiKey = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
+  public readonly clientSessionId: string = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  public sessionHeadersEnabled = false;
+  public onSessionHeadersFailed?: () => void;
 
   // ── Config ──────────────────────────────────────────────────────
   // Non-secret connection settings may be persisted in browser storage.
@@ -459,13 +657,18 @@ class LemonadeAPI {
 
   get baseUrl(): string {
     try {
+      const hasExplicitUrl = Boolean(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL));
       const raw = normalizeBaseUrl(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL) || DEFAULT_BASE_URL);
       // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
       // Substitute it when the configured host is localhost/127.0.0.1 so that all
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
       const parsed = new URL(raw);
-      if ((parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
-        parsed.hostname = window.location.hostname;
+      const hasBuildTimeOverride = Boolean(process.env.LEMONADE_BASE_URL);
+      if (!hasExplicitUrl && !hasBuildTimeOverride && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
+        const winHost = window.location.hostname;
+        if (winHost && winHost !== 'localhost' && winHost !== '127.0.0.1' && winHost !== '[::1]' && winHost !== '::1') {
+          parsed.hostname = winHost;
+        }
       }
       return parsed.toString().replace(/\/+$/, '');
     } catch {
@@ -488,6 +691,23 @@ class LemonadeAPI {
     this.setSessionApiKey(key);
   }
 
+  /**
+   * Credential for /internal/* routes. Lemonade defaults the server-side admin
+   * key to the regular API key, so an empty explicit admin key intentionally
+   * falls back to the current API key.
+   */
+  get adminApiKey(): string {
+    return this._sessionAdminApiKey || this._sessionApiKey;
+  }
+
+  get explicitAdminApiKey(): string {
+    return this._sessionAdminApiKey;
+  }
+
+  setSessionAdminApiKey(key: string): void {
+    this._sessionAdminApiKey = key.trim();
+  }
+
   get canPersistApiKey(): boolean {
     const hostApi = getHostSettingsApi();
     return Boolean(hostApi?.getSettings && hostApi?.saveSettings);
@@ -505,8 +725,13 @@ class LemonadeAPI {
         const settings = await hostApi.getSettings();
         const baseUrl = typedSettingString(settings, 'baseURL');
         const apiKey = typedSettingString(settings, 'apiKey');
-        if (baseUrl.trim()) {
-          this._hostBaseUrl = normalizeBaseUrl(baseUrl);
+        // Fallback: web-app mock provides apiUrl as a plain string (not typed setting)
+        const fallbackUrl = !baseUrl.trim() && isObject(settings) && typeof (settings as any).apiUrl === 'string'
+          ? (settings as any).apiUrl.trim()
+          : '';
+        const resolvedUrl = baseUrl.trim() || fallbackUrl;
+        if (resolvedUrl) {
+          this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
         this._sessionApiKey = apiKey;
@@ -553,6 +778,7 @@ class LemonadeAPI {
   async clearConnectionSettings(): Promise<void> {
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
+    this._sessionAdminApiKey = '';
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
 
@@ -634,39 +860,106 @@ class LemonadeAPI {
 
   // ── Fetch wrapper ───────────────────────────────────────────────
 
-  private _headers(extra?: Record<string, string>): Record<string, string> {
+  private _headers(
+    extra?: Record<string, string>,
+    includeSessionHeaders?: boolean,
+    auth: 'api' | 'admin' | 'none' = 'api',
+  ): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
-    if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
+    const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
+    if (credential) h['Authorization'] = `Bearer ${credential}`;
+
+    if (includeSessionHeaders && this.sessionHeadersEnabled) {
+      h['X-Client-Session-Id'] = this.clientSessionId;
+
+      // Add current account session token or guest ID to scope model caches
+      try {
+        const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { id?: string };
+          if (parsed.id) {
+            h['X-Account-Session-Id'] = parsed.id;
+          } else {
+            h['X-Account-Session-Id'] = 'guest';
+          }
+        } else {
+          h['X-Account-Session-Id'] = 'guest';
+        }
+      } catch {
+        h['X-Account-Session-Id'] = 'guest';
+      }
+    }
+
     return h;
   }
 
   private async _fetch(path: string, opts: LemonadeRequestInit = {}): Promise<Response> {
     const endpoint = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${endpoint}`;
-    const extraHeaders = opts.headers instanceof Headers
-      ? Object.fromEntries(opts.headers.entries())
-      : (Array.isArray(opts.headers) ? Object.fromEntries(opts.headers) : (opts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders);
-    const method = (opts.method || 'GET').toUpperCase();
+    const { includeSessionHeaders, auth = 'api', ...requestOpts } = opts;
+    const extraHeaders = requestOpts.headers instanceof Headers
+      ? Object.fromEntries(requestOpts.headers.entries())
+      : (Array.isArray(requestOpts.headers) ? Object.fromEntries(requestOpts.headers) : (requestOpts.headers as Record<string, string> | undefined));
+    const headers = this._headers(extraHeaders, includeSessionHeaders, auth);
+    const method = (requestOpts.method || 'GET').toUpperCase();
 
-    let processedOpts: LemonadeRequestInit = { ...opts };
-    if (opts.body && typeof opts.body === 'object' &&
-        !(opts.body instanceof FormData) &&
-        !(opts.body instanceof ReadableStream) &&
-        !(opts.body instanceof Blob)) {
+    let processedOpts: Omit<LemonadeRequestInit, 'includeSessionHeaders' | 'auth'> = { ...requestOpts };
+    if (requestOpts.body && typeof requestOpts.body === 'object' &&
+        !(requestOpts.body instanceof FormData) &&
+        !(requestOpts.body instanceof ReadableStream) &&
+        !(requestOpts.body instanceof Blob)) {
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-      processedOpts = { ...opts, body: JSON.stringify(opts.body) };
+      processedOpts = { ...requestOpts, body: JSON.stringify(requestOpts.body) };
     }
 
     let resp: Response;
     try {
       resp = await fetch(url, { ...processedOpts, headers } as RequestInit);
     } catch (cause) {
-      const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
-      err.url = url;
-      err.endpoint = endpoint;
-      err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
-      throw err;
+      if (includeSessionHeaders && this.sessionHeadersEnabled) {
+        this.sessionHeadersEnabled = false;
+        this.onSessionHeadersFailed?.();
+        try {
+          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          if (processedOpts.body && headers['Content-Type'] === 'application/json') {
+            fallbackHeaders['Content-Type'] = 'application/json';
+          }
+          resp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
+        } catch {
+          const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
+          err.url = url;
+          err.endpoint = endpoint;
+          err.userMessage = endpoint.startsWith('/internal/mcp')
+            ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
+            : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+          throw err;
+        }
+      } else {
+        const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
+        err.url = url;
+        err.endpoint = endpoint;
+        err.userMessage = endpoint.startsWith('/internal/mcp')
+          ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
+          : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+        throw err;
+      }
+    }
+
+    if (!resp.ok) {
+      if (includeSessionHeaders && this.sessionHeadersEnabled && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
+        this.sessionHeadersEnabled = false;
+        this.onSessionHeadersFailed?.();
+        try {
+          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          if (processedOpts.body && headers['Content-Type'] === 'application/json') {
+            fallbackHeaders['Content-Type'] = 'application/json';
+          }
+          const retryResp = await fetch(url, { ...processedOpts, headers: fallbackHeaders } as RequestInit);
+          if (retryResp.ok) {
+            resp = retryResp;
+          }
+        } catch {}
+      }
     }
 
     if (!resp.ok) {
@@ -700,6 +993,22 @@ class LemonadeAPI {
 
     const params = new URLSearchParams(query);
     if (this.apiKey) params.set('api_key', this.apiKey);
+    params.set('client_session_id', this.clientSessionId);
+    try {
+      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id?: string };
+        if (parsed.id) {
+          params.set('account_session_id', parsed.id);
+        } else {
+          params.set('account_session_id', 'guest');
+        }
+      } else {
+        params.set('account_session_id', 'guest');
+      }
+    } catch {
+      params.set('account_session_id', 'guest');
+    }
     url.search = params.toString();
     return url.toString();
   }
@@ -880,10 +1189,27 @@ class LemonadeAPI {
     return this._json<ModelInfo>(`/api/v1/models/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * List the physical files backing a model (main weights, mmproj, tokenizer, …).
+   * Returns null when the endpoint is unreachable or the model is unknown, so the
+   * UI can fall back to an empty/error state instead of throwing.
+   */
+  async getModelFiles(id: string): Promise<ModelFilesResponse | null> {
+    try {
+      const data = await this._json<ModelFilesResponse>(
+        `/api/v1/models/${encodeURIComponent(id)}/files`,
+      );
+      if (!data || !Array.isArray(data.files)) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo);
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
     const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
@@ -897,6 +1223,33 @@ class LemonadeAPI {
     return result;
   }
 
+  /**
+   * Apply a *load-time* preset change to an already-loaded model (#2356).
+   *
+   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
+   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
+   * not the source of truth for runtime capability. Load-time fields (ctx_size,
+   * backend, device, model args via recipe_options) require a real reload, which
+   * today is literally an unload followed by a load, exactly as `main` does.
+   *
+   * This helper is named `reloadModel` (rather than inlining unload→load at every
+   * call site) so that if a real in-place backend reload ever lands, only this
+   * method's body changes; callers and tests stay identical.
+   *
+   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
+   * handled here — rebinding the active preset is the whole "live" operation and
+   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
+   * the new values on the next generation request; nothing is POSTed.
+   */
+  async reloadModel(
+    modelName: string,
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
+  ): Promise<unknown> {
+    await this.unloadModel(modelName);
+    return this.loadModel(modelName, recipeOptions, modelInfo);
+  }
+
   async deleteModel(modelName: string): Promise<unknown> {
     const result = await this._json('/api/v1/delete', {
       method: 'POST',
@@ -907,9 +1260,45 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
-    const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
+    const data = await this._json<Record<string, unknown>>(
+      '/api/v1/system-info',
+      { cache: 'no-store' } as LemonadeRequestInit,
+    );
     this._systemInfoData = data;
     return data;
+  }
+
+  /**
+   * Real used/total bytes of the drive where models are stored.
+   *
+   * POC LIMITATION (fl0rianr #2424): lemond is OFF LIMITS and exposes no
+   * disk-usage field today (verified: /system-info and /system-stats lack it).
+   * This probes system-info for a future `storage` / `disk` shape so the meter
+   * lights up the moment the backend team adds it — no client changes needed.
+   * Returns null when no real source is reachable, letting the UI fall back to a
+   * derived estimate instead of a hardcoded mock.
+   */
+  async getStorageInfo(): Promise<StorageInfo | null> {
+    try {
+      const info = await this.systemInfo();
+      const candidates = [
+        (info as any).storage,
+        (info as any).disk,
+        (info as any).model_storage,
+        (info as any).Storage,
+      ];
+      for (const c of candidates) {
+        if (!isObject(c)) continue;
+        const total = Number((c as any).total_bytes ?? (c as any).totalBytes ?? (c as any).total);
+        const used = Number((c as any).used_bytes ?? (c as any).usedBytes ?? (c as any).used);
+        if (Number.isFinite(total) && total > 0 && Number.isFinite(used) && used >= 0) {
+          return { usedBytes: used, totalBytes: total };
+        }
+      }
+    } catch {
+      /* unreachable in the browser-served POC — fall through to null */
+    }
+    return null;
   }
 
 
@@ -954,10 +1343,90 @@ class LemonadeAPI {
     this._notifyModelsChanged();
   }
 
+  // ── MCP client host ─────────────────────────────────────────────
+
+  async listMcpServers(): Promise<McpServerState[]> {
+    // Probe without Authorization first. This keeps a keyless/fail-closed MCP
+    // host from turning a browser preflight into the opaque `Failed to fetch`
+    // error. A configured host answers 401, at which point we retry with the
+    // admin credential (or the regular API key fallback).
+    try {
+      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'none' });
+      return Array.isArray(data.servers) ? data.servers : [];
+    } catch (error) {
+      const status = (error as LemonadeRequestError)?.status;
+      if (status !== 401) throw error;
+      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'admin' });
+      return Array.isArray(data.servers) ? data.servers : [];
+    }
+  }
+
+  async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {
+    const data = await this._json<{ server: McpServerConfig }>('/internal/mcp/servers', {
+      method: 'POST',
+      auth: 'admin',
+      body: { server: { ...server, transport: 'stdio' } },
+    });
+    return data.server;
+  }
+
+  async removeMcpServer(id: string): Promise<void> {
+    await this._fetch(`/internal/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE', auth: 'admin' });
+  }
+
+  async connectMcpServer(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/connect`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async disconnectMcpServer(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/disconnect`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async refreshMcpServerTools(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/refresh-tools`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async listMcpTools(): Promise<McpToolCatalogEntry[]> {
+    const data = await this._json<{ tools?: McpToolCatalogEntry[] }>('/internal/mcp/tools', { auth: 'admin' });
+    return Array.isArray(data.tools) ? data.tools : [];
+  }
+
+  async callMcpTool(
+    serverId: string,
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<McpToolCallResponse> {
+    return this._json<McpToolCallResponse>(
+      `/internal/mcp/servers/${encodeURIComponent(serverId)}/tools/call`,
+      {
+        method: 'POST',
+        auth: 'admin',
+        body: {
+          name,
+          arguments: args,
+          ...(typeof timeoutMs === 'number' ? { timeout_ms: timeoutMs } : {}),
+        },
+      },
+    );
+  }
+
   // ── Capability-specific inference endpoints ────────────────────
 
   async imageGeneration(model: string, prompt: string, opts: Record<string, unknown> = {}): Promise<string[]> {
-    const requestedSize = typeof opts.size === 'string' ? opts.size : '1024x1024';
+    const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : COLLECTION_IMAGE_SIZE;
     const data = await this._json<Record<string, any>>('/api/v1/images/generations', {
       method: 'POST',
       body: {
@@ -967,6 +1436,7 @@ class LemonadeAPI {
         size: requestedSize,
         response_format: 'b64_json',
       },
+      includeSessionHeaders: true,
     });
     const items = Array.isArray(data.data) ? data.data : [];
     const images = items
@@ -974,6 +1444,46 @@ class LemonadeAPI {
       .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0);
     if (images.length === 0) throw new Error('Image endpoint returned no image data.');
     return images;
+  }
+
+  async audioGeneration(
+    model: string,
+    prompt: string,
+    opts: Record<string, unknown> = {},
+  ): Promise<{ url: string; blob: Blob; filename: string }> {
+    const resp = await this._fetch('/api/v1/audio/generations', {
+      method: 'POST',
+      body: {
+        ...opts,
+        model,
+        prompt,
+        response_format: 'wav',
+      },
+      includeSessionHeaders: true,
+    });
+    const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('Audio generation endpoint returned an empty file.');
+    return { blob, url: URL.createObjectURL(blob), filename: `${model}.wav` };
+  }
+
+  async model3dGeneration(
+    model: string,
+    image: string,
+    opts: Record<string, unknown> = {},
+  ): Promise<{ url: string; blob: Blob; filename: string }> {
+    const resp = await this._fetch('/api/v1/3d/generations', {
+      method: 'POST',
+      body: {
+        ...opts,
+        model,
+        image,
+        response_format: 'glb',
+      },
+      includeSessionHeaders: true,
+    });
+    const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('3D generation endpoint returned an empty model.');
+    return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
 
   async imageUpscale(model: string, imageUrl: string): Promise<string> {
@@ -989,21 +1499,25 @@ class LemonadeAPI {
   }
 
   async textToSpeech(model: string, input: string, voice = 'alloy', opts: Record<string, unknown> = {}): Promise<{ url: string; blob: Blob }> {
+    const body: Record<string, unknown> = { ...opts, model, input };
+    if (voice.trim()) body.voice = voice.trim();
     const resp = await this._fetch('/api/v1/audio/speech', {
       method: 'POST',
-      body: { ...opts, model, input, voice },
+      body,
+      includeSessionHeaders: true,
     });
     const blob = await resp.blob();
+    if (blob.size === 0) throw new Error('Speech endpoint returned an empty audio file.');
     return { blob, url: URL.createObjectURL(blob) };
   }
 
   async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
-    const requestedSize = typeof opts.size === 'string' ? opts.size : '1024x1024';
+    const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : '';
     const imageBlob = blobFromDataUrl(imageDataUrl);
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
-    form.append('size', requestedSize);
+    if (requestedSize) form.append('size', requestedSize);
     form.append('response_format', 'b64_json');
     form.append('n', String(typeof opts.n === 'number' ? opts.n : 1));
     ['steps', 'cfg_scale', 'seed', 'sample_method', 'flow_shift'].forEach(key => {
@@ -1026,13 +1540,15 @@ class LemonadeAPI {
     return images;
   }
 
-  async audioTranscription(model: string, file: File): Promise<string> {
+  async audioTranscription(model: string, file: File, language?: string): Promise<string> {
     const form = new FormData();
     form.append('file', file);
     form.append('model', model);
+    if (language && language.trim()) form.append('language', language.trim());
     const data = await this._json<Record<string, unknown>>('/api/v1/audio/transcriptions', {
       method: 'POST',
       body: form,
+      includeSessionHeaders: true,
     });
     const text = typeof data.text === 'string' ? data.text : '';
     if (!text) throw new Error('Transcription endpoint returned no text.');
@@ -1154,39 +1670,88 @@ class LemonadeAPI {
     backend: string,
     callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void },
   ): Promise<void> {
+    const completeBackendInstall = () => {
+      callbacks?.onComplete?.();
+      this._notifyModelsChanged();
+    };
+
     try {
       const resp = await this._fetch('/api/v1/install', {
         method: 'POST',
-        body: { recipe, backend, stream: true, subscribe: true },
+        body: { recipe, backend, stream: true, subscribe: false },
+        cache: 'no-store',
       });
-      const reader = resp.body!.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop()!;
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
+        const error = downloadPayloadErrorMessage(data);
+        if (error) throw new Error(error);
+        callbacks?.onProgress?.(data);
+        if (downloadPayloadCompleted(data) || (data as any).action) {
+          completeBackendInstall();
+          return;
+        }
+      } else {
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('No response body');
+        const dec = new TextDecoder();
+        let buf = '';
+        let currentEventType = 'progress';
+        let sawTerminal = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEventType = line.substring(6).trim() || 'progress';
+              continue;
+            }
+            if (!line.startsWith('data:')) continue;
+            const d = JSON.parse(line.substring(5).trim()) as Record<string, unknown>;
+            const eventError = currentEventType === 'error'
+              ? (d.error || d.message || d.detail || 'Unknown backend install error')
+              : downloadPayloadErrorMessage(d);
+            if (eventError) throw new Error(String(eventError));
             callbacks?.onProgress?.(d);
-          } catch {}
+            if (currentEventType === 'complete' || downloadPayloadCompleted(d)) sawTerminal = true;
+          }
+        }
+
+        if (sawTerminal) {
+          completeBackendInstall();
+          return;
         }
       }
-      callbacks?.onComplete?.();
+
+      const downloadName = `${recipe}:${backend}`;
+      const match = (await this.downloads().catch(() => []))
+        .find(download => String(download.id || '') === `backend:${downloadName}` || String(download.model_name || download.name || '') === downloadName);
+      const matchError = downloadPayloadErrorMessage(match);
+      if (matchError) throw new Error(matchError);
+      if (match && downloadPayloadCompleted(match) && match.running !== true) {
+        completeBackendInstall();
+        return;
+      }
+
+      completeBackendInstall();
     } catch (err) {
       callbacks?.onError?.(err as Error);
+      this._notifyModelsChanged();
     }
   }
 
   async uninstallBackend(recipe: string, backend: string): Promise<unknown> {
-    return this._json('/api/v1/uninstall', {
+    const result = await this._json('/api/v1/uninstall', {
       method: 'POST',
       body: { recipe, backend },
     });
+    this._notifyModelsChanged();
+    return result;
   }
 
   // ── Persistent downloads ───────────────────────────────────────
@@ -1196,6 +1761,44 @@ class LemonadeAPI {
     if (Array.isArray(data)) return data as DownloadProgressEvent[];
     if (isObject(data) && Array.isArray(data.downloads)) return data.downloads as DownloadProgressEvent[];
     return [];
+  }
+
+
+  async createJob(name: string, steps: unknown[], inputs: Record<string, unknown> = {}): Promise<{ id: string }> {
+    return this._json<{ id: string }>('/api/v1/jobs', {
+      method: 'POST',
+      body: { name, definition: { steps }, inputs },
+    });
+  }
+
+  async getJob(id: string, signal?: AbortSignal): Promise<JobRecord> {
+    return this._json<JobRecord>(`/api/v1/jobs/${encodeURIComponent(id)}`, {
+      cache: 'no-store',
+      signal,
+    } as LemonadeRequestInit);
+  }
+
+  async listJobs(): Promise<JobRecord[]> {
+    const data = await this._json<unknown>('/api/v1/jobs', { cache: 'no-store' } as LemonadeRequestInit);
+    if (Array.isArray(data)) return data as JobRecord[];
+    if (isObject(data) && Array.isArray(data.jobs)) return data.jobs as JobRecord[];
+    return [];
+  }
+
+  async interruptJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/interrupt`, { method: 'POST' });
+  }
+
+  async pauseJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST' });
+  }
+
+  async resumeJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}/resume`, { method: 'POST' });
+  }
+
+  async deleteJob(id: string): Promise<void> {
+    await this._fetch(`/api/v1/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async controlDownload(downloadId: string, action: 'pause' | 'cancel' | 'remove'): Promise<unknown> {
@@ -1221,10 +1824,112 @@ class LemonadeAPI {
     return candidate === target || id === `model:${target}` || id.endsWith(`:${target}`);
   }
 
+
+  private async _isModelDownloadedOnServer(modelName: string): Promise<boolean> {
+    try {
+      const target = modelName.trim().toLowerCase();
+      const data = await this.models(true);
+      return data.data.some((model: ModelInfo) => {
+        const id = String((model as any).id || '').trim().toLowerCase();
+        const name = String((model as any).name || '').trim().toLowerCase();
+        const modelNameValue = String((model as any).model_name || '').trim().toLowerCase();
+        const downloaded = (model as any).downloaded === true || (model as any).installed === true || (model as any).local === true;
+        return downloaded && (id === target || name === target || modelNameValue === target);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private async _waitForModelDownloadTerminal(
+    modelName: string,
+    signal: AbortSignal | undefined,
+    onProgress: PullCallbacks['onProgress'] | undefined,
+    initialJobSeen = false,
+  ): Promise<DownloadProgressEvent | null> {
+    const started = performance.now();
+    let sawServerJob = initialJobSeen;
+    let consecutiveMissingSnapshots = 0;
+    let snapshotErrorsStartedAt: number | undefined;
+    const snapshotErrorTimeoutMs = 300_000;
+
+    while (!signal?.aborted) {
+      let downloads: DownloadProgressEvent[] = [];
+      try {
+        downloads = await this.downloads();
+        snapshotErrorsStartedAt = undefined;
+      } catch (error) {
+        const timestamp = Date.now();
+        snapshotErrorsStartedAt ??= timestamp;
+        if (timestamp - snapshotErrorsStartedAt >= snapshotErrorTimeoutMs) {
+          throw new Error(`Timed out refreshing server download state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+
+      const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
+      if (match) {
+        sawServerJob = true;
+        consecutiveMissingSnapshots = 0;
+        const matchError = downloadPayloadErrorMessage(match);
+        onProgress?.(match);
+        if (matchError) throw new Error(matchError);
+
+        const stopped = match.running !== true;
+        const status = String(match.status || '').toLowerCase();
+        if ((status === 'paused' || status === 'cancelled' || status === 'canceled') && stopped) return null;
+        if (downloadPayloadCompleted(match) && stopped) return match;
+      } else if (sawServerJob) {
+        consecutiveMissingSnapshots += 1;
+        if (consecutiveMissingSnapshots >= 10) {
+          if (await this._isModelDownloadedOnServer(modelName)) {
+            return {
+              id: `model:${modelName}`,
+              type: 'model',
+              model_name: modelName,
+              status: 'completed',
+              running: false,
+              complete: true,
+              percent: 100,
+            };
+          }
+          throw new Error(`Download for ${modelName} disappeared before completion.`);
+        }
+      } else if (performance.now() - started > 30000) {
+        throw new Error(`Download did not appear in the server download list for ${modelName}.`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    return null;
+  }
+
   // ── Pull variants (HF model file discovery) ────────────────────
 
-  async pullVariants(checkpoint: string): Promise<PullVariantsResult> {
-    return this._json(`/api/v1/pull/variants?checkpoint=${encodeURIComponent(checkpoint)}`);
+  async pullVariants(
+    checkpoint: string,
+    source: ModelRegistryProvider = 'huggingface',
+    signal?: AbortSignal,
+  ): Promise<PullVariantsResult> {
+    const params = new URLSearchParams({ checkpoint, source });
+    return this._json(`/api/v1/pull/variants?${params}`, { signal });
+  }
+
+  async registrySearch(
+    source: ModelRegistryProvider,
+    query: string,
+    limit = 14,
+    signal?: AbortSignal,
+  ): Promise<RegistrySearchResponse> {
+    const params = new URLSearchParams({
+      source,
+      query,
+      limit: String(limit),
+      format: 'gguf',
+    });
+    return this._json(`/api/v1/registry/search?${params}`, { signal });
   }
 
   // ── SSE: Pull (model download) ──────────────────────────────────
@@ -1236,86 +1941,94 @@ class LemonadeAPI {
         ...(opts || {}),
         model_name: modelName,
         stream: true,
-        // Let lemond own the download so progress survives F5/new tabs.
-        // Browser SSE is still supported below for older servers.
+        // Let lemond own the download. The UI observes /downloads, just like
+        // Lemonade main, instead of deciding completion from a renderer stream.
         subscribe: false,
       };
+
       const resp = await this._fetch('/api/v1/pull', {
         method: 'POST',
         body,
         signal,
+        cache: 'no-store',
       });
 
       const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('text/event-stream')) {
-        const initial = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
-        onProgress?.({ percent: typeof initial.percent === 'number' ? initial.percent : 0, ...initial });
-        const started = performance.now();
-        let lastMatch: DownloadProgressEvent | null = null;
-        while (!signal?.aborted) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const downloads = await this.downloads().catch(() => []);
-          const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
-          if (match) {
-            lastMatch = match;
-            const percent = typeof match.percent === 'number' ? match.percent : undefined;
-            onProgress?.({ ...match, percent });
-            if (match.error || match.status === 'error') {
-              throw new Error(String(match.error || `Download failed for ${modelName}.`));
-            }
-            if (match.status === 'cancelled') return;
-            if (match.complete || match.status === 'completed') {
-              onComplete?.({ ...match });
-              this._notifyModelsChanged();
+      if (contentType.includes('text/event-stream')) {
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const dec = new TextDecoder();
+        let buf = '';
+        let currentEventType = 'progress';
+        let terminalPayload: DownloadProgressEvent | null = null;
+
+        try {
+          while (true) {
+            if (signal?.aborted) {
+              await reader.cancel();
               return;
             }
-          } else if (lastMatch && (lastMatch.complete || lastMatch.status === 'completed')) {
-            onComplete?.({ ...lastMatch });
-            this._notifyModelsChanged();
-            return;
-          } else if (!lastMatch && performance.now() - started > 3000) {
-            // Some lemond versions only acknowledge a registration/pull that is immediately complete.
-            onComplete?.(initial);
-            this._notifyModelsChanged();
-            return;
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                currentEventType = line.substring(6).trim() || 'progress';
+                continue;
+              }
+              if (!line.startsWith('data:')) continue;
+
+              const data = JSON.parse(line.substring(5).trim()) as DownloadProgressEvent;
+              const eventError = currentEventType === 'error'
+                ? (data.error || data.message || data.detail || 'Unknown download error')
+                : downloadPayloadErrorMessage(data);
+              if (eventError) throw new Error(String(eventError));
+
+              onProgress?.(data);
+              if (currentEventType === 'complete' || downloadPayloadCompleted(data)) {
+                terminalPayload = data;
+              }
+            }
           }
+        } finally {
+          if (signal?.aborted) reader.cancel().catch(() => undefined);
+        }
+
+        // Prefer the server registry as the source of truth, so a 404/failed job
+        // cannot become completed merely because an SSE response ended.
+        const terminal = await this._waitForModelDownloadTerminal(
+          modelName,
+          signal,
+          onProgress,
+          terminalPayload != null,
+        ).catch(async error => {
+          if (terminalPayload && downloadPayloadCompleted(terminalPayload)) return terminalPayload;
+          throw error;
+        });
+        if (terminal) {
+          onComplete?.(terminal);
+          this._notifyModelsChanged();
         }
         return;
       }
 
-      const reader = resp.body!.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
+      const startedSnapshot = await resp.json().catch(() => ({} as DownloadProgressEvent)) as DownloadProgressEvent;
+      const initialError = downloadPayloadErrorMessage(startedSnapshot);
+      if (initialError) throw new Error(initialError);
+      onProgress?.(startedSnapshot);
 
-      try {
-        while (true) {
-          if (signal?.aborted) {
-            await reader.cancel();
-            break;
-          }
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop()!;
+      const terminal = downloadPayloadCompleted(startedSnapshot) && startedSnapshot.running !== true
+        ? startedSnapshot
+        : await this._waitForModelDownloadTerminal(modelName, signal, onProgress, true);
 
-          for (const line of lines) {
-            if (line.startsWith('event:')) continue;
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const d = JSON.parse(line.slice(6));
-              if (d.percent !== undefined) onProgress?.(d);
-              else onComplete?.(d);
-            } catch {}
-          }
-        }
-      } finally {
-        if (signal?.aborted) {
-          reader.cancel().catch(() => {});
-        }
-      }
-      if (!signal?.aborted) {
-        onComplete?.({});
+      if (terminal) {
+        const terminalError = downloadPayloadErrorMessage(terminal);
+        if (terminalError) throw new Error(terminalError);
+        onComplete?.(terminal);
         this._notifyModelsChanged();
       }
     } catch (err) {
@@ -1384,12 +2097,14 @@ class LemonadeAPI {
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
-      const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model), ...(params || {}) };
+      const requestModelInfo = this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null;
+      const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (tools && tools.length > 0) body.tools = tools;
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
         signal,
+        includeSessionHeaders: true,
       });
 
       const reader = resp.body!.getReader();
@@ -1495,7 +2210,8 @@ class LemonadeAPI {
   ): Promise<string> {
     const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
       method: 'POST',
-      body: { model, messages, stream: false, ...samplingForModel(model), ...params },
+      body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
+      includeSessionHeaders: true,
     });
     if (data.error) {
       throw new Error(data.error?.message || 'Chat completion failed');
@@ -1526,10 +2242,19 @@ class LemonadeAPI {
 
   async refresh(): Promise<{ health: HealthData; models: ModelsData } | null> {
     try {
-      const [health, models] = await Promise.all([
-        this.health(),
-        this.models(true),
-      ]);
+      const health = await this.health();
+      let models: ModelsData;
+      try {
+        models = await this.models(true);
+      } catch (err) {
+        // Health is the connection source of truth. Some tests and lightweight
+        // servers expose health/MCP before the model registry is available; do
+        // not flip the whole app back to disconnected merely because /models
+        // failed after /health succeeded. Keep the previous registry if present,
+        // otherwise use an empty one until the next refresh.
+        this._lastConnectionError = friendlyErrorMessage(err);
+        models = this._modelsData || { data: [] };
+      }
       return { health, models };
     } catch (err) {
       this._lastConnectionError = friendlyErrorMessage(err);
@@ -1554,9 +2279,36 @@ class LemonadeAPI {
 
 // Singleton export
 export const api = new LemonadeAPI();
+if (typeof window !== 'undefined') {
+  (window as any).apiClient = api;
+}
 export default api;
 
 /* ── HuggingFace search (standalone — external API) ────────── */
+
+export interface RegistrySearchResult {
+  repository_id?: string;
+  display_name?: string;
+  source?: string;
+  description?: string;
+  tags?: string[];
+  task?: string;
+  downloads?: number;
+  likes?: number;
+  has_gguf?: boolean;
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  model_type?: string;
+  architecture?: string;
+  library_name?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RegistrySearchResponse {
+  results?: RegistrySearchResult[];
+  error?: string | { message?: string; path?: string };
+}
 
 export interface HFModelResult {
   id: string;           // e.g. "TheBloke/Llama-2-7B-GGUF"
@@ -1566,6 +2318,14 @@ export interface HFModelResult {
   tags: string[];
   createdAt?: string;
   pipeline_tag?: string;
+  source?: ModelRegistryProvider;
+  capabilities?: string[];
+  input_modalities?: string[];
+  output_modalities?: string[];
+  model_type?: string;
+  architecture?: string;
+  library_name?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export async function searchHuggingFace(
@@ -1591,5 +2351,45 @@ export async function searchHuggingFace(
     throw new Error(`HuggingFace search failed with HTTP ${resp.status}`);
   }
   const data = await resp.json();
-  return Array.isArray(data) ? data : [];
+  return Array.isArray(data)
+    ? data.map((item: HFModelResult) => ({ ...item, source: 'huggingface' as const }))
+    : [];
+}
+
+export async function searchModelScope(
+  query: string,
+  signal?: AbortSignal,
+): Promise<HFModelResult[]> {
+  const payload = await api.registrySearch('modelscope', query, 14, signal);
+  if (payload.error) {
+    const message = typeof payload.error === 'string'
+      ? payload.error
+      : payload.error.message || 'ModelScope registry search failed';
+    throw new Error(message);
+  }
+  const deduplicated = new Map<string, HFModelResult>();
+  for (const result of Array.isArray(payload.results) ? payload.results : []) {
+    const id = typeof result.repository_id === 'string' ? result.repository_id.trim() : '';
+    const source = typeof result.source === 'string' ? result.source.toLowerCase() : 'modelscope';
+    if (!id || (source !== 'modelscope' && source !== 'ms')) continue;
+    if (!deduplicated.has(id)) {
+      deduplicated.set(id, {
+        id,
+        modelId: id,
+        likes: typeof result.likes === 'number' ? result.likes : 0,
+        downloads: typeof result.downloads === 'number' ? result.downloads : 0,
+        tags: Array.isArray(result.tags) ? result.tags : [],
+        pipeline_tag: typeof result.task === 'string' ? result.task : undefined,
+        capabilities: Array.isArray(result.capabilities) ? result.capabilities : undefined,
+        input_modalities: Array.isArray(result.input_modalities) ? result.input_modalities : undefined,
+        output_modalities: Array.isArray(result.output_modalities) ? result.output_modalities : undefined,
+        model_type: typeof result.model_type === 'string' ? result.model_type : undefined,
+        architecture: typeof result.architecture === 'string' ? result.architecture : undefined,
+        library_name: typeof result.library_name === 'string' ? result.library_name : undefined,
+        metadata: isObject(result.metadata) ? result.metadata : undefined,
+        source: 'modelscope',
+      });
+    }
+  }
+  return [...deduplicated.values()];
 }

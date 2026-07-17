@@ -1,8 +1,10 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+
+const Model3DResult = lazy(() => import('./Model3DResult'));
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -16,6 +18,7 @@ import {
   capabilityLabel,
   modelDisplayName,
   modelInitial,
+  modelSupportsChatAudioInput,
   ModelCapability,
   ModelSnapshot,
   selectPreferredLoadedModel,
@@ -26,10 +29,32 @@ import {
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
-import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { PRESET_STORE_EVENT, activePresetForModel, systemPromptTextForPreset, systemPromptNameForPreset } from '../presetStore';
+import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
+import {
+  DEFAULT_PRESET,
+  PRESET_STORE_EVENT,
+  type Preset,
+  activePresetForModel,
+  allStoredPresets,
+  isCompatible,
+  loadApplied,
+  saveApplied,
+  classifyPresetChange,
+  runningPresetIdForModel,
+  setRunningPreset,
+  systemPromptTextForPreset,
+  systemPromptNameForPreset,
+  presetMcpServerIds,
+  presetMcpDisplayText,
+} from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
+import {
+  GLOBAL_MODEL_SETTINGS_EVENT,
+  loadGlobalModelSettings,
+  loadPinnedModelNames,
+  loadWithGlobalModelPolicy,
+} from '../features/modelSettings/globalModelSettings';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -38,6 +63,8 @@ interface Message {
   generatedImages?: string[]; // transient generated image data URLs
   audioUrl?: string; // transient object URL for TTS output
   audioName?: string;
+  model3dUrl?: string; // transient generated GLB object URL
+  model3dName?: string;
   thinking?: string;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
@@ -58,6 +85,33 @@ const STORAGE_KEY = 'conversations';
 const ACTIVE_KEY = 'active_conversation';
 const PERSIST_KEY = 'persist_conversations';
 const STORAGE_VERSION = 3;
+
+const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
+const CHAT_LOGS_DEFAULT_WIDTH = 520;
+const CHAT_LOGS_MIN_WIDTH = 340;
+const CHAT_LOGS_MAX_WIDTH = 920;
+
+function maxChatLogsWidthForViewport(railExpanded = true): number {
+  if (typeof window === 'undefined') return CHAT_LOGS_MAX_WIDTH;
+  const railWidth = railExpanded ? 280 : 56;
+  const viewportMax = window.innerWidth - railWidth - 380;
+  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, viewportMax));
+}
+
+function clampChatLogsWidth(width: number, railExpanded = true): number {
+  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
+}
+
+function loadChatLogsWidth(scope: string): number {
+  if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
+  try {
+    const stored = Number(window.localStorage.getItem(scopedKey(scope, CHAT_LOGS_WIDTH_KEY)));
+    const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
+    return clampChatLogsWidth(width, true);
+  } catch {
+    return clampChatLogsWidth(CHAT_LOGS_DEFAULT_WIDTH, true);
+  }
+}
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -149,6 +203,8 @@ function saveConversations(convos: Conversation[], persist: boolean, scope: stri
       generatedImages: undefined,
       audioUrl: undefined,
       audioName: undefined,
+      model3dUrl: undefined,
+      model3dName: undefined,
     })),
   }));
   try { localStorage.setItem(scopedKey(scope, STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
@@ -177,6 +233,27 @@ function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = [
   if (audioFiles.length > 0) return `Audio: ${audioFiles[0].name}`.slice(0, 50);
   if (hasImages) return 'Image conversation';
   return 'New conversation';
+}
+
+
+const ModelModeIcons: React.FC<{
+  capability: ModelCapability;
+  audioInput?: boolean;
+  size?: number;
+}> = ({ capability, audioInput = false, size = 14 }) => {
+  const showAudio = audioInput && capability === 'chat';
+  return (
+    <span className="capability-icon-pair" aria-hidden="true">
+      <CapabilityIcon capability={capability} size={size} />
+      {showAudio && <CapabilityIcon capability="audio" size={Math.max(11, size - 1)} />}
+    </span>
+  );
+};
+
+function modelModeLabel(capability: ModelCapability, audioInput = false): string {
+  return audioInput && capability === 'chat'
+    ? 'Chat + Audio'
+    : capabilityLabel(capability);
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -226,7 +303,8 @@ interface ChatViewProps {
   accountSession: AccountSession;
 }
 
-const TOOLS_KEY = 'use_tools';
+const MCP_ENABLED_KEY = 'mcp_enabled';
+const LEGACY_TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 const IMAGE_SIZE_OPTIONS = [256, 512, 768, 1024, 1536, 2048] as const;
@@ -251,6 +329,60 @@ const DEFAULT_IMAGE_SETTINGS: ImageGenerationSettings = {
   upscaleModel: '',
 };
 
+interface AudioGenerationSettings {
+  duration: number;
+  steps: number;
+  cfg: number;
+  seed: number | '';
+  lyrics: string;
+  vocalLanguage: string;
+}
+
+const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
+  duration: 10,
+  steps: 50,
+  cfg: 4.5,
+  seed: -1,
+  lyrics: '',
+  vocalLanguage: 'en',
+};
+
+type OpenMossMode = 'plain' | 'describe' | 'clone';
+
+interface OpenMossSettings {
+  mode: OpenMossMode;
+  voiceDescription: string;
+}
+
+const DEFAULT_OPENMOSS_SETTINGS: OpenMossSettings = {
+  mode: 'plain',
+  voiceDescription: '',
+};
+
+const OPENMOSS_VOICE_DESIGN_PHRASE =
+  'Hello there. This is a short sample of the voice you described.';
+
+type Model3DSourceMode = 'image' | 'text';
+
+interface Model3DSettings {
+  sourceMode: Model3DSourceMode;
+  resolution: 512 | 1024 | 1536;
+  backgroundRemoval: 'birefnet' | 'threshold';
+  seed: number | '';
+  imageModel: string;
+}
+
+const DEFAULT_MODEL3D_SETTINGS: Model3DSettings = {
+  sourceMode: 'image',
+  resolution: 512,
+  backgroundRemoval: 'birefnet',
+  seed: -1,
+  imageModel: '',
+};
+
+const MODEL3D_REFERENCE_PROMPT =
+  'single subject, centered, whole object in frame, three-quarter view from slightly above showing the top and two sides, plain white background, even soft studio lighting, high detail, 3D asset render';
+
 function numberFromUnknown(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim()) {
@@ -263,6 +395,12 @@ function numberFromUnknown(value: unknown): number | null {
 function intFromUnknown(value: unknown): number | null {
   const number = numberFromUnknown(value);
   return number === null ? null : Math.round(number);
+}
+
+function seedFromInput(value: string): number | '' {
+  if (value === '') return '';
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? -1 : Math.max(-1, parsed);
 }
 
 function nestedRecord(source: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined {
@@ -376,49 +514,6 @@ function canUseMicrophone(): boolean {
     && !!navigator.mediaDevices?.getUserMedia;
 }
 
-const LEMONADE_TOOL_RUNTIME: ChatToolRuntime = {
-  tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
-  execute: executeTool as unknown as ChatToolRuntime['execute'],
-};
-
-function composeToolRuntimes(runtimes: Array<ChatToolRuntime | null | undefined>): ChatToolRuntime | null {
-  const active = runtimes.filter((runtime): runtime is ChatToolRuntime => !!runtime && runtime.tools.length > 0);
-  if (active.length === 0) return null;
-  if (active.length === 1) return active[0];
-
-  const tools: Record<string, unknown>[] = [];
-  const byName = new Map<string, ChatToolRuntime>();
-  const prompts: string[] = [];
-
-  for (const runtime of active) {
-    if (runtime.systemPrompt) prompts.push(runtime.systemPrompt);
-    for (const tool of runtime.tools) {
-      const name = String((tool as any).function?.name || '');
-      if (!name || byName.has(name)) continue;
-      tools.push(tool);
-      byName.set(name, runtime);
-    }
-  }
-
-  return {
-    tools,
-    systemPrompt: prompts.join('\n\n'),
-    execute: async call => {
-      const runtime = byName.get(call.function.name);
-      if (!runtime) {
-        return {
-          tool_call_id: call.id,
-          role: 'tool',
-          content: JSON.stringify({ error: `Unknown tool: ${call.function.name}` }),
-          error: true,
-          displayResult: `Error: unknown tool ${call.function.name}`,
-        };
-      }
-      return runtime.execute(call);
-    },
-  };
-}
-
 function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
   return (toolCalls || []).flatMap(call => call.artifacts || []);
 }
@@ -444,7 +539,16 @@ function collectConversationImages(messages: Message[]): string[] {
   return images;
 }
 
-/** Resize and compress an image file to base64 data URL */
+async function blobToDataUrl(file: Blob): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Resize and compress a chat/image-edit attachment to a base64 data URL. */
 async function imageToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -490,6 +594,32 @@ async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; inp
         : mime.includes('ogg') || lowerName.endsWith('.ogg') ? 'ogg'
           : 'wav';
   return { type: 'input_audio', input_audio: { data: payload, format } };
+}
+
+async function fileToBase64(file: Blob): Promise<string> {
+  const dataUrl = await blobToDataUrl(file);
+  const comma = dataUrl.indexOf(',');
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+}
+
+async function wavVoiceSampleToBase64(file: File): Promise<string> {
+  const maxBytes = 10 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error(`'${file.name}' is too large (max 10 MB). A few seconds of clean speech is enough.`);
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const hasMagic = (offset: number, text: string) =>
+    bytes.length >= offset + text.length
+    && [...text].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
+  if (!hasMagic(0, 'RIFF') || !hasMagic(8, 'WAVE')) {
+    throw new Error(`'${file.name}' is not a WAV file. Voice samples must use WAV audio.`);
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 
@@ -554,6 +684,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
+  const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
+  const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
+  const [model3dSettings, setModel3dSettings] = useState<Model3DSettings>(DEFAULT_MODEL3D_SETTINGS);
   const imageSettingsModelRef = useRef<string | null>(null);
   const imageSettingsTouchedRef = useRef(false);
   const imageSettingsCommittedRef = useRef(false);
@@ -568,24 +701,37 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [presetVersion, setPresetVersion] = useState(0);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(storageScope));
+  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings(storageScope));
   const [railExpanded, setRailExpanded] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
   const sheetTriggerRef = useRef<HTMLButtonElement>(null);
   const bottomSheetRef = useRef<HTMLDivElement>(null);
-  const [useTools, setUseTools] = useState(() => {
-    try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
+  const [useMcp, setUseMcp] = useState(() => {
+    try {
+      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      if (explicit !== null) return explicit === 'true';
+      return localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY)) === 'true';
+    } catch { return false; }
   });
-  const presetToolsSeedRef = useRef('');
+  const presetMcpSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
+  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
+  const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
+  const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [presetPickerQuery, setPresetPickerQuery] = useState('');
+  const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
+  const [presetPickerError, setPresetPickerError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const presetPickerRef = useRef<HTMLDivElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -601,6 +747,76 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+
+  const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
+  const trackGeneratedMediaUrl = useCallback((url: string): string => {
+    if (url.startsWith('blob:')) generatedMediaUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  useEffect(() => () => {
+    generatedMediaUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    generatedMediaUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(scopedKey(storageScope, CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
+    } catch {
+      // Non-critical: inline log width persistence is best-effort only.
+    }
+  }, [chatLogsWidth, storageScope]);
+
+  const chatLayoutStyle = useMemo(() => ({
+    '--chat-logs-width': `${chatLogsWidth}px`,
+  } as React.CSSProperties), [chatLogsWidth]);
+
+  const handleChatLogsResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 980) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = chatLogsWidth;
+    const handle = event.currentTarget;
+    try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      // The handle sits on the left edge of the logs panel: dragging left makes
+      // the panel wider, dragging right makes it narrower.
+      const nextWidth = clampChatLogsWidth(startWidth - (moveEvent.clientX - startX), railExpanded);
+      setChatLogsWidth(nextWidth);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.classList.remove('is-resizing-chat-logs');
+      try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    };
+
+    document.body.classList.add('is-resizing-chat-logs');
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize, { once: true });
+    window.addEventListener('pointercancel', stopResize, { once: true });
+  }, [chatLogsWidth, railExpanded]);
+
+  const handleChatLogsResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 48 : 20;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setChatLogsWidth(width => clampChatLogsWidth(width + step, railExpanded));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setChatLogsWidth(width => clampChatLogsWidth(width - step, railExpanded));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setChatLogsWidth(CHAT_LOGS_MIN_WIDTH);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setChatLogsWidth(clampChatLogsWidth(CHAT_LOGS_MAX_WIDTH, railExpanded));
+    }
+  }, [railExpanded]);
 
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name === currentModel) || null,
@@ -654,6 +870,66 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
+  const isAceStepAudio = currentCapability === 'audio-generation'
+    && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
+  const currentLabels = (currentKnownModelInfo?.labels || []).map(label => String(label).toLowerCase());
+  const isOpenMossTts = currentCapability === 'tts'
+    && (currentRecipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
+  const currentIsVoiceDesign = currentLabels.includes('voice-design')
+    || /voicegen/i.test(String(currentModel || ''));
+  const openMossModels = useMemo(() => {
+    const loadedNames = new Set(loadedModels.map(model => model.model_name.toLowerCase()));
+    return knownModelInfos
+      .map(info => {
+        const name = String((info as any).model_name || info.name || info.id || '').trim();
+        const recipe = String(
+          (info as any).recipe
+          || ((Array.isArray(info.recipes) && info.recipes[0]) ? (info.recipes[0] as any).recipe : ''),
+        ).toLowerCase();
+        const labels = (info.labels || []).map(label => String(label).toLowerCase());
+        return { name, recipe, labels, downloaded: Boolean((info as any).downloaded) };
+      })
+      .filter(model => model.name
+        && (model.recipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(model.name))
+        && (model.downloaded || loadedNames.has(model.name.toLowerCase()) || model.name === currentModel));
+  }, [currentModel, knownModelInfos, loadedModels]);
+  const openMossVoiceDesignModel = currentIsVoiceDesign && isOpenMossTts
+    ? currentModel
+    : (openMossModels.find(model => model.labels.includes('voice-design') || /voicegen/i.test(model.name))?.name || '');
+  const openMossCloneModel = isOpenMossTts && !currentIsVoiceDesign
+    ? currentModel
+    : (openMossModels.find(model => !model.labels.includes('voice-design') && !/voicegen/i.test(model.name))?.name || '');
+  const openMossDescribeUnavailable = isOpenMossTts
+    && openMossSettings.mode === 'describe'
+    && !openMossVoiceDesignModel;
+  const openMossCloneUnavailable = isOpenMossTts
+    && openMossSettings.mode === 'clone'
+    && (!openMossCloneModel || pendingAudioFiles.length === 0);
+  const imageGenerationModels = useMemo(() => {
+    const names = new Set<string>();
+    loadedModels.forEach(model => {
+      const info = findModelInfoByName(knownModelInfos, model.model_name);
+      const capability = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(model);
+      if (capability === 'image') names.add(model.model_name);
+    });
+    knownModelInfos.forEach(info => {
+      if (capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
+      const name = String((info as any).model_name || info.name || info.id || '').trim();
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [knownModelInfos, loadedModels]);
+
+  useEffect(() => {
+    if (currentCapability !== 'model3d') return;
+    setModel3dSettings(prev => ({
+      ...prev,
+      imageModel: prev.imageModel && imageGenerationModels.includes(prev.imageModel)
+        ? prev.imageModel
+        : (imageGenerationModels[0] || ''),
+    }));
+  }, [currentCapability, imageGenerationModels]);
   useEffect(() => {
     const updatePresetVersion = () => setPresetVersion(v => v + 1);
     window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
@@ -667,16 +943,64 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
   }, [storageScope]);
 
-  const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
+  useEffect(() => {
+    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings(storageScope));
+    reloadGlobalModelSettings();
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
+  }, [storageScope]);
+
+  const allPresets = useMemo(() => allStoredPresets(), [presetVersion]);
+  const currentPreset = useMemo(
+    () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
+    [currentCapability, currentModel, presetVersion],
+  );
+
+  useEffect(() => {
+    if (currentCapability !== 'audio-generation') return;
+    const recipeOptions = currentPreset?.recipe_options || {};
+    setAudioGenerationSettings(prev => ({
+      ...prev,
+      duration: isAceStepAudio ? 150 : 10,
+      steps: typeof recipeOptions.steps === 'number' ? recipeOptions.steps : 50,
+      cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
+      lyrics: '',
+    }));
+  }, [currentModel, currentCapability, currentPreset, isAceStepAudio]);
+
+  useEffect(() => {
+    if (!isOpenMossTts) return;
+    setOpenMossSettings({
+      mode: 'plain',
+      voiceDescription: String(currentPreset?.recipe_options?.voice || ''),
+    });
+    setPendingAudioFiles([]);
+  }, [currentModel, currentPreset, isOpenMossTts]);
+
+  useEffect(() => {
+    const keepsAudioAttachments = currentCapability === 'audio'
+      || currentCapability === 'omni'
+      || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
+    if (keepsAudioAttachments) return;
+    if (isOpenMossTts && openMossSettings.mode === 'clone') return;
+    setPendingAudioFiles([]);
+  }, [
+    currentCapability,
+    currentKnownModelInfo,
+    currentLoadedModel,
+    isOpenMossTts,
+    openMossSettings.mode,
+  ]);
 
   useEffect(() => {
     if (!currentModel || !currentPreset) return;
-    const next = currentPreset.tools_enabled !== false;
-    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${next ? 'tools-on' : 'tools-off'}`;
-    if (presetToolsSeedRef.current === seed) return;
-    presetToolsSeedRef.current = seed;
-    setUseTools(next);
-    try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
+    const selectedIds = presetMcpServerIds(currentPreset);
+    const next = selectedIds.length > 0;
+    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
+    if (presetMcpSeedRef.current === seed) return;
+    presetMcpSeedRef.current = seed;
+    setUseMcp(next);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
   }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
@@ -686,6 +1010,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const supportsRealtimeAudio = useMemo(
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
+  );
+  const supportsChatAudioInput = useMemo(
+    () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
+    [currentKnownModelInfo, currentLoadedModel],
   );
 
   const defaultImageSettings = useMemo(
@@ -736,14 +1064,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
     return customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(model);
   }, [customModelInfos]);
+  const audioInputForLoaded = useCallback((model: LoadedModel) => {
+    const info = findModelInfoByName(knownModelInfos, model.model_name);
+    return modelSupportsChatAudioInput(info, model);
+  }, [knownModelInfos]);
   const selectableModels = useMemo(
-    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'tts'].includes(capabilityForLoaded(m))),
+    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
   );
   type ModelPickerOption = {
     name: string;
     capability: ModelCapability;
     loaded: boolean;
+    audioInput: boolean;
     info?: ModelInfo;
     detail: string;
   };
@@ -754,7 +1087,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const addOption = (option: ModelPickerOption) => {
       const key = option.name.toLowerCase();
       if (!option.name || seen.has(key)) return;
-      if (!['chat', 'omni', 'image', 'audio', 'tts'].includes(option.capability)) return;
+      if (!['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(option.capability)) return;
       seen.add(key);
       options.push(option);
     };
@@ -763,6 +1096,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       name: model.model_name,
       capability: capabilityForLoaded(model),
       loaded: true,
+      audioInput: audioInputForLoaded(model),
       detail: `Loaded · ${model.recipe || 'runtime'}${model.device ? ` · ${model.device}` : ''}`,
     }));
 
@@ -775,6 +1109,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         name,
         capability,
         loaded: false,
+        audioInput: modelSupportsChatAudioInput(info, null),
         info,
         detail: 'Downloaded · click to load',
       });
@@ -782,14 +1117,109 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${capabilityLabel(option.capability)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${modelModeLabel(option.capability, option.audioInput)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
-  }, [capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
+  }, [audioInputForLoaded, capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
+
+
+  const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
+  const presetPickerOptions = useMemo(() => {
+    if (!currentModel || currentCapability === 'image') return [];
+    const q = presetPickerQuery.trim().toLowerCase();
+    return allPresets
+      .filter(preset => isCompatible(preset, presetPickerTarget))
+      .filter(preset => {
+        if (!q) return true;
+        return [
+          preset.name,
+          preset.description,
+          preset.applies_to.join(' '),
+          systemPromptNameForPreset(preset),
+          `mcp ${presetMcpDisplayText(preset)}`,
+        ].join(' ').toLowerCase().includes(q);
+      })
+      .slice(0, 80);
+  }, [allPresets, currentCapability, currentModel, presetPickerQuery, presetPickerTarget]);
+
+  const handlePresetPickerSelect = useCallback(async (preset: Preset) => {
+    if (!currentModel || presetPickerApplying) return;
+
+    const targetName = currentModel;
+    const previousApplied = loadApplied();
+    const previouslyLinkedPreset = currentPreset || activePresetForModel(targetName);
+    const runId = runningPresetIdForModel(targetName);
+    const runningPreset = runId
+      ? (allStoredPresets().find(p => p.id === runId) ?? previouslyLinkedPreset)
+      : previouslyLinkedPreset;
+    const changeKind = currentLoadedModel
+      ? classifyPresetChange(runningPreset, preset)
+      : 'none';
+
+    const nextApplied = { ...previousApplied };
+    if (preset.id === DEFAULT_PRESET.id) delete nextApplied[targetName];
+    else nextApplied[targetName] = preset.id;
+
+    setPresetPickerApplying(preset.id);
+    setPresetPickerError(null);
+    saveApplied(nextApplied);
+
+    const nextMcp = presetMcpServerIds(preset).length > 0;
+    setUseMcp(nextMcp);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextMcp)); } catch { /* ignore */ }
+
+    // Choosing a preset from the Chat composer is an explicit user action, just
+    // like choosing a different model. Apply the target state immediately: live
+    // request-time changes take effect on the next request; load-time changes
+    // trigger a reload so the running backend is actually using the selected
+    // preset instead of merely linking it for later.
+    try {
+      if (currentCapability === 'image') {
+        imageSettingsTouchedRef.current = false;
+        imageSettingsCommittedRef.current = false;
+        setImageSettings(imageDefaultsForModel(
+          currentLoadedModel,
+          currentKnownModelInfo,
+          preset.recipe_options as Record<string, unknown> | undefined,
+        ));
+        setImageMode('generate');
+      }
+
+      if (currentLoadedModel && changeKind === 'reload') {
+        await api.reloadModel(
+          targetName,
+          Object.keys(preset.recipe_options || {}).length > 0
+            ? preset.recipe_options as Record<string, unknown>
+            : undefined,
+          currentKnownModelInfo || currentCustomModelInfo || null,
+        );
+        await Promise.resolve(onRefresh());
+      }
+
+      if (currentLoadedModel) setRunningPreset(targetName, preset.id);
+      setPresetPickerOpen(false);
+      setPresetPickerQuery('');
+    } catch (err) {
+      setPresetPickerOpen(true);
+      setPresetPickerError(friendlyErrorMessage(err));
+    } finally {
+      setPresetPickerApplying(null);
+    }
+  }, [
+    currentCapability,
+    currentCustomModelInfo,
+    currentKnownModelInfo,
+    currentLoadedModel,
+    currentModel,
+    currentPreset,
+    onRefresh,
+    presetPickerApplying,
+    storageScope,
+  ]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
-  const modeSupportsTools = modeSupportsChatCompletions;
-  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || supportsRealtimeAudio;
+  const modeSupportsMcp = modeSupportsChatCompletions;
+  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -833,6 +1263,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [modelPickerOpen]);
 
   useEffect(() => {
+    if (!presetPickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = presetPickerRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setPresetPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [presetPickerOpen]);
+
+  useEffect(() => {
     const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
     if (currentStillUsable || loadedModels.length === 0) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
@@ -862,6 +1303,30 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   useEffect(() => () => stopAutoSpeech(), [stopAutoSpeech]);
 
+  const loadModelWithPolicy = useCallback(async (
+    modelName: string,
+    info: ModelInfo | null,
+    recipeOptions?: Record<string, unknown>,
+  ) => {
+    let currentLoaded = loadedModels;
+    try {
+      currentLoaded = (await api.health()).all_models_loaded || loadedModels;
+    } catch {
+      // The render snapshot is still sufficient when a health refresh is not
+      // available (for example during a short reconnect window).
+    }
+    const target = info || findModelInfoByName(knownModelInfos, modelName) || null;
+    return loadWithGlobalModelPolicy({
+      loadedModels: currentLoaded,
+      allModels: knownModelInfos,
+      target,
+      pinnedNames: loadPinnedModelNames(storageScope),
+      settings: globalModelSettings,
+      unload: name => api.unloadModel(name),
+      load: () => api.loadModel(modelName, recipeOptions, target),
+    });
+  }, [globalModelSettings, knownModelInfos, loadedModels, storageScope]);
+
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
     const modelName = ttsPlaybackSettings.modelName;
@@ -873,9 +1338,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     try {
       const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
       if (!isLoaded) {
-        await api.loadModel(modelName, undefined, findModelInfoByName(knownModelInfos, modelName) || null);
+        await loadModelWithPolicy(modelName, findModelInfoByName(knownModelInfos, modelName) || null);
       }
-      const voice = ttsVoiceFromRecipeOptions(activePresetForModel(modelName).recipe_options);
+      const modelInfo = findModelInfoByName(knownModelInfos, modelName);
+      const modelRecipe = String(
+        (modelInfo as any)?.recipe
+        || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
+      ).toLowerCase();
+      const presetOptions = activePresetForModel(modelName).recipe_options;
+      const voice = modelRecipe.includes('openmoss')
+        ? String(presetOptions.voice || '')
+        : ttsVoiceFromRecipeOptions(presetOptions);
       const audio = await api.textToSpeech(modelName, trimmed, voice);
       stopAutoSpeech();
       const player = new Audio(audio.url);
@@ -890,7 +1363,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelWithPolicy, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -899,11 +1372,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const artifacts = collectToolArtifacts(toolCalls);
     const generatedImages = artifacts.filter(a => a.type === 'image').map(a => a.url);
     const generatedAudio = artifacts.find(a => a.type === 'audio');
-    const mediaFallback = generatedImages.length > 0
-      ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
-      : generatedAudio
-        ? 'Generated speech audio from your text.'
-        : '';
+    const generated3d = artifacts.find(a => a.type === 'model3d');
+    const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
+    const generated3dUrl = generated3d?.url ? trackGeneratedMediaUrl(generated3d.url) : undefined;
+    const mediaFallback = generated3d
+      ? 'Generated a 3D model from the reference image.'
+      : generatedImages.length > 0
+        ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+        : generatedAudio
+          ? 'Generated speech audio from your text.'
+          : '';
     const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
     updateConversation(convoId, c => ({
       ...c,
@@ -915,13 +1393,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         stats,
         model,
         generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
-        audioUrl: generatedAudio?.url,
+        audioUrl: generatedAudioUrl,
         audioName: generatedAudio?.name,
+        model3dUrl: generated3dUrl,
+        model3dName: generated3d?.name,
       }],
       updatedAt: Date.now(),
     }));
-    if (!generatedAudio && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
-  }, [speakWithPinnedTts, updateConversation]);
+    if (!generatedAudio && !generated3d && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
+  }, [speakWithPinnedTts, trackGeneratedMediaUrl, updateConversation]);
 
   const handleStreamError = useCallback((convoId: string, message: string) => {
     const model = streamModelsRef.current[convoId] || null;
@@ -1058,7 +1538,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     if (activeId === id) setActiveId(null);
   }, [activeId]);
 
-  // --- Mobile bottom sheet logic ---
+  const handleRailKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
+    const list = e.currentTarget;
+    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (!options.length) return;
+    const currentIdx = options.findIndex(el =>
+      el === document.activeElement || el.contains(document.activeElement as Node),
+    );
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
+      options[next].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
+      options[prev].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      options[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      options[options.length - 1].focus();
+    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
+      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+        e.preventDefault();
+        handleSelectConversation(conversations[currentIdx].id);
+      }
+    }
+  }, [conversations, handleSelectConversation]);
+
+
   const handleRailToggle = useCallback(() => {
     if (window.innerWidth <= 480) {
       setMobileSheetOpen(prev => !prev);
@@ -1071,6 +1580,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setMobileSheetOpen(false);
     sheetTriggerRef.current?.focus();
   }, []);
+
+  const handleSheetKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
+    const list = e.currentTarget;
+    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+    if (!options.length) return;
+    const currentIdx = options.findIndex(el =>
+      el === document.activeElement || el.contains(document.activeElement as Node),
+    );
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
+      options[next].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
+      options[prev].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      options[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      options[options.length - 1].focus();
+    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
+      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+        e.preventDefault();
+        handleSelectConversation(conversations[currentIdx].id);
+        closeMobileSheet();
+      }
+    }
+  }, [conversations, handleSelectConversation, closeMobileSheet]);
 
   // ESC closes mobile sheet
   useEffect(() => {
@@ -1307,15 +1846,131 @@ ${finalText}`
           generatedImages,
           model,
         });
+      } else if (model.capability === 'audio-generation') {
+        if (!text) throw new Error('Audio generation needs a prompt.');
+        const isAceStepModel = String(model.recipe || '').toLowerCase().includes('acestep')
+          || /ace[-_ ]?step/.test(String(model.name || '').toLowerCase());
+        const audioOptions: Record<string, unknown> = {
+          duration: audioGenerationSettings.duration,
+          steps: audioGenerationSettings.steps,
+          seed: audioGenerationSettings.seed === '' ? -1 : audioGenerationSettings.seed,
+        };
+        if (isAceStepModel) {
+          const lyrics = audioGenerationSettings.lyrics.trim();
+          if (lyrics) {
+            audioOptions.lyrics = lyrics;
+            audioOptions.vocal_language = audioGenerationSettings.vocalLanguage.trim() || 'en';
+          }
+        } else {
+          audioOptions.cfg = audioGenerationSettings.cfg;
+        }
+        const audio = await api.audioGeneration(model.name, text, audioOptions);
+        appendAssistantMessage(convoId, {
+          content: isAceStepModel
+            ? `Generated ${audioGenerationSettings.lyrics.trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
+            : 'Generated a sound effect from your prompt.',
+          audioUrl: trackGeneratedMediaUrl(audio.url),
+          audioName: audio.filename,
+          model,
+        });
+      } else if (model.capability === 'model3d') {
+        let referenceImage = images[0] || '';
+        let generatedReference: string[] | undefined;
+        if (model3dSettings.sourceMode === 'text') {
+          if (!text) throw new Error('Text-to-3D needs an object description.');
+          if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
+          const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
+          if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
+            await loadModelWithPolicy(model3dSettings.imageModel, imageInfo);
+          }
+          const references = await api.imageGeneration(
+            model3dSettings.imageModel,
+            `${text.trim()} -- ${MODEL3D_REFERENCE_PROMPT}`,
+            { n: 1, size: '1024x1024' },
+          );
+          referenceImage = references[0];
+          generatedReference = [referenceImage];
+          await loadModelWithPolicy(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
+        } else if (!referenceImage) {
+          throw new Error('Image-to-3D needs one reference image.');
+        }
+        const result = await api.model3dGeneration(model.name, referenceImage, {
+          resolution: model3dSettings.resolution,
+          bg_removal: model3dSettings.backgroundRemoval,
+          seed: model3dSettings.seed === '' ? -1 : model3dSettings.seed,
+        });
+        appendAssistantMessage(convoId, {
+          content: model3dSettings.sourceMode === 'text'
+            ? 'Rendered a reference image and reconstructed it as a textured 3D model.'
+            : 'Reconstructed the reference image as a textured 3D model.',
+          generatedImages: generatedReference,
+          model3dUrl: trackGeneratedMediaUrl(result.url),
+          model3dName: result.filename,
+          model,
+        });
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
-        const voice = ttsVoiceFromRecipeOptions(activePresetForModel(model.name).recipe_options);
-        const audio = await api.textToSpeech(model.name, text, voice);
+        let targetModel = model.name;
+        let voice = ttsVoiceFromRecipeOptions(activePresetForModel(model.name).recipe_options);
+        let speechOptions: Record<string, unknown> = {};
+        let content = 'Generated speech audio from your text.';
+        let reloadTargetAfterVoiceDesign = false;
+
+        if (isOpenMossTts) {
+          voice = openMossSettings.voiceDescription.trim();
+          if (openMossSettings.mode === 'describe') {
+            if (!openMossVoiceDesignModel) {
+              throw new Error('Install MOSS-VoiceGen to design a voice from a description.');
+            }
+            targetModel = openMossVoiceDesignModel;
+            if (openMossCloneModel) {
+              if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
+                await loadModelWithPolicy(
+                  openMossVoiceDesignModel,
+                  findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
+                );
+              }
+              const designedSample = await api.textToSpeech(
+                openMossVoiceDesignModel,
+                OPENMOSS_VOICE_DESIGN_PHRASE,
+                voice,
+              );
+              try {
+                speechOptions.reference_wav_b64 = await fileToBase64(designedSample.blob);
+              } finally {
+                URL.revokeObjectURL(designedSample.url);
+              }
+              targetModel = openMossCloneModel;
+              voice = '';
+              reloadTargetAfterVoiceDesign = true;
+              content = 'Designed a voice from your description and generated speech with it.';
+            } else {
+              content = 'Generated speech with the described voice.';
+            }
+          } else if (openMossSettings.mode === 'clone') {
+            const sample = audioFiles[0];
+            if (!sample) throw new Error('Attach a WAV voice sample to clone.');
+            if (!openMossCloneModel) throw new Error('Install OpenMOSS-TTS to clone a voice sample.');
+            targetModel = openMossCloneModel;
+            speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
+            content = 'Generated speech using the attached voice sample.';
+          }
+
+          if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
+            await loadModelWithPolicy(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
+          }
+        }
+
+        const audio = await api.textToSpeech(targetModel, text, voice, speechOptions);
+        const targetInfo = findModelInfoByName(knownModelInfos, targetModel);
+        const outputModel = targetModel === model.name
+          ? model
+          : (snapshotFromModelInfo(targetInfo) || { ...model, name: targetModel });
         appendAssistantMessage(convoId, {
-          content: 'Generated speech audio from your text.',
-          audioUrl: audio.url,
-          audioName: `${model.name}.wav`,
-          model,
+          content,
+          audioUrl: trackGeneratedMediaUrl(audio.url),
+          audioName: `${targetModel}.wav`,
+          model: outputModel,
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
@@ -1339,7 +1994,12 @@ ${finalText}`
     } finally {
       setCapabilityBusy(false);
     }
-  }, [appendAssistantMessage, imageMode, imageSettings, onRefresh, presetVersion, speakWithPinnedTts]);
+  }, [
+    appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
+    isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
+    loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    presetVersion, speakWithPinnedTts, trackGeneratedMediaUrl,
+  ]);
 
   const startAssistantResponse = useCallback(async (
     convoId: string,
@@ -1435,10 +2095,33 @@ ${finalText}`
       }
     }
 
-    const toolRuntime = composeToolRuntimes([
-      omniRuntime,
-      useTools && modeSupportsTools ? LEMONADE_TOOL_RUNTIME : null,
-    ]);
+    let selectedMcpRuntime: ChatToolRuntime | null = null;
+    if (useMcp && modeSupportsMcp) {
+      try {
+        selectedMcpRuntime = await buildSelectedMcpRuntime(
+          presetMcpServerIds(currentPreset || DEFAULT_PRESET),
+          {
+            attachedImages: images || [],
+            attachedAudioFiles: audioFiles,
+            previousImages: collectConversationImages(priorMessages),
+          },
+        );
+      } catch (err) {
+        // MCP availability must never dead-end the chat composer. Surface the
+        // failure, switch MCP off for this chat, and continue the same request
+        // as a normal model completion without tools.
+        setUseMcp(false);
+        try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
+        appendAssistantMessage(convoId, {
+          content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
+          model: modelSnapshot,
+          isError: true,
+        });
+        selectedMcpRuntime = null;
+      }
+    }
+
+    const toolRuntime = composeMcpRuntimes([omniRuntime, selectedMcpRuntime]);
 
     // Build chat history from the conversation's messages before this user prompt.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
@@ -1447,34 +2130,7 @@ ${finalText}`
     const systemPrompts: string[] = [];
     const presetSystemPrompt = systemPromptTextForPreset(currentPreset);
     if (presetSystemPrompt) systemPrompts.push(presetSystemPrompt);
-    if (omniRuntime?.systemPrompt) systemPrompts.push(omniRuntime.systemPrompt);
-
-    // Inject a system prompt when Lemonade tools are enabled so the model knows to use them.
-    // Keep this privacy-safe: no backend URLs, API keys, PIDs, or local paths.
-    if (useTools && modeSupportsTools) {
-      const loadedList = loadedModels.length > 0
-        ? loadedModels.map(m => `${m.model_name} (${capabilityLabel(capabilityFromLoaded(m))})`).join(', ')
-        : 'none';
-      systemPrompts.push([
-        'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
-        'Use Lemonade management tools when the user asks about local models, backends, hardware capability, or server health.',
-        '',
-        'Tool routing rules:',
-        '- Backend/recipe/CPU/GPU/NPU/install-status questions: call list_backends, not list_models.',
-        '- Named model questions: call get_model_info for that exact model. Do not answer from list_models alone.',
-        '- Load/start/use model requests: resolve the downloaded model, then call load_model. If CPU/GPU/NPU is specified, pass backend/device explicitly.',
-        '- Download/pull requests: call pull_model. It searches Lemonade registry first, then Hugging Face GGUF when needed. If pull_model returns needs_choice, call ask_question with its choices.',
-        '- System/hardware questions: call get_system_info and then summarize the returned OS/version/devices/backend counts.',
-        '- General inventory questions: call list_models. It defaults to local models only; request registry/all only if the user explicitly asks what can be downloaded.',
-        '- After any tool call, give a concrete final answer with names/status/details. Never stop at a bare count like “105 models”.',
-        '- When choices are needed, use ask_question so the UI can render clickable options.',
-        '',
-        'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
-        '',
-        `Currently loaded model names and capabilities: ${loadedList}`,
-        `Active composer model: ${currentModel || 'none'}`,
-      ].join('\n'));
-    }
+    if (toolRuntime?.systemPrompt) systemPrompts.push(toolRuntime.systemPrompt);
 
     if (systemPrompts.length > 0) {
       chatMessages.push({ role: 'system' as const, content: systemPrompts.join('\n\n') });
@@ -1482,7 +2138,7 @@ ${finalText}`
 
     const historyMessages = priorMessages.filter(m => {
       if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
-      if (m.generatedImages?.length || m.audioUrl) return false;
+      if (m.generatedImages?.length || m.audioUrl || m.model3dUrl) return false;
       return true;
     });
 
@@ -1528,13 +2184,14 @@ ${finalText}`
     knownModelInfos,
     loadedModels,
     modeSupportsChatCompletions,
-    modeSupportsTools,
+    modeSupportsMcp,
     canUseAudioInput,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
+    storageScope,
     updateConversation,
-    useTools,
+    useMcp,
   ]);
 
   const handleSend = async (overrideText?: string) => {
@@ -1545,7 +2202,13 @@ ${finalText}`
       ? audioFiles.length > 0
       : currentCapability === 'image'
         ? (imageMode === 'edit' ? (!!text && hasImages) : !!text)
-        : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
+        : currentCapability === 'audio-generation'
+          ? !!text
+          : currentCapability === 'model3d'
+            ? (model3dSettings.sourceMode === 'image' ? hasImages : (!!text && !!model3dSettings.imageModel))
+            : currentCapability === 'tts'
+              ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
+              : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy) return;
     if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
 
@@ -1594,9 +2257,9 @@ ${finalText}`
     if (userIndex < 0) return;
 
     const originalUserMessage = convo.messages[userIndex];
-    if (originalUserMessage.audioName && !originalUserMessage.images?.length && !originalUserMessage.content.trim()) {
+    if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
-        content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+        content: friendlyChatError('Retrying a request with an audio attachment needs the original file. Please attach it again.'),
         model: currentModelSnapshot,
         isError: true,
       });
@@ -1662,6 +2325,12 @@ ${finalText}`
   // ── Attachment handling ────────────────────────────────────
 
   const addAttachments = useCallback(async (files: File[]) => {
+    if (isOpenMossTts && openMossSettings.mode === 'clone') {
+      const wav = files.find(file => file.type.toLowerCase().includes('wav') || file.name.toLowerCase().endsWith('.wav'));
+      if (wav) setPendingAudioFiles([wav]);
+      return;
+    }
+
     if (canUseAudioInput) {
       const audioFiles = files.filter(f => f.type.startsWith('audio/'));
       if (audioFiles.length > 0) {
@@ -1673,6 +2342,22 @@ ${finalText}`
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
     if (currentCapability === 'image' && imageMode !== 'edit') return;
+    if (currentCapability === 'model3d' && model3dSettings.sourceMode !== 'image') return;
+
+    if (currentCapability === 'model3d') {
+      const source = imageFiles.find(file => {
+        const mime = file.type.toLowerCase();
+        const name = file.name.toLowerCase();
+        return ['image/png', 'image/jpeg', 'image/bmp', 'image/gif'].includes(mime)
+          || /\.(png|jpe?g|bmp|gif)$/.test(name);
+      });
+      if (!source) return;
+      // TRELLIS accepts these source formats directly. Preserve alpha and the
+      // original pixels instead of routing the reference through the generic
+      // chat attachment JPEG compressor.
+      setPendingImages([await blobToDataUrl(source)]);
+      return;
+    }
 
     if (currentCapability === 'image' && imageMode === 'edit') {
       const encoded = await imageToBase64(imageFiles[0]);
@@ -1684,7 +2369,11 @@ ${finalText}`
     const toProcess = imageFiles.slice(0, remaining);
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
-  }, [canUseAudioInput, currentCapability, imageMode, modeSupportsChatCompletions, pendingImages.length]);
+  }, [
+    canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
+    modeSupportsChatCompletions, model3dSettings.sourceMode,
+    openMossSettings.mode, pendingImages.length,
+  ]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -1733,6 +2422,19 @@ ${finalText}`
     setPersistHistory(prev => !prev);
   }, []);
 
+  const handleModelPickerUnload = useCallback(async (modelName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (modelPickerUnloading) return;
+    setModelPickerUnloading(modelName);
+    try {
+      await api.unloadModel(modelName);
+      await Promise.resolve(onRefresh());
+      setUnloadAnnouncement(`${modelName} unloaded`);
+    } finally {
+      setModelPickerUnloading(null);
+    }
+  }, [modelPickerUnloading, onRefresh]);
+
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
       onModelSelect(option.name);
@@ -1744,7 +2446,7 @@ ${finalText}`
     setModelPickerError(null);
     setModelPickerLoading(option.name);
     try {
-      await api.loadModel(option.name, undefined, option.info || null);
+      await loadModelWithPolicy(option.name, option.info || null);
       await Promise.resolve(onRefresh());
       onModelSelect(option.name);
       setModelPickerOpen(false);
@@ -1754,7 +2456,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [modelPickerLoading, onModelSelect, onRefresh]);
+  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -1763,41 +2465,74 @@ ${finalText}`
   }, [handleSend]);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
+  const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
   const canAttach = currentCapability === 'chat'
     || currentCapability === 'omni'
     || currentCapability === 'audio'
     || supportsRealtimeAudio
-    || (currentCapability === 'image' && imageMode === 'edit');
-  const fileAccept = canUseAudioInput
-    ? (currentCapability === 'image' ? 'image/*' : 'image/*,audio/*')
-    : 'image/*';
+    || isOpenMossCloneMode
+    || (currentCapability === 'image' && imageMode === 'edit')
+    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
+  const fileAccept = isOpenMossCloneMode
+    ? 'audio/wav,audio/x-wav,.wav'
+    : currentCapability === 'model3d'
+      ? 'image/png,image/jpeg,image/bmp,image/gif,.png,.jpg,.jpeg,.bmp,.gif'
+      : currentCapability === 'image'
+        ? 'image/*'
+        : canUseAudioInput
+          ? 'image/*,audio/*'
+          : 'image/*';
   const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio' && !modeSupportsChatCompletions
     ? pendingAudioFiles.length > 0
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? (!!inputValue.trim() && pendingImages.length > 0) : !!inputValue.trim())
-      : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
+      : currentCapability === 'audio-generation'
+        ? !!inputValue.trim()
+        : currentCapability === 'model3d'
+          ? (model3dSettings.sourceMode === 'image' ? pendingImages.length > 0 : (!!inputValue.trim() && !!model3dSettings.imageModel))
+          : currentCapability === 'tts'
+            ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
+            : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message — connect and load a model to send…'
-    : currentCapability === 'omni' || supportsRealtimeAudio
-      ? `Message ${currentModel} with text${canUseAudioInput ? ', images, or audio' : ' or images'}…`
+    : currentCapability === 'omni'
+      ? `Message ${currentModel} through the Omni collection…`
+      : currentCapability === 'chat' && supportsChatAudioInput
+        ? `Message ${currentModel} with text, images, or audio…`
       : currentCapability === 'image'
       ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
         ? `Attach audio or use the mic with ${currentModel}…`
-        : currentCapability === 'tts'
-          ? `Text to speak with ${currentModel}…`
-          : `Message ${currentModel}…`;
-  const composerHint = supportsRealtimeAudio && modeSupportsChatCompletions
-    ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
+        : currentCapability === 'audio-generation'
+          ? (isAceStepAudio ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
+          : currentCapability === 'model3d'
+            ? (model3dSettings.sourceMode === 'image' ? 'Attach a reference image for 3D reconstruction…' : 'Describe the object to render and reconstruct in 3D…')
+            : currentCapability === 'tts'
+              ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
+              : `Message ${currentModel}…`;
+  const composerHint = supportsChatAudioInput && modeSupportsChatCompletions
+    ? (supportsRealtimeAudio
+      ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
+      : 'Chat + audio mode · attached audio is routed through chat completions')
     : currentCapability === 'omni'
-    ? 'Omni mode · text, image and audio are routed through chat completions'
+    ? 'Omni collection mode · requests are orchestrated across collection components'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
     : currentCapability === 'audio'
-      ? 'Audio mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
-      : currentCapability === 'tts'
-        ? 'TTS mode · text becomes /audio/speech'
-        : 'Enter to send · Shift+Enter for newline · Paste or drop images';
+      ? 'Transcription mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
+      : currentCapability === 'audio-generation'
+        ? (isAceStepAudio ? 'Music mode · instrumental or optional structured lyrics via /audio/generations' : 'Sound mode · prompt becomes /audio/generations')
+        : currentCapability === 'model3d'
+          ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
+          : currentCapability === 'tts'
+            ? (isOpenMossTts
+              ? openMossSettings.mode === 'describe'
+                ? 'OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis'
+                : openMossSettings.mode === 'clone'
+                  ? 'OpenMOSS · attach one WAV sample to clone its voice'
+                  : 'OpenMOSS · optional voice style instruction via /audio/speech'
+              : 'TTS mode · text becomes /audio/speech')
+            : 'Enter to send · Shift+Enter for newline · Paste or drop images';
 
   const upscalingModels = useMemo(
     () => knownModelInfos
@@ -1809,7 +2544,10 @@ ${finalText}`
 
   return (
     <>
-      <div className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}>
+      <div
+        className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}
+        style={showInlineLogs ? chatLayoutStyle : undefined}
+      >
       {/* Conversation rail */}
       <aside className="rail">
         <div className="rail__head">
@@ -1818,11 +2556,7 @@ ${finalText}`
             onClick={handleRailToggle}
             aria-label="Toggle conversations"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-              <line x1="3" y1="4" x2="13" y2="4" />
-              <line x1="3" y1="8" x2="13" y2="8" />
-              <line x1="3" y1="12" x2="13" y2="12" />
-            </svg>
+            <Icon name="menu" size={16} />
           </button>
           <span className="rail__title">Conversations</span>
         </div>
@@ -1830,27 +2564,30 @@ ${finalText}`
         <div className="rail__new-wrap">
           <button className="rail__new" onClick={handleNewChat} aria-label="New chat">
             <span className="rail__new-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <line x1="7" y1="2.5" x2="7" y2="11.5" />
-                <line x1="2.5" y1="7" x2="11.5" y2="7" />
-              </svg>
+              <Icon name="plus" size={14} />
             </span>
             <span className="rail__new-label">New chat</span>
           </button>
         </div>
 
-        <ul className="rail__list" role="listbox" aria-label="Conversations">
-          {conversations.map(c => {
+        <ul className="rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleRailKeyDown}>
+          {conversations.map((c, idx) => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
+            const isSelected = c.id === activeId;
+            const isTabTarget = isSelected || (idx === 0 && !activeId);
+            const convTitle = c.title || deriveTitle(c.messages);
             return (
               <li
-                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                id={`rail-conv-${c.id}`}
+                className={`rail__item ${isSelected ? 'is-active' : ''}`}
                 key={c.id}
                 role="option"
+                aria-selected={isSelected}
+                tabIndex={isTabTarget ? 0 : -1}
                 onClick={() => handleSelectConversation(c.id)}
               >
                 <span className="rail__item-title">
-                  {c.title || deriveTitle(c.messages)}
+                  {convTitle}
                 </span>
                 <span className="rail__item-meta">
                   {streaming.streamingConvoIds.has(c.id) && (
@@ -1864,8 +2601,9 @@ ${finalText}`
                 <button
                   className="rail__item-delete"
                   onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label="Delete conversation"
+                  aria-label={`Delete conversation: ${convTitle}`}
                   title="Delete"
+                  tabIndex={-1}
                 >×</button>
               </li>
             );
@@ -1899,24 +2637,27 @@ ${finalText}`
           <div className="bottom-sheet__handle-pill" />
         </div>
         <button className="bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-            <line x1="7" y1="2.5" x2="7" y2="11.5" />
-            <line x1="2.5" y1="7" x2="11.5" y2="7" />
-          </svg>
+          <Icon name="plus" size={14} />
           New Chat
         </button>
-        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations">
-          {conversations.map(c => {
+        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
+          {conversations.map((c, idx) => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
+            const isSelected = c.id === activeId;
+            const isTabTarget = isSelected || (idx === 0 && !activeId);
+            const convTitle = c.title || deriveTitle(c.messages);
             return (
               <li
-                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                id={`sheet-conv-${c.id}`}
+                className={`rail__item ${isSelected ? 'is-active' : ''}`}
                 key={c.id}
                 role="option"
+                aria-selected={isSelected}
+                tabIndex={isTabTarget ? 0 : -1}
                 onClick={() => { handleSelectConversation(c.id); closeMobileSheet(); }}
               >
                 <span className="rail__item-title">
-                  {c.title || deriveTitle(c.messages)}
+                  {convTitle}
                 </span>
                 <span className="rail__item-meta">
                   {streaming.streamingConvoIds.has(c.id) && (
@@ -1930,8 +2671,9 @@ ${finalText}`
                 <button
                   className="rail__item-delete"
                   onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label="Delete conversation"
+                  aria-label={`Delete conversation: ${convTitle}`}
                   title="Delete"
+                  tabIndex={-1}
                 >×</button>
               </li>
             );
@@ -1952,11 +2694,7 @@ ${finalText}`
           aria-label="Open conversations"
           title="Conversations"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-            <line x1="3" y1="4" x2="13" y2="4" />
-            <line x1="3" y1="8" x2="13" y2="8" />
-            <line x1="3" y1="12" x2="13" y2="12" />
-          </svg>
+          <Icon name="menu" size={16} />
           <span>Conversations</span>
         </button>
         <div className="chat__inner">
@@ -1976,6 +2714,7 @@ ${finalText}`
                   message={msg}
                   activeModel={currentModelSnapshot}
                   userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
+                  defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
@@ -2048,11 +2787,24 @@ ${finalText}`
 
       {showInlineLogs && (
         <aside className="chat__logs" aria-label="Lemonade logs next to chat">
+          <div
+            className="chat__logs-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize logs panel"
+            aria-valuemin={CHAT_LOGS_MIN_WIDTH}
+            aria-valuemax={CHAT_LOGS_MAX_WIDTH}
+            aria-valuenow={chatLogsWidth}
+            tabIndex={0}
+            onPointerDown={handleChatLogsResizeStart}
+            onKeyDown={handleChatLogsResizeKeyDown}
+          />
           <LogViewer />
         </aside>
       )}
 
       {/* Composer */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">{unloadAnnouncement}</div>
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
@@ -2061,12 +2813,15 @@ ${finalText}`
               <button
                 type="button"
                 className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                onClick={() => { setModelPickerOpen(v => !v); setPresetPickerOpen(false); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
-                <CapabilityIcon capability={currentCapability} size={14} />
+                <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
                 <span className="composer__model-button-name">{currentModel || 'Choose model'}</span>
+                {selectableModels.length > 0 && (
+                  <span className="composer__model-button-badge">({selectableModels.length})</span>
+                )}
                 <span className="composer__model-button-caret">▾</span>
               </button>
               {modelPickerOpen && (
@@ -2082,22 +2837,37 @@ ${finalText}`
                   </label>
                   <div className="composer__model-results" role="listbox">
                     {modelPickerOptions.map(option => (
-                      <button
-                        type="button"
+                      <div
                         key={option.name}
-                        className={`composer__model-option${option.name === currentModel ? ' is-active' : ''}`}
-                        onClick={() => handleModelPickerSelect(option)}
-                        disabled={!!modelPickerLoading}
-                        role="option"
-                        aria-selected={option.name === currentModel}
+                        className={`composer__model-option-row${option.name === currentModel ? ' is-active' : ''}${modelPickerUnloading === option.name ? ' is-unloading' : ''}`}
                       >
-                        <CapabilityIcon capability={option.capability} size={15} />
-                        <span className="composer__model-option-text">
-                          <strong>{option.name}</strong>
-                          <span>{capabilityLabel(option.capability)} · {option.detail}</span>
-                        </span>
-                        {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
-                      </button>
+                        <button
+                          type="button"
+                          className="composer__model-option"
+                          onClick={() => handleModelPickerSelect(option)}
+                          disabled={!!modelPickerLoading || modelPickerUnloading === option.name}
+                          role="option"
+                          aria-selected={option.name === currentModel}
+                        >
+                          <ModelModeIcons capability={option.capability} audioInput={option.audioInput} size={15} />
+                          <span className="composer__model-option-text">
+                            <strong>{option.name}</strong>
+                            <span>{modelModeLabel(option.capability, option.audioInput)} · {option.detail}</span>
+                          </span>
+                          {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
+                        </button>
+                        {option.loaded && (
+                          <button
+                            type="button"
+                            className="composer__model-option-unload"
+                            onClick={(e) => handleModelPickerUnload(option.name, e)}
+                            disabled={!!modelPickerUnloading}
+                            aria-label={`Unload ${option.name}`}
+                          >
+                            {modelPickerUnloading === option.name ? '…' : '×'}
+                          </button>
+                        )}
+                      </div>
                     ))}
                     {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
                   </div>
@@ -2109,30 +2879,78 @@ ${finalText}`
           <button
             type="button"
             className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)} composer__mode-badge--interactive`}
-            onClick={() => setModelPickerOpen(true)}
+            onClick={() => { setModelPickerOpen(true); setPresetPickerOpen(false); }}
             title="Mode follows the selected model. Open model search to change it."
           >
-            <CapabilityIcon capability={currentCapability} size={13} /> {supportsRealtimeAudio && modeSupportsChatCompletions ? 'Chat + Audio' : capabilityLabel(currentCapability)} mode
+            <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={13} /> {modelModeLabel(currentCapability, supportsChatAudioInput)} mode
           </button>
-          {currentPreset && (
-            <span className="composer__preset-badge" title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. Tools start ${currentPreset.tools_enabled === false ? 'OFF' : 'ON'}.`}>
-              <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
-            </span>
+          {currentPreset && currentModel && currentCapability !== 'image' && (
+            <div className="composer__preset-picker" ref={presetPickerRef}>
+              <button
+                type="button"
+                className="composer__preset-badge composer__preset-badge--interactive"
+                onClick={() => { setPresetPickerOpen(v => !v); setModelPickerOpen(false); }}
+                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. MCP: ${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}. Click to change preset.`}
+                aria-haspopup="listbox"
+                aria-expanded={presetPickerOpen}
+              >
+                <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
+                <span className="composer__model-button-caret">▾</span>
+              </button>
+              {presetPickerOpen && (
+                <div className="composer__model-menu composer__preset-menu" role="dialog" aria-label="Search presets">
+                  <label className="composer__model-search">
+                    <Icon name="search" size={14} />
+                    <input
+                      autoFocus
+                      value={presetPickerQuery}
+                      placeholder="Search presets…"
+                      onChange={e => setPresetPickerQuery(e.target.value)}
+                    />
+                  </label>
+                  <div className="composer__model-results" role="listbox">
+                    {presetPickerOptions.map(preset => {
+                      const isActive = preset.id === currentPreset.id;
+                      return (
+                        <button
+                          type="button"
+                          key={preset.id}
+                          className={`composer__model-option${isActive ? ' is-active' : ''}`}
+                          onClick={() => handlePresetPickerSelect(preset)}
+                          disabled={!!presetPickerApplying}
+                          role="option"
+                          aria-selected={isActive}
+                        >
+                          <PresetIcon preset={preset} />
+                          <span className="composer__model-option-text">
+                            <strong>{preset.name}</strong>
+                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · MCP {presetMcpDisplayText(preset)}</span>
+                          </span>
+                          {presetPickerApplying === preset.id && <span className="composer__model-option-loading">Applying…</span>}
+                        </button>
+                      );
+                    })}
+                    {presetPickerOptions.length === 0 && <div className="composer__model-empty">No matching presets</div>}
+                  </div>
+                  {presetPickerError && <div className="composer__model-error">{presetPickerError}</div>}
+                </div>
+              )}
+            </div>
           )}
           <button
-            className={`composer__tools-toggle ${useTools ? 'composer__tools-toggle--active' : ''}`}
+            className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {
-              const next = !useTools;
-              setUseTools(next);
-              try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
+              const next = !useMcp;
+              setUseMcp(next);
+              try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
             }}
-            disabled={!modeSupportsTools}
-            title={modeSupportsTools
-              ? (useTools ? 'Lemonade tools enabled — click to disable' : 'Enable lemonade tools (model management via chat)')
-              : 'Tools are only available for chat-completion models'}
-            aria-pressed={useTools && modeSupportsTools}
+            disabled={!modeSupportsMcp}
+            title={modeSupportsMcp
+              ? (useMcp ? `MCP enabled (${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}) — click to disable for this chat` : 'Enable the MCP servers selected by this preset')
+              : 'MCP is only available for chat-completion models'}
+            aria-pressed={useMcp && modeSupportsMcp}
           >
-            <Icon name="tools" size={13} /> Tools {useTools && modeSupportsTools ? 'ON' : 'OFF'}
+            <Icon name="plug" size={13} /> MCP {useMcp && modeSupportsMcp ? presetMcpServerIds(currentPreset || DEFAULT_PRESET).length : 'OFF'}
           </button>
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
@@ -2241,6 +3059,209 @@ ${finalText}`
             </label>
           </div>
         )}
+        {currentCapability === 'audio-generation' && (
+          <div className="composer__capability-settings composer__audio-generation-settings" aria-label="Audio generation settings">
+            <label className="composer__image-setting">
+              <span>Duration</span>
+              <input
+                type="number"
+                min={1}
+                max={600}
+                value={audioGenerationSettings.duration}
+                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, duration: Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)) }))}
+                disabled={isBusy}
+              />
+              <small>s</small>
+            </label>
+            <label className="composer__image-setting">
+              <span>Steps</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={audioGenerationSettings.steps}
+                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) }))}
+                disabled={isBusy}
+              />
+            </label>
+            {!isAceStepAudio && (
+              <label className="composer__image-setting">
+                <span>CFG</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={30}
+                  step={0.5}
+                  value={audioGenerationSettings.cfg}
+                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, cfg: Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)) }))}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
+            <label className="composer__image-setting">
+              <span>Seed</span>
+              <input
+                type="number"
+                min={-1}
+                value={audioGenerationSettings.seed}
+                placeholder="-1"
+                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
+                disabled={isBusy}
+              />
+            </label>
+            {isAceStepAudio && (
+              <label className="composer__image-setting composer__image-setting--language">
+                <span>Lyrics language</span>
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={audioGenerationSettings.vocalLanguage}
+                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, vocalLanguage: e.target.value }))}
+                  placeholder="en"
+                  disabled={isBusy}
+                />
+              </label>
+            )}
+            {isAceStepAudio && (
+              <label className="composer__audio-lyrics">
+                <span>Lyrics <small>optional · leave empty for instrumental</small></span>
+                <textarea
+                  value={audioGenerationSettings.lyrics}
+                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
+                  placeholder={'[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…'}
+                  rows={3}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
+          </div>
+        )}
+        {currentCapability === 'tts' && isOpenMossTts && (
+          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
+            <label className="composer__image-setting composer__image-setting--mode">
+              <span>Voice mode</span>
+              <select
+                value={openMossSettings.mode}
+                onChange={event => {
+                  const mode = event.target.value as OpenMossMode;
+                  setOpenMossSettings(previous => ({ ...previous, mode }));
+                  if (mode !== 'clone') setPendingAudioFiles([]);
+                }}
+                disabled={isBusy}
+              >
+                <option value="plain">Plain</option>
+                <option value="describe">Describe voice</option>
+                <option value="clone">Clone WAV sample</option>
+              </select>
+            </label>
+            <label className="composer__openmoss-description">
+              <span>
+                {openMossSettings.mode === 'describe'
+                  ? 'Voice description'
+                  : openMossSettings.mode === 'clone'
+                    ? 'Style note'
+                    : 'Voice style'}
+                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
+              </span>
+              <input
+                type="text"
+                value={openMossSettings.voiceDescription}
+                onChange={event => setOpenMossSettings(previous => ({ ...previous, voiceDescription: event.target.value }))}
+                placeholder={openMossSettings.mode === 'describe'
+                  ? 'Warm low female voice, British accent…'
+                  : openMossSettings.mode === 'clone'
+                    ? 'Calm, conversational delivery…'
+                    : 'Cheerful, whispering, dramatic…'}
+                disabled={isBusy}
+              />
+            </label>
+            <div
+              className={`composer__openmoss-status${openMossDescribeUnavailable || (openMossSettings.mode === 'clone' && !openMossCloneModel) ? ' composer__openmoss-status--error' : ''}`}
+              role="status"
+              aria-live="polite"
+            >
+              {openMossSettings.mode === 'describe'
+                ? openMossDescribeUnavailable
+                  ? 'Install MOSS-VoiceGen to enable described voices.'
+                  : openMossCloneModel
+                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
+                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
+                : openMossSettings.mode === 'clone'
+                  ? !openMossCloneModel
+                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
+                    : pendingAudioFiles.length > 0
+                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
+                      : 'Attach one WAV voice sample with the paperclip below.'
+                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
+            </div>
+          </div>
+        )}
+        {currentCapability === 'model3d' && (
+          <div className="composer__capability-settings composer__model3d-settings" aria-label="3D generation settings">
+            <label className="composer__image-setting composer__image-setting--mode">
+              <span>Source</span>
+              <select
+                value={model3dSettings.sourceMode}
+                onChange={e => {
+                  const sourceMode = e.target.value as Model3DSourceMode;
+                  setModel3dSettings(prev => ({ ...prev, sourceMode }));
+                  if (sourceMode === 'text') setPendingImages([]);
+                }}
+                disabled={isBusy}
+              >
+                <option value="image">Image → 3D</option>
+                <option value="text">Text → image → 3D</option>
+              </select>
+            </label>
+            {model3dSettings.sourceMode === 'text' && (
+              <label className="composer__image-setting composer__image-setting--model">
+                <span>Image model</span>
+                <select
+                  value={model3dSettings.imageModel}
+                  onChange={e => setModel3dSettings(prev => ({ ...prev, imageModel: e.target.value }))}
+                  disabled={isBusy || imageGenerationModels.length === 0}
+                >
+                  {imageGenerationModels.length === 0 && <option value="">Download an image model first</option>}
+                  {imageGenerationModels.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+            )}
+            <label className="composer__image-setting">
+              <span>Resolution</span>
+              <select
+                value={model3dSettings.resolution}
+                onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
+                disabled={isBusy}
+              >
+                <option value={512}>512 · fast</option>
+                <option value={1024}>1024 · sharp</option>
+                <option value={1536}>1536 · heavy</option>
+              </select>
+            </label>
+            <label className="composer__image-setting">
+              <span>Background</span>
+              <select
+                value={model3dSettings.backgroundRemoval}
+                onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
+                disabled={isBusy}
+              >
+                <option value="birefnet">Auto matte</option>
+                <option value="threshold">Plain background</option>
+              </select>
+            </label>
+            <label className="composer__image-setting">
+              <span>Seed</span>
+              <input
+                type="number"
+                min={-1}
+                value={model3dSettings.seed}
+                placeholder="-1"
+                onChange={e => setModel3dSettings(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
+                disabled={isBusy}
+              />
+            </label>
+          </div>
+        )}
         {pendingImages.length > 0 && (
           <div className="composer__images">
             {pendingImages.map((src, i) => (
@@ -2277,9 +3298,21 @@ ${finalText}`
           <button
             className="composer__attach"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!canAttach || !currentModel || isBusy || pendingImages.length >= MAX_IMAGES}
-            title={canUseAudioInput ? 'Attach image or audio' : 'Attach image'}
-            aria-label={canUseAudioInput ? 'Attach image or audio' : 'Attach image'}
+            disabled={!canAttach || !currentModel || isBusy || (!isOpenMossCloneMode && pendingImages.length >= MAX_IMAGES)}
+            title={isOpenMossCloneMode
+              ? 'Attach WAV voice sample'
+              : currentCapability === 'model3d'
+                ? 'Attach reference image'
+                : canUseAudioInput
+                  ? 'Attach image or audio'
+                  : 'Attach image'}
+            aria-label={isOpenMossCloneMode
+              ? 'Attach WAV voice sample'
+              : currentCapability === 'model3d'
+                ? 'Attach reference image'
+                : canUseAudioInput
+                  ? 'Attach image or audio'
+                  : 'Attach image'}
           >
             <Icon name="paperclip" size={16} />
           </button>
@@ -2287,7 +3320,7 @@ ${finalText}`
             ref={fileInputRef}
             type="file"
             accept={fileAccept}
-            multiple={!(currentCapability === 'audio' && !modeSupportsChatCompletions) && !(currentCapability === 'image' && imageMode === 'edit')}
+            multiple={!isOpenMossCloneMode && !(currentCapability === 'audio' && !modeSupportsChatCompletions) && !(currentCapability === 'image' && imageMode === 'edit') && currentCapability !== 'model3d'}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
@@ -2356,7 +3389,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
       <p className="hero__subtitle">
         {loadedModels.length > 0
           ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
-          : 'Connect to a server and load a chat, omni, image, audio, or TTS model to begin.'}
+          : 'Connect to a server and load a chat, omni, image, audio, TTS, or 3D model to begin.'}
       </p>
 
       <div className="chips" role="list">
@@ -2389,7 +3422,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
           {loadedModels.map(m => {
             const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
             const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'tts'].includes(cap);
+            const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
+            const modeLabel = modelModeLabel(cap, audioInput);
+            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
             const isActive = currentModel === m.model_name;
             return (
               <div className="active-card" key={m.model_name}>
@@ -2404,13 +3439,13 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                   <span className="active-card__device">{m.device || 'device unknown'}</span>
                 </div>
                 <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><CapabilityIcon capability={cap} size={13} /> {capabilityLabel(cap)}</span>
+                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><ModelModeIcons capability={cap} audioInput={audioInput} size={13} /> {modeLabel}</span>
                 </div>
                 {isActive ? (
-                  <span className="active-card__status">● Active {capabilityLabel(cap)} mode</span>
+                  <span className="active-card__status">● Active {modeLabel} mode</span>
                 ) : selectable ? (
                   <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                    Use in {capabilityLabel(cap)} mode ▸
+                    Use in {modeLabel} mode ▸
                   </button>
                 ) : (
                   <span className="active-card__status active-card__status--muted">Utility model only</span>
@@ -2514,8 +3549,8 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
-  const [thinkingOpen, setThinkingOpen] = useState(false);
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+  const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
 
@@ -2613,7 +3648,19 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         {message.audioUrl && (
           <div className="message__audio">
             <audio controls src={message.audioUrl}>Your browser does not support audio playback.</audio>
+            <a
+              href={message.audioUrl}
+              download={(message.audioName || `${displayModel?.name || 'lemonade-audio'}.wav`).replace(/[^a-z0-9._-]+/gi, '-')}
+              className="message__action message__audio-download"
+            >
+              <Icon name="download" size={13} /> Download audio
+            </a>
           </div>
+        )}
+        {message.model3dUrl && (
+          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">Preparing 3D result…</div>}>
+            <Model3DResult src={message.model3dUrl} name={message.model3dName || displayModel?.name} />
+          </Suspense>
         )}
         {message.stats && (
           <div className="message__metrics">

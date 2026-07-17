@@ -23,6 +23,7 @@
     "highlight.js": "^11.11.1",
     "html-webpack-plugin": "^5.6.4",
     "katex": "^0.16.25",
+    "lucide-react": "1.25.0",
     "markdown-it": "^14.1.0",
     "markdown-it-texmath": "^1.0.0",
     "react": "^19.2.0",
@@ -35,6 +36,7 @@
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.4.7",
     "mermaid": "^11.15.0",
+    "react-icons": "5.7.0",
     "recharts": "^3.8.1"
   },
   "overrides": {
