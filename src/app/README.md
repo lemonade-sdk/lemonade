@@ -1,8 +1,8 @@
 # Lemonade UI Redesign Prototype
 
-A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation Lemonade UI. This prototype is built side-by-side with the existing `src/app/` and `src/web-app/` in the main codebase and now runs **real-server-first** against `lemond` at `http://localhost:13305` by default. It is designed to work both as a web app and as a desktop Tauri application — a single React codebase powering both delivery channels.
+GUI3 is the **React 19 + TypeScript + webpack** frontend integrated under `src/app/`. It runs **real-server-first** against `lemond` at `http://localhost:13305` by default and powers both the browser-delivered web app and the Tauri desktop application from one React codebase.
 
-**Not production code** — this is an active design and engineering POC on branch `feat/ui-testing`. See [`.squad/decisions.md`](../../.squad/decisions.md) for the design rationale and capability-keyed presets architecture (v1.4).
+**Beta status:** GUI3 is frozen for beta stabilization on `GUI3_merging`. New work should be limited to release-blocking fixes and integration updates. See [`docs/PRESETS_REDESIGN.md`](docs/PRESETS_REDESIGN.md) for the capability-keyed preset architecture.
 
 ## Prerequisites
 
@@ -190,14 +190,14 @@ Playwright waits up to 60 seconds by default (see `playwright.config.ts`). `npm 
 
 ## Next Steps
 
-To integrate this prototype into the main codebase:
+For beta stabilization and final integration:
 
-1. Coordinate with Kyle and the team on the next milestone (web app only vs. Tauri desktop first)
-2. Move approved UI components to `src/web-app/` or `src/app/` as appropriate
-3. Keep API calls aligned with the finalized `/api/v1/...` server contract and add route-level mocks only for deterministic tests
-4. Update the main `CMakeLists.txt` build targets and Web app webpack if needed
+1. Keep changes scoped to release-blocking fixes.
+2. Merge current `main` into `GUI3_merging` when synchronization is required.
+3. Keep API calls aligned with the finalized `/api/v1/...` server contract.
+4. Validate both npm-based desktop builds and distro system-module web builds.
 
-See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/mattingly/history.md`](../../.squad/agents/mattingly/history.md) for the full decision trail and learnings.
+See [`docs/PRESETS_REDESIGN.md`](docs/PRESETS_REDESIGN.md), [`docs/UPDATE_PRESET_CONTRACT.md`](docs/UPDATE_PRESET_CONTRACT.md), and [`docs/CLIENT_MCP.md`](docs/CLIENT_MCP.md) for the current design and runtime contracts.
 
 ### Follow-up fixes in this prototype package
 

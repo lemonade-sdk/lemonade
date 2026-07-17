@@ -1,99 +1,15 @@
 import React from 'react';
-import {
-  ArrowUp,
-  AudioLines,
-  BookOpen,
-  Box,
-  Brain,
-  BrainCircuit,
-  BrainCog,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  Citrus,
-  CircleOff,
-  Clock,
-  Cloud,
-  CloudOff,
-  Code2,
-  Compass,
-  Copy,
-  Cpu,
-  Crosshair,
-  Download,
-  Expand,
-  Eye,
-  EyeOff,
-  File,
-  Flame,
-  Funnel,
-  Gauge,
-  Gem,
-  Globe,
-  HardDrive,
-  Image,
-  Info,
-  Layers3,
-  Library,
-  Lightbulb,
-  List,
-  ListFilter,
-  Maximize2,
-  Menu,
-  MessageCircle,
-  Mic,
-  Minimize2,
-  Moon,
-  Network,
-  Newspaper,
-  PanelTop,
-  Paperclip,
-  Pause,
-  PenLine,
-  Pencil,
-  Pin,
-  Play,
-  Plug,
-  Plus,
-  Rocket,
-  RotateCcw,
-  Router,
-  Scale,
-  ScanEye,
-  ScanText,
-  Search,
-  SearchCheck,
-  Settings,
-  SlidersHorizontal,
-  Sparkles,
-  Speech,
-  Square,
-  SquareTerminal,
-  Star,
-  Sun,
-  Thermometer,
-  Timer,
-  Trash2,
-  TriangleAlert,
-  UserRoundCog,
-  Volume2,
-  Wrench,
-  WrenchOff,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import type { IconType } from 'react-icons';
-import { SiDiscord, SiGithub, SiHuggingface } from 'react-icons/si';
 import { ModelCapability } from '../modelCapabilities';
 import type { Preset } from '../presetStore';
 import { presetIconName } from '../presetStore';
+import { LOCAL_ICON_DEFINITIONS, LocalIcon } from './localIcons';
 
 /**
  * Central icon registry.
  *
- * Do not add hand-authored SVG paths here. Product UI icons belong in
- * lucide-react; third-party brand marks belong in react-icons/si.
+ * Icon geometry is vendored locally so npm-based desktop builds and distro
+ * system-module builds render the same GUI3 icons without requiring
+ * lucide-react or react-icons at package-build time.
  */
 
 export type IconName =
@@ -116,140 +32,24 @@ interface IconProps {
   title?: string;
 }
 
-type BrandIconName = 'hugging-face' | 'github' | 'discord';
-type LucideIconName = Exclude<IconName, BrandIconName>;
-
-const LUCIDE_ICONS: Record<LucideIconName, LucideIcon> = {
-  sun: Sun,
-  moon: Moon,
-  paperclip: Paperclip,
-  mic: Mic,
-  send: ArrowUp,
-  stop: Square,
-  copy: Copy,
-  check: Check,
-  x: X,
-  tools: Wrench,
-  chat: MessageCircle,
-  omni: Sparkles,
-  image: Image,
-  audio: AudioLines,
-  tts: Volume2,
-  embedding: Network,
-  reranking: ListFilter,
-  model: Cpu,
-  globe: Globe,
-  file: File,
-  code: Code2,
-  vision: Eye,
-  logs: List,
-  search: Search,
-  'search-check': SearchCheck,
-  eye: Eye,
-  'eye-off': EyeOff,
-  plus: Plus,
-  edit: Pencil,
-  download: Download,
-  play: Play,
-  pause: Pause,
-  trash: Trash2,
-  'rotate-ccw': RotateCcw,
-  'chevron-down': ChevronDown,
-  'chevron-up': ChevronUp,
-  'chevron-right': ChevronRight,
-  plug: Plug,
-  box: Box,
-  alert: TriangleAlert,
-  clock: Clock,
-  citrus: Citrus,
-  scale: Scale,
-  'scan-eye': ScanEye,
-  gem: Gem,
-  gauge: Gauge,
-  timer: Timer,
-  'pen-line': PenLine,
-  library: Library,
-  'hard-drive': HardDrive,
-  'sliders-horizontal': SlidersHorizontal,
-  flame: Flame,
-  wrench: Wrench,
-  brain: Brain,
-  rocket: Rocket,
-  pin: Pin,
-  star: Star,
-  cloud: Cloud,
-  'cloud-off': CloudOff,
-  'user-round-cog': UserRoundCog,
-  router: Router,
-  speech: Speech,
-  'book-open': BookOpen,
-  newspaper: Newspaper,
-  funnel: Funnel,
-  info: Info,
-  thermometer: Thermometer,
-  crosshair: Crosshair,
-  compass: Compass,
-  lightbulb: Lightbulb,
-  'scan-text': ScanText,
-  'minimize-2': Minimize2,
-  'panel-top': PanelTop,
-  expand: Expand,
-  'maximize-2': Maximize2,
-  // Lucide currently has no BrainOff glyph; CircleOff preserves the disabled
-  // meaning without introducing a hand-authored composite SVG.
-  'brain-off': CircleOff,
-  'brain-cog': BrainCog,
-  'brain-circuit': BrainCircuit,
-  'wrench-off': WrenchOff,
-  'terminal-square': SquareTerminal,
-  settings: Settings,
-  layers: Layers3,
-  menu: Menu,
-};
-
-const BRAND_ICONS: Record<BrandIconName, IconType> = {
-  'hugging-face': SiHuggingface,
-  github: SiGithub,
-  discord: SiDiscord,
-};
-
 const iconClassName = (className?: string): string =>
   ['app-icon', className].filter(Boolean).join(' ');
 
-function isBrandIcon(name: IconName): name is BrandIconName {
-  return name === 'hugging-face' || name === 'github' || name === 'discord';
-}
-
 export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title }) => {
-  const sharedProps = {
-    className: iconClassName(className),
-    'data-icon': name,
-    'aria-hidden': title ? undefined : true,
-    'aria-label': title,
-    role: title ? 'img' : undefined,
-    focusable: false,
-    title,
-  } as const;
+  const definition = LOCAL_ICON_DEFINITIONS[name];
 
-  if (isBrandIcon(name)) {
-    const BrandIcon = BRAND_ICONS[name];
-    return (
-      <BrandIcon
-        {...sharedProps}
-        data-icon-library="simple-icons"
-        size={size}
-      />
-    );
+  if (!definition) {
+    return null;
   }
 
-  const LucideComponent = LUCIDE_ICONS[name];
   return (
-    <LucideComponent
-      {...sharedProps}
-      data-icon-library="lucide"
+    <LocalIcon
+      definition={definition}
       size={size}
-      strokeWidth={1.0}
-      absoluteStrokeWidth
+      className={iconClassName(className)}
+      title={title}
+      data-icon={name}
+      data-icon-library={definition.brand ? 'simple-icons' : 'lucide'}
     />
   );
 };

@@ -35,6 +35,29 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Generate the per-client session identifier using a cryptographically secure
+ * source on every supported browser/WebView. randomUUID is preferred, while
+ * getRandomValues provides a standards-compliant UUID v4 fallback.
+ */
+export function createSecureClientSessionId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (!cryptoApi || typeof cryptoApi.getRandomValues !== 'function') {
+    throw new Error('Secure random number generation is unavailable.');
+  }
+  if (typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  cryptoApi.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) throw new Error('Server URL is required.');
@@ -644,9 +667,7 @@ class LemonadeAPI {
   private _sessionAdminApiKey = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
-  public readonly clientSessionId: string = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    ? crypto.randomUUID()
-    : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  public readonly clientSessionId: string = createSecureClientSessionId();
   public sessionHeadersEnabled = false;
   public onSessionHeadersFailed?: () => void;
 
