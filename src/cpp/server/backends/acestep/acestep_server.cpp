@@ -187,8 +187,12 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
                             std::string& result, std::string& error) {
     const std::string stage = path.substr(1);
     const std::string base = get_base_url();
-    auto submit = utils::HttpClient::post(base + path, body,
-                                          {{"Content-Type", "application/json"}}, 60);
+    auto submit = utils::HttpClient::post(
+        base + path,
+        body,
+        {{"Content-Type", "application/json"}},
+        60,
+        utils::HttpSecurityPolicy::TrustedLoopback);
     if (submit.status_code != 200) {
         LOG(ERROR, "acestep-server") << stage << " submit failed (HTTP " << submit.status_code
                                      << "): " << submit.body << std::endl;
