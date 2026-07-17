@@ -22,8 +22,8 @@ def test_lemon_mlx_static_integration_contract():
     assert '/*bin_variants*/    {"metal", "rocm", "cpu"}' in descriptor
 
     versions = json.loads(_read("src/cpp/resources/backend_versions.json"))
-    assert set(versions["lemon-mlx"]) == {"metal", "rocm", "cpu"}
-    assert all(versions["lemon-mlx"][backend] for backend in ("metal", "rocm", "cpu"))
+    assert set(versions["lemon-mlx"]) == {"metal", "rocm-stable", "cpu"}
+    assert all(versions["lemon-mlx"][backend] for backend in ("metal", "rocm-stable", "cpu"))
 
     defaults = json.loads(_read("src/cpp/resources/defaults.json"))
     assert defaults["lemon-mlx"]["backend"] == "auto"
