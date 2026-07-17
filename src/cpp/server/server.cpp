@@ -2185,7 +2185,6 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
-        {"source", info.source.empty() ? info.registry_source : info.source},
         {"registry_source", info.registry_source},
         {"labels", info.labels},
         {"components", public_components},

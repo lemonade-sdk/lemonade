@@ -519,12 +519,6 @@ static bool iequals(const std::string& a, const std::string& b) {
         [](char c1, char c2) { return std::tolower(c1) == std::tolower(c2); });
 }
 
-static bool icontains(const std::string& haystack, const std::string& needle) {
-    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-        [](char c1, char c2) { return std::tolower(c1) == std::tolower(c2); });
-    return it != haystack.end();
-}
-
 static bool device_matches(const std::string& m_device, const std::string& f_device) {
     std::stringstream ss(m_device);
     std::string token;
