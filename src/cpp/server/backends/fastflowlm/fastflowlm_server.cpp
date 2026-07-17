@@ -268,7 +268,8 @@ bool FastFlowLMServer::wait_for_ready() {
             return false;
         }
 
-        if (utils::HttpClient::is_reachable(tags_url, 1)) {
+        if (utils::HttpClient::is_reachable(
+                tags_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
             LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
             start_backend_watchdog("/api/tags");
             return true;
