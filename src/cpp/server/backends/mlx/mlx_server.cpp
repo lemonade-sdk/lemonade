@@ -1264,9 +1264,16 @@ void MlxServer::load(const std::string& model_name,
             << "Configured ROCm runtime root for lemon-mlx: "
             << rocm_root << std::endl;
     } else if (backend == "cpu") {
-        std::vector<fs::path> lib_paths;
-        append_path(lib_paths, executable_dir);
-        env_vars.push_back({"LD_LIBRARY_PATH", join_paths(lib_paths, std::getenv("LD_LIBRARY_PATH"))});
+        // CPU mode: explicitly exclude any system ROCm paths from
+        // LD_LIBRARY_PATH so the CPU lemon-mlx-engine binary does not
+        // accidentally load HIP libraries and fail with:
+        //   "[hip_kernel] No ROCm back-end"
+        // The existing environment may carry /opt/rocm or TheRock paths
+        // inherited from the Lemonade process; CPU must isolate from them.
+        env_vars.push_back({"LD_LIBRARY_PATH", executable_dir.string()});
+        env_vars.push_back({"ROCM_PATH", "/dev/null"});
+        env_vars.push_back({"HIP_PATH", "/dev/null"});
+        env_vars.push_back({"HIP_VISIBLE_DEVICES", ""});
         env_vars.push_back({"MLX_DISABLE_COMPILE", "1"});
         LOG(DEBUG, kLog) << "Configured CPU runtime environment for lemon-mlx" << std::endl;
     }
