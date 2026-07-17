@@ -810,6 +810,7 @@ jobs:
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "mac unsigned streaming-errors"
           echo "Running streaming error termination tests..."
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
+          .venv/bin/python test/test_gpu_hang_retry.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
       - name: Restart server before whisper Metal tests (unsigned path)
@@ -2273,6 +2274,7 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
             echo "Running streaming error termination tests..."
             $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+            $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
           fi
           echo "${{ matrix.test_type }} tests PASSED!"
 
@@ -2432,6 +2434,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} streaming-errors"
           $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
