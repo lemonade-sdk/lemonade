@@ -1382,6 +1382,25 @@ footer {
     min-width: 0;
 }
 
+.registry-result-source-badge {
+    flex-shrink: 0;
+    min-width: 18px;
+    padding: 1px 4px;
+    border: 1px solid var(--border-alpha-08);
+    border-radius: 3px;
+    background: var(--bg-alpha-04);
+    color: var(--text-quaternary);
+    font-size: 0.5rem;
+    line-height: 1.1;
+    text-align: center;
+    letter-spacing: 0.25px;
+}
+
+.registry-result-source-badge.modelscope {
+    color: var(--text-secondary);
+    border-color: var(--border-alpha-1);
+}
+
 .hf-model-meta {
     font-size: 0.6rem;
     color: var(--color-5);
@@ -7873,4 +7892,33 @@ input::-webkit-calendar-picker-indicator {
 
 [data-theme="light"] .audio-duration-label input {
   color-scheme: light;
+}
+
+/* Registry search providers share one widget. Each provider owns a bounded
+ * result viewport so a long Hugging Face list can never push ModelScope out of
+ * sight. The rows remain fully available through the provider-local scrollbar. */
+.registry-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.registry-provider-group {
+    min-width: 0;
+}
+
+.registry-provider-group + .registry-provider-group {
+    padding-top: 8px;
+    border-top: 1px solid var(--border-alpha-05);
+}
+
+.registry-provider-header {
+    margin-bottom: 3px;
+}
+
+.registry-provider-results {
+    max-height: 168px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }

@@ -8,6 +8,7 @@
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
+#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -598,7 +599,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
+    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
+    //   require no authentication. The MCP process-launch surface is deliberately
+    //   fail-closed and requires an explicitly configured admin key.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -617,7 +620,23 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
+    const bool is_mcp_internal_route =
+        req.path == "/internal/mcp" ||
+        req.path.rfind("/internal/mcp/", 0) == 0;
+
     if (is_internal_route) {
+        // MCP server registration can launch arbitrary local processes. Do not
+        // expose that capability on a keyless server, even on loopback: permissive
+        // CORS would otherwise let an unrelated web page drive these endpoints.
+        // Apply this to OPTIONS as well so a browser preflight fails closed.
+        if (is_mcp_internal_route && admin_api_key_.empty()) {
+            res.status = 403;
+            res.set_content(
+                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
+                "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -826,6 +845,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_pull(req, res);
     });
 
+    register_get("registry/search", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_registry_search(req, res);
+    });
+
     register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull_variants(req, res);
     });
@@ -924,6 +947,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
     });
+
+    // Server-side MCP client host foundation (admin-gated through the existing
+    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
+    // endpoints via the normal Lemonade server connection.
+    register_mcp_client_routes(web_server, cache_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -1524,9 +1552,10 @@ void Server::run() {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
-                   "control endpoints, are reachable from other machines "
-                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
-                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
+                   "control endpoints and the /internal/mcp/* process-launch endpoints, "
+                   "are reachable from other machines unauthenticated. Set "
+                   "LEMONADE_API_KEY to secure all endpoints; LEMONADE_ADMIN_API_KEY "
+                   "on its own only secures the /internal/* "
                    "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
@@ -4565,6 +4594,111 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_registry_search(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::string query = req.has_param("query")
+            ? req.get_param_value("query")
+            : (req.has_param("q") ? req.get_param_value("q") : "");
+        const auto first = query.find_first_not_of(" \t\r\n");
+        const auto last = query.find_last_not_of(" \t\r\n");
+        query = first == std::string::npos ? "" : query.substr(first, last - first + 1);
+        if (query.size() < 3) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Query parameter 'query' must contain at least 3 characters"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        const std::string source_text = req.has_param("source")
+            ? req.get_param_value("source") : "huggingface";
+        const auto source = parse_remote_registry_source(source_text);
+
+        std::size_t limit = 12;
+        if (req.has_param("limit")) {
+            const std::string limit_text = req.get_param_value("limit");
+            std::size_t parsed = 0;
+            try {
+                std::size_t consumed = 0;
+                parsed = static_cast<std::size_t>(std::stoul(limit_text, &consumed));
+                if (consumed != limit_text.size()) throw std::invalid_argument("trailing characters");
+            } catch (...) {
+                throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+            }
+            if (parsed < 1 || parsed > 50) {
+                throw std::invalid_argument("Query parameter 'limit' must be an integer from 1 to 50");
+            }
+            limit = parsed;
+        }
+
+        bool gguf_only = false;
+        if (req.has_param("format")) {
+            const std::string format = req.get_param_value("format");
+            if (format != "gguf") {
+                throw std::invalid_argument(
+                    "Unsupported registry search format '" + format + "' (expected 'gguf')");
+            }
+            gguf_only = true;
+        }
+
+        if (config_->offline()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Lemond is in offline mode, registry search is unavailable"},
+                {"type", "invalid_request_error"},
+                {"code", "lemond_offline"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        const auto search = search_registry_models(source, query, limit, gguf_only);
+        nlohmann::json results = nlohmann::json::array();
+        for (const auto& model : search.results) {
+            results.push_back({
+                {"repository_id", model.repo_id},
+                {"display_name", model.display_name},
+                {"source", remote_registry_source_name(model.source)},
+                {"repository_type", model.repository_type},
+                {"description", model.description},
+                {"tags", model.tags},
+                {"task", model.task},
+                {"downloads", model.downloads},
+                {"likes", model.likes},
+                {"has_gguf", model.has_gguf}
+            });
+        }
+        nlohmann::json response = {
+            {"source", remote_registry_source_name(source)},
+            {"query", query},
+            {"total", search.total},
+            {"results", std::move(results)}
+        };
+        if (gguf_only) response["format"] = "gguf";
+        res.set_content(response.dump(), "application/json");
+    } catch (const RegistrySearchError& e) {
+        res.status = e.status_code() == 429 ? 429 : 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "registry_error"},
+            {"upstream_status_code", e.status_code()}
+        }}}.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_registry_search: " << e.what() << std::endl;
+        res.status = 502;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", e.what()},
+            {"type", "registry_error"}
+        }}}.dump(), "application/json");
     }
 }
 

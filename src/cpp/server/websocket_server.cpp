@@ -116,7 +116,10 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                     request_host = request_host.substr(0, r_path_pos);
                 }
 
-                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" || origin_host == "[::1]" || origin_host == "::1");
+                // tauri.localhost is the Windows WebView2 origin for the desktop app.
+                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" ||
+                                   origin_host == "[::1]" || origin_host == "::1" ||
+                                   origin_host == "tauri.localhost");
                 if (!is_allowed && !request_host.empty() && origin_host == request_host) {
                     is_allowed = true;
                 }

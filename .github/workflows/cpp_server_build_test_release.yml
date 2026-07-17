@@ -178,6 +178,19 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
+      - name: Run MCP client unit test on Windows
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Exercise the Windows-only process, quoting, environment-block, and
+          # pipe/handle paths that Linux and macOS cannot cover.
+          cmake --build build --config Release --target test_mcp_client_config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
         uses: actions/upload-artifact@v7
@@ -288,8 +301,9 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_mcp_client_config
           cd build
-          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -598,8 +612,9 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_mcp_client_config
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
