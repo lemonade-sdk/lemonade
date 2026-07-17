@@ -20,7 +20,7 @@ import concurrent.futures
 # Add test/ to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils.test_models import ENDPOINT_TEST_MODEL, get_default_lemond_binary
-from utils.server_base import parse_args, get_cli_binary
+from utils.server_base import parse_args, get_cli_binary, run_server_tests
 
 args = parse_args()
 
@@ -40,6 +40,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 state_file = {state_file_repr}
 attempt = 1
+state = {{}}
 if os.path.exists(state_file):
     try:
         with open(state_file, "r") as f:
@@ -48,9 +49,10 @@ if os.path.exists(state_file):
     except Exception as e:
         print("Failed to read state:", e)
 
+state["attempt"] = attempt
 try:
     with open(state_file, "w") as f:
-        json.dump({{"attempt": attempt}}, f)
+        json.dump(state, f)
 except Exception as e:
     print("Failed to write state:", e)
 
@@ -63,6 +65,7 @@ for i in range(len(sys.argv)):
 print(f"Mock llama-server attempt {{attempt}} starting on port {{port}}")
 
 barrier = threading.Barrier(2)
+state_lock = threading.Lock()
 
 class MockLlamaServer(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -70,11 +73,25 @@ class MockLlamaServer(BaseHTTPRequestHandler):
         body = self.rfile.read(content_length)
 
         if attempt == 1:
-            # Synchronize concurrent requests on the first attempt
-            try:
-                barrier.wait(timeout=2.0)
-            except threading.BrokenBarrierError:
-                pass
+            with state_lock:
+                try:
+                    if os.path.exists(state_file):
+                        with open(state_file, "r") as f:
+                            state = json.load(f)
+                    else:
+                        state = {{}}
+                    state["attempt_1_requests"] = state.get("attempt_1_requests", 0) + 1
+                    with open(state_file, "w") as f:
+                        json.dump(state, f)
+                except Exception as e:
+                    print("Failed to update state with request count:", e)
+
+            if b"concurrent-test" in body:
+                # Synchronize concurrent requests on the first attempt
+                try:
+                    barrier.wait(timeout=2.0)
+                except threading.BrokenBarrierError:
+                    pass
 
             # First attempt: return GPU hang / compute error
             resp = {{"error": {{"code": 500, "message": "Compute error.", "type": "server_error"}}}}
@@ -277,6 +294,16 @@ class TestGpuHangRecovery(unittest.TestCase):
                 pass
         return 0
 
+    def _get_attempt_1_requests(self):
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r") as f:
+                    state = json.load(f)
+                    return state.get("attempt_1_requests", 0)
+            except Exception:
+                pass
+        return 0
+
     def test_non_streaming_gpu_hang_recovery(self):
         """Test that a non-streaming GPU Hang/Compute Error triggers a reload and transparent retry."""
         self._reset_attempt_count()
@@ -397,7 +424,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         print("Sending concurrent chat completion requests...")
         payload = {
             "model": ENDPOINT_TEST_MODEL,
-            "messages": [{"role": "user", "content": "Hello!"}],
+            "messages": [{"role": "user", "content": "concurrent-test"}],
             "stream": False,
         }
 
@@ -435,8 +462,16 @@ class TestGpuHangRecovery(unittest.TestCase):
             2,
             f"Expected exactly 2 starts (1 initial + 1 reload), but got {attempts}",
         )
+
+        # Verify that both concurrent requests were handled by attempt 1
+        attempt_1_reqs = self._get_attempt_1_requests()
+        self.assertEqual(
+            attempt_1_reqs,
+            2,
+            f"Expected exactly 2 requests to hit attempt 1, but got {attempt_1_reqs}",
+        )
         print("[PASS] Concurrent GPU Hang recovery succeeded!")
 
 
 if __name__ == "__main__":
-    unittest.main()
+    run_server_tests(TestGpuHangRecovery, "GPU HANG / COMPUTE ERROR RECOVERY TESTS")
