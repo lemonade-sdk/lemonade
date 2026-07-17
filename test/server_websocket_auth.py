@@ -239,6 +239,44 @@ class WebSocketAuthTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    # --- origin -------------------------------------------------------------
+
+    def test_009_tauri_windows_origin_accepted(self):
+        """The Windows Tauri WebView2 origin (http://tauri.localhost) upgrades."""
+
+        async def run():
+            uri = f"ws://localhost:{self.port}/logs/stream"
+            async with websockets.connect(
+                uri,
+                subprotocols=auth_subprotocols(API_KEY),
+                origin="http://tauri.localhost",
+            ) as ws:
+                await ws.send(json.dumps({"type": "logs.subscribe", "after_seq": None}))
+                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                self.assertEqual(msg.get("type"), "logs.snapshot")
+
+        asyncio.run(run())
+
+    def test_010_foreign_origin_rejected(self):
+        """A cross-site browser origin is rejected even with valid credentials."""
+
+        async def run():
+            uri = f"ws://localhost:{self.port}/logs/stream"
+            with self.assertRaises(
+                (
+                    websockets.exceptions.InvalidStatus,
+                    websockets.exceptions.InvalidHandshake,
+                )
+            ):
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin="http://evil.example.com",
+                ):
+                    pass
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
 import { COLLECTION_OMNI_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
+export type ModelRegistrySource = 'huggingface' | 'modelscope';
+
 export interface AddModelInitialValues {
   name: string;
   checkpoint: string;
   recipe: string;
+  source?: ModelRegistrySource;
   checkpoints?: Record<string, string>;
   mmprojOptions?: string[];
   labels?: string[];
@@ -18,6 +21,7 @@ export interface ModelInstallData {
   name: string;
   checkpoint: string;
   recipe: string;
+  source: ModelRegistrySource;
   checkpoints?: Record<string, string>;
   mmproj?: string;
   labels?: string[];
@@ -84,10 +88,25 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
 
 const getRecipeExample = (recipe: string): RecipeExample => RECIPE_EXAMPLES[recipe] ?? RECIPE_EXAMPLES.llamacpp;
 
-const createEmptyForm = (initial?: AddModelInitialValues) => ({
+type AddModelFormState = {
+  name: string;
+  checkpoint: string;
+  recipe: string;
+  source: ModelRegistrySource;
+  textEncoderCheckpoint: string;
+  vaeCheckpoint: string;
+  mmproj: string;
+  reasoning: boolean;
+  vision: boolean;
+  embedding: boolean;
+  reranking: boolean;
+};
+
+const createEmptyForm = (initial?: AddModelInitialValues): AddModelFormState => ({
   name: initial?.name ?? '',
   checkpoint: initial?.checkpoint ?? initial?.checkpoints?.main ?? '',
   recipe: initial?.recipe ?? 'llamacpp',
+  source: initial?.source ?? 'huggingface',
   textEncoderCheckpoint: initial?.checkpoints?.text_encoder ?? '',
   vaeCheckpoint: initial?.checkpoints?.vae ?? '',
   mmproj: '',
@@ -131,7 +150,9 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     setError(null);
   }, [initialValues]);
 
-  const handleChange = (field: string, value: string | boolean) => {
+  const handleChange = <K extends keyof AddModelFormState>(
+    field: K, value: AddModelFormState[K]
+  ) => {
     setForm(prev => ({ ...prev, [field]: value }));
     setError(null);
   };
@@ -140,6 +161,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     const name = form.name.trim();
     const checkpoint = form.checkpoint.trim();
     const recipe = form.recipe.trim();
+    const source = form.source;
     const textEncoderCheckpoint = form.textEncoderCheckpoint.trim();
     const vaeCheckpoint = form.vaeCheckpoint.trim();
     const hasSdComponents = Boolean(textEncoderCheckpoint || vaeCheckpoint);
@@ -157,7 +179,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
     if (recipe === 'sd-cpp' && !hasRepoRelativeFilePath(checkpoint)) {
-      setError('StableDiffusion.cpp checkpoints must include the full file path relative to the Hugging Face repo, for example repo/model:path/to/model.safetensors or repo/model:path/to/model.gguf.');
+      setError('StableDiffusion.cpp checkpoints must include the full file path relative to the selected registry repo, for example repo/model:path/to/model.safetensors or repo/model:path/to/model.gguf.');
       return;
     }
     if (recipe !== 'sd-cpp' && isGgufCheckpoint(checkpoint) && !checkpoint.includes(':')) {
@@ -165,7 +187,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
     if (recipe === 'vllm' && isGgufCheckpoint(checkpoint)) {
-      setError('vLLM checkpoints should use a Hugging Face model repo, not a GGUF file or GGUF repo.');
+      setError('vLLM checkpoints should use a model repository, not a GGUF file or GGUF repo.');
       return;
     }
     if (recipe === 'sd-cpp' && hasSdComponents && (!textEncoderCheckpoint || !vaeCheckpoint)) {
@@ -182,6 +204,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     onInstall({
       name,
       checkpoint,
+      source,
       checkpoints: recipe === 'sd-cpp' && hasSdComponents
         ? { main: checkpoint, text_encoder: textEncoderCheckpoint, vae: vaeCheckpoint }
         : undefined,
@@ -263,13 +286,30 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
         </div>
 
         <div className="form-section">
+          <label className="form-label" title="Remote registry used for downloads, variants, caching, and update checks">
+            Model source
+          </label>
+          <select
+            className="form-input form-select"
+            value={form.source}
+            onChange={(e) => handleChange('source', e.target.value as ModelRegistrySource)}
+          >
+            <option value="huggingface">Hugging Face</option>
+            <option value="modelscope">ModelScope</option>
+          </select>
+          <span className="settings-description">
+            Lemonade stores this source with the model so future updates use the same registry.
+          </span>
+        </div>
+
+        <div className="form-section">
           <label
             className="form-label"
             title={isSdCpp
-              ? 'Hugging Face repo and exact model file path relative to the repo'
+              ? 'Repository and exact model file path relative to the selected registry'
               : form.recipe === 'vllm'
-                ? 'Hugging Face model repository for vLLM; do not use GGUF checkpoints'
-                : 'Hugging Face model path, for example repo/model or repo/model:variant'}
+                ? 'Model repository for vLLM; do not use GGUF checkpoints'
+                : 'Registry model path, for example repo/model or repo/model:variant'}
           >
             {isSdCpp ? 'Main checkpoint' : 'Checkpoint'}
           </label>

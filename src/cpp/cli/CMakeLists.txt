@@ -93,6 +93,10 @@ set(COMMON_SOURCES
     ../server/utils/path_utils.cpp
     ../server/utils/json_utils.cpp
     ../server/utils/http_client.cpp
+    # recipe_import.cpp persists and validates remote registry provenance.
+    # Compile the provider implementation into the standalone CLI as well; the
+    # CLI does not link lemonade-server-core, where this source is otherwise built.
+    ../server/model_registry.cpp
     agent_launcher.cpp
     agent_config_file.cpp
     opencode_profile.cpp
@@ -117,7 +121,7 @@ elseif(APPLE)
 elseif(UNIX)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_linux.cpp
-        ../server/utils/platform/process_unix.cpp
+        ../server/utils/platform/process_linux.cpp
     )
 endif()
 

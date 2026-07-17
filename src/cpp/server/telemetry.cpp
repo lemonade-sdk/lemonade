@@ -858,6 +858,18 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
         } else {
             request_dump_ = truncate_string(request_json.dump(), max_len);
         }
+    } else if (span_kind_ == "CLASSIFIER") {
+        // Classifier inputs are the payloads being screened (PII, phishing,
+        // prompt injection) — never capture the raw text, only length + a
+        // salted hash for correlating repeated inputs.
+        std::string text;
+        if (request_json.contains("text") && request_json["text"].is_string()) {
+            text = request_json["text"].get<std::string>();
+        } else if (request_json.contains("input") && request_json["input"].is_string()) {
+            text = request_json["input"].get<std::string>();
+        }
+        request_dump_ = "[classifier input: " + std::to_string(text.size()) +
+                        " chars, sha256=" + hash_token(text) + "]";
     } else {
         request_dump_ = truncate_string(request_json.dump(), max_len);
     }

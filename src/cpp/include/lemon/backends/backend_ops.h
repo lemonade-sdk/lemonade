@@ -27,6 +27,7 @@ struct CheckpointResolveContext {
     std::string variant;           // checkpoint variant after ':' ("" if none)
     std::string type;              // checkpoint type ("main", "mmproj", "npu_cache", …)
     std::string checkpoint;        // the raw checkpoint string
+    std::string registry_source;   // huggingface/modelscope
 };
 
 // Stateless per-backend behavior for model management that happens WITHOUT a
@@ -49,7 +50,7 @@ public:
     }
 
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
-    // Default: the shared HF behavior — locate the variant/aux file in the active
+    // Default: the shared registry-cache behavior — locate the variant/aux file in the active
     // snapshot, else fall back to the model cache directory.
     virtual std::string resolve_checkpoint_path(const ModelInfo& info,
                                                 const CheckpointResolveContext& ctx) const;
@@ -88,7 +89,7 @@ public:
         return {};
     }
 
-    // Whether a model's local artifacts are present. Default: the shared HF
+    // Whether a model's local artifacts are present. Default: the shared registry
     // checkpoint-completeness check (ModelManager::checkpoints_complete).
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
 
@@ -99,7 +100,7 @@ public:
         return "";
     }
 
-    // Download a model's artifacts. Default: the shared Hugging Face download.
+    // Download a model's artifacts. Default: the shared remote-registry download.
     virtual void download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress,
                                 const BackendOpsContext& ctx) const;

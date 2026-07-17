@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "lemon/model_types.h"
+#include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 
@@ -194,49 +195,32 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
-nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
+nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+                                   const std::string& registry_source,
+                                   bool& not_found) {
     not_found = false;
 
     if (checkpoint.empty() || checkpoint.find('/') == std::string::npos) {
-        throw std::runtime_error("checkpoint must be a Hugging Face repo id of the form 'owner/name'");
+        throw std::runtime_error("checkpoint must be a repository id of the form 'owner/name'");
     }
 
-    std::map<std::string, std::string> headers;
-    const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token && hf_token[0]) {
-        headers["Authorization"] = "Bearer " + std::string(hf_token);
-    }
-
-    // `?blobs=true` makes HF include per-file `size` in each siblings entry,
-    // which we forward to the variant set so the CLI menu can show real sizes.
-    std::string url = "https://huggingface.co/api/models/" + checkpoint + "?blobs=true";
-    auto response = HttpClient::get(url, headers);
-    // HuggingFace returns 401 (not 404) for nonexistent public repos to mimic
-    // the behavior of gated repos. Treat both as "not found" from the user's
-    // perspective so the CLI can give a clean error message.
-    if (response.status_code == 404 || response.status_code == 401) {
+    const auto source = parse_remote_registry_source(registry_source);
+    const auto& registry = model_registry(source);
+    RegistryRepository repository;
+    try {
+        repository = registry.fetch_repository(checkpoint);
+    } catch (const RegistryNotFoundError&) {
         not_found = true;
         return {};
     }
-    if (response.status_code != 200) {
-        throw std::runtime_error(
-            "Hugging Face API returned status " + std::to_string(response.status_code));
-    }
 
-    auto info = JsonUtils::parse(response.body);
-    if (!info.contains("siblings") || !info["siblings"].is_array()) {
-        throw std::runtime_error("Hugging Face response missing 'siblings' array");
-    }
-
+    const auto headers = registry.auth_headers();
     std::vector<std::string> repo_files;
     std::vector<std::pair<std::string, uint64_t>> file_sizes;
-    for (const auto& s : info["siblings"]) {
-        if (!s.contains("rfilename")) continue;
-        std::string name = s["rfilename"].get<std::string>();
-        repo_files.push_back(name);
-        if (s.contains("size") && s["size"].is_number()) {
-            file_sizes.emplace_back(name, s["size"].get<uint64_t>());
-        }
+    for (const auto& file : repository.files) {
+        if (file.directory) continue;
+        repo_files.push_back(file.path);
+        if (file.size > 0) file_sizes.emplace_back(file.path, file.size);
     }
 
     // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
@@ -276,6 +260,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
         out["recipe"] = "ryzenai-llm";
         out["repo_kind"] = "onnx-ryzenai";
         out["suggested_name"] = suggested_name;
@@ -307,8 +292,8 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
             }
         }
 
-        std::string manifest_url =
-            "https://huggingface.co/" + checkpoint + "/resolve/main/" + manifest_filename;
+        std::string manifest_url = registry.resolve_file_url(
+            checkpoint, repository.revision, manifest_filename);
         auto manifest_response = HttpClient::get(manifest_url, headers);
         if (manifest_response.status_code != 200) {
             throw std::runtime_error(
@@ -340,6 +325,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         // deliberately omitted — /pull re-downloads it to disk.
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
         out["recipe"] = "collection.omni";
         out["repo_kind"] = "collection";
         out["suggested_name"] = suggested_name;
@@ -373,6 +359,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     nlohmann::json out;
     out["checkpoint"] = checkpoint;
+    out["source"] = remote_registry_source_name(source);
     out["recipe"] = "llamacpp";
     out["repo_kind"] = "gguf";
     out["suggested_name"] = suggested_name;

@@ -29,6 +29,7 @@ export interface ModelRegistrationData {
   checkpoints?: Record<string, string>;
   components?: string[];
   recipe: string;
+  source?: 'huggingface' | 'modelscope';
   mmproj?: string;
   labels?: string[];
   reasoning?: boolean;
