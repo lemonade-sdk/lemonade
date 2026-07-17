@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Router-Metadata",
+  "recipe": "collection.router",
+  "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "routing": {
+    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "default_model": "vllm.qwen3-32b",
+    "rules": [
+      { "id": "sensitive-task-stays-local",
+        "match": { "any": [
+          { "metadata": { "key": "task_class", "any": ["payment", "checkout"] } },
+          { "metadata": { "key": "consent", "equals": "denied" } } ] },
+        "route_to": "Qwen3-8B-GGUF" },
+      { "id": "no-consent-recorded-stays-local",
+        "match": { "metadata": { "key": "consent", "exists": false } },
+        "route_to": "Qwen3-8B-GGUF" }
+    ]
+  }
+}
