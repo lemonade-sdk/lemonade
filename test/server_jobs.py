@@ -1494,6 +1494,55 @@ class JobEngineTests(unittest.TestCase):
             "(stale alias-keyed ownership shadowed the live instance)",
         )
 
+    def test_model_dependent_resume_after_hard_restart(self):
+        backend = self.require_real_backend()
+        steps = [
+            {
+                "id": "ld",
+                "op": "load",
+                "params": {
+                    "model": TEST_MODEL,
+                    "llamacpp_backend": backend,
+                    "ctx_size": 2048,
+                },
+            },
+            {"id": "hold", "op": "sleep", "params": {"ms": 30000}},
+            {
+                "id": "say",
+                "op": "chat",
+                "params": {
+                    "model": TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Say hi in one word."}],
+                    "temperature": 0,
+                    "max_completion_tokens": 16,
+                },
+            },
+        ]
+        job = self.create_job("restart-restore", steps)
+        jid = job["id"]
+        self.poll_cursor(jid, "hold", timeout=60)
+
+        self.stop_server(hard=True)
+        self.start_server()
+
+        recovered = self.get_job(jid)
+        self.assertEqual(recovered.status_code, 200, recovered.text)
+        self.assertEqual(recovered.json()["status"], "interrupted")
+        self.assertNotEqual(
+            requests.get(f"{BASE}/health", timeout=15).json().get("model_loaded"),
+            TEST_MODEL,
+        )
+
+        r = requests.post(f"{BASE}/jobs/{jid}/resume", timeout=10)
+        self.assertEqual(r.status_code, 200, r.text)
+        done = self.poll_status(jid, "completed", timeout=120)
+        self.assertEqual(
+            self.step_by_id(done, "say")["status"],
+            "completed",
+            "resume after a hard restart could not run the model-dependent "
+            "step (job model state was not reconstructed)",
+        )
+
     def test_bench_shaped_sweep(self):
         backend = self.require_real_backend()
 

@@ -570,15 +570,29 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         };
         providers.restore_exclusive = [this, job_states, state_mutex](
                                           const std::string& job_id,
+                                          const lemon::jobs::json& manifest,
                                           lemon::jobs::CancelFlag* cancel) -> bool {
             std::map<std::string, nlohmann::json> to_restore;
+            std::set<std::string> tracked;
             {
                 std::lock_guard<std::mutex> lk(*state_mutex);
                 auto it = job_states->find(job_id);
-                if (it == job_states->end()) return true;
-                for (const auto& kv : it->second.owned)
-                    if (kv.second.is_object() && kv.second.contains("options"))
-                        to_restore[kv.first] = kv.second;
+                if (it != job_states->end()) {
+                    for (const auto& kv : it->second.owned) {
+                        tracked.insert(kv.first);
+                        if (kv.second.is_object() && kv.second.contains("options"))
+                            to_restore[kv.first] = kv.second;
+                    }
+                }
+            }
+            for (auto it = manifest.begin(); it != manifest.end(); ++it) {
+                const std::string canonical = router_->canonical_model_name(it.key());
+                if (tracked.count(canonical) || to_restore.count(canonical)) continue;
+                nlohmann::json params = nlohmann::json::parse(it.value().dump());
+                nlohmann::json entry = {{"options", params}};
+                if (params.contains("pinned") && params["pinned"].is_boolean())
+                    entry["pinned"] = params["pinned"].get<bool>();
+                to_restore[canonical] = std::move(entry);
             }
             for (const auto& kv : to_restore) {
                 if (cancel && cancel->load()) return false;

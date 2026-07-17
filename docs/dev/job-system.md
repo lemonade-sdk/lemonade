@@ -118,8 +118,14 @@ A single worker runs one job at a time.
   external client loaded the same model while the job was interrupted, the
   restore *adopts* that residency instead of replacing it: the external
   instance is left untouched (options and pin included) and stops being
-  job-owned. If a restore fails, the job still resumes and the dependent step
-  fails with its normal `on_fail` semantics.
+  job-owned. Restore also survives a server restart: the in-memory captured
+  state is gone after a crash, so the engine reconstructs the job's model
+  state from its persisted record — the completed `load`/`unload` steps
+  (parameters resolved against the persisted context, in execution order)
+  describe exactly what should be resident, and resuming a recovered job
+  reloads that before re-running the pending step. If a restore fails, the job
+  still resumes and the dependent step fails with its normal `on_fail`
+  semantics.
 - **delete** — removes the job. Deleting an active job persists a deletion
   tombstone *before* the call returns, then interrupts it and defers the actual
   removal until the worker has finished cleanup (reconcile unload), so a deleted

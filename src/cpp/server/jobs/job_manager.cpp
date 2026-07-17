@@ -440,8 +440,37 @@ void JobManager::worker_main() {
         } guard{registry_, id};
 
         bool ready = !exclusive || guard.begin(&ctrl->cancel);
-        if (ready && guard.held && registry_.restore_exclusive)
-            ready = registry_.restore_exclusive(id, &ctrl->cancel);
+        if (ready && guard.held && registry_.restore_exclusive) {
+            json manifest = json::object();
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                auto it = jobs_.find(id);
+                if (it != jobs_.end()) {
+                    const Job& job = it->second;
+                    for (const auto& s : job.steps) {
+                        if (s.status != StepStatus::Completed) continue;
+                        try {
+                            if (s.op == "load") {
+                                json params = resolve_refs(s.params, job.context);
+                                if (params.contains("model") && params["model"].is_string())
+                                    manifest[params["model"].get<std::string>()] = params;
+                            } else if (s.op == "unload") {
+                                json params = resolve_refs(s.params, job.context);
+                                if (params.contains("model") && params["model"].is_string())
+                                    manifest.erase(params["model"].get<std::string>());
+                                else
+                                    manifest = json::object();
+                            }
+                        } catch (const std::exception& e) {
+                            LOG(WARNING, "Jobs")
+                                << "job " << id << " restore manifest skipped step '" << s.id
+                                << "': " << e.what() << std::endl;
+                        }
+                    }
+                }
+            }
+            ready = registry_.restore_exclusive(id, manifest, &ctrl->cancel);
+        }
         if (ready) {
             execute(id, ctrl);
         } else {
