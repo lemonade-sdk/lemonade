@@ -75,6 +75,9 @@ export interface Preset {
   auto_opt_enabled?: boolean;
   system_prompt_id?: string;
   system_prompts?: PresetSystemPrompt[];
+  /** MCP servers available to chat for this preset. Canonical replacement for tools_enabled. */
+  mcp_server_ids?: string[];
+  /** Legacy import field. New presets write mcp_server_ids instead. */
   tools_enabled?: boolean;
 }
 
@@ -144,6 +147,32 @@ export const LS_MODEL_TUNINGS = 'model_tunings';
 export const LS_RUNNING_PRESETS = 'running_presets';
 export const PRESET_STORE_EVENT = 'lemonade:preset-store-changed';
 export const DEFAULT_CONTEXT_SIZE = 4096;
+export const BUILTIN_LEMONADE_MCP_ID = 'lemonade';
+export const MAX_PRESET_MCP_SERVERS = 4;
+
+export function sanitizePresetMcpServerIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(item => /^[A-Za-z0-9_.-]{1,96}$/.test(item));
+  return [...new Set(ids)].slice(0, MAX_PRESET_MCP_SERVERS);
+}
+
+export function presetMcpServerIds(preset: Pick<Preset, 'mcp_server_ids' | 'tools_enabled' | 'id'>): string[] {
+  if (Array.isArray(preset.mcp_server_ids)) return sanitizePresetMcpServerIds(preset.mcp_server_ids);
+  const legacyEnabled = typeof preset.tools_enabled === 'boolean'
+    ? preset.tools_enabled
+    : defaultToolsEnabledForPreset(preset.id);
+  return legacyEnabled ? [BUILTIN_LEMONADE_MCP_ID] : [];
+}
+
+export function presetMcpDisplayText(preset: Pick<Preset, 'mcp_server_ids' | 'tools_enabled' | 'id'>): string {
+  const ids = presetMcpServerIds(preset);
+  if (ids.length === 0) return 'None';
+  if (ids.length === 1 && ids[0] === BUILTIN_LEMONADE_MCP_ID) return 'Lemonade';
+  return `${ids.length} MCP${ids.length === 1 ? '' : 's'}`;
+}
 
 const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<PresetRecipe, keyof RecipeOptions>> = {
   llamacpp: 'llamacpp_args',
@@ -192,6 +221,7 @@ export const DEFAULT_PRESET: Preset = {
   auto_opt_run_id: null,
   system_prompt_id: NO_SYSTEM_PROMPT_ID,
   system_prompts: [],
+  mcp_server_ids: [BUILTIN_LEMONADE_MCP_ID],
   tools_enabled: true,
 };
 
@@ -225,6 +255,7 @@ export const STARTERS: Preset[] = STARTER_BASE.map(preset => ({
   ...preset,
   system_prompt_id: defaultSystemPromptIdForPreset(preset.id),
   system_prompts: starterSystemPromptsForPreset(preset.id),
+  mcp_server_ids: defaultToolsEnabledForPreset(preset.id) ? [BUILTIN_LEMONADE_MCP_ID] : [],
   tools_enabled: defaultToolsEnabledForPreset(preset.id),
 }));
 
@@ -611,7 +642,18 @@ export function sanitizePreset(p: Partial<Preset>): Preset | null {
     auto_opt_enabled: p.auto_opt_enabled ?? true,
     system_prompt_id: systemPromptId,
     system_prompts: systemPrompts,
-    tools_enabled: supportsChatIntent && (typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id)),
+    mcp_server_ids: supportsChatIntent
+      ? (Array.isArray(p.mcp_server_ids)
+        ? sanitizePresetMcpServerIds(p.mcp_server_ids)
+        : ((typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id))
+          ? [BUILTIN_LEMONADE_MCP_ID]
+          : []))
+      : [],
+    // Keep the old field readable in exports during the transition, but derive
+    // it from the canonical MCP selection so legacy consumers stay consistent.
+    tools_enabled: supportsChatIntent && (Array.isArray(p.mcp_server_ids)
+      ? sanitizePresetMcpServerIds(p.mcp_server_ids).length > 0
+      : (typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id))),
   };
 }
 
@@ -1602,7 +1644,7 @@ export type PresetChangeKind = 'none' | 'live' | 'reload';
 /** Fields that the backend/runtime binds at load time → require a reload. */
 const RELOAD_FIELDS: Array<keyof Preset> = ['context_hint', 'recipe_options', 'engine_hint'];
 /** Fields applied per request at generation time → can be updated live. */
-const LIVE_FIELDS: Array<keyof Preset> = ['temperature_hint', 'thinking_mode', 'sampling', 'system_prompt_id', 'system_prompts', 'tools_enabled'];
+const LIVE_FIELDS: Array<keyof Preset> = ['temperature_hint', 'thinking_mode', 'sampling', 'system_prompt_id', 'system_prompts', 'mcp_server_ids', 'tools_enabled'];
 
 function stableEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);

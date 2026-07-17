@@ -79,6 +79,36 @@ function installBrowserStorageShim() {
     const creativePreset = presets.STARTERS.find(preset => preset.id === 's-creative');
     assert.ok(codePreset && creativePreset);
 
+    // Preset MCP migration is deterministic and bounded.
+    const basePreset = {
+      id: 'mcp-migration',
+      name: 'MCP migration',
+      description: '',
+      applies_to: ['chat'],
+      recipe_options: {},
+      sampling: {},
+      engine_hint: 'auto',
+      starter: false,
+      system_prompt_id: 'none',
+      system_prompts: [],
+    };
+    const legacyToolsOn = presets.sanitizePreset({ ...basePreset, tools_enabled: true });
+    const legacyToolsOff = presets.sanitizePreset({ ...basePreset, id: 'mcp-off', tools_enabled: false });
+    const explicitMcp = presets.sanitizePreset({
+      ...basePreset,
+      id: 'mcp-explicit',
+      tools_enabled: false,
+      mcp_server_ids: ['lemonade', 'filesystem', 'filesystem', 'git', 'browser', 'fifth', '../invalid'],
+    });
+    assert.deepEqual(legacyToolsOn.mcp_server_ids, ['lemonade']);
+    assert.equal(legacyToolsOn.tools_enabled, true);
+    assert.deepEqual(legacyToolsOff.mcp_server_ids, []);
+    assert.equal(legacyToolsOff.tools_enabled, false);
+    assert.deepEqual(explicitMcp.mcp_server_ids, ['lemonade', 'filesystem', 'git', 'browser']);
+    assert.equal(explicitMcp.tools_enabled, true, 'canonical MCP selection wins over the legacy boolean');
+    assert.equal(presets.presetMcpDisplayText(explicitMcp), '4 MCPs');
+    assert.deepEqual(presets.presetMcpServerIds({ id: 'legacy-only', tools_enabled: true }), ['lemonade']);
+
     const model = {
       id: 'qwen-coder',
       name: 'qwen-coder',

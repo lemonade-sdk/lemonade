@@ -24,6 +24,9 @@ import {
   PRESET_STORE_EVENT,
   presetLabelsFor,
   presetParamPreviewLines,
+  presetMcpServerIds,
+  presetMcpDisplayText,
+  MAX_PRESET_MCP_SERVERS,
   sanitizePreset,
   newCustomSystemPrompt,
   systemPromptNameForPreset,
@@ -34,6 +37,7 @@ import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import AutoOptRail, { openAutoOptRun } from '../features/autoOpt/AutoOptRail';
 import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
+import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
 
 const CAPABILITIES: Capability[] = ['all', 'chat', 'omni', 'vision', 'code', 'image', 'transcription', 'audio-generation', 'tts', 'model3d', 'embedding', 'reranking'];
 
@@ -103,8 +107,8 @@ function promptDisplayText(preset: Preset): string {
   return systemPromptNameForPreset(preset);
 }
 
-function toolsDisplayText(preset: Preset): string {
-  return preset.tools_enabled === false ? 'OFF' : 'ON';
+function mcpDisplayText(preset: Preset): string {
+  return presetMcpDisplayText(preset);
 }
 
 
@@ -249,6 +253,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       auto_opt_run_id: null,
       system_prompt_id: 'general',
       system_prompts: cloneSystemPrompts(CUSTOM_PRESET_PROMPTS),
+      mcp_server_ids: [LEMONADE_MCP_SERVER.id],
       tools_enabled: true,
     };
     setUserPresets(prev => [newPreset, ...prev]);
@@ -310,7 +315,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       sampling: { ...preset.sampling },
       system_prompts: cloneSystemPrompts(preset.system_prompts),
       system_prompt_id: preset.system_prompt_id || NO_SYSTEM_PROMPT_ID,
-      tools_enabled: preset.tools_enabled !== false,
+      mcp_server_ids: presetMcpServerIds(preset),
+      tools_enabled: presetMcpServerIds(preset).length > 0,
     };
     setUserPresets(prev => [cloned, ...prev]);
     setHighlightPresetId(cloned.id);
@@ -530,7 +536,7 @@ const PresetCard: React.FC<{
   if (linkedModels?.length) descParts.push(linkedModelsText(preset, linkedModels));
   if (paramLines.length) descParts.push(`Intent: ${paramLines.join('; ')}`);
   descParts.push(`Prompt: ${promptDisplayText(preset)}`);
-  descParts.push(`Tools: ${toolsDisplayText(preset)}`);
+  descParts.push(`MCP: ${mcpDisplayText(preset)}`);
   return (
   <article
     className={`recipe-card${highlight ? ' recipe-card--flash' : ''}`}
@@ -543,7 +549,7 @@ const PresetCard: React.FC<{
       aria-label={`Open Preset: ${preset.name}`}
       aria-describedby={descId}
     />
-    {/* sr-only description for #2345: exposes intent/prompt/tools metadata to AT */}
+    {/* sr-only description for #2345: exposes intent/prompt/MCP metadata to AT */}
     <span id={descId} className="sr-only">{descParts.join('. ')}.</span>
     {preset.starter && <span className="starter-badge">Starter</span>}
     <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
@@ -563,7 +569,7 @@ const PresetCard: React.FC<{
     </div>
     <div className="recipe-card__behavior" aria-hidden="true">
       <span>prompt</span><strong>{promptDisplayText(preset)}</strong>
-      <span>tools</span><strong>{toolsDisplayText(preset)}</strong>
+      <span>MCP</span><strong>{mcpDisplayText(preset)}</strong>
     </div>
     <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
       {preset.starter ? (
@@ -628,12 +634,16 @@ const SlideoverContent: React.FC<{
   const [thinkingMode, setThinkingMode] = useState<ThinkingMode>(preset.thinking_mode || 'normal');
   const [systemPromptId, setSystemPromptId] = useState(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
   const [systemPrompts, setSystemPrompts] = useState<PresetSystemPrompt[]>(cloneSystemPrompts(preset.system_prompts));
-  const [toolsEnabled, setToolsEnabled] = useState(preset.tools_enabled !== false);
+  const [mcpServerIds, setMcpServerIds] = useState<string[]>(presetMcpServerIds(preset));
+  const [mcpServers, setMcpServers] = useState<McpServerOption[]>([LEMONADE_MCP_SERVER]);
+  const [mcpLoadError, setMcpLoadError] = useState('');
   const [saved, setSaved] = useState(false);
   const [autoOptState, setAutoOptState] = useState<AutoOptState>(() => autoOptStore.snapshot());
   const [missingRunNote, setMissingRunNote] = useState(false);
 
   useEffect(() => autoOptStore.subscribe(setAutoOptState), []);
+
+
 
   useEffect(() => {
     setMissingRunNote(false);
@@ -645,12 +655,47 @@ const SlideoverContent: React.FC<{
     setThinkingMode(preset.thinking_mode || 'normal');
     setSystemPromptId(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
     setSystemPrompts(cloneSystemPrompts(preset.system_prompts));
-    setToolsEnabled(preset.tools_enabled !== false);
+    setMcpServerIds(presetMcpServerIds(preset));
     setSaved(false);
   }, [preset]);
 
   const normalizedAppliesTo = normalizePresetCapabilities(preset.id, appliesTo);
   const hasChat = presetSupportsChatIntent({ id: preset.id, applies_to: normalizedAppliesTo });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hasChat) return () => { cancelled = true; };
+    listMcpServerOptions()
+      .then(servers => {
+        if (!cancelled) {
+          setMcpServers(servers);
+          setMcpLoadError('');
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setMcpServers([LEMONADE_MCP_SERVER]);
+          setMcpLoadError(error instanceof Error ? error.message : String(error));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [hasChat]);
+
+  const visibleMcpServers = useMemo<McpServerOption[]>(() => {
+    const known = new Set(mcpServers.map(server => server.id));
+    const unavailableSelected = mcpServerIds
+      .filter(id => !known.has(id))
+      .map(id => ({
+        id,
+        name: id,
+        transport: 'stdio' as const,
+        connected: false,
+        status: 'unavailable',
+        tools: 0,
+        lastError: 'The server list could not be loaded or this configured server no longer exists.',
+      }));
+    return [...mcpServers, ...unavailableSelected];
+  }, [mcpServers, mcpServerIds]);
   const currentPreset = useMemo<Preset>(() => {
     if (isReadOnly) return { ...preset, applies_to: normalizePresetCapabilities(preset.id, preset.applies_to) };
     return {
@@ -669,9 +714,10 @@ const SlideoverContent: React.FC<{
       starter: false,
       system_prompt_id: hasChat ? systemPromptId : NO_SYSTEM_PROMPT_ID,
       system_prompts: hasChat ? cloneSystemPrompts(systemPrompts) : [],
-      tools_enabled: hasChat && toolsEnabled,
+      mcp_server_ids: hasChat ? mcpServerIds.slice(0, MAX_PRESET_MCP_SERVERS) : [],
+      tools_enabled: hasChat && mcpServerIds.length > 0,
     };
-  }, [isReadOnly, preset, name, description, normalizedAppliesTo, hasChat, temperatureHint, contextHint, thinkingMode, systemPromptId, systemPrompts, toolsEnabled]);
+  }, [isReadOnly, preset, name, description, normalizedAppliesTo, hasChat, temperatureHint, contextHint, thinkingMode, systemPromptId, systemPrompts, mcpServerIds]);
 
   const selectedModel = models.find(model => modelName(model) === applyTarget);
   const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
@@ -812,19 +858,56 @@ const SlideoverContent: React.FC<{
             {renderIntentOptions('Context', 'scan-text', CONTEXT_INTENT_OPTIONS, contextHint, setContextHint, 'context')}
             {renderIntentOptions('Thinking', 'brain', THINKING_INTENT_OPTIONS, thinkingMode, setThinkingMode, 'thinking')}
 
-            <fieldset className="preset-intent-fieldset" data-preset-intent="tools">
-              <legend><Icon name="wrench" size={15} aria-hidden="true" /> Tools</legend>
-              <button
-                type="button"
-                className="preset-tools-toggle"
-                aria-pressed={toolsEnabled}
-                disabled={isReadOnly}
-                onClick={() => setToolsEnabled(enabled => !enabled)}
-                title={toolsEnabled ? 'Tools enabled' : 'Tools disabled'}
-              >
-                <Icon name={toolsEnabled ? 'wrench' : 'wrench-off'} size={17} aria-hidden="true" />
-                <span>{toolsEnabled ? 'Enabled' : 'Off'}</span>
-              </button>
+            <fieldset className="preset-intent-fieldset preset-mcp-fieldset" data-preset-intent="mcp">
+              <legend><Icon name="plug" size={15} aria-hidden="true" /> MCP</legend>
+              <div className="preset-mcp-summary">
+                <strong>{mcpServerIds.length}/{MAX_PRESET_MCP_SERVERS}</strong>
+                <span>{mcpServerIds.length === 0 ? 'No MCP servers' : 'selected'}</span>
+              </div>
+              <div className="preset-mcp-options" role="group" aria-label="MCP servers available to this preset">
+                <button
+                  type="button"
+                  className={`preset-mcp-option preset-mcp-option--none${mcpServerIds.length === 0 ? ' is-selected' : ''}`}
+                  aria-pressed={mcpServerIds.length === 0}
+                  disabled={isReadOnly}
+                  onClick={() => setMcpServerIds([])}
+                  title="Disable MCP and tool calls for this preset"
+                  data-preset-mcp-none
+                >
+                  <span className="preset-mcp-option__status preset-mcp-option__status--none" aria-hidden="true" />
+                  <span className="preset-mcp-option__text">
+                    <strong>No MCP</strong>
+                    <small>Disable all tool calls</small>
+                  </span>
+                  <Icon name={mcpServerIds.length === 0 ? 'check' : 'x'} size={14} aria-hidden="true" />
+                </button>
+                {visibleMcpServers.map(server => {
+                  const selected = mcpServerIds.includes(server.id);
+                  const atLimit = !selected && mcpServerIds.length >= MAX_PRESET_MCP_SERVERS;
+                  return (
+                    <button
+                      key={server.id}
+                      type="button"
+                      className={`preset-mcp-option${selected ? ' is-selected' : ''}`}
+                      aria-pressed={selected}
+                      disabled={isReadOnly || atLimit}
+                      onClick={() => setMcpServerIds(current => selected
+                        ? current.filter(id => id !== server.id)
+                        : [...current, server.id].slice(0, MAX_PRESET_MCP_SERVERS))}
+                      title={atLimit ? `A preset can use at most ${MAX_PRESET_MCP_SERVERS} MCP servers.` : `${server.name} · ${server.tools} tool(s) · ${server.status}`}
+                    >
+                      <span className={`preset-mcp-option__status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
+                      <span className="preset-mcp-option__text">
+                        <strong>{server.name}</strong>
+                        <small>{server.transport === 'builtin' ? 'Built in' : server.status} · {server.tools} tool{server.tools === 1 ? '' : 's'}</small>
+                      </span>
+                      <Icon name={selected ? 'check' : 'plus'} size={14} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+              {mcpLoadError && <p className="preset-help preset-error" role="alert">External MCP list unavailable: {mcpLoadError} You can still select No MCP or Lemonade.</p>}
+              <p className="preset-help">Configure external MCP servers under Connect. No MCP always remains available, even when the external server list cannot be loaded.</p>
             </fieldset>
           </div>
         )}

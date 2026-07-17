@@ -16,7 +16,10 @@
     "test:autoopt-store-scope": "node tests/autoopt-store-scope.runtime.cjs",
     "test:model-providers": "node tests/model-provider-search.runtime.cjs",
     "test:autoopt-actions": "node tests/autoopt-actions.runtime.cjs",
-    "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs"
+    "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs",
+    "test:mcp-external": "node scripts/test-external-mcp.mjs",
+    "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
+    "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

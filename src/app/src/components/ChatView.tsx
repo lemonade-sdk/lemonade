@@ -29,8 +29,8 @@ import {
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
-import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
+import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
 import {
   DEFAULT_PRESET,
   PRESET_STORE_EVENT,
@@ -45,6 +45,8 @@ import {
   setRunningPreset,
   systemPromptTextForPreset,
   systemPromptNameForPreset,
+  presetMcpServerIds,
+  presetMcpDisplayText,
 } from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 
@@ -295,7 +297,8 @@ interface ChatViewProps {
   accountSession: AccountSession;
 }
 
-const TOOLS_KEY = 'use_tools';
+const MCP_ENABLED_KEY = 'mcp_enabled';
+const LEGACY_TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 const IMAGE_SIZE_OPTIONS = [256, 512, 768, 1024, 1536, 2048] as const;
@@ -505,49 +508,6 @@ function canUseMicrophone(): boolean {
     && !!navigator.mediaDevices?.getUserMedia;
 }
 
-const LEMONADE_TOOL_RUNTIME: ChatToolRuntime = {
-  tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
-  execute: executeTool as unknown as ChatToolRuntime['execute'],
-};
-
-function composeToolRuntimes(runtimes: Array<ChatToolRuntime | null | undefined>): ChatToolRuntime | null {
-  const active = runtimes.filter((runtime): runtime is ChatToolRuntime => !!runtime && runtime.tools.length > 0);
-  if (active.length === 0) return null;
-  if (active.length === 1) return active[0];
-
-  const tools: Record<string, unknown>[] = [];
-  const byName = new Map<string, ChatToolRuntime>();
-  const prompts: string[] = [];
-
-  for (const runtime of active) {
-    if (runtime.systemPrompt) prompts.push(runtime.systemPrompt);
-    for (const tool of runtime.tools) {
-      const name = String((tool as any).function?.name || '');
-      if (!name || byName.has(name)) continue;
-      tools.push(tool);
-      byName.set(name, runtime);
-    }
-  }
-
-  return {
-    tools,
-    systemPrompt: prompts.join('\n\n'),
-    execute: async call => {
-      const runtime = byName.get(call.function.name);
-      if (!runtime) {
-        return {
-          tool_call_id: call.id,
-          role: 'tool',
-          content: JSON.stringify({ error: `Unknown tool: ${call.function.name}` }),
-          error: true,
-          displayResult: `Error: unknown tool ${call.function.name}`,
-        };
-      }
-      return runtime.execute(call);
-    },
-  };
-}
-
 function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
   return (toolCalls || []).flatMap(call => call.artifacts || []);
 }
@@ -740,10 +700,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const sheetHandleRef = useRef<HTMLDivElement>(null);
   const sheetTriggerRef = useRef<HTMLButtonElement>(null);
   const bottomSheetRef = useRef<HTMLDivElement>(null);
-  const [useTools, setUseTools] = useState(() => {
-    try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
+  const [useMcp, setUseMcp] = useState(() => {
+    try {
+      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      if (explicit !== null) return explicit === 'true';
+      return localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY)) === 'true';
+    } catch { return false; }
   });
-  const presetToolsSeedRef = useRef('');
+  const presetMcpSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
   const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -1013,12 +977,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   useEffect(() => {
     if (!currentModel || !currentPreset) return;
-    const next = currentPreset.tools_enabled !== false;
-    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${next ? 'tools-on' : 'tools-off'}`;
-    if (presetToolsSeedRef.current === seed) return;
-    presetToolsSeedRef.current = seed;
-    setUseTools(next);
-    try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
+    const selectedIds = presetMcpServerIds(currentPreset);
+    const next = selectedIds.length > 0;
+    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
+    if (presetMcpSeedRef.current === seed) return;
+    presetMcpSeedRef.current = seed;
+    setUseMcp(next);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
   }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
@@ -1154,7 +1119,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           preset.description,
           preset.applies_to.join(' '),
           systemPromptNameForPreset(preset),
-          preset.tools_enabled === false ? 'tools off' : 'tools on',
+          `mcp ${presetMcpDisplayText(preset)}`,
         ].join(' ').toLowerCase().includes(q);
       })
       .slice(0, 80);
@@ -1182,9 +1147,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setPresetPickerError(null);
     saveApplied(nextApplied);
 
-    const nextTools = preset.tools_enabled !== false;
-    setUseTools(nextTools);
-    try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(nextTools)); } catch { /* ignore */ }
+    const nextMcp = presetMcpServerIds(preset).length > 0;
+    setUseMcp(nextMcp);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextMcp)); } catch { /* ignore */ }
 
     // Choosing a preset from the Chat composer is an explicit user action, just
     // like choosing a different model. Apply the target state immediately: live
@@ -1236,7 +1201,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   ]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
-  const modeSupportsTools = modeSupportsChatCompletions;
+  const modeSupportsMcp = modeSupportsChatCompletions;
   const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
@@ -1366,11 +1331,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const artifacts = collectToolArtifacts(toolCalls);
     const generatedImages = artifacts.filter(a => a.type === 'image').map(a => a.url);
     const generatedAudio = artifacts.find(a => a.type === 'audio');
-    const mediaFallback = generatedImages.length > 0
-      ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
-      : generatedAudio
-        ? 'Generated speech audio from your text.'
-        : '';
+    const generated3d = artifacts.find(a => a.type === 'model3d');
+    const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
+    const generated3dUrl = generated3d?.url ? trackGeneratedMediaUrl(generated3d.url) : undefined;
+    const mediaFallback = generated3d
+      ? 'Generated a 3D model from the reference image.'
+      : generatedImages.length > 0
+        ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+        : generatedAudio
+          ? 'Generated speech audio from your text.'
+          : '';
     const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
     updateConversation(convoId, c => ({
       ...c,
@@ -1382,13 +1352,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         stats,
         model,
         generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
-        audioUrl: generatedAudio?.url,
+        audioUrl: generatedAudioUrl,
         audioName: generatedAudio?.name,
+        model3dUrl: generated3dUrl,
+        model3dName: generated3d?.name,
       }],
       updatedAt: Date.now(),
     }));
-    if (!generatedAudio && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
-  }, [speakWithPinnedTts, updateConversation]);
+    if (!generatedAudio && !generated3d && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
+  }, [speakWithPinnedTts, trackGeneratedMediaUrl, updateConversation]);
 
   const handleStreamError = useCallback((convoId: string, message: string) => {
     const model = streamModelsRef.current[convoId] || null;
@@ -2083,10 +2055,33 @@ ${finalText}`
       }
     }
 
-    const toolRuntime = composeToolRuntimes([
-      omniRuntime,
-      useTools && modeSupportsTools ? LEMONADE_TOOL_RUNTIME : null,
-    ]);
+    let selectedMcpRuntime: ChatToolRuntime | null = null;
+    if (useMcp && modeSupportsMcp) {
+      try {
+        selectedMcpRuntime = await buildSelectedMcpRuntime(
+          presetMcpServerIds(currentPreset || DEFAULT_PRESET),
+          {
+            attachedImages: images || [],
+            attachedAudioFiles: audioFiles,
+            previousImages: collectConversationImages(priorMessages),
+          },
+        );
+      } catch (err) {
+        // MCP availability must never dead-end the chat composer. Surface the
+        // failure, switch MCP off for this chat, and continue the same request
+        // as a normal model completion without tools.
+        setUseMcp(false);
+        try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
+        appendAssistantMessage(convoId, {
+          content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
+          model: modelSnapshot,
+          isError: true,
+        });
+        selectedMcpRuntime = null;
+      }
+    }
+
+    const toolRuntime = composeMcpRuntimes([omniRuntime, selectedMcpRuntime]);
 
     // Build chat history from the conversation's messages before this user prompt.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
@@ -2095,34 +2090,7 @@ ${finalText}`
     const systemPrompts: string[] = [];
     const presetSystemPrompt = systemPromptTextForPreset(currentPreset);
     if (presetSystemPrompt) systemPrompts.push(presetSystemPrompt);
-    if (omniRuntime?.systemPrompt) systemPrompts.push(omniRuntime.systemPrompt);
-
-    // Inject a system prompt when Lemonade tools are enabled so the model knows to use them.
-    // Keep this privacy-safe: no backend URLs, API keys, PIDs, or local paths.
-    if (useTools && modeSupportsTools) {
-      const loadedList = loadedModels.length > 0
-        ? loadedModels.map(m => `${m.model_name} (${capabilityLabel(capabilityFromLoaded(m))})`).join(', ')
-        : 'none';
-      systemPrompts.push([
-        'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
-        'Use Lemonade management tools when the user asks about local models, backends, hardware capability, or server health.',
-        '',
-        'Tool routing rules:',
-        '- Backend/recipe/CPU/GPU/NPU/install-status questions: call list_backends, not list_models.',
-        '- Named model questions: call get_model_info for that exact model. Do not answer from list_models alone.',
-        '- Load/start/use model requests: resolve the downloaded model, then call load_model. If CPU/GPU/NPU is specified, pass backend/device explicitly.',
-        '- Download/pull requests: call pull_model. It searches Lemonade registry first, then Hugging Face GGUF when needed. If pull_model returns needs_choice, call ask_question with its choices.',
-        '- System/hardware questions: call get_system_info and then summarize the returned OS/version/devices/backend counts.',
-        '- General inventory questions: call list_models. It defaults to local models only; request registry/all only if the user explicitly asks what can be downloaded.',
-        '- After any tool call, give a concrete final answer with names/status/details. Never stop at a bare count like “105 models”.',
-        '- When choices are needed, use ask_question so the UI can render clickable options.',
-        '',
-        'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
-        '',
-        `Currently loaded model names and capabilities: ${loadedList}`,
-        `Active composer model: ${currentModel || 'none'}`,
-      ].join('\n'));
-    }
+    if (toolRuntime?.systemPrompt) systemPrompts.push(toolRuntime.systemPrompt);
 
     if (systemPrompts.length > 0) {
       chatMessages.push({ role: 'system' as const, content: systemPrompts.join('\n\n') });
@@ -2176,13 +2144,14 @@ ${finalText}`
     knownModelInfos,
     loadedModels,
     modeSupportsChatCompletions,
-    modeSupportsTools,
+    modeSupportsMcp,
     canUseAudioInput,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
+    storageScope,
     updateConversation,
-    useTools,
+    useMcp,
   ]);
 
   const handleSend = async (overrideText?: string) => {
@@ -2894,7 +2863,7 @@ ${finalText}`
                 type="button"
                 className="composer__preset-badge composer__preset-badge--interactive"
                 onClick={() => { setPresetPickerOpen(v => !v); setModelPickerOpen(false); }}
-                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. Tools start ${currentPreset.tools_enabled === false ? 'OFF' : 'ON'}. Click to change preset.`}
+                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. MCP: ${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}. Click to change preset.`}
                 aria-haspopup="listbox"
                 aria-expanded={presetPickerOpen}
               >
@@ -2928,7 +2897,7 @@ ${finalText}`
                           <PresetIcon preset={preset} />
                           <span className="composer__model-option-text">
                             <strong>{preset.name}</strong>
-                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · Tools {preset.tools_enabled === false ? 'OFF' : 'ON'}</span>
+                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · MCP {presetMcpDisplayText(preset)}</span>
                           </span>
                           {presetPickerApplying === preset.id && <span className="composer__model-option-loading">Applying…</span>}
                         </button>
@@ -2942,19 +2911,19 @@ ${finalText}`
             </div>
           )}
           <button
-            className={`composer__tools-toggle ${useTools && modeSupportsTools ? 'composer__tools-toggle--active' : ''}`}
+            className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {
-              const next = !useTools;
-              setUseTools(next);
-              try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
+              const next = !useMcp;
+              setUseMcp(next);
+              try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
             }}
-            disabled={!modeSupportsTools}
-            title={modeSupportsTools
-              ? (useTools ? 'Lemonade tools enabled — click to disable' : 'Enable lemonade tools (model management via chat)')
-              : 'Tools are only available for chat-completion models'}
-            aria-pressed={useTools && modeSupportsTools}
+            disabled={!modeSupportsMcp}
+            title={modeSupportsMcp
+              ? (useMcp ? `MCP enabled (${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}) — click to disable for this chat` : 'Enable the MCP servers selected by this preset')
+              : 'MCP is only available for chat-completion models'}
+            aria-pressed={useMcp && modeSupportsMcp}
           >
-            <Icon name="tools" size={13} /> Tools {useTools && modeSupportsTools ? 'ON' : 'OFF'}
+            <Icon name="plug" size={13} /> MCP {useMcp && modeSupportsMcp ? presetMcpServerIds(currentPreset || DEFAULT_PRESET).length : 'OFF'}
           </button>
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}

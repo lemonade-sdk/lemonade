@@ -220,7 +220,7 @@ export interface ToolResult {
   role: 'tool';
   content: string;
   displayResult?: string;
-  artifacts?: Array<{ type: 'image' | 'audio'; url: string; name?: string; mime?: string }>;
+  artifacts?: Array<{ type: 'image' | 'audio' | 'model3d'; url: string; name?: string; mime?: string }>;
   error?: boolean;
 }
 
