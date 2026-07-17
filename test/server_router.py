@@ -476,6 +476,137 @@ class RouterTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    def test_621_semantic_similarity_cloud_candidate(self):
+        """A `semantic_similarity` match routes to a *cloud* candidate.
+
+        The intersection of the two model-backed / cloud paths: an embedding
+        classifier decides, and the winning candidate is a `recipe:"cloud"`
+        model served by an in-process mock provider (no real key). A coding
+        query goes to the cloud model; an unrelated query stays local.
+        """
+        pull_model_with_retry(EMBED_MODEL)
+        provider = "testsemcloud"
+        upstream_id = "vendor/sem-cloud-model"
+        marker = "answered-by-cloud-provider"
+        collection = "user.Test-Router-Semantic-Cloud"
+
+        base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(
+                len(cloud_ids), 1, f"expected one cloud model: {cloud_ids}"
+            )
+            cloud_model = cloud_ids[0]
+
+            policy = {
+                "version": "1",
+                "model_name": collection,
+                "recipe": "collection.router",
+                "components": [DEFAULT_MODEL, cloud_model, EMBED_MODEL],
+                "routing": {
+                    "candidates": [DEFAULT_MODEL, cloud_model],
+                    "default_model": DEFAULT_MODEL,
+                    "classifiers": [
+                        {
+                            "id": "topic",
+                            "type": "semantic_similarity",
+                            "model": EMBED_MODEL,
+                            "reference_phrases": {
+                                "coding": [
+                                    "write a function",
+                                    "fix this bug",
+                                    "refactor this code",
+                                    "debug a stack trace",
+                                    "time complexity of an algorithm",
+                                ]
+                            },
+                        }
+                    ],
+                    "rules": [
+                        {
+                            "id": "coding-to-cloud",
+                            "match": {
+                                "classifier": "topic",
+                                "label": "coding",
+                                "min_score": 0.6,
+                            },
+                            "route_to": cloud_model,
+                            "outputs": {"route_category": "cloud"},
+                        }
+                    ],
+                },
+            }
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+            # Semantically coding -> cloud candidate, answered by the mock provider.
+            _, decision, data = self._route(
+                "How do I refactor this recursive function to lower its time complexity?",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), cloud_model)
+            self.assertEqual(decision.get("matched_rule"), "coding-to-cloud")
+            self.assertEqual(
+                data["choices"][0]["message"]["content"],
+                marker,
+                "coding prompt should be answered by the cloud provider",
+            )
+            print(f"[OK] semantic coding -> {cloud_model} (cloud), answered by mock")
+
+            # Unrelated -> stays local (default).
+            _, decision, _ = self._route(
+                "What are some good recipes for a summer picnic by the lake?",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            self.assertTrue(decision.get("default_used"))
+            print(f"[OK] semantic non-coding -> {DEFAULT_MODEL} (local default)")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
 
 if __name__ == "__main__":
     run_server_tests(RouterTests, description="ROUTER TESTS")
