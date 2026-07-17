@@ -511,11 +511,13 @@ jobs:
         run: |
           set -euo pipefail
           UPDATE_BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-          EVIDENCE_BRANCH="auto-sdcpp-validation-images-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          EVIDENCE_BRANCH="auto/sdcpp-validation-images"
           EVIDENCE_ROOT=".github/sdcpp-validation"
-          EVIDENCE_DIR="${EVIDENCE_ROOT}/${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
-          # Keep only the current update evidence in the dedicated evidence branch
-          # so update PRs do not accumulate binary PNG evidence in their diffs.
+          EVIDENCE_NAME="${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
+          EVIDENCE_DIR="${EVIDENCE_ROOT}/${EVIDENCE_NAME}"
+
+          # The shared evidence branch keeps the newest three validation results.
+          # Older historical PR image links intentionally expire after pruning.
           rm -rf "$EVIDENCE_ROOT"
           python3 .github/scripts/render_sdcpp_pr_body.py \
             --base-release "$BASE_RELEASE" \
@@ -533,6 +535,7 @@ jobs:
             echo "UPDATE_BRANCH=$UPDATE_BRANCH"
             echo "EVIDENCE_BRANCH=$EVIDENCE_BRANCH"
             echo "EVIDENCE_ROOT=$EVIDENCE_ROOT"
+            echo "EVIDENCE_NAME=$EVIDENCE_NAME"
           } >> "$GITHUB_ENV"
 
       - name: Publish validation images
@@ -544,28 +547,82 @@ jobs:
           CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
         run: |
           set -euo pipefail
-          if [ ! -d "$EVIDENCE_ROOT" ]; then
-            echo "Expected validation evidence directory is missing: $EVIDENCE_ROOT" >&2
+          if [ ! -d "$EVIDENCE_ROOT/$EVIDENCE_NAME" ]; then
+            echo "Expected validation evidence directory is missing: $EVIDENCE_ROOT/$EVIDENCE_NAME" >&2
             exit 1
           fi
 
           PUBLISH_DIR="$(mktemp -d)"
-          EVIDENCE_COPY="$(mktemp -d)"
-          cp -R "$EVIDENCE_ROOT" "$EVIDENCE_COPY/sdcpp-validation"
+          SNAPSHOT_DIR="$(mktemp -d)"
+          CURRENT_EVIDENCE="$(mktemp -d)"
+          cp -R "$EVIDENCE_ROOT/$EVIDENCE_NAME" "$CURRENT_EVIDENCE/$EVIDENCE_NAME"
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
+
+          git init "$PUBLISH_DIR"
           cd "$PUBLISH_DIR"
-          git checkout --orphan "$EVIDENCE_BRANCH"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          REMOTE_SHA=$(git ls-remote origin "refs/heads/$EVIDENCE_BRANCH" | awk '{print $1}')
+          if [ -n "$REMOTE_SHA" ]; then
+            git fetch --depth 1 origin "refs/heads/$EVIDENCE_BRANCH"
+            git checkout --detach FETCH_HEAD
+            if [ -d .github/sdcpp-validation ]; then
+              cp -R .github/sdcpp-validation "$SNAPSHOT_DIR/sdcpp-validation"
+            fi
+          fi
+
+          mkdir -p "$SNAPSHOT_DIR/sdcpp-validation"
+          RESULT_DIR="$SNAPSHOT_DIR/sdcpp-validation/$EVIDENCE_NAME"
+
+          # Preserve the original publication time when a workflow reruns for the
+          # same release combination, so retention order remains deterministic.
+          if [ -f "$RESULT_DIR/.published-at" ]; then
+            PUBLISHED_AT=$(cat "$RESULT_DIR/.published-at")
+          else
+            PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          fi
+
+          rm -rf "$RESULT_DIR"
+          cp -R "$CURRENT_EVIDENCE/$EVIDENCE_NAME" "$RESULT_DIR"
+          printf '%s\n' "$PUBLISHED_AT" > "$RESULT_DIR/.published-at"
+
+          python3 - "$SNAPSHOT_DIR/sdcpp-validation" <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          entries = []
+          for directory in root.iterdir():
+              if not directory.is_dir():
+                  continue
+              marker = directory / ".published-at"
+              timestamp = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+              entries.append((timestamp, directory.name, directory))
+
+          entries.sort(reverse=True)
+          for _, _, directory in entries[3:]:
+              print(f"Pruning old validation evidence: {directory.name}")
+              shutil.rmtree(directory)
+          PY
+
+          git checkout --orphan evidence-publish
           git rm -rf . >/dev/null 2>&1 || true
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           mkdir -p .github
-          cp -R "$EVIDENCE_COPY/sdcpp-validation" .github/sdcpp-validation
-          touch .nojekyll
-          git add .nojekyll .github/sdcpp-validation
+          cp -R "$SNAPSHOT_DIR/sdcpp-validation" .github/sdcpp-validation
+          git add .github/sdcpp-validation
           git commit -m "Publish stable-diffusion.cpp validation images for ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
-          git push --force origin "$EVIDENCE_BRANCH"
+
+          if [ -n "$REMOTE_SHA" ]; then
+            git push \
+              --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$REMOTE_SHA" \
+              origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          else
+            git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          fi
 
       - name: Create or update Pull Request
         if: steps.update-diff.outputs.has_update == 'true'
@@ -581,11 +638,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet src/cpp/resources/backend_versions.json; then
-            echo "backend_versions.json is unchanged; nothing to update."
-            exit 0
-          fi
 
           git checkout -B "$BRANCH"
           git add src/cpp/resources/backend_versions.json
