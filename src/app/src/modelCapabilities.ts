@@ -76,6 +76,7 @@ export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
   const r = normalizeModelType(recipe);
   if (!r || r === 'unknown') return 'unknown';
   if (r === 'collection.omni' || r.startsWith('collection.omni.')) return 'omni';
+  if (r === 'collection.router' || r.startsWith('collection.router.')) return 'chat';
   if (r === 'collection') return 'omni';
   for (const [hint, cap] of NON_CHAT_RECIPE_HINTS) {
     if (r === hint || r.includes(hint)) return cap;

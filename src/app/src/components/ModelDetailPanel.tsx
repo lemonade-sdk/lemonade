@@ -60,6 +60,7 @@ function recipeDisplayLabel(recipe: string): string {
     case 'openmoss': return 'OpenMOSS TTS';
     case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni Collection';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
   }

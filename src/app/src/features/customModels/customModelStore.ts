@@ -2,6 +2,7 @@ import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
 import { scopedStorageKey } from '../accounts/accountStore';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
+import { routerRegistrationOptions } from '../router/routerStore';
 
 export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking'>;
 
@@ -253,6 +254,8 @@ export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
 }
 
 export function customRegistrationOptions(model: ModelInfo): Record<string, unknown> | undefined {
+  const routerOptions = routerRegistrationOptions(model);
+  if (routerOptions) return routerOptions;
   if (!(model as any).custom) return undefined;
   const checkpoint = String((model as any).checkpoint || '').trim();
   const recipe = String((model as any).recipe || '').trim();
