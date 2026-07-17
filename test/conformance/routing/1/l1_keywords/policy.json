@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Router-Keywords",
+  "recipe": "collection.router",
+  "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "routing": {
+    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "default_model": "Qwen3-8B-GGUF",
+    "rules": [
+      { "id": "code-to-big",
+        "match": { "any": [
+          { "keywords_any": ["def ", "function", "stack trace", "compile"] },
+          { "regex": "```[a-z]*" } ] },
+        "route_to": "vllm.qwen3-32b" },
+      { "id": "long-context-to-big",
+        "match": { "min_chars": 4000 },
+        "route_to": "vllm.qwen3-32b" }
+    ]
+  }
+}
