@@ -477,7 +477,10 @@ void WrappedServer::backend_watchdog_loop() {
             break;
         }
 
-        const bool reachable = utils::HttpClient::is_reachable(health_url, probe_timeout_seconds);
+        const bool reachable = utils::HttpClient::is_reachable(
+            health_url,
+            probe_timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         if (reachable) {
             consecutive_failures = 0;
             note_backend_activity();
@@ -548,7 +551,8 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
         }
 
         // Try health endpoint
-        if (utils::HttpClient::is_reachable(health_url, 1)) {
+        if (utils::HttpClient::is_reachable(
+                health_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
             LOG(INFO, "WrappedServer") << server_name_ + " is ready!" << std::endl;
             start_backend_watchdog(normalized_endpoint);
             return true;
@@ -635,8 +639,12 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
     try {
-        auto response = utils::HttpClient::post(url, request.dump(), headers,
-                                               timeout_seconds);
+        auto response = utils::HttpClient::post(
+            url,
+            request.dump(),
+            headers,
+            timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -688,8 +696,11 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        auto response = utils::HttpClient::post_multipart(url, fields,
-                                                         timeout_seconds);
+        auto response = utils::HttpClient::post_multipart(
+            url,
+            fields,
+            timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
         if (response.status_code == 200) {

@@ -621,7 +621,15 @@ private:
                 bool retryable = true;
                 std::string error_detail;
                 try {
-                    auto response = utils::HttpClient::post(batch_endpoint, payload, batch_headers, 3);
+                    const auto policy = batch_endpoint.rfind("http://", 0) == 0
+                        ? utils::HttpSecurityPolicy::AllowInsecureHttp
+                        : utils::HttpSecurityPolicy::ExternalHttpsOnly;
+                    auto response = utils::HttpClient::post(
+                        batch_endpoint,
+                        payload,
+                        batch_headers,
+                        3,
+                        policy);
                     if (response.status_code >= 200 && response.status_code < 300) {
                         success = true;
                         LOG(DEBUG, "Telemetry") << "Successfully sent telemetry batch." << std::endl;

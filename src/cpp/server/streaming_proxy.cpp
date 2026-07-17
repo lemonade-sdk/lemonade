@@ -131,7 +131,9 @@ void StreamingProxy::forward_sse_stream(
             return true;
         },
         {},
-        timeout_seconds
+        timeout_seconds,
+        nullptr,
+        utils::HttpSecurityPolicy::TrustedLoopback
     );
 
     const bool transport_interrupted =
@@ -249,7 +251,8 @@ void StreamingProxy::forward_byte_stream(
         },
         {},
         timeout_seconds,
-        [&backend_status](int status) { backend_status = status; }
+        [&backend_status](int status) { backend_status = status; },
+        utils::HttpSecurityPolicy::TrustedLoopback
     );
 
     const bool transport_interrupted =
