@@ -64,7 +64,7 @@ static json l0a_collection() {
             {"router", {
                 {"type", "llm"},
                 {"model", "Qwen3-1.7B-GGUF"},
-                {"prompt", "Reply with ONLY a model name."},
+                {"prompt", "Pick the best model for the user's request."},
             }},
         }},
     };
@@ -109,6 +109,58 @@ static void test_classifier_structured_choice() {
           s.rationale == "Hard reasoning task");
 }
 
+// The router LLM receives a structured JSON view of the routing context —
+// not just the latest text — so image-only, tool-bearing, and metadata-tagged
+// requests are all visible to it. History policy: text is the latest user
+// turn only (the frozen v1 RouteContext contract).
+static void test_classifier_receives_structured_context() {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_chat_reply("router-model",
+        "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}");
+    ClassifierServices svc = fake.make();
+    std::string seen_input;
+    auto inner = svc.chat;
+    svc.chat = [&seen_input, inner](const std::string& m, const std::string& p,
+                                    const std::string& i) {
+        seen_input = i;
+        return inner(m, p, i);
+    };
+    auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
+
+    // Image-only request: empty text, has_images=true — must not look empty.
+    RouteContext image_only;
+    image_only.input = "";
+    image_only.params.has_images = true;
+    image_only.params.chars = 0;
+    Score s1 = llm->evaluate(ClassifierContext{image_only, svc});
+    json payload = json::parse(seen_input);
+    check("llm: image-only request is visible as has_images with empty text",
+          payload.value("has_images", false) && payload.value("text", "x").empty());
+    check("llm: image-only request still routes via the structured payload",
+          s1.ok && s1.score_of("Qwen3-8B-GGUF") == 1.0);
+
+    // Tool-bearing request with no textual tool hint.
+    RouteContext with_tools;
+    with_tools.input = "do it";
+    with_tools.params.has_tools = true;
+    with_tools.params.chars = 5;
+    llm->evaluate(ClassifierContext{with_tools, svc});
+    payload = json::parse(seen_input);
+    check("llm: tool availability is visible without a textual hint",
+          payload.value("has_tools", false) && payload.value("text", "") == "do it");
+    check("llm: chars is carried in the payload",
+          payload.value("chars", 0) == 5);
+
+    // Metadata routing hints are passed verbatim.
+    RouteContext with_meta;
+    with_meta.input = "hi";
+    with_meta.metadata["task_class"] = "support";
+    llm->evaluate(ClassifierContext{with_meta, svc});
+    payload = json::parse(seen_input);
+    check("llm: metadata routing hints reach the router",
+          payload["metadata"].value("task_class", "") == "support");
+}
+
 static void test_classifier_prompt_carries_contract() {
     lemon::testing::FakeClassifierServices fake;
     fake.set_chat_reply("router-model",
@@ -133,6 +185,8 @@ static void test_classifier_prompt_carries_contract() {
     check("llm: composed prompt states the JSON response contract",
           seen_prompt.find("\"model\"") != std::string::npos &&
           seen_prompt.find("\"rationale\"") != std::string::npos);
+    check("llm: composed prompt describes the structured input and history policy",
+          seen_prompt.find("latest user turn only") != std::string::npos);
 }
 
 static void test_classifier_fenced_json_is_tolerated() {
@@ -249,14 +303,25 @@ static void test_e2e_routes_to_chosen() {
           d.route_to == "Qwen3.5-35B-A3B-GGUF" && !d.default_used);
 
     bool trace_has_rationale = false;
+    bool rejected_entry_clean = true;
+    bool saw_rejected_entry = false;
     for (const auto& e : d.trace) {
         if (e.condition == "classifier:__router" && e.result &&
             e.label == "Qwen3.5-35B-A3B-GGUF" &&
             e.rationale == "Hard reasoning") {
             trace_has_rationale = true;
         }
+        // The selected candidate is the SECOND identity rule, so the first
+        // band (Qwen3-8B) is evaluated and rejected before it. The winner's
+        // rationale must not be attached to that rejected entry.
+        if (e.condition == "classifier:__router" && !e.result) {
+            saw_rejected_entry = true;
+            if (!e.rationale.empty()) rejected_entry_clean = false;
+        }
     }
     check("e2e: trace identifies the tested label and records the rationale", trace_has_rationale);
+    check("e2e: rejected candidate entries do not carry the winner's rationale",
+          saw_rejected_entry && rejected_entry_clean);
 }
 
 static void test_e2e_invalid_falls_back() {
@@ -272,6 +337,7 @@ static void test_e2e_invalid_falls_back() {
 
 int main() {
     test_classifier_structured_choice();
+    test_classifier_receives_structured_context();
     test_classifier_prompt_carries_contract();
     test_classifier_fenced_json_is_tolerated();
     test_classifier_rejects_non_exact_replies();

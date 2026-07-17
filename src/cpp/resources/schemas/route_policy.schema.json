@@ -61,8 +61,8 @@
       "required": ["type", "model", "prompt"],
       "properties": {
         "type": { "const": "llm" },
-        "model": { "type": "string" },
-        "prompt": { "type": "string" }
+        "model": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -90,7 +90,7 @@
         "labels": {
           "description": "classifier output labels; dangling condition `label` refs are rejected.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "string", "minLength": 1 }
         },
         "default_label": {
           "description": "Used when a condition omits `label`.",

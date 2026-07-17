@@ -3237,8 +3237,10 @@ class EndpointTests(ServerTestBase):
         selected candidate share the single generation slot, so consecutive
         requests reload both models. Slot semantics for classifier models are
         deliberately out of scope here and tracked in #2725."""
-        router_model = ENDPOINT_TEST_MODEL
-        candidate_model = SECOND_TEST_MODEL_EVICTION
+        # The router must emit strict JSON; use the more capable model as the
+        # router and the tiny model as the candidate for CI reliability.
+        router_model = SECOND_TEST_MODEL_EVICTION
+        candidate_model = ENDPOINT_TEST_MODEL
         pull_model_with_retry(router_model)
         pull_model_with_retry(candidate_model)
 

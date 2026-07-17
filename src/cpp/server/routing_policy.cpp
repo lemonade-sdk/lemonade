@@ -162,7 +162,13 @@ public:
             if (label_.has_value()) {
                 entry.label = *label_;
             }
-            if (score.ok && !score.rationale.empty()) {
+            // The rationale explains the labels the classifier actually scored
+            // (for the llm router: the single selected candidate). A band that
+            // tests a different label must not carry it — otherwise the trace
+            // attaches the winner's rationale to rejected candidates.
+            const bool rationale_applies =
+                !label_.has_value() || score.labels.count(*label_) > 0;
+            if (score.ok && !score.rationale.empty() && rationale_applies) {
                 entry.rationale = score.rationale;
             }
             ctx.trace.push_back(std::move(entry));
@@ -287,7 +293,8 @@ public:
         }
         std::string reply;
         try {
-            reply = ctx.services.chat(model_, effective_prompt(), ctx.request.input);
+            reply = ctx.services.chat(model_, effective_prompt(),
+                                      build_context_payload(ctx.request));
         } catch (...) {
             return failed_score();
         }
@@ -323,11 +330,43 @@ public:
     }
 
 private:
+    // The user message handed to the router LLM: a structured JSON view of the
+    // routing context, so the router can see everything a deterministic rule
+    // could — not just the latest text. An image-only request is visible as
+    // has_images=true with empty text; a tool-bearing request as
+    // has_tools=true; length via chars; caller routing hints via metadata.
+    //
+    // History policy (explicit, per the frozen v1 RouteContext contract):
+    // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a
+    // single turn so earlier assistant/system turns can't skew routing;
+    // supplying more history to the router requires extending that contract
+    // for all classifiers, which is out of scope for this classifier.
+    static std::string build_context_payload(const RouteContext& request) {
+        json metadata = json::object();
+        for (const auto& [key, value] : request.metadata) {
+            metadata[key] = value;
+        }
+        const json payload = {
+            {"text", request.input},
+            {"has_tools", request.params.has_tools},
+            {"has_images", request.params.has_images},
+            {"chars", request.params.chars},
+            {"metadata", std::move(metadata)},
+        };
+        return payload.dump();
+    }
+
     // The author's prompt describes routing intent; the response contract —
-    // candidate vocabulary and the required JSON shape — is appended here so
-    // every llm router speaks the same protocol regardless of authoring.
+    // input format, candidate vocabulary, and the required JSON shape — is
+    // appended here so every llm router speaks the same protocol regardless
+    // of authoring.
     std::string effective_prompt() const {
-        std::string suffix = "You must choose exactly one of these models: ";
+        std::string suffix =
+            "The user message is a JSON object describing the request to "
+            "route: {\"text\": latest user turn only, \"has_tools\": whether "
+            "the request carries tools, \"has_images\": whether it carries "
+            "images, \"chars\": byte length of text, \"metadata\": caller "
+            "routing hints}. You must choose exactly one of these models: ";
         for (std::size_t i = 0; i < labels().size(); ++i) {
             if (i > 0) suffix += ", ";
             suffix += labels()[i];

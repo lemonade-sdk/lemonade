@@ -316,6 +316,26 @@ static void test_chat_service_is_constrained_invocation() {
           captured["messages"][0].value("content", "") == "route this");
 }
 
+// #2405 review: the llm router's history policy is "latest user turn only"
+// (the frozen v1 RouteContext contract). This pins that a multi-turn request
+// yields exactly the last user turn — earlier turns cannot affect the route
+// because they never reach the context, and therefore never reach the router.
+static void test_build_route_context_multi_turn_latest_user_turn_only() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", "first turn about databases"}},
+            {{"role", "assistant"}, {"content", "sure, here is a schema"}},
+            {{"role", "user"}, {"content", "now write a poem"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("multi-turn: input is the latest user turn only",
+          ctx.input == "now write a poem");
+    check("multi-turn: chars measures the latest turn, not the conversation",
+          ctx.params.chars == std::string("now write a poem").size());
+}
+
 static void test_build_route_context_chat_typed_parts_and_image() {
     json request = {
         {"model", "router"},
@@ -398,6 +418,7 @@ int main() {
     test_model_classifier_routes_with_router_services();
     test_chat_service_extracts_text();
     test_chat_service_is_constrained_invocation();
+    test_build_route_context_multi_turn_latest_user_turn_only();
     test_build_route_context_chat_typed_parts_and_image();
     test_build_route_context_responses_typed_input_message();
     test_build_route_context_responses_bare_parts();
