@@ -250,7 +250,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.6-35B-A3B-GGUF` | 23.3 | vision, tool-calling, hot |
 | `Qwen3.6-35B-A3B-MTP-GGUF` | 23.8 | vision, tool-calling, mtp |
 | `SmolLM3-3B-GGUF` | 1.94 | — |
-| `Tiny-Test-Model-GGUF` | 0.18 | — |
+| `Tiny-Gemma-Test-Model-GGUF` | 0.18 | — |
+| `Tiny-Test-Model-GGUF` | 0.09 | — |
 | `bge-reranker-v2-m3-GGUF` | 0.636 | reranking |
 | `gpt-oss-120b-GGUF` | 62.8 | reasoning, tool-calling |
 | `gpt-oss-120b-mxfp-GGUF` | 63.4 | hot, reasoning, tool-calling |

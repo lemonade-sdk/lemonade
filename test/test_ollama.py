@@ -855,7 +855,7 @@ class OllamaTests(ServerTestBase):
 
         try:
             # Use a model with native tool-calling support in its chat template;
-            # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
+            # the tiny test model (SmolLM2) lacks tool markers so the llama.cpp
             # autoparser ignores tools even with tool_choice required.
             self.ensure_tool_calling_model_pulled()
 
