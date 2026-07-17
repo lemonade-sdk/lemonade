@@ -14,6 +14,12 @@
 
 namespace lemon {
 
+static thread_local std::atomic<bool>* t_request_cancel = nullptr;
+
+void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) { t_request_cancel = f; }
+
+std::atomic<bool>* WrappedServer::current_request_cancel() { return t_request_cancel; }
+
 namespace {
 
 std::string lower_copy(std::string value) {
@@ -532,6 +538,13 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
     for (int i = 0; i < max_attempts; i++) {
+        if (load_cancel_ && load_cancel_->load()) {
+            const ProcessHandle h = consume_process_handle_for_cleanup();
+            if (has_process_handle(h)) utils::ProcessManager::stop_process(h);
+            LOG(WARNING, "WrappedServer") << server_name_ << " load cancelled" << std::endl;
+            return false;
+        }
+
         // Check if process is still running. If it already exited, consume and
         // reap the owned handle here so the caller cannot later signal a stale
         // PID while cleaning up a failed startup.
@@ -644,7 +657,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             request.dump(),
             headers,
             timeout_seconds,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel());
         note_backend_activity();
 
         if (response.status_code == 200) {
