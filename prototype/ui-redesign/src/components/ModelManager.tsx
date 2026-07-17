@@ -15,8 +15,19 @@ import { ModelDetailPanel } from './ModelDetailPanel';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import RouterEditorPanel from './RouterEditorPanel';
+import GlobalModelSettingsPanel, { type UpdateAllModelsResult } from './GlobalModelSettingsPanel';
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
+import {
+  GLOBAL_MODEL_SETTINGS_EVENT,
+  automaticUpdateIsDue,
+  loadGlobalModelSettings,
+  loadPinnedModelNames,
+  loadWithGlobalModelPolicy,
+  saveGlobalModelSettings,
+  savePinnedModelNames,
+  type GlobalModelSettings,
+} from '../features/modelSettings/globalModelSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -661,24 +672,6 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
   return result;
 }
 
-function pinnedModelsKey(scope: string): string {
-  return scopedStorageKey(scope, 'pinned_models');
-}
-
-function loadPinnedModels(scope: string): string[] {
-  try {
-    const raw = localStorage.getItem(pinnedModelsKey(scope));
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map(v => String(v).trim()).filter(Boolean) : [];
-  } catch { return []; }
-}
-
-function savePinnedModels(scope: string, names: string[]): void {
-  try {
-    localStorage.setItem(pinnedModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
-  } catch {}
-}
-
 // Favorites are a DISTINCT client-local concept from Pinned (fl0rianr #2424).
 // Pinned models float to the top of the middle list; favorites is a separate
 // filter/count surfaced by the left-rail "Favorites" (star) entry. Stored under
@@ -1275,6 +1268,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
@@ -1282,13 +1276,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
-  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModels(accountSession.storageScope));
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames(accountSession.storageScope));
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels(accountSession.storageScope));
   // Multi-select functional capability filter driven by the funnel popover.
   const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
+  const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings(accountSession.storageScope));
+  const automaticUpdateStartedRef = useRef(false);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
@@ -1384,7 +1380,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
 
   useEffect(() => {
-    setPinnedModels(loadPinnedModels(accountSession.storageScope));
+    setPinnedModels(loadPinnedModelNames(accountSession.storageScope));
     setFavoriteModels(loadFavoriteModels(accountSession.storageScope));
   }, [accountSession.storageScope]);
 
@@ -1404,6 +1400,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+  }, [accountSession.storageScope]);
+
+  useEffect(() => {
+    const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings(accountSession.storageScope));
+    automaticUpdateStartedRef.current = false;
+    reloadGlobalSettings();
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
   }, [accountSession.storageScope]);
 
   const refreshCustomRecipeAvailability = useCallback(async () => {
@@ -1738,13 +1742,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     visited.delete(key);
   };
 
+  const loadWithGlobalPolicy = async (model: ModelInfo): Promise<void> => {
+    await loadWithGlobalModelPolicy({
+      loadedModels,
+      allModels,
+      target: model,
+      pinnedNames: pinnedModels,
+      settings: globalModelSettings,
+      unload: name => api.unloadModel(name),
+      load: () => loadModelRuntime(model),
+    });
+  };
+
   const handleLoad = async (model: ModelInfo) => {
     if (loadingModel) return;
     const name = modelName(model);
     setLoadError(null);
     setLoadingModel(name);
     try {
-      await loadModelRuntime(model);
+      await loadWithGlobalPolicy(model);
       await refresh();
       onModelSelect(name);
     } catch (err) {
@@ -1981,6 +1997,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const openCustomForm = (mode: CustomFormMode = 'model') => {
     setShowRouterEditor(false);
+    setShowGlobalSettings(false);
     setRouterEditorModel(null);
     setEditingCustomModelName(null);
     setCustomDraft(createEmptyCustomDraft(mode));
@@ -1991,6 +2008,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const openCustomCollectionEditor = (model: ModelInfo) => {
     setShowRouterEditor(false);
+    setShowGlobalSettings(false);
     setRouterEditorModel(null);
     setEditingCustomModelName(modelName(model));
     setCustomDraft(customDraftFromModel(model));
@@ -2007,6 +2025,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const openRouterEditor = (model?: ModelInfo | null) => {
     closeCustomForm();
+    setShowGlobalSettings(false);
     const routerModel = model && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE ? model : null;
     setRouterEditorModel(routerModel);
     setShowRouterEditor(true);
@@ -2016,6 +2035,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const closeRouterEditor = () => {
     setShowRouterEditor(false);
     setRouterEditorModel(null);
+  };
+
+  const openGlobalSettings = () => {
+    closeCustomForm();
+    closeRouterEditor();
+    setShowGlobalSettings(true);
+    setMobileDetailOpen(true);
+  };
+
+  const closeGlobalSettings = () => {
+    setShowGlobalSettings(false);
   };
 
   const pullRegistrationOrThrow = async (
@@ -2118,7 +2148,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setPinnedModels(prev => {
       const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
       const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
-      savePinnedModels(accountSession.storageScope, next);
+      savePinnedModelNames(accountSession.storageScope, next);
       return next;
     });
   };
@@ -2419,6 +2449,47 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     }
     return { downloaded: dl, available: av };
   }, [allModels, loadedNames]);
+
+  const handleUpdateAllModels = useCallback(async (): Promise<UpdateAllModelsResult> => {
+    const candidates = allModels.filter(model => {
+      const name = modelName(model);
+      if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
+      return loadedNames.has(name)
+        || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
+    });
+
+    let started = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (const model of candidates) {
+      const name = modelName(model);
+      if (pulling[name] !== undefined) {
+        skipped += 1;
+        continue;
+      }
+      started += 1;
+      // Queue all pulls without holding the settings panel open for potentially
+      // multi-gigabyte downloads. Progress and terminal failures stay visible in
+      // the normal download manager and model rows.
+      void handlePull(model).catch(error => {
+        console.error(`Could not start update for ${name}:`, error);
+      });
+    }
+    return { started, skipped, errors };
+  }, [allModels, loadedNames, pulling]);
+
+  useEffect(() => {
+    if (automaticUpdateStartedRef.current || !api.isConnected || modelsLoading) return;
+    if (!automaticUpdateIsDue(globalModelSettings)) return;
+    automaticUpdateStartedRef.current = true;
+    void handleUpdateAllModels().finally(() => {
+      const next = saveGlobalModelSettings(accountSession.storageScope, {
+        ...loadGlobalModelSettings(accountSession.storageScope),
+        lastAutomaticUpdateAt: new Date().toISOString(),
+      });
+      setGlobalModelSettings(next);
+    });
+  }, [accountSession.storageScope, globalModelSettings, handleUpdateAllModels, modelsLoading]);
 
   const applyFilter = useCallback((list: ModelInfo[]) => {
     let filtered = list;
@@ -3287,6 +3358,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           setMobileDetailOpen(true);
           if (showCustomForm) closeCustomForm();
           if (showRouterEditor) closeRouterEditor();
+          if (showGlobalSettings) closeGlobalSettings();
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -3299,6 +3371,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         tagFilter={tagFilter}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
+        onOpenGlobalSettings={openGlobalSettings}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
@@ -3321,8 +3394,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         onKeyDown={handleModelListResizeKeyDown}
       />
 
-      {/* Right panel: router editor, custom form, or model detail */}
-      {showRouterEditor ? (
+      {/* Right panel: global settings, router editor, custom form, or model detail */}
+      {showGlobalSettings ? (
+        <div className="manager__detail-form-panel manager__detail-form-panel--global-settings">
+          <GlobalModelSettingsPanel
+            scope={accountSession.storageScope}
+            models={allModels}
+            loadedModels={loadedModels}
+            pinnedModels={pinnedModels}
+            onTogglePin={togglePinnedModel}
+            onUpdateAllModels={handleUpdateAllModels}
+            onClose={closeGlobalSettings}
+          />
+        </div>
+      ) : showRouterEditor ? (
         <div className="manager__detail-form-panel manager__detail-form-panel--router">
           <RouterEditorPanel
             models={allModels}

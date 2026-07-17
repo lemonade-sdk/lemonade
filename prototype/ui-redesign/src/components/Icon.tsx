@@ -13,7 +13,7 @@ export type IconName =
   | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog' | 'router'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
   | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
-  | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square';
+  | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers';
 
 interface IconProps {
   name: IconName;
@@ -95,6 +95,8 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'cloud-off': return <><path d="M3 3l18 18" /><path d="M9.5 5.4A7 7 0 0119.7 11.2 4 4 0 0118 18.8" /><path d="M7 19a5 5 0 01-1.6-9.74" /></>;
       case 'user-round-cog': return <><path d="M2 21a8 8 0 0 1 10.434-7.62" /><circle cx="10" cy="8" r="5" /><circle cx="18" cy="18" r="3" /><path d="m19.5 14.3-.4.9m-2.2 5.6-.4.9m5.2-.4-.9-.4m-5.6-2.2-.9-.4m7.4 0-.9.4m-5.6 2.2-.9.4m5.2 2.2-.4-.9m-2.2-5.6-.4-.9" /></>;
       case 'router': return <><rect x="2" y="14" width="20" height="8" rx="2" /><path d="M6.01 18H6M10.01 18H10M15 10v4" /><path d="M17.84 7.17a4 4 0 00-5.66 0" /><path d="M20.66 4.34a8 8 0 00-11.31 0" /></>;
+      case 'settings': return <><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z" /><path d="M19.4 15a1.7 1.7 0 00.34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 00-1.88-.34 1.7 1.7 0 00-1.03 1.55V20h-3v-.09a1.7 1.7 0 00-1.03-1.55 1.7 1.7 0 00-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 007 14.7a1.7 1.7 0 00-1.55-1.03H5.3v-3h.09A1.7 1.7 0 006.94 9.6a1.7 1.7 0 00-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 001.88.34A1.7 1.7 0 0011.63 4.4V4.3h3v.09a1.7 1.7 0 001.03 1.55 1.7 1.7 0 001.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 00-.34 1.88 1.7 1.7 0 001.55 1.03h.09v3h-.09A1.7 1.7 0 0019.4 15z" /></>;
+      case 'layers': return <><path d="M12 2l9 5-9 5-9-5 9-5z" /><path d="M3 12l9 5 9-5" /><path d="M3 17l9 5 9-5" /></>;
       case 'speech': return <><path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z" /><path d="M8 9h8" /><path d="M8 13h5" /></>;
       case 'book-open': return <><path d="M12 7v14" /><path d="M3 5.5A2.5 2.5 0 015.5 3H12v18H5.5A2.5 2.5 0 013 18.5z" /><path d="M21 5.5A2.5 2.5 0 0018.5 3H12v18h6.5a2.5 2.5 0 002.5-2.5z" /></>;
       case 'newspaper': return <><path d="M4 5h13a3 3 0 013 3v11H7a3 3 0 01-3-3z" /><path d="M4 16a3 3 0 003 3" /><path d="M8 8h6" /><path d="M8 12h8" /><path d="M8 15h5" /></>;

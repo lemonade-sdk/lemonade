@@ -49,6 +49,12 @@ import {
   presetMcpDisplayText,
 } from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
+import {
+  GLOBAL_MODEL_SETTINGS_EVENT,
+  loadGlobalModelSettings,
+  loadPinnedModelNames,
+  loadWithGlobalModelPolicy,
+} from '../features/modelSettings/globalModelSettings';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -695,6 +701,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [presetVersion, setPresetVersion] = useState(0);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(storageScope));
+  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings(storageScope));
   const [railExpanded, setRailExpanded] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
@@ -936,8 +943,18 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
   }, [storageScope]);
 
+  useEffect(() => {
+    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings(storageScope));
+    reloadGlobalModelSettings();
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
+  }, [storageScope]);
+
   const allPresets = useMemo(() => allStoredPresets(), [presetVersion]);
-  const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
+  const currentPreset = useMemo(
+    () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
+    [currentCapability, currentModel, presetVersion],
+  );
 
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
@@ -1108,7 +1125,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
   const presetPickerOptions = useMemo(() => {
-    if (!currentModel) return [];
+    if (!currentModel || currentCapability === 'image') return [];
     const q = presetPickerQuery.trim().toLowerCase();
     return allPresets
       .filter(preset => isCompatible(preset, presetPickerTarget))
@@ -1123,7 +1140,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         ].join(' ').toLowerCase().includes(q);
       })
       .slice(0, 80);
-  }, [allPresets, currentModel, presetPickerQuery, presetPickerTarget]);
+  }, [allPresets, currentCapability, currentModel, presetPickerQuery, presetPickerTarget]);
 
   const handlePresetPickerSelect = useCallback(async (preset: Preset) => {
     if (!currentModel || presetPickerApplying) return;
@@ -1286,6 +1303,30 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   useEffect(() => () => stopAutoSpeech(), [stopAutoSpeech]);
 
+  const loadModelWithPolicy = useCallback(async (
+    modelName: string,
+    info: ModelInfo | null,
+    recipeOptions?: Record<string, unknown>,
+  ) => {
+    let currentLoaded = loadedModels;
+    try {
+      currentLoaded = (await api.health()).all_models_loaded || loadedModels;
+    } catch {
+      // The render snapshot is still sufficient when a health refresh is not
+      // available (for example during a short reconnect window).
+    }
+    const target = info || findModelInfoByName(knownModelInfos, modelName) || null;
+    return loadWithGlobalModelPolicy({
+      loadedModels: currentLoaded,
+      allModels: knownModelInfos,
+      target,
+      pinnedNames: loadPinnedModelNames(storageScope),
+      settings: globalModelSettings,
+      unload: name => api.unloadModel(name),
+      load: () => api.loadModel(modelName, recipeOptions, target),
+    });
+  }, [globalModelSettings, knownModelInfos, loadedModels, storageScope]);
+
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
     const modelName = ttsPlaybackSettings.modelName;
@@ -1297,7 +1338,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     try {
       const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
       if (!isLoaded) {
-        await api.loadModel(modelName, undefined, findModelInfoByName(knownModelInfos, modelName) || null);
+        await loadModelWithPolicy(modelName, findModelInfoByName(knownModelInfos, modelName) || null);
       }
       const modelInfo = findModelInfoByName(knownModelInfos, modelName);
       const modelRecipe = String(
@@ -1322,7 +1363,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelWithPolicy, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -1840,7 +1881,7 @@ ${finalText}`
           if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
           const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
           if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
-            await api.loadModel(model3dSettings.imageModel, undefined, imageInfo);
+            await loadModelWithPolicy(model3dSettings.imageModel, imageInfo);
           }
           const references = await api.imageGeneration(
             model3dSettings.imageModel,
@@ -1849,7 +1890,7 @@ ${finalText}`
           );
           referenceImage = references[0];
           generatedReference = [referenceImage];
-          await api.loadModel(model.name, undefined, findModelInfoByName(knownModelInfos, model.name) || null);
+          await loadModelWithPolicy(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
         } else if (!referenceImage) {
           throw new Error('Image-to-3D needs one reference image.');
         }
@@ -1884,9 +1925,8 @@ ${finalText}`
             targetModel = openMossVoiceDesignModel;
             if (openMossCloneModel) {
               if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
-                await api.loadModel(
+                await loadModelWithPolicy(
                   openMossVoiceDesignModel,
-                  undefined,
                   findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
                 );
               }
@@ -1917,7 +1957,7 @@ ${finalText}`
           }
 
           if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
-            await api.loadModel(targetModel, undefined, findModelInfoByName(knownModelInfos, targetModel) || null);
+            await loadModelWithPolicy(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
           }
         }
 
@@ -1957,7 +1997,7 @@ ${finalText}`
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
     presetVersion, speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
@@ -2406,7 +2446,7 @@ ${finalText}`
     setModelPickerError(null);
     setModelPickerLoading(option.name);
     try {
-      await api.loadModel(option.name, undefined, option.info || null);
+      await loadModelWithPolicy(option.name, option.info || null);
       await Promise.resolve(onRefresh());
       onModelSelect(option.name);
       setModelPickerOpen(false);
@@ -2416,7 +2456,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [modelPickerLoading, onModelSelect, onRefresh]);
+  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -2688,6 +2728,7 @@ ${finalText}`
                   message={msg}
                   activeModel={currentModelSnapshot}
                   userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
+                  defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
@@ -2857,7 +2898,7 @@ ${finalText}`
           >
             <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={13} /> {modelModeLabel(currentCapability, supportsChatAudioInput)} mode
           </button>
-          {currentPreset && currentModel && (
+          {currentPreset && currentModel && currentCapability !== 'image' && (
             <div className="composer__preset-picker" ref={presetPickerRef}>
               <button
                 type="button"
@@ -3522,8 +3563,8 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
-  const [thinkingOpen, setThinkingOpen] = useState(false);
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+  const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
 

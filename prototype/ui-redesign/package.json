@@ -21,13 +21,15 @@
     "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
     "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs",
     "test:router-editor": "node tests/router-editor.runtime.cjs",
-    "test:router-store": "node tests/router-store.runtime.cjs"
+    "test:router-store": "node tests/router-store.runtime.cjs",
+    "test:global-model-settings": "node tests/global-model-settings.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.60.0",
     "@types/katex": "^0.16.7",
     "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.20.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "css-loader": "^7.1.2",

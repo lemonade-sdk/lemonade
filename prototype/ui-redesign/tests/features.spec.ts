@@ -408,6 +408,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
       localStorage.removeItem('lemonade_user_presets');
       localStorage.removeItem('lemonade_applied_presets');
     });
+    // Presets fetch /models directly, while the Models view only hydrates its
+    // list after the API client has a successful health state. Keep both views
+    // on the same deterministic mock server so the image fixture remains
+    // available after navigating from Presets to Models.
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
     await page.route('**/api/v1/models**', async route => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -423,6 +430,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
+    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
 
     // Navigate to Presets
     await page.locator('.titlebar__nav').getByText('Presets').click();
@@ -446,16 +454,18 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const starterZone = recipesView.locator('.zone').filter({ hasText: 'Bundled starters' });
     await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
 
-    // Should have 8 starter cards
+    // Six chat starters plus one configurable Speech starter.
     const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
-    await expect(starterCards).toHaveCount(9);
+    await expect(starterCards).toHaveCount(7);
 
     // Starter badge on first card
     await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
 
     // Capability chip visible on cards (v1.4 applies_to schema)
     await expect(starterCards.first().locator('.cap-chip')).toContainText('Chat');
-    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('Image');
+    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('TTS');
+    await expect(recipesView.locator('[data-recipe-id="s-speech"]')).toHaveCount(1);
+    await expect(recipesView.locator('[data-recipe-id="s-quality"], [data-recipe-id="s-preview"], [data-recipe-id="s-turbo"]')).toHaveCount(0);
 
     // Zone: Your presets is genuinely empty on first run
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
@@ -505,6 +515,28 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
     await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
 
+    // The single Speech starter owns both TTS-family and voice selection. Its
+    // controls align on one baseline and the Apply action stays inside the panel.
+    await recipesView.locator('[data-recipe-id="s-speech"] .recipe-card__overlay-btn').click();
+    const ttsSelects = page.locator('[data-preset-fields="tts-voice"] select');
+    await expect(ttsSelects).toHaveCount(2);
+    const ttsBoxes = await ttsSelects.evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, height: rect.height };
+    }));
+    expect(Math.abs(ttsBoxes[0].top - ttsBoxes[1].top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(ttsBoxes[0].height - ttsBoxes[1].height)).toBeLessThanOrEqual(1);
+    const applyButton = page.locator('.preset-apply-row .btn--primary');
+    await expect(applyButton).toBeVisible();
+    const applyFits = await applyButton.evaluate(button => {
+      const buttonRect = button.getBoundingClientRect();
+      const panelRect = button.closest('.slideover')!.getBoundingClientRect();
+      return buttonRect.right <= panelRect.right && buttonRect.left >= panelRect.left;
+    });
+    expect(applyFits).toBeTruthy();
+    await page.locator('.slideover__close').click();
+    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
+
     const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
     expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
     expect(zoneTitles.indexOf('Bundled starters')).toBeLessThan(zoneTitles.indexOf('Applied to models'));
@@ -513,6 +545,19 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+
+    // Image presets remain deliberately disabled. Selecting an image-only model
+    // skips Presets and opens the Default baseline directly in Model Tuning.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    const imageModel = page.locator('.model-list-item').filter({ hasText: 'sd-image' }).first();
+    await expect(imageModel).toBeVisible();
+    await imageModel.click();
+    await expect(page.locator('#detail-tab-presets')).toHaveCount(0);
+    await expect(page.locator('#detail-tab-tuning')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#detail-panel-tuning')).toBeVisible();
+    await expect(page.locator('[data-model-tuning-preset]')).toHaveValue('s-default');
+    await expect(page.locator('[data-model-tuning-preset]')).toBeDisabled();
+    await expect(page.locator('.detail-tuning__intro')).toContainText('image request override these model defaults');
   });
 
 
