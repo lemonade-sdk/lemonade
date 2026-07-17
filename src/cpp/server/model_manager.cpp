@@ -4559,16 +4559,20 @@ std::optional<std::string> ModelManager::validate_collection_request(
             } catch (...) {
                 // Not registered yet - the name may match an inline `models[]`
                 // definition in this same request; derive its type from that
-                // definition's declared labels instead of guessing one.
+                // definition's declared labels (absent labels default to LLM,
+                // same as everywhere else). Only nullopt if no definition
+                // exists at all - that's the "truly unknown" case.
                 const json* def = find_inline_def(bare_component_name(name));
-                if (def && def->contains("labels") && (*def)["labels"].is_array()) {
-                    std::vector<std::string> labels;
+                if (!def) {
+                    return std::nullopt;
+                }
+                std::vector<std::string> labels;
+                if (def->contains("labels") && (*def)["labels"].is_array()) {
                     for (const auto& label : (*def)["labels"]) {
                         if (label.is_string()) labels.push_back(label.get<std::string>());
                     }
-                    return get_model_type_from_labels(labels);
                 }
-                return std::nullopt;
+                return get_model_type_from_labels(labels);
             }
         };
         try {
