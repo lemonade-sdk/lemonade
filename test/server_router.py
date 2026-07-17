@@ -4,8 +4,9 @@ Router end-to-end tests for Lemonade Server (issue #2388).
 Registers a `collection.router` collection and drives it with a vanilla OpenAI
 client, asserting that requests are dispatched to the right candidate by the
 policy's rules. Covers deterministic conditions (keywords / min_chars /
-metadata), first-match ordering, fail-open to `default_model`, and the decision
-surfaced on the response (`x-lemonade-route` header + `x_lemonade_route` body).
+metadata), a model-backed `semantic_similarity` classifier, a cloud candidate,
+first-match ordering, fail-open to `default_model`, and the decision surfaced on
+the response (`x-lemonade-route` header + `x_lemonade_route` body).
 
 The routing decision is computed server-side before the request is forwarded to
 the chosen candidate, so these are true end-to-end runs: a real completion comes
@@ -104,6 +105,8 @@ def start_mock_cloud_provider(upstream_ids, marker_content):
 # test — only which one answers matters.
 DEFAULT_MODEL = "Tiny-Test-Model-GGUF"
 CAPABLE_MODEL = "Qwen3-0.6B-GGUF"
+# Small embedding model that backs the semantic_similarity classifier.
+EMBED_MODEL = "nomic-embed-text-v1-GGUF"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -163,10 +166,10 @@ class RouterTests(ServerTestBase):
         super().setUp()
         self._ensure_setup()
 
-    def _route(self, prompt, metadata=None):
+    def _route(self, prompt, metadata=None, collection=COLLECTION_NAME):
         """Send a chat request through the router; return (header, decision, body)."""
         body = {
-            "model": COLLECTION_NAME,
+            "model": collection,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 8,
             "temperature": 0.0,
@@ -381,6 +384,97 @@ class RouterTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             stop_provider()
+
+    def test_620_semantic_similarity_routing(self):
+        """A `semantic_similarity` classifier routes by embedding similarity.
+
+        This is the first *model-backed* condition in the suite: it embeds the
+        input (via `Router::embeddings`) and scores it against labelled
+        reference phrases. Scores are deterministic for a fixed model, so the
+        0.6 threshold reliably separates a coding query (~0.74) from an
+        unrelated one (~0.47).
+        """
+        pull_model_with_retry(EMBED_MODEL)
+        collection = "user.Test-Router-Semantic"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL, EMBED_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "classifiers": [
+                    {
+                        "id": "topic",
+                        "type": "semantic_similarity",
+                        "model": EMBED_MODEL,
+                        "reference_phrases": {
+                            "coding": [
+                                "write a function",
+                                "fix this bug",
+                                "refactor this code",
+                                "debug a stack trace",
+                                "time complexity of an algorithm",
+                            ]
+                        },
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "coding-to-capable",
+                        "match": {
+                            "classifier": "topic",
+                            "label": "coding",
+                            "min_score": 0.6,
+                        },
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        resp = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+        )
+        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+        try:
+
+            def classify_score(decision):
+                for t in decision.get("trace", []):
+                    if t["condition"] == "classifier:topic":
+                        return t.get("score")
+                return None
+
+            # A semantically coding prompt (no literal rule keyword) -> capable.
+            _, decision, _ = self._route(
+                "How do I refactor this recursive function to lower its time complexity?",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+            self.assertEqual(decision.get("matched_rule"), "coding-to-capable")
+            coding_score = classify_score(decision)
+            self.assertIsNotNone(coding_score)
+            self.assertGreaterEqual(coding_score, 0.6)
+            print(f"[OK] semantic coding ({coding_score:.3f}) -> {CAPABLE_MODEL}")
+
+            # An unrelated prompt scores below threshold -> default.
+            _, decision, _ = self._route(
+                "What are some good recipes for a summer picnic by the lake?",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            self.assertTrue(decision.get("default_used"))
+            other_score = classify_score(decision)
+            self.assertIsNotNone(other_score)
+            self.assertLess(other_score, 0.6)
+            print(f"[OK] semantic non-coding ({other_score:.3f}) -> {DEFAULT_MODEL}")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
 
 if __name__ == "__main__":
