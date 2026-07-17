@@ -21,7 +21,14 @@ using RoutingComponentResolver =
 // binds this to the model registry (ModelInfo::type); pure parser tests leave
 // it unset, which skips the capability check entirely (matching prior
 // behavior — this option is additive and opt-in).
-using RoutingModelTypeResolver = std::function<ModelType(const std::string& resolved_model)>;
+//
+// Returns nullopt when the type genuinely cannot be established (e.g. an
+// inline collection component with no matching `models[]` definition to fall
+// back on) — the parser treats that as a hard error rather than guessing a
+// type, since guessing wrong is worse than not checking at all: it can both
+// reject valid configs and silently accept invalid ones.
+using RoutingModelTypeResolver =
+    std::function<std::optional<ModelType>(const std::string& resolved_model)>;
 
 struct RoutingPolicyParseOptions {
     RoutingComponentResolver resolve_component;

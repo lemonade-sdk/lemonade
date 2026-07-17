@@ -422,7 +422,13 @@ json parse_classifier_configs(const json& routing,
             // configured (pure parser tests, and callers that don't have a
             // model registry to check against).
             if (options.get_model_type) {
-                const ModelType model_type = options.get_model_type(resolved_model);
+                const std::optional<ModelType> resolved_type = options.get_model_type(resolved_model);
+                if (!resolved_type) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has an unresolvable type; "
+                        "cannot validate it as a '" + type + "'");
+                }
+                const ModelType model_type = *resolved_type;
                 if (type == "classifier" &&
                     model_type != ModelType::LLM && model_type != ModelType::CLASSIFICATION) {
                     throw std::invalid_argument(

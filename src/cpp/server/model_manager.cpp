@@ -1935,9 +1935,9 @@ void ModelManager::build_cache() {
     // Direct lookup into the map already being built, same rationale as
     // resolve_component above: models_cache_ is populated and the lock is
     // still held, so this avoids re-entering get_model_info()'s own locking.
-    policy_options.get_model_type = [this](const std::string& name) -> ModelType {
+    policy_options.get_model_type = [this](const std::string& name) -> std::optional<ModelType> {
         auto it = models_cache_.find(name);
-        return it != models_cache_.end() ? it->second.type : ModelType::LLM;
+        return it != models_cache_.end() ? std::optional<ModelType>(it->second.type) : std::nullopt;
     };
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
@@ -4553,13 +4553,22 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 return name;
             }
         };
-        options.get_model_type = [this](const std::string& name) -> ModelType {
+        options.get_model_type = [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
             try {
                 return get_model_info(name).type;
             } catch (...) {
-                // Unregistered inline-collection component: no type to check
-                // yet, so don't block registration on it here.
-                return ModelType::LLM;
+                // Not registered yet - the name may match an inline `models[]`
+                // definition in this same request; derive its type from that
+                // definition's declared labels instead of guessing one.
+                const json* def = find_inline_def(bare_component_name(name));
+                if (def && def->contains("labels") && (*def)["labels"].is_array()) {
+                    std::vector<std::string> labels;
+                    for (const auto& label : (*def)["labels"]) {
+                        if (label.is_string()) labels.push_back(label.get<std::string>());
+                    }
+                    return get_model_type_from_labels(labels);
+                }
+                return std::nullopt;
             }
         };
         try {
