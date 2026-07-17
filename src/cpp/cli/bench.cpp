@@ -1015,8 +1015,8 @@ FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& result
     for (const auto& backend_result : results) {
         for (const auto& scenario : backend_result.scenarios) {
             if (scenario.runs.empty()) {
-                widths.ttft = std::max(widths.ttft, 8UL);
-                widths.tps = std::max(widths.tps, 8UL);
+                widths.ttft = std::max(widths.ttft, size_t{8});
+                widths.tps  = std::max(widths.tps,  size_t{8});
             } else {
                 double max_ttft = scenario.ttft_max_ms();
                 widths.ttft = std::max(widths.ttft, calculate_number_width(max_ttft, 1));
