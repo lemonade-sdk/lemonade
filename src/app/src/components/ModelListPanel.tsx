@@ -892,7 +892,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   <span className="model-list-item__caps" role="img" aria-label={`Capabilities: ${capTags.map(t => CAPABILITY_TAG_LABELS[t]).join(', ')}`}>
                     {capTags.map(tag => (
                       <span key={tag} className="model-list-item__cap" title={CAPABILITY_TAG_LABELS[tag]}>
-                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={10} aria-hidden="true" />
+                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
                       </span>
                     ))}
                   </span>
