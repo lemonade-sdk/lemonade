@@ -14,6 +14,9 @@ import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
+import RouterEditorPanel from './RouterEditorPanel';
+import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
+import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -95,6 +98,7 @@ function recipeBadgeText(recipe: string): string {
     case 'openmoss': return 'OpenMOSS';
     case 'trellis': return 'TRELLIS';
     case 'collection.omni': return 'Omni';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Backend';
   }
@@ -116,6 +120,7 @@ function recipeColor(recipe: string): string {
     case 'openmoss': return '#f9a8d4';
     case 'trellis': return '#818cf8';
     case 'collection.omni': return '#a78bfa';
+    case 'collection.router': return '#22d3ee';
     case 'collection': return '#94a3b8';
     default: return 'var(--text-tertiary)';
   }
@@ -151,6 +156,7 @@ function recipeLabel(recipe: string): string {
     case 'openmoss': return 'OpenMOSS TTS';
     case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni Collection';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Unknown';
   }
@@ -389,6 +395,7 @@ const RECIPE_BADGES: Record<string, string> = {
   trellis: 'TRELLIS.2',
   'ryzenai-llm': 'RyzenAI',
   'collection.omni': 'Omni Collection',
+  'collection.router': 'Router',
 };
 
 type CustomRecipeOption = { value: string; recipe: string; backend?: string; label: string; hint: string };
@@ -1265,6 +1272,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
 
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
+  const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
+  const [showRouterEditor, setShowRouterEditor] = useState(false);
+  const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
@@ -1355,8 +1365,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
 
   useEffect(() => {
-    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0;
-  }, [models.length, loadedModels.length, customModels.length]);
+    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0 || routerModels.length > 0;
+  }, [models.length, loadedModels.length, customModels.length, routerModels.length]);
 
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
@@ -1365,6 +1375,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [accountSession.storageScope]);
 
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
+
+  const reloadRouterModels = useCallback(() => {
+    setRouterModels(loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
+  }, [accountSession.storageScope]);
+
+  useEffect(() => { reloadRouterModels(); }, [reloadRouterModels]);
 
 
   useEffect(() => {
@@ -1769,8 +1785,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     await refresh();
   };
 
+  const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
+    if (api.isConnected) await api.deleteModel(name);
+    deleteRouterRecord(accountSession.storageScope, name);
+    reloadRouterModels();
+    if (selectedDetailModelId === name) setSelectedDetailModelId(null);
+  };
+
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if ((model as any).custom && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
+      if (!confirm(`Delete router definition "${model.display_name || name}"?`)) return;
+      try {
+        await handleDeleteRouterDefinition(name);
+      } catch (err) {
+        console.error('Router delete failed:', err);
+      }
+      return;
+    }
     if ((model as any).custom) {
       if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
       deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
@@ -1948,6 +1980,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const openCustomForm = (mode: CustomFormMode = 'model') => {
+    setShowRouterEditor(false);
+    setRouterEditorModel(null);
     setEditingCustomModelName(null);
     setCustomDraft(createEmptyCustomDraft(mode));
     setCustomError(null);
@@ -1956,6 +1990,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const openCustomCollectionEditor = (model: ModelInfo) => {
+    setShowRouterEditor(false);
+    setRouterEditorModel(null);
     setEditingCustomModelName(modelName(model));
     setCustomDraft(customDraftFromModel(model));
     setCustomError(null);
@@ -1967,6 +2003,71 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setShowCustomForm(false);
     setEditingCustomModelName(null);
     setCustomError(null);
+  };
+
+  const openRouterEditor = (model?: ModelInfo | null) => {
+    closeCustomForm();
+    const routerModel = model && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE ? model : null;
+    setRouterEditorModel(routerModel);
+    setShowRouterEditor(true);
+    setMobileDetailOpen(true);
+  };
+
+  const closeRouterEditor = () => {
+    setShowRouterEditor(false);
+    setRouterEditorModel(null);
+  };
+
+  const pullRegistrationOrThrow = async (
+    modelNameValue: string,
+    options: Record<string, unknown> | undefined,
+  ): Promise<void> => {
+    let failure: unknown = null;
+    await api.pullModel(modelNameValue, {
+      onError: errorValue => { failure = errorValue; },
+    }, options);
+    if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
+  };
+
+  const handleRegisterRouter = async (request: RouterPullRequest): Promise<void> => {
+    const registered = new Set<string>();
+    const registering = new Set<string>();
+    const registerCustomDependency = async (component: ModelInfo): Promise<void> => {
+      const name = modelName(component);
+      const key = name.toLowerCase();
+      if (!name || registered.has(key) || !(component as any).custom) return;
+      if (registering.has(key)) throw new Error(`Circular custom component reference: ${name}`);
+      registering.add(key);
+      if (isCollectionModel(component)) {
+        for (const nestedName of getCollectionComponents(component)) {
+          const nested = findCurrentModel(nestedName);
+          if (nested) await registerCustomDependency(nested);
+        }
+      }
+      await pullRegistrationOrThrow(name, customRegistrationOptions(component));
+      registering.delete(key);
+      registered.add(key);
+    };
+
+    for (const componentName of request.components) {
+      const component = findCurrentModel(componentName);
+      if (component) await registerCustomDependency(component);
+    }
+    await pullRegistrationOrThrow(request.model_name, {
+      version: request.version,
+      recipe: request.recipe,
+      components: request.components,
+      routing: request.routing,
+    });
+    await refresh();
+  };
+
+  const handleRouterSaved = (model: ModelInfo) => {
+    reloadRouterModels();
+    setRouterEditorModel(model);
+    setPrimaryFilter('my-models');
+    setSearchQuery('');
+    setSelectedDetailModelId(modelName(model));
   };
 
   const recipeOptionsForDraft = useCallback((capability: CustomModelCapability, omniSource: 'single' | 'collection') => {
@@ -2194,6 +2295,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const allModels = useMemo(() => {
     const seen = new Set<string>();
     const merged: ModelInfo[] = [];
+    for (const m of routerModels) {
+      const name = modelName(m).toLowerCase();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      merged.push(m);
+    }
     for (const m of customModels) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
@@ -2210,7 +2317,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       merged.push(m);
     }
     return merged;
-  }, [customModels, models, loadedModels]);
+  }, [routerModels, customModels, models, loadedModels]);
 
   const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
 
@@ -3179,6 +3286,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           setSelectedRemoteModel(null);
           setMobileDetailOpen(true);
           if (showCustomForm) closeCustomForm();
+          if (showRouterEditor) closeRouterEditor();
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -3190,6 +3298,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         backendFilter={backendFilter}
         tagFilter={tagFilter}
         searchInputRef={searchRef}
+        onOpenRouter={() => openRouterEditor(selectedDetailModel)}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
@@ -3212,8 +3321,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         onKeyDown={handleModelListResizeKeyDown}
       />
 
-      {/* Right panel: custom form overlay OR model detail */}
-      {showCustomEditor ? (
+      {/* Right panel: router editor, custom form, or model detail */}
+      {showRouterEditor ? (
+        <div className="manager__detail-form-panel manager__detail-form-panel--router">
+          <RouterEditorPanel
+            models={allModels}
+            scope={accountSession.storageScope}
+            initialModel={routerEditorModel}
+            onRegister={handleRegisterRouter}
+            onSaved={handleRouterSaved}
+            onDeleted={handleDeleteRouterDefinition}
+            onClose={closeRouterEditor}
+          />
+        </div>
+      ) : showCustomEditor ? (
         <div className="manager__detail-form-panel">
           <section className="zone custom-model-form" aria-label={customFormTitle}>
             <div className="zone__head">

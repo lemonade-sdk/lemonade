@@ -19,7 +19,9 @@
     "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs",
     "test:mcp-external": "node scripts/test-external-mcp.mjs",
     "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
-    "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs"
+    "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs",
+    "test:router-editor": "node tests/router-editor.runtime.cjs",
+    "test:router-store": "node tests/router-store.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

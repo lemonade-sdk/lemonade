@@ -52,6 +52,7 @@ export function listRecipeBadgeText(recipe: string): string {
     case 'openmoss': return 'OpenMOSS';
     case 'trellis': return 'TRELLIS.2';
     case 'collection.omni': return 'Omni';
+    case 'collection.router': return 'Router';
     case 'collection': return 'Collection';
     default: return recipe || 'Backend';
   }
@@ -73,6 +74,7 @@ function listRecipeColor(recipe: string): string {
     case 'openmoss': return '#ec4899';
     case 'trellis': return '#818cf8';
     case 'collection.omni': return '#a78bfa';
+    case 'collection.router': return '#22d3ee';
     case 'collection': return '#94a3b8';
     default: return 'var(--text-tertiary)';
   }
@@ -309,6 +311,7 @@ export interface ModelListPanelProps {
   tagFilter?: string | null;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onOpenCustomModels?: () => void;
+  onOpenRouter?: () => void;
   /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
   pinnedNames?: Set<string>;
   /** Toggle a model's pinned state. Receives the model name. */
@@ -343,6 +346,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   tagFilter = null,
   searchInputRef,
   onOpenCustomModels,
+  onOpenRouter,
   pinnedNames,
   onTogglePin,
   favoriteNames,
@@ -591,17 +595,30 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       {/* Title */}
       <div className="model-list-panel__title manager__title">
         <h1>Models</h1>
-        {onOpenCustomModels && (
-          <button
-            type="button"
-            className="model-list-panel__custom-menu-btn"
-            onClick={onOpenCustomModels}
-            aria-label="Open custom models"
-            title="Manage custom models"
-          >
-            <Icon name="user-round-cog" size={19} aria-hidden="true" />
-          </button>
-        )}
+        <div className="model-list-panel__title-actions">
+          {onOpenCustomModels && (
+            <button
+              type="button"
+              className="model-list-panel__custom-menu-btn"
+              onClick={onOpenCustomModels}
+              aria-label="Open custom models"
+              title="Manage custom models"
+            >
+              <Icon name="user-round-cog" size={19} />
+            </button>
+          )}
+          {onOpenRouter && (
+            <button
+              type="button"
+              className="model-list-panel__custom-menu-btn model-list-panel__custom-menu-btn--router"
+              onClick={onOpenRouter}
+              aria-label="Open router editor"
+              title="Create or edit a model router"
+            >
+              <Icon name="router" size={19} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search bar */}
