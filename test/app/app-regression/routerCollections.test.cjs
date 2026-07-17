@@ -865,6 +865,67 @@ const tests = [
 
   // ── makeCollectionId slug edge cases ───────────────────────────────────
 
+  // ── Lossy round-trip detection ─────────────────────────────────────────
+
+  {
+    name: 'lossyRuleIds - metadata leaf is flagged as lossy',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [
+          { id: 'r1', route_to: 'b', match: { metadata: { key: 'task', equals: 'payment' } } },
+        ],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(Array.isArray(draft.lossyRuleIds), 'lossyRuleIds must be set');
+      assert.ok(draft.lossyRuleIds.includes('r1'), `r1 must be flagged lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  {
+    name: 'lossyRuleIds - known conditions produce no lossy entries',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [
+          { id: 'r1', route_to: 'b', match: { keywords_any: ['hello', 'hi'] } },
+          { id: 'r2', route_to: 'a', match: { min_chars: 500 } },
+        ],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        `no lossy rules expected, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  {
+    name: 'lossyRuleIds - unknown top-level key in match is flagged',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [
+          { id: 'unknown-cond', route_to: 'b', match: { future_condition: { some: 'value' } } },
+        ],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(draft.lossyRuleIds?.includes('unknown-cond'),
+        `unknown-cond must be flagged lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  {
+    name: 'lossyRuleIds - empty match object is not flagged',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: {} }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        'empty match should not be flagged as lossy');
+    },
+  },
+
   {
     name: 'makeCollectionId - spaces become hyphens',
     run() {

@@ -198,8 +198,12 @@ function leafFromExpr(expr: Record<string, unknown>, not?: boolean): RuleLeaf | 
   if (typeof expr.regex === 'string') return { signalType: 'regex', signalValue: expr.regex, not };
   if (typeof expr.min_chars === 'number') return { signalType: 'min_chars', signalValue: expr.min_chars, not };
   if (typeof expr.max_chars === 'number') return { signalType: 'max_chars', signalValue: expr.max_chars, not };
-  if ('has_tools' in expr) return { signalType: 'has_tools', not };
-  if ('has_images' in expr) return { signalType: 'has_images', not };
+  if ('has_tools' in expr) return expr.has_tools === false
+    ? { signalType: 'has_tools', not: !not }
+    : { signalType: 'has_tools', not };
+  if ('has_images' in expr) return expr.has_images === false
+    ? { signalType: 'has_images', not: !not }
+    : { signalType: 'has_images', not };
   if (typeof expr.classifier === 'string') return {
     signalType: 'classifier',
     classifierId: expr.classifier,
@@ -301,11 +305,24 @@ export function validateRuleNode(
           ? Object.keys(clf.referencePhrases ?? {})
           : (clf.labels ?? []);
         if (node.label) {
-          if (validLabels.length > 0 && !validLabels.includes(node.label)) {
-            return [`Classifier "${node.classifierId}" has no label "${node.label}" - it may have been renamed`];
+          // Always validate an explicit label regardless of whether validLabels is empty -
+          // an empty validLabels means the classifier is misconfigured, not that any label is ok.
+          if (validLabels.length === 0) {
+            return [`Classifier "${node.classifierId}" has no labels defined - remove the label from this condition or add labels to the classifier`];
           }
-        } else if (validLabels.length > 0 && !clf.defaultLabel) {
-          return [`Classifier "${node.classifierId}" has no default label - either select a label or set a default in the classifier config`];
+          if (!validLabels.includes(node.label)) {
+            return [`Classifier "${node.classifierId}" has no label "${node.label}" - it may have been renamed or removed`];
+          }
+        } else if (validLabels.length > 0) {
+          // No explicit label - require a valid defaultLabel.
+          // Exception: a single-concept semantic_similarity classifier implicitly uses its only concept.
+          const effectiveDefault = clf.defaultLabel || (clf.type === 'semantic_similarity' && validLabels.length === 1 ? validLabels[0] : undefined);
+          if (!effectiveDefault) {
+            return [`Classifier "${node.classifierId}" has no default label - either select a label or set a default in the classifier config`];
+          }
+          if (!validLabels.includes(effectiveDefault)) {
+            return [`Classifier "${node.classifierId}" default label "${effectiveDefault}" is no longer valid - update the classifier config`];
+          }
         }
       }
     }

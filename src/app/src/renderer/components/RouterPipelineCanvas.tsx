@@ -20,6 +20,7 @@ interface RouterPipelineCanvasProps {
   draft: RouterCollectionDraft;
   candidateOptions: CandidateOption[];
   embeddingOptions: CandidateOption[];
+  classifierModelOptions: CandidateOption[];
   displayName: (id: string) => string;
   displayNameWithStatus: (id: string) => string;
   onPatchClassifier: (id: string, p: Partial<RouterClassifier>) => void;
@@ -48,14 +49,18 @@ const ClassifierCard: React.FC<{
   clf: RouterClassifier;
   isHighlighted: boolean;
   embeddingOptions: CandidateOption[];
+  classifierModelOptions: CandidateOption[];
   candidateOptions: CandidateOption[];
   displayNameWithStatus: (id: string) => string;
   onPatch: (p: Partial<RouterClassifier>) => void;
   onRemove: () => void;
-}> = ({ clf, isHighlighted, embeddingOptions, candidateOptions, displayNameWithStatus, onPatch, onRemove }) => {
+}> = ({ clf, isHighlighted, embeddingOptions, classifierModelOptions, candidateOptions, displayNameWithStatus, onPatch, onRemove }) => {
   const [expanded, setExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const modelOptions = clf.type === 'semantic_similarity' ? embeddingOptions : candidateOptions;
+  const modelOptions =
+    clf.type === 'semantic_similarity' ? embeddingOptions :
+    clf.type === 'classifier' ? classifierModelOptions :
+    candidateOptions;
 
   // Compact chip summary lines
   const modelShort = clf.model ? clf.model.split(/[/:-]/).pop() ?? clf.model : '-';
@@ -391,7 +396,7 @@ function countNodes(node: RuleNode): number {
 
 
 const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
-  draft, candidateOptions, embeddingOptions, displayName, displayNameWithStatus,
+  draft, candidateOptions, embeddingOptions, classifierModelOptions, displayName, displayNameWithStatus,
   onPatchClassifier, onAddClassifier, onRemoveClassifier,
   onPatchRule, onAddRule, onRemoveRule,
   highlightedClassifierId,
@@ -433,6 +438,7 @@ const RouterPipelineCanvas: React.FC<RouterPipelineCanvasProps> = ({
             <ClassifierCard key={ci} clf={clf}
               isHighlighted={highlightedClassifierId === clf.id}
               embeddingOptions={embeddingOptions}
+              classifierModelOptions={classifierModelOptions}
               candidateOptions={candidateOptions}
               displayNameWithStatus={displayNameWithStatus}
               onPatch={p => onPatchClassifier(clf.id, p)}

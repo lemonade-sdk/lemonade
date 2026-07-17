@@ -500,8 +500,22 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   const [previewJson, setPreviewJson] = useState<string | null>(null);
   const [confirmAdvanced, setConfirmAdvanced] = useState(false);
   const [confirmQuick, setConfirmQuick] = useState(false);
+  const [lossyAcknowledged, setLossyAcknowledged] = useState(false);
   const ruleSeqRef = useRef(0);
   const clfSeqRef = useRef(0);
+
+  // Seed sequence counters from loaded rules/classifiers so newly generated IDs
+  // never collide with existing ones (e.g. rule-1 already present on edit-open).
+  const seedSeqRefs = (d: RouterCollectionDraft) => {
+    for (const r of d.rules ?? []) {
+      const m = r.id.match(/^rule-(\d+)$/);
+      if (m) ruleSeqRef.current = Math.max(ruleSeqRef.current, parseInt(m[1], 10));
+    }
+    for (const c of d.classifiers ?? []) {
+      const m = c.id.match(/^clf-(\d+)$/);
+      if (m) clfSeqRef.current = Math.max(clfSeqRef.current, parseInt(m[1], 10));
+    }
+  };
 
   const candidateOptions = useMemo(() => getRouterCandidateOptions(modelsData), [modelsData]);
 
@@ -515,11 +529,32 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       }),
   [modelsData]);
 
+  // Models suitable for type:"classifier" - excludes chat LLMs, embeddings, and collections.
+  // Covers ONNX text-classification and reranking models.
+  const classifierModelOptions = useMemo(() =>
+    Object.entries(modelsData)
+      .filter(([, info]) => {
+        if (isCollectionRecipe(info?.recipe)) return false;
+        const labels = info?.labels ?? [];
+        const isEmbedding = labels.some(l => l === 'embeddings' || l === 'embedding');
+        const isChatLLM = !labels.some(l =>
+          ['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding',
+           'reranking', 'edit', 'esrgan', 'classifier'].includes(l)
+        );
+        return !isEmbedding && !isChatLLM;
+      })
+      .map(([id, info]) => ({ id, info }))
+      .sort((a, b) => {
+        const dl = Number(b.info.downloaded === true) - Number(a.info.downloaded === true);
+        return dl !== 0 ? dl : (a.info.model_name ?? a.id).localeCompare(b.info.model_name ?? b.id);
+      }),
+  [modelsData]);
+
   useEffect(() => {
     setError(null);
     setPreviewJson(null);
     if (mode !== 'edit' || !collectionId) { setDraft(emptyDraft()); return; }
-    serverFetch(`/v1/models/${encodeURIComponent(collectionId)}`)
+    serverFetch(`/models/${encodeURIComponent(collectionId)}`)
       .then(r => r.json())
       .then((raw: unknown) => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -529,11 +564,13 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         if (!rec.routing || typeof rec.routing !== 'object') {
           setError('This model has no routing policy. Refresh and try again.'); return;
         }
-        setDraft(routingToRouterCollectionDraft(
+        const loaded = routingToRouterCollectionDraft(
           collectionId,
           rec.routing as Record<string, unknown>,
           Array.isArray(rec.components) ? rec.components as string[] : [],
-        ));
+        );
+        seedSeqRefs(loaded);
+        setDraft(loaded);
       })
       .catch(() => setError('Failed to load router policy from server.'));
   }, [mode, collectionId]);
@@ -558,6 +595,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     setDraft(prev => ({ ...prev, ...p }));
     setError(null);
     setPreviewJson(null);
+    if ('rules' in p || 'routingMode' in p) setLossyAcknowledged(false);
   };
 
   const toggleCandidate = (id: string) => {
@@ -692,6 +730,17 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         const treeErrors = validateRuleNode(r.conditionTree, classifierIds, draft.classifiers ?? []);
         if (treeErrors.length) { setError(`${label}: ${treeErrors[0]}`); return null; }
       }
+    }
+    // Block save when the policy loaded from the server had conditions this editor
+    // cannot represent (e.g. metadata leaves). The user must acknowledge before
+    // those conditions are permanently dropped.
+    if ((draft.lossyRuleIds?.length ?? 0) > 0 && !lossyAcknowledged) {
+      setError(
+        `Rule${(draft.lossyRuleIds!.length > 1) ? 's' : ''} ${draft.lossyRuleIds!.map(id => `"${id}"`).join(', ')} ` +
+        `contain conditions this editor cannot display (e.g. metadata). ` +
+        `Saving will permanently remove them. Tick "I understand" below to proceed.`
+      );
+      return null;
     }
     return { ...draft, name };
   };
@@ -879,6 +928,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             draft={draft}
             candidateOptions={candidateOptions}
             embeddingOptions={embeddingOptions}
+            classifierModelOptions={classifierModelOptions}
             displayName={displayName}
             displayNameWithStatus={displayNameWithStatus}
             onPatchClassifier={patchClassifier}
@@ -896,12 +946,31 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
       </div>
 
+      {(draft.lossyRuleIds?.length ?? 0) > 0 && (
+        <div className="router-panel-lossy-warning">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>
+            {draft.lossyRuleIds!.length === 1
+              ? `Rule "${draft.lossyRuleIds![0]}" contains`
+              : `Rules ${draft.lossyRuleIds!.map(id => `"${id}"`).join(', ')} contain`}
+            {' '}conditions this editor cannot display (e.g. <code>metadata</code>).
+            Saving will <strong style={{ color: '#f87171' }}>permanently remove</strong> them from the policy.
+          </span>
+          <label className="router-panel-lossy-ack">
+            <input type="checkbox" checked={lossyAcknowledged} onChange={e => { setLossyAcknowledged(e.target.checked); setError(null); }} />
+            I understand
+          </label>
+        </div>
+      )}
+
       {confirmQuick && createPortal(
         <div className="confirm-overlay" onClick={() => setConfirmQuick(false)}>
           <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
             <div className="confirm-title">Switch to Quick Rules?</div>
             <div className="confirm-body">
-              Switching to Quick Rules starts with a blank slate - your Advanced Rules, classifiers, and conditions will be cleared.
+              Switching to Quick Rules starts with a blank slate - <strong style={{ color: '#f87171' }}>your Advanced Rules, classifiers, and conditions will be cleared.</strong>
               <br /><br />
               Quick Rules only supports simple flat conditions. Complex gates and classifiers cannot be migrated automatically.
             </div>
@@ -921,7 +990,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
             <div className="confirm-title">Switch to Advanced Rules?</div>
             <div className="confirm-body">
-              Switching to Advanced Rules starts with a blank canvas, your Quick Rules will be cleared.
+              Switching to Advanced Rules starts with a blank canvas, <strong style={{ color: '#f87171' }}>your Quick Rules will be cleared.</strong>
               <br /><br />
               To keep editing your current rules in Advanced, use <strong style={{ color: '#d69e2e' }}>Expand in Advanced →</strong> instead.
             </div>
@@ -939,14 +1008,14 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       {previewJson !== null && (
         <div className="router-json-preview">
           <div className="router-json-preview-header">
-            <span className="router-json-preview-title">Generated JSON</span>
+            <span className="router-json-preview-title">Registration JSON (pull body)</span>
             <button type="button" className="router-json-preview-btn" title="Copy"
               onClick={() => navigator.clipboard.writeText(previewJson)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
-            <button type="button" className="router-json-preview-btn" title="Download"
+            <button type="button" className="router-json-preview-btn" title="Download registration JSON (save first for a fully portable export)"
               onClick={() => {
                 const blob = new Blob([previewJson], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);

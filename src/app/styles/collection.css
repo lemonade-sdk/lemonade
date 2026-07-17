@@ -66,6 +66,19 @@
     flex-shrink: 0;
 }
 
+.model-selector-option.router-option::before {
+    content: 'Router';
+    font-size: 0.56rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 999px;
+    padding: 1px 5px;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
 .collection-options-summary {
     display: grid;
     gap: 8px;
@@ -747,6 +760,38 @@
     font-size: 0.72rem;
     color: #e57373;
     flex-shrink: 0;
+}
+
+.router-panel-lossy-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 6px 16px;
+    padding: 8px 12px;
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.router-panel-lossy-warning code {
+    font-family: monospace;
+    background: rgba(255,255,255,0.07);
+    padding: 0 3px;
+    border-radius: 3px;
+}
+
+.router-panel-lossy-ack {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    margin-left: auto;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.72rem;
 }
 
 /* ── Chip grid (collapsed classifier/rule cards) ─────────────────────────── */

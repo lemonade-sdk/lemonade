@@ -11,7 +11,7 @@ export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
 // show authors the text they're (potentially) overriding. Matched verbatim on
 // save: when the textarea content equals this string, the editor stores no
 // override and the collection stays on whatever the global default is at
-// runtime — so a future tweak to toolDefinitions.json propagates automatically.
+// runtime - so a future tweak to toolDefinitions.json propagates automatically.
 export const DEFAULT_OMNI_SYSTEM_PROMPT: string = toolDefinitions.system_prompt;
 
 export type CustomCollectionRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
@@ -234,6 +234,10 @@ export interface RouterCollectionDraft {
   // L1–L3 fields - used when routingMode === 'rules'
   classifiers?: RouterClassifier[];  // L2/L3 declared classifiers
   rules?: RouterRule[];
+  // Rule IDs whose condition trees could not be fully reconstructed from the server
+  // policy (e.g. metadata leaves, deeply nested composites). Saving will drop those
+  // conditions. The panel surfaces a warning and requires acknowledgment before save.
+  lossyRuleIds?: string[];
 }
 
 export interface RouterCollectionPullRequest {
@@ -362,23 +366,43 @@ export const routingToRouterCollectionDraft = (
   }));
 
   const rawRules = Array.isArray(routing.rules) ? routing.rules : [];
+  const lossyRuleIds: string[] = [];
   const rules: RouterRule[] = (rawRules as Record<string, unknown>[]).map((r) => {
     const rawMatch = (r.match && typeof r.match === 'object' ? r.match : {}) as Record<string, unknown>;
+    const conditionTree = matchExprToRuleNode(rawMatch);
+    const ruleId = typeof r.id === 'string' ? r.id : '';
+
+    // Detect lossy round-trip: re-serialize the reconstructed tree and compare
+    // to the original match JSON. Any difference means unsupported conditions
+    // (e.g. metadata leaves, deeply nested composites) were silently dropped.
+    if (Object.keys(rawMatch).length > 0) {
+      const reserialized = conditionTree ? ruleNodeToMatchExpr(conditionTree) : null;
+      if (JSON.stringify(reserialized ?? {}) !== JSON.stringify(rawMatch)) {
+        lossyRuleIds.push(ruleId || `rule-${lossyRuleIds.length + 1}`);
+      }
+    }
+
     return {
-      id: typeof r.id === 'string' ? r.id : '',
+      id: ruleId,
       routeTo: typeof r.route_to === 'string' ? r.route_to : '',
-      conditionTree: matchExprToRuleNode(rawMatch),
+      conditionTree,
       outputs: r.outputs && typeof r.outputs === 'object' ? r.outputs as Record<string, unknown> : undefined,
     };
   });
 
+  // Signal types the Quick editor can render. Must stay in sync with QUICK_CONDITIONS
+  // in RouterCollectionPanel.tsx - only these types survive a Quick-mode round-trip.
+  const QUICK_SIGNAL_TYPES = new Set([
+    'min_chars', 'max_chars', 'keywords_any', 'regex', 'has_images', 'has_tools',
+  ]);
+
   // Detect quick mode: no classifiers, every rule's condition tree is either a single
-  // non-classifier leaf OR a flat AND/OR whose children are all non-classifier leaves.
+  // Quick-compatible leaf OR a flat AND/OR whose children are all Quick-compatible leaves.
   const isQuickCompatibleTree = (tree: RouterRule['conditionTree']): boolean => {
     if (!tree) return false;
-    if ('signalType' in tree) return tree.signalType !== 'classifier';
+    if ('signalType' in tree) return QUICK_SIGNAL_TYPES.has(tree.signalType);
     if ('operator' in tree && (tree.operator === 'AND' || tree.operator === 'OR')) {
-      return tree.conditions.every(c => 'signalType' in c && c.signalType !== 'classifier');
+      return tree.conditions.every(c => 'signalType' in c && QUICK_SIGNAL_TYPES.has(c.signalType));
     }
     return false;
   };
@@ -390,6 +414,7 @@ export const routingToRouterCollectionDraft = (
     id: collectionId, name, candidates, defaultModel,
     routingMode: isQuick ? 'quick' : 'rules',
     classifiers, rules,
+    ...(lossyRuleIds.length > 0 ? { lossyRuleIds } : {}),
   };
 };
 

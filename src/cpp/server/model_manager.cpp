@@ -373,7 +373,7 @@ static void cleanup_orphaned_blob(const fs::path& file_path,
                                   const fs::path& models_dir) {
     std::error_code ec;
     if (!fs::is_symlink(file_path, ec) || ec) {
-        return;  // Not a symlink (real file) or error — nothing to clean up
+        return;  // Not a symlink (real file) or error - nothing to clean up
     }
 
     // Resolve the blob target (relative symlink like ../../blobs/<hash>)
@@ -395,12 +395,12 @@ static void cleanup_orphaned_blob(const fs::path& file_path,
         if (ec) continue;
         fs::path other_blob = fs::canonical(entry.path().parent_path() / other_target, ec);
         if (!ec && other_blob == blob_path) {
-            // Another symlink still references this blob — keep it
+            // Another symlink still references this blob - keep it
             return;
         }
     }
 
-    // No other symlink references this blob — safe to remove
+    // No other symlink references this blob - safe to remove
     LOG(INFO, "ModelManager") << "Removing orphaned blob: " << path_to_utf8(blob_path) << std::endl;
     fs::remove(blob_path, ec);
 
@@ -867,7 +867,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     // entries by bare name; the current spec requires a canonical "builtin."
     // prefix so each source is addressable distinctly even on shadowing.
     //
-    // Normalize to an object before iterating — a corrupted file may parse as
+    // Normalize to an object before iterating - a corrupted file may parse as
     // null, array, or scalar, and json::iterator::key() throws on non-objects.
     if (!recipe_options_.is_object()) {
         if (!recipe_options_.is_null()) {
@@ -886,7 +886,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
                 migrated_options[canonical_id(ModelSource::Builtin, key)] = it.value();
                 ++migrated;
             } else {
-                // Preserve unknown bare keys (likely stale built-ins) — avoids silent data loss.
+                // Preserve unknown bare keys (likely stale built-ins) - avoids silent data loss.
                 migrated_options[key] = it.value();
             }
         }
@@ -1833,7 +1833,7 @@ void ModelManager::build_cache() {
     }
 
     // Step 1.6: Dynamic discovery. Backends whose models are supplied at runtime
-    // (descriptor dynamic_models = true — flm from `flm list`, cloud from each
+    // (descriptor dynamic_models = true - flm from `flm list`, cloud from each
     // provider) contribute their models via ops->discover_models(). Each carries
     // its own downloaded status. Precedence: server/user/extra models win, so we
     // emplace (don't overwrite). Failures are handled inside each backend's ops.
@@ -1866,7 +1866,7 @@ void ModelManager::build_cache() {
     }
 
     // Populate recipe options. recipe_options.json is keyed by canonical ID
-    // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
+    // (user.*, extra.*, builtin.*) - built-ins are keyed bare in the cache, so
     // we translate before lookup.
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
@@ -1923,7 +1923,7 @@ void ModelManager::build_cache() {
     // Parse each collection.router model's routing policy now, while the cache
     // and its alias map are fully built and the lock is still held. The parser's
     // component resolver needs only alias resolution, which is a direct lookup
-    // into public_model_aliases_ here — exactly what resolve_model_name() does,
+    // into public_model_aliases_ here - exactly what resolve_model_name() does,
     // minus its own build_cache()+lock. Calling resolve_model_name() here would
     // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
     RoutingPolicyParseOptions policy_options;
@@ -2427,13 +2427,13 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         return 0;
     }
 
-    // Resolve creds outside the cache lock — resolve_key takes a shared
+    // Resolve creds outside the cache lock - resolve_key takes a shared
     // lock on the registry's mutex internally; holding the cache lock here
     // doesn't matter but keeping it tight is cheaper.
     const std::string api_key = cloud_registry_->resolve_key(provider);
     const std::string base_url = cloud_registry_->base_url_for(provider);
     if (api_key.empty() || base_url.empty()) {
-        // Drop any stale entries for this provider but don't try to discover —
+        // Drop any stale entries for this provider but don't try to discover -
         // there's nothing to discover with. The contract is "models present
         // after refresh", so return 0 (not the evicted count).
         evict_cloud_models(provider);
@@ -2484,7 +2484,7 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     for (const auto& m : models) {
         if (m.recipe != "cloud" || m.model_name.empty()) continue;
         // Match build_cache()'s precedence exactly: emplace, don't overwrite.
-        // Any pre-existing entry under the same bare cache key wins — whether
+        // Any pre-existing entry under the same bare cache key wins - whether
         // it's an FLM model, another cloud provider that discovered first, or
         // a builtin/extra/user record. This provider's previously-registered
         // entries are already cleared above, so emplace here is symmetric
@@ -2834,7 +2834,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id,
     fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(repo_id, source);
 
     // A usable manifest needs both arrays; an incomplete cached copy (e.g. a
-    // stale old-format file) must not satisfy do_not_upgrade — it should
+    // stale old-format file) must not satisfy do_not_upgrade - it should
     // trigger a refresh instead.
     auto manifest_complete = [](const json& m) {
         return m.is_object() &&
@@ -2955,7 +2955,7 @@ std::vector<std::string> ModelManager::register_components(const json& component
             // Unknown component: register it from the inline definition so the
             // collection file is self-contained. Persists to user_models.json.
             std::string canonical = "user." + name;
-            // Manifest content is remote input — apply the same reserved-name
+            // Manifest content is remote input - apply the same reserved-name
             // check as the CLI and /pull registration paths.
             if (is_reserved_registration_name(canonical)) {
                 LOG(WARNING, "ModelManager") << "Skipping collection component with "
@@ -3185,7 +3185,7 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
-    // Register collections early — the fan-out below calls get_model_info().
+    // Register collections early - the fan-out below calls get_model_info().
     // Track that this call created the registration so component-resolution
     // failures can roll it back instead of leaving a broken entry behind.
     bool collection_registered_this_call = false;
@@ -3195,7 +3195,7 @@ void ModelManager::download_model(const std::string& model_name,
         collection_registered_this_call = true;
     }
 
-    // Collections don't have their own backend — download each component instead.
+    // Collections don't have their own backend - download each component instead.
     //
     // Persistence follows one rule, uniform across models and collections: a
     // registry entry stores what was *authored locally*; anything *fetched from
@@ -3236,7 +3236,7 @@ void ModelManager::download_model(const std::string& model_name,
                 // rebuild. register_user_model drops the bulky `models` array and,
                 // for a registry-backed collection (one with a checkpoint pointer), also
                 // drops `components` so the cached manifest stays the sole source of
-                // truth — only a pure inline collection persists its component list.
+                // truth - only a pure inline collection persists its component list.
                 if (is_user_model_name(model_name) && !components.empty()) {
                     json reg = registration_data;
                     reg["components"] = components;
@@ -3260,7 +3260,7 @@ void ModelManager::download_model(const std::string& model_name,
             // Roll back the early registration when component resolution fails,
             // so a failed import does not persist a collection entry whose
             // components were never resolved. Downloads below are not rolled
-            // back — a mid-download failure leaves a valid, re-pullable entry.
+            // back - a mid-download failure leaves a valid, re-pullable entry.
             if (collection_registered_this_call) {
                 LOG(WARNING, "ModelManager") << "Component resolution failed; unregistering "
                     << "collection: " << model_name << std::endl;
@@ -3272,7 +3272,7 @@ void ModelManager::download_model(const std::string& model_name,
                                   << " component(s) for collection: " << model_name << std::endl;
 
         // Wrap the callback so recursive per-component downloads don't each
-        // emit a "complete" event — the SSE stream should only see one final
+        // emit a "complete" event - the SSE stream should only see one final
         // completion after every component finishes.
         //
         // Capture progress_callback by value (not by reference) so `forward`
@@ -3307,8 +3307,8 @@ void ModelManager::download_model(const std::string& model_name,
         // A registry-backed collection's in-memory components were empty until the
         // manifest was fetched above (build_cache populated them empty at startup
         // when no manifest was cached yet). Invalidate the cache so the next lookup
-        // rebuilds the collection entry from the now-cached manifest — populating
-        // its components and recomputing its downloaded status — instead of leaving
+        // rebuilds the collection entry from the now-cached manifest - populating
+        // its components and recomputing its downloaded status - instead of leaving
         // the stale empty-components/not-downloaded state until a restart.
         if (!repo_id.empty()) {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
@@ -3602,7 +3602,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
                 bytes_needed_for_file = 0;
             } else if (safe_exists(partial_path_fs)) {
-                // Cap credit to manifest size — partial can't save more than the file costs
+                // Cap credit to manifest size - partial can't save more than the file costs
                 size_t partial_size = fs::file_size(partial_path_fs);
                 size_t bytes_already_on_disk = (std::min)(partial_size, file_size);
                 // Clamp to zero: manifest can contain size=0 entries while partials exist.
@@ -3820,7 +3820,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Check for .partial file (incomplete download)
         if (fs::exists(partial_path)) {
             if (fs::exists(expected_path)) {
-                // Final file exists alongside stale .partial — clean up the leftover
+                // Final file exists alongside stale .partial - clean up the leftover
                 LOG(INFO, "ModelManager") << "Removing stale partial file: " << filename << ".partial" << std::endl;
                 std::error_code ec;
                 fs::remove(partial_path, ec);
@@ -3841,7 +3841,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         if (expected_size > 0) {
             size_t actual_size = fs::file_size(expected_path);
             if (actual_size != expected_size) {
-                // Log mismatch but don't fail — tree API sizes can differ from
+                // Log mismatch but don't fail - tree API sizes can differ from
                 // actual LFS object sizes in some edge cases
                 LOG(WARNING, "ModelManager") << "Size note for " << filename
                             << ": tree API reports " << expected_size
@@ -4232,7 +4232,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     bool main_shared = is_repo_shared(main_repo, effective_registry_source(info), canonical_model_name, models_cache_);
 
     if (!main_shared) {
-        // No other model uses this repo — safe to delete the entire directory
+        // No other model uses this repo - safe to delete the entire directory
         if (fs::exists(model_cache_path_fs)) {
             LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
             fs::remove_all(model_cache_path_fs);
@@ -4241,7 +4241,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
     } else {
-        // Shared repo — only delete this model's specific resolved variant path
+        // Shared repo - only delete this model's specific resolved variant path
         LOG(INFO, "ModelManager") << "Main repo " << main_repo
                     << " is shared with other models, deleting variant path only" << std::endl;
         std::string rpath = info.resolved_path("main");
@@ -4446,7 +4446,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
     // A registry-backed collection is registered as a pointer: recipe + a checkpoint
     // that names the HF repo, with no inline components. /pull downloads the
     // repo's manifest to disk and resolves the components from it, so there is
-    // nothing to validate here — accept the pointer body.
+    // nothing to validate here - accept the pointer body.
     std::string checkpoint_pointer = model_data.value("checkpoint", std::string());
     if (checkpoint_pointer.empty() && model_data.contains("checkpoints") &&
         model_data["checkpoints"].is_object()) {
@@ -4465,7 +4465,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
     // array. Every component must be *resolvable*: either it is already
     // registered locally (local-wins) or it has a matching definition in
     // `models`. Validate this per-component and fail closed. `models` being
-    // present is not a blanket license — a component it omits would otherwise
+    // present is not a blanket license - a component it omits would otherwise
     // pass here and then be silently skipped during registration, persisting a
     // collection smaller than the imported file describes. Mirror the
     // name-matching that register_components() uses (bare names; `model_name`
@@ -4547,7 +4547,15 @@ std::optional<std::string> ModelManager::validate_collection_request(
             }
         };
         try {
-            RoutePolicy policy = parse_route_policy_collection(model_data, options);
+            // Strip pull-protocol keys (stream, subscribe, do_not_upgrade, …)
+            // that the client merges into the body but the policy parser does
+            // not know about. Passing the raw request body would trigger the
+            // reject_unknown_keys check inside parse_route_policy_collection.
+            json policy_json = json::object();
+            for (const auto& key : routing_policy_root_keys()) {
+                if (model_data.contains(key)) policy_json[key] = model_data.at(key);
+            }
+            RoutePolicy policy = parse_route_policy_collection(policy_json, options);
             RoutingPolicyEngine(std::move(policy), ClassifierServices{});
         } catch (const std::exception& e) {
             return std::string("Invalid collection.router routing policy: ") + e.what();
@@ -4709,13 +4717,13 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 //
 // Populates two maps that drive the friendly-name / canonical-ID system:
 //
-//   public_model_aliases_ — input alias → cache key (canonical name in cache):
+//   public_model_aliases_ - input alias → cache key (canonical name in cache):
 //     - <bare> → cache key of the precedence-winner for that bare name
 //     - builtin.<X> → bare cache key X (built-ins are keyed bare in the cache)
 //     - user.<X>, extra.<X> resolve directly via cache lookup fallback in the
 //       callers, so no identity entries are required here
 //
-//   canonical_public_names_ — cache key → wire-format ID emitted by the API:
+//   canonical_public_names_ - cache key → wire-format ID emitted by the API:
 //     - winner cache keys → bare name
 //     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
 //

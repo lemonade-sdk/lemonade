@@ -398,7 +398,7 @@ const AppContent: React.FC = () => {
     const collectionComponents = Array.isArray(requestBody.components)
       ? requestBody.components
       : undefined;
-    // An Omni collection whose components are all present needs no download —
+    // An Omni collection whose components are all present needs no download -
     // only its definition gets registered. registrationOnly skips the Download
     // Manager/progress flow for that case. Require at least one component:
     // every() is vacuously true for an empty array, which would otherwise let a
@@ -462,14 +462,27 @@ const AppContent: React.FC = () => {
   const handleExportRouterCollection = async (collection: RouterCollectionDraft) => {
     try {
       const request = buildRouterCollectionPullRequest(collection);
-      await downloadModelExportFile(request.model_name);
-    } catch (exportError) {
-      const msg = exportError instanceof Error ? exportError.message : '';
-      if (msg.includes('404') || msg.includes('not found')) {
-        showError('Save the router first before exporting — it hasn\'t been registered with the server yet.');
-      } else {
-        showError(msg || 'Failed to export Hybrid Router.');
+      try {
+        await downloadModelExportFile(request.model_name);
+      } catch (serverError) {
+        const msg = serverError instanceof Error ? serverError.message : '';
+        if (msg.includes('404') || msg.includes('not found') || msg.includes('HTTP 404')) {
+          // Model not saved yet - fall back to downloading the pull-body directly.
+          // This file is the /v1/pull registration body and won't carry embedded
+          // component definitions, so it may need those models present on the target.
+          showError('Router not saved yet - downloading the registration JSON instead. Save first for a fully portable export.');
+          const blob = new Blob([JSON.stringify(request, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const bareName = request.model_name.replace(/^user\./, '');
+          a.href = url; a.download = `${bareName}.json`; a.click();
+          URL.revokeObjectURL(url);
+        } else {
+          showError(msg || 'Failed to export Hybrid Router.');
+        }
       }
+    } catch (buildError) {
+      showError(buildError instanceof Error ? buildError.message : 'Failed to build router JSON.');
     }
   };
 
@@ -490,7 +503,22 @@ const AppContent: React.FC = () => {
           throw new Error("The selected file is missing a 'model_name' field.");
         }
         if (record.recipe !== COLLECTION_ROUTER_MODEL_RECIPE) {
-          throw new Error(`Expected recipe 'collection.router', got '${record.recipe}'.`);
+          throw new Error(`Expected recipe 'collection.router', got '${String(record.recipe ?? '(missing)')}'.`);
+        }
+        // Validate routing block before hitting the server so errors are descriptive.
+        const routing = (record as Record<string, unknown>).routing;
+        if (!routing || typeof routing !== 'object' || Array.isArray(routing)) {
+          throw new Error("The file is missing a 'routing' block. Check that it is a valid Hybrid Router JSON.");
+        }
+        const r = routing as Record<string, unknown>;
+        if (!Array.isArray(r.candidates) || r.candidates.length === 0) {
+          throw new Error("'routing.candidates' is missing or empty - the file must list at least one candidate model.");
+        }
+        if (typeof r.default_model !== 'string' || !r.default_model) {
+          throw new Error("'routing.default_model' is missing - the file must specify a fallback candidate.");
+        }
+        if (!Array.isArray(r.rules) && (typeof r.router !== 'object' || r.router === null)) {
+          throw new Error("The 'routing' block must contain either 'rules' or a 'router' entry.");
         }
         await pullRegistration(record);
         await refreshModels();
