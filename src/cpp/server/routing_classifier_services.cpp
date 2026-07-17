@@ -264,16 +264,23 @@ ClassifierServices make_classifier_services_from_router_calls(
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
         -> std::map<std::string, double> {
-        ensure_model(ensure_loaded, model);
-
         // Models registered under ModelType::CLASSIFICATION (the onnxruntime
         // backend) speak /v1/classify natively — a real encoder classification
         // head, not an LLM asked to emit JSON. Route to it directly instead of
         // going through chat_completion, which such a model can't serve at all
         // (WrappedServer's default chat_completion() is an unsupported-capability
         // error for any backend that doesn't implement it).
-        if (classify_call && *classify_call && get_model_type &&
-            get_model_type(model) == ModelType::CLASSIFICATION) {
+        const bool use_classify_endpoint =
+            classify_call && *classify_call && get_model_type &&
+            get_model_type(model) == ModelType::CLASSIFICATION;
+
+        if (!use_classify_endpoint && !*chat_completion_call) {
+            throw std::runtime_error("Router chat_completion call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        if (use_classify_endpoint) {
             json request = {
                 {"model", model},
                 {"input", input},
@@ -281,9 +288,6 @@ ClassifierServices make_classifier_services_from_router_calls(
             return parse_classifier_scores((*classify_call)(request));
         }
 
-        if (!*chat_completion_call) {
-            throw std::runtime_error("Router chat_completion call is not configured");
-        }
         json request = {
             {"model", model},
             {"stream", false},
