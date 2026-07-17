@@ -606,7 +606,7 @@ json McpServer::tool_transcribe_audio(const json& arguments) {
                 "file path, use the `audio_path` argument instead.");
         }
         if (filename.empty()) {
-            filename = "audio.wav";
+            filename = "audio.bin";
         }
     }
 
