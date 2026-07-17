@@ -18,7 +18,7 @@ load/unload paths only.
 Preset changes fall into two kinds, and each already has a home in the existing
 architecture — no new endpoint and no client `mode` flag are needed:
 
-- **Request-time fields** (`system_prompt`, `sampling`/temperature, `tools`):
+- **Request-time fields** (`system_prompt`, `sampling`/temperature, `mcp_server_ids`):
   applied by **request composition** in the frontend on the next generation
   request. No model runtime state changes; no reload.
 - **Load-time fields** (`ctx_size`, `backend`, `device`, model args via
@@ -49,7 +49,7 @@ nothing to POST.
 | Field group      | Fields                                                                                  | Kind     | Why |
 |------------------|-----------------------------------------------------------------------------------------|----------|-----|
 | Reload-requiring | `recipe_options` (ctx_size, backend, device, args, steps, cfg, ...), `engine_hint`      | `reload` | Bound at init; needs reinitialization. |
-| Live-updateable  | `sampling`, `system_prompt_id`, `system_prompts`, `tools_enabled`                       | `live`   | Applied per request at generation time. |
+| Live-updateable  | `sampling`, `system_prompt_id`, `system_prompts`, `mcp_server_ids` (plus legacy `tools_enabled` import compatibility) | `live`   | Applied per request at generation time. |
 | Everything else  | name, description, applies_to, id, ...                                                   | `none`   | No effect on a running model. |
 
 First reload-requiring diff wins (-> `reload`); else any live diff -> `live`;
@@ -118,9 +118,9 @@ If a real in-place backend reload ever lands, only this helper's body changes;
 callers and tests stay the same. The old `api.updatePreset(...)` method and its
 `/api/v1/update-preset` POST are removed.
 
-## Lemonade tools (`src/tools/lemonadeTools.ts`)
+## Lemon-Tools MCP tools (`src/tools/lemonadeTools.ts`, `src/tools/mcpRuntime.ts`)
 
-Add a **`change_preset`** tool that drives the same preset-update workflow
+The built-in **Lemon-Tools MCP** exposes the existing `change_preset` tool, which drives the same preset-update workflow
 directly, so chat-/agent-triggered preset changes behave identically to the UI
 button:
 
@@ -151,9 +151,9 @@ tool now executes the workflow with the same primitives as the UI.
 1. Should the active-preset binding **persist across an unload/reload** (the UI
    re-binds before reloading, so the reloaded model runs the new preset), and is
    that the behaviour you want for the tool path too?
-2. Request-time **tool** changes: confirm tools belong on the request-composition
-   side for every backend (we compose them with sampling + system prompt), with
-   no reload — i.e. nothing tool-related is load-time.
+2. Request-time **MCP selection** changes belong on the request-composition
+   side for every backend (we compose the selected MCP tool schemas with sampling
+   and system prompt), with no reload — no MCP selection is load-time state.
 3. If a future backend gains real in-place reload, do you want it surfaced as a
    distinct capability flag, or is the silent `reloadModel` swap (unload->load ->
    in-place) acceptable since the contract is identical to callers?

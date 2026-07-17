@@ -13,7 +13,7 @@ const TOOL_FOLLOWUP_PROMPT = [
 ].join(' ');
 
 export interface ToolArtifact {
-  type: 'image' | 'audio';
+  type: 'image' | 'audio' | 'model3d';
   url: string;
   name?: string;
   mime?: string;

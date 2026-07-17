@@ -458,9 +458,61 @@ export interface RealtimeTranscriptionHandle {
   isConnected: () => boolean;
 }
 
+
+export type McpTransport = 'stdio' | 'builtin';
+
+export interface McpToolDefinition {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  working_dir?: string;
+  timeout_ms?: number;
+  enabled?: boolean;
+}
+
+export interface McpServerState extends McpServerConfig {
+  status: string;
+  connected: boolean;
+  last_error?: string;
+  protocol_version?: string;
+  server_info?: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  tools?: McpToolDefinition[];
+}
+
+export interface McpToolCatalogEntry {
+  server_id: string;
+  server_name: string;
+  name: string;
+  chat_name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  tool?: McpToolDefinition;
+  openai_tool?: Record<string, unknown>;
+}
+
+export interface McpToolCallResponse {
+  server_id: string;
+  tool: string;
+  result: Record<string, unknown>;
+}
+
 export type LemonadeRequestInit = Omit<RequestInit, 'body'> & {
   body?: unknown;
   includeSessionHeaders?: boolean;
+  /** Select which Lemonade credential is sent. Internal control routes use admin auth. */
+  auth?: 'api' | 'admin' | 'none';
 };
 
 export type LemonadeContextDefault = number | 'auto';
@@ -589,6 +641,7 @@ class LemonadeAPI {
   private _systemInfoData: Record<string, unknown> | null = null;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
+  private _sessionAdminApiKey = '';
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
@@ -636,6 +689,23 @@ class LemonadeAPI {
 
   set apiKey(key: string) {
     this.setSessionApiKey(key);
+  }
+
+  /**
+   * Credential for /internal/* routes. Lemonade defaults the server-side admin
+   * key to the regular API key, so an empty explicit admin key intentionally
+   * falls back to the current API key.
+   */
+  get adminApiKey(): string {
+    return this._sessionAdminApiKey || this._sessionApiKey;
+  }
+
+  get explicitAdminApiKey(): string {
+    return this._sessionAdminApiKey;
+  }
+
+  setSessionAdminApiKey(key: string): void {
+    this._sessionAdminApiKey = key.trim();
   }
 
   get canPersistApiKey(): boolean {
@@ -708,6 +778,7 @@ class LemonadeAPI {
   async clearConnectionSettings(): Promise<void> {
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
+    this._sessionAdminApiKey = '';
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
 
@@ -789,9 +860,14 @@ class LemonadeAPI {
 
   // ── Fetch wrapper ───────────────────────────────────────────────
 
-  private _headers(extra?: Record<string, string>, includeSessionHeaders?: boolean): Record<string, string> {
+  private _headers(
+    extra?: Record<string, string>,
+    includeSessionHeaders?: boolean,
+    auth: 'api' | 'admin' | 'none' = 'api',
+  ): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
-    if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
+    const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
+    if (credential) h['Authorization'] = `Bearer ${credential}`;
 
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
@@ -820,30 +896,31 @@ class LemonadeAPI {
   private async _fetch(path: string, opts: LemonadeRequestInit = {}): Promise<Response> {
     const endpoint = path.startsWith('/') ? path : `/${path}`;
     const url = `${this.baseUrl}${endpoint}`;
-    const extraHeaders = opts.headers instanceof Headers
-      ? Object.fromEntries(opts.headers.entries())
-      : (Array.isArray(opts.headers) ? Object.fromEntries(opts.headers) : (opts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders, opts.includeSessionHeaders);
-    const method = (opts.method || 'GET').toUpperCase();
+    const { includeSessionHeaders, auth = 'api', ...requestOpts } = opts;
+    const extraHeaders = requestOpts.headers instanceof Headers
+      ? Object.fromEntries(requestOpts.headers.entries())
+      : (Array.isArray(requestOpts.headers) ? Object.fromEntries(requestOpts.headers) : (requestOpts.headers as Record<string, string> | undefined));
+    const headers = this._headers(extraHeaders, includeSessionHeaders, auth);
+    const method = (requestOpts.method || 'GET').toUpperCase();
 
-    let processedOpts: LemonadeRequestInit = { ...opts };
-    if (opts.body && typeof opts.body === 'object' &&
-        !(opts.body instanceof FormData) &&
-        !(opts.body instanceof ReadableStream) &&
-        !(opts.body instanceof Blob)) {
+    let processedOpts: Omit<LemonadeRequestInit, 'includeSessionHeaders' | 'auth'> = { ...requestOpts };
+    if (requestOpts.body && typeof requestOpts.body === 'object' &&
+        !(requestOpts.body instanceof FormData) &&
+        !(requestOpts.body instanceof ReadableStream) &&
+        !(requestOpts.body instanceof Blob)) {
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-      processedOpts = { ...opts, body: JSON.stringify(opts.body) };
+      processedOpts = { ...requestOpts, body: JSON.stringify(requestOpts.body) };
     }
 
     let resp: Response;
     try {
       resp = await fetch(url, { ...processedOpts, headers } as RequestInit);
     } catch (cause) {
-      if (opts.includeSessionHeaders && this.sessionHeadersEnabled) {
+      if (includeSessionHeaders && this.sessionHeadersEnabled) {
         this.sessionHeadersEnabled = false;
         this.onSessionHeadersFailed?.();
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -852,24 +929,28 @@ class LemonadeAPI {
           const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
           err.url = url;
           err.endpoint = endpoint;
-          err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+          err.userMessage = endpoint.startsWith('/internal/mcp')
+            ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
+            : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
           throw err;
         }
       } else {
         const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
         err.url = url;
         err.endpoint = endpoint;
-        err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+        err.userMessage = endpoint.startsWith('/internal/mcp')
+          ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
+          : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
         throw err;
       }
     }
 
     if (!resp.ok) {
-      if (opts.includeSessionHeaders && this.sessionHeadersEnabled && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
+      if (includeSessionHeaders && this.sessionHeadersEnabled && (resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405)) {
         this.sessionHeadersEnabled = false;
         this.onSessionHeadersFailed?.();
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1260,6 +1341,86 @@ class LemonadeAPI {
       body: { backend: 'cloud', provider: provider.trim() },
     });
     this._notifyModelsChanged();
+  }
+
+  // ── MCP client host ─────────────────────────────────────────────
+
+  async listMcpServers(): Promise<McpServerState[]> {
+    // Probe without Authorization first. This keeps a keyless/fail-closed MCP
+    // host from turning a browser preflight into the opaque `Failed to fetch`
+    // error. A configured host answers 401, at which point we retry with the
+    // admin credential (or the regular API key fallback).
+    try {
+      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'none' });
+      return Array.isArray(data.servers) ? data.servers : [];
+    } catch (error) {
+      const status = (error as LemonadeRequestError)?.status;
+      if (status !== 401) throw error;
+      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'admin' });
+      return Array.isArray(data.servers) ? data.servers : [];
+    }
+  }
+
+  async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {
+    const data = await this._json<{ server: McpServerConfig }>('/internal/mcp/servers', {
+      method: 'POST',
+      auth: 'admin',
+      body: { server: { ...server, transport: 'stdio' } },
+    });
+    return data.server;
+  }
+
+  async removeMcpServer(id: string): Promise<void> {
+    await this._fetch(`/internal/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE', auth: 'admin' });
+  }
+
+  async connectMcpServer(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/connect`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async disconnectMcpServer(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/disconnect`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async refreshMcpServerTools(id: string): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>(
+      `/internal/mcp/servers/${encodeURIComponent(id)}/refresh-tools`,
+      { method: 'POST', auth: 'admin' },
+    );
+    return data.server;
+  }
+
+  async listMcpTools(): Promise<McpToolCatalogEntry[]> {
+    const data = await this._json<{ tools?: McpToolCatalogEntry[] }>('/internal/mcp/tools', { auth: 'admin' });
+    return Array.isArray(data.tools) ? data.tools : [];
+  }
+
+  async callMcpTool(
+    serverId: string,
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<McpToolCallResponse> {
+    return this._json<McpToolCallResponse>(
+      `/internal/mcp/servers/${encodeURIComponent(serverId)}/tools/call`,
+      {
+        method: 'POST',
+        auth: 'admin',
+        body: {
+          name,
+          arguments: args,
+          ...(typeof timeoutMs === 'number' ? { timeout_ms: timeoutMs } : {}),
+        },
+      },
+    );
   }
 
   // ── Capability-specific inference endpoints ────────────────────

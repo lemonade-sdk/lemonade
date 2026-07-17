@@ -578,7 +578,7 @@ test.describe('Accessibility — :focus-visible rings', () => {
     expect(outlineWidth).toBe('0px');
   });
 
-  test('A30 — composer textarea gets visible focus ring on keyboard focus (Tab navigation)', async ({ page }) => {
+  test('A30 — composer keyboard focus uses the rounded shell without a rectangular textarea outline', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.composer__input');
 
@@ -587,18 +587,18 @@ test.describe('Accessibility — :focus-visible rings', () => {
       await page.keyboard.press('Tab');
       const info = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null;
+        const bar = el?.closest('.composer__bar') as HTMLElement | null;
         return {
           isComposer: el?.classList.contains('composer__input') ?? false,
-          outlineWidth: el
-            ? window.getComputedStyle(el).outlineWidth
-            : '0px',
+          inputOutlineWidth: el ? window.getComputedStyle(el).outlineWidth : '0px',
+          barHasFocus: bar?.matches(':focus-within') ?? false,
+          barBorderRadius: bar ? window.getComputedStyle(bar).borderRadius : '0px',
         };
       });
       if (info.isComposer) {
-        expect(
-          info.outlineWidth,
-          'composer__input should have a non-zero outline when reached via keyboard',
-        ).not.toBe('0px');
+        expect(info.inputOutlineWidth, 'textarea must not draw the old rectangular focus box').toBe('0px');
+        expect(info.barHasFocus, 'rounded composer shell should own the focus state').toBe(true);
+        expect(info.barBorderRadius, 'composer focus treatment should remain rounded').not.toBe('0px');
         found = true;
         break;
       }
@@ -748,7 +748,7 @@ test.describe('Accessibility — preset card metadata accessible (#2345)', () =>
     expect(descText, 'description element must have non-empty text').toBeTruthy();
     expect(descText, 'description must include applies_to metadata').toMatch(/Applies to:/i);
     expect(descText, 'description must include prompt metadata').toMatch(/Prompt:/i);
-    expect(descText, 'description must include tools metadata').toMatch(/Tools:/i);
+    expect(descText, 'description must include MCP metadata').toMatch(/MCP:/i);
   });
 });
 
@@ -1688,6 +1688,14 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     { name: 'lemonade_omni', description: 'Multi-modal omni tool.' },
   ];
 
+  test.beforeEach(async ({ page }) => {
+    // The Connect view also queries the separate stdio-host administration API.
+    // Keep that request deterministic and, crucially, outside the public /mcp mock.
+    await page.route('**/internal/mcp/servers', route =>
+      route.fulfill({ json: { servers: [] } }),
+    );
+  });
+
   /** Mock health + MCP so the panel shows connected with a tools list. */
   async function setupWithMcp(page: import('@playwright/test').Page): Promise<void> {
     await page.route('**/api/v1/health**', route =>
@@ -1695,7 +1703,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     );
     // Both initialize (id:1) and tools/list (id:2) go to /mcp
     let callIndex = 0;
-    await page.route('**/mcp**', async route => {
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
       if (body?.method === 'initialize') {
         await route.fulfill({
@@ -1709,12 +1717,16 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
             },
           }),
         });
-      } else {
+      } else if (body?.method === 'notifications/initialized') {
+        await route.fulfill({ status: 202, body: '' });
+      } else if (body?.method === 'tools/list') {
         callIndex++;
         await route.fulfill({
           contentType: 'application/json',
           body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: MCP_TOOLS } }),
         });
+      } else {
+        await route.fulfill({ status: 400, json: { error: 'Unexpected MCP request' } });
       }
     });
 
@@ -1830,7 +1842,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
     );
-    await page.route('**/mcp**', async route => {
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
       if (body?.method === 'initialize') {
         await route.fulfill({
@@ -1840,11 +1852,15 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
             result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-mcp', version: '1.0.0' } },
           }),
         });
-      } else {
+      } else if (body?.method === 'notifications/initialized') {
+        await route.fulfill({ status: 202, body: '' });
+      } else if (body?.method === 'tools/list') {
         await route.fulfill({
           contentType: 'application/json',
           body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: MCP_TOOLS } }),
         });
+      } else {
+        await route.fulfill({ status: 400, json: { error: 'Unexpected MCP request' } });
       }
     });
 
@@ -1876,7 +1892,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
     );
-    await page.route('**/mcp**', async route => {
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as {
         method?: string; id?: number; params?: Record<string, unknown>;
       };
@@ -1948,7 +1964,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
     );
-    await page.route('**/mcp**', async route => {
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
       if (body?.method === 'initialize') {
         // Server rejects with a JSON-RPC error in the response body.
@@ -3724,5 +3740,33 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
       v => v.impact === 'critical' || v.impact === 'serious',
     );
     expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});
+
+// ─── MCP failure recovery ────────────────────────────────────────────────────
+
+test.describe('MCP failure recovery', () => {
+  test('MCP list errors never block selecting No MCP in an editable preset', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
+    await page.route('**/internal/mcp/servers**', route => route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY' }),
+    }));
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToView(page, 'Presets');
+    await page.getByRole('button', { name: '+ New Preset' }).first().click();
+
+    const none = page.locator('[data-preset-mcp-none]');
+    await expect(none).toBeVisible();
+    await expect(none).toBeEnabled();
+    await none.click();
+    await expect(none).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText(/You can still select No MCP or Lemonade/)).toBeVisible();
   });
 });
