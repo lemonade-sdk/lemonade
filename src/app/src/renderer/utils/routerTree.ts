@@ -262,7 +262,10 @@ export function stableStringify(value: unknown): string {
       .map(key => JSON.stringify(key) + ':' + stableStringify(value[key]))
       .join(',') + '}';
   }
-  return JSON.stringify(value);
+  // JSON.stringify returns undefined for undefined/functions/symbols; map those
+  // to 'null' so the function is total (values here come from parsed JSON, so
+  // this branch is only a type-level concern).
+  return JSON.stringify(value) ?? 'null';
 }
 
 // Trim and drop empty keywords - the whitespace normalization the editor's

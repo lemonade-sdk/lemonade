@@ -21,9 +21,24 @@ const fixtureDir = path.join(repoRoot, 'test', 'cpp', 'fixtures', 'routing');
 
 // ── TypeScript loader ──────────────────────────────────────────────────────
 
-let ts;
+let ts = null;
 try { ts = require(path.join(appRoot, 'node_modules', 'typescript')); }
-catch (_) { ts = require('typescript'); }
+catch (_) {
+  try { ts = require('typescript'); } catch (_2) { ts = null; }
+}
+
+if (!ts) {
+  // Don't crash the whole runner when deps are absent - surface one explicit
+  // skip instead. CI cannot hit this path: the workflow's type-check step
+  // already fails hard without node_modules.
+  module.exports = {
+    tests: [{
+      name: 'router collection suite',
+      run: () => ({ skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" }),
+    }],
+  };
+  return;
+}
 
 const originalTsLoader = require.extensions['.ts'];
 require.extensions['.ts'] = function loadTypeScript(module, filename) {

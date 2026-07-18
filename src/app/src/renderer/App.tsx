@@ -26,7 +26,7 @@ import {
   validateRouterImportPayload,
 } from './utils/customCollections';
 import { isCollectionRecipe, COLLECTION_ROUTER_MODEL_RECIPE } from './utils/recipeNames';
-import { buildModelExportFile, downloadJsonFile, downloadModelExportFile } from './utils/modelData';
+import { buildModelExportFile, downloadJsonFile } from './utils/modelData';
 import { isModelEffectivelyDownloaded } from './utils/collectionModels';
 import '../../styles/index.css';
 
@@ -73,7 +73,7 @@ const AppContent: React.FC = () => {
   const [routerCollectionModal, setRouterCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
   const importRouterFileRef = useRef<HTMLInputElement>(null);
   const { modelsData, selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
-  const { toasts, removeToast, showError, showSuccess } = useToast();
+  const { toasts, removeToast, showError, showSuccess, showInfo } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -439,9 +439,30 @@ const AppContent: React.FC = () => {
   const handleExportCustomCollection = async (collection: CustomCollectionDraft) => {
     try {
       const request = buildCustomCollectionPullRequest(collection);
-      await downloadModelExportFile(request.model_name);
-    } catch (exportError) {
-      showError(exportError instanceof Error ? exportError.message : 'Failed to export Omni Model.');
+      const downloadPullBody = (message: string) => {
+        showInfo(message);
+        const bareName = request.model_name.replace(/^user\./, '');
+        downloadJsonFile(`${bareName}.json`, request);
+      };
+      try {
+        const { filename, payload } = await buildModelExportFile(request.model_name);
+        const savedComponents = JSON.stringify(Array.isArray(payload.components) ? payload.components : []);
+        const savedPrompt = typeof payload.system_prompt === 'string' ? payload.system_prompt : '';
+        if (savedComponents !== JSON.stringify(request.components) || savedPrompt !== (request.system_prompt ?? '')) {
+          downloadPullBody('Exporting your current edits (not saved yet). Create or save first for a fully portable export with embedded component definitions.');
+          return;
+        }
+        downloadJsonFile(filename, payload);
+      } catch (serverError) {
+        const msg = serverError instanceof Error ? serverError.message : '';
+        if (msg.includes('404') || msg.includes('not found') || msg.includes('HTTP 404')) {
+          downloadPullBody('Omni Model not saved yet - downloading the registration JSON instead. Create or save first for a fully portable export.');
+        } else {
+          showError(msg || 'Failed to export Omni Model.');
+        }
+      }
+    } catch (buildError) {
+      showError(buildError instanceof Error ? buildError.message : 'Failed to build Omni Model JSON.');
     }
   };
 
@@ -467,7 +488,8 @@ const AppContent: React.FC = () => {
       // The pull-body is the /v1/pull registration JSON. It won't carry embedded
       // component definitions, so it may need those models present on the target.
       const downloadPullBody = (message: string) => {
-        showError(message);
+        // Informational - a file IS downloaded, just the less-portable variant.
+        showInfo(message);
         const bareName = request.model_name.replace(/^user\./, '');
         downloadJsonFile(`${bareName}.json`, request);
       };
@@ -476,7 +498,7 @@ const AppContent: React.FC = () => {
         if (!routingBlocksEquivalent(payload.routing, request.routing)) {
           // The editor holds unsaved edits - exporting the server copy would
           // silently discard them. Export what the user sees instead.
-          downloadPullBody('Exporting your current edits (not saved yet). Save first for a fully portable export with embedded component definitions.');
+          downloadPullBody('Exporting your current edits (not saved yet). Create or save first for a fully portable export with embedded component definitions.');
           return;
         }
         downloadJsonFile(filename, payload);
@@ -484,7 +506,7 @@ const AppContent: React.FC = () => {
         const msg = serverError instanceof Error ? serverError.message : '';
         if (msg.includes('404') || msg.includes('not found') || msg.includes('HTTP 404')) {
           // Model not saved yet - fall back to downloading the pull-body directly.
-          downloadPullBody('Router not saved yet - downloading the registration JSON instead. Save first for a fully portable export.');
+          downloadPullBody('Router not saved yet - downloading the registration JSON instead. Create or save first for a fully portable export.');
         } else {
           showError(msg || 'Failed to export Hybrid Router.');
         }

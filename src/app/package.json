@@ -6,6 +6,7 @@
     "dev:renderer": "webpack serve --mode development",
     "build:renderer": "webpack --mode development",
     "build:renderer:prod": "webpack --mode production",
+    "typecheck": "tsc --noEmit",
     "watch:renderer": "webpack --watch --mode development",
     "tauri": "tauri",
     "dev": "tauri dev",

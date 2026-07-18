@@ -830,12 +830,12 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           ) : (
             <>
               <ModelCheckboxList
-                options={candidateOptions.map(({ id, info }) => ({
+                options={candidateOptions.map(({ id, info }): ModelOption => ({
                   id,
                   label: info.model_name ?? getModelDisplayName(id),
                   sublabel: info.downloaded === true ? 'local' : 'will download',
                   downloaded: info.downloaded === true,
-                }) satisfies ModelOption)}
+                }))}
                 selected={draft.candidates}
                 onToggle={toggleCandidate}
               />
@@ -1035,7 +1035,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                 <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
-            <button type="button" className="router-json-preview-btn" title="Download registration JSON (save first for a fully portable export)"
+            <button type="button" className="router-json-preview-btn" title="Download registration JSON (create or save first for a fully portable export)"
               onClick={() => {
                 const blob = new Blob([previewJson], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
