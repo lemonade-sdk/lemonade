@@ -4046,6 +4046,12 @@ void Server::handle_3d_generations(const httplib::Request& req, httplib::Respons
         if (request_json.contains("seed") && !request_json["seed"].is_number_integer()) {
             return reject("'seed' must be an integer");
         }
+        if (request_json.contains("uv")) {
+            const auto& u = request_json["uv"];
+            if (!u.is_string() || (u != "box" && u != "xatlas")) {
+                return reject("'uv' must be 'box' or 'xatlas'");
+            }
+        }
 
         std::string requested_model = request_json["model"];
         try {

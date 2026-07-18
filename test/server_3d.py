@@ -82,6 +82,7 @@ class Model3DTests(ServerTestBase):
             "image": make_input_png_b64(),
             "resolution": 512,
             "seed": 42,
+            "bg_removal": "threshold",
         }
         payload.update(overrides)
         return payload
