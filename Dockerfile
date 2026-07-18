@@ -71,9 +71,10 @@ ENV XDG_RUNTIME_DIR=/run/lemonade
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Make executables executable
-RUN chmod +x ./lemond ./lemonade
+RUN chmod +x ./lemond ./lemonade /usr/local/bin/docker-entrypoint.sh
 
 # Expose the lemond/lemonade binaries on PATH so `docker exec` users can run
 # them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.
@@ -85,8 +86,6 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/.cache/huggingface \
     /opt/lemonade/.cache/lemonade && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade
-
-USER lemonade
 
 # Expose default port
 EXPOSE 13305
@@ -100,4 +99,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # its external interface, not loopback. Restrict exposure at run time by
 # publishing to host loopback (-p 127.0.0.1:13305:13305) and/or setting
 # LEMONADE_API_KEY. See docs/guide/install/docker.md.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["./lemond", "--host", "0.0.0.0"]
