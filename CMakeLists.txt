@@ -343,7 +343,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG 89c932f313c6437c38f2982869beacc89c2f2246  # v0.26.0
+        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -2355,4 +2355,11 @@ if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
     add_test(NAME CloudDiscoveryPolicyTest COMMAND test_cloud_discovery_policy)
+endif()
+
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
 endif()
