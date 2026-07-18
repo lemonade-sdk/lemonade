@@ -39,8 +39,12 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# Install runtime dependencies only
+# Install runtime dependencies. build-essential is required at runtime (not just
+# image build time) so bundled vLLM can JIT-compile Triton launcher modules on
+# first model load. Without gcc/ld and libc headers, vllm-server fails with
+# errors such as "stdlib.h: No such file or directory" or "cannot find crti.o".
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libcurl4 \
     curl \
     libssl3 \

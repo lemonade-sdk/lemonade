@@ -108,6 +108,11 @@ docker run -d \
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
 >
+> **vLLM note:** loading a `vllm` recipe also requires a C toolchain inside the
+> container for first-run Triton JIT. The published image includes
+> `build-essential` in the runtime stage for this reason. If you build your own
+> image, do not omit it from the final stage.
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
@@ -297,8 +302,10 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# Install runtime dependencies only
+# Install runtime dependencies. build-essential is required at runtime so bundled
+# vLLM can JIT-compile Triton launcher modules on first model load.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libcurl4 \
     curl \
     libssl3 \
@@ -508,3 +515,7 @@ docker run -d \
 
 - Model download fails: Ensure /opt/lemonade/.cache/huggingface volume is writable
 - Vulkan errors on CPU-only machine: The server will fallback to CPU backend automatically
+- vLLM load fails with Triton/clang errors (`stdlib.h: No such file or directory`,
+  `cannot find crti.o`, or `posix_spawn failed`): the runtime image is missing a
+  C toolchain. Install `build-essential` in the final Docker stage (see the
+  Dockerfile in the repository root) and rebuild the image.
