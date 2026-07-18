@@ -120,7 +120,12 @@ public:
 
     // Pinned status for eviction prevention
     bool is_pinned() const { return pinned_; }
-    void set_pinned(bool pinned) { pinned_ = pinned; }
+    void set_pinned(bool pinned) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pinned_ = pinned;
+        if (pinned) recipe_options_.set_option("pinned", true);
+        else recipe_options_.remove_option("pinned");
+    }
 
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
@@ -188,6 +193,14 @@ public:
             state_cv_.notify_all();
         }
         return false;
+    }
+
+    void rescue_from_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
     }
 
     void release_inference() {
@@ -259,6 +272,7 @@ public:
     // Multi-model support: Model metadata
     void set_model_metadata(const std::string& model_name, const std::string& checkpoint,
                            ModelType type, DeviceType device, const RecipeOptions& recipe_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         model_name_ = model_name;
         checkpoint_ = checkpoint;
         model_type_ = type;
@@ -270,7 +284,10 @@ public:
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
-    RecipeOptions get_recipe_options() const { return recipe_options_; }
+    RecipeOptions get_recipe_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return recipe_options_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 
@@ -293,6 +310,11 @@ public:
 
     // Unload the model and stop the server
     virtual void unload() = 0;
+
+    void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
+
+    static void set_request_cancel_flag(std::atomic<bool>* f);
+    static std::atomic<bool>* current_request_cancel();
 
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
@@ -503,6 +525,7 @@ protected:
     bool maintenance_in_progress_;
     long load_duration_ms_;
     bool pinned_ = false;
+    std::atomic<bool>* load_cancel_ = nullptr;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

@@ -18,6 +18,7 @@ public:
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
+    void remove_option(const std::string& opt);
     std::string get_recipe() const { return recipe_; };
 
 #ifdef LEMONADE_CLI
