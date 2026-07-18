@@ -117,6 +117,27 @@ static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 
+// The deployment ModelType a model actually serves, honoring backend capability.
+// get_model_type_from_labels() gives chat-indicator labels (reasoning / vision /
+// tools / chat-transcription) priority — correct for LLM backends, but wrong for
+// a backend that cannot chat: its descriptor declares a definitive non-LLM
+// deployment (onnxruntime -> classification, sd-cpp -> image, whispercpp ->
+// transcription), and a stray chat-indicator label must not promote it to LLM
+// and slip past classifier-capability validation or send run_classifier down the
+// unsupported chat_completion path at runtime.
+static ModelType get_deployment_model_type(const std::string& recipe,
+                                           const std::vector<std::string>& labels) {
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        for (const auto& label : desc->default_labels) {
+            ModelType backend_type = get_model_type_from_labels({label});
+            if (backend_type != ModelType::LLM) {
+                return backend_type;
+            }
+        }
+    }
+    return get_model_type_from_labels(labels);
+}
+
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -1134,7 +1155,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.labels.push_back("vision");
         }
 
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
 
         discovered[model_name] = info;
     }
@@ -1746,7 +1767,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -1806,7 +1827,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -2021,7 +2042,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Populate type and device fields (multi-model support)
-    info.type = get_model_type_from_labels(info.labels);
+    info.type = get_deployment_model_type(info.recipe, info.labels);
     info.device = device_type_for_recipe(info.recipe);
 
     resolve_all_model_paths(info);
@@ -4562,13 +4583,16 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() would once
-                // this inline definition is registered — explicit labels, legacy
-                // capability flags, and the backend's default labels — so
-                // validation and registration cannot disagree (e.g. a label-less
-                // sd-cpp model is IMAGE, not LLM).
+                // Derive the type exactly as register_user_model() +
+                // get_deployment_model_type() would once this inline definition
+                // is registered — explicit labels, legacy capability flags, and
+                // the backend's default labels, with the backend's deployment
+                // capability winning over chat-indicator labels — so validation
+                // and runtime cannot disagree (e.g. a label-less sd-cpp model is
+                // IMAGE, and onnxruntime + reasoning:true is CLASSIFICATION, not LLM).
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_model_type_from_labels(
+                return get_deployment_model_type(
+                    def->value("recipe", std::string()),
                     std::vector<std::string>(label_set.begin(), label_set.end()));
             }
         };

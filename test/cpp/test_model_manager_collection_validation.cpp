@@ -169,6 +169,45 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
     check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
 }
 
+// A chat-indicator label (reasoning/vision/…) must not promote a non-chat
+// backend to LLM. The backend's deployment capability wins, at both the model
+// type (which drives runtime routing) and collection.router validation.
+static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
+    // onnxruntime is a classification backend: reasoning:true stays CLASSIFICATION,
+    // so run_classifier routes to /classify, not the (unsupported) chat path.
+    manager.register_user_model(
+        "user.GuardX",
+        json{{"model_name", "user.GuardX"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/guard"}, {"reasoning", true}});
+    check("onnxruntime + reasoning:true is CLASSIFICATION, not LLM",
+          manager.get_model_info("user.GuardX").type == lemon::ModelType::CLASSIFICATION);
+
+    // sd-cpp is an image backend: vision:true stays IMAGE, not LLM.
+    manager.register_user_model(
+        "user.ImgX",
+        json{{"model_name", "user.ImgX"}, {"recipe", "sd-cpp"},
+             {"checkpoint", "example/img"}, {"vision", true}});
+    check("sd-cpp + vision:true is IMAGE, not LLM",
+          manager.get_model_info("user.ImgX").type == lemon::ModelType::IMAGE);
+
+    // …and the same models used as router classifiers resolve accordingly:
+    // onnxruntime is accepted (CLASSIFICATION), sd-cpp is rejected (IMAGE).
+    json onnx_reason = router_with_classifier(
+        "classifier",
+        json{{"model_name", "guard"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/guard"}, {"reasoning", true}});
+    check("onnxruntime + reasoning:true accepted as classifier (CLASSIFICATION)",
+          !manager.validate_collection_request("user.RouterKit", onnx_reason).has_value());
+
+    json sd_vision = router_with_classifier(
+        "classifier",
+        json{{"model_name", "img"}, {"recipe", "sd-cpp"},
+             {"checkpoint", "example/img"}, {"vision", true}});
+    check("sd-cpp + vision:true rejected as classifier (still IMAGE)",
+          error_contains(manager.validate_collection_request("user.RouterKit", sd_vision),
+                         "cannot serve as a classifier"));
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -186,6 +225,7 @@ int main() {
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
+    test_backend_capability_over_chat_indicator(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);
