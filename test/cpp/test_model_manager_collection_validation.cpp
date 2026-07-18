@@ -206,6 +206,15 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     check("sd-cpp + vision:true rejected as classifier (still IMAGE)",
           error_contains(manager.validate_collection_request("user.RouterKit", sd_vision),
                          "cannot serve as a classifier"));
+
+    // kokoro only does TTS but has no explicit labels; its default label must
+    // still keep a label-less kokoro model out of the classifier path.
+    json kokoro_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "voice"}, {"recipe", "kokoro"}, {"checkpoint", "example/voice"}});
+    check("label-less kokoro rejected as classifier (default label 'tts')",
+          error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
+                         "cannot serve as a classifier"));
 }
 
 static void test_register_preserves_routing(ModelManager& manager) {
