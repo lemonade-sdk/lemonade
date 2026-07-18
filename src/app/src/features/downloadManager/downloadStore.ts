@@ -40,6 +40,11 @@ type Listener = (downloads: DownloadListItem[]) => void;
 const STORAGE_KEY = 'lemonade_download_manager_items_v1';
 const DISMISSED_STORAGE_KEY = 'lemonade_download_manager_dismissed_v1';
 const TERMINAL_TTL_MS = 60 * 60 * 1000;
+// A locally-created placeholder can briefly precede the server-owned job in
+// /downloads. Keep that row long enough for registration to appear, but do not
+// let a stale renderer/localStorage row block the model forever when the server
+// no longer knows about the job.
+const SERVER_APPEAR_GRACE_MS = 30 * 1000;
 const POLL_MS = 1000;
 const SPEED_SMOOTHING_ALPHA = 0.35;
 
@@ -385,8 +390,15 @@ export function normalizeDownload(raw: DownloadProgressEvent, previous?: Downloa
   const timestamp = now();
   const status = statusFromDownload(raw);
   const progress = calculateProgress(raw, previous, status);
-  let running = typeof raw.running === 'boolean' ? raw.running : previous?.running;
-  if (status === 'completed' || status === 'error' || status === 'cancelled') {
+  const hasExplicitRunning = typeof raw.running === 'boolean';
+  let running = hasExplicitRunning ? raw.running : previous?.running;
+  // The server may publish a terminal-looking status while its worker is still
+  // unwinding. Preserve an explicit running=true; only infer stopped when no
+  // running state exists at all. An explicit completion event is also terminal
+  // on older servers that predate the `running` field.
+  if (!hasExplicitRunning && (raw.complete === true || status === 'completed' || status === 'cancelled')) {
+    running = false;
+  } else if (running == null && (status === 'error')) {
     running = false;
   }
   const terminalAt = isDownloadTerminal({ status, running })
@@ -458,7 +470,7 @@ function coerceStoredDownload(download: DownloadListItem, timestamp = now()): Do
     ?? timestampNumber(download.updatedAt)
     ?? timestamp;
 
-  if (download.status === 'completed' || download.status === 'error' || download.status === 'cancelled') {
+  if (isDownloadTerminal(download)) {
     return {
       ...download,
       createdAt,
@@ -467,7 +479,13 @@ function coerceStoredDownload(download: DownloadListItem, timestamp = now()): Do
       terminalAt: download.terminalAt || download.updatedAt || timestamp,
     };
   }
-  return { ...download, createdAt };
+  return {
+    ...download,
+    createdAt,
+    // A terminal-looking status with running=true is still server-owned and
+    // must survive reload as non-terminal.
+    terminalAt: undefined,
+  };
 }
 
 function readStored(resetActiveBaselines = false): DownloadListItem[] {
@@ -584,8 +602,10 @@ class DownloadStore {
         const normalized = serverDownloads
           .map(raw => normalizeDownload(raw, this.findExisting(raw)))
           .filter((item): item is DownloadListItem => Boolean(item));
-        this.mergeDownloads(normalized, true);
+        this.mergeDownloads(normalized, true, true);
       } catch {
+        // A failed poll is not an empty authoritative snapshot. Preserve local
+        // state and retry instead of deleting rows during a transient outage.
         this.mergeDownloads([], true);
       } finally {
         this.scheduleNext();
@@ -624,29 +644,66 @@ class DownloadStore {
     const id = `${type}:${modelName}`;
     const previous = this.downloads.find(item => item.id === id || (item.modelName === modelName && item.downloadType === type));
     const timestamp = now();
-    const item: DownloadListItem = {
-      ...(previous || {
-        id,
-        downloadType: type,
-        modelName,
-        fileName: '',
-        fileIndex: 1,
-        totalFiles: 1,
-        bytesDownloaded: 0,
-        bytesTotal: 0,
-        percent: 0,
-        createdAt: timestamp,
-        startTime: timestamp,
-        bytesResumed: 0,
-        updatedAt: timestamp,
-      }),
-      id: previous?.id || id,
+    // Reusing the stable model:<name> id for a retry must start a genuinely new
+    // attempt. Keeping a completed row's old creation time/progress can make the
+    // authoritative empty snapshot prune the fresh placeholder during the short
+    // interval before the server registers the new job.
+    const startsNewAttempt = status === 'downloading' && (!previous || isDownloadTerminal(previous));
+    const running = status === 'downloading'
+      ? true
+      : (status === 'completed' || status === 'error')
+        ? false
+        : (status === 'paused' || status === 'cancelled' || status === 'deleting')
+          // Pause/cancel are requests. Until /downloads confirms running=false,
+          // assume the worker still owns files/locks for an active row.
+          ? (previous?.running ?? true)
+          : previous?.running;
+    const base: DownloadListItem = previous || {
+      id,
+      downloadType: type,
+      modelName,
+      fileName: '',
+      fileIndex: 1,
+      totalFiles: 1,
+      bytesDownloaded: 0,
+      bytesTotal: 0,
+      percent: 0,
       status,
-      running: status === 'downloading' ? true : (status === 'paused' || status === 'deleting' ? previous?.running : false),
-      percent: status === 'completed' ? 100 : (previous?.percent || 0),
-      speedBytesPerSecond: status === 'downloading' ? previous?.speedBytesPerSecond : 0,
+      running,
+      createdAt: timestamp,
+      startTime: timestamp,
+      bytesResumed: 0,
       updatedAt: timestamp,
-      terminalAt: ['completed', 'error', 'cancelled'].includes(status) ? (previous?.terminalAt || timestamp) : undefined,
+    };
+    const item: DownloadListItem = {
+      ...base,
+      id: previous?.id || id,
+      downloadType: type,
+      modelName,
+      status,
+      running,
+      fileName: startsNewAttempt ? '' : base.fileName,
+      fileIndex: startsNewAttempt ? 1 : base.fileIndex,
+      totalFiles: startsNewAttempt ? 1 : base.totalFiles,
+      bytesDownloaded: startsNewAttempt ? 0 : base.bytesDownloaded,
+      bytesTotal: startsNewAttempt ? (base.declaredTotalBytes || 0) : base.bytesTotal,
+      bytesTotalIsLowerBound: startsNewAttempt ? false : base.bytesTotalIsLowerBound,
+      percent: status === 'completed' ? 100 : (startsNewAttempt ? 0 : (base.percent || 0)),
+      createdAt: startsNewAttempt ? timestamp : base.createdAt,
+      startTime: startsNewAttempt ? timestamp : base.startTime,
+      bytesResumed: startsNewAttempt ? 0 : base.bytesResumed,
+      completedFilesBytes: startsNewAttempt ? 0 : base.completedFilesBytes,
+      knownFileSizes: startsNewAttempt ? {} : base.knownFileSizes,
+      preExistingBytes: startsNewAttempt ? {} : base.preExistingBytes,
+      speedBytesPerSecond: status === 'downloading'
+        ? (startsNewAttempt ? 0 : base.speedBytesPerSecond)
+        : 0,
+      speedSampleTime: startsNewAttempt ? timestamp : base.speedSampleTime,
+      speedSampleBytes: startsNewAttempt ? 0 : base.speedSampleBytes,
+      error: startsNewAttempt ? undefined : base.error,
+      updatedAt: timestamp,
+      terminalAt: isDownloadTerminal({ status, running }) ? (base.terminalAt || timestamp) : undefined,
+      raw: startsNewAttempt ? undefined : base.raw,
     };
     this.mergeDownloads([item], false);
   }
@@ -675,7 +732,11 @@ class DownloadStore {
     return this.downloads.find(item => item.id === id || (modelName && item.downloadType === type && item.modelName === modelName));
   }
 
-  private mergeDownloads(incoming: DownloadListItem[], includeStored: boolean): void {
+  private mergeDownloads(
+    incoming: DownloadListItem[],
+    includeStored: boolean,
+    reconcileServerSnapshot = false,
+  ): void {
     const timestamp = now();
     const stored = includeStored ? readStored() : [];
     const dismissed = readDismissed(timestamp);
@@ -700,7 +761,13 @@ class DownloadStore {
       // genuinely newer active server snapshot should reopen the row.
       const createdAt = Math.min(existing.createdAt, item.createdAt);
       if (itemTerminal !== existingTerminal) {
-        if (itemUpdated >= existingUpdated) map.set(item.id, { ...item, createdAt });
+        if (itemUpdated >= existingUpdated) {
+          // A terminal update belongs to the current attempt and keeps its
+          // original ordering. A newer active item reopening a terminal stable
+          // id is a fresh retry and must keep its fresh creation timestamp, or
+          // the next empty server snapshot can prune it as stale immediately.
+          map.set(item.id, { ...item, createdAt: itemTerminal ? createdAt : item.createdAt });
+        }
         return;
       }
 
@@ -719,6 +786,23 @@ class DownloadStore {
         putDownload(item);
       }
     }
+
+    if (reconcileServerSnapshot) {
+      const serverIds = new Set(incoming.map(item => item.id));
+      for (const [id, item] of Array.from(map.entries())) {
+        if (!(id.startsWith('model:') || id.startsWith('backend:')) || serverIds.has(id)) continue;
+        if (isDownloadTerminal(item)) continue;
+
+        // New local rows are allowed to precede the first /downloads snapshot.
+        // Everything else is stale server-owned state and must not keep a model
+        // unavailable after another tab removed/cancelled the job or after a
+        // renderer reload recovered an obsolete localStorage row.
+        const awaitingServerRegistration = item.status === 'downloading'
+          && timestamp - item.createdAt < SERVER_APPEAR_GRACE_MS;
+        if (!awaitingServerRegistration) map.delete(id);
+      }
+    }
+
     writeDismissed(dismissed);
     this.downloads = sortDownloads(prune(Array.from(map.values()), timestamp));
     writeStored(this.downloads);

@@ -52,6 +52,16 @@ assert.match(manager, /\}, \[searchQuery, providerEnabled\.modelscope\]\);/,
   'ModelScope search must only depend on query/provider state');
 assert.ok(manager.includes('REMOTE_SEARCH_CACHE'), 'search results must be cached');
 assert.ok(manager.includes('REMOTE_VARIANT_CACHE'), 'variant/capability metadata must be cached');
+assert.match(manager, /remoteVariantCheckpoint\(modelId, variantName, recipe\)/,
+  'remote pulls must keep the selected GGUF variant in the registration checkpoint');
+assert.match(manager, /String\(recipe \|\| ''\)\.toLowerCase\(\) !== 'llamacpp' \|\| !variantName/,
+  'only llama.cpp registrations should receive a variant suffix');
+assert.match(manager, /const fallbackBase = safeOwner \? `\$\{defaultName\}-\$\{safeOwner\}` : defaultName/,
+  'colliding remote model names must fall back to the repository owner');
+assert.match(manager, /existingCandidate && !matchesCheckpoint\(existingCandidate\)/,
+  'collision suffixes must remain idempotent for the same checkpoint');
+assert.match(manager, /active\.downloadId \|\| `model:\$\{active\.modelName\}`/,
+  'remote cancellation must address the exact resolved download id');
 assert.ok(remoteCapabilitiesSource.includes('remoteCapabilityEvidence'), 'remote capabilities must use structured evidence');
 assert.ok(remoteCapabilitiesSource.includes('tokenizer.chat_template'), 'GGUF chat-template metadata must be consumed when provided');
 assert.ok(remoteCapabilitiesSource.includes('pooling_type'), 'GGUF pooling metadata must be consumed when provided');

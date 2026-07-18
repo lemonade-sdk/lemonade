@@ -16,25 +16,23 @@ async function main(): Promise<void> {
 
   const originalFetch = globalThis.fetch;
   const authHeaders: string[] = [];
-  let authAttempt = 0;
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     authHeaders.push(headers.get('Authorization') || '');
-    authAttempt += 1;
-    if (authAttempt === 1) {
-      return new Response(JSON.stringify({ error: 'Invalid or missing admin API key' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
     return new Response(JSON.stringify({ servers: [] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }) as typeof fetch;
   try {
+    api.setSessionApiKey('');
+    api.setSessionAdminApiKey('');
     assert.deepEqual(await api.listMcpServers(), []);
-    assert.deepEqual(authHeaders, ['', 'Bearer admin-key'], 'MCP discovery must probe without auth, then retry with admin auth');
+    assert.deepEqual(authHeaders, [], 'default MCP discovery must not probe a fail-closed admin endpoint without credentials');
+
+    api.setSessionAdminApiKey('admin-key');
+    assert.deepEqual(await api.listMcpServers(), []);
+    assert.deepEqual(authHeaders, ['Bearer admin-key'], 'credentialed MCP discovery must use admin auth directly');
   } finally {
     globalThis.fetch = originalFetch;
   }

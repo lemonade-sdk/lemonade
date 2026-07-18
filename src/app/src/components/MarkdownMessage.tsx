@@ -6,6 +6,7 @@ import katex from 'katex';
 import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
+import { copyTextToClipboard } from '../clipboard';
 
 interface MarkdownMessageProps {
   content: string;
@@ -15,6 +16,7 @@ interface MarkdownMessageProps {
 
 const COPY_LABEL = 'Copy';
 const COPIED_LABEL = 'Copied';
+const COPY_FAILED_LABEL = 'Copy failed';
 
 /* ── Mermaid init ──────────────────────────────────────────── */
 
@@ -235,15 +237,28 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       // Copy button
       const copyBtn = target.closest('.code-block__copy') as HTMLButtonElement | null;
       if (copyBtn) {
+        e.preventDefault();
+        e.stopPropagation();
         const codeBlock = copyBtn.closest('.code-block');
         const code = codeBlock?.querySelector('code');
         if (!code) return;
-        navigator.clipboard.writeText(code.textContent || '').then(() => {
+
+        const codeText = code.textContent || '';
+        void copyTextToClipboard(codeText).then(() => {
           copyBtn.textContent = COPIED_LABEL;
+          copyBtn.title = COPIED_LABEL;
           copyBtn.classList.add('copied');
-          setTimeout(() => {
+          copyBtn.classList.remove('copy-failed');
+        }).catch(() => {
+          copyBtn.textContent = COPY_FAILED_LABEL;
+          copyBtn.title = 'Could not copy code to the clipboard';
+          copyBtn.classList.add('copy-failed');
+          copyBtn.classList.remove('copied');
+        }).finally(() => {
+          window.setTimeout(() => {
             copyBtn.textContent = COPY_LABEL;
-            copyBtn.classList.remove('copied');
+            copyBtn.title = COPY_LABEL;
+            copyBtn.classList.remove('copied', 'copy-failed');
           }, 2000);
         });
         return;

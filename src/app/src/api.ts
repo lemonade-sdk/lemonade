@@ -80,6 +80,42 @@ export function friendlyErrorMessage(err: unknown): string {
   return String(err || 'Unknown error');
 }
 
+function serverErrorMessage(responseText: string): string {
+  const fallback = responseText.trim();
+  if (!fallback) return '';
+
+  try {
+    const parsed = JSON.parse(responseText);
+    if (typeof parsed?.error === 'string') return parsed.error;
+    if (isObject(parsed?.error) && typeof parsed.error.message === 'string') {
+      return parsed.error.message;
+    }
+    if (typeof parsed?.message === 'string') return parsed.message;
+  } catch {
+    // Plain-text server response.
+  }
+
+  return fallback;
+}
+
+function currentGuiOrigin(): string | null {
+  if (typeof window === 'undefined' || !window.location) return null;
+  const origin = String(window.location.origin || '').trim();
+  return origin && origin !== 'null' ? origin : null;
+}
+
+export function originNotAllowedMessage(serverUrl: string, guiOrigin = currentGuiOrigin()): string {
+  const originLabel = guiOrigin ? `"${guiOrigin}"` : 'this GUI origin';
+  const setting = guiOrigin
+    ? `LEMONADE_ALLOWED_ORIGINS=${guiOrigin}`
+    : 'LEMONADE_ALLOWED_ORIGINS=<full GUI origin>';
+
+  return `Lemonade Server at ${serverUrl} does not allow requests from ${originLabel}. `
+    + `On the server, set ${setting} (including scheme, host, and port) and restart lemond. `
+    + 'If the variable already contains origins, add this origin to its comma-separated list. '
+    + 'Avoid "*" except in an isolated development environment.';
+}
+
 function normalizeLoadedModel(model: unknown): LoadedModel | null {
   if (!isObject(model)) return null;
   const modelName = String(model.model_name || model.name || '').trim();
@@ -985,17 +1021,15 @@ class LemonadeAPI {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      let serverMessage = text.trim();
-      try {
-        const parsed = JSON.parse(text);
-        serverMessage = parsed?.error?.message || parsed?.message || serverMessage;
-      } catch { /* plain text response */ }
+      const serverMessage = serverErrorMessage(text);
       const statusText = resp.statusText || `HTTP ${resp.status}`;
       const err = new Error(`${method} ${url} failed with ${resp.status} ${statusText}${serverMessage ? `: ${serverMessage}` : ''}`) as LemonadeRequestError;
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
-      err.userMessage = `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
+      err.userMessage = resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
+        ? originNotAllowedMessage(this.baseUrl)
+        : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
     return resp;
@@ -1228,6 +1262,7 @@ class LemonadeAPI {
   }
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
+    await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
@@ -1367,19 +1402,18 @@ class LemonadeAPI {
   // ── MCP client host ─────────────────────────────────────────────
 
   async listMcpServers(): Promise<McpServerState[]> {
-    // Probe without Authorization first. This keeps a keyless/fail-closed MCP
-    // host from turning a browser preflight into the opaque `Failed to fetch`
-    // error. A configured host answers 401, at which point we retry with the
-    // admin credential (or the regular API key fallback).
-    try {
-      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'none' });
-      return Array.isArray(data.servers) ? data.servers : [];
-    } catch (error) {
-      const status = (error as LemonadeRequestError)?.status;
-      if (status !== 401) throw error;
-      const data = await this._json<{ servers?: McpServerState[] }>('/internal/mcp/servers', { auth: 'admin' });
-      return Array.isArray(data.servers) ? data.servers : [];
-    }
+    // External MCP administration is deliberately fail-closed on the server.
+    // Do not probe /internal/mcp/servers from ordinary preset/chat rendering
+    // when the app has no admin-capable credential: on a default keyless server
+    // that request is guaranteed to be rejected and only produces noisy 403 logs.
+    // The dedicated MCP panel prompts for a key before calling this method.
+    if (!this.adminApiKey) return [];
+
+    const data = await this._json<{ servers?: McpServerState[] }>(
+      '/internal/mcp/servers',
+      { auth: 'admin' },
+    );
+    return Array.isArray(data.servers) ? data.servers : [];
   }
 
   async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {
@@ -1842,24 +1876,43 @@ class LemonadeAPI {
     const target = modelName.trim().toLowerCase();
     const candidate = this._downloadModelName(download).trim().toLowerCase();
     const id = String(download.id || '').toLowerCase();
+    const type = String(download.type || '').toLowerCase();
+    if (id.startsWith('backend:') || (type && type !== 'model')) return false;
     return candidate === target || id === `model:${target}` || id.endsWith(`:${target}`);
   }
 
-
-  private async _isModelDownloadedOnServer(modelName: string): Promise<boolean> {
+  /**
+   * Refuse a load while lemond still owns an active/paused/finalizing download
+   * for the same model. Some registry snapshots expose `downloaded: true` as
+   * soon as the destination file exists, before the download is complete; a
+   * load request at that point can wait behind the server download lock and
+   * make an ordinary UI action look hung.
+   *
+   * The check is best-effort for older/unreachable download endpoints: only a
+   * positively identified in-progress job blocks the load.
+   */
+  private async _assertModelNotDownloading(modelName: string): Promise<void> {
+    let downloads: DownloadProgressEvent[];
     try {
-      const target = modelName.trim().toLowerCase();
-      const data = await this.models(true);
-      return data.data.some((model: ModelInfo) => {
-        const id = String((model as any).id || '').trim().toLowerCase();
-        const name = String((model as any).name || '').trim().toLowerCase();
-        const modelNameValue = String((model as any).model_name || '').trim().toLowerCase();
-        const downloaded = (model as any).downloaded === true || (model as any).installed === true || (model as any).local === true;
-        return downloaded && (id === target || name === target || modelNameValue === target);
-      });
+      downloads = await this.downloads();
     } catch {
-      return false;
+      return;
     }
+
+    const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
+    if (!match) return;
+
+    const status = downloadPayloadStatus(match);
+    const stopped = match.running !== true;
+    const stoppedTerminal = stopped && (
+      downloadPayloadCompleted(match)
+      || Boolean(downloadPayloadErrorMessage(match))
+      || status === 'cancelled'
+      || status === 'canceled'
+    );
+    if (stoppedTerminal) return;
+
+    throw new Error(`Model "${modelName}" is still downloading. Wait for the download to finish before loading it.`);
   }
 
   private async _waitForModelDownloadTerminal(
@@ -1904,17 +1957,10 @@ class LemonadeAPI {
       } else if (sawServerJob) {
         consecutiveMissingSnapshots += 1;
         if (consecutiveMissingSnapshots >= 10) {
-          if (await this._isModelDownloadedOnServer(modelName)) {
-            return {
-              id: `model:${modelName}`,
-              type: 'model',
-              model_name: modelName,
-              status: 'completed',
-              running: false,
-              complete: true,
-              percent: 100,
-            };
-          }
+          // Do not infer completion from `/models`. During a pull the registry
+          // may report `downloaded: true` as soon as a partial destination file
+          // exists. Only an explicit terminal download snapshot/SSE event is a
+          // safe completion signal.
           throw new Error(`Download for ${modelName} disappeared before completion.`);
         }
       } else if (performance.now() - started > 30000) {
@@ -2027,7 +2073,9 @@ class LemonadeAPI {
           onProgress,
           terminalPayload != null,
         ).catch(async error => {
-          if (terminalPayload && downloadPayloadCompleted(terminalPayload)) return terminalPayload;
+          if (terminalPayload && downloadPayloadCompleted(terminalPayload) && terminalPayload.running !== true) {
+            return terminalPayload;
+          }
           throw error;
         });
         if (terminal) {

@@ -1378,16 +1378,35 @@ test.describe('Accessibility — download progress bar semantics', () => {
   test.beforeEach(async ({ page }) => {
     // Pre-populate localStorage so the DownloadStore singleton (read at module init)
     // has an active downloading item before React renders anything.
-    await page.addInitScript((item: unknown) => {
-      localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([item]));
+    await page.addInitScript((item: typeof MOCK_DOWNLOAD) => {
+      const timestamp = Date.now();
+      localStorage.setItem('lemonade_download_manager_items_v1', JSON.stringify([{
+        ...item,
+        createdAt: timestamp,
+        startTime: timestamp,
+        updatedAt: timestamp,
+      }]));
     }, MOCK_DOWNLOAD);
 
-    await page.route('/api/v1/health', route =>
+    await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
     );
-    // Return empty from the server so the mock item is not overwritten by polling.
-    await page.route('/api/v1/downloads**', route =>
-      route.fulfill({ json: { downloads: [] } }),
+    // The server owns download truth. Return the same active job so the
+    // accessibility fixture remains valid after authoritative reconciliation.
+    await page.route('**/api/v1/downloads**', route =>
+      route.fulfill({ json: { downloads: [{
+        id: MOCK_DOWNLOAD.id,
+        type: 'model',
+        model_name: MOCK_DOWNLOAD.modelName,
+        status: 'downloading',
+        running: true,
+        file: MOCK_DOWNLOAD.fileName,
+        file_index: MOCK_DOWNLOAD.fileIndex,
+        total_files: MOCK_DOWNLOAD.totalFiles,
+        bytes_downloaded: MOCK_DOWNLOAD.bytesDownloaded,
+        bytes_total: MOCK_DOWNLOAD.bytesTotal,
+        percent: MOCK_DOWNLOAD.percent,
+      }] } }),
     );
 
     await page.goto('/');
@@ -1688,13 +1707,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     { name: 'lemonade_omni', description: 'Multi-modal omni tool.' },
   ];
 
-  test.beforeEach(async ({ page }) => {
-    // The Connect view also queries the separate stdio-host administration API.
-    // Keep that request deterministic and, crucially, outside the public /mcp mock.
-    await page.route('**/internal/mcp/servers', route =>
-      route.fulfill({ json: { servers: [] } }),
-    );
-  });
 
   /** Mock health + MCP so the panel shows connected with a tools list. */
   async function setupWithMcp(page: import('@playwright/test').Page): Promise<void> {
@@ -3746,16 +3758,20 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 // ─── MCP failure recovery ────────────────────────────────────────────────────
 
 test.describe('MCP failure recovery', () => {
-  test('MCP list errors never block selecting No MCP in an editable preset', async ({ page }) => {
+  test('preset editing does not probe the fail-closed MCP admin endpoint without credentials', async ({ page }) => {
+    let adminRequests = 0;
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
-    await page.route('**/internal/mcp/servers**', route => route.fulfill({
-      status: 403,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY' }),
-    }));
+    await page.route('**/internal/mcp/servers**', route => {
+      adminRequests += 1;
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY' }),
+      });
+    });
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
@@ -3767,6 +3783,6 @@ test.describe('MCP failure recovery', () => {
     await expect(none).toBeEnabled();
     await none.click();
     await expect(none).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText(/You can still select No MCP or Lemonade/)).toBeVisible();
+    expect(adminRequests).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
+import { copyTextToClipboard } from '../clipboard';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
@@ -28,6 +29,7 @@ import {
 } from '../modelCapabilities';
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
+import { activeDownloadForModel, downloadStore, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
@@ -623,23 +625,6 @@ async function wavVoiceSampleToBase64(file: File): Promise<string> {
 }
 
 
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (!text) return;
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-}
 
 const CopyInlineButton: React.FC<{ text: string; title?: string; className?: string }> = ({ text, title = 'Copy', className = '' }) => {
   const [copied, setCopied] = useState(false);
@@ -722,6 +707,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [presetPickerQuery, setPresetPickerQuery] = useState('');
@@ -892,8 +878,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       })
       .filter(model => model.name
         && (model.recipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(model.name))
-        && (model.downloaded || loadedNames.has(model.name.toLowerCase()) || model.name === currentModel));
-  }, [currentModel, knownModelInfos, loadedModels]);
+        && (loadedNames.has(model.name.toLowerCase())
+          || model.name === currentModel
+          || (model.downloaded && !activeDownloadForModel(downloadItems, model.name))));
+  }, [currentModel, downloadItems, knownModelInfos, loadedModels]);
   const openMossVoiceDesignModel = currentIsVoiceDesign && isOpenMossTts
     ? currentModel
     : (openMossModels.find(model => model.labels.includes('voice-design') || /voicegen/i.test(model.name))?.name || '');
@@ -916,10 +904,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     knownModelInfos.forEach(info => {
       if (capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
       const name = String((info as any).model_name || info.name || info.id || '').trim();
-      if (name) names.add(name);
+      if (name && !activeDownloadForModel(downloadItems, name)) names.add(name);
     });
     return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [knownModelInfos, loadedModels]);
+  }, [downloadItems, knownModelInfos, loadedModels]);
 
   useEffect(() => {
     if (currentCapability !== 'model3d') return;
@@ -930,6 +918,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         : (imageGenerationModels[0] || ''),
     }));
   }, [currentCapability, imageGenerationModels]);
+  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+
   useEffect(() => {
     const updatePresetVersion = () => setPresetVersion(v => v + 1);
     window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
@@ -1104,7 +1094,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
       const downloaded = Boolean((info as any).downloaded);
-      if (!downloaded) return;
+      if (!downloaded || activeDownloadForModel(downloadItems, name)) return;
       addOption({
         name,
         capability,
@@ -1120,7 +1110,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       ? options.filter(option => `${option.name} ${modelModeLabel(option.capability, option.audioInput)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
-  }, [audioInputForLoaded, capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
+  }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
 
   const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
@@ -2443,6 +2433,10 @@ ${finalText}`
       return;
     }
     if (!api.isConnected || modelPickerLoading) return;
+    if (activeDownloadForModel(downloadStore.snapshot(), option.name)) {
+      setModelPickerError(`${option.name} is still downloading. Wait for the download to finish before loading it.`);
+      return;
+    }
     setModelPickerError(null);
     setModelPickerLoading(option.name);
     try {

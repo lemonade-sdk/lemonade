@@ -104,6 +104,7 @@ async function mockServer(page: Page, options: MockOptions = {}): Promise<MockCo
     json: { status: 'ok', version: 'test', all_models_loaded: loaded },
   }));
   await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: MODELS } }));
+  await page.route('**/api/v1/downloads**', route => route.fulfill({ json: { downloads: [] } }));
   await page.route('**/api/v1/models/*', route => {
     const id = decodeURIComponent(route.request().url().split('/').pop() || '').split('?')[0];
     const model = MODELS.find(m => m.id === id);
@@ -771,6 +772,8 @@ test.describe('AutoOpt run detail actions', () => {
     await page.locator('[data-autoopt-use-alternative="Maximum quality"]').click();
     await expect(page.locator('[data-autoopt-rec-args]')).toContainText('--spec-default -b 2048 -ub 2048');
     await page.locator('[data-autoopt-try-now]').click();
+    await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('nothing saved');
+    expect(counts.load).toHaveLength(1);
     expect(counts.load[0].ctx_size).toBe(16384);
   });
 

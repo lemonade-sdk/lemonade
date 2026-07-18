@@ -15,11 +15,15 @@ export interface CustomModelComponentRoles {
   speech?: string;
 }
 
+export type CustomOmniToolTargetType = 'chat' | 'vision' | 'image';
+
 export interface CustomOmniToolDefinition {
   id?: string;
   name: string;
   description: string;
   target_model: string;
+  /** Endpoint used for this target. Missing values from older records mean chat. */
+  target_type?: CustomOmniToolTargetType;
   system_prompt?: string;
   prompt_template?: string;
   parameters?: Record<string, unknown>;
@@ -87,15 +91,22 @@ function normalizeToolName(value?: string): string {
     .slice(0, 64);
 }
 
+function normalizeToolTargetType(value: unknown): CustomOmniToolTargetType {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'vision' || normalized === 'image') return normalized;
+  return 'chat';
+}
+
 function normalizeCustomTools(value?: CustomOmniToolDefinition[]): CustomOmniToolDefinition[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const tools: CustomOmniToolDefinition[] = [];
   for (const raw of value) {
     if (!raw || typeof raw !== 'object') continue;
-    const anyRaw = raw as CustomOmniToolDefinition & { targetModel?: string; model?: string };
+    const anyRaw = raw as CustomOmniToolDefinition & { targetModel?: string; model?: string; targetType?: string; kind?: string };
     const name = normalizeToolName(anyRaw.name);
     const targetModel = normalizeComponentName(anyRaw.target_model || anyRaw.targetModel || anyRaw.model);
+    const targetType = normalizeToolTargetType(anyRaw.target_type || anyRaw.targetType || anyRaw.kind);
     if (!name || !targetModel || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const description = String(raw.description || `Ask ${targetModel}`).trim();
@@ -106,6 +117,7 @@ function normalizeCustomTools(value?: CustomOmniToolDefinition[]): CustomOmniToo
       name,
       description: description || `Ask ${targetModel}`,
       target_model: targetModel,
+      target_type: targetType,
       system_prompt: String(raw.system_prompt || '').trim() || undefined,
       prompt_template: String(raw.prompt_template || '').trim() || undefined,
       parameters,
@@ -173,8 +185,7 @@ function saveCustomModels(scope: string, models: CustomModelRecord[]): void {
 export function upsertCustomModel(scope: string, draft: CustomModelDraft): CustomModelRecord {
   const now = Date.now();
   const customTools = normalizeCustomTools(draft.customTools);
-  const customToolComponents = customTools.map(tool => tool.target_model);
-  const normalizedComponents = Array.from(new Set([...(draft.components || []), ...customToolComponents].map(normalizeComponentName).filter(Boolean)));
+  const normalizedComponents = Array.from(new Set((draft.components || []).map(normalizeComponentName).filter(Boolean)));
   const componentRoles: CustomModelComponentRoles = {
     llm: normalizeComponentName(draft.componentRoles?.llm),
     vision: normalizeComponentName(draft.componentRoles?.vision),
@@ -185,6 +196,13 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
   };
   const explicitRoleComponents = Object.values(componentRoles).filter(Boolean) as string[];
   const components = Array.from(new Set([...normalizedComponents, ...explicitRoleComponents]));
+  const configuredComponents = new Set(components.map(component => component.toLowerCase()));
+  const invalidTool = draft.capability === 'omni'
+    ? customTools.find(tool => !configuredComponents.has(tool.target_model.toLowerCase()))
+    : undefined;
+  if (invalidTool) {
+    throw new Error(`Custom tool ${invalidTool.name} target ${invalidTool.target_model} must be configured as an Omni collection component.`);
+  }
   const name = normalizeModelName(draft.name);
   if (name.length < 7) throw new Error('Custom model name must contain at least 2 characters after the user. prefix.');
   const capability = draft.capability;

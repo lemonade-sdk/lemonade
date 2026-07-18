@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
+import { copyTextToClipboard } from '../clipboard';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, modelMatchesCapabilityTags, ModelCapability } from '../modelCapabilities';
 import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
@@ -329,23 +330,6 @@ function formatBytes(bytes: number): string {
 }
 
 
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (!text) return;
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-}
 
 function safeFileName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'model';
@@ -720,9 +704,23 @@ const PROVIDER_META: Record<ModelRegistryProvider, { label: string; compactLabel
   },
 };
 
-function remoteSuggestedName(provider: ModelRegistryProvider, modelId: string, variants?: PullVariantsResult): string {
-  const base = variants?.suggested_name || modelId.split('/').pop() || modelId;
-  return provider === 'modelscope' ? `${base}-modelscope` : base;
+function remoteVariantCheckpoint(modelId: string, variantName: string, recipe: string): string {
+  return String(recipe || '').toLowerCase() === 'llamacpp'
+    ? `${modelId}:${variantName}`
+    : modelId;
+}
+
+function remoteDefaultModelName(
+  provider: ModelRegistryProvider,
+  modelId: string,
+  variants?: PullVariantsResult,
+  variantName = '',
+  recipe = variants?.recipe || '',
+): string {
+  const suggested = variants?.suggested_name || modelId.split('/').pop() || modelId;
+  const providerScoped = provider === 'modelscope' ? `${suggested}-modelscope` : suggested;
+  if (String(recipe || '').toLowerCase() !== 'llamacpp' || !variantName) return providerScoped;
+  return `${providerScoped}-${variantName}`;
 }
 
 async function loadRemoteVariants(
@@ -742,11 +740,13 @@ async function loadRemoteVariants(
 }
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
+type OmniCustomToolPreset = 'generic' | 'coder' | 'reviewer' | 'vision' | 'image';
 type OmniCustomToolDraft = {
   id: string;
   name: string;
   description: string;
   targetModel: string;
+  targetType: CustomOmniToolTargetType;
   systemPrompt: string;
   promptTemplate: string;
   parametersJson: string;
@@ -787,6 +787,42 @@ const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS = {
 
 const DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON = JSON.stringify(DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS, null, 2);
 
+const DEFAULT_CUSTOM_VISION_TOOL_PARAMETERS_JSON = JSON.stringify({
+  type: 'object',
+  properties: {
+    question: { type: 'string', description: 'What the vision model should determine from the latest image.' },
+    context: { type: 'string', description: 'Optional context or constraints for the analysis.' },
+  },
+  required: ['question'],
+  additionalProperties: false,
+}, null, 2);
+
+const DEFAULT_CUSTOM_IMAGE_TOOL_PARAMETERS_JSON = JSON.stringify({
+  type: 'object',
+  properties: {
+    prompt: { type: 'string', description: 'A detailed description of the image to generate.' },
+    size: { type: 'string', description: 'Optional WIDTHxHEIGHT canvas size.' },
+    steps: { type: 'integer', minimum: 1, maximum: 100 },
+    cfg_scale: { type: 'number', minimum: 0 },
+    seed: { type: 'integer' },
+  },
+  required: ['prompt'],
+  additionalProperties: false,
+}, null, 2);
+
+function targetTypeForOmniToolPreset(preset: OmniCustomToolPreset): CustomOmniToolTargetType {
+  if (preset === 'vision' || preset === 'image') return preset;
+  return 'chat';
+}
+
+function defaultOmniToolParametersJson(targetType: CustomOmniToolTargetType): string {
+  switch (targetType) {
+    case 'vision': return DEFAULT_CUSTOM_VISION_TOOL_PARAMETERS_JSON;
+    case 'image': return DEFAULT_CUSTOM_IMAGE_TOOL_PARAMETERS_JSON;
+    default: return DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON;
+  }
+}
+
 function sanitizeOmniToolName(value: string): string {
   return value
     .trim()
@@ -806,8 +842,9 @@ function nextOmniToolName(existing: OmniCustomToolDraft[], base: string): string
   return `${candidate}_${i}`;
 }
 
-function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset: 'generic' | 'coder' | 'reviewer' = 'generic', targetModel = ''): OmniCustomToolDraft {
+function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset: OmniCustomToolPreset = 'generic', targetModel = ''): OmniCustomToolDraft {
   const id = `custom-tool-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const targetType = targetTypeForOmniToolPreset(preset);
   if (preset === 'coder') {
     const name = nextOmniToolName(existing, 'ask_coder');
     return {
@@ -815,6 +852,7 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
       name,
       description: 'Delegate a focused implementation task to a coding model.',
       targetModel,
+      targetType,
       systemPrompt: 'You are a focused coding assistant. Implement small, well-scoped tasks. Prefer concrete code and mention important assumptions or edge cases briefly.',
       promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn the implementation guidance or code the planner should use.',
       parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
@@ -828,9 +866,36 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
       name,
       description: 'Ask a reviewer model to check code, plans, or patches for bugs and regressions.',
       targetModel,
+      targetType,
       systemPrompt: 'You are a strict but practical code reviewer. Look for correctness bugs, regressions, missing tests, and risky assumptions. Be concise and actionable.',
       promptTemplate: 'Review task:\n{task}\n\nMaterial to review:\n{context}\n\nReturn findings grouped by severity, plus a short verdict.',
       parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  if (preset === 'vision') {
+    return {
+      id,
+      name: nextOmniToolName(existing, 'inspect_image'),
+      description: 'Ask a selected vision model to inspect the latest attached or generated image.',
+      targetModel,
+      targetType,
+      systemPrompt: 'You are a precise vision specialist. Analyze only what is visible and clearly separate observations from uncertainty.',
+      promptTemplate: 'Question:\n{question}\n\nAdditional context:\n{context}',
+      parametersJson: DEFAULT_CUSTOM_VISION_TOOL_PARAMETERS_JSON,
+      maxTokens: '',
+    };
+  }
+  if (preset === 'image') {
+    return {
+      id,
+      name: nextOmniToolName(existing, 'render_image'),
+      description: 'Generate an image with a specifically selected image model.',
+      targetModel,
+      targetType,
+      systemPrompt: '',
+      promptTemplate: '',
+      parametersJson: DEFAULT_CUSTOM_IMAGE_TOOL_PARAMETERS_JSON,
       maxTokens: '',
     };
   }
@@ -838,8 +903,9 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
   return {
     id,
     name,
-    description: 'Delegate a focused task to another local LLM and return its result to the planner.',
+    description: 'Delegate a focused task to another local chat model and return its result to the planner.',
     targetModel,
+    targetType,
     systemPrompt: 'You are a focused internal assistant tool. Complete the delegated task and return concise, actionable results.',
     promptTemplate: 'Task:\n{task}\n\nContext:\n{context}\n\nReturn a concise result for the planner model.',
     parametersJson: DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
@@ -916,6 +982,7 @@ function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
       name: String(tool.name || ''),
       description: String(tool.description || ''),
       targetModel: String(tool.target_model || ''),
+      targetType: (['vision', 'image'].includes(String(tool.target_type || '')) ? String(tool.target_type) : 'chat') as CustomOmniToolTargetType,
       systemPrompt: String(tool.system_prompt || ''),
       promptTemplate: String(tool.prompt_template || ''),
       parametersJson: JSON.stringify(tool.parameters || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS, null, 2),
@@ -988,7 +1055,7 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
   },
 };
 
-const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'embeddings', 'embedding', 'reranking', 'reranker']);
+const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'audio-generation', 'music', 'music-generation', 'sound-generation', 'sfx', '3d', 'model3d', '3d-generation', 'image-to-3d', 'mesh', 'mesh-generation', 'embeddings', 'embedding', 'reranking', 'reranker']);
 
 const MODEL_LIST_WIDTH_KEY = 'model_list_panel_width';
 const MODEL_LIST_DEFAULT_WIDTH = 360;
@@ -1025,7 +1092,8 @@ function isOmniComponentEligible(m: ModelInfo, role: OmniComponentRole): boolean
 
   switch (role) {
     case 'llm':
-      return cap === 'chat' || cap === 'omni' || !labels.some(label => NON_PLANNER_LABELS.has(label));
+      if (cap !== 'unknown') return cap === 'chat' || cap === 'omni';
+      return !labels.some(label => NON_PLANNER_LABELS.has(label));
     case 'vision':
       return cap === 'omni' || hasAnyLabel(m, ['vision', 'vlm', 'vision-language', 'image-input']);
     case 'image':
@@ -1070,6 +1138,23 @@ function compareOmniComponentOptions(a: OmniComponentOption, b: OmniComponentOpt
   const diff = sourceRank[a.source] - sourceRank[b.source];
   if (diff !== 0) return diff;
   return a.label.localeCompare(b.label);
+}
+
+function configuredOmniToolTargetIds(draft: CustomModelDraftState, targetType: CustomOmniToolTargetType): string[] {
+  const candidates = targetType === 'chat'
+    ? [draft.llmComponent, draft.visionComponent]
+    : targetType === 'vision'
+      ? [draft.visionComponent]
+      : [draft.imageComponent];
+  const seen = new Set<string>();
+  return candidates
+    .map(value => value.trim())
+    .filter(value => {
+      const key = value.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 interface OmniComponentPickerProps {
@@ -1259,7 +1344,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
-  const [pullingRemote, setPullingRemote] = useState<Record<string, number>>({});
+  const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
   const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
   const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
@@ -1693,6 +1778,82 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return allModels.find(mi => modelName(mi).toLowerCase() === target) || null;
   };
 
+  const modelCheckpoint = (model: ModelInfo | null | undefined): string => {
+    if (!model) return '';
+    return String((model as any).checkpoint || (model as any).checkpoints?.main || '').trim();
+  };
+
+  const resolveRemoteModelName = (
+    provider: ModelRegistryProvider,
+    modelId: string,
+    variantName: string,
+    recipe: string,
+    variants?: PullVariantsResult,
+  ): string => {
+    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe);
+    const defaultName = remoteDefaultModelName(provider, modelId, variants, variantName, recipe);
+    const lookup = (bareName: string): ModelInfo | null => (
+      findCurrentModel(`user.${bareName}`) || findCurrentModel(bareName)
+    );
+    const matchesCheckpoint = (info: ModelInfo | null): boolean => modelCheckpoint(info) === checkpoint;
+
+    const existingDefault = lookup(defaultName);
+    if (!existingDefault || matchesCheckpoint(existingDefault)) return `user.${defaultName}`;
+
+    const owner = modelId.split('/')[0]?.trim() || '';
+    const safeOwner = owner.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+    const fallbackBase = safeOwner ? `${defaultName}-${safeOwner}` : defaultName;
+    let candidate = fallbackBase;
+    let suffix = 2;
+    let existingCandidate = lookup(candidate);
+    while (existingCandidate && !matchesCheckpoint(existingCandidate)) {
+      candidate = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+      existingCandidate = lookup(candidate);
+    }
+    return `user.${candidate}`;
+  };
+
+  const activeRemotePull = (
+    provider: ModelRegistryProvider,
+    modelId: string,
+    variants?: PullVariantsResult,
+  ): { modelName: string; percent: number; downloadId?: string } | null => {
+    const key = providerKey(provider, modelId);
+    const local = pullingRemote[key];
+    if (local) {
+      const download = activeDownloadForModel(downloadItems, local.modelName);
+      return {
+        modelName: local.modelName,
+        percent: download?.percent ?? local.percent,
+        downloadId: download?.id,
+      };
+    }
+
+    const sourceMatches = (model: ModelInfo): boolean => {
+      const source = String((model as any).registry_source || (model as any).source || '').toLowerCase();
+      return !source || source === provider;
+    };
+    const registered = allModels.find(model => {
+      const checkpoint = modelCheckpoint(model);
+      return sourceMatches(model)
+        && (checkpoint === modelId || checkpoint.startsWith(`${modelId}:`))
+        && Boolean(activeDownloadForModel(downloadItems, modelName(model)));
+    });
+    if (registered) {
+      const name = modelName(registered);
+      const download = activeDownloadForModel(downloadItems, name);
+      if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
+    }
+
+    for (const variant of variants?.variants || []) {
+      const name = resolveRemoteModelName(provider, modelId, variant.name, variants?.recipe || '', variants);
+      const download = activeDownloadForModel(downloadItems, name);
+      if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
+    }
+    return null;
+  };
+
   const ensureCustomRegistration = async (model: ModelInfo | null) => {
     if (!model || !(model as any).custom) return;
     await api.pullModel(modelName(model), {}, customRegistrationOptions(model));
@@ -1757,6 +1918,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const handleLoad = async (model: ModelInfo) => {
     if (loadingModel) return;
     const name = modelName(model);
+    if (activeDownloadForModel(downloadStore.snapshot(), name)) {
+      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
+      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      return;
+    }
     setLoadError(null);
     setLoadingModel(name);
     try {
@@ -1838,7 +2004,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handlePull = async (model: ModelInfo) => {
     const name = modelName(model);
-    if (pulling[name] !== undefined) return;
+    if (pulling[name] !== undefined || activeDownloadForModel(downloadStore.snapshot(), name)) return;
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
@@ -1865,7 +2031,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       signal: ac.signal,
     };
 
-    await api.pullModel(name, callbacks, customRegistrationOptions(model));
+    try {
+      await api.pullModel(name, callbacks, customRegistrationOptions(model));
+    } finally {
+      delete pullAbortRef.current[name];
+      setPulling(p => {
+        if (p[name] === undefined) return p;
+        const next = { ...p };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const handleCancelPull = async (name: string) => {
@@ -1878,6 +2054,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handlePullAndLoad = async (model: ModelInfo) => {
     const name = modelName(model);
+    if (pulling[name] !== undefined || activeDownloadForModel(downloadStore.snapshot(), name)) return;
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
@@ -1916,34 +2093,50 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       signal: ac.signal,
     };
 
-    await api.pullModel(name, callbacks, customRegistrationOptions(model));
+    try {
+      await api.pullModel(name, callbacks, customRegistrationOptions(model));
+    } finally {
+      delete pullAbortRef.current[name];
+      setPulling(p => {
+        if (p[name] === undefined) return p;
+        const next = { ...p };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const handleRemotePull = async (provider: ModelRegistryProvider, modelId: string, variantName: string, recipe: string) => {
     const key = providerKey(provider, modelId);
-    if (pullingRemote[key] !== undefined) return;
     const vdata = remoteVariants[key];
-    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
-    const modelName = `user.${suggestedName}`;
-    const checkpoint = `${modelId}:${variantName}`;
+    if (activeRemotePull(provider, modelId, vdata)) return;
+    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe);
+    const targetModelName = resolveRemoteModelName(provider, modelId, variantName, recipe, vdata);
     const ac = new AbortController();
     pullRemoteAbortRef.current[key] = ac;
-    setPullingRemote(p => ({ ...p, [key]: 0 }));
-    downloadStore.markLocal(modelName, 'downloading', 'model');
+    setPullingRemote(p => ({ ...p, [key]: { percent: 0, modelName: targetModelName, checkpoint } }));
+    downloadStore.markLocal(targetModelName, 'downloading', 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        const item = downloadStore.upsertFromPull(modelName, data, 'model');
-        setPullingRemote(p => ({ ...p, [key]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[key] ?? 0) }));
+        const item = downloadStore.upsertFromPull(targetModelName, data, 'model');
+        setPullingRemote(p => ({
+          ...p,
+          [key]: {
+            percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[key]?.percent ?? 0),
+            modelName: targetModelName,
+            checkpoint,
+          },
+        }));
       },
       onComplete: (data) => {
-        downloadStore.upsertFromPull(modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
+        downloadStore.upsertFromPull(targetModelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
         refresh();
       },
       onError: (err) => {
-        downloadStore.upsertFromPull(modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
+        downloadStore.upsertFromPull(targetModelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
         console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
@@ -1953,26 +2146,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
     const labels = new Set(vdata?.suggested_labels || []);
     if (vdata?.mmproj_files?.length) labels.add('vision');
-    await api.pullModel(modelName, callbacks, {
-      checkpoint,
-      recipe,
-      source: provider,
-      mmproj: vdata?.mmproj_files?.[0],
-      labels: [...labels],
-      vision: labels.has('vision'),
-      embedding: labels.has('embeddings'),
-      reranking: labels.has('reranking'),
-    });
+    try {
+      await api.pullModel(targetModelName, callbacks, {
+        checkpoint,
+        recipe,
+        source: provider,
+        mmproj: vdata?.mmproj_files?.[0],
+        labels: [...labels],
+        vision: labels.has('vision'),
+        embedding: labels.has('embeddings'),
+        reranking: labels.has('reranking'),
+      });
+    } finally {
+      delete pullRemoteAbortRef.current[key];
+      setPullingRemote(p => {
+        if (!p[key]) return p;
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    }
   };
 
   const handleCancelRemotePull = async (provider: ModelRegistryProvider, modelId: string) => {
     const key = providerKey(provider, modelId);
     pullRemoteAbortRef.current[key]?.abort();
     const vdata = remoteVariants[key];
-    const suggestedName = remoteSuggestedName(provider, modelId, vdata);
-    await api.controlDownload(`model:user.${suggestedName}`, 'cancel').catch(() => undefined);
+    const active = activeRemotePull(provider, modelId, vdata);
+    if (active) {
+      await api.controlDownload(active.downloadId || `model:${active.modelName}`, 'cancel').catch(() => undefined);
+      downloadStore.markLocal(active.modelName, 'cancelled', 'model');
+    }
     delete pullRemoteAbortRef.current[key];
-    downloadStore.markLocal(`user.${suggestedName}`, 'cancelled', 'model');
     setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
   };
 
@@ -2220,6 +2425,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         throw new Error('Select a planner LLM for the Omni collection.');
       }
       const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
+      const componentRoles = {
+        llm: customDraft.llmComponent,
+        vision: customDraft.visionComponent,
+        image: customDraft.imageComponent,
+        edit: customDraft.editComponent,
+        transcription: customDraft.transcriptionComponent,
+        speech: customDraft.speechComponent,
+      };
       const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
       const seenCustomToolNames = new Set<string>();
       const customTools = isOmniCollection
@@ -2232,12 +2445,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           if (seenCustomToolNames.has(name.toLowerCase())) throw new Error(`Custom tool ${name} is duplicated.`);
           seenCustomToolNames.add(name.toLowerCase());
           const targetModel = tool.targetModel.trim();
-          if (!targetModel) throw new Error(`Custom tool ${name}: select a target LLM.`);
+          if (!targetModel) throw new Error(`Custom tool ${name}: select a target model.`);
+          const configuredTargets = configuredOmniToolTargetIds(customDraft, tool.targetType);
+          if (!configuredTargets.some(candidate => candidate.toLowerCase() === targetModel.toLowerCase())) {
+            throw new Error(`Custom tool ${name}: target ${targetModel} is not configured in this Omni collection.`);
+          }
           const description = tool.description.trim();
           if (!description) throw new Error(`Custom tool ${name}: enter a description so the planner knows when to call it.`);
           let parameters: Record<string, unknown>;
           try {
-            const parsed = JSON.parse(tool.parametersJson || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON);
+            const parsed = JSON.parse(tool.parametersJson || defaultOmniToolParametersJson(tool.targetType));
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schema must be a JSON object');
             parameters = parsed as Record<string, unknown>;
           } catch (err) {
@@ -2249,6 +2466,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             name,
             description,
             target_model: targetModel,
+            target_type: tool.targetType,
             system_prompt: tool.systemPrompt.trim() || undefined,
             prompt_template: tool.promptTemplate.trim() || undefined,
             parameters,
@@ -2256,17 +2474,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           };
         }).filter((tool): tool is CustomOmniToolDefinition => tool !== null)
         : [];
-      const componentRoles = {
-        llm: customDraft.llmComponent,
-        vision: customDraft.visionComponent,
-        image: customDraft.imageComponent,
-        edit: customDraft.editComponent,
-        transcription: customDraft.transcriptionComponent,
-        speech: customDraft.speechComponent,
-      };
-      const customToolTargets = customTools.map(tool => tool.target_model);
       const components = customDraft.omniSource === 'collection'
-        ? Array.from(new Set([...Object.values(componentRoles), ...customToolTargets].map(v => v.trim()).filter(Boolean)))
+        ? Array.from(new Set(Object.values(componentRoles).map(v => v.trim()).filter(Boolean)))
         : [];
       const omniSystemPrompt = customDraft.omniSystemPrompt.trim();
       const availableRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
@@ -2398,17 +2607,65 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return roles;
   }, [allModels]);
 
-  const addOmniCustomTool = (preset: 'generic' | 'coder' | 'reviewer' = 'generic') => {
-    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
-    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, preset, targetModel);
+  const omniCustomToolTargetOptions = useMemo<Record<CustomOmniToolTargetType, OmniComponentOption[]>>(() => {
+    const byId = new Map(allModels.map(model => [modelName(model).toLowerCase(), model] as const));
+    const optionsFor = (targetType: CustomOmniToolTargetType): OmniComponentOption[] => configuredOmniToolTargetIds(customDraft, targetType).map(id => {
+      const model = byId.get(id.toLowerCase());
+      if (model) return omniComponentOptionFromModel(model);
+      return {
+        id,
+        label: id,
+        detail: 'configured in this collection',
+        source: 'registered',
+        downloaded: false,
+        custom: false,
+        recipe: '',
+        labels: [],
+      };
+    });
+    return {
+      chat: optionsFor('chat'),
+      vision: optionsFor('vision'),
+      image: optionsFor('image'),
+    };
+  }, [allModels, customDraft.llmComponent, customDraft.visionComponent, customDraft.imageComponent]);
+
+  const defaultCustomToolTarget = (targetType: CustomOmniToolTargetType): string => {
+    const options = omniCustomToolTargetOptions[targetType];
+    if (targetType === 'vision' && customDraft.visionComponent) return customDraft.visionComponent;
+    if (targetType === 'image' && customDraft.imageComponent) return customDraft.imageComponent;
+    if (targetType === 'chat' && customDraft.llmComponent) return customDraft.llmComponent;
+    return options[0]?.id || '';
+  };
+
+  const addOmniCustomTool = (preset: OmniCustomToolPreset = 'generic') => {
+    const targetType = targetTypeForOmniToolPreset(preset);
+    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, preset, defaultCustomToolTarget(targetType));
     handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, next] });
   };
 
   const addCoderReviewerPair = () => {
-    const targetModel = customDraft.llmComponent || omniComponentOptions.llm[0]?.id || '';
+    const targetModel = defaultCustomToolTarget('chat');
     const coder = createOmniCustomToolDraft(customDraft.omniCustomTools, 'coder', targetModel);
     const reviewer = createOmniCustomToolDraft([...customDraft.omniCustomTools, coder], 'reviewer', targetModel);
     handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, coder, reviewer] });
+  };
+
+  const changeOmniCustomToolTargetType = (tool: OmniCustomToolDraft, targetType: CustomOmniToolTargetType) => {
+    const knownDefaults = new Set([
+      DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS_JSON,
+      DEFAULT_CUSTOM_VISION_TOOL_PARAMETERS_JSON,
+      DEFAULT_CUSTOM_IMAGE_TOOL_PARAMETERS_JSON,
+    ]);
+    const targetOptions = omniCustomToolTargetOptions[targetType];
+    const currentTargetIsCompatible = targetOptions.some(option => option.id.toLowerCase() === tool.targetModel.trim().toLowerCase());
+    updateOmniCustomTool(tool.id, {
+      targetType,
+      targetModel: currentTargetIsCompatible ? tool.targetModel : defaultCustomToolTarget(targetType),
+      parametersJson: !tool.parametersJson.trim() || knownDefaults.has(tool.parametersJson)
+        ? defaultOmniToolParametersJson(targetType)
+        : tool.parametersJson,
+    });
   };
 
   const updateOmniCustomTool = (id: string, patch: Partial<OmniCustomToolDraft>) => {
@@ -2431,6 +2688,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     [displayLoadedModels]
   );
 
+  // Local pull callbacks are lost when the user leaves/re-enters the Models
+  // view, while the server-backed store keeps tracking the active download.
+  const effectivePulling = useMemo(() => {
+    const next = { ...pulling };
+    downloadItems.forEach(item => {
+      if (item.downloadType !== 'model' || !activeDownloadForModel(downloadItems, item.modelName)) return;
+      if (next[item.modelName] === undefined) next[item.modelName] = item.percent;
+    });
+    return next;
+  }, [downloadItems, pulling]);
 
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
@@ -2441,14 +2708,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     for (const m of allModels) {
       const name = modelName(m);
       if (loadedNames.has(name)) continue;
-      const isDownloaded = isCollectionModel(m)
+      const hasActiveDownload = Boolean(activeDownloadForModel(downloadItems, name))
+        || (isCollectionModel(m) && getCollectionComponents(m).some(component => Boolean(activeDownloadForModel(downloadItems, component))));
+      const isDownloaded = !hasActiveDownload && (isCollectionModel(m)
         ? isCollectionFullyDownloaded(m, allModels)
-        : Boolean((m as any).downloaded);
+        : Boolean((m as any).downloaded));
       if (isDownloaded) dl.push(m);
       else av.push(m);
     }
     return { downloaded: dl, available: av };
-  }, [allModels, loadedNames]);
+  }, [allModels, downloadItems, loadedNames]);
 
   const handleUpdateAllModels = useCallback(async (): Promise<UpdateAllModelsResult> => {
     const candidates = allModels.filter(model => {
@@ -2463,7 +2732,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const errors: string[] = [];
     for (const model of candidates) {
       const name = modelName(model);
-      if (pulling[name] !== undefined) {
+      if (pulling[name] !== undefined || activeDownloadForModel(downloadItems, name)) {
         skipped += 1;
         continue;
       }
@@ -2476,7 +2745,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       });
     }
     return { started, skipped, errors };
-  }, [allModels, loadedNames, pulling]);
+  }, [allModels, downloadItems, loadedNames, pulling]);
 
   useEffect(() => {
     if (automaticUpdateStartedRef.current || !api.isConnected || modelsLoading) return;
@@ -3019,9 +3288,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     ]))
       .filter(tag => !['gguf', 'transformers', 'pytorch', 'safetensors'].includes(tag.toLowerCase()))
       .slice(0, 6);
-    const suggestedForProgress = remoteSuggestedName(provider, result.id, variants);
-    const activeRemoteDownload = activeDownloadForModel(downloadItems, `user.${suggestedForProgress}`);
-    const pullPercent = activeRemoteDownload?.percent ?? pullingRemote[key];
+    const remotePull = activeRemotePull(provider, result.id, variants);
+    const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
     const isLoadingVariants = remoteVariantsLoading[key] || false;
     const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
@@ -3559,7 +3827,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <details className="custom-model-form__advanced custom-model-form__wide">
                     <summary>
                       <span>Advanced settings</span>
-                      <small>System prompt and custom LLM tools</small>
+                      <small>System prompt and custom model tools</small>
                     </summary>
                     <div className="custom-model-form__advanced-body">
                       <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
@@ -3576,22 +3844,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                       <div className="custom-model-form__tools custom-model-form__wide">
                         <div className="custom-model-form__section-head">
                           <div>
-                            <strong>Custom LLM tools</strong>
-                            <span>Optional planner-callable helper models.</span>
+                            <strong>Custom model tools</strong>
+                            <span>Add an editable example, choose its endpoint, then select one of the models configured in this collection.</span>
                           </div>
                           <div className="custom-model-form__section-actions">
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('generic')}>+ LLM tool</button>
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={addCoderReviewerPair}>+ Coder/reviewer pair</button>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('generic')}>+ LLM example</button>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('vision')}>+ Vision example</button>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('image')}>+ Image example</button>
+                            <button className="btn btn--ghost btn--tiny" type="button" onClick={addCoderReviewerPair}>+ Coding pair</button>
                           </div>
                         </div>
                         {customDraft.omniCustomTools.length === 0 ? (
-                          <div className="custom-model-form__empty-tools">No custom LLM tools configured.</div>
+                          <div className="custom-model-form__empty-tools">No custom model tools configured. The buttons above insert working examples that you can rename and adapt.</div>
                         ) : customDraft.omniCustomTools.map((tool, index) => {
-                          const targetListId = `omni-custom-tool-targets-${tool.id}`;
+                          const targetOptions = omniCustomToolTargetOptions[tool.targetType];
+                          const selectedTarget = targetOptions.find(option => option.id.toLowerCase() === tool.targetModel.trim().toLowerCase())?.id || '';
+                          const promptDriven = tool.targetType === 'chat' || tool.targetType === 'vision';
                           return (
                             <div className="custom-model-form__tool-card" key={tool.id}>
                               <div className="custom-model-form__tool-card-head">
-                                <strong>Tool {index + 1}</strong>
+                                <div>
+                                  <strong>Tool {index + 1}</strong>
+                                  <small>Editable example · {tool.targetType === 'chat' ? 'Chat / LLM' : tool.targetType === 'vision' ? 'Vision' : 'Image generation'}</small>
+                                </div>
                                 <button className="btn btn--ghost btn--tiny" type="button" onClick={() => removeOmniCustomTool(tool.id)}>Remove</button>
                               </div>
                               <label className="custom-model-form__field">Tool name
@@ -3601,18 +3876,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                   placeholder="ask_coder"
                                 />
                               </label>
-                              <label className="custom-model-form__field">Target LLM
-                                <input
-                                  value={tool.targetModel}
-                                  list={targetListId}
+                              <label className="custom-model-form__field">Execution type
+                                <select
+                                  value={tool.targetType}
+                                  onChange={e => changeOmniCustomToolTargetType(tool, e.target.value as CustomOmniToolTargetType)}
+                                >
+                                  <option value="chat">Chat / LLM</option>
+                                  <option value="vision">Vision LLM</option>
+                                  <option value="image">Image generation</option>
+                                </select>
+                                <small>Selects the Lemonade endpoint used for this model.</small>
+                              </label>
+                              <label className="custom-model-form__field custom-model-form__wide">Target model
+                                <select
+                                  value={selectedTarget}
                                   onChange={e => updateOmniCustomTool(tool.id, { targetModel: e.target.value })}
-                                  placeholder="Select or type a model id"
-                                />
-                                <datalist id={targetListId}>
-                                  {omniComponentOptions.llm.map(option => (
+                                  disabled={targetOptions.length === 0}
+                                >
+                                  <option value="">{targetOptions.length ? 'Select a configured target' : 'Configure a compatible collection component first'}</option>
+                                  {targetOptions.map(option => (
                                     <option key={option.id} value={option.id}>{option.label}</option>
                                   ))}
-                                </datalist>
+                                </select>
+                                <small>Only models configured in this Omni collection are available as targets.</small>
                               </label>
                               <label className="custom-model-form__field custom-model-form__wide">Description
                                 <input
@@ -3621,22 +3907,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                   placeholder="When should the planner use this tool?"
                                 />
                               </label>
-                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool system prompt
-                                <textarea
-                                  value={tool.systemPrompt}
-                                  onChange={e => updateOmniCustomTool(tool.id, { systemPrompt: e.target.value })}
-                                  rows={4}
-                                  spellCheck={false}
-                                />
-                              </label>
-                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">User prompt template
-                                <textarea
-                                  value={tool.promptTemplate}
-                                  onChange={e => updateOmniCustomTool(tool.id, { promptTemplate: e.target.value })}
-                                  rows={4}
-                                  spellCheck={false}
-                                />
-                              </label>
+                              {promptDriven && (
+                                <>
+                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target system prompt
+                                    <textarea
+                                      value={tool.systemPrompt}
+                                      onChange={e => updateOmniCustomTool(tool.id, { systemPrompt: e.target.value })}
+                                      rows={4}
+                                      spellCheck={false}
+                                    />
+                                  </label>
+                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target user prompt template
+                                    <textarea
+                                      value={tool.promptTemplate}
+                                      onChange={e => updateOmniCustomTool(tool.id, { promptTemplate: e.target.value })}
+                                      rows={4}
+                                      spellCheck={false}
+                                    />
+                                  </label>
+                                </>
+                              )}
                               <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool argument schema JSON
                                 <textarea
                                   value={tool.parametersJson}
@@ -3644,15 +3934,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                   rows={5}
                                   spellCheck={false}
                                 />
+                                <small>This editable schema tells the planner which arguments it may send.</small>
                               </label>
-                              <label className="custom-model-form__field">Max tokens
-                                <input
-                                  value={tool.maxTokens}
-                                  inputMode="numeric"
-                                  onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
-                                  placeholder="Optional"
-                                />
-                              </label>
+                              {promptDriven && (
+                                <label className="custom-model-form__field">Max tokens
+                                  <input
+                                    value={tool.maxTokens}
+                                    inputMode="numeric"
+                                    onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
+                                    placeholder="Optional"
+                                  />
+                                </label>
+                              )}
                             </div>
                           );
                         })}
@@ -3684,7 +3977,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
           loadingModel={loadingModel}
-          pulling={pulling}
+          pulling={effectivePulling}
           loadError={loadError}
           onLoad={handleLoad}
           onUnload={handleUnload}
@@ -3703,8 +3996,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           hfVariants={selectedRemoteModel ? remoteVariants[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] : undefined}
           onFetchHfVariants={(modelId) => { void fetchRemoteVariants(selectedRemoteProvider, modelId); }}
           onHfPull={(modelId, variantName, recipe) => { void handleRemotePull(selectedRemoteProvider, modelId, variantName, recipe); }}
-          pullingHf={selectedRemoteModel && pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] !== undefined
-            ? { [selectedRemoteModel.id]: pullingRemote[providerKey(selectedRemoteProvider, selectedRemoteModel.id)] }
+          pullingHf={selectedRemoteModel
+            ? (() => {
+              const pull = activeRemotePull(
+                selectedRemoteProvider,
+                selectedRemoteModel.id,
+                remoteVariants[providerKey(selectedRemoteProvider, selectedRemoteModel.id)],
+              );
+              return pull ? { [selectedRemoteModel.id]: pull.percent } : {};
+            })()
             : {}}
           onCancelHfPull={(modelId) => { void handleCancelRemotePull(selectedRemoteProvider, modelId); }}
           onBack={() => {

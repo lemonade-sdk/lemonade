@@ -154,6 +154,11 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     setHostLoading(true);
     setHostError('');
     try {
+      if (!api.adminApiKey) {
+        setServers([]);
+        setHostError('External MCP server administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY. Enter the matching key below to manage external servers.');
+        return;
+      }
       setServers(await api.listMcpServers());
     } catch (error) {
       setHostError(friendlyErrorMessage(error));
@@ -281,7 +286,13 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
               <h3 id="external-mcp-title">External MCP servers</h3>
               <p>{connectedExternal}/{servers.length} connected · stdio transport · select up to four per preset.</p>
             </div>
-            <button type="button" className="btn btn--primary" onClick={() => { setDraft(EMPTY_DRAFT); setFormError(''); setShowForm(value => !value); }} disabled={connectionStatus !== 'connected'}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => { setDraft(EMPTY_DRAFT); setFormError(''); setShowForm(value => !value); }}
+              disabled={connectionStatus !== 'connected' || !api.adminApiKey}
+              title={!api.adminApiKey ? 'Apply an admin-capable API key before adding an external MCP server' : undefined}
+            >
               {showForm ? 'Cancel' : 'Add server'}
             </button>
           </div>

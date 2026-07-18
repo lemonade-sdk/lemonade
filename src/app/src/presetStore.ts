@@ -31,6 +31,7 @@ export interface RecipeOptions {
   height?: number;
   sampling_method?: string;
   flow_shift?: number;
+  'sd-cpp_backend'?: string;
   sdcpp_args?: string;
   whispercpp_backend?: string;
   whispercpp_args?: string;
@@ -1163,6 +1164,7 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
   }
 
   if (capability === 'image' || recipe === 'sd-cpp') {
+    out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend']]) ?? backend;
     out.steps = readNumberFromModelOrRecipe(model, [['recipe_options', 'steps'], ['sample_params', 'steps'], ['sample_steps'], ['steps']]);
     out.cfg_scale = readNumberFromModelOrRecipe(model, [['recipe_options', 'cfg_scale'], ['sample_params', 'cfg_scale'], ['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg'], ['cfg_scale']]);
     out.width = readNumberFromModelOrRecipe(model, [['recipe_options', 'width'], ['sample_params', 'width'], ['width']]);
@@ -1708,7 +1710,7 @@ export function recipeOptionsForCapability(options: RecipeOptions, capability: M
 
   switch (capability) {
     case 'image':
-      return pickRecipeOptions(options, ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      return pickRecipeOptions(options, ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
     case 'audio':
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);

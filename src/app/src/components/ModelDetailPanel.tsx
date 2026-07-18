@@ -129,6 +129,7 @@ const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
   height: 'Height',
   sampling_method: 'Sampling method',
   flow_shift: 'Flow shift',
+  'sd-cpp_backend': 'Backend',
   sdcpp_args: 'Backend args',
   whispercpp_backend: 'Backend',
   whispercpp_args: 'Backend args',
@@ -157,6 +158,7 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
   openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
+  'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
   llamacpp_args: 'Raw backend args for this model and selected backend only.',
   sdcpp_args: 'Raw backend args for this image model only.',
@@ -170,12 +172,13 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
 const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args', 'mmproj_enabled']);
-const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
+const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd-cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
 const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
 const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
   llamacpp_backend: 'llamacpp_args',
   vllm_backend: 'vllm_args',
+  'sd-cpp_backend': 'sdcpp_args',
   whispercpp_backend: 'whispercpp_args',
   moonshine_backend: 'moonshine_args',
 };
@@ -184,7 +187,7 @@ const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'l
 const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args', 'merge_args'];
 const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args', 'merge_args'];
 const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['merge_args'];
-const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'];
+const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'];
 const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args', 'merge_args'];
 const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args', 'merge_args'];
 const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed', 'merge_args'];
@@ -284,6 +287,7 @@ function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): 
   switch (key) {
     case 'llamacpp_backend': return 'llamacpp';
     case 'vllm_backend': return 'vllm';
+    case 'sd-cpp_backend': return 'sd-cpp';
     case 'whispercpp_backend': return 'whispercpp';
     case 'moonshine_backend': return 'moonshine';
     case 'acestep_backend': return 'acestep';
@@ -2053,7 +2057,7 @@ const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model:
         <div className="custom-collection-settings__summary">
           <span>System prompt</span>
           <strong>{hasCustomPrompt ? 'Customized' : 'Default'}</strong>
-          <span>Custom LLM tools</span>
+          <span>Custom model tools</span>
           <strong>{tools.length}</strong>
         </div>
       </section>
@@ -2364,7 +2368,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isLoadingThis = loadingModel === name;
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
-  const isDownloaded = Boolean((model as any).downloaded);
+  const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
   const cap = capabilityFromModelInfo(model);
 
   // ── Update-preset-while-loaded derivation (#2356) ─────────────────────────

@@ -53,10 +53,25 @@ function calculateETA(download: DownloadListItem): string {
 }
 
 function isFinalizing(download: DownloadListItem): boolean {
+  if (download.running !== true) return false;
+  if (download.status === 'completed') return true;
   return download.status === 'downloading'
     && !download.bytesTotalIsLowerBound
     && download.bytesTotal > 0
     && download.bytesDownloaded >= download.bytesTotal;
+}
+
+function applyControlSnapshot(
+  download: DownloadListItem,
+  result: unknown,
+  fallbackStatus: DownloadStatus,
+): void {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return;
+  const snapshot = result as Record<string, unknown>;
+  downloadStore.upsertFromPull(download.modelName, {
+    ...snapshot,
+    status: snapshot.status || fallbackStatus,
+  }, download.downloadType);
 }
 
 async function removeDownload(download: DownloadListItem): Promise<void> {
@@ -68,7 +83,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
-  const prevStatusRef = useRef<Map<string, DownloadStatus> | null>(null);
+  const prevStatusRef = useRef<Map<string, Pick<DownloadListItem, 'status' | 'running'>> | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
 
   useEffect(() => downloadStore.subscribe(setDownloads), []);
@@ -79,32 +94,49 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   useEffect(() => {
     if (prevStatusRef.current === null) {
       // First run — initialise the map without announcing (avoids spurious on-mount reads).
-      const initial = new Map<string, DownloadStatus>();
-      for (const d of downloads) initial.set(d.id, d.status);
+      const initial = new Map<string, Pick<DownloadListItem, 'status' | 'running'>>();
+      for (const d of downloads) initial.set(d.id, { status: d.status, running: d.running });
       prevStatusRef.current = initial;
       return;
     }
     const prev = prevStatusRef.current;
     let message = '';
     for (const d of downloads) {
-      const prevStatus = prev.get(d.id);
+      const previous = prev.get(d.id);
+      const prevStatus = previous?.status;
       const name = displayName(d.modelName);
       if (!prevStatus && d.status === 'downloading') {
         message = `Downloading ${name} started`;
-      } else if (prevStatus === 'downloading' && d.status === 'completed') {
+      } else if (
+        d.status === 'completed'
+        && d.running !== true
+        && (prevStatus !== 'completed' || previous?.running === true)
+      ) {
         message = `${name} download complete`;
-      } else if (prevStatus === 'downloading' && d.status === 'error') {
+      } else if (
+        d.status === 'error'
+        && d.running !== true
+        && (prevStatus !== 'error' || previous?.running === true)
+      ) {
         message = `${name} download failed${d.error ? ': ' + d.error : ''}`;
-      } else if (prevStatus === 'downloading' && d.status === 'cancelled') {
+      } else if (
+        d.status === 'cancelled'
+        && d.running !== true
+        && (prevStatus !== 'cancelled' || previous?.running === true)
+      ) {
         message = `${name} download cancelled`;
-      } else if (prevStatus === 'downloading' && d.status === 'paused') {
+      } else if (
+        d.status === 'paused'
+        && d.running !== true
+        && (prevStatus !== 'paused' || previous?.running === true)
+      ) {
         message = `${name} download paused`;
       } else if (prevStatus === 'paused' && d.status === 'downloading') {
         message = `${name} download resumed`;
       }
     }
-    const next = new Map<string, DownloadStatus>();
-    for (const d of downloads) next.set(d.id, d.status);
+    const next = new Map<string, Pick<DownloadListItem, 'status' | 'running'>>();
+    for (const d of downloads) next.set(d.id, { status: d.status, running: d.running });
     prevStatusRef.current = next;
     if (message) setStatusAnnouncement(message);
   }, [downloads]);
@@ -131,7 +163,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     [downloads],
   );
   const completedDownloads = useMemo(
-    () => downloads.filter(d => d.status === 'completed').length,
+    () => downloads.filter(d => d.status === 'completed' && d.running !== true).length,
     [downloads],
   );
 
@@ -150,13 +182,15 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const handlePause = (download: DownloadListItem) => withBusy(download.id, async () => {
     downloadStore.markLocal(download.modelName, 'paused', download.downloadType);
-    await api.controlDownload(download.id, 'pause').catch(() => undefined);
+    const result = await api.controlDownload(download.id, 'pause').catch(() => undefined);
+    applyControlSnapshot(download, result, 'paused');
     await downloadStore.refresh();
   });
 
   const handleCancel = (download: DownloadListItem) => withBusy(download.id, async () => {
     downloadStore.markLocal(download.modelName, 'cancelled', download.downloadType);
-    await api.controlDownload(download.id, 'cancel').catch(() => undefined);
+    const result = await api.controlDownload(download.id, 'cancel').catch(() => undefined);
+    applyControlSnapshot(download, result, 'cancelled');
     await downloadStore.refresh();
   });
 
@@ -283,7 +317,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                           <span>
                             {download.status === 'downloading' && <>File {download.fileIndex}/{download.totalFiles} · {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}</>}
                             {download.status === 'paused' && <>{download.running === true ? 'Pausing' : 'Paused'} · File {download.fileIndex}/{download.totalFiles} · {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}</>}
-                            {download.status === 'completed' && <>Completed · {formatTotalBytes(download)}</>}
+                            {download.status === 'completed' && <>{download.running === true ? 'Finalizing' : 'Completed'} · {formatTotalBytes(download)}</>}
                             {download.status === 'error' && <>Error: {download.error || 'Unknown error'}</>}
                             {download.status === 'cancelled' && <>Cancelled</>}
                             {download.status === 'deleting' && <>Deleting files...</>}
@@ -320,7 +354,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         )
                       )}
                       {(download.status === 'completed' || download.status === 'error') && (
-                        <button type="button" onClick={() => handleRemove(download)} disabled={busy} title="Remove from list" aria-label="Remove from list"><Icon name="x" size={13} /></button>
+                        download.running === true
+                          ? <span className="download-item__metric">Finalizing...</span>
+                          : <button type="button" onClick={() => handleRemove(download)} disabled={!canRemove} title="Remove from list" aria-label="Remove from list"><Icon name="x" size={13} /></button>
                       )}
                     </div>
                   </div>

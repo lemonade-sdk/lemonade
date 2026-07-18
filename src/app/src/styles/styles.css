@@ -1036,6 +1036,7 @@ input, textarea {
 }
 
 .code-block__copy.copied { color: var(--success); }
+.code-block__copy.copy-failed { color: var(--danger); }
 
 .code-block pre {
   margin: 0;
@@ -10478,6 +10479,16 @@ input, textarea {
 
 .custom-model-form__tool-card-head strong {
   color: var(--text-primary);
+}
+
+.custom-model-form__tool-card-head > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.custom-model-form__tool-card-head small {
+  line-height: var(--leading-snug);
 }
 
 .custom-model-form__textarea-field--compact {

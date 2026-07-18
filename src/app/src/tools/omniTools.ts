@@ -361,11 +361,14 @@ interface OmniComponentMap {
   analyze_image?: string;
 }
 
-interface CustomOmniLlmTool {
+type CustomOmniToolTargetType = 'chat' | 'vision' | 'image';
+
+interface CustomOmniModelTool {
   id?: string;
   name: string;
   description: string;
   target_model: string;
+  target_type: CustomOmniToolTargetType;
   system_prompt?: string;
   prompt_template?: string;
   parameters?: Record<string, unknown>;
@@ -396,7 +399,13 @@ function normalizeToolName(value: unknown): string {
     .slice(0, 64);
 }
 
-function normalizeCustomLlmTools(model: ModelInfo): CustomOmniLlmTool[] {
+function normalizeCustomToolTargetType(value: unknown): CustomOmniToolTargetType {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'vision' || normalized === 'image') return normalized;
+  return 'chat';
+}
+
+function normalizeCustomModelTools(model: ModelInfo): CustomOmniModelTool[] {
   const direct = Array.isArray((model as any).custom_tools) ? (model as any).custom_tools : [];
   const options = (model as any).recipe_options;
   const fromOptions = options && typeof options === 'object' && !Array.isArray(options)
@@ -405,11 +414,12 @@ function normalizeCustomLlmTools(model: ModelInfo): CustomOmniLlmTool[] {
       : (Array.isArray((options as Record<string, unknown>).customTools) ? (options as Record<string, unknown>).customTools : [])) as unknown[])
     : [];
   const seen = new Set<string>();
-  const tools: CustomOmniLlmTool[] = [];
+  const tools: CustomOmniModelTool[] = [];
   for (const raw of [...direct, ...fromOptions]) {
     if (!isPlainObject(raw)) continue;
     const name = normalizeToolName(raw.name);
     const targetModel = stringValue(raw.target_model) || stringValue(raw.targetModel) || stringValue(raw.model);
+    const targetType = normalizeCustomToolTargetType(raw.target_type || raw.targetType || raw.kind);
     if (!name || !targetModel || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const maxTokens = Number(raw.max_tokens ?? raw.maxTokens);
@@ -418,6 +428,7 @@ function normalizeCustomLlmTools(model: ModelInfo): CustomOmniLlmTool[] {
       name,
       description: stringValue(raw.description) || `Delegate a focused task to ${targetModel}.`,
       target_model: targetModel,
+      target_type: targetType,
       system_prompt: stringValue(raw.system_prompt) || stringValue(raw.systemPrompt) || undefined,
       prompt_template: stringValue(raw.prompt_template) || stringValue(raw.promptTemplate) || undefined,
       parameters: isPlainObject(raw.parameters) ? raw.parameters : DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS,
@@ -468,8 +479,8 @@ export function buildOmniToolRuntime(
 
   const tools: OmniFunctionTool[] = [];
   const models: OmniComponentMap = {};
-  const customLlmTools = normalizeCustomLlmTools(collectionModel);
-  const customToolMap = new Map<string, CustomOmniLlmTool>();
+  const customModelTools = normalizeCustomModelTools(collectionModel);
+  const customToolMap = new Map<string, CustomOmniModelTool>();
 
   const builtInGuidance: string[] = [];
   const includeDefaultTool = (toolName: keyof OmniComponentMap, modelName: string | null | undefined) => {
@@ -487,7 +498,7 @@ export function buildOmniToolRuntime(
   includeDefaultTool('analyze_image', visionModel);
 
   const reservedToolNames = new Set(tools.map(tool => tool.function.name));
-  for (const tool of customLlmTools) {
+  for (const tool of customModelTools) {
     if (reservedToolNames.has(tool.name)) continue;
     tools.push(makeTool(tool.name, tool.description, tool.parameters || DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS));
     customToolMap.set(tool.name, tool);
@@ -502,8 +513,8 @@ export function buildOmniToolRuntime(
     models.text_to_speech ? 'Use text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.' : '',
     models.analyze_image ? "If the model cannot provide a real image_url for analyze_image, it may pass the visible placeholder; the UI will safely use the latest attached/generated image." : '',
     models.transcribe_audio ? "When the user message contains '[User provided audio file #N]', call transcribe_audio before answering audio-specific questions. Include language only when the user specified it or it is obvious." : '',
-    customToolMap.size > 0 ? `Custom LLM tools delegate work to other local models: ${Array.from(customToolMap.values()).map(tool => `${tool.name} -> ${tool.target_model}`).join(', ')}.` : '',
-    customToolMap.size > 0 ? 'Do not recursively ask custom LLM tools to call tools. They return plain text for you to use.' : '',
+    customToolMap.size > 0 ? `Custom model tools use explicit Lemonade endpoints: ${Array.from(customToolMap.values()).map(tool => `${tool.name} -> ${tool.target_model} (${tool.target_type})`).join(', ')}.` : '',
+    customToolMap.size > 0 ? 'Do not ask custom model tools to call tools recursively. Use their returned text or media artifacts in the final answer.' : '',
     'After a tool succeeds, give a brief friendly response. Do not include base64 data in your message; the UI renders media artifacts automatically.',
     `Planner model: ${plannerModel || String((collectionModel as any).name || collectionModel.id || 'planner')}`,
   ].filter(Boolean).join('\n');
@@ -517,13 +528,38 @@ export function buildOmniToolRuntime(
     const customTool = customToolMap.get(name);
     if (customTool) {
       try {
-        const messages: ChatMessage[] = [];
-        messages.push({
+        const params = customTool.max_tokens ? { max_tokens: customTool.max_tokens } : {};
+
+        if (customTool.target_type === 'image') {
+          const prompt = String(args.prompt || args.task || '').trim();
+          if (!prompt) throw new Error(`${customTool.name} requires a prompt.`);
+          const urls = await api.imageGeneration(customTool.target_model, prompt, imageGenerationOptions(args));
+          return mediaResult(
+            call.id,
+            `Image generated with ${customTool.target_model}.`,
+            urls.map((url, index) => ({ ...artifactFromDataUrl(url, 'image', `${customTool.target_model}-${index + 1}.png`) })),
+          );
+        }
+
+        const messages: ChatMessage[] = [{
           role: 'system',
           content: customTool.system_prompt || `You are ${customTool.name}, a focused internal assistant tool. Complete delegated tasks and return concise, actionable results.`,
-        });
-        messages.push({ role: 'user', content: renderCustomToolPrompt(customTool.prompt_template, args) });
-        const params = customTool.max_tokens ? { max_tokens: customTool.max_tokens } : {};
+        }];
+
+        if (customTool.target_type === 'vision') {
+          const sourceImage = latestImage(context);
+          if (!sourceImage) throw new Error(`${customTool.name} requires an attached or previously generated image.`);
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: sourceImage } },
+              { type: 'text', text: renderCustomToolPrompt(customTool.prompt_template, args) },
+            ],
+          } as ChatMessage);
+        } else {
+          messages.push({ role: 'user', content: renderCustomToolPrompt(customTool.prompt_template, args) });
+        }
+
         const content = await api.chatCompletionOnce(customTool.target_model, messages, params);
         return textResult(call.id, content || `${customTool.name} completed without text output.`, `${customTool.name} completed`);
       } catch (err) {
