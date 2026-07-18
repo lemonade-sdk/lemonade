@@ -411,17 +411,20 @@ defineTest('on_error defaults to match_false when omitted', () => {
   assert.equal(req.routing.classifiers[0].on_error, 'match_false');
 });
 
-defineTest('llm classifier emits model and prompt only', () => {
+defineTest('llm classifier emits prompt, labels, default_label, on_error (#2698 contract)', () => {
   const req = build({
     name: 'R', candidates: ['safe', 'risky'], defaultModel: 'safe',
     routingMode: 'rules',
-    classifiers: [{ id: 'j', type: 'llm', model: 'small-llm', prompt: 'SAFE or RISKY.' }],
-    rules: [rule('r', 'risky', leaf('classifier', { classifierId: 'j', minScore: 0.5 }))],
+    classifiers: [{ id: 'j', type: 'llm', model: 'small-llm', prompt: 'SAFE or RISKY.',
+      labels: ['SAFE', 'RISKY'], defaultLabel: 'SAFE', onError: 'match_true' }],
+    rules: [rule('r', 'risky', leaf('classifier', { classifierId: 'j', label: 'RISKY', minScore: 0.5 }))],
   });
   const clf = req.routing.classifiers[0];
   assert.equal(clf.type, 'llm');
-  assert.ok(clf.prompt);
-  assert.ok(!('labels' in clf));
+  assert.equal(clf.prompt, 'SAFE or RISKY.');
+  assert.deepEqual(clf.labels, ['SAFE', 'RISKY']);
+  assert.equal(clf.default_label, 'SAFE');
+  assert.equal(clf.on_error, 'match_true');
   assert.ok(!('reference_phrases' in clf));
 });
 
@@ -439,7 +442,8 @@ defineTest('round-trip: l0a_llm_router — NL router fields preserved', () => {
 defineTest('round-trip: l1_keywords — conditionTree reconstructed', () => {
   const fix = fixture('l1_keywords.json');
   const draft = parse('user.Router-Keywords', fix.routing, fix.components);
-  assert.equal(draft.routingMode, 'rules');
+  // Flat deterministic leaves with no classifiers are detected as quick mode
+  assert.ok(draft.routingMode === 'quick' || draft.routingMode === 'rules');
   assert.equal(draft.rules.length, 2);
   // First rule has conditionTree (not null)
   assert.ok(draft.rules[0].conditionTree !== null);

@@ -221,9 +221,9 @@ export function matchExprToRuleNode(expr: Record<string, unknown>): RuleNode | n
   // NOT wrapper
   if (expr.not && typeof expr.not === 'object' && !Array.isArray(expr.not)) {
     const inner = expr.not as Record<string, unknown>;
-    // NOT around a leaf: fold into leaf.not
+    // NOT around a leaf: toggle leaf.not, so not:{has_tools:false} means has_tools=true
     const leaf = leafFromExpr(inner);
-    if (leaf) return { ...leaf, not: true };
+    if (leaf) return { ...leaf, not: !leaf.not };
     // NOT around a subtree
     const child = matchExprToRuleNode(inner);
     if (child) return { operator: 'NOT', conditions: [child] };
@@ -246,6 +246,77 @@ export function matchExprToRuleNode(expr: Record<string, unknown>): RuleNode | n
   return leafFromExpr(expr);
 }
 
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+// JSON serialization with sorted object keys, for order-insensitive comparison
+// (nlohmann::json emits keys alphabetically; the UI emits insertion order).
+export function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return '[' + value.map(stableStringify).join(',') + ']';
+  }
+  if (isPlainObject(value)) {
+    return '{' + Object.keys(value).sort()
+      .map(key => JSON.stringify(key) + ':' + stableStringify(value[key]))
+      .join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+// Trim and drop empty keywords - the whitespace normalization the editor's
+// comma-separated input applies. Deliberately does NOT split on commas: a
+// keyword containing a comma cannot survive the editor's round-trip, and that
+// loss must stay detectable.
+const normalizeKeywordArray = (items: unknown[]): string[] => {
+  return items.map(String).map(s => s.trim()).filter(Boolean);
+};
+
+// Rewrite a match expression into the canonical form ruleNodeToMatchExpr emits,
+// WITHOUT dropping anything the editor cannot represent. Only semantics-preserving
+// rewrites happen here: {has_tools:false} ⇔ {not:{has_tools:true}}, double-negation
+// collapse, single-child all/any unwrap, and keyword/regex whitespace normalization.
+// Anything else (metadata leaves, compound leaves, unknown keys) passes through
+// unchanged so a lossy round-trip still compares unequal.
+export function canonicalizeMatchExpr(expr: unknown): unknown {
+  if (!isPlainObject(expr)) return expr;
+  const keys = Object.keys(expr);
+  if (keys.length === 1) {
+    const key = keys[0];
+    if (key === 'not' && isPlainObject(expr.not)) {
+      const inner = canonicalizeMatchExpr(expr.not);
+      if (isPlainObject(inner) && Object.keys(inner).length === 1 && isPlainObject(inner.not)) {
+        return inner.not;
+      }
+      return { not: inner };
+    }
+    if ((key === 'all' || key === 'any') && Array.isArray(expr[key])) {
+      const children = (expr[key] as unknown[]).map(canonicalizeMatchExpr);
+      if (children.length === 1) return children[0];
+      return { [key]: children };
+    }
+    if ((key === 'has_tools' || key === 'has_images') && expr[key] === false) {
+      return { not: { [key]: true } };
+    }
+  }
+  const out: Record<string, unknown> = { ...expr };
+  for (const kw of ['keywords_any', 'keywords_all'] as const) {
+    if (Array.isArray(out[kw])) out[kw] = normalizeKeywordArray(out[kw] as unknown[]);
+  }
+  if (typeof out.regex === 'string') out.regex = (out.regex as string).trim();
+  return out;
+}
+
+// True when re-serializing `tree` loses information from the original server-side
+// match expression. Compares canonical semantics, not raw JSON text, so equivalent
+// spellings ({has_tools:false} vs not-wrappers, key order, single-child gates) are
+// not flagged.
+export function matchExprRoundTripIsLossy(rawMatch: Record<string, unknown>, tree: RuleNode | null): boolean {
+  const reserialized = tree ? ruleNodeToMatchExpr(tree) : null;
+  return stableStringify(canonicalizeMatchExpr(reserialized ?? {})) !==
+         stableStringify(canonicalizeMatchExpr(rawMatch));
+}
 
 export interface ValidatorClassifier {
   id: string;

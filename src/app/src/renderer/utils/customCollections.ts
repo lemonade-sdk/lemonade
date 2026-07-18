@@ -3,7 +3,13 @@ import { USER_MODEL_PREFIX } from './modelData';
 import { isChatPlannerCandidate } from './modelLabels';
 import { COLLECTION_OMNI_MODEL_RECIPE, COLLECTION_ROUTER_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
 import toolDefinitions from './toolDefinitions.json';
-import { ruleNodeToMatchExpr, matchExprToRuleNode } from './routerTree';
+import {
+  canonicalizeMatchExpr,
+  matchExprRoundTripIsLossy,
+  matchExprToRuleNode,
+  ruleNodeToMatchExpr,
+  stableStringify,
+} from './routerTree';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
 
@@ -291,15 +297,27 @@ export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): 
       routing.classifiers = draft.classifiers.map((c) => {
         const base: Record<string, unknown> = { id: c.id, type: c.type, model: c.model };
         if (c.type === 'llm') {
-          base.prompt = c.prompt ?? '';
+          // #2698 contract: llm classifiers require prompt AND a non-empty labels array.
+          base.prompt = (c.prompt ?? '').trim();
+          if (c.labels?.length) base.labels = c.labels;
+          if (c.defaultLabel && c.labels?.includes(c.defaultLabel)) base.default_label = c.defaultLabel;
+          base.on_error = c.onError ?? 'match_false';
         } else if (c.type === 'classifier') {
           if (c.labels?.length) base.labels = c.labels;
-          if (c.defaultLabel) base.default_label = c.defaultLabel;
+          // Server rejects a default_label that is missing from labels (or has no labels).
+          if (c.defaultLabel && c.labels?.includes(c.defaultLabel)) base.default_label = c.defaultLabel;
           base.on_error = c.onError ?? 'match_false';
         } else {
           // semantic_similarity: reference_phrases is { concept: string[] }
-          base.reference_phrases = c.referencePhrases ?? {};
-          if (c.defaultLabel) base.default_label = c.defaultLabel;
+          const referencePhrases = c.referencePhrases ?? {};
+          base.reference_phrases = referencePhrases;
+          const concepts = Object.keys(referencePhrases);
+          // The server requires an explicit default_label whenever a rule omits `label`,
+          // with no single-concept exception - so materialize the implicit default here.
+          const defaultLabel = (c.defaultLabel && concepts.includes(c.defaultLabel))
+            ? c.defaultLabel
+            : (concepts.length === 1 ? concepts[0] : undefined);
+          if (defaultLabel) base.default_label = defaultLabel;
           base.on_error = c.onError ?? 'match_false';
         }
         return base;
@@ -373,13 +391,10 @@ export const routingToRouterCollectionDraft = (
     const ruleId = typeof r.id === 'string' ? r.id : '';
 
     // Detect lossy round-trip: re-serialize the reconstructed tree and compare
-    // to the original match JSON. Any difference means unsupported conditions
-    // (e.g. metadata leaves, deeply nested composites) were silently dropped.
-    if (Object.keys(rawMatch).length > 0) {
-      const reserialized = conditionTree ? ruleNodeToMatchExpr(conditionTree) : null;
-      if (JSON.stringify(reserialized ?? {}) !== JSON.stringify(rawMatch)) {
-        lossyRuleIds.push(ruleId || `rule-${lossyRuleIds.length + 1}`);
-      }
+    // canonical semantics with the original match JSON. Any difference means
+    // unsupported conditions (e.g. metadata leaves, compound leaves) were dropped.
+    if (Object.keys(rawMatch).length > 0 && matchExprRoundTripIsLossy(rawMatch, conditionTree)) {
+      lossyRuleIds.push(ruleId || `rule-${lossyRuleIds.length + 1}`);
     }
 
     return {
@@ -416,6 +431,70 @@ export const routingToRouterCollectionDraft = (
     classifiers, rules,
     ...(lossyRuleIds.length > 0 ? { lossyRuleIds } : {}),
   };
+};
+
+// Validate an imported Hybrid Router JSON (a /pull registration body) before it
+// is sent to the server, so file-picker mistakes get descriptive errors instead
+// of raw parser messages. Structural checks only - name resolution, candidate
+// membership, and rule semantics stay server-side (the server resolves aliases
+// the UI cannot). Returns a normalized copy ready for registration.
+export const validateRouterImportPayload = (parsed: unknown): Record<string, unknown> => {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('The selected file is not a valid Router JSON.');
+  }
+  const record = { ...(parsed as Record<string, unknown>) };
+  if (typeof record.model_name !== 'string' || record.model_name.length === 0) {
+    throw new Error("The selected file is missing a 'model_name' field.");
+  }
+  if (record.recipe !== COLLECTION_ROUTER_MODEL_RECIPE) {
+    throw new Error(`Expected recipe 'collection.router', got '${String(record.recipe ?? '(missing)')}'.`);
+  }
+  const routing = record.routing;
+  if (!routing || typeof routing !== 'object' || Array.isArray(routing)) {
+    throw new Error("The file is missing a 'routing' block. Check that it is a valid Hybrid Router JSON.");
+  }
+  const r = routing as Record<string, unknown>;
+  if (!Array.isArray(r.candidates) || r.candidates.length === 0) {
+    throw new Error("'routing.candidates' is missing or empty - the file must list at least one candidate model.");
+  }
+  if (typeof r.default_model !== 'string' || !r.default_model) {
+    throw new Error("'routing.default_model' is missing - the file must specify a fallback candidate.");
+  }
+  const hasRules = Array.isArray(r.rules) && r.rules.length > 0;
+  const hasRouter = isRecord(r.router);
+  if (!hasRules && !hasRouter) {
+    throw new Error("The 'routing' block must contain either a non-empty 'rules' array or a 'router' entry.");
+  }
+  if (hasRules && hasRouter) {
+    throw new Error("The 'routing' block cannot contain both 'rules' and a 'router' entry.");
+  }
+  // The server parser requires a root version and only supports "1". Files
+  // exported before the version field was preserved lack it - default it so
+  // they stay importable.
+  if (record.version === undefined) {
+    record.version = '1';
+  }
+  return record;
+};
+
+// Order-insensitive, semantics-aware comparison of two routing blocks. Used to
+// detect whether the draft in the editor still matches what the server has
+// saved (rule match expressions are canonicalized the same way the lossy
+// round-trip check does).
+export const routingBlocksEquivalent = (a: unknown, b: unknown): boolean => {
+  const canon = (routing: unknown): unknown => {
+    if (!isRecord(routing)) return routing;
+    const out: Record<string, unknown> = { ...routing };
+    if (Array.isArray(out.rules)) {
+      out.rules = out.rules.map((rule) =>
+        isRecord(rule) && isRecord(rule.match)
+          ? { ...rule, match: canonicalizeMatchExpr(rule.match) }
+          : rule,
+      );
+    }
+    return out;
+  };
+  return stableStringify(canon(a)) === stableStringify(canon(b));
 };
 
 export const getRouterCandidateOptions = (modelsData: ModelsData) => {

@@ -143,15 +143,35 @@ const ClassifierCard: React.FC<{
                   searchPlaceholder="Search models…"
                 />
               </div>
-              {clf.type === 'classifier' && (
+              {clf.type === 'llm' && (
+                <div className="pipeline-clf-field">
+                  <label className="pipeline-clf-label">Prompt *</label>
+                  <textarea className="form-input pipeline-clf-textarea" rows={6}
+                    defaultValue={clf.prompt ?? ''}
+                    onBlur={e => onPatch({ prompt: e.target.value || undefined })}
+                    placeholder={'Classify this request.\nReply with ONLY one of: SAFE, RISKY'} />
+                </div>
+              )}
+              {(clf.type === 'classifier' || clf.type === 'llm') && (
                 <>
                   <div className="pipeline-clf-field">
-                    <label className="pipeline-clf-label">Labels <span className="settings-description" style={{ marginLeft: 4 }}>(one per line)</span></label>
+                    <label className="pipeline-clf-label">{clf.type === 'llm' ? 'Labels *' : 'Labels'} <span className="settings-description" style={{ marginLeft: 4 }}>{clf.type === 'llm' ? '(one per line - the answers the LLM chooses from)' : '(one per line)'}</span></label>
                     <textarea className="form-input pipeline-clf-textarea" rows={4}
                       defaultValue={(clf.labels ?? []).join('\n')}
                       onBlur={e => { const labels = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); onPatch({ labels, defaultLabel: labels.includes(clf.defaultLabel ?? '') ? clf.defaultLabel : '' }); }}
-                      placeholder={'PII\nNO_PII'} />
+                      placeholder={clf.type === 'llm' ? 'SAFE\nRISKY' : 'PII\nNO_PII'} />
                   </div>
+                  {parsedLabels.length > 0 && (
+                    <div className="pipeline-clf-field">
+                      <label className="pipeline-clf-label">Default Label <span className="settings-description" style={{ marginLeft: 4 }}>used when condition omits label</span></label>
+                      <select className="form-input form-select pipeline-clf-select"
+                        value={clf.defaultLabel ?? ''}
+                        onChange={e => onPatch({ defaultLabel: e.target.value })}>
+                        <option value="">None</option>
+                        {parsedLabels.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="pipeline-clf-field">
                     <label className="pipeline-clf-label">On Error</label>
                     <select className="form-input form-select pipeline-clf-select" value={clf.onError ?? 'match_false'}
@@ -161,15 +181,6 @@ const ClassifierCard: React.FC<{
                     </select>
                   </div>
                 </>
-              )}
-              {clf.type === 'llm' && (
-                <div className="pipeline-clf-field">
-                  <label className="pipeline-clf-label">Prompt *</label>
-                  <textarea className="form-input pipeline-clf-textarea" rows={6}
-                    defaultValue={clf.prompt ?? ''}
-                    onBlur={e => onPatch({ prompt: e.target.value || undefined })}
-                    placeholder={'Classify this request.\nReply with ONLY one of: SAFE, RISKY'} />
-                </div>
               )}
               {clf.type === 'semantic_similarity' && (
                 <div className="pipeline-clf-field">
@@ -237,12 +248,24 @@ const ClassifierCard: React.FC<{
             )}
           </div>
 
-          {clf.type === 'classifier' && (
+          {clf.type === 'llm' && (
+            <div className="pipeline-clf-field">
+              <label className="pipeline-clf-label">Prompt *</label>
+              <textarea className="form-input pipeline-clf-textarea" rows={4}
+                defaultValue={clf.prompt ?? ''}
+                onBlur={e => onPatch({ prompt: e.target.value || undefined })}
+                placeholder={'Classify this request.\nReply with ONLY one of: SAFE, RISKY'} />
+            </div>
+          )}
+
+          {(clf.type === 'classifier' || clf.type === 'llm') && (
             <>
               <div className="pipeline-clf-field">
                 <label className="pipeline-clf-label">
-                  Labels
-                  <span className="settings-description" style={{ marginLeft: 4 }}>(one per line)</span>
+                  {clf.type === 'llm' ? 'Labels *' : 'Labels'}
+                  <span className="settings-description" style={{ marginLeft: 4 }}>
+                    {clf.type === 'llm' ? '(one per line - the answers the LLM chooses from)' : '(one per line)'}
+                  </span>
                 </label>
                 <textarea className="form-input pipeline-clf-textarea" rows={3}
                   defaultValue={(clf.labels ?? []).join('\n')}
@@ -251,7 +274,7 @@ const ClassifierCard: React.FC<{
                     const defaultLabel = labels.includes(clf.defaultLabel ?? '') ? clf.defaultLabel : '';
                     onPatch({ labels, defaultLabel });
                   }}
-                  placeholder={'PII\nNO_PII'} />
+                  placeholder={clf.type === 'llm' ? 'SAFE\nRISKY' : 'PII\nNO_PII'} />
               </div>
 
               {parsedLabels.length > 0 && (
@@ -279,16 +302,6 @@ const ClassifierCard: React.FC<{
                 </select>
               </div>
             </>
-          )}
-
-          {clf.type === 'llm' && (
-            <div className="pipeline-clf-field">
-              <label className="pipeline-clf-label">Prompt *</label>
-              <textarea className="form-input pipeline-clf-textarea" rows={4}
-                defaultValue={clf.prompt ?? ''}
-                onBlur={e => onPatch({ prompt: e.target.value || undefined })}
-                placeholder={'Classify this request.\nReply with ONLY one of: SAFE, RISKY'} />
-            </div>
           )}
 
           {clf.type === 'semantic_similarity' && (

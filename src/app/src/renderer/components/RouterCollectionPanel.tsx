@@ -529,20 +529,11 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       }),
   [modelsData]);
 
-  // Models suitable for type:"classifier" - excludes chat LLMs, embeddings, and collections.
-  // Covers ONNX text-classification and reranking models.
+  // Models suitable for type:"classifier" - only text-classification models
+  // (registry label "classification"), never chat LLMs, embeddings, or collections.
   const classifierModelOptions = useMemo(() =>
     Object.entries(modelsData)
-      .filter(([, info]) => {
-        if (isCollectionRecipe(info?.recipe)) return false;
-        const labels = info?.labels ?? [];
-        const isEmbedding = labels.some(l => l === 'embeddings' || l === 'embedding');
-        const isChatLLM = !labels.some(l =>
-          ['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding',
-           'reranking', 'edit', 'esrgan', 'classifier'].includes(l)
-        );
-        return !isEmbedding && !isChatLLM;
-      })
+      .filter(([, info]) => !isCollectionRecipe(info?.recipe) && (info?.labels ?? []).includes('classification'))
       .map(([id, info]) => ({ id, info }))
       .sort((a, b) => {
         const dl = Number(b.info.downloaded === true) - Number(a.info.downloaded === true);
@@ -591,8 +582,21 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     return `clf-${n}`;
   };
 
+  // Lossy markers only make sense while the flagged rule still exists - prune
+  // them whenever the rule set changes so stale warnings can't block saving.
+  const pruneLossyRuleIds = (lossy: string[] | undefined, rules: RouterRule[]): string[] | undefined => {
+    if (!lossy?.length) return undefined;
+    const ids = new Set(rules.map(r => r.id));
+    const kept = lossy.filter(id => ids.has(id));
+    return kept.length > 0 ? kept : undefined;
+  };
+
   const patch = (p: Partial<RouterCollectionDraft>) => {
-    setDraft(prev => ({ ...prev, ...p }));
+    setDraft(prev => {
+      const next = { ...prev, ...p };
+      if ('rules' in p) next.lossyRuleIds = pruneLossyRuleIds(prev.lossyRuleIds, next.rules ?? []);
+      return next;
+    });
     setError(null);
     setPreviewJson(null);
     if ('rules' in p || 'routingMode' in p) setLossyAcknowledged(false);
@@ -605,7 +609,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         : [...prev.candidates, id];
       const defaultModel = next.includes(prev.defaultModel) ? prev.defaultModel : '';
       const rules = (prev.rules ?? []).filter(r => next.includes(r.routeTo));
-      return { ...prev, candidates: next, defaultModel, rules };
+      return { ...prev, candidates: next, defaultModel, rules, lossyRuleIds: pruneLossyRuleIds(prev.lossyRuleIds, rules) };
     });
     setError(null);
   };
@@ -660,14 +664,20 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   };
 
   const removeRule = (id: string) => {
-    setDraft(prev => ({ ...prev, rules: (prev.rules ?? []).filter(r => r.id !== id) }));
+    setDraft(prev => {
+      const rules = (prev.rules ?? []).filter(r => r.id !== id);
+      return { ...prev, rules, lossyRuleIds: pruneLossyRuleIds(prev.lossyRuleIds, rules) };
+    });
   };
 
   const patchRule = (id: string, p: Partial<RouterRule>) => {
-    setDraft(prev => ({
-      ...prev,
-      rules: (prev.rules ?? []).map(r => r.id === id ? { ...r, ...p } : r),
-    }));
+    setDraft(prev => {
+      const rules = (prev.rules ?? []).map(r => r.id === id ? { ...r, ...p } : r);
+      const lossy = p.id && p.id !== id
+        ? prev.lossyRuleIds?.map(l => (l === id ? p.id! : l))
+        : prev.lossyRuleIds;
+      return { ...prev, rules, lossyRuleIds: pruneLossyRuleIds(lossy, rules) };
+    });
     setError(null);
   };
 
@@ -704,8 +714,13 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
       for (const c of draft.classifiers ?? []) {
         if (!c.id.trim()) { setError('Each classifier needs an id.'); return null; }
         if (!c.model) { setError(`Classifier "${c.id}": select a model.`); return null; }
-        if (c.type === 'llm' && !c.prompt?.trim()) {
-          setError(`Classifier "${c.id}": enter a routing prompt.`); return null;
+        if (c.type === 'llm') {
+          if (!c.prompt?.trim()) {
+            setError(`Classifier "${c.id}": enter a routing prompt.`); return null;
+          }
+          if (!c.labels?.length) {
+            setError(`Classifier "${c.id}": LLM classifiers need at least one label.`); return null;
+          }
         }
         if (c.type === 'semantic_similarity') {
           const concepts = Object.keys(c.referencePhrases ?? {});
@@ -715,6 +730,11 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
               setError(`Classifier "${c.id}" concept "${k}": add at least one phrase.`); return null;
             }
           }
+          if (c.defaultLabel && !concepts.includes(c.defaultLabel)) {
+            setError(`Classifier "${c.id}": default label "${c.defaultLabel}" is not one of the concepts.`); return null;
+          }
+        } else if (c.defaultLabel && !(c.labels ?? []).includes(c.defaultLabel)) {
+          setError(`Classifier "${c.id}": default label "${c.defaultLabel}" is not in the labels list.`); return null;
         }
       }
       if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }

@@ -22,9 +22,11 @@ import {
   buildCustomCollectionPullRequest,
   buildRouterCollectionPullRequest,
   getCollectionDisplayName,
+  routingBlocksEquivalent,
+  validateRouterImportPayload,
 } from './utils/customCollections';
 import { isCollectionRecipe, COLLECTION_ROUTER_MODEL_RECIPE } from './utils/recipeNames';
-import { downloadModelExportFile } from './utils/modelData';
+import { buildModelExportFile, downloadJsonFile, downloadModelExportFile } from './utils/modelData';
 import { isModelEffectivelyDownloaded } from './utils/collectionModels';
 import '../../styles/index.css';
 
@@ -462,21 +464,27 @@ const AppContent: React.FC = () => {
   const handleExportRouterCollection = async (collection: RouterCollectionDraft) => {
     try {
       const request = buildRouterCollectionPullRequest(collection);
+      // The pull-body is the /v1/pull registration JSON. It won't carry embedded
+      // component definitions, so it may need those models present on the target.
+      const downloadPullBody = (message: string) => {
+        showError(message);
+        const bareName = request.model_name.replace(/^user\./, '');
+        downloadJsonFile(`${bareName}.json`, request);
+      };
       try {
-        await downloadModelExportFile(request.model_name);
+        const { filename, payload } = await buildModelExportFile(request.model_name);
+        if (!routingBlocksEquivalent(payload.routing, request.routing)) {
+          // The editor holds unsaved edits - exporting the server copy would
+          // silently discard them. Export what the user sees instead.
+          downloadPullBody('Exporting your current edits (not saved yet). Save first for a fully portable export with embedded component definitions.');
+          return;
+        }
+        downloadJsonFile(filename, payload);
       } catch (serverError) {
         const msg = serverError instanceof Error ? serverError.message : '';
         if (msg.includes('404') || msg.includes('not found') || msg.includes('HTTP 404')) {
           // Model not saved yet - fall back to downloading the pull-body directly.
-          // This file is the /v1/pull registration body and won't carry embedded
-          // component definitions, so it may need those models present on the target.
-          showError('Router not saved yet - downloading the registration JSON instead. Save first for a fully portable export.');
-          const blob = new Blob([JSON.stringify(request, null, 2)], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          const bareName = request.model_name.replace(/^user\./, '');
-          a.href = url; a.download = `${bareName}.json`; a.click();
-          URL.revokeObjectURL(url);
+          downloadPullBody('Router not saved yet - downloading the registration JSON instead. Save first for a fully portable export.');
         } else {
           showError(msg || 'Failed to export Hybrid Router.');
         }
@@ -495,31 +503,8 @@ const AppContent: React.FC = () => {
     reader.onload = async (loadEvent) => {
       try {
         const parsed: unknown = JSON.parse(String(loadEvent.target?.result ?? ''));
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          throw new Error('The selected file is not a valid Router JSON.');
-        }
-        const record = parsed as PullRegistrationPayload;
-        if (typeof record.model_name !== 'string' || record.model_name.length === 0) {
-          throw new Error("The selected file is missing a 'model_name' field.");
-        }
-        if (record.recipe !== COLLECTION_ROUTER_MODEL_RECIPE) {
-          throw new Error(`Expected recipe 'collection.router', got '${String(record.recipe ?? '(missing)')}'.`);
-        }
-        // Validate routing block before hitting the server so errors are descriptive.
-        const routing = (record as Record<string, unknown>).routing;
-        if (!routing || typeof routing !== 'object' || Array.isArray(routing)) {
-          throw new Error("The file is missing a 'routing' block. Check that it is a valid Hybrid Router JSON.");
-        }
-        const r = routing as Record<string, unknown>;
-        if (!Array.isArray(r.candidates) || r.candidates.length === 0) {
-          throw new Error("'routing.candidates' is missing or empty - the file must list at least one candidate model.");
-        }
-        if (typeof r.default_model !== 'string' || !r.default_model) {
-          throw new Error("'routing.default_model' is missing - the file must specify a fallback candidate.");
-        }
-        if (!Array.isArray(r.rules) && (typeof r.router !== 'object' || r.router === null)) {
-          throw new Error("The 'routing' block must contain either 'rules' or a 'router' entry.");
-        }
+        // Validate before hitting the server so errors are descriptive.
+        const record = validateRouterImportPayload(parsed) as PullRegistrationPayload;
         await pullRegistration(record);
         await refreshModels();
         showSuccess(`Imported Hybrid Router ${getCollectionDisplayName(record.model_name)}.`);
@@ -552,6 +537,10 @@ const AppContent: React.FC = () => {
         }
         if (typeof record.recipe !== 'string' || record.recipe.length === 0) {
           throw new Error("The selected file is missing a 'recipe' field.");
+        }
+        if (record.recipe === COLLECTION_ROUTER_MODEL_RECIPE) {
+          // Router files get the structural checks plus version defaulting.
+          Object.assign(record, validateRouterImportPayload(record));
         }
         await pullRegistration(record);
         await refreshModels();

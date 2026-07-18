@@ -427,6 +427,9 @@ const RouterRuleCanvas: React.FC<RouterRuleCanvasProps> = ({ tree, classifiers, 
       const concepts = Object.keys(c.referencePhrases ?? {});
       if (concepts.length === 0) return [`Classifier "${c.id}" needs at least one concept before it can be used`];
     }
+    if (c.type === 'llm' && (c.labels ?? []).length === 0) {
+      return [`Classifier "${c.id}" needs at least one label before it can be used`];
+    }
     if (!c.model) return [`Classifier "${c.id}" has no model selected`];
     return [];
   });

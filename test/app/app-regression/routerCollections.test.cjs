@@ -3,8 +3,9 @@
 // These tests verify that buildRouterCollectionPullRequest produces JSON
 // accepted by the CURRENT C++ parser (M9 / routing_policy_parser.cpp).
 //
-// NL Router (routing.router) and llm classifiers are intentionally skipped:
-// the M9 parser explicitly rejects those structures pending #2405.
+// NL Router (routing.router) fixture tests are intentionally skipped: the M9
+// parser explicitly rejects that structure pending #2405. llm classifiers are
+// tested against the #2698 contract (model + prompt + non-empty labels).
 
 for (const key of Object.keys(process.env)) {
   if (key.startsWith('npm_') || key === 'INIT_CWD') delete process.env[key];
@@ -45,6 +46,10 @@ const routerTree = require(
   path.join(appRoot, 'src', 'renderer', 'utils', 'routerTree.ts'),
 );
 
+const modelData = require(
+  path.join(appRoot, 'src', 'renderer', 'utils', 'modelData.ts'),
+);
+
 if (originalTsLoader) require.extensions['.ts'] = originalTsLoader;
 else delete require.extensions['.ts'];
 
@@ -53,6 +58,9 @@ else delete require.extensions['.ts'];
 const build = collectionUtils.buildRouterCollectionPullRequest;
 const parse = collectionUtils.routingToRouterCollectionDraft;
 const validate = routerTree.validateRuleNode;
+const validateImport = collectionUtils.validateRouterImportPayload;
+const routingEquivalent = collectionUtils.routingBlocksEquivalent;
+const normalizeExport = modelData.normalizeModelExportPayload;
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'));
 
@@ -406,10 +414,60 @@ const tests = [
     },
   },
 
+  // ── Classifier - type: "llm" (#2698 contract) ─────────────────────────
+
   {
-    name: 'classifier - llm type is SKIPPED (M9 parser rejects)',
+    name: 'llm classifier - emits prompt, labels, default_label, on_error per #2698',
     run() {
-      return { skip: true, reason: 'llm classifier type reserved for #2405, rejected by M9 parser' };
+      const req = build({
+        name: 'R', candidates: ['safe', 'risky'], defaultModel: 'safe',
+        routingMode: 'rules',
+        classifiers: [{ id: 'j', type: 'llm', model: 'small-llm', prompt: 'SAFE or RISKY.',
+          labels: ['SAFE', 'RISKY'], defaultLabel: 'SAFE', onError: 'match_true' }],
+        rules: [rule('r', 'risky', leaf('classifier', { classifierId: 'j', label: 'RISKY', minScore: 0.5 }))],
+      });
+      const clf = req.routing.classifiers[0];
+      assert.equal(clf.type, 'llm');
+      assert.equal(clf.prompt, 'SAFE or RISKY.');
+      assert.deepEqual(clf.labels, ['SAFE', 'RISKY'], '#2698 requires a non-empty labels array');
+      assert.equal(clf.default_label, 'SAFE');
+      assert.equal(clf.on_error, 'match_true');
+      assert.ok(!('reference_phrases' in clf));
+    },
+  },
+
+  {
+    name: 'llm classifier - labels survive build → parse → rebuild round-trip',
+    run() {
+      const original = {
+        name: 'LlmRT', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 'j', type: 'llm', model: 'small-llm', prompt: 'Pick one.',
+          labels: ['X', 'Y'], defaultLabel: 'X' }],
+        rules: [rule('r', 'b', leaf('classifier', { classifierId: 'j', label: 'Y', minScore: 0.5 }))],
+      };
+      const built = build(original);
+      const parsed = parse(built.model_name, built.routing, built.components);
+      assert.deepEqual(parsed.classifiers[0].labels, ['X', 'Y']);
+      assert.equal(parsed.classifiers[0].defaultLabel, 'X');
+      assert.equal(parsed.classifiers[0].prompt, 'Pick one.');
+      const rebuilt = build(parsed);
+      assert.deepEqual(rebuilt.routing.classifiers, built.routing.classifiers);
+    },
+  },
+
+  {
+    name: 'llm classifier - default_label omitted when not in labels',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 'j', type: 'llm', model: 'm', prompt: 'p',
+          labels: ['X'], defaultLabel: 'GONE' }],
+        rules: [rule('r', 'b', leaf('classifier', { classifierId: 'j', label: 'X', minScore: 0.5 }))],
+      });
+      assert.ok(!('default_label' in req.routing.classifiers[0]),
+        'a default_label missing from labels is rejected by the server and must not be emitted');
     },
   },
 
@@ -923,6 +981,391 @@ const tests = [
       const draft = parse('user.R', routing, ['a', 'b']);
       assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
         'empty match should not be flagged as lossy');
+    },
+  },
+
+  // ── Negative boolean conditions ────────────────────────────────────────
+
+  {
+    name: 'negation - has_tools:false parses to negated leaf and is NOT flagged lossy',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: { has_tools: false } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      const tree = draft.rules[0].conditionTree;
+      assert.ok(tree && 'signalType' in tree && tree.signalType === 'has_tools');
+      assert.equal(tree.not, true, 'has_tools:false must mean "no tools"');
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        `has_tools:false is representable and must not be lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+      const rebuilt = build(draft);
+      assert.deepEqual(rebuilt.routing.rules[0].match, { not: { has_tools: true } },
+        'canonical serialization of a negated boolean');
+    },
+  },
+
+  {
+    name: 'negation - not:{has_tools:false} is a double negative (has_tools required)',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: { not: { has_tools: false } } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      const tree = draft.rules[0].conditionTree;
+      assert.ok(tree && 'signalType' in tree && tree.signalType === 'has_tools');
+      assert.ok(!tree.not, 'not(has_tools=false) means has_tools=true - negations must toggle, not overwrite');
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        'double negation is representable and must not be lossy');
+      const rebuilt = build(draft);
+      assert.deepEqual(rebuilt.routing.rules[0].match, { has_tools: true });
+    },
+  },
+
+  {
+    name: 'negation - not:{has_images:true} round-trips as negated leaf',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: { not: { has_images: true } } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      const tree = draft.rules[0].conditionTree;
+      assert.ok(tree && 'signalType' in tree && tree.signalType === 'has_images');
+      assert.equal(tree.not, true);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0);
+    },
+  },
+
+  // ── Canonical (semantic) lossy comparison ──────────────────────────────
+
+  {
+    name: 'lossy comparison - single-child all wrapper unwraps without being flagged',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: { all: [{ min_chars: 500 }] } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        'single-child all is semantically identical to its child');
+    },
+  },
+
+  {
+    name: 'lossy comparison - classifier leaf key order does not trigger lossy flag',
+    run() {
+      // nlohmann::json serializes object keys alphabetically; the UI emits them
+      // in insertion order. Semantics are identical either way.
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        classifiers: [{ id: 'c', type: 'classifier', model: 'm', labels: ['X'], default_label: 'X' }],
+        rules: [{ id: 'r1', route_to: 'b', match: { max_score: 0.9, classifier: 'c', min_score: 0.4 } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        `key order must not be flagged lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  {
+    name: 'lossy comparison - compound leaf (two conditions in one object) IS flagged',
+    run() {
+      // The server allows {min_chars, has_tools} in a single leaf; the editor
+      // can only keep one of them, so this genuinely loses information.
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'compound', route_to: 'b', match: { min_chars: 500, has_tools: true } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(draft.lossyRuleIds?.includes('compound'),
+        `compound leaves must be flagged lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  {
+    name: 'lossy comparison - keyword whitespace normalization is not flagged',
+    run() {
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r1', route_to: 'b', match: { keywords_any: [' hello ', 'hi'] } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(!draft.lossyRuleIds || draft.lossyRuleIds.length === 0,
+        'trimmed keywords are semantically preserved');
+    },
+  },
+
+  {
+    name: 'lossy comparison - keyword containing a comma IS flagged (editor splits it)',
+    run() {
+      // "a,b" is one keyword server-side, but the editor's comma-separated
+      // input turns it into two - a real semantic change.
+      const routing = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'comma', route_to: 'b', match: { keywords_any: ['a,b'] } }],
+      };
+      const draft = parse('user.R', routing, ['a', 'b']);
+      assert.ok(draft.lossyRuleIds?.includes('comma'),
+        `comma keywords must be flagged lossy, got: ${JSON.stringify(draft.lossyRuleIds)}`);
+    },
+  },
+
+  // ── Semantic similarity implicit default label ─────────────────────────
+
+  {
+    name: 'semantic_similarity - single concept materializes default_label on build',
+    run() {
+      // The server requires default_label whenever a rule leaf omits `label`
+      // (no single-concept exception), so the builder must emit it explicitly.
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 's', type: 'semantic_similarity', model: 'embed',
+          referencePhrases: { topic: ['hello'] } }],
+        rules: [rule('r', 'b', leaf('classifier', { classifierId: 's', minScore: 0.6 }))],
+      });
+      assert.equal(req.routing.classifiers[0].default_label, 'topic');
+    },
+  },
+
+  {
+    name: 'semantic_similarity - multi-concept without defaultLabel emits no default_label',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 's', type: 'semantic_similarity', model: 'embed',
+          referencePhrases: { one: ['a'], two: ['b'] } }],
+        rules: [rule('r', 'b', leaf('classifier', { classifierId: 's', label: 'one', minScore: 0.6 }))],
+      });
+      assert.ok(!('default_label' in req.routing.classifiers[0]));
+    },
+  },
+
+  {
+    name: 'classifier - default_label omitted when not in labels list',
+    run() {
+      const req = build({
+        name: 'R', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules',
+        classifiers: [{ id: 'c', type: 'classifier', model: 'm',
+          labels: ['A', 'B'], defaultLabel: 'REMOVED' }],
+        rules: [rule('r', 'b', leaf('classifier', { classifierId: 'c', label: 'A', minScore: 0.5 }))],
+      });
+      assert.ok(!('default_label' in req.routing.classifiers[0]),
+        'server rejects default_label values missing from labels');
+    },
+  },
+
+  // ── Export flow (normalizeModelExportPayload) ──────────────────────────
+
+  {
+    name: 'export - version and routing survive the export transform (re-import depends on them)',
+    run() {
+      // Simulated live /models/{id} object for a saved router collection - the
+      // server emits root `version` + `routing` plus wire decorations.
+      const live = {
+        id: 'user.MyRouter', object: 'model', owned_by: 'lemonade',
+        suggested: false, downloaded: true, created: 123,
+        recipe: 'collection.router', version: '1',
+        components: ['model-a', 'model-b'],
+        routing: {
+          candidates: ['model-a', 'model-b'], default_model: 'model-a',
+          rules: [{ id: 'r1', match: { min_chars: 500 }, route_to: 'model-b' }],
+        },
+        models: [
+          { id: 'model-a', recipe: 'llamacpp', checkpoint: 'org/a', downloaded: true, suggested: true, components: [], models: [] },
+          { id: 'model-b', recipe: 'llamacpp', checkpoint: 'org/b', downloaded: false, suggested: false, components: [], models: [] },
+        ],
+      };
+      const { filename, payload } = normalizeExport(live, 'user.MyRouter');
+      assert.equal(filename, 'MyRouter.json');
+      assert.equal(payload.model_name, 'user.MyRouter');
+      assert.equal(payload.version, '1', 'the /pull parser requires a root version - export must keep it');
+      assert.deepEqual(payload.routing, live.routing);
+      assert.deepEqual(payload.components, ['model-a', 'model-b']);
+      // Wire/runtime decorations must not leak into the file
+      for (const key of ['id', 'object', 'owned_by', 'suggested', 'downloaded', 'created']) {
+        assert.ok(!(key in payload), `'${key}' must not be exported`);
+      }
+      // Embedded components normalized the same way
+      assert.equal(payload.models.length, 2);
+      assert.equal(payload.models[0].model_name, 'model-a');
+      assert.ok(!('downloaded' in payload.models[0]));
+      assert.ok(!('components' in payload.models[0]), 'empty collection fields dropped from leaf components');
+    },
+  },
+
+  {
+    name: 'export→import - exported file passes import validation unchanged',
+    run() {
+      const live = {
+        id: 'user.RT', recipe: 'collection.router', version: '1',
+        components: ['a', 'b'], downloaded: true, suggested: false,
+        routing: {
+          candidates: ['a', 'b'], default_model: 'a',
+          rules: [{ id: 'r1', match: { has_tools: false }, route_to: 'b' }],
+        },
+        models: [],
+      };
+      const { payload } = normalizeExport(live, 'user.RT');
+      const record = validateImport(payload);
+      assert.equal(record.version, '1');
+      assert.equal(record.recipe, 'collection.router');
+    },
+  },
+
+  // ── Import validation ──────────────────────────────────────────────────
+
+  {
+    name: 'import - missing version is defaulted to "1" (files from older exports)',
+    run() {
+      const req = build({
+        name: 'V', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'rules', classifiers: [],
+        rules: [rule('r', 'b', leaf('min_chars', { signalValue: 10 }))],
+      });
+      const noVersion = { ...req };
+      delete noVersion.version;
+      const record = validateImport(noVersion);
+      assert.equal(record.version, '1');
+    },
+  },
+
+  {
+    name: 'import - NL router file (router entry, no rules) is accepted',
+    run() {
+      const record = validateImport({
+        version: '1', model_name: 'user.NL', recipe: 'collection.router',
+        components: ['a', 'b', 'tiny'],
+        routing: {
+          candidates: ['a', 'b'], default_model: 'a',
+          router: { type: 'llm', model: 'tiny', prompt: 'Pick.' },
+        },
+      });
+      assert.equal(record.model_name, 'user.NL');
+    },
+  },
+
+  {
+    name: 'import - malformed files produce descriptive errors',
+    run() {
+      const base = () => ({
+        version: '1', model_name: 'user.X', recipe: 'collection.router',
+        components: ['a'],
+        routing: {
+          candidates: ['a'], default_model: 'a',
+          rules: [{ id: 'r', match: { min_chars: 1 }, route_to: 'a' }],
+        },
+      });
+      assert.throws(() => validateImport('nope'), /not a valid Router JSON/i);
+      assert.throws(() => validateImport([1, 2]), /not a valid Router JSON/i);
+      assert.throws(() => validateImport({ ...base(), model_name: undefined }), /model_name/);
+      assert.throws(() => validateImport({ ...base(), recipe: 'llamacpp' }), /collection\.router/);
+      assert.throws(() => validateImport({ ...base(), routing: undefined }), /routing/);
+      assert.throws(() => validateImport({ ...base(), routing: { default_model: 'a', rules: [{}] } }), /candidates/);
+      assert.throws(() => validateImport({ ...base(), routing: { candidates: ['a'], rules: [{}] } }), /default_model/);
+      assert.throws(
+        () => validateImport({ ...base(), routing: { candidates: ['a'], default_model: 'a', rules: [] } }),
+        /rules.*router|router.*rules/i,
+        'empty rules with no router entry must be rejected before hitting the server',
+      );
+      assert.throws(
+        () => validateImport({ ...base(), routing: { candidates: ['a'], default_model: 'a', rules: [{}], router: { type: 'llm' } } }),
+        /both/i,
+        'rules and router are mutually exclusive',
+      );
+    },
+  },
+
+  // ── routingBlocksEquivalent (unsaved-changes detection for export) ─────
+
+  {
+    name: 'routingBlocksEquivalent - tolerates key order and negation spelling',
+    run() {
+      const a = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r', match: { has_tools: false }, route_to: 'b' }],
+      };
+      const b = {
+        default_model: 'a', candidates: ['a', 'b'],
+        rules: [{ route_to: 'b', id: 'r', match: { not: { has_tools: true } } }],
+      };
+      assert.ok(routingEquivalent(a, b), 'same semantics must compare equal');
+    },
+  },
+
+  {
+    name: 'routingBlocksEquivalent - detects real edits',
+    run() {
+      const a = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r', match: { min_chars: 500 }, route_to: 'b' }],
+      };
+      const edited = {
+        candidates: ['a', 'b'], default_model: 'a',
+        rules: [{ id: 'r', match: { min_chars: 900 }, route_to: 'b' }],
+      };
+      assert.ok(!routingEquivalent(a, edited));
+      assert.ok(!routingEquivalent(a, { ...a, default_model: 'b' }));
+    },
+  },
+
+  // ── Kitchen sink - every condition type through build → parse → rebuild ─
+
+  {
+    name: 'kitchen sink - all condition types and classifier kinds round-trip identically',
+    run() {
+      const original = {
+        name: 'Everything', candidates: ['small', 'big'], defaultModel: 'small',
+        routingMode: 'rules',
+        classifiers: [
+          { id: 'pii', type: 'classifier', model: 'clf-model',
+            labels: ['PII', 'NO_PII'], defaultLabel: 'PII', onError: 'match_true' },
+          { id: 'topic', type: 'semantic_similarity', model: 'embed-model',
+            referencePhrases: { coding: ['write code'], math: ['integral'] }, defaultLabel: 'math' },
+          { id: 'judge', type: 'llm', model: 'tiny-llm', prompt: 'SAFE or RISKY?',
+            labels: ['SAFE', 'RISKY'], defaultLabel: 'SAFE' },
+        ],
+        rules: [
+          rule('r-nested', 'big', or(
+            and(
+              leaf('keywords_any', { signalValue: 'code, refactor' }),
+              leaf('min_chars', { signalValue: 0 }),
+            ),
+            leaf('has_tools', { not: true }),
+          )),
+          rule('r-notgate', 'small', not(and(
+            leaf('keywords_all', { signalValue: 'foo, bar' }),
+            leaf('regex', { signalValue: '```[a-z]*' }),
+          ))),
+          rule('r-clf', 'big',
+            leaf('classifier', { classifierId: 'pii', label: 'NO_PII', minScore: 0, maxScore: 1 })),
+          rule('r-sem', 'big',
+            leaf('classifier', { classifierId: 'topic', label: 'coding', minScore: 0.75 })),
+          rule('r-llm', 'small',
+            leaf('classifier', { classifierId: 'judge', label: 'SAFE', minScore: 0.5 })),
+          rule('r-img', 'big', leaf('has_images')),
+          rule('r-short', 'small', leaf('max_chars', { signalValue: 200 }), { note: 'fast path' }),
+        ],
+      };
+      const built = build(original);
+      // Every rule tree must validate cleanly with the declared classifiers
+      const clfIds = new Set(original.classifiers.map(c => c.id));
+      for (const r of original.rules) {
+        assert.deepEqual(validate(r.conditionTree, clfIds, original.classifiers), [], `rule ${r.id} must validate`);
+      }
+      // The registration passes import validation (same body a file import sends)
+      validateImport(built);
+      // Round-trip: parse the routing back and rebuild - byte-identical policy
+      const parsed = parse(built.model_name, built.routing, built.components);
+      assert.ok(!parsed.lossyRuleIds, `nothing may be lossy, got: ${JSON.stringify(parsed.lossyRuleIds)}`);
+      const rebuilt = build(parsed);
+      assert.deepEqual(rebuilt.routing, built.routing, 'rebuild must be identical');
+      assert.deepEqual(rebuilt.components.sort(), built.components.sort());
+      assert.ok(routingEquivalent(built.routing, rebuilt.routing));
     },
   },
 
