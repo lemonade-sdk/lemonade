@@ -1868,7 +1868,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 CLI::App* register_bench_command(CLI::App& parent,
                                  std::string& output_file,
                                  BenchCliOptions& opts) {
-    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark model speed for different model types")->group("Model management");
+    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark model performance for different model types")->group("Model management");
     cmd->add_option("models", opts.models, "One or more model names to benchmark")
         ->required()
         ->type_name("MODEL")
