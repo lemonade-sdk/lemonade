@@ -2550,6 +2550,26 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
                          });
 }
 
+// The label set a user or inline model definition normalizes to. Kept in one
+// place so model registration (register_user_model) and collection.router
+// capability validation (validate_collection_request) derive the same type for
+// the same definition: explicit labels + legacy capability flags + the backend
+// descriptor's default labels (e.g. sd-cpp -> "image", whispercpp -> "transcription").
+static std::set<std::string> normalized_definition_labels(const json& model_data) {
+    std::set<std::string> labels = {"custom"};
+    std::vector<std::string> extra = model_data.value("labels", std::vector<std::string>{});
+    labels.insert(extra.begin(), extra.end());
+    if (model_data.value("reasoning", false)) labels.insert("reasoning");
+    if (model_data.value("vision", false)) labels.insert("vision");
+    if (model_data.value("embedding", false)) labels.insert("embeddings");
+    if (model_data.value("reranking", false)) labels.insert("reranking");
+    if (const auto* desc =
+            lemon::backends::descriptor_for(model_data.value("recipe", std::string()))) {
+        for (const auto& label : desc->default_labels) labels.insert(label);
+    }
+    return labels;
+}
+
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
@@ -2566,35 +2586,11 @@ void ModelManager::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
-    std::set<std::string> labels = {"custom"};
-    std::vector<std::string> extra_labels = model_data.value("labels", std::vector<std::string>{});
-    labels.insert(extra_labels.begin(), extra_labels.end());
-
-    // legacy label format
-    if (model_data.value("reasoning", false)) {
-        labels.insert("reasoning");
-    }
-    if (model_data.value("vision", false)) {
-        labels.insert("vision");
-    }
-    if (model_data.value("embedding", false)) {
-        labels.insert("embeddings");
-    }
-    if (model_data.value("reranking", false)) {
-        labels.insert("reranking");
-    }
+    std::set<std::string> labels = normalized_definition_labels(model_data);
 
     // `recipe` already copied into `model_entry` by the USER_DEFINED_MODEL_PROPS
-    // loop above; this local is just for the label inference below.
+    // loop above; this local is just for the collection handling below.
     std::string recipe = model_data.value("recipe", "");
-
-    // Inject the backend's default labels for models that omit them (e.g. sd-cpp
-    // -> image, whispercpp/moonshine -> transcription).
-    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        for (const auto& label : desc->default_labels) {
-            labels.insert(label);
-        }
-    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
@@ -4566,13 +4562,14 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 if (!def) {
                     return std::nullopt;
                 }
-                std::vector<std::string> labels;
-                if (def->contains("labels") && (*def)["labels"].is_array()) {
-                    for (const auto& label : (*def)["labels"]) {
-                        if (label.is_string()) labels.push_back(label.get<std::string>());
-                    }
-                }
-                return get_model_type_from_labels(labels);
+                // Derive the type exactly as register_user_model() would once
+                // this inline definition is registered — explicit labels, legacy
+                // capability flags, and the backend's default labels — so
+                // validation and registration cannot disagree (e.g. a label-less
+                // sd-cpp model is IMAGE, not LLM).
+                std::set<std::string> label_set = normalized_definition_labels(*def);
+                return get_model_type_from_labels(
+                    std::vector<std::string>(label_set.begin(), label_set.end()));
             }
         };
         try {

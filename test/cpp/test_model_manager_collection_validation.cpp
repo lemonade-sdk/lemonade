@@ -106,6 +106,69 @@ static void test_rejects_bad_routing(ModelManager& manager) {
           error_contains(err, "catastrophic backtracking"));
 }
 
+// Build a minimal router whose single classifier of `type` is backed by the
+// given inline model definition. `local` is the only candidate.
+static json router_with_classifier(const std::string& type,
+                                   const json& classifier_model_def) {
+    const std::string cmodel = classifier_model_def.value("model_name", "clf");
+    json classifier = {{"id", "clf"}, {"type", type}, {"model", cmodel}};
+    json match;
+    if (type == "semantic_similarity") {
+        classifier["reference_phrases"] = {{"coding", {"write code"}}};
+        match = {{"classifier", "clf"}, {"label", "coding"}, {"min_score", 0.5}};
+    } else {
+        classifier["labels"] = {"A", "B"};
+        classifier["default_label"] = "A";
+        match = {{"classifier", "clf"}, {"min_score", 0.5}};
+    }
+    return json{
+        {"model_name", "user.RouterKit"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", cmodel}},
+        {"models", {component_def("local"), classifier_model_def}},
+        {"routing", {
+            {"candidates", {"local"}},
+            {"default_model", "local"},
+            {"classifiers", {classifier}},
+            {"rules", {{
+                {"id", "r"},
+                {"match", match},
+                {"route_to", "local"},
+            }}},
+        }},
+    };
+}
+
+// The inline type resolver must mirror registration's normalization, not just
+// read explicit labels: a label-less definition still picks up legacy flags and
+// the backend's default labels.
+static void test_inline_capability_matches_registration(ModelManager& manager) {
+    // Label-less sd-cpp -> IMAGE at registration, so it cannot be a classifier.
+    json sd_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "img"}, {"recipe", "sd-cpp"}, {"checkpoint", "example/img"}});
+    auto err = manager.validate_collection_request("user.RouterKit", sd_clf);
+    check("label-less sd-cpp rejected as classifier (backend default label 'image')",
+          error_contains(err, "cannot serve as a classifier"));
+
+    // Legacy `embedding: true` -> EMBEDDING, valid for semantic_similarity.
+    json emb_sem = router_with_classifier(
+        "semantic_similarity",
+        json{{"model_name", "emb"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/emb:Q4_K_M"}, {"embedding", true}});
+    err = manager.validate_collection_request("user.RouterKit", emb_sem);
+    check("legacy embedding:true accepted for semantic_similarity", !err.has_value());
+
+    // Label-less regular llamacpp still defaults to LLM, valid as a classifier.
+    json llm_clf = router_with_classifier(
+        "classifier",
+        json{{"model_name", "reg"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/reg:Q4_K_M"}});
+    err = manager.validate_collection_request("user.RouterKit", llm_clf);
+    check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -122,6 +185,7 @@ int main() {
     ModelManager manager;
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
+    test_inline_capability_matches_registration(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);
