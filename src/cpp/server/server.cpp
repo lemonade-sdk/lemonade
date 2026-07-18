@@ -7,6 +7,7 @@
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/config_file.h"
+#include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
@@ -44,6 +45,7 @@
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
 #include "lemon/utils/network_utils.h"
+#include "lemon/utils/origin_utils.h"
 
 #ifdef _WIN32
     #include <windows.h>
@@ -407,6 +409,231 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
 
+    {
+        lemon::jobs::OpProviders providers;
+        struct JobModelState {
+            std::map<std::string, bool> snapshot;
+            std::map<std::string, nlohmann::json> owned;
+        };
+        auto job_states = std::make_shared<std::map<std::string, JobModelState>>();
+        auto current_job = std::make_shared<std::string>();
+        auto state_mutex = std::make_shared<std::mutex>();
+        providers.system_info = [] {
+            return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
+        };
+        providers.system_stats = [this] {
+            lemon::jobs::json stats;
+            const double cpu_percent = get_cpu_usage();
+            stats["cpu_percent"] =
+                cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
+            stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
+            const double gpu_percent = get_gpu_usage();
+            stats["gpu_percent"] =
+                gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
+            const double vram_gb = get_vram_usage();
+            stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
+            const double npu_percent = get_npu_utilization();
+            stats["npu_percent"] =
+                npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
+            return stats;
+        };
+        providers.models_list = [this] {
+            nlohmann::json data = nlohmann::json::array();
+            for (const auto& [model_id, info] : model_manager_->get_supported_models())
+                data.push_back(model_info_to_json(model_id, info));
+            nlohmann::json response = {{"object", "list"}, {"data", data}};
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.model_get = [this](const std::string& id) -> lemon::jobs::json {
+            auto models = model_manager_->get_supported_models();
+            auto it = models.find(id);
+            if (it == models.end()) return lemon::jobs::json(nullptr);
+            return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
+        };
+        providers.load_op = [this, job_states, current_job, state_mutex](
+                                const lemon::jobs::json& params,
+                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (!params.contains("model") || !params["model"].is_string())
+                throw lemon::jobs::JobError(400, "load requires a 'model' string");
+            const std::string model = params["model"].get<std::string>();
+            if (!model_manager_->model_exists(model))
+                throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+            if (!model_manager_->is_model_downloaded(model))
+                throw lemon::jobs::JobError(404, "model '" + model + "' is not downloaded");
+            auto info = model_manager_->get_model_info(model);
+            nlohmann::json opt_json = nlohmann::json::parse(params.dump());
+            RecipeOptions options(info.recipe, opt_json);
+            std::optional<bool> pinned = std::nullopt;
+            if (params.contains("pinned") && params["pinned"].is_boolean())
+                pinned = params["pinned"].get<bool>();
+            try {
+                router_->load_model(model, info, options, true, true, pinned, &cancel);
+            } catch (const std::exception& e) {
+                throw lemon::jobs::JobError(500, e.what());
+            }
+            {
+                const std::string canonical = router_->canonical_model_name(model);
+                const int pid = router_->loaded_model_pid(model);
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                if (!current_job->empty()) {
+                    auto it = job_states->find(*current_job);
+                    if (it != job_states->end())
+                        it->second.owned[canonical] = {{"pid", pid}};
+                }
+            }
+            if (cancel.load()) {
+                throw lemon::jobs::JobError(499, "interrupted");
+            }
+            RecipeOptions effective = router_->get_model_recipe_options(model);
+            lemon::jobs::json out;
+            out["loaded"] = true;
+            out["model"] = model;
+            const nlohmann::json backend_json = effective.get_option(info.recipe + "_backend");
+            if (backend_json.is_string()) out["backend"] = backend_json.get<std::string>();
+            const nlohmann::json ctx_json = effective.get_option("ctx_size");
+            if (ctx_json.is_number()) out["ctx_size"] = ctx_json.get<int64_t>();
+            return out;
+        };
+        providers.unload_op = [this, job_states, current_job, state_mutex](
+                                  const lemon::jobs::json& params,
+                                  lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            std::string model;
+            if (params.contains("model") && params["model"].is_string())
+                model = params["model"].get<std::string>();
+            if (!model.empty()) {
+                if (router_->is_model_loaded(model)) router_->unload_model(model);
+            } else {
+                router_->unload_model("");
+            }
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                if (!current_job->empty()) {
+                    auto it = job_states->find(*current_job);
+                    if (it != job_states->end()) {
+                        if (model.empty()) it->second.owned.clear();
+                        else it->second.owned.erase(router_->canonical_model_name(model));
+                    }
+                }
+            }
+            return lemon::jobs::json::object();
+        };
+        providers.chat_op = [this](const lemon::jobs::json& params,
+                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            nlohmann::json response = router_->chat_completion(request, &cancel);
+            if (response.contains("error")) {
+                std::string msg = "chat failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.begin_exclusive = [this, job_states, current_job, state_mutex](
+                                        const std::string& job_id,
+                                        lemon::jobs::CancelFlag* cancel) -> bool {
+            if (!router_->begin_exclusive(cancel)) return false;
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            if (!job_states->count(job_id))
+                (*job_states)[job_id].snapshot = router_->snapshot_loaded_models();
+            *current_job = job_id;
+            return true;
+        };
+        providers.end_exclusive = [this, current_job, state_mutex] {
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                current_job->clear();
+            }
+            router_->end_exclusive();
+        };
+        providers.reconcile_unload = [this, job_states, state_mutex](
+                                         const std::string& job_id) {
+            std::map<std::string, int> owned_live;
+            std::map<std::string, bool> snapshot;
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                auto it = job_states->find(job_id);
+                if (it == job_states->end()) return;
+                for (const auto& kv : it->second.owned)
+                    if (kv.second.is_object() && kv.second.contains("pid"))
+                        owned_live[kv.first] = kv.second["pid"].get<int>();
+                snapshot = it->second.snapshot;
+            }
+            if (owned_live.empty()) return;
+            auto captured = router_->unload_job_models(owned_live, snapshot);
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            auto it = job_states->find(job_id);
+            if (it == job_states->end()) return;
+            for (auto& kv : captured) it->second.owned[kv.first] = std::move(kv.second);
+        };
+        providers.restore_exclusive = [this, job_states, state_mutex](
+                                          const std::string& job_id,
+                                          const lemon::jobs::json& manifest,
+                                          lemon::jobs::CancelFlag* cancel) -> bool {
+            std::map<std::string, nlohmann::json> to_restore;
+            std::set<std::string> tracked;
+            {
+                std::lock_guard<std::mutex> lk(*state_mutex);
+                auto it = job_states->find(job_id);
+                if (it != job_states->end()) {
+                    for (const auto& kv : it->second.owned) {
+                        tracked.insert(kv.first);
+                        if (kv.second.is_object() && kv.second.contains("options"))
+                            to_restore[kv.first] = kv.second;
+                    }
+                }
+            }
+            for (auto it = manifest.begin(); it != manifest.end(); ++it) {
+                const std::string canonical = router_->canonical_model_name(it.key());
+                if (tracked.count(canonical) || to_restore.count(canonical)) continue;
+                nlohmann::json params = nlohmann::json::parse(it.value().dump());
+                nlohmann::json entry = {{"options", params}};
+                if (params.contains("pinned") && params["pinned"].is_boolean())
+                    entry["pinned"] = params["pinned"].get<bool>();
+                to_restore[canonical] = std::move(entry);
+            }
+            for (const auto& kv : to_restore) {
+                if (cancel && cancel->load()) return false;
+                if (router_->is_model_loaded(kv.first)) {
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned.erase(kv.first);
+                    continue;
+                }
+                try {
+                    auto info = model_manager_->get_model_info(kv.first);
+                    RecipeOptions options(info.recipe, kv.second.value("options", nlohmann::json::object()));
+                    std::optional<bool> pinned = std::nullopt;
+                    if (kv.second.contains("pinned") && kv.second["pinned"].is_boolean())
+                        pinned = kv.second["pinned"].get<bool>();
+                    router_->load_model(kv.first, info, options, true, true, pinned, cancel);
+                    const int pid = router_->loaded_model_pid(kv.first);
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned[kv.first] = {{"pid", pid}};
+                } catch (const std::exception& e) {
+                    if (cancel && cancel->load()) return false;
+                    LOG(WARNING, "Jobs") << "could not restore job model '" << kv.first
+                                         << "' on resume: " << e.what() << std::endl;
+                    std::lock_guard<std::mutex> lk(*state_mutex);
+                    auto it = job_states->find(job_id);
+                    if (it != job_states->end()) it->second.owned.erase(kv.first);
+                }
+            }
+            return true;
+        };
+        providers.discard_exclusive = [job_states, state_mutex](
+                                          const std::string& job_id) {
+            std::lock_guard<std::mutex> lk(*state_mutex);
+            job_states->erase(job_id);
+        };
+        job_manager_ = std::make_unique<lemon::jobs::JobManager>(
+            lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
+    }
+
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
@@ -663,6 +890,37 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
+
+        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
+        std::string vary = "Origin";
+        if (res.has_header("Vary")) {
+            std::string existing = res.get_header_value("Vary");
+            if (existing.find("Origin") == std::string::npos) {
+                vary = existing + ", Origin";
+            } else {
+                vary = existing;
+            }
+        }
+        res.set_header("Vary", vary);
+
+        if (req.has_header("Origin")) {
+            std::string origin = req.get_header_value("Origin");
+            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
+            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+
+            if (utils::is_origin_allowed(origin, allowed_origins)) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+                if (req.has_header("Access-Control-Request-Private-Network") &&
+                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
+                    res.set_header("Access-Control-Allow-Private-Network", "true");
+                }
+            } else {
+                res.status = 403;
+                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+
         return authenticate_request(req, res);
     });
 
@@ -693,7 +951,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        if (endpoint != "params") {
+        if (endpoint != "params" && endpoint != "jobs") {
             web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
                 res.status = 405;
                 res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
@@ -860,6 +1118,35 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
         handle_download_control(req, res);
     });
+
+    register_post("jobs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_jobs_create(req, res);
+    });
+    register_get("jobs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_jobs_list(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/pause)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_pause(req, res);
+                        });
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/interrupt)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_interrupt(req, res);
+                        });
+        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/resume)",
+                        [this](const httplib::Request& req, httplib::Response& res) {
+                            handle_jobs_resume(req, res);
+                        });
+        web_server.Get(std::string(prefix) + R"(/jobs/([^/]+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+                           handle_jobs_get(req, res);
+                       });
+        web_server.Delete(std::string(prefix) + R"(/jobs/([^/]+))",
+                          [this](const httplib::Request& req, httplib::Response& res) {
+                              handle_jobs_delete(req, res);
+                          });
+    }
 
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1367,9 +1654,8 @@ window.api = {
 void Server::setup_cors(httplib::Server &web_server) {
     // Set CORS headers for all responses
     web_server.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version"}
     });
 
     // Handle preflight OPTIONS requests
@@ -5535,6 +5821,92 @@ void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib:
         res.status = 400;
         res.set_content(json{{"error", e.what()}}.dump(), "application/json");
     }
+}
+
+namespace {
+
+std::string job_id_from_path(const httplib::Request& req) {
+    return req.matches.size() > 1 ? std::string(req.matches[1]) : std::string();
+}
+
+void job_error(httplib::Response& res, int status, const std::string& message) {
+    res.status = status;
+    res.set_content(lemon::jobs::json{{"error", message}}.dump(), "application/json");
+}
+
+}
+
+void Server::handle_jobs_create(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto body = lemon::jobs::json::parse(req.body);
+        const std::string name = body.value("name", "");
+        lemon::jobs::json steps_json = lemon::jobs::json::array();
+        if (body.contains("definition") && body["definition"].is_object()
+            && body["definition"].contains("steps")) {
+            steps_json = body["definition"]["steps"];
+        } else if (body.contains("steps")) {
+            steps_json = body["steps"];
+        }
+        std::vector<lemon::jobs::StepRecord> steps;
+        if (steps_json.is_array())
+            for (const auto& s : steps_json)
+                steps.push_back(lemon::jobs::StepRecord::from_json(s));
+        lemon::jobs::json inputs =
+            body.contains("inputs") ? body["inputs"] : lemon::jobs::json::object();
+        const std::string id = job_manager_->create(name, std::move(steps), inputs);
+        res.status = 202;
+        res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
+    } catch (const lemon::jobs::JobError& e) {
+        job_error(res, e.status, e.what());
+    } catch (const std::exception& e) {
+        job_error(res, 400, e.what());
+    }
+}
+
+void Server::handle_jobs_list(const httplib::Request&, httplib::Response& res) {
+    res.set_content(lemon::jobs::json{{"jobs", job_manager_->list()}}.dump(), "application/json");
+}
+
+void Server::handle_jobs_get(const httplib::Request& req, httplib::Response& res) {
+    const auto job = job_manager_->get(job_id_from_path(req));
+    if (!job) {
+        job_error(res, 404, "unknown job");
+        return;
+    }
+    res.set_content(job->dump(), "application/json");
+}
+
+void Server::handle_jobs_pause(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->pause(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not pausable");
+        return;
+    }
+    res.set_content(R"({"status":"pausing"})", "application/json");
+}
+
+void Server::handle_jobs_interrupt(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->interrupt(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not interruptible");
+        return;
+    }
+    res.set_content(R"({"status":"interrupting"})", "application/json");
+}
+
+void Server::handle_jobs_resume(const httplib::Request& req, httplib::Response& res) {
+    if (!job_manager_->resume(job_id_from_path(req))) {
+        job_error(res, 404, "job not found or not resumable");
+        return;
+    }
+    res.set_content(R"({"status":"resuming"})", "application/json");
+}
+
+void Server::handle_jobs_delete(const httplib::Request& req, httplib::Response& res) {
+    bool active = false;
+    if (!job_manager_->remove(job_id_from_path(req), active)) {
+        job_error(res, active ? 409 : 404, active ? "job is active" : "unknown job");
+        return;
+    }
+    res.set_content(R"({"status":"deleted"})", "application/json");
 }
 
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {

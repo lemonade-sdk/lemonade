@@ -99,6 +99,8 @@ private:
         std::string api_key;
         std::string base_url;
         bool insecure_http_blocked = false;
+        utils::HttpSecurityPolicy policy =
+            utils::HttpSecurityPolicy::ExternalHttpsOnly;
     };
 
     // Looks up creds from the registry. Returns empty fields when the

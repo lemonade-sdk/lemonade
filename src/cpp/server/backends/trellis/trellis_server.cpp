@@ -193,7 +193,11 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
         sink.write(payload.data(), payload.size());
     };
     try {
-        auto resp = utils::HttpClient::post_multipart(get_base_url() + "/generate", fields, 1800);
+        auto resp = utils::HttpClient::post_multipart(
+            get_base_url() + "/generate",
+            fields,
+            1800,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         if (resp.curl_code != 0) {
             LOG(ERROR, "trellis-server") << "generation transport error: " << resp.curl_error << std::endl;
             fail("generation transport error: " + resp.curl_error);
