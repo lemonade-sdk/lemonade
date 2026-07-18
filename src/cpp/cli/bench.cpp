@@ -829,6 +829,7 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
         // Populate timing fields
         auto end = steady_clock::now();
         result.ttft_ms = duration<double, std::milli>(end - start).count();
+        result.total_time_ms += result.ttft_ms;
 
     } catch (const std::exception& e) {
         std::cerr << "    Image generation benchmark run failed: " << e.what() << std::endl;
