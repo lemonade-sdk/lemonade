@@ -264,6 +264,15 @@ ClassifierServices make_classifier_services_from_router_calls(
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
         -> std::map<std::string, double> {
+        // Load the model BEFORE resolving its runtime type. The production
+        // resolver (Router::get_model_type) reports ModelType::LLM until the
+        // backend is loaded and alive, so resolving first would make a cold-start
+        // request — the first after startup, eviction, or a backend restart —
+        // pick the chat path for a model that only speaks /v1/classify,
+        // recreating the unsupported-capability failure this routing exists to
+        // avoid.
+        ensure_model(ensure_loaded, model);
+
         // Models registered under ModelType::CLASSIFICATION (the onnxruntime
         // backend) speak /v1/classify natively — a real encoder classification
         // head, not an LLM asked to emit JSON. Route to it directly instead of
@@ -274,18 +283,16 @@ ClassifierServices make_classifier_services_from_router_calls(
             classify_call && *classify_call && get_model_type &&
             get_model_type(model) == ModelType::CLASSIFICATION;
 
-        if (!use_classify_endpoint && !*chat_completion_call) {
-            throw std::runtime_error("Router chat_completion call is not configured");
-        }
-
-        ensure_model(ensure_loaded, model);
-
         if (use_classify_endpoint) {
             json request = {
                 {"model", model},
                 {"input", input},
             };
             return parse_classifier_scores((*classify_call)(request));
+        }
+
+        if (!*chat_completion_call) {
+            throw std::runtime_error("Router chat_completion call is not configured");
         }
 
         json request = {
