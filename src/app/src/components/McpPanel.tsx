@@ -87,6 +87,8 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
   const [servers, setServers] = useState<McpServerState[]>([]);
   const [hostError, setHostError] = useState('');
   const [hostLoading, setHostLoading] = useState(false);
+  const [secure, setSecure] = useState<boolean | null>(null);
+  const [adminAccess, setAdminAccess] = useState<'checking' | 'ok' | 'needs-admin' | 'unavailable'>('checking');
   const [adminKeyDraft, setAdminKeyDraft] = useState(() => api.explicitAdminApiKey);
   const [adminKeyNotice, setAdminKeyNotice] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -150,21 +152,31 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     }
   }, [mcpUrl]);
 
-  const loadServers = useCallback(async () => {
+  const probeAccess = useCallback(async (): Promise<
+    "ok" | "needs-admin" | "unavailable"
+  > => {
     setHostLoading(true);
-    setHostError('');
-    try {
-      if (!api.adminApiKey) {
-        setServers([]);
-        setHostError('External MCP server administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY. Enter the matching key below to manage external servers.');
-        return;
-      }
-      setServers(await api.listMcpServers());
-    } catch (error) {
-      setHostError(friendlyErrorMessage(error));
-    } finally {
-      setHostLoading(false);
+    setHostError("");
+    const result = await api.probeMcpAccess();
+    setHostLoading(false);
+    if (result.ok) {
+      setServers(result.servers);
+      setAdminAccess("ok");
+      return "ok";
     }
+    setServers([]);
+    if (result.status === 401) {
+      setAdminAccess("needs-admin");
+      return "needs-admin";
+    }
+
+    setAdminAccess("unavailable");
+    setHostError(
+      result.status
+        ? `Could not reach MCP administration (HTTP ${result.status}).`
+        : "Could not reach MCP administration. Check that the server is running and reachable.",
+    );
+    return "unavailable";
   }, []);
 
   useEffect(() => {
@@ -173,11 +185,19 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       setGatewayStatus('idle');
       setGatewayTools([]);
       setServers([]);
+      setSecure(null);
+      setAdminAccess('checking');
       return;
     }
-    void loadGatewayTools().then(loadServers);
+    const flag = api.highSecurity;
+    setSecure(flag === false ? false : true);
+    void loadGatewayTools();
+    if (flag !== false) {
+      setAdminAccess('checking');
+      void probeAccess();
+    }
     return () => abortRef.current?.abort();
-  }, [connectionStatus, isActive, loadGatewayTools, loadServers]);
+  }, [connectionStatus, isActive, loadGatewayTools, probeAccess]);
 
   const gatewayLabel = gatewayStatus === 'connected' ? 'Connected'
     : gatewayStatus === 'checking' ? 'Checking…'
@@ -185,14 +205,16 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
 
   const connectedExternal = useMemo(() => servers.filter(server => server.connected).length, [servers]);
 
-  const applyAdminKey = async (useApiKey = false) => {
-    const next = useApiKey ? '' : adminKeyDraft;
-    api.setSessionAdminApiKey(next);
-    if (useApiKey) setAdminKeyDraft('');
-    setAdminKeyNotice(next.trim()
-      ? 'Admin key applied for this app session.'
-      : 'Using the regular API key for MCP administration.');
-    await loadServers();
+  const applyAdminKey = async () => {
+    api.setSessionAdminApiKey(adminKeyDraft);
+    setAdminKeyNotice('');
+    setAdminAccess('checking');
+    const outcome = await probeAccess();
+    if (outcome === 'ok') {
+      setAdminKeyNotice('Admin key applied for this app session.');
+    } else if (outcome === 'needs-admin') {
+      setHostError('Admin API key was rejected.');
+    }
   };
 
   const runServerAction = async (id: string, action: 'connect' | 'disconnect' | 'refresh' | 'remove') => {
@@ -203,7 +225,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       else if (action === 'disconnect') await api.disconnectMcpServer(id);
       else if (action === 'refresh') await api.refreshMcpServerTools(id);
       else await api.removeMcpServer(id);
-      await loadServers();
+      await probeAccess();
     } catch (error) {
       setHostError(friendlyErrorMessage(error));
     } finally {
@@ -231,7 +253,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
         enabled: true,
       });
       await api.connectMcpServer(saved.id);
-      await loadServers();
+      await probeAccess();
       setDraft(EMPTY_DRAFT);
       setShowForm(false);
     } catch (error) {
@@ -286,42 +308,60 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
               <h3 id="external-mcp-title">External MCP servers</h3>
               <p>{connectedExternal}/{servers.length} connected · stdio transport · select up to four per preset.</p>
             </div>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => { setDraft(EMPTY_DRAFT); setFormError(''); setShowForm(value => !value); }}
-              disabled={connectionStatus !== 'connected' || !api.adminApiKey}
-              title={!api.adminApiKey ? 'Apply an admin-capable API key before adding an external MCP server' : undefined}
-            >
-              {showForm ? 'Cancel' : 'Add server'}
-            </button>
+            {secure === true && adminAccess === 'ok' && (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => { setDraft(EMPTY_DRAFT); setFormError(''); setShowForm(value => !value); }}
+                disabled={connectionStatus !== 'connected'}
+              >
+                {showForm ? 'Cancel' : 'Add server'}
+              </button>
+            )}
           </div>
 
-          <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
-            <div>
-              <label htmlFor="mcp-admin-key">Admin API key</label>
-              <p>Required for <code>/internal/mcp/*</code>. Empty means “use the regular API key”. This client field does not configure the lemond process.</p>
+          {secure === null || (secure === true && adminAccess === 'checking') ? (
+            <p className="connect__empty">Checking MCP administration access…</p>
+          ) : secure === false ? (
+            <div className="connect__notice mcp-panel__security-warning" role="note" data-mcp-security-warning>
+              <p><strong>External MCP servers are unavailable on this server.</strong></p>
+              <p>
+                Due to security constraints, using external MCP servers requires your server to be set up with either a
+                general API key (<code>LEMONADE_API_KEY</code>) or a dedicated admin API key (<code>LEMONADE_ADMIN_API_KEY</code>).
+                Please set the respective environment variable in your Lemonade Server launch script, then restart the
+                server to use this feature.
+              </p>
             </div>
-            <div className="mcp-panel__admin-auth-controls">
-              <input
-                id="mcp-admin-key"
-                type="password"
-                autoComplete="off"
-                value={adminKeyDraft}
-                onChange={event => setAdminKeyDraft(event.target.value)}
-                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void applyAdminKey(false); } }}
-                placeholder="Uses API key when empty"
-                aria-describedby="mcp-admin-key-help"
-              />
-              <button type="button" className="btn btn--primary" onClick={() => void applyAdminKey(false)} disabled={connectionStatus !== 'connected' || hostLoading}>Apply</button>
-              <button type="button" className="btn btn--ghost" onClick={() => void applyAdminKey(true)} disabled={connectionStatus !== 'connected' || hostLoading}>Use API key</button>
+          ) : adminAccess === 'unavailable' ? (
+            <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
+              <p>{hostError || 'MCP administration is currently unavailable.'}</p>
+              <button type="button" className="btn btn--ghost" onClick={() => void probeAccess()} disabled={connectionStatus !== 'connected' || hostLoading}>
+                {hostLoading ? 'Retrying…' : 'Retry'}
+              </button>
             </div>
-            <p id="mcp-admin-key-help" className="mcp-server-form__note">
-              Server side: set <code>LEMONADE_ADMIN_API_KEY</code> (or <code>LEMONADE_API_KEY</code>) before starting lemond, then restart it.
-            </p>
-            {adminKeyNotice && <div className="connect__notice" role="status">{adminKeyNotice}</div>}
-          </div>
-
+          ) : adminAccess === 'needs-admin' ? (
+            <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
+              <div>
+                <label htmlFor="mcp-admin-key">Admin API key</label>
+                <p>Server requires admin API key to access external MCP feature setup.</p>
+              </div>
+              <div className="mcp-panel__admin-auth-controls">
+                <input
+                  id="mcp-admin-key"
+                  type="password"
+                  autoComplete="off"
+                  value={adminKeyDraft}
+                  onChange={event => setAdminKeyDraft(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void applyAdminKey(); } }}
+                  placeholder="Admin API key"
+                />
+                <button type="button" className="btn btn--primary" onClick={() => void applyAdminKey()} disabled={connectionStatus !== 'connected' || hostLoading || !adminKeyDraft.trim()}>Apply</button>
+              </div>
+              {adminKeyNotice && <div className="connect__notice" role="status">{adminKeyNotice}</div>}
+              {hostError && <div className="connect__error" role="alert">{hostError}</div>}
+            </div>
+          ) : (
+            <>
           {showForm && (
             <form className="mcp-server-form" onSubmit={saveServer}>
               <label><span>Name</span><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} placeholder="Filesystem" /></label>
@@ -338,7 +378,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
 
           {hostError && <div className="connect__error" role="alert">{hostError}</div>}
           {hostLoading ? <p className="connect__empty">Loading MCP servers…</p> : servers.length === 0 ? (
-            <p className="connect__empty">{hostError ? 'External MCP server list is unavailable. Fix or change the admin key above; preset MCP controls remain editable.' : 'No external MCP server configured. Lemon-Tools MCP remains available in presets.'}</p>
+            <p className="connect__empty">No external MCP server configured. Lemon-Tools MCP remains available in presets.</p>
           ) : (
             <div className="mcp-server-list">
               {servers.map(server => (
@@ -362,6 +402,8 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                 </article>
               ))}
             </div>
+          )}
+            </>
           )}
         </section>
       </div>
