@@ -114,7 +114,8 @@ public:
         const std::string& body,
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::atomic<bool>* cancel_flag = nullptr);
 
     // Multipart form data POST request. Redirects are never followed.
     static HttpResponse post_multipart(

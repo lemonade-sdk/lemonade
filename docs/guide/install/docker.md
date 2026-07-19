@@ -107,7 +107,7 @@ docker run -d \
 ```
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
->
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
@@ -297,8 +297,9 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# Install runtime dependencies only
+# vLLM/Triton JIT-compiles native launcher modules at runtime.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libcurl4 \
     curl \
     libssl3 \

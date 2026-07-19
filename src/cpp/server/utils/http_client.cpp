@@ -253,6 +253,12 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
+static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                    curl_off_t) {
+    auto* flag = static_cast<std::atomic<bool>*>(clientp);
+    return (flag && flag->load()) ? 1 : 0;
+}
+
 struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
@@ -456,7 +462,8 @@ HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,
                               long timeout_seconds,
-                              HttpSecurityPolicy policy) {
+                              HttpSecurityPolicy policy,
+                              std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -476,6 +483,12 @@ HttpResponse HttpClient::post(const std::string& url,
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     // Add custom headers
     bool has_content_type = false;

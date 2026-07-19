@@ -432,6 +432,19 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
 
+### Allowed Origins
+
+The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+
+- **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
+  > [!WARNING]
+  > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
+- **Wildcard (`*`)**: Setting the variable to `*` allows any origin to connect.
+- **Security Implications of `*`**:
+  > [!WARNING]
+  > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+- **Local/Loopback Access**: Loopback origins (`localhost`, `127.0.0.1`, `[::1]`, and `tauri.localhost`) are always allowed and do not need to be explicitly listed.
+
 ## Remote Server Connection
 
 To make Lemonade Server accessible from other machines on your network, set the host to `0.0.0.0`:
