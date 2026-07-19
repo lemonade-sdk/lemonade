@@ -30,7 +30,8 @@
     "test:router-editor": "node tests/router-editor.runtime.cjs",
     "test:router-store": "node tests/router-store.runtime.cjs",
     "test:global-model-settings": "node tests/global-model-settings.runtime.cjs",
-    "test:icons": "node tests/icon-library.runtime.cjs"
+    "test:icons": "node tests/icon-library.runtime.cjs",
+    "test:default-chat-model": "node tests/default-chat-model.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
