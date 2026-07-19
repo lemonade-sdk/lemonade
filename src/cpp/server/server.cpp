@@ -104,11 +104,39 @@ bool should_disable_thinking(const json& request_json) {
     return false;
 }
 
-bool strip_handled_thinking_fields(json& request_json) {
+// Strip thinking control fields after lemonade has handled them, except when
+// enable_thinking=true must be forwarded to backends that honor template
+// thinking (e.g. lemon-mlx-engine after tools auto-policy + request override).
+bool strip_handled_thinking_fields(json& request_json, bool keep_enable_thinking_true) {
     bool modified = false;
+    if (keep_enable_thinking_true &&
+        request_json.contains("enable_thinking") &&
+        request_json["enable_thinking"].is_boolean() &&
+        request_json["enable_thinking"].get<bool>() == true) {
+        // Keep enable_thinking for engine escape hatch; still drop OpenCode "thinking".
+        modified = request_json.erase("thinking") > 0 || modified;
+        return modified;
+    }
     modified = request_json.erase("enable_thinking") > 0 || modified;
     modified = request_json.erase("thinking") > 0 || modified;
     return modified;
+}
+
+bool request_enables_thinking_true(const json& request_json) {
+    if (request_json.contains("enable_thinking") &&
+        request_json["enable_thinking"].is_boolean()) {
+        return request_json["enable_thinking"].get<bool>() == true;
+    }
+    if (request_json.contains("thinking")) {
+        const auto& thinking = request_json["thinking"];
+        if (thinking.is_boolean()) {
+            return thinking.get<bool>() == true;
+        }
+        if (thinking.is_object() && thinking.value("type", "") == "enabled") {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
@@ -2833,10 +2861,18 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
+        // Escape hatch (L-fwd): enable_thinking=true is forwarded to backends that
+        // honor template thinking (e.g. lemon-mlx-engine). Do NOT auto-inject
+        // /no_think merely because tools are present — engine tools_auto policy
+        // handles that, and prompt injection can corrupt tool XML emission.
+        const bool keep_thinking_true = request_enables_thinking_true(request_json);
         if (should_disable_thinking(request_json)) {
-            request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
+            request_modified =
+                prepend_no_think_to_last_user_message(request_json) || request_modified;
         }
-        request_modified = strip_handled_thinking_fields(request_json) || request_modified;
+        request_modified =
+            strip_handled_thinking_fields(request_json, keep_thinking_true) ||
+            request_modified;
 
         // If we modified the request (or normalized the model name earlier), serialize to string
         // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,

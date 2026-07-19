@@ -1395,7 +1395,17 @@ void MlxServer::load(const std::string& model_name,
     env_vars.push_back({"DYLD_LIBRARY_PATH", join_paths(lib_paths, std::getenv("DYLD_LIBRARY_PATH"))});
 #endif
 
-    LOG(INFO, kLog) << "Starting lemon-mlx server..." << std::endl;
+    // Always log executable + argv at INFO so operators can audit custom args
+    // (e.g. --no-think) without requiring DEBUG/inherit_output.
+    {
+        std::ostringstream argv_line;
+        argv_line << executable;
+        for (const auto& a : args) {
+            argv_line << ' ' << a;
+        }
+        LOG(INFO, kLog) << "Starting lemon-mlx server: " << argv_line.str()
+                        << std::endl;
+    }
     const bool inherit_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 

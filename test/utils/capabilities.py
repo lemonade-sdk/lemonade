@@ -145,8 +145,15 @@ CAPABILITIES = {
                 "embeddings": False,
                 "embeddings_batch": False,
                 "reranking": False,
-                # P4: engine parse/emit tools + P3 stream hygiene. Gate model is 4B
-                # (0.8B is plumbing-only and flaky for tool emission).
+                # P4: engine parse/emit tools + lemonade P3 stream hygiene.
+                # Capability True means the OpenAI tools *path* exists.
+                # CI plumbing model is 0.8B (see test_models). Product registry
+                # labels only Qwen3.5-4B-MLX as tool-calling for marketplace honesty.
+                # lemon-mlx tools tests (012/013) require at least one of:
+                #   (1) engine --no-think via lemon-mlx.args / harness, OR
+                #   (2) max_completion_tokens >= 128 on thinking models, OR
+                #   (3) model >= Qwen3.5-4B-MLX (tool-calling label).
+                # Preferred CI: (1)+(2) on 0.8B for plumbing; optional 4B quality gate.
                 "tool_calls": True,
                 "tool_calls_streaming": True,
                 "multi_model": False,
@@ -158,9 +165,9 @@ CAPABILITIES = {
                 "static_max_context_window": False,
             },
             "test_models": {
-                # Prefer the small MLX model that loads reliably from HF cache in CI.
-                # Tool *emission* is proven on 0.8B after XML-function parse fix; 4B is
-                # registered with tool-calling for product use when the checkpoint loads.
+                # Small MLX model for reliable CI load/cache. Tools plumbing is
+                # exercised on 0.8B under the tools-test policy above; 4B remains
+                # the product tool-calling gate model in server_models.json.
                 "llm": "Qwen3.5-0.8B-MLX",
             },
         },

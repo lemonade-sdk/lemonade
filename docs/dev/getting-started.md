@@ -838,6 +838,14 @@ python test/server_endpoints.py
 # LLM tests (specify wrapped server and backend)
 python test/server_llm.py --wrapped-server llamacpp --backend vulkan
 
+# lemon-mlx LLM tests (ROCm). Harness defaults lemon-mlx.args to --no-think
+# for tools tests (012/013) on the 0.8B CI plumbing model — test/CI only,
+# not a product default. Override with --lemon-mlx-args if needed.
+# Tools policy: no-think OR max_completion_tokens>=128 OR tool-calling 4B model.
+python test/server_llm.py --wrapped-server lemon-mlx --backend rocm
+# Example filtered tools-only run (custom suite; harness has no argv filter):
+#   LEMONADE_TEST_PORT=13306 python -c '...'  # see test/utils/server_base.py
+
 # Audio transcription tests
 python test/server_whisper.py
 

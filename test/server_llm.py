@@ -418,11 +418,36 @@ class LLMTests(ServerTestBase):
     # TOOL CALLS TESTS
     # =========================================================================
 
+    def _tool_call_token_budget(self) -> int:
+        """Token budget for tools tests.
+
+        lemon-mlx Qwen thinking models can burn a 50-token budget on CoT before
+        completing tool markup. Prefer >=128 for lemon-mlx; keep 50 elsewhere.
+        """
+        from utils.capabilities import get_current_config
+
+        wrapped, _backend, _modality = get_current_config()
+        if wrapped == "lemon-mlx":
+            return 128
+        return 50
+
+    def _tool_call_request_kwargs(self) -> dict:
+        """Extra OpenAI client kwargs for tools tests.
+
+        lemon-mlx: harness sets process --no-think and engine tools_auto disables
+        thinking when tools inject. Avoid client enable_thinking=false here —
+        lemonade would inject /no_think into the user message, which can corrupt
+        tool XML emission on small Qwen models.
+        """
+        return {}
+
     @skip_if_unsupported("tool_calls")
     def test_012_chat_completions_with_tool_calls(self):
         """Test chat completions with tool calls."""
         client = self.get_openai_client()
         model = self.get_test_model("llm")
+        max_tokens = self._tool_call_token_budget()
+        extra = self._tool_call_request_kwargs()
 
         completion = client.chat.completions.create(
             model=model,
@@ -433,18 +458,26 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            max_completion_tokens=max_tokens,
+            **extra,
         )
 
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
         self.assertIsNotNone(tool_calls, "Response should have tool_calls")
         self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(
+            tool_calls[0].function.name,
+            "calculator_calculate",
+            "Tool call name should match SAMPLE_TOOL",
+        )
 
     @skip_if_unsupported("tool_calls_streaming")
     def test_013_chat_completions_with_tool_calls_streaming(self):
         """Test streaming chat completions with tool calls."""
         client = self.get_openai_client()
         model = self.get_test_model("llm")
+        max_tokens = self._tool_call_token_budget()
+        extra = self._tool_call_request_kwargs()
 
         stream = client.chat.completions.create(
             model=model,
@@ -455,11 +488,13 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            max_completion_tokens=max_tokens,
             stream=True,
+            **extra,
         )
 
         tool_call_count = 0
+        seen_names = []
         for chunk in stream:
             delta = (
                 chunk.choices[0].delta
@@ -470,8 +505,18 @@ class LLMTests(ServerTestBase):
                 for tool_call in delta.tool_calls:
                     print(tool_call)
                     tool_call_count += 1
+                    fn = getattr(tool_call, "function", None)
+                    name = getattr(fn, "name", None) if fn is not None else None
+                    if name:
+                        seen_names.append(name)
 
         self.assertGreater(tool_call_count, 0, "Should receive tool call chunks")
+        if seen_names:
+            self.assertIn(
+                "calculator_calculate",
+                seen_names,
+                "Streamed tool call name should match SAMPLE_TOOL when present",
+            )
 
     # =========================================================================
     # GENERATION PARAMETERS TESTS
