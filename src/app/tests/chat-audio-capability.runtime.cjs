@@ -49,6 +49,7 @@ const {
   capabilityFromModelInfo,
   modelCapabilityTags,
   modelSupportsChatAudioInput,
+  modelSupportsChatImageInput,
 } = loadTypeScriptModule(capabilitiesPath);
 
 const gemmaFlmLoaded = {
@@ -85,6 +86,11 @@ assert.equal(
   modelSupportsChatAudioInput(gemmaFlmInfo, gemmaFlmLoaded),
   true,
   'audio is retained as an additional input capability',
+);
+assert.equal(
+  modelSupportsChatImageInput(gemmaFlmInfo, gemmaFlmLoaded),
+  true,
+  'vision is retained as an additional input capability',
 );
 assert.deepEqual(
   [...modelCapabilityTags(gemmaFlmInfo)].sort(),
@@ -145,6 +151,10 @@ const plainFlm = {
 };
 assert.equal(capabilityFromLoaded(plainFlm), 'chat');
 assert.equal(modelSupportsChatAudioInput(null, plainFlm), false);
+assert.equal(modelSupportsChatImageInput(null, plainFlm), false,
+  'a plain text LLM must not expose image attachments');
+assert.equal(modelSupportsChatImageInput({ id: 'llava-next', recipe: 'llamacpp', type: 'llm' }, null), true,
+  'well-known VLM identity patterns remain a fallback when modality metadata is missing');
 
 assert.match(apiSource, /input_modalities\?: string\[\]/,
   'health metadata must preserve declared input modalities');
@@ -164,6 +174,16 @@ assert.match(chatViewSource, /includeDirectAudioParts = canUseAudioInput && mode
   'audio files must be routed through the normal chat completion request');
 assert.match(chatViewSource, /modelSupportsChatAudioInput\(currentKnownModelInfo, currentLoadedModel\)/,
   'audio input availability must be derived independently from primary mode');
+assert.match(chatViewSource, /modelSupportsChatImageInput\(currentKnownModelInfo, currentLoadedModel\)/,
+  'image input availability must be derived independently from primary Chat mode');
+assert.match(chatViewSource, /const canAttach = acceptsImageAttachments \|\| acceptsAudioAttachments/,
+  'the paperclip must only be enabled for modalities supported by the selected model');
+assert.match(chatViewSource, /if \(!acceptsImageAttachments\) return;/,
+  'paste, drop, and file selection must reject images for text-only models');
+assert.match(chatViewSource, /The selected text model does not support image input/,
+  'stale or retried image messages must be blocked before reaching a text-only backend');
+assert.match(chatViewSource, /if \(m\.images\?\.length && supportsChatImageInput\)/,
+  'image-bearing conversation history must be stripped when switching to a text-only model');
 assert.match(chatViewSource, /const keepsAudioAttachments = currentCapability === 'audio'[\s\S]*modelSupportsChatAudioInput/,
   'switching to Chat + Audio must not immediately clear attached audio');
 assert.match(stylesSource, /\.capability-icon-pair[\s\S]*gap: 2px/,

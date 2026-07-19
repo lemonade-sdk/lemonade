@@ -108,6 +108,11 @@ const AUDIO_INPUT_LABELS = new Set([
   'audio-input', 'audio-chat', 'chat-transcription', 'speech-input',
 ]);
 
+const IMAGE_INPUT_LABELS = new Set([
+  'vision', 'image-input', 'vision-language', 'vlm', 'image-text-to-text',
+  'multimodal', 'multi-modal',
+]);
+
 const STANDALONE_AUDIO_LABELS = new Set([
   'audio', 'transcription', 'realtime-transcription', 'asr', 'stt', 'speech-to-text',
 ]);
@@ -180,6 +185,52 @@ export function modelSupportsChatAudioInput(
   if (normalizeModelType(loadedModel?.type) === 'audio') return true;
   if (normalizeModelType((modelInfo as any)?.type) === 'audio') return true;
   return false;
+}
+
+/**
+ * True when image/vision is an input modality of a chat model. A plain LLM
+ * stays in Chat mode but must not expose the image attachment affordance.
+ * Collection-based Omni routing is handled separately by the collection
+ * component resolver because the collection itself is not a single VLM.
+ */
+export function modelSupportsChatImageInput(
+  modelInfo?: ModelInfo | null,
+  loadedModel?: LoadedModel | null,
+): boolean {
+  const descriptors = [
+    ...modelDescriptorStrings(modelInfo),
+    ...modelDescriptorStrings(loadedModel),
+  ];
+  const inputModalities = [
+    ...modelInputModalities(modelInfo),
+    ...modelInputModalities(loadedModel),
+  ];
+  const primaryIsChat = hasChatPrimaryEvidence(modelInfo) || hasChatPrimaryEvidence(loadedModel);
+  if (!primaryIsChat) return false;
+
+  if (inputModalities.some(value => value === 'image' || value === 'vision')) return true;
+  if (descriptors.some(value => IMAGE_INPUT_LABELS.has(value))) return true;
+
+  const declaredTypes = [
+    normalizeModelType((modelInfo as any)?.capability),
+    normalizeModelType((modelInfo as any)?.type),
+    normalizeModelType((loadedModel as any)?.capability),
+    normalizeModelType(loadedModel?.type),
+  ];
+  if (declaredTypes.some(value => IMAGE_INPUT_LABELS.has(value))) return true;
+
+  const identities = [
+    (modelInfo as any)?.model_name,
+    modelInfo?.name,
+    modelInfo?.id,
+    (modelInfo as any)?.checkpoint,
+    loadedModel?.model_name,
+    loadedModel?.checkpoint,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map(value => normalizeModelType(value));
+
+  return identities.some(identity => MULTIMODAL_CHAT_NAME_PATTERNS.some(pattern => pattern.test(identity)));
 }
 
 export function capabilityFromLabels(labels?: string[]): ModelCapability {

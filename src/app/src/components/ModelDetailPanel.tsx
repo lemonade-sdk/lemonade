@@ -419,6 +419,16 @@ function samplingAllowedForModel(model: ModelInfo): boolean {
   return cap === 'chat' || cap === 'omni' || cap === 'unknown';
 }
 
+function formatResolvedTemperature(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(2) : 'Auto';
+}
+
+function formatResolvedContext(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n).toLocaleString('en-US') : 'Auto';
+}
+
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
 const HF_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
@@ -463,7 +473,7 @@ const README_PURIFY_CONFIG: DOMPurify.Config = {
     'sup', 'sub', 'kbd', 'samp', 'var',
     'blockquote', 'details', 'summary', 'figure', 'figcaption', 'abbr',
   ],
-  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'srcset', 'alt', 'title', 'width', 'height', 'align', 'colspan', 'rowspan'],
+  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'srcset', 'alt', 'title', 'width', 'height', 'align', 'colspan', 'rowspan', 'loading', 'decoding'],
 };
 
 /**
@@ -488,6 +498,116 @@ function stripFrontmatter(source: string): string {
 }
 
 const readmeCache = new Map<string, string>();
+const failedReadmeAssets = new Set<string>();
+
+function isExternalReadmeUrl(value: string): boolean {
+  return /^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(value);
+}
+
+function resolveHfReadmeUrl(repo: string, value: string, kind: 'asset' | 'link'): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || isExternalReadmeUrl(trimmed)) return trimmed;
+  // HF READMEs commonly use both `assets/foo.png` and `/assets/foo.png` for
+  // repository-local files. A leading slash must therefore not resolve against
+  // Lemonade's own web-server root.
+  const repoRelative = trimmed.replace(/^\/+/, '');
+  const base = kind === 'asset'
+    ? `https://huggingface.co/${repo}/resolve/main/`
+    : `https://huggingface.co/${repo}/blob/main/`;
+  try { return new URL(repoRelative, base).toString(); } catch { return trimmed; }
+}
+
+function rewriteReadmeSrcset(repo: string, value: string): string {
+  if (/^\s*data:/i.test(value)) return value;
+  return String(value || '')
+    .split(',')
+    .map(candidate => {
+      const trimmed = candidate.trim();
+      if (!trimmed) return '';
+      const match = trimmed.match(/^(\S+)(\s+.+)?$/);
+      if (!match) return trimmed;
+      const resolved = resolveHfReadmeUrl(repo, match[1], 'asset');
+      if (failedReadmeAssets.has(resolved)) return '';
+      return `${resolved}${match[2] || ''}`;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+function renderHfReadmeHtml(source: string, repo: string): string {
+  const sanitized = DOMPurify.sanitize(readmeMd.render(stripFrontmatter(source)), README_PURIFY_CONFIG);
+  const parsed = new DOMParser().parseFromString(`<div id="readme-root">${sanitized}</div>`, 'text/html');
+  const root = parsed.getElementById('readme-root');
+  if (!root) return sanitized;
+
+  root.querySelectorAll<HTMLImageElement>('img').forEach(image => {
+    const rawSrc = image.getAttribute('src');
+    if (rawSrc) {
+      const src = resolveHfReadmeUrl(repo, rawSrc, 'asset');
+      if (failedReadmeAssets.has(src)) {
+        image.removeAttribute('src');
+        image.setAttribute('data-readme-asset-failed', 'true');
+      } else {
+        image.setAttribute('src', src);
+      }
+    }
+    const rawSrcset = image.getAttribute('srcset');
+    if (rawSrcset) {
+      const srcset = rewriteReadmeSrcset(repo, rawSrcset);
+      if (srcset) image.setAttribute('srcset', srcset);
+      else image.removeAttribute('srcset');
+    }
+    image.setAttribute('loading', 'lazy');
+    image.setAttribute('decoding', 'async');
+  });
+
+  root.querySelectorAll<HTMLSourceElement>('source').forEach(sourceNode => {
+    const rawSrc = sourceNode.getAttribute('src');
+    if (rawSrc) sourceNode.setAttribute('src', resolveHfReadmeUrl(repo, rawSrc, 'asset'));
+    const rawSrcset = sourceNode.getAttribute('srcset');
+    if (rawSrcset) {
+      const srcset = rewriteReadmeSrcset(repo, rawSrcset);
+      if (srcset) sourceNode.setAttribute('srcset', srcset);
+      else sourceNode.removeAttribute('srcset');
+    }
+  });
+
+  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(anchor => {
+    const rawHref = anchor.getAttribute('href');
+    if (!rawHref) return;
+    anchor.setAttribute('href', resolveHfReadmeUrl(repo, rawHref, 'link'));
+    if (!rawHref.startsWith('#')) {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noreferrer noopener');
+    }
+  });
+
+  return DOMPurify.sanitize(root.innerHTML, README_PURIFY_CONFIG);
+}
+
+const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, hfRepo }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const html = useMemo(() => renderHfReadmeHtml(readme, hfRepo), [readme, hfRepo]);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const handleAssetError = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      const failedUrl = target.currentSrc || target.src || target.getAttribute('src') || '';
+      if (failedUrl) failedReadmeAssets.add(failedUrl);
+      const fallback = document.createElement('span');
+      fallback.className = 'detail-readme__asset-fallback';
+      fallback.textContent = target.alt ? `Image unavailable: ${target.alt}` : 'README image unavailable';
+      target.replaceWith(fallback);
+    };
+    node.addEventListener('error', handleAssetError, true);
+    return () => node.removeEventListener('error', handleAssetError, true);
+  }, [html]);
+
+  return <div ref={ref} className="detail-tab-content detail-readme" dangerouslySetInnerHTML={{ __html: html }} />;
+};
 
 /* ── README tab ──────────────────────────────────────────────── */
 
@@ -542,14 +662,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     );
   }
 
-  const html = DOMPurify.sanitize(readmeMd.render(stripFrontmatter(readme)), README_PURIFY_CONFIG);
-
-  return (
-    <div
-      className="detail-tab-content detail-readme"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+  return <ReadmeContent readme={readme} hfRepo={hfRepo!} />;
 };
 
 /* ── HF README tab ────────────────────────────────────────────── */
@@ -595,10 +708,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
       </div>
     );
   }
-  const html = DOMPurify.sanitize(readmeMd.render(stripFrontmatter(readme)), README_PURIFY_CONFIG);
-  return (
-    <div className="detail-tab-content detail-readme" dangerouslySetInnerHTML={{ __html: html }} />
-  );
+  return <ReadmeContent readme={readme} hfRepo={hfId} />;
 };
 
 /* ── HF overview tab ──────────────────────────────────────────── */
@@ -869,7 +979,9 @@ const HfDetailView: React.FC<{
 const ModelPresetsTab: React.FC<{
   model: ModelInfo;
   isActive: boolean;
-}> = ({ model, isActive }) => {
+  serverDefaultCtxSize: number;
+  onOpenModelTuning: () => void;
+}> = ({ model, isActive, serverDefaultCtxSize, onOpenModelTuning }) => {
   const name = mdName(model);
   const [allPresets, setAllPresets] = useState<Preset[]>(() => allStoredPresets());
   const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(() => loadApplied());
@@ -906,9 +1018,22 @@ const ModelPresetsTab: React.FC<{
   const linkedPreset = allPresets.find(p => p.id === linkedPresetId) || DEFAULT_PRESET;
 
   const compatiblePresets = useMemo(
-    () => allPresets.filter(p => p.id !== DEFAULT_PRESET.id && isCompatible(p, model)),
+    () => allPresets.filter(p => isCompatible(p, model)),
     [allPresets, model],
   );
+
+  const linkedResolved = useMemo(
+    () => resolvedModelTuningForPreset(name, model, linkedPreset, serverDefaultCtxSize),
+    [name, model, linkedPreset, serverDefaultCtxSize, allPresets, appliedPresets],
+  );
+  const linkedResolvedTuning = linkedResolved.tuning;
+  const linkedUsesSavedModelSettings = linkedPreset.id === DEFAULT_PRESET.id;
+  const linkedTemperatureHint = TEMPERATURE_HINT_LABELS[linkedPreset.temperature_hint || 'balanced'];
+  const linkedContextHint = linkedUsesSavedModelSettings
+    ? 'Model'
+    : CONTEXT_HINT_LABELS[linkedPreset.context_hint || 'medium'];
+  const linkedTemperatureValue = formatResolvedTemperature(linkedResolvedTuning.sampling.temperature);
+  const linkedContextValue = formatResolvedContext(linkedResolvedTuning.recipe_options.ctx_size);
 
   const handleAttach = useCallback((preset: Preset) => {
     if (!name) return;
@@ -944,7 +1069,7 @@ const ModelPresetsTab: React.FC<{
 
   if (!isActive) return null;
 
-  const previewLines = effectivePresetParamPreviewLines(linkedPreset, model, undefined);
+  const previewLines = effectivePresetParamPreviewLines(linkedPreset, model, serverDefaultCtxSize);
 
   return (
     <div className="detail-tab-content detail-presets">
@@ -952,6 +1077,90 @@ const ModelPresetsTab: React.FC<{
       <div ref={liveRef} role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {notice || ''}
       </div>
+
+      {/* Visual relationship between cross-model intent and model-specific tuning. */}
+      <section className="detail-presets__explanation" aria-labelledby="detail-presets-explanation-title">
+        <div className="detail-presets__explanation-head">
+          <span className="detail-presets__explanation-icon" aria-hidden="true">
+            <Icon name="info" size={15} />
+          </span>
+          <div>
+            <h3 id="detail-presets-explanation-title">Preset intent, translated for this model</h3>
+            <p>
+              Presets stay portable across models. Model Tuning controls how this model implements that intent.
+            </p>
+          </div>
+        </div>
+
+        <div className="detail-presets__explanation-body">
+          <div className="detail-presets__explanation-flow" aria-label="Preset intent is translated by model tuning into effective settings">
+            <button
+              type="button"
+              className="detail-presets__explanation-step detail-presets__explanation-step--link"
+              onClick={navigateToPresets}
+              aria-label="Open the Presets page"
+            >
+              <span className="detail-presets__explanation-step-icon" aria-hidden="true">
+                <PresetIcon preset={linkedPreset} size={17} />
+              </span>
+              <span className="detail-presets__explanation-step-copy">
+                <strong>Preset</strong>
+                <small>{linkedUsesSavedModelSettings ? 'Balanced temperature · saved context' : 'User intent across models'}</small>
+              </span>
+              <span className="detail-presets__explanation-step-value">{linkedPreset.name}</span>
+            </button>
+
+            <span className="detail-presets__explanation-arrow" aria-hidden="true">
+              <Icon name="chevron-right" size={16} />
+            </span>
+
+            <button
+              type="button"
+              className="detail-presets__explanation-step detail-presets__explanation-step--link"
+              onClick={onOpenModelTuning}
+              aria-label={`Open Model Tuning for ${name}`}
+            >
+              <span className="detail-presets__explanation-step-icon" aria-hidden="true">
+                <Icon name="sliders-horizontal" size={17} />
+              </span>
+              <span className="detail-presets__explanation-step-copy">
+                <strong>Model Tuning</strong>
+                <small>Per-model translation</small>
+              </span>
+              <span className="detail-presets__explanation-step-value">{name}</span>
+            </button>
+
+            <span className="detail-presets__explanation-arrow" aria-hidden="true">
+              <Icon name="chevron-right" size={16} />
+            </span>
+
+            <div className="detail-presets__explanation-step detail-presets__explanation-step--result">
+              <span className="detail-presets__explanation-step-icon" aria-hidden="true">
+                <Icon name="gauge" size={17} />
+              </span>
+              <span className="detail-presets__explanation-step-copy">
+                <strong>Effective settings</strong>
+                <small>Used for this model</small>
+              </span>
+              <span className="detail-presets__explanation-result-values">
+                <span title={`Temperature: ${linkedTemperatureHint}, ${linkedTemperatureValue}`}>
+                  <Icon name="thermometer" size={12} aria-hidden="true" />
+                  {linkedTemperatureHint} <b>{linkedTemperatureValue}</b>
+                </span>
+                <span title={`Context: ${linkedContextHint}, ${linkedContextValue}`}>
+                  <Icon name="scan-text" size={12} aria-hidden="true" />
+                  {linkedContextHint} <b>{linkedContextValue}</b>
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="detail-presets__explanation-conclusion">
+            <Icon name="lightbulb" size={12} aria-hidden="true" />
+            <span>Change the preset to change intent across models. Use Model Tuning only when this model needs different details.</span>
+          </div>
+        </div>
+      </section>
 
       {/* Linked preset */}
       <section className="detail-presets__linked-section" aria-label="Linked preset">
@@ -974,19 +1183,19 @@ const ModelPresetsTab: React.FC<{
               {previewLines.join(' · ')}
             </p>
           )}
-          {linkedPreset.id !== DEFAULT_PRESET.id && (
-            <div className="detail-presets__linked-actions">
-              <button
-                ref={changeBtnRef}
-                type="button"
-                className="btn btn--primary btn--tiny detail-presets__change-btn"
-                onClick={() => setShowChooser(v => !v)}
-                aria-label={`Change linked preset for ${name}`}
-                aria-expanded={showChooser}
-                aria-haspopup="dialog"
-              >
-                Change
-              </button>
+          <div className="detail-presets__linked-actions">
+            <button
+              ref={changeBtnRef}
+              type="button"
+              className="btn btn--primary btn--tiny detail-presets__change-btn"
+              onClick={() => setShowChooser(v => !v)}
+              aria-label={`Change linked preset for ${name}`}
+              aria-expanded={showChooser}
+              aria-haspopup="dialog"
+            >
+              Change
+            </button>
+            {linkedPreset.id !== DEFAULT_PRESET.id && (
               <button
                 type="button"
                 className="btn btn--ghost btn--tiny detail-presets__detach-btn"
@@ -995,8 +1204,8 @@ const ModelPresetsTab: React.FC<{
               >
                 Reset to default
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Inline change-preset chooser */}
@@ -1072,7 +1281,12 @@ const ModelPresetsTab: React.FC<{
           >
             {compatiblePresets.map(preset => {
               const isLinked = preset.id === linkedPresetId;
-              const paramLines = effectivePresetParamPreviewLines(preset, model, undefined);
+              const paramLines = effectivePresetParamPreviewLines(
+                preset,
+                model,
+                serverDefaultCtxSize,
+                linkedUsesSavedModelSettings ? undefined : linkedResolved.intent_values,
+              );
               return (
                 <li
                   key={preset.id}
@@ -1187,6 +1401,7 @@ const ModelTuningTab: React.FC<{
 
   const selectedPreset = compatiblePresets.find(preset => preset.id === selectedPresetId) || linkedPreset;
   const selectedPresetIsLinked = selectedPreset.id === linkedPreset.id;
+  const selectedUsesSavedModelSettings = selectedPreset.id === DEFAULT_PRESET.id;
   const userTuning = useMemo(
     () => loadModelTuning(name, selectedPreset.id),
     [name, selectedPreset.id, storeVersion],
@@ -1265,7 +1480,7 @@ const ModelTuningTab: React.FC<{
     !!userTuning.engine_hint
   );
   const hasDraftValues = Object.values(temperatureIntentDraft).some(value => value?.trim())
-    || Object.values(contextIntentDraft).some(value => value?.trim())
+    || (!selectedUsesSavedModelSettings && Object.values(contextIntentDraft).some(value => value?.trim()))
     || Object.values(recipeDraft).some(value => value.trim())
     || Object.values(samplingDraft).some(value => value.trim());
 
@@ -1375,8 +1590,17 @@ const ModelTuningTab: React.FC<{
   };
 
   const saveDraft = () => {
-    saveModelTuning(name, { intent_values: buildIntentValues(), recipe_options: buildRecipeOptions(), sampling: buildSampling() }, selectedPreset.id);
-    setNotice(`Model tuning saved for ${selectedPreset.name}. Temperature intent applies to the next request; context and runtime fields apply on the next load.`);
+    const intentValues = buildIntentValues();
+    saveModelTuning(name, {
+      intent_values: selectedUsesSavedModelSettings
+        ? { temperature: intentValues.temperature }
+        : intentValues,
+      recipe_options: buildRecipeOptions(),
+      sampling: buildSampling(),
+    }, selectedPreset.id);
+    setNotice(selectedUsesSavedModelSettings
+      ? 'Default temperature tuning saved. Context remains the model’s saved loading setting.'
+      : `Model tuning saved for ${selectedPreset.name}. Temperature intent applies to the next request; context and runtime fields apply on the next load.`);
   };
 
   const resetDraft = () => {
@@ -1703,7 +1927,9 @@ const ModelTuningTab: React.FC<{
         <p>
           {imageOnly
             ? 'Image models use the Default baseline here. Generation and editing controls supplied with each image request override these model defaults.'
-            : 'Presets describe intent. Model Tuning stores the concrete implementation separately for every model × preset combination.'}
+            : selectedUsesSavedModelSettings
+              ? 'Default uses the Balanced temperature intent while leaving context to this model’s saved loading setting, matching the classic Lemonade workflow.'
+              : 'Presets describe intent. Model Tuning stores the concrete implementation separately for every model × preset combination.'}
         </p>
       </section>
 
@@ -1787,6 +2013,18 @@ const ModelTuningTab: React.FC<{
           {notice && <p className="detail-tuning__notice">{notice}</p>}
         </div>
 
+        {allowSampling && selectedUsesSavedModelSettings && (
+          <div className="detail-tuning__default-baseline" role="note">
+            <Icon name="info" size={14} aria-hidden="true" />
+            <div>
+              <strong>Default leaves context at the saved model value</strong>
+              <span>
+                Balanced temperature resolves to {formatResolvedTemperature(effectiveTuning.sampling.temperature)}. Context remains {formatResolvedContext(effectiveTuning.recipe_options.ctx_size)} and is not translated by the preset.
+              </span>
+            </div>
+          </div>
+        )}
+
         {allowSampling && (
           <div className="detail-tuning__intent-map" aria-label="Intent translation values">
             <div className="detail-tuning__intent-group">
@@ -1798,49 +2036,51 @@ const ModelTuningTab: React.FC<{
                 {TEMPERATURE_HINTS.map(renderTemperatureIntentField)}
               </div>
             </div>
-            <div className="detail-tuning__intent-group">
-              <div className="detail-tuning__intent-head">
-                <h4><Icon name="scan-text" size={15} aria-hidden="true" /> Context intent</h4>
-                <span>Max always follows the model-supported maximum</span>
-              </div>
-              <div className="detail-tuning__intent-grid">
-                {(['small', 'medium', 'large', 'max'] as ContextHint[]).map(renderContextIntentField)}
-              </div>
-              <div className="detail-tuning__context-slider">
-                <span className="detail-tuning__context-slider-head">
-                  <strong>{CONTEXT_HINT_LABELS[selectedContextIntent]} context</strong>
-                  <output>{formatContextSize(selectedContextValue)} · {selectedContextValue.toLocaleString()} tokens</output>
-                </span>
-                <div className="detail-tuning__context-slider-row">
-                  <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.min)}</span>
-                  <input
-                    className="slider"
-                    type="range"
-                    min={selectedContextBounds.min}
-                    max={selectedContextBounds.max}
-                    step={selectedContextBounds.step}
-                    value={selectedContextValue}
-                    onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
-                    aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context size`}
-                    data-model-tuning-context-slider={selectedContextIntent}
-                  />
-                  <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.max)}</span>
-                  <input
-                    className="input detail-tuning__context-number"
-                    type="number"
-                    min={selectedContextBounds.min}
-                    max={selectedContextBounds.max}
-                    step={selectedContextBounds.step}
-                    value={selectedContextValue}
-                    onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
-                    aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context tokens`}
-                    data-model-tuning-context-number={selectedContextIntent}
-                  />
-                  {renderClearOverrideButton(() => clearContextIntentField(selectedContextIntent), selectedContextOverride === undefined)}
+            {!selectedUsesSavedModelSettings && (
+              <div className="detail-tuning__intent-group">
+                <div className="detail-tuning__intent-head">
+                  <h4><Icon name="scan-text" size={15} aria-hidden="true" /> Context intent</h4>
+                  <span>Max always follows the model-supported maximum</span>
                 </div>
-                <small>Range is constrained by the neighboring context intents. Max remains fixed to the model maximum.</small>
+                <div className="detail-tuning__intent-grid">
+                  {(['small', 'medium', 'large', 'max'] as ContextHint[]).map(renderContextIntentField)}
+                </div>
+                <div className="detail-tuning__context-slider">
+                  <span className="detail-tuning__context-slider-head">
+                    <strong>{CONTEXT_HINT_LABELS[selectedContextIntent]} context</strong>
+                    <output>{formatContextSize(selectedContextValue)} · {selectedContextValue.toLocaleString()} tokens</output>
+                  </span>
+                  <div className="detail-tuning__context-slider-row">
+                    <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.min)}</span>
+                    <input
+                      className="slider"
+                      type="range"
+                      min={selectedContextBounds.min}
+                      max={selectedContextBounds.max}
+                      step={selectedContextBounds.step}
+                      value={selectedContextValue}
+                      onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
+                      aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context size`}
+                      data-model-tuning-context-slider={selectedContextIntent}
+                    />
+                    <span className="detail-tuning__context-bound">{formatContextSize(selectedContextBounds.max)}</span>
+                    <input
+                      className="input detail-tuning__context-number"
+                      type="number"
+                      min={selectedContextBounds.min}
+                      max={selectedContextBounds.max}
+                      step={selectedContextBounds.step}
+                      value={selectedContextValue}
+                      onChange={event => setBoundedContextIntent(selectedContextIntent, Number(event.target.value))}
+                      aria-label={`${CONTEXT_HINT_LABELS[selectedContextIntent]} context tokens`}
+                      data-model-tuning-context-number={selectedContextIntent}
+                    />
+                    {renderClearOverrideButton(() => clearContextIntentField(selectedContextIntent), selectedContextOverride === undefined)}
+                  </div>
+                  <small>Range is constrained by the neighboring context intents. Max remains fixed to the model maximum.</small>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -2384,6 +2624,17 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     : 'none';
   const isUpdatingPreset = updateStatus.phase === 'live' || updateStatus.phase === 'reload';
   const canUpdatePreset = isLoaded && presetChangeKind !== 'none' && !isUpdatingPreset && !isLoadingThis;
+  const activeSettingsPreset = isLoaded && runningPreset ? runningPreset : linkedPreset;
+  const activeSettingsTuning = samplingAllowedForModel(model)
+    ? resolvedModelTuningForPreset(name, model, activeSettingsPreset, serverDefaultCtxSize).tuning
+    : null;
+  const activeUsesSavedModelSettings = activeSettingsPreset.id === DEFAULT_PRESET.id;
+  const activeTemperatureHint = TEMPERATURE_HINT_LABELS[activeSettingsPreset.temperature_hint || 'balanced'];
+  const activeContextHint = activeUsesSavedModelSettings
+    ? 'Model'
+    : CONTEXT_HINT_LABELS[activeSettingsPreset.context_hint || 'medium'];
+  const activeTemperatureValue = formatResolvedTemperature(activeSettingsTuning?.sampling.temperature);
+  const activeContextValue = formatResolvedContext(activeSettingsTuning?.recipe_options.ctx_size);
 
   return (
     <div className="model-detail-panel" role="region" aria-label={`Model details: ${name}`}>
@@ -2547,6 +2798,33 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               </button>
             </>
           )}
+          {activeSettingsTuning && (
+            <div
+              className="model-detail-panel__effective-settings"
+              aria-label={`Effective settings from ${activeSettingsPreset.name} preset`}
+            >
+              <div
+                className="model-detail-panel__setting-pill"
+                title={`Temperature intent ${activeTemperatureHint}; effective value ${activeTemperatureValue}`}
+              >
+                <Icon name="thermometer" size={13} aria-hidden="true" />
+                <span className="model-detail-panel__setting-label">Temperature</span>
+                <span className="model-detail-panel__setting-intent">{activeTemperatureHint}</span>
+                <strong className="model-detail-panel__setting-value">{activeTemperatureValue}</strong>
+              </div>
+              <div
+                className="model-detail-panel__setting-pill"
+                title={activeUsesSavedModelSettings
+                  ? `Saved model context: ${activeContextValue}`
+                  : `Context intent ${activeContextHint}; effective value ${activeContextValue}`}
+              >
+                <Icon name="scan-text" size={13} aria-hidden="true" />
+                <span className="model-detail-panel__setting-label">Context</span>
+                <span className="model-detail-panel__setting-intent">{activeContextHint}</span>
+                <strong className="model-detail-panel__setting-value">{activeContextValue}</strong>
+              </div>
+            </div>
+          )}
           {(isDownloaded || isLoaded) && (
             <button
               type="button"
@@ -2649,7 +2927,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             <ModelReadmeTab model={model} isActive={activeTab === 'readme'} />
           )}
           {tab.id === 'presets' && (
-            <ModelPresetsTab model={model} isActive={activeTab === 'presets'} />
+            <ModelPresetsTab
+              model={model}
+              isActive={activeTab === 'presets'}
+              serverDefaultCtxSize={serverDefaultCtxSize}
+              onOpenModelTuning={() => setActiveTab('tuning')}
+            />
           )}
           {tab.id === 'tuning' && (
             <ModelTuningTab

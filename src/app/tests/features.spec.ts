@@ -619,6 +619,86 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.preset-error')).toContainText('This file uses the legacy schema. Use the v1.4 export instead.');
   });
 
+  test('13c — Model Presets resolves values, keeps Default selectable, and explains the flow', async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('applied_presets') || key.includes('model_tunings')) {
+          localStorage.removeItem(key);
+        }
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [{
+          id: 'preset-beta-model',
+          name: 'preset-beta-model',
+          display_name: 'Preset Beta Model',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          max_context_window: 65536,
+          recipe_options: { ctx_size: 8192 },
+          preset_tunings: {
+            's-balanced': {
+              intent_values: {
+                temperature: { precise: 0.31, balanced: 0.63, exploratory: 0.87, creative: 1.23 },
+                context: { small: 6144, medium: 24576, large: 51200 },
+              },
+            },
+          },
+        }],
+      }),
+    }));
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
+    await page.locator('.model-list-item').filter({ hasText: 'Preset Beta Model' }).click();
+    await page.getByRole('tab', { name: 'Presets' }).click();
+
+    const panel = page.locator('#detail-panel-presets');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.detail-presets__explanation')).toBeVisible();
+    await expect(panel.getByText('Preset intent, translated for this model')).toBeVisible();
+
+    const headerSettings = page.locator('.model-detail-panel__effective-settings');
+    await expect(headerSettings).toContainText('Temperature');
+    await expect(headerSettings).toContainText('Balanced');
+    await expect(headerSettings).toContainText('0.70');
+    await expect(headerSettings).toContainText('Context');
+    await expect(headerSettings).toContainText('Model');
+    await expect(headerSettings).toContainText('8,192');
+    await expect(panel.getByRole('button', { name: /explanation/i })).toHaveCount(0);
+    await expect(panel.locator('.detail-presets__explanation-conclusion')).toBeVisible();
+
+    const balancedCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Balanced' });
+    await expect(balancedCard.locator('.detail-presets__card-meta')).toContainText('temp 0.63');
+    await expect(balancedCard.locator('.detail-presets__card-meta')).toContainText('ctx 24576');
+    await balancedCard.getByRole('button').click();
+    await expect(panel.locator('.detail-presets__linked-card')).toContainText('Balanced');
+    await expect(headerSettings).toContainText('Balanced');
+    await expect(headerSettings).toContainText('0.63');
+    await expect(headerSettings).toContainText('24,576');
+
+    const creativeCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Creative' });
+    await expect(creativeCard.locator('.detail-presets__card-meta')).toContainText('temp 1.23');
+    await expect(creativeCard.locator('.detail-presets__card-meta')).toContainText('ctx 24576');
+
+    const defaultCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Default' });
+    await expect(defaultCard).toBeVisible();
+    await expect(defaultCard.getByRole('button', { name: /preset "Default"/ })).toBeVisible();
+    await defaultCard.getByRole('button', { name: /preset "Default"/ }).click();
+    await expect(panel.locator('.detail-presets__linked-card')).toContainText('Default');
+    await expect(panel.getByRole('button', { name: 'Change linked preset for preset-beta-model' })).toBeVisible();
+
+    await panel.getByRole('button', { name: 'Open Model Tuning for preset-beta-model' }).click();
+    await expect(page.getByRole('tab', { name: 'Model Tuning' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   test('14 — Backends view shows matrix and device info', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
@@ -1250,6 +1330,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
 
     const contextCards = page.locator('[data-model-tuning-context-intent]');
+    await expect(contextCards).toHaveCount(0);
+    await expect(page.locator('.detail-tuning__default-baseline')).toContainText('Default leaves context at the saved model value');
+
+    await page.locator('[data-model-tuning-preset]').selectOption('s-code');
     await expect(contextCards).toHaveCount(4);
     for (const hint of ['small', 'medium', 'large']) {
       await expect(page.locator(`button[data-model-tuning-context-intent="${hint}"]`)).toBeVisible();
@@ -1260,7 +1344,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(maxContext).toContainText('128K');
     await expect(page.locator('.detail-tuning__runtime .detail-tuning__field', { hasText: 'Context size' })).toHaveCount(0);
 
-    await page.locator('[data-model-tuning-preset]').selectOption('s-code');
     await page.locator('[data-model-tuning-temperature-intent="precise"]').fill('0.2');
     await page.locator('[data-model-tuning-temperature-intent="balanced"]').fill('0.6');
     await page.locator('[data-model-tuning-temperature-intent="exploratory"]').fill('0.8');

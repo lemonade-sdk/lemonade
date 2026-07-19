@@ -209,10 +209,9 @@ function emitPresetStoreEvent(): void {
 export const DEFAULT_PRESET: Preset = {
   id: 's-default',
   name: 'Default',
-  description: 'Neutral everyday intent. Lemonade keeps model and backend defaults unless you tune this model.',
+  description: 'Uses the last saved settings for each model, matching the classic Lemonade behavior.',
   applies_to: ['all'],
   temperature_hint: 'balanced',
-  context_hint: 'medium',
   thinking_mode: 'normal',
   recipe_options: {},
   sampling: {},
@@ -487,6 +486,7 @@ export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelC
   const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
   const targetCap = capabilityForPresetPreview(modelCapability);
   if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
+  if (preset.id === DEFAULT_PRESET.id) return ['Balanced temperature', 'Saved model context'];
   const chatIntent = presetSupportsChatIntent(preset) && (!modelCapability || isChatPreviewCapability(modelCapability));
   if (chatIntent) {
     const temperature = TEMPERATURE_HINT_LABELS[preset.temperature_hint || 'balanced'];
@@ -503,7 +503,7 @@ export function presetParamPreview(preset: Preset): string {
 }
 
 export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): string[] {
-  if (!model) return [`temp --- · ctx ${formatDash(previewContext(undefined, fallbackCtxSize))}`];
+  if (!model) return [`temp auto · ctx ${formatDash(previewContext(undefined, fallbackCtxSize))}`];
   const capability = capabilityFromModelInfo(model);
   const candidate = model as Record<string, unknown>;
   const ctx = modelDefaultContextSize(model, fallbackCtxSize);
@@ -525,23 +525,36 @@ export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefine
     return [`voice ${voice}`];
   }
   if (isChatPreviewCapability(capability)) {
-    return [`temp ${formatDash(temperature, 2)} · ctx ${formatDash(ctx)}`];
+    return [`temp ${temperature === undefined ? 'auto' : formatDash(temperature, 2)} · ctx ${formatDash(ctx)}`];
   }
   return ['---'];
 }
 
-export function effectivePresetParamPreviewLines(preset: Preset, model?: ModelInfo | null, fallbackCtxSize?: unknown): string[] {
+export function effectivePresetParamPreviewLines(
+  preset: Preset,
+  model?: ModelInfo | null,
+  fallbackCtxSize?: unknown,
+  modelIntentValues?: ResolvedModelTuning['intent_values'],
+): string[] {
   if (!model) return presetParamPreviewLines(preset, undefined, fallbackCtxSize);
   const capability = capabilityFromModelInfo(model);
   const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
   const targetCap = capabilityForPresetPreview(capability);
   if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
-  if (preset.id === DEFAULT_PRESET.id || !isChatPreviewCapability(capability)) {
+  if (!isChatPreviewCapability(capability)) {
     return modelDefaultParamPreviewLines(model, fallbackCtxSize);
   }
   const modelName = String((model as Record<string, unknown>).model_name || model.name || model.id || '');
-  const resolved = resolvedModelTuningForPreset(modelName, model, preset, fallbackCtxSize).tuning;
-  return [`temp ${formatDash(resolved.sampling.temperature, 2)} · ctx ${formatDash(resolved.recipe_options.ctx_size)}`];
+  const resolved = resolvedModelTuningForPreset(modelName, model, preset, fallbackCtxSize);
+  if (preset.id === DEFAULT_PRESET.id) {
+    const temperature = resolved.tuning.sampling.temperature;
+    return [`temp ${temperature === undefined ? 'auto' : formatDash(temperature, 2)} · ctx ${formatDash(resolved.tuning.recipe_options.ctx_size)}`];
+  }
+  const temperatureHint = preset.temperature_hint || 'balanced';
+  const contextHint = preset.context_hint || 'medium';
+  const temperature = modelIntentValues?.temperature[temperatureHint] ?? resolved.tuning.sampling.temperature;
+  const context = modelIntentValues?.context[contextHint] ?? resolved.tuning.recipe_options.ctx_size;
+  return [`temp ${formatDash(temperature, 2)} · ctx ${formatDash(context)}`];
 }
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
@@ -641,8 +654,8 @@ export function sanitizePreset(p: Partial<Preset>): Preset | null {
     name: p.name || 'Untitled',
     description: p.description || '',
     applies_to: normalizedAppliesTo,
-    temperature_hint: supportsChatIntent ? normalizeTemperatureHint(p.temperature_hint, sampling.temperature) : undefined,
-    context_hint: supportsChatIntent ? normalizeContextHint(p.context_hint, recipeOptions.ctx_size) : undefined,
+    temperature_hint: supportsChatIntent && !isDefault ? normalizeTemperatureHint(p.temperature_hint, sampling.temperature) : undefined,
+    context_hint: supportsChatIntent && !isDefault ? normalizeContextHint(p.context_hint, recipeOptions.ctx_size) : undefined,
     thinking_mode: supportsChatIntent ? normalizeThinkingMode(p.thinking_mode) : undefined,
     // Kept only so old exports and backend assignments remain readable. The
     // active model-preset path no longer consumes these fields directly.
@@ -957,11 +970,11 @@ function presetForTuningId(presetId: string): Preset {
 
 function migrateLegacyConcreteIntentValues(tuning: Partial<ModelTuning>, presetId: string): ModelTuning {
   const sanitized = sanitizeModelTuning(tuning);
+  const preset = presetForTuningId(presetId);
   // AutoOpt writes a complete, measured model-tuning recommendation. Unlike
   // legacy Preset payloads, its concrete context must remain in recipe_options
   // so the exact measured configuration is reproduced on the next load.
-  if (sanitized.source === 'optimized') return sanitized;
-  const preset = presetForTuningId(presetId);
+  if (sanitized.source === 'optimized' && preset.id !== DEFAULT_PRESET.id) return sanitized;
   if (!presetSupportsChatIntent(preset)) return sanitized;
 
   const intentValues = sanitizeIntentTuningValues(sanitized.intent_values);
@@ -975,6 +988,16 @@ function migrateLegacyConcreteIntentValues(tuning: Partial<ModelTuning>, presetI
   if (sampling.temperature !== undefined && temperature[temperatureHint] === undefined) {
     temperature[temperatureHint] = sampling.temperature;
     delete sampling.temperature;
+  }
+  // Default deliberately has no context intent. Its concrete ctx_size remains
+  // the model-specific saved setting, matching the classic model workflow.
+  if (preset.id === DEFAULT_PRESET.id) {
+    return sanitizeModelTuning({
+      ...sanitized,
+      intent_values: { temperature, context },
+      recipe_options: recipeOptions,
+      sampling,
+    });
   }
   if (recipeOptions.ctx_size !== undefined && contextHint !== 'max' && context[contextHint] === undefined) {
     context[contextHint] = Math.round(recipeOptions.ctx_size);
@@ -1397,7 +1420,10 @@ function resolveModelTuning(
   includeUser = true,
 ): ResolvedModelTuning {
   const capability = model ? capabilityFromModelInfo(model) : 'unknown';
-  const supportsIntent = presetSupportsChatIntent(preset) && isChatPreviewCapability(capability);
+  const supportsTemperatureIntent = presetSupportsChatIntent(preset)
+    && isChatPreviewCapability(capability);
+  const supportsContextIntent = supportsTemperatureIntent
+    && preset.id !== DEFAULT_PRESET.id;
   const builtIn = modelPresetTuningCandidate(model, preset);
   const user = includeUser ? loadModelTuning(modelName, preset.id) : null;
   const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, user);
@@ -1413,8 +1439,8 @@ function resolveModelTuning(
     if (!tuning) return;
     const concreteRecipe = { ...(tuning.recipe_options || {}) };
     const concreteSampling = { ...(tuning.sampling || {}) };
-    delete concreteRecipe.ctx_size;
-    delete concreteSampling.temperature;
+    if (supportsContextIntent) delete concreteRecipe.ctx_size;
+    if (supportsTemperatureIntent) delete concreteSampling.temperature;
     Object.assign(recipe_options, concreteRecipe);
     Object.assign(sampling, concreteSampling);
     Object.assign(recipeSources, sourceMapForRecipe(concreteRecipe, source));
@@ -1424,19 +1450,17 @@ function resolveModelTuning(
   applyConcrete(builtIn, 'built-in');
   applyConcrete(user, user?.source === 'optimized' ? 'optimized' : 'custom');
 
-  if (supportsIntent) {
+  if (supportsContextIntent) {
     const contextHint = preset.context_hint || 'medium';
-    const temperatureHint = preset.temperature_hint || 'balanced';
     const contextSource = translations.sources.context[contextHint];
+    recipe_options.ctx_size = translations.values.context[contextHint];
+    recipeSources.ctx_size = contextSource;
+  }
+  if (supportsTemperatureIntent) {
+    const temperatureHint = preset.temperature_hint || 'balanced';
     const temperatureSource = translations.sources.temperature[temperatureHint];
-    if (preset.id !== DEFAULT_PRESET.id || contextSource !== 'generic') {
-      recipe_options.ctx_size = translations.values.context[contextHint];
-      recipeSources.ctx_size = contextSource;
-    }
-    if (preset.id !== DEFAULT_PRESET.id || temperatureSource !== 'generic') {
-      sampling.temperature = translations.values.temperature[temperatureHint];
-      samplingSources.temperature = temperatureSource;
-    }
+    sampling.temperature = translations.values.temperature[temperatureHint];
+    samplingSources.temperature = temperatureSource;
   }
 
   return {
@@ -1450,7 +1474,7 @@ function resolveModelTuning(
     },
     preset_id: preset.id,
     max_context: maxContext,
-    thinking_mode: supportsIntent ? normalizeThinkingMode(preset.thinking_mode) : 'normal',
+    thinking_mode: supportsTemperatureIntent ? normalizeThinkingMode(preset.thinking_mode) : 'normal',
     intent_values: translations.values,
     intent_sources: translations.sources,
     sources: {
@@ -1742,7 +1766,9 @@ function concretePresetTuningForRequest(
   const builtIn = modelPresetTuningCandidate(model, preset);
   const user = loadModelTuning(modelName, preset.id);
   const capability = model ? capabilityFromModelInfo(model) : 'unknown';
-  const supportsIntent = presetSupportsChatIntent(preset) && isChatPreviewCapability(capability);
+  const supportsIntent = preset.id !== DEFAULT_PRESET.id
+    && presetSupportsChatIntent(preset)
+    && isChatPreviewCapability(capability);
   const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, user);
   const translations = resolveIntentTranslations(maxContext, preset, builtIn, user);
   const recipe_options: RecipeOptions = {
@@ -1753,8 +1779,10 @@ function concretePresetTuningForRequest(
     ...(builtIn?.sampling || {}),
     ...(user?.sampling || {}),
   };
-  delete recipe_options.ctx_size;
-  delete sampling.temperature;
+  if (supportsIntent) {
+    delete recipe_options.ctx_size;
+    delete sampling.temperature;
+  }
 
   if (supportsIntent) {
     const contextHint = preset.context_hint || 'medium';

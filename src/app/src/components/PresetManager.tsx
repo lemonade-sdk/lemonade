@@ -781,18 +781,24 @@ const SlideoverContent: React.FC<{
     value: T,
     setValue: (next: T) => void,
     dataAttribute: string,
+    inactive = false,
+    inactiveHelp?: string,
   ) => (
-    <fieldset className="preset-intent-fieldset" data-preset-intent={dataAttribute}>
+    <fieldset
+      className={`preset-intent-fieldset${inactive ? ' preset-intent-fieldset--inactive' : ''}`}
+      data-preset-intent={dataAttribute}
+      aria-disabled={inactive || undefined}
+    >
       <legend><Icon name={icon} size={15} aria-hidden="true" /> {label}</legend>
       <div className="preset-intent-options">
         {options.map(option => {
-          const disabled = isReadOnly || !!option.unavailable;
+          const disabled = isReadOnly || inactive || !!option.unavailable;
           return (
             <button
               key={option.value}
               type="button"
               className="preset-intent-option"
-              aria-pressed={value === option.value}
+              aria-pressed={!inactive && value === option.value}
               disabled={disabled}
               title={label === 'Thinking' && option.value === 'normal'
                 ? option.description
@@ -807,6 +813,7 @@ const SlideoverContent: React.FC<{
           );
         })}
       </div>
+      {inactive && inactiveHelp && <p className="preset-intent-fieldset__help">{inactiveHelp}</p>}
     </fieldset>
   );
 
@@ -876,7 +883,16 @@ const SlideoverContent: React.FC<{
         {hasChat && (
           <div className="slideover__section preset-intent-controls" data-preset-fields="intent">
             {renderIntentOptions('Temperature', 'thermometer', TEMPERATURE_INTENT_OPTIONS, temperatureHint, setTemperatureHint, 'temperature')}
-            {renderIntentOptions('Context', 'scan-text', CONTEXT_INTENT_OPTIONS, contextHint, setContextHint, 'context')}
+            {renderIntentOptions(
+              'Context',
+              'scan-text',
+              CONTEXT_INTENT_OPTIONS,
+              contextHint,
+              setContextHint,
+              'context',
+              preset.id === DEFAULT_PRESET.id,
+              'Default does not set context. Each model keeps its last saved context size.',
+            )}
             {renderIntentOptions('Thinking', 'brain', THINKING_INTENT_OPTIONS, thinkingMode, setThinkingMode, 'thinking')}
 
             <fieldset className="preset-intent-fieldset preset-mcp-fieldset" data-preset-intent="mcp">

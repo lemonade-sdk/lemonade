@@ -20,6 +20,7 @@ import {
   modelDisplayName,
   modelInitial,
   modelSupportsChatAudioInput,
+  modelSupportsChatImageInput,
   ModelCapability,
   ModelSnapshot,
   selectPreferredLoadedModel,
@@ -1005,6 +1006,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
     [currentKnownModelInfo, currentLoadedModel],
   );
+  const supportsChatImageInput = useMemo(() => {
+    if (currentCapability === 'omni') {
+      return Boolean(getVisionChatComponent(currentKnownModelInfo, knownModelInfos));
+    }
+    return currentCapability === 'chat'
+      && modelSupportsChatImageInput(currentKnownModelInfo, currentLoadedModel);
+  }, [currentCapability, currentKnownModelInfo, currentLoadedModel, knownModelInfos]);
 
   const defaultImageSettings = useMemo(
     () => imageDefaultsForModel(
@@ -1049,6 +1057,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       setPendingImages([]);
     }
   }, [supportsImageEdit, imageMode]);
+
+  useEffect(() => {
+    const keepsImageAttachments = supportsChatImageInput
+      || (currentCapability === 'image' && imageMode === 'edit')
+      || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
+    if (!keepsImageAttachments) setPendingImages([]);
+  }, [currentCapability, imageMode, model3dSettings.sourceMode, supportsChatImageInput]);
 
   const capabilityForLoaded = useCallback((model: LoadedModel) => {
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
@@ -2017,6 +2032,15 @@ ${finalText}`
 
     thinkingSticky.current = true;
 
+    if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError('The selected text model does not support image input. Choose a vision-capable model to send images.'),
+        model: modelSnapshot,
+        isError: true,
+      });
+      return;
+    }
+
     if (!modeSupportsChatCompletions) {
       if (modelSnapshot.capability === 'audio' && audioFiles.length === 0) {
         appendAssistantMessage(convoId, {
@@ -2133,7 +2157,7 @@ ${finalText}`
     });
 
     chatMessages.push(...historyMessages.map(m => {
-      if (m.images?.length) {
+      if (m.images?.length && supportsChatImageInput) {
         return {
           role: m.role,
           content: [
@@ -2176,6 +2200,7 @@ ${finalText}`
     modeSupportsChatCompletions,
     modeSupportsMcp,
     canUseAudioInput,
+    supportsChatImageInput,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
@@ -2314,6 +2339,12 @@ ${finalText}`
 
   // ── Attachment handling ────────────────────────────────────
 
+  const acceptsImageAttachments = supportsChatImageInput
+    || (currentCapability === 'image' && imageMode === 'edit')
+    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
+  const acceptsAudioAttachments = canUseAudioInput
+    || (isOpenMossTts && openMossSettings.mode === 'clone');
+
   const addAttachments = useCallback(async (files: File[]) => {
     if (isOpenMossTts && openMossSettings.mode === 'clone') {
       const wav = files.find(file => file.type.toLowerCase().includes('wav') || file.name.toLowerCase().endsWith('.wav'));
@@ -2331,6 +2362,7 @@ ${finalText}`
 
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
+    if (!acceptsImageAttachments) return;
     if (currentCapability === 'image' && imageMode !== 'edit') return;
     if (currentCapability === 'model3d' && model3dSettings.sourceMode !== 'image') return;
 
@@ -2360,7 +2392,7 @@ ${finalText}`
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
   }, [
-    canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
+    acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
     modeSupportsChatCompletions, model3dSettings.sourceMode,
     openMossSettings.mode, pendingImages.length,
   ]);
@@ -2371,7 +2403,8 @@ ${finalText}`
     const files: File[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (item.type.startsWith('image/') || item.type.startsWith('audio/')) {
+      if ((acceptsImageAttachments && item.type.startsWith('image/'))
+        || (acceptsAudioAttachments && item.type.startsWith('audio/'))) {
         const file = item.getAsFile();
         if (file) files.push(file);
       }
@@ -2380,7 +2413,7 @@ ${finalText}`
       e.preventDefault();
       addAttachments(files);
     }
-  }, [addAttachments]);
+  }, [acceptsAudioAttachments, acceptsImageAttachments, addAttachments]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2460,22 +2493,23 @@ ${finalText}`
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
   const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
-  const canAttach = currentCapability === 'chat'
-    || currentCapability === 'omni'
-    || currentCapability === 'audio'
-    || supportsRealtimeAudio
-    || isOpenMossCloneMode
-    || (currentCapability === 'image' && imageMode === 'edit')
-    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
+  const canAttach = acceptsImageAttachments || acceptsAudioAttachments;
+  const imageAttachmentLimitReached = acceptsImageAttachments
+    && !acceptsAudioAttachments
+    && pendingImages.length >= MAX_IMAGES;
   const fileAccept = isOpenMossCloneMode
     ? 'audio/wav,audio/x-wav,.wav'
     : currentCapability === 'model3d'
       ? 'image/png,image/jpeg,image/bmp,image/gif,.png,.jpg,.jpeg,.bmp,.gif'
       : currentCapability === 'image'
         ? 'image/*'
-        : canUseAudioInput
+        : acceptsImageAttachments && acceptsAudioAttachments
           ? 'image/*,audio/*'
-          : 'image/*';
+          : acceptsImageAttachments
+            ? 'image/*'
+            : acceptsAudioAttachments
+              ? 'audio/*'
+              : '';
   const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio' && !modeSupportsChatCompletions
     ? pendingAudioFiles.length > 0
     : currentCapability === 'image'
@@ -2491,8 +2525,12 @@ ${finalText}`
     ? 'Draft a message — connect and load a model to send…'
     : currentCapability === 'omni'
       ? `Message ${currentModel} through the Omni collection…`
-      : currentCapability === 'chat' && supportsChatAudioInput
+      : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
         ? `Message ${currentModel} with text, images, or audio…`
+      : currentCapability === 'chat' && supportsChatImageInput
+        ? `Message ${currentModel} with text or images…`
+      : currentCapability === 'chat' && supportsChatAudioInput
+        ? `Message ${currentModel} with text or audio…`
       : currentCapability === 'image'
       ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
@@ -3292,21 +3330,25 @@ ${finalText}`
           <button
             className="composer__attach"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!canAttach || !currentModel || isBusy || (!isOpenMossCloneMode && pendingImages.length >= MAX_IMAGES)}
+            disabled={!canAttach || !currentModel || isBusy || imageAttachmentLimitReached}
             title={isOpenMossCloneMode
               ? 'Attach WAV voice sample'
               : currentCapability === 'model3d'
                 ? 'Attach reference image'
-                : canUseAudioInput
+                : acceptsImageAttachments && acceptsAudioAttachments
                   ? 'Attach image or audio'
-                  : 'Attach image'}
+                  : acceptsImageAttachments
+                    ? 'Attach image'
+                    : 'Attach audio'}
             aria-label={isOpenMossCloneMode
               ? 'Attach WAV voice sample'
               : currentCapability === 'model3d'
                 ? 'Attach reference image'
-                : canUseAudioInput
+                : acceptsImageAttachments && acceptsAudioAttachments
                   ? 'Attach image or audio'
-                  : 'Attach image'}
+                  : acceptsImageAttachments
+                    ? 'Attach image'
+                    : 'Attach audio'}
           >
             <Icon name="paperclip" size={16} />
           </button>
