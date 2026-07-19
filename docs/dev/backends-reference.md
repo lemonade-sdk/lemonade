@@ -21,6 +21,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `lemon-mlx` | Lemon MLX (experimental) | yes | yes | metal, rocm, cpu |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -63,6 +64,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `lemon-mlx` | metal | macos | Apple Silicon GPU |
+| `lemon-mlx` | rocm | linux | amd_gpu (gfx1150, gfx1151) |
+| `lemon-mlx` | cpu | linux, macos | x86_64 CPU; ARM64 CPU (macOS) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
@@ -152,6 +156,14 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `whispercpp_backend` | `--whispercpp` | BACKEND | "" | WhisperCpp backend to use |
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
+
+#### `lemon-mlx` — Lemon MLX (experimental)
+
+| Option key | CLI flag | Value | Default | Description |
+|---|---|---|---|---|
+| `lemon-mlx_backend` | `--lemon-mlx` | BACKEND | "" | lemon-mlx backend to use |
+| `lemon-mlx_args` | `--lemon-mlx-args` | ARGS | "" | Custom arguments to pass to lemon-mlx server |
+
 <!-- END GENERATED: backend-options -->
 
 ## Models
@@ -422,6 +434,15 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Whisper-Medium` | 1.53 | transcription, realtime-transcription |
 | `Whisper-Small` | 0.488 | transcription, realtime-transcription |
 | `Whisper-Tiny` | 0.075 | transcription, realtime-transcription |
+
+#### `lemon-mlx` — Lemon MLX (experimental) (3 models)
+
+| Model | Checkpoint | Size |
+|---|---|---|
+| Qwen3.5-0.8B-MLX | mlx-community/Qwen3.5-0.8B-4bit | 1.0 |
+| Qwen3.6-27B-MLX | mlx-community/Qwen3.6-27B-4bit | 16.1 |
+| Qwen3.6-35B-A3B-MLX | mlx-community/Qwen3.6-35B-A3B-4bit | 20.4 |
+
 <!-- END GENERATED: backend-models -->
 
 ## Implementation notes

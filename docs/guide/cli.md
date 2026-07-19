@@ -408,6 +408,14 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
+#### Lemon MLX (experimental) (`lemon-mlx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--lemon-mlx BACKEND` | lemon-mlx backend to use | Auto-detected |
+| `--lemon-mlx-args ARGS` | Custom arguments to pass to lemon-mlx server | `""` |
+
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values
