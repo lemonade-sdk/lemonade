@@ -1,11 +1,14 @@
 // Router collection builder - app regression tests.
 //
-// These tests verify that buildRouterCollectionPullRequest produces JSON
-// accepted by the CURRENT C++ parser (M9 / routing_policy_parser.cpp).
+// These tests exercise the TypeScript builder/parser round-trip
+// (buildRouterCollectionPullRequest / routingToRouterCollectionDraft) and
+// compare the emitted JavaScript objects against the frozen fixtures in
+// test/cpp/fixtures/routing/. They do NOT invoke the C++ parser - parser-side
+// acceptance is covered by the C++ tests over the same fixtures.
 //
-// NL Router (routing.router) fixture tests are intentionally skipped: the M9
-// parser explicitly rejects that structure pending #2405. llm classifiers are
-// tested against the #2698 contract (model + prompt + non-empty labels).
+// Natural Language routing (routing.router) and llm classifiers are tested
+// here at the builder level against the #2698 contract; the server rejects
+// both at registration time until that backend PR merges.
 
 for (const key of Object.keys(process.env)) {
   if (key.startsWith('npm_') || key === 'INIT_CWD') delete process.env[key];
@@ -105,11 +108,6 @@ function assertSubset(actual, expected, path = '') {
 
 // ── Tests (exported in the format expected by run-app-regression-tests.cjs) ─
 
-const SKIP_NL_ROUTER = {
-  skip: true,
-  reason: 'routing.router desugaring is reserved for #2405 and rejected by the M9 parser',
-};
-
 const tests = [
 
   // ── Schema invariants (parser-independent) ─────────────────────────────
@@ -187,11 +185,74 @@ const tests = [
     },
   },
 
-  // ── NL Router - SKIPPED (M9 parser rejects routing.router) ────────────
+  // ── NL Router (builder-level; server acceptance pending #2698) ────────
 
   {
-    name: 'NL Router - structure matches l0a_llm_router.json [SKIPPED: #2405 not implemented]',
-    run() { return SKIP_NL_ROUTER; },
+    name: 'NL Router - builder output matches l0a_llm_router.json structure',
+    run() {
+      const fix = fixture('l0a_llm_router.json');
+      const req = build({
+        name: 'Router-Auto',
+        candidates: ['Qwen3-8B-GGUF', 'Qwen3.5-35B-A3B-GGUF'],
+        defaultModel: 'Qwen3-8B-GGUF', routingMode: 'llm',
+        routerModel: 'Qwen3-1.7B-GGUF', routerPrompt: fix.routing.router.prompt,
+      });
+      assert.equal(req.version, '1');
+      assert.equal(req.model_name, 'user.Router-Auto');
+      assert.deepEqual(req.components.sort(),
+        ['Qwen3-1.7B-GGUF', 'Qwen3-8B-GGUF', 'Qwen3.5-35B-A3B-GGUF'].sort());
+      assertSubset(req.routing, {
+        candidates: fix.routing.candidates, default_model: fix.routing.default_model,
+        router: { type: 'llm', model: fix.routing.router.model, prompt: fix.routing.router.prompt },
+      });
+      assert.ok(!('rules' in req.routing), 'router is mutually exclusive with rules');
+      assert.ok(!('classifiers' in req.routing), 'router is mutually exclusive with classifiers');
+    },
+  },
+
+  {
+    name: 'NL Router - router model joins components but not routing.candidates',
+    run() {
+      const req = build({
+        name: 'Router-Auto', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'llm', routerModel: 'tiny', routerPrompt: 'Pick.',
+      });
+      assert.ok(req.components.includes('tiny'));
+      assert.ok(!req.routing.candidates.includes('tiny'));
+    },
+  },
+
+  {
+    name: 'NL Router - components deduplicated when router model is also a candidate',
+    run() {
+      const req = build({
+        name: 'Overlap', candidates: ['a', 'b'], defaultModel: 'a',
+        routingMode: 'llm', routerModel: 'a', routerPrompt: 'Pick.',
+      });
+      assert.equal(req.components.filter(c => c === 'a').length, 1);
+    },
+  },
+
+  {
+    name: 'NL Router - missing routing prompt throws',
+    run() {
+      assert.throws(() => build({
+        name: 'NoPr', candidates: ['a'], defaultModel: 'a',
+        routingMode: 'llm', routerModel: 'tiny', routerPrompt: '',
+      }), /routing prompt/i);
+    },
+  },
+
+  {
+    name: 'NL Router - round-trip: l0a fixture parses back into an llm-mode draft',
+    run() {
+      const fix = fixture('l0a_llm_router.json');
+      const draft = parse('user.Router-Auto', fix.routing, fix.components);
+      assert.equal(draft.routingMode, 'llm');
+      assert.deepEqual(draft.candidates, fix.routing.candidates);
+      assert.equal(draft.routerModel, fix.routing.router.model);
+      assert.equal(draft.routerPrompt, fix.routing.router.prompt);
+    },
   },
 
   // ── Single leaf conditions ─────────────────────────────────────────────
