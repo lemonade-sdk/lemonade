@@ -152,27 +152,31 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     }
   }, [mcpUrl]);
 
-  const probeAccess = useCallback(async (): Promise<'ok' | 'needs-admin' | 'unavailable'> => {
+  const probeAccess = useCallback(async (): Promise<
+    "ok" | "needs-admin" | "unavailable"
+  > => {
     setHostLoading(true);
-    setHostError('');
+    setHostError("");
     const result = await api.probeMcpAccess();
     setHostLoading(false);
     if (result.ok) {
       setServers(result.servers);
-      setAdminAccess('ok');
-      return 'ok';
+      setAdminAccess("ok");
+      return "ok";
     }
     setServers([]);
     if (result.status === 401) {
-      setAdminAccess('needs-admin');
-    } else if (result.status === 403) {
-      setAdminAccess('security-required');
+      setAdminAccess("needs-admin");
+      return "needs-admin";
     }
-    setAdminAccess('unavailable');
-    setHostError(result.status
-      ? `Could not reach MCP administration (HTTP ${result.status}).`
-      : 'Could not reach MCP administration. Check that the server is running and reachable.');
-    return 'unavailable';
+
+    setAdminAccess("unavailable");
+    setHostError(
+      result.status
+        ? `Could not reach MCP administration (HTTP ${result.status}).`
+        : "Could not reach MCP administration. Check that the server is running and reachable.",
+    );
+    return "unavailable";
   }, []);
 
   useEffect(() => {
