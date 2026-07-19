@@ -163,9 +163,10 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       return 'ok';
     }
     setServers([]);
-    if (result.status === 401 || result.status === 403) {
+    if (result.status === 401) {
       setAdminAccess('needs-admin');
-      return 'needs-admin';
+    } else if (result.status === 403) {
+      setAdminAccess('security-required');
     }
     setAdminAccess('unavailable');
     setHostError(result.status
