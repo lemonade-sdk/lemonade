@@ -125,6 +125,8 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
                     cli.push_back(std::to_string((double) val));
                 } else if (val.is_number_integer()) {
                     cli.push_back(std::to_string((int) val));
+                } else if (val.is_boolean()) {
+                    cli.push_back(val.get<bool>() ? "true" : "false");
                 } else {
                     cli.push_back(val);
                 }

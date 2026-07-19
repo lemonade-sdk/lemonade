@@ -1864,7 +1864,10 @@ export function recipeOptionsForModel(
   const sessionOverride = getSessionArgsOverride(modelName);
   if (sessionOverride) {
     const field = backendArgsFieldForRecipe(sessionOverride.recipe);
-    if (field) (merged as Record<string, unknown>)[field] = sessionOverride.args;
+    if (field) {
+      (merged as Record<string, unknown>)[field] = sessionOverride.args;
+      merged.merge_args = false;
+    }
   }
 
   return Object.keys(merged).length > 0 ? merged : undefined;

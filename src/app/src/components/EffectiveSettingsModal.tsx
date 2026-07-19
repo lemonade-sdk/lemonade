@@ -168,7 +168,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     const handle = setTimeout(async () => {
       setPreviewError(null);
       try {
-        const result = await api.effectiveLoadCommand(modelName, { [argsField]: draft }, modelInfo);
+        const result = await api.effectiveLoadCommand(modelName, { [argsField]: draft, merge_args: false }, modelInfo);
         if (!cancelled) setPreview(result);
       } catch (err) {
         if (!cancelled) { setPreview(null); setPreviewError(friendlyErrorMessage(err)); }
