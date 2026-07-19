@@ -327,6 +327,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                 <p className="effective-settings__note">
                   <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
                 </p>
+                {(preview?.ctx_size_auto_resolved ?? effective?.ctx_size_auto_resolved) && (
+                  <p className="effective-settings__note">
+                    <Icon name="info" size={12} /> Context size is auto-resolved from available memory. This is an estimate — the final value is computed at load time after any model eviction.
+                  </p>
+                )}
               </>
             )}
           </section>

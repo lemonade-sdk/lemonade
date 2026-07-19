@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include <optional>
+#include "lemon/auto_tune.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
@@ -5166,6 +5167,13 @@ void Server::handle_load_command(const httplib::Request& req, httplib::Response&
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         RecipeOptions effective = router_->resolve_effective_recipe_options(info, options);
 
+        bool ctx_size_auto_resolved = false;
+        int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        if (auto_ctx > 0) {
+            effective.set_option("ctx_size", auto_ctx);
+            ctx_size_auto_resolved = true;
+        }
+
         json backend_json = effective.get_option(info.recipe + "_backend");
 
         nlohmann::json response = {
@@ -5173,7 +5181,8 @@ void Server::handle_load_command(const httplib::Request& req, httplib::Response&
             {"recipe", info.recipe},
             {"backend", backend_json.is_string() ? backend_json.get<std::string>() : ""},
             {"options", effective.to_json()},
-            {"args", RecipeOptions::to_cli_options(effective.to_json())}
+            {"args", RecipeOptions::to_cli_options(effective.to_json())},
+            {"ctx_size_auto_resolved", ctx_size_auto_resolved}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {

@@ -232,6 +232,7 @@ export interface EffectiveLoadCommand {
   backend: string;
   options: Record<string, unknown>;
   args: string[];
+  ctx_size_auto_resolved?: boolean;
 }
 
 export interface ModelInfo {
