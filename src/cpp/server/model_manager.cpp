@@ -135,7 +135,25 @@ static ModelType get_deployment_model_type(const std::string& recipe,
             }
         }
     }
-    return get_model_type_from_labels(labels);
+    ModelType type = get_model_type_from_labels(labels);
+
+    // Reaching here means the backend declares no definitive non-LLM deployment,
+    // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none
+    // of which implement IClassificationServer (only onnxruntime does, and it
+    // returned CLASSIFICATION above via its default label). So a `classification`
+    // label here is spurious: typing it CLASSIFICATION would send run_classifier
+    // to Router::classify() and hit an unsupported-capability error. Drop the
+    // claim so the model stays an LLM, usable as an LLM-as-classifier via chat.
+    if (type == ModelType::CLASSIFICATION) {
+        std::vector<std::string> non_classification;
+        for (const auto& label : labels) {
+            if (label != "classification" && label != "classifier") {
+                non_classification.push_back(label);
+            }
+        }
+        return get_model_type_from_labels(non_classification);
+    }
+    return type;
 }
 
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already

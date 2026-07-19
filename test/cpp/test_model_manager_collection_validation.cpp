@@ -215,6 +215,24 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     check("label-less kokoro rejected as classifier (default label 'tts')",
           error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
                          "cannot serve as a classifier"));
+
+    // The inverse: /v1/classify is served only by onnxruntime. A `classification`
+    // label on llamacpp (which cannot classify) must NOT type it CLASSIFICATION,
+    // or run_classifier would call Router::classify() and fail. It stays LLM and
+    // is accepted as an LLM-as-classifier via the chat path.
+    manager.register_user_model(
+        "user.LlamaClf",
+        json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
+    check("llamacpp + labels:[classification] stays LLM, not CLASSIFICATION",
+          manager.get_model_info("user.LlamaClf").type == lemon::ModelType::LLM);
+
+    json llama_clf_label = router_with_classifier(
+        "classifier",
+        json{{"model_name", "xclf"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/xclf:Q4_K_M"}, {"labels", {"classification"}}});
+    check("llamacpp + labels:[classification] accepted as classifier via LLM chat path",
+          !manager.validate_collection_request("user.RouterKit", llama_clf_label).has_value());
 }
 
 static void test_register_preserves_routing(ModelManager& manager) {
