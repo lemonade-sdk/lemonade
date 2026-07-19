@@ -148,7 +148,7 @@ function normalizeHealth(data: unknown): HealthData {
     websocket_port: Number(obj.websocket_port || 0),
     all_models_loaded: loaded,
     max_models: isObject(obj.max_models) ? obj.max_models as Record<string, number> : {},
-    high_security: obj.high_security === true,
+    high_security: typeof obj.high_security === 'boolean' ? obj.high_security : undefined,
   };
 }
 
@@ -209,7 +209,7 @@ export interface HealthData {
   websocket_port: number;
   all_models_loaded: LoadedModel[];
   max_models: Record<string, number>;
-  high_security: boolean;
+  high_security?: boolean;
 }
 
 export interface LoadedModel {
@@ -911,7 +911,7 @@ class LemonadeAPI {
   get lastConnectionError(): string | null { return this._lastConnectionError; }
   get isConnected(): boolean { return this._status === 'connected'; }
   get healthData(): HealthData | null { return this._healthData; }
-  get highSecurity(): boolean { return this._healthData?.high_security === true; }
+  get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
   get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
 

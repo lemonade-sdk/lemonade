@@ -88,7 +88,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
   const [hostError, setHostError] = useState('');
   const [hostLoading, setHostLoading] = useState(false);
   const [secure, setSecure] = useState<boolean | null>(null);
-  const [adminAccess, setAdminAccess] = useState<'checking' | 'ok' | 'needs-admin'>('checking');
+  const [adminAccess, setAdminAccess] = useState<'checking' | 'ok' | 'needs-admin' | 'unavailable'>('checking');
   const [adminKeyDraft, setAdminKeyDraft] = useState(() => api.explicitAdminApiKey);
   const [adminKeyNotice, setAdminKeyNotice] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -152,23 +152,26 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     }
   }, [mcpUrl]);
 
-  const probeAccess = useCallback(async () => {
+  const probeAccess = useCallback(async (): Promise<'ok' | 'needs-admin' | 'unavailable'> => {
     setHostLoading(true);
     setHostError('');
     const result = await api.probeMcpAccess();
+    setHostLoading(false);
     if (result.ok) {
       setServers(result.servers);
       setAdminAccess('ok');
-    } else {
-      setServers([]);
-      setAdminAccess('needs-admin');
-      if (result.status !== 401 && result.status !== 403) {
-        setHostError(result.status
-          ? `Could not reach MCP administration (HTTP ${result.status}).`
-          : 'Could not reach MCP administration.');
-      }
+      return 'ok';
     }
-    setHostLoading(false);
+    setServers([]);
+    if (result.status === 401 || result.status === 403) {
+      setAdminAccess('needs-admin');
+      return 'needs-admin';
+    }
+    setAdminAccess('unavailable');
+    setHostError(result.status
+      ? `Could not reach MCP administration (HTTP ${result.status}).`
+      : 'Could not reach MCP administration. Check that the server is running and reachable.');
+    return 'unavailable';
   }, []);
 
   useEffect(() => {
@@ -181,9 +184,10 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
       setAdminAccess('checking');
       return;
     }
-    setSecure(api.highSecurity);
+    const flag = api.highSecurity;
+    setSecure(flag === false ? false : true);
     void loadGatewayTools();
-    if (api.highSecurity) {
+    if (flag !== false) {
       setAdminAccess('checking');
       void probeAccess();
     }
@@ -198,9 +202,14 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
 
   const applyAdminKey = async () => {
     api.setSessionAdminApiKey(adminKeyDraft);
-    setAdminKeyNotice(adminKeyDraft.trim() ? 'Admin key applied for this app session.' : '');
+    setAdminKeyNotice('');
     setAdminAccess('checking');
-    await probeAccess();
+    const outcome = await probeAccess();
+    if (outcome === 'ok') {
+      setAdminKeyNotice('Admin key applied for this app session.');
+    } else if (outcome === 'needs-admin') {
+      setHostError('Admin API key was rejected.');
+    }
   };
 
   const runServerAction = async (id: string, action: 'connect' | 'disconnect' | 'refresh' | 'remove') => {
@@ -317,6 +326,13 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                 Please set the respective environment variable in your Lemonade Server launch script, then restart the
                 server to use this feature.
               </p>
+            </div>
+          ) : adminAccess === 'unavailable' ? (
+            <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
+              <p>{hostError || 'MCP administration is currently unavailable.'}</p>
+              <button type="button" className="btn btn--ghost" onClick={() => void probeAccess()} disabled={connectionStatus !== 'connected' || hostLoading}>
+                {hostLoading ? 'Retrying…' : 'Retry'}
+              </button>
             </div>
           ) : adminAccess === 'needs-admin' ? (
             <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
