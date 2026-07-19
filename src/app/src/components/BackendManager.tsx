@@ -33,11 +33,16 @@ interface BackendInfo {
   release_url?: string;
   download_filename?: string;
   can_uninstall?: boolean;
+  experimental?: boolean;
+  display_name?: string;
 }
 
 interface RecipeInfo {
   default_backend: string;
   backends: Record<string, BackendInfo>;
+  experimental?: boolean;
+  display_name?: string;
+  web_display_name?: string;
 }
 
 interface SystemInfoData {
@@ -91,6 +96,33 @@ const RECIPE_CAPABILITY: Record<string, string> = {
   openmoss:        'TTS',
   trellis:         '3D',
 };
+
+// Older lemond builds did not expose descriptor.experimental through
+// /system-info yet. Keep a compatibility fallback for the recipes that are
+// declared experimental in the backend descriptor registry. Newer servers
+// remain authoritative through the explicit boolean fields below.
+const EXPERIMENTAL_RECIPE_FALLBACK = new Set([
+  'acestep',
+  'onnxruntime',
+  'openmoss',
+  'thinksound',
+  'trellis',
+  'vllm',
+]);
+
+function isExperimentalBackend(recipe: string, recipeInfo: RecipeInfo, backendInfo: BackendInfo): boolean {
+  const explicit = backendInfo.experimental ?? recipeInfo.experimental;
+  if (explicit !== undefined) return explicit;
+
+  const metadata = [
+    recipeInfo.display_name,
+    recipeInfo.web_display_name,
+    backendInfo.display_name,
+    backendInfo.message,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return metadata.includes('experimental') || EXPERIMENTAL_RECIPE_FALLBACK.has(recipe);
+}
 
 /** Device display order */
 const DEVICE_ORDER = ['cpu', 'nvidia_gpu', 'amd_gpu', 'metal', 'amd_npu', 'gpu', 'accelerator', 'unknown'] as const;
@@ -582,13 +614,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        const effectiveInfo: BackendInfo = {
+          ...backendInfo,
+          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
+        };
         // Match GUI2: unsupported backends are not useful actions/statuses for
         // the current system and should not take matrix space (#2568).
-        if (backendInfo.state === 'unsupported') continue;
-        for (const device of devicesForBackend(recipe, backend, backendInfo)) {
+        if (effectiveInfo.state === 'unsupported') continue;
+        for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
-          cells.get(key)!.push({ recipe, backend, info: backendInfo });
+          cells.get(key)!.push({ recipe, backend, info: effectiveInfo });
         }
       }
     }
@@ -602,13 +638,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
+        const effectiveInfo: BackendInfo = {
+          ...backendInfo,
+          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
+        };
         // Keep unsupported backends out of the primary matrix (#2568), but retain
         // a collapsed same-shape matrix for debugging and technical-detail reasons.
-        if (backendInfo.state !== 'unsupported') continue;
-        for (const device of devicesForBackend(recipe, backend, backendInfo)) {
+        if (effectiveInfo.state !== 'unsupported') continue;
+        for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
-          cells.get(key)!.push({ recipe, backend, info: backendInfo });
+          cells.get(key)!.push({ recipe, backend, info: effectiveInfo });
         }
       }
     }
@@ -682,9 +722,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
     return (
       <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
-        <span className="cell__name">
-          {RECIPE_LABELS[recipe] || recipe}
-          {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
+        <span className={`cell__name${info.experimental ? ' cell__name--experimental' : ''}`}>
+          <span>
+            {RECIPE_LABELS[recipe] || recipe}
+            {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
+          </span>
+          {info.experimental && (
+            <span className="cell__experimental-icon" role="img" title="experimental" aria-label="experimental">
+              <Icon name="flask-conical" size={13} />
+            </span>
+          )}
         </span>
         <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
         {showTech && info.version && <span className="cell__sha">{info.version}</span>}

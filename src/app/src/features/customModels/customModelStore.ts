@@ -283,6 +283,12 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   const components = Array.isArray((model as any).components) ? (model as any).components.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0) : [];
   if ((recipe === COLLECTION_OMNI_RECIPE || type === 'omni') && components.length) {
     const opts: Record<string, unknown> = { recipe: COLLECTION_OMNI_RECIPE, components };
+    const displayName = String((model as any).display_name || '').trim();
+    if (displayName) opts.display_name = displayName;
+    const componentRoles = isPlainObject((model as any).component_roles)
+      ? Object.fromEntries(Object.entries((model as any).component_roles).filter(([, value]) => typeof value === 'string' && value.trim()))
+      : null;
+    if (componentRoles && Object.keys(componentRoles).length) opts.component_roles = componentRoles;
     const systemPrompt = String((model as any).system_prompt || '').trim();
     if (systemPrompt) opts.system_prompt = systemPrompt;
     if (Array.isArray((model as any).custom_tools) && (model as any).custom_tools.length) opts.custom_tools = (model as any).custom_tools;
@@ -291,6 +297,8 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   }
 
   const opts: Record<string, unknown> = { custom: true };
+  const displayName = String((model as any).display_name || '').trim();
+  if (displayName) opts.display_name = displayName;
   if (serverLabels.length) opts.labels = serverLabels;
   const checkpoints = isPlainObject((model as any).checkpoints) ? (model as any).checkpoints as Record<string, unknown> : null;
   if (checkpoints && Object.keys(checkpoints).length > 0) {

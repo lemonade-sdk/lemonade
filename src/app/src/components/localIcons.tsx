@@ -120,6 +120,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"></path><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"></path>"
   },
+  "flask-conical": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M14 2v6.5l5.74 9.65A2.5 2.5 0 0 1 17.59 22H6.41a2.5 2.5 0 0 1-2.15-3.85L10 8.5V2\"></path><path d=\"M6.5 2h11\"></path><path d=\"M6.5 16h11\"></path>"
+  },
   "flame": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4\"></path>"

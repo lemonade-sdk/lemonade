@@ -231,9 +231,17 @@ export function modelIsDownloaded(m: ModelInfo, loadedNames: Set<string>): boole
   return loadedNames.has(name) || Boolean((m as any).downloaded);
 }
 
-/** Custom / user-registered models (client-local store). */
+/** Custom / user-registered models from either the client store or lemond. */
 export function modelIsCustom(m: ModelInfo): boolean {
-  return (m as any).custom === true;
+  if ((m as any).custom === true) return true;
+  const name = listModelName(m).toLowerCase();
+  const labels = Array.isArray(m.labels) ? m.labels.map(label => String(label).trim().toLowerCase()) : [];
+  const source = String((m as any).source || (m as any).registry_source || '').trim().toLowerCase();
+  return name.startsWith('user.')
+    || labels.includes('custom')
+    || source === 'user'
+    || source === 'user_models'
+    || source === 'custom';
 }
 
 export function modelMatchesPrimary(

@@ -656,6 +656,7 @@ test.describe('AutoOpt run detail actions', () => {
     await page.locator(`[data-autoopt-inspect="${COMPLETED_RUN.id}"]`).click();
     await page.waitForSelector('[data-autoopt-detail]');
     await expect(page.locator('[data-autoopt-recommendation]')).toBeVisible();
+    await expect(page.locator('[data-autoopt-recommendation]')).toContainText('ctx 32,768');
     return counts;
   }
 
@@ -688,7 +689,7 @@ test.describe('AutoOpt run detail actions', () => {
     }, CHAT_MODEL);
   }
 
-  test('saving to model tuning persists the full recommendation and creates no preset', async ({ page }) => {
+  test('saving to model tuning persists applicable recommendation fields without forcing context and creates no preset', async ({ page }) => {
     const counts = await openCompletedRunDetail(page);
     await page.locator('[data-autoopt-save-model-tuning]').click();
     await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('Saved the recommendation');
@@ -700,7 +701,7 @@ test.describe('AutoOpt run detail actions', () => {
     expect(stored.modelTuning?.source).toBe('optimized');
     expect(stored.modelTuning?.auto_opt_run_id).toBe(COMPLETED_RUN.id);
     expect(stored.modelTuning?.recipe_options.llamacpp_backend).toBe('vulkan');
-    expect(stored.modelTuning?.recipe_options.ctx_size).toBe(32768);
+    expect(stored.modelTuning?.recipe_options.ctx_size).toBeUndefined();
     expect(stored.modelTuning?.recipe_options.llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
     expect(stored.modelTuning?.sampling.min_p).toBe(0.05);
   });
@@ -736,7 +737,7 @@ test.describe('AutoOpt run detail actions', () => {
     expect(rocm).toMatchObject({ args: '--keep-rocm', source: 'user' });
   });
 
-  test('"Try now without saving" loads a not-loaded model with the exact recommended options', async ({ page }) => {
+  test('"Try now without saving" loads a not-loaded model with recommended runtime options but no forced context', async ({ page }) => {
     const counts = await openCompletedRunDetail(page);
     await page.locator('[data-autoopt-try-now]').click();
     await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('nothing saved');
@@ -744,7 +745,7 @@ test.describe('AutoOpt run detail actions', () => {
     expect(counts.load).toHaveLength(1);
     const body = counts.load[0];
     expect(body.model_name).toBe(CHAT_MODEL);
-    expect(body.ctx_size).toBe(32768);
+    expect(body.ctx_size).toBeUndefined();
     expect(body.llamacpp_args).toBe('-ctk q8_0 -ctv q8_0 --spec-default -b 2048 -ub 2048');
     expect(body.llamacpp_backend).toBe('vulkan');
     expect(body.save_options).toBe(false);
@@ -770,11 +771,12 @@ test.describe('AutoOpt run detail actions', () => {
   test('"Use this instead" changes all three actions to the selected alternative', async ({ page }) => {
     const counts = await openCompletedRunDetail(page);
     await page.locator('[data-autoopt-use-alternative="Maximum quality"]').click();
+    await expect(page.locator('[data-autoopt-recommendation]')).toContainText('ctx 16,384');
     await expect(page.locator('[data-autoopt-rec-args]')).toContainText('--spec-default -b 2048 -ub 2048');
     await page.locator('[data-autoopt-try-now]').click();
     await expect(page.locator('[data-autoopt-detail-notice]')).toContainText('nothing saved');
     expect(counts.load).toHaveLength(1);
-    expect(counts.load[0].ctx_size).toBe(16384);
+    expect(counts.load[0].ctx_size).toBeUndefined();
   });
 
   test('completed-run actions explain the persistence boundary and expose the three intended choices', async ({ page }) => {

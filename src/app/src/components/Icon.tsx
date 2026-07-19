@@ -23,7 +23,7 @@ export type IconName =
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
   | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
   | 'panel-top' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
-  | 'menu';
+  | 'menu' | 'flask-conical';
 
 interface IconProps {
   name: IconName;

@@ -9,7 +9,7 @@ import { collectionComponentLabel, getCollectionComponents, isCollectionModel, i
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
-import { ModelListPanel, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
+import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
 import type { PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
@@ -955,8 +955,8 @@ function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
   const roles = objectRecord((model as any).component_roles);
   const rawTools = Array.isArray((model as any).custom_tools) ? (model as any).custom_tools as CustomOmniToolDefinition[] : [];
   const components = getCollectionComponents(model);
-  const capability = String((model as any).type || 'chat') as CustomModelCapability;
   const collection = isCollectionModel(model);
+  const capability = (collection ? 'omni' : String((model as any).type || 'chat')) as CustomModelCapability;
   const structuralLabels = new Set(['custom', 'omni', 'multimodal', 'vision-language']);
   return {
     name: modelName(model),
@@ -1061,18 +1061,27 @@ const MODEL_LIST_WIDTH_KEY = 'model_list_panel_width';
 const MODEL_LIST_DEFAULT_WIDTH = 360;
 const MODEL_LIST_MIN_WIDTH = 300;
 const MODEL_LIST_MAX_WIDTH = 620;
+const MODEL_NAV_RAIL_WIDTH = 232;
+const MODEL_DETAIL_MIN_WIDTH = 420;
 
-function clampModelListWidth(width: number): number {
-  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, Math.round(width)));
+function maxModelListWidthForViewport(viewportWidth?: number): number {
+  const width = viewportWidth
+    ?? (typeof window !== 'undefined' ? window.innerWidth : MODEL_NAV_RAIL_WIDTH + MODEL_LIST_MAX_WIDTH + MODEL_DETAIL_MIN_WIDTH);
+  const viewportMax = width - MODEL_NAV_RAIL_WIDTH - MODEL_DETAIL_MIN_WIDTH;
+  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, viewportMax));
+}
+
+function clampModelListWidth(width: number, viewportWidth?: number): number {
+  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(maxModelListWidthForViewport(viewportWidth), Math.round(width)));
 }
 
 function loadModelListWidth(): number {
   if (typeof window === 'undefined') return MODEL_LIST_DEFAULT_WIDTH;
   try {
     const stored = Number(window.localStorage.getItem(MODEL_LIST_WIDTH_KEY));
-    return Number.isFinite(stored) ? clampModelListWidth(stored) : MODEL_LIST_DEFAULT_WIDTH;
+    return clampModelListWidth(Number.isFinite(stored) ? stored : MODEL_LIST_DEFAULT_WIDTH, window.innerWidth);
   } catch {
-    return MODEL_LIST_DEFAULT_WIDTH;
+    return clampModelListWidth(MODEL_LIST_DEFAULT_WIDTH, window.innerWidth);
   }
 }
 
@@ -1388,6 +1397,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     }
   }, [modelListWidth]);
 
+  useEffect(() => {
+    const clampToViewport = () => {
+      setModelListWidth(width => clampModelListWidth(width, window.innerWidth));
+    };
+    clampToViewport();
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, []);
+
   const modelDetailLayoutStyle = useMemo(() => ({
     '--model-list-panel-width': `${modelListWidth}px`,
   } as React.CSSProperties), [modelListWidth]);
@@ -1401,15 +1419,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const handle = event.currentTarget;
     try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
 
-    const maxWidthForViewport = () => {
-      // Keep a usable detail pane even on medium desktops. The fixed rail is
-      // 232px in the desktop grid; the detail pane should keep at least ~420px.
-      const viewportMax = window.innerWidth - 232 - 420;
-      return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, viewportMax));
-    };
-
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const nextWidth = clampModelListWidth(Math.min(maxWidthForViewport(), startWidth + moveEvent.clientX - startX));
+      const nextWidth = clampModelListWidth(startWidth + moveEvent.clientX - startX, window.innerWidth);
       setModelListWidth(nextWidth);
     };
 
@@ -1431,16 +1442,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const largeStep = event.shiftKey ? 40 : 16;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      setModelListWidth(width => clampModelListWidth(width - largeStep));
+      setModelListWidth(width => clampModelListWidth(width - largeStep, window.innerWidth));
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      setModelListWidth(width => clampModelListWidth(width + largeStep));
+      setModelListWidth(width => clampModelListWidth(width + largeStep, window.innerWidth));
     } else if (event.key === 'Home') {
       event.preventDefault();
       setModelListWidth(MODEL_LIST_MIN_WIDTH);
     } else if (event.key === 'End') {
       event.preventDefault();
-      setModelListWidth(MODEL_LIST_MAX_WIDTH);
+      setModelListWidth(maxModelListWidthForViewport(window.innerWidth));
     }
   }, []);
 
@@ -1976,7 +1987,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
-    if ((model as any).custom && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
+    if (modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
       if (!confirm(`Delete router definition "${model.display_name || name}"?`)) return;
       try {
         await handleDeleteRouterDefinition(name);
@@ -1985,10 +1996,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       }
       return;
     }
-    if ((model as any).custom) {
+    if (modelIsCustom(model)) {
       if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
-      deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
-      reloadCustomModels();
+      try {
+        if (api.isConnected) await api.deleteModel(name);
+        deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
+        reloadCustomModels();
+        await refresh();
+      } catch (err) {
+        console.error('Custom model delete failed:', err);
+      }
       return;
     }
     if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
@@ -2215,7 +2232,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setShowRouterEditor(false);
     setShowGlobalSettings(false);
     setRouterEditorModel(null);
-    setEditingCustomModelName(modelName(model));
+    const name = modelName(model);
+    setSelectedDetailModelId(name);
+    setMobileDetailOpen(true);
+    setEditingCustomModelName(name);
     setCustomDraft(customDraftFromModel(model));
     setCustomError(null);
     setShowCustomForm(true);
@@ -2414,7 +2434,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
-  const handleSaveCustomModel = (e: React.FormEvent) => {
+  const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
     try {
@@ -2517,6 +2537,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         customTools,
       });
       reloadCustomModels();
+
+      // A custom collection is a server model definition, not merely UI state.
+      // Register custom component definitions first, then synchronously persist
+      // the collection itself so /models exposes it immediately and restart does
+      // not depend on this WebView's localStorage.
+      if (isOmniCollection) {
+        const savedInfo = customModelToModelInfo(saved);
+        for (const componentName of getCollectionComponents(savedInfo)) {
+          const componentInfo = findCurrentModel(componentName);
+          if (componentInfo && (componentInfo as any).custom) {
+            await api.registerModelDefinition(modelName(componentInfo), customRegistrationOptions(componentInfo));
+          }
+        }
+        await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
+        const persistedModels = await api.models(true);
+        const persisted = persistedModels.data.some(model => modelName(model).toLowerCase() === saved.name.toLowerCase());
+        if (!persisted) {
+          throw new Error(`Lemond acknowledged the collection but did not expose ${saved.name} through /api/v1/models.`);
+        }
+        await refresh();
+      }
+
       setShowCustomForm(false);
       setEditingCustomModelName(null);
       setPrimaryFilter('my-models');
@@ -2878,7 +2920,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const selectedDetailModel = selectedDetailModelId
     ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
     : null;
-  const selectedDetailIsCustom = Boolean(selectedDetailModel && (selectedDetailModel as any).custom);
+  const selectedDetailIsCustom = Boolean(selectedDetailModel && modelIsCustom(selectedDetailModel));
   const showCustomEditor = showCustomForm || (primaryFilter === 'my-models' && !selectedDetailIsCustom);
 
   const handlePrimaryFilterChange = (next: PrimaryFilter) => {

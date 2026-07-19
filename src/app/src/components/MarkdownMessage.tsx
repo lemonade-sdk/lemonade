@@ -316,4 +316,8 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
   );
 };
 
-export default MarkdownMessage;
+export default React.memo(MarkdownMessage, (previous, next) => (
+  previous.content === next.content
+  && (previous.isComplete ?? true) === (next.isComplete ?? true)
+  && previous.onOptionSelect === next.onOptionSelect
+));

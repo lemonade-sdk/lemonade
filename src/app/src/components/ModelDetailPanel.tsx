@@ -22,6 +22,7 @@ import {
   type RecipeOptions, type SamplingParams, type TuningValueSource, type TemperatureHint, type ContextHint, type EditableContextHint,
 } from '../presetStore';
 import { Icon, CapabilityIcon, PresetIcon, type IconName } from './Icon';
+import { modelIsCustom } from './ModelListPanel';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
@@ -473,7 +474,7 @@ const README_PURIFY_CONFIG: DOMPurify.Config = {
     'sup', 'sub', 'kbd', 'samp', 'var',
     'blockquote', 'details', 'summary', 'figure', 'figcaption', 'abbr',
   ],
-  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'srcset', 'alt', 'title', 'width', 'height', 'align', 'colspan', 'rowspan', 'loading', 'decoding'],
+  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'srcset', 'alt', 'title', 'width', 'height', 'align', 'colspan', 'rowspan', 'loading', 'decoding', 'hidden', 'aria-hidden', 'data-readme-asset-failed'],
 };
 
 /**
@@ -542,17 +543,23 @@ function renderHfReadmeHtml(source: string, repo: string): string {
 
   root.querySelectorAll<HTMLImageElement>('img').forEach(image => {
     const rawSrc = image.getAttribute('src');
+    let assetFailed = false;
     if (rawSrc) {
       const src = resolveHfReadmeUrl(repo, rawSrc, 'asset');
-      if (failedReadmeAssets.has(src)) {
-        image.removeAttribute('src');
+      assetFailed = failedReadmeAssets.has(src);
+      if (assetFailed) {
         image.setAttribute('data-readme-asset-failed', 'true');
+        image.classList.add('detail-readme__asset--failed');
+        const fallback = parsed.createElement('span');
+        fallback.className = 'detail-readme__asset-fallback';
+        fallback.textContent = image.alt ? `Image unavailable: ${image.alt}` : 'README image unavailable';
+        image.insertAdjacentElement('afterend', fallback);
       } else {
         image.setAttribute('src', src);
       }
     }
     const rawSrcset = image.getAttribute('srcset');
-    if (rawSrcset) {
+    if (rawSrcset && !assetFailed) {
       const srcset = rewriteReadmeSrcset(repo, rawSrcset);
       if (srcset) image.setAttribute('srcset', srcset);
       else image.removeAttribute('srcset');
@@ -595,12 +602,15 @@ const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, h
     const handleAssetError = (event: Event) => {
       const target = event.target;
       if (!(target instanceof HTMLImageElement)) return;
+      if (target.dataset.readmeAssetFailed === 'true') return;
       const failedUrl = target.currentSrc || target.src || target.getAttribute('src') || '';
       if (failedUrl) failedReadmeAssets.add(failedUrl);
+      target.dataset.readmeAssetFailed = 'true';
+      target.classList.add('detail-readme__asset--failed');
       const fallback = document.createElement('span');
       fallback.className = 'detail-readme__asset-fallback';
       fallback.textContent = target.alt ? `Image unavailable: ${target.alt}` : 'README image unavailable';
-      target.replaceWith(fallback);
+      target.insertAdjacentElement('afterend', fallback);
     };
     node.addEventListener('error', handleAssetError, true);
     return () => node.removeEventListener('error', handleAssetError, true);
@@ -1783,13 +1793,17 @@ const ModelTuningTab: React.FC<{
 
     if (key === 'mmproj_enabled') {
       const activeState = typeof baseValue === 'boolean' && !baseValue ? 'Off' : 'On';
+      const alternatives = activeState === 'On'
+        ? [{ value: 'false', label: 'Off' }]
+        : [{ value: 'true', label: 'On' }];
       return (
         <label key={key} className="detail-tuning__field" htmlFor={inputId}>
           <span>{label}</span>
           <select id={inputId} className="select" value={draftValue} onChange={e => setRecipeField(key, e.target.value)}>
             <option value="">{activeState}</option>
-            <option value="true">On</option>
-            <option value="false">Off</option>
+            {alternatives.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
           {hint && <small>{hint}</small>}
         </label>
@@ -1802,6 +1816,11 @@ const ModelTuningTab: React.FC<{
       const activeBehavior = typeof baseValue === 'boolean'
         ? (baseValue ? 'Merge backend + model args' : 'Use model args only')
         : (hasModelArgs ? 'Use model args only' : 'Use backend args only');
+      const behaviorOptions = [
+        { value: '__backend_only', label: 'Use backend args only' },
+        { value: 'false', label: 'Use model args only' },
+        { value: 'true', label: 'Merge backend + model args' },
+      ].filter(option => option.label !== activeBehavior);
       const setArgsBehavior = (value: string) => {
         if (value === '__backend_only') {
           setRecipeDraft(prev => {
@@ -1819,9 +1838,9 @@ const ModelTuningTab: React.FC<{
           <span>{label}</span>
           <select id={inputId} className="select" value={draftValue} onChange={e => setArgsBehavior(e.target.value)}>
             <option value="">{activeBehavior}</option>
-            <option value="__backend_only">Use backend args only</option>
-            <option value="false">Use model args only</option>
-            <option value="true">Merge backend + model args</option>
+            {behaviorOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
           {hint && <small>{hint}</small>}
         </label>
@@ -2268,8 +2287,19 @@ const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model:
           <p>Components stay editable after the collection has been saved or downloaded.</p>
         </div>
         {onEdit && (
-          <button type="button" className="btn btn--primary btn--sm" onClick={() => onEdit(model)}>
-            <Icon name="edit" size={13} /> Edit settings
+          <button
+            type="button"
+            className="btn btn--primary btn--sm custom-collection-settings__edit-button"
+            aria-label="Edit collection settings"
+            title="Edit collection settings"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEdit(model);
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden="true" />
+            <span>Edit settings</span>
           </button>
         )}
       </div>
@@ -2424,7 +2454,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const detailName = model ? mdName(model) : '';
   const detailLoaded = !!loadedModel;
-  const isCustomCollection = Boolean(model && (model as any).custom && isCollectionModel(model));
+  const isCustomCollection = Boolean(model && modelIsCustom(model) && isCollectionModel(model));
   const imageOnly = isImageOnlyModel(model);
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
 

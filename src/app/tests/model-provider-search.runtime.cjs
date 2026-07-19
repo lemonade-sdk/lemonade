@@ -40,6 +40,21 @@ assert.match(api, /format: 'gguf'/);
 assert.match(api, /searchModelScope/);
 assert.match(api, /source: 'modelscope'/);
 
+// User models and Omni collections must be server-backed, not only browser
+// localStorage entries. This keeps them visible through /models after restart.
+assert.match(api, /async registerModelDefinition\(modelName: string/,
+  'API client must expose synchronous model-definition registration');
+assert.match(api, /stream: false[\s\S]*subscribe: false[\s\S]*do_not_upgrade: true/,
+  'definition registration must use the non-streaming persistent /pull path');
+assert.match(api, /name\.startsWith\('user\.'\)[\s\S]*labels\.includes\('custom'\)/,
+  'server-returned user models must be normalized as custom models');
+assert.match(manager, /await api\.registerModelDefinition\(saved\.name/,
+  'saved Omni collections must be registered with lemond');
+assert.match(manager, /persistedModels\.data\.some/,
+  'collection save must verify that /models exposes the registered definition');
+assert.match(listPanelSource, /name\.startsWith\('user\.'\)[\s\S]*labels\.includes\('custom'\)/,
+  'My Models must include custom definitions restored from lemond');
+
 // Server selection remains the prototype's existing contract; ModelScope uses
 // Lemonade's registry endpoint without a browser-side fallback.
 assert.doesNotMatch(api, /modelscope\.cn\/openapi/,

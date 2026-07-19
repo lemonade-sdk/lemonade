@@ -21,7 +21,6 @@ export interface SavedBackendTuningResult {
 
 export function recommendationRecipeOptions(rec: AutoOptRecommendation): RecipeOptions {
   const options: RecipeOptions = {};
-  if (rec.ctx_size > 0) options.ctx_size = rec.ctx_size;
   if (rec.llamacpp_backend) options.llamacpp_backend = rec.llamacpp_backend;
   if (rec.llamacpp_args) options.llamacpp_args = rec.llamacpp_args;
   return options;
@@ -87,19 +86,16 @@ export function saveRunToModelTuning(
   const preset = activePresetForModel(run.model);
   const sampling = samplingFromDefaults(run.result?.sampling_defaults);
   const intentValues: IntentTuningValues = {};
-  const contextHint = preset.context_hint || 'medium';
   const temperatureHint = preset.temperature_hint || 'balanced';
-  if (rec.ctx_size > 0 && contextHint !== 'max') {
-    intentValues.context = { [contextHint]: rec.ctx_size };
-  }
   if (sampling.temperature !== undefined) {
     intentValues.temperature = { [temperatureHint]: sampling.temperature };
   }
   saveOptimizedModelTuning(run.model, {
     intent_values: intentValues,
-    // Keep the exact measured values as concrete load/request options too. The
-    // intent translations make later Preset resolution deterministic, while
-    // recipe_options/sampling reproduce the AutoOpt recommendation verbatim.
+    // AutoOpt may benchmark and recommend several context sizes, but context is
+    // advisory only: it must not silently override the user's Context intent or
+    // become a persisted/runtime load argument. Backend and sampling settings
+    // remain reproducible here; the recommended ctx stays visible in the run.
     recipe_options: recommendationRecipeOptions(rec),
     sampling,
   }, preset.id, run.id);
@@ -108,7 +104,8 @@ export function saveRunToModelTuning(
 
 /**
  * Replace the args for the exact backend selected by AutoOpt. This deliberately
- * stores only backend-wide arguments; context and sampling remain model tuning.
+ * stores only backend-wide arguments; context remains an advisory result and
+ * sampling remains model tuning.
  */
 export function applyRunToBackend(
   run: AutoOptRunRecord,
@@ -126,7 +123,7 @@ export function applyRunToBackend(
   return { key, backend };
 }
 
-/** Load once with the selected recommendation and persist nothing. */
+/** Load once with the selected backend/args recommendation and persist nothing. */
 export async function applyRunNow(
   run: AutoOptRunRecord,
   rec: AutoOptRecommendation,

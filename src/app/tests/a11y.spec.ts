@@ -959,7 +959,7 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
       llamacpp: {
         default_backend: 'cpu',
         backends: {
-          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '', experimental: true },
           cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
         },
       },
@@ -1003,6 +1003,15 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     expect(label!.toLowerCase()).toContain('uninstall');
     expect(label!.toLowerCase()).toContain('llama');
     expect(label!.toLowerCase()).toContain('cpu');
+  });
+
+  test('A56b — experimental backend marker is labelled and exposes the requested tooltip', async ({ page }) => {
+    const marker = page.locator('[data-cell="llamacpp:vulkan"] .cell__experimental-icon');
+    await expect(marker).toBeVisible();
+    await expect(marker).toHaveAttribute('aria-label', 'experimental');
+    await expect(marker).toHaveAttribute('title', 'experimental');
+    await expect(marker.locator('[data-icon="flask-conical"]')).toBeVisible();
+    await expect(page.locator('[data-cell="llamacpp:cpu"] .cell__experimental-icon')).toHaveCount(0);
   });
 
   // ── #2351 — persistent polite live region for toasts ───

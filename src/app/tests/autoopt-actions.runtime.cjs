@@ -92,6 +92,8 @@ export { api, calls } from './mockApi';
 
     const presetsBefore = presets.loadUserPresets();
     const appliedBefore = presets.loadApplied();
+    const contextBeforeAutoOpt = presets.resolvedModelTuningForPreset('model-a', api.allModels[0], intent)
+      .tuning.recipe_options.ctx_size;
     const backendResult = actions.applyRunToBackend(run, rec);
     assert.equal(backendResult.key, 'llamacpp:vulkan');
     assert.deepEqual(presets.loadUserPresets(), presetsBefore, 'backend apply must not create a Preset');
@@ -107,13 +109,15 @@ export { api, calls } from './mockApi';
     const modelTuning = presets.loadModelTuning('model-a', intent.id);
     assert.equal(modelTuning.source, 'optimized');
     assert.equal(modelTuning.auto_opt_run_id, run.id);
-    assert.equal(modelTuning.intent_values.context.medium, 32768);
+    assert.equal(modelTuning.intent_values.context, undefined, 'AutoOpt must not override Context intent');
+    assert.equal(modelTuning.recipe_options.ctx_size, undefined, 'AutoOpt must not persist ctx_size as a load option');
     assert.equal(modelTuning.recipe_options.llamacpp_backend, 'vulkan');
     assert.equal(modelTuning.recipe_options.llamacpp_args, rec.llamacpp_args);
     assert.equal(modelTuning.intent_values.temperature.balanced, 0.5);
     assert.equal(modelTuning.sampling.min_p, 0.02);
     const resolved = presets.resolvedModelTuningForPreset('model-a', api.allModels[0], intent);
-    assert.equal(resolved.tuning.recipe_options.ctx_size, 32768);
+    assert.equal(resolved.tuning.recipe_options.ctx_size, contextBeforeAutoOpt,
+      'AutoOpt must leave the Preset-derived context unchanged');
     assert.equal(resolved.tuning.sampling.temperature, 0.5);
 
     const storageBeforeTry = new Map(storage);
@@ -121,7 +125,7 @@ export { api, calls } from './mockApi';
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0], {
       kind: 'load', model: 'model-a',
-      options: { ctx_size: 32768, llamacpp_backend: 'vulkan', llamacpp_args: rec.llamacpp_args, save_options: false },
+      options: { llamacpp_backend: 'vulkan', llamacpp_args: rec.llamacpp_args, save_options: false },
     });
     assert.deepEqual(new Map(storage), storageBeforeTry, 'Try now must not persist any setting');
 

@@ -153,7 +153,32 @@ function normalizeHealth(data: unknown): HealthData {
 
 function normalizeModels(data: unknown): ModelsData {
   const obj = isObject(data) ? data : {};
-  return { data: Array.isArray(obj.data) ? obj.data as ModelInfo[] : [] };
+  const rows = Array.isArray(data)
+    ? data
+    : (Array.isArray(obj.data) ? obj.data : []);
+
+  const models = rows
+    .filter(isObject)
+    .map((raw): ModelInfo => {
+      const model = { ...raw } as ModelInfo;
+      const name = String((raw as any).model_name || raw.name || raw.id || '').trim();
+      const labels = Array.isArray(raw.labels)
+        ? raw.labels.map(label => String(label).trim().toLowerCase()).filter(Boolean)
+        : [];
+      const source = String((raw as any).source || (raw as any).registry_source || '').trim().toLowerCase();
+      const serverOwnedCustom = name.startsWith('user.')
+        || labels.includes('custom')
+        || source === 'user'
+        || source === 'user_models'
+        || source === 'custom';
+
+      if ((raw as any).custom === true || serverOwnedCustom) {
+        (model as any).custom = true;
+      }
+      return model;
+    });
+
+  return { data: models };
 }
 
 function modelInfoKey(model: ModelInfo | null | undefined): string {
@@ -1999,6 +2024,41 @@ class LemonadeAPI {
     return this._json(`/api/v1/registry/search?${params}`, { signal });
   }
 
+  // ── Model registration / pull ───────────────────────────────────
+
+  /**
+   * Persist a user model or collection definition before returning. Unlike the
+   * streaming pull path, this mirrors GUI2's registration flow and guarantees
+   * that a successful save is immediately visible through /api/v1/models and
+   * survives a lemond/UI restart.
+   */
+  async registerModelDefinition(modelName: string, opts?: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const resp = await this._fetch('/api/v1/pull', {
+      method: 'POST',
+      body: {
+        ...(opts || {}),
+        model_name: modelName,
+        stream: false,
+        subscribe: false,
+        do_not_upgrade: true,
+      },
+      cache: 'no-store',
+    });
+    const text = await resp.text();
+    let result: Record<string, unknown> = {};
+    if (text.trim()) {
+      try {
+        const parsed = JSON.parse(text);
+        if (isObject(parsed)) result = parsed;
+      } catch {
+        // Some lemond builds return an empty/plain acknowledgement for a
+        // non-streaming registration. HTTP success is sufficient here.
+      }
+    }
+    this._notifyModelsChanged();
+    return result;
+  }
+
   // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: Record<string, unknown>): Promise<void> {
@@ -2309,6 +2369,27 @@ class LemonadeAPI {
     }
   }
 
+  /**
+   * Revalidate an established connection without publishing a transient
+   * "connecting" state. Background polling used to call `connect()` every
+   * 15 seconds, which made the whole React tree observe
+   * connected -> connecting -> connected even when nothing changed. Besides
+   * the visible status flicker, dependent views re-fetched and re-rendered,
+   * interrupting text selection in Chat and making otherwise static controls
+   * in Models/Connect appear to refresh periodically.
+   */
+  private async _pollConnection(): Promise<boolean> {
+    try {
+      await this.health();
+      return true;
+    } catch (err) {
+      this._lastConnectionError = friendlyErrorMessage(err);
+      this._setStatus('disconnected');
+      this._healthData = null;
+      return false;
+    }
+  }
+
   async refresh(): Promise<{ health: HealthData; models: ModelsData } | null> {
     try {
       const health = await this.health();
@@ -2335,7 +2416,7 @@ class LemonadeAPI {
 
   startPolling(ms = 15000): void {
     this.stopPolling();
-    this._pollTimer = setInterval(() => this.connect(), ms);
+    this._pollTimer = setInterval(() => { void this._pollConnection(); }, ms);
   }
 
   stopPolling(): void {

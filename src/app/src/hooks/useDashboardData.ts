@@ -102,6 +102,7 @@ export interface DashboardData {
   health: HealthData | null;
   stats: StatsData | null;
   sysStats: SystemStatsData | null;
+  systemInfo: Record<string, unknown> | null;
   slots: SlotData[];
   slotLive: Record<number, SlotLiveTps>;
   lastError: string | null;
@@ -133,6 +134,7 @@ export function useDashboardData(isActive = true): DashboardData {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [slots, setSlots] = useState<SlotData[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
@@ -141,6 +143,19 @@ export function useDashboardData(isActive = true): DashboardData {
   const [slotsUnsupported, setSlotsUnsupported] = useState(false);
   const [slotStatus, setSlotStatus] = useState('Slot telemetry is waiting for a compatible backend.');
   const [paused, setPaused] = useState(false);
+
+  // Hardware topology is effectively static during a dashboard session. Fetch
+  // it once when the view becomes active instead of mixing it into the 2-second
+  // telemetry poll. The dashboard uses this to distinguish a discrete VRAM
+  // budget from an APU's shared RAM/VRAM pool.
+  useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    api.systemInfo()
+      .then(info => { if (!cancelled) setSystemInfo(info); })
+      .catch(() => { if (!cancelled) setSystemInfo(api.systemInfoData); });
+    return () => { cancelled = true; };
+  }, [isActive]);
 
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -563,7 +578,7 @@ export function useDashboardData(isActive = true): DashboardData {
   []);
 
   return {
-    health, stats, sysStats, slots, slotLive,
+    health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,

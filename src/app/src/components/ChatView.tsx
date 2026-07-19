@@ -30,7 +30,7 @@ import {
 } from '../modelCapabilities';
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
-import { activeDownloadForModel, downloadStore, type DownloadListItem } from '../features/downloadManager/downloadStore';
+import { activeDownloadForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
@@ -228,6 +228,22 @@ function saveActiveId(id: string | null, persist: boolean, scope: string) {
       localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
     }
   } catch { /* ignore */ }
+}
+
+/**
+ * Chat only needs to know whether a model is blocked by a non-terminal
+ * download. Progress/speed updates arrive every second and must not rerender
+ * completed message markup while a user is selecting text to copy.
+ */
+function chatBlockingDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
+  return downloads.filter(download => !isDownloadTerminal(download));
+}
+
+function chatBlockingDownloadsKey(downloads: DownloadListItem[]): string {
+  return downloads
+    .map(download => `${download.downloadType}:${download.id}:${download.modelName}`)
+    .sort()
+    .join('|');
 }
 
 function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = []): string {
@@ -708,7 +724,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
-  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => chatBlockingDownloads(downloadStore.snapshot()));
+  const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [presetPickerQuery, setPresetPickerQuery] = useState('');
@@ -734,6 +751,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+  const handleSendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {});
 
   const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
   const trackGeneratedMediaUrl = useCallback((url: string): string => {
@@ -919,7 +937,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         : (imageGenerationModels[0] || ''),
     }));
   }, [currentCapability, imageGenerationModels]);
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+  useEffect(() => downloadStore.subscribe(items => {
+    const blocking = chatBlockingDownloads(items);
+    const nextKey = chatBlockingDownloadsKey(blocking);
+    if (nextKey === downloadAvailabilityKeyRef.current) return;
+    downloadAvailabilityKeyRef.current = nextKey;
+    setDownloadItems(blocking);
+  }), []);
 
   useEffect(() => {
     const updatePresetVersion = () => setPresetVersion(v => v + 1);
@@ -2330,6 +2354,10 @@ ${finalText}`
     await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
   }, [activeId, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
+  // Keep option-button callbacks stable across unrelated Chat state updates. This
+  // lets memoized completed Markdown messages retain their DOM and selection.
+  handleSendRef.current = handleSend;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -2488,8 +2516,8 @@ ${finalText}`
   // ── Option select from assistant messages ───────────────────
 
   const handleOptionSelect = useCallback((text: string) => {
-    handleSend(text);
-  }, [handleSend]);
+    void handleSendRef.current(text);
+  }, []);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
   const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';

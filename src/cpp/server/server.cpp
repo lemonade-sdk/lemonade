@@ -2459,6 +2459,22 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
+    // User-defined metadata must round-trip through /models. GUI3 uses these
+    // fields to reconstruct and edit Omni collections after an application or
+    // server restart instead of relying on renderer-local storage.
+    for (const auto& label : info.labels) {
+        if (label == "custom") {
+            model_json["custom"] = true;
+            break;
+        }
+    }
+    for (const char* key : {"display_name", "component_roles", "custom_tools"}) {
+        auto it = info.extras.find(key);
+        if (it != info.extras.end() && !it->second.is_null()) {
+            model_json[key] = it->second;
+        }
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {

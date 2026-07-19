@@ -111,7 +111,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "component_roles", "custom_tools", "display_name", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;

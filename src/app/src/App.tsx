@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import AccountMenu from './features/accounts/AccountMenu';
@@ -16,7 +16,7 @@ import LogViewer from './components/LogViewer';
 import DownloadManager from './components/DownloadManager';
 import InspectView from './components/InspectView';
 import { Icon } from './components/Icon';
-import { DownloadListItem, downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
+import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
 type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect' | 'inspect';
 
@@ -175,18 +175,21 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const accountSessionRef = useRef(accountSession);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
-  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const [activeDownloadCount, setActiveDownloadCount] = useState(
+    () => downloadStore.snapshot().filter(isDownloadActive).length,
+  );
+  const activeDownloadCountRef = useRef(activeDownloadCount);
   useEffect(() => {
     accountSessionRef.current = accountSession;
     setPresetStorageScope(accountSession.storageScope);
   }, [accountSession]);
 
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
-
-  const activeDownloadCount = useMemo(
-    () => downloadItems.filter(isDownloadActive).length,
-    [downloadItems],
-  );
+  useEffect(() => downloadStore.subscribe(items => {
+    const nextCount = items.filter(isDownloadActive).length;
+    if (nextCount === activeDownloadCountRef.current) return;
+    activeDownloadCountRef.current = nextCount;
+    setActiveDownloadCount(nextCount);
+  }), []);
 
   const handleAccountSessionChange = useCallback((next: AccountSession) => {
     setPresetStorageScope(next.storageScope);

@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { AreaChart as RechartArea, Area, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadedModel } from '../api';
 import { useDashboardData, HISTORY_LEN, SessionCounters } from '../hooks/useDashboardData';
+import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
+import { Icon } from './Icon';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -202,13 +204,20 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   const {
-    health, stats, sysStats, slots, slotLive,
+    health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
   } = useDashboardData(isActive);
+
+  const memoryTopology = useMemo(() => dashboardMemoryTopology(systemInfo), [systemInfo]);
+  const ramUsedGb = sysStats?.memory_gb ?? null;
+  const ramGaugeMax = memoryTopology.hostTotalGb
+    ?? Math.max(64, Math.ceil((ramUsedGb || 0) / 16) * 16);
+  const vramGaugeMax = memoryTopology.gpuTotalGb
+    ?? Math.max(32, Math.ceil(((sysStats?.vram_gb ?? 0) || 0) / 8) * 8);
 
   /* ── Render ──────────────────────────────────────────────── */
 
@@ -225,8 +234,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         </div>
         <div className="dash2-bar__right">
           <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
-            onClick={() => setPaused(p => !p)} title={paused ? 'Resume' : 'Pause'}>
-            {paused ? 'Resume' : 'Pause'}
+            onClick={() => setPaused(p => !p)}
+            title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+            aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+            data-dashboard-poll-toggle>
+            <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -350,12 +362,23 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             <div className="dash2-gauges">
               <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
                 subtitle={pct(sysStats?.cpu_percent ?? null)} />
-              <RingGauge label="RAM" value={sysStats?.memory_gb ?? null} max={64} unit="GB"
-                color="var(--info)" subtitle={`${(sysStats?.memory_gb ?? 0).toFixed(1)} GB`} />
+              {memoryTopology.unified ? (
+                <RingGauge
+                  label="RAM / VRAM"
+                  value={ramUsedGb}
+                  max={ramGaugeMax}
+                  unit="GB"
+                  color="var(--info)"
+                  subtitle={ramUsedGb == null ? 'Shared memory pool' : `${ramUsedGb.toFixed(1)} GB used · shared pool`}
+                />
+              ) : (
+                <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
+                  color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${ramUsedGb.toFixed(1)} GB`} />
+              )}
               {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
                 color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
-              {hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
-                <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={32} unit="GB"
+              {!memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
+                <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
                   color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
