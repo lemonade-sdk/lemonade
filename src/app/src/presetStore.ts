@@ -206,6 +206,30 @@ function emitPresetStoreEvent(): void {
   try { window.dispatchEvent(new CustomEvent(PRESET_STORE_EVENT)); } catch {}
 }
 
+export interface SessionArgsOverride {
+  recipe: string;
+  args: string;
+}
+
+const sessionArgsOverrides = new Map<string, SessionArgsOverride>();
+
+function sessionArgsKey(modelName: string): string {
+  return String(modelName || '').trim().toLowerCase();
+}
+
+export function getSessionArgsOverride(modelName: string): SessionArgsOverride | null {
+  return sessionArgsOverrides.get(sessionArgsKey(modelName)) || null;
+}
+
+export function setSessionArgsOverride(modelName: string, recipe: string, args: string): void {
+  sessionArgsOverrides.set(sessionArgsKey(modelName), { recipe, args });
+  emitPresetStoreEvent();
+}
+
+export function clearSessionArgsOverride(modelName: string): void {
+  if (sessionArgsOverrides.delete(sessionArgsKey(modelName))) emitPresetStoreEvent();
+}
+
 export const DEFAULT_PRESET: Preset = {
   id: 's-default',
   name: 'Default',
@@ -1836,6 +1860,13 @@ export function recipeOptionsForModel(
   }
 
   const merged: RecipeOptions = { ...backendOptions, ...modelTuningOptions };
+
+  const sessionOverride = getSessionArgsOverride(modelName);
+  if (sessionOverride) {
+    const field = backendArgsFieldForRecipe(sessionOverride.recipe);
+    if (field) (merged as Record<string, unknown>)[field] = sessionOverride.args;
+  }
+
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
