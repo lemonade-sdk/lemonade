@@ -120,15 +120,17 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
         if (raw_options.contains(opt_name)) {
             auto val = raw_options[opt_name];
             if (!val.is_null() && val != "") {
-                cli.push_back(cli_flag);
-                if (val.is_number_float()) {
-                    cli.push_back(std::to_string((double) val));
-                } else if (val.is_number_integer()) {
-                    cli.push_back(std::to_string((int) val));
-                } else if (val.is_boolean()) {
-                    cli.push_back(val.get<bool>() ? "true" : "false");
+                if (val.is_boolean()) {
+                    cli.push_back(val.get<bool>() ? cli_flag : lemon::utils::negate_flag(cli_flag));
                 } else {
-                    cli.push_back(val);
+                    cli.push_back(cli_flag);
+                    if (val.is_number_float()) {
+                        cli.push_back(std::to_string((double) val));
+                    } else if (val.is_number_integer()) {
+                        cli.push_back(std::to_string((int) val));
+                    } else {
+                        cli.push_back(val);
+                    }
                 }
             }
         }
