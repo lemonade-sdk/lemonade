@@ -70,7 +70,14 @@ std::string resolve_mlx_backend(const std::string& backend) {
 #if defined(__APPLE__)
     return "metal";
 #else
-    return is_supported_rocm_arch(SystemInfo::get_rocm_arch()) ? "rocm" : "cpu";
+    if (is_supported_rocm_arch(SystemInfo::get_rocm_arch())) {
+        return "rocm";
+    }
+    throw std::runtime_error(
+        "No supported lemon-mlx backend is available on this system. "
+        "Use Apple Silicon Metal or Linux ROCm on gfx1151. "
+        "The CPU implementation is retained for development but is not "
+        "currently exposed because its performance is not competitive.");
 #endif
 }
 
@@ -843,6 +850,10 @@ std::vector<json> transform_chat_stream_chunk(const json& chunk,
 
         for (const auto& piece : pieces) {
             json split_chunk = chunk;
+            // Usage/timing metadata belongs to the backend's original event.
+            // Do not duplicate it into every synthetic reasoning/content piece.
+            split_chunk.erase("usage");
+            split_chunk.erase("timings");
             json split_choice = base_choice;
             split_choice["delta"][piece.first] = piece.second;
             split_chunk["choices"] = json::array({split_choice});
@@ -1403,6 +1414,9 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
     auto first_token_at = started;
     bool saw_first_token = false;
     bool stream_error = false;
+    std::string stream_error_message;
+    bool backend_response_error = false;
+    std::string backend_error_body;
     bool client_aborted = false;
     bool locally_finished = false;
     bool has_done_marker = false;
@@ -1574,6 +1588,10 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             url,
             prepared_body,
             [&](const char* data, size_t length) {
+                if (backend_response_error) {
+                    backend_error_body.append(data, length);
+                    return true;
+                }
                 event_buffer.append(data, length);
 
                 while (true) {
@@ -1596,12 +1614,55 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
                 return true;
             },
             {},
-            timeout_seconds
+            timeout_seconds,
+            [&](int status_code) {
+                backend_response_error = status_code != 200;
+            }
         );
 
-        if (result.status_code != 200 && !locally_finished && !client_aborted) {
+        if (!locally_finished && !client_aborted &&
+            result.status_code != 0 && result.status_code != 200) {
             stream_error = true;
-            LOG(ERROR, kLog) << "Backend returned error: " << result.status_code << std::endl;
+            stream_error_message = "lemon-mlx backend returned HTTP " +
+                std::to_string(result.status_code);
+            try {
+                const json backend_error = json::parse(backend_error_body);
+                if (backend_error.contains("error")) {
+                    const auto& error = backend_error["error"];
+                    if (error.is_string()) {
+                        stream_error_message = error.get<std::string>();
+                    } else if (error.is_object() && error.contains("message") &&
+                               error["message"].is_string()) {
+                        stream_error_message = error["message"].get<std::string>();
+                    }
+                } else if (backend_error.contains("message") &&
+                           backend_error["message"].is_string()) {
+                    stream_error_message = backend_error["message"].get<std::string>();
+                }
+            } catch (const json::exception&) {
+                if (!backend_error_body.empty()) {
+                    constexpr size_t kMaxBackendErrorLength = 4096;
+                    const std::string bounded_body =
+                        backend_error_body.substr(0, kMaxBackendErrorLength);
+                    stream_error_message += ": " + bounded_body;
+                    if (backend_error_body.size() > bounded_body.size()) {
+                        stream_error_message += "...";
+                    }
+                }
+            }
+            LOG(ERROR, kLog) << stream_error_message << std::endl;
+        } else if (!locally_finished && !client_aborted &&
+                   result.curl_code != 0 && !has_done_marker) {
+            stream_error = true;
+            stream_error_message = result.curl_error.empty()
+                ? std::string("lemon-mlx streaming connection ended unexpectedly")
+                : std::string("lemon-mlx streaming failed: ") + result.curl_error;
+            LOG(ERROR, kLog) << stream_error_message << std::endl;
+        } else if (!locally_finished && !client_aborted &&
+                   result.status_code == 0 && !has_done_marker) {
+            stream_error = true;
+            stream_error_message = "lemon-mlx backend returned no HTTP response";
+            LOG(ERROR, kLog) << stream_error_message << std::endl;
         }
     } catch (const std::exception& e) {
         if (client_aborted) {
@@ -1610,7 +1671,9 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             LOG(DEBUG, kLog) << "Streaming request stopped after local stop sequence" << std::endl;
         } else {
             stream_error = true;
-            LOG(ERROR, kLog) << "Streaming request failed: " << e.what() << std::endl;
+            stream_error_message = e.what();
+            LOG(ERROR, kLog) << "Streaming request failed: "
+                             << stream_error_message << std::endl;
         }
     }
 
@@ -1666,6 +1729,18 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
     } else {
+        if (!client_aborted) {
+            const json error = {
+                {"error", {
+                    {"message", stream_error_message.empty()
+                        ? std::string("lemon-mlx streaming failed")
+                        : stream_error_message},
+                    {"type", "backend_error"}
+                }}
+            };
+            const std::string event = sse_data_event(error);
+            sink.write(event.c_str(), event.size());
+        }
         sink.done();
     }
 }

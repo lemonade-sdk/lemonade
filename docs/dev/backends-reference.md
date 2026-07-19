@@ -12,7 +12,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
-| `lemon-mlx` | Lemon MLX (experimental) | yes | yes | cpu, metal, rocm |
+| `lemon-mlx` | Lemon MLX (experimental) | yes | yes | metal, rocm |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
@@ -38,7 +38,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | metal | macos | metal |
 | `lemon-mlx` | metal | macos | metal |
 | `lemon-mlx` | rocm | linux | amd_gpu (gfx1151) |
-| `lemon-mlx` | cpu | linux, macos | cpu (arm64, x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |

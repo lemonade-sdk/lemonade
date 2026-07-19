@@ -17,7 +17,7 @@ inline const BackendDescriptor descriptor = {
     /*binary*/          "server",
 #endif
     /*config_section*/  "",  // defaults to recipe
-    /*default_device*/  DEVICE_GPU,  // cpu variant resolves to CPU via effective_device()
+    /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,
     /*uses_ctx_size*/   true,
@@ -31,7 +31,6 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"metal", {"macos"}, { {"metal", {}} }, "Apple Silicon GPU"},
         {"rocm", {"linux"}, { {"amd_gpu", {"gfx1151"}} }, "AMD Strix Halo iGPU (gfx1151)"},
-        {"cpu", {"linux", "macos"}, { {"cpu", {"x86_64", "arm64"}} }, "x86_64 CPU; ARM64 CPU (macOS)"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
@@ -45,6 +44,8 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
     /*arg_variants*/    {},
+    // Keep the CPU artifact and implementation available for development and
+    // future optimization, but do not advertise it as a supported runtime path.
     /*bin_variants*/    {"metal", "rocm", "cpu"},
     /*config_extra*/    nlohmann::json::object(),
 };
