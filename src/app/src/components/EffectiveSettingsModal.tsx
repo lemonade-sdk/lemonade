@@ -85,7 +85,7 @@ function shellQuote(token: string): string {
 }
 
 function formatCommand(modelName: string, args: string[]): string {
-  const parts = ['lemonade-server', 'load', shellQuote(modelName), ...args.map(shellQuote)];
+  const parts = ['lemonade', 'load', shellQuote(modelName), ...args.map(shellQuote)];
   return parts.join(' ');
 }
 
@@ -193,19 +193,30 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     if (!argsField) return;
     setBusy(true);
     setNotice(null);
+    const previousOverride = getSessionArgsOverride(modelName);
+    const restorePreviousOverride = () => {
+      if (previousOverride) setSessionArgsOverride(modelName, previousOverride.recipe, previousOverride.args);
+      else clearSessionArgsOverride(modelName);
+    };
     try {
       setSessionArgsOverride(modelName, recipe, draft.trim());
       if (isModelLoaded) {
-        await onReload();
+        try {
+          await onReload();
+        } catch (reloadErr) {
+          restorePreviousOverride();
+          try { await onReload(); } catch { /* keep the original failure */ }
+          throw reloadErr;
+        }
         setNotice('Applied and reloaded with the new arguments.');
       } else {
         setNotice('Saved for this session. It will take effect the next time this model loads.');
       }
-      await loadEffective();
       setUnlocked(false);
     } catch (err) {
       setNotice(friendlyErrorMessage(err));
     } finally {
+      await loadEffective();
       setBusy(false);
     }
   }, [argsField, modelName, recipe, draft, isModelLoaded, onReload, loadEffective]);
