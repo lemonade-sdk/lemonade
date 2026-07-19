@@ -94,6 +94,7 @@ def test_lemon_mlx_models_are_modern_and_sized():
     models = json.loads(_read("src/cpp/resources/server_models.json"))
     expected = {
         "Qwen3.5-0.8B-MLX": "mlx-community/Qwen3.5-0.8B-4bit",
+        "Qwen3.5-4B-MLX": "mlx-community/Qwen3.5-4B-4bit",
         "Qwen3.6-35B-A3B-MLX": "mlx-community/Qwen3.6-35B-A3B-4bit",
         "Qwen3.6-27B-MLX": "mlx-community/Qwen3.6-27B-4bit",
     }
@@ -112,6 +113,24 @@ def test_lemon_mlx_models_are_modern_and_sized():
         assert model["checkpoint"] == checkpoint
         assert model["suggested"] is True
         assert isinstance(model["size"], (int, float)) and model["size"] > 0
+
+    # P4 honesty: only the 4B gate model is labeled tool-calling for MLX.
+    assert "tool-calling" in lemon_mlx_models["Qwen3.5-4B-MLX"].get("labels", [])
+    assert "tool-calling" not in lemon_mlx_models["Qwen3.5-0.8B-MLX"].get("labels", [])
+
+
+def test_lemon_mlx_tool_capabilities_p4():
+    """P4: capability catalog advertises tools for lemon-mlx."""
+    import importlib.util
+
+    caps_path = ROOT / "test" / "utils" / "capabilities.py"
+    spec = importlib.util.spec_from_file_location("capabilities", caps_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    llm = mod.CAPABILITIES["llm"]["lemon-mlx"]
+    assert llm["supports"]["tool_calls"] is True
+    assert llm["supports"]["tool_calls_streaming"] is True
+    assert llm["test_models"]["llm"] == "Qwen3.5-0.8B-MLX"
 
 
 def test_lemon_mlx_capabilities_match_supported_runtime_paths():

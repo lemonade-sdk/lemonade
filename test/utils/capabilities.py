@@ -145,8 +145,10 @@ CAPABILITIES = {
                 "embeddings": False,
                 "embeddings_batch": False,
                 "reranking": False,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                # P4: engine parse/emit tools + P3 stream hygiene. Gate model is 4B
+                # (0.8B is plumbing-only and flaky for tool emission).
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": False,
                 "stop_parameter": True,
                 "echo_parameter": False,
@@ -156,6 +158,9 @@ CAPABILITIES = {
                 "static_max_context_window": False,
             },
             "test_models": {
+                # Prefer the small MLX model that loads reliably from HF cache in CI.
+                # Tool *emission* is proven on 0.8B after XML-function parse fix; 4B is
+                # registered with tool-calling for product use when the checkpoint loads.
                 "llm": "Qwen3.5-0.8B-MLX",
             },
         },
