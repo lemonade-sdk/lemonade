@@ -11226,6 +11226,7 @@ button.detail-presets__explanation-step {
 .inspect-layout {
   display: grid;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-rows: 100%;
   height: 100%;
   width: 100%;
   background: var(--surface-0);
@@ -14922,3 +14923,19 @@ button.detail-presets__explanation-step {
   .global-settings-card__head > span { text-align: left; }
   .global-model-settings__footer > div { display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* message-card toggler cleanroom styles */
+.message-card__toggle-segmented {
+  display: inline-flex !important;
+  padding: 1px !important;
+  background: var(--surface-3) !important;
+  border: 1px solid var(--border-subtle) !important;
+  margin-right: 8px !important;
+}
+
+.message-card__toggle-segmented button {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  font-weight: var(--weight-semibold) !important;
+}
+
