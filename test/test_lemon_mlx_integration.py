@@ -148,12 +148,26 @@ def test_lemon_mlx_tool_capabilities_p4():
 
 
 def test_lemon_mlx_capabilities_match_supported_runtime_paths():
-    capabilities = _read("test/utils/capabilities.py")
-    assert '"lemon-mlx": {' in capabilities
-    assert '"backends": ["metal", "rocm"]' in capabilities
-    assert '"backends": ["metal", "rocm", "cpu"]' not in capabilities
-    assert '"chat_completions_streaming": True' in capabilities
-    assert '"completions_streaming": False' in capabilities
-    assert '"tool_calls": False' in capabilities
-    assert '"tool_calls_streaming": False' in capabilities
-    assert '"llm": "Qwen3.5-0.8B-MLX"' in capabilities
+    """Lemon-mlx-scoped runtime capability contract (not file-wide substring).
+
+    File-wide searches for '"tool_calls": False/True' match other backends
+    (llamacpp/flm False; ryzenai True) and do not uniquely prove lemon-mlx.
+    """
+    import importlib.util
+
+    caps_path = ROOT / "test" / "utils" / "capabilities.py"
+    spec = importlib.util.spec_from_file_location("capabilities", caps_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    llm = mod.CAPABILITIES["llm"]["lemon-mlx"]
+    assert set(llm["backends"]) >= {"metal", "rocm"}
+    assert "cpu" in llm["backends"]
+    assert llm["supports"]["chat_completions_streaming"] is True
+    assert llm["supports"]["completions_streaming"] is False
+    # P4: tools path wired (engine parse/emit + P3 stream hygiene).
+    assert llm["supports"]["tool_calls"] is True
+    assert llm["supports"]["tool_calls_streaming"] is True
+    # CI plumbing model (small); product tool-calling label remains on 4B only.
+    assert llm["test_models"]["llm"] == "Qwen3.5-0.8B-MLX"
+
