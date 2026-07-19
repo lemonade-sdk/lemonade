@@ -148,7 +148,14 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "vllm": {
     "args": "",
     "backend": "auto"
-  },
+  },,
+  "lemon-mlx": {
+    "args": "",
+    "backend": "auto",
+    "cpu_bin": "builtin",
+    "metal_bin": "builtin",
+    "rocm_bin": "builtin"
+  }
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

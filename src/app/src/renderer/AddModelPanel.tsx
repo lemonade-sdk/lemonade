@@ -37,7 +37,7 @@ interface AddModelPanelProps {
   initialValues?: AddModelInitialValues;
 }
 
-const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
+const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'lemon-mlx', 'flm', 'ryzenai-llm'];
 const HIDDEN_RECIPE_OPTIONS = new Set([COLLECTION_OMNI_MODEL_RECIPE]);
 
 const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
@@ -57,6 +57,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
   'ryzenai-llm': {
     name: 'Qwen2.5-0.5B-Instruct-CPU',
     checkpoint: 'amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx',
+  },
+  'lemon-mlx': {
+    name: 'Qwen3.5-0.8B-MLX',
+    checkpoint: 'mlx-community/Qwen3.5-0.8B-4bit',
   },
   'flm': {
     name: 'Gemma-3-4B-FLM',

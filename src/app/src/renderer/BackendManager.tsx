@@ -6,15 +6,15 @@ import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import CloudProvidersSection from './CloudProvidersSection';
 
-const RECIPE_ORDER = new Map([
-  'llamacpp',
+const RECIPE_ORDER = new Map([  'llamacpp',
+  'lemon-mlx',
+  'vllm',
   'whispercpp',
   'moonshine',
   'sd-cpp',
   'kokoro',
   'flm',
   'ryzenai-llm',
-  'vllm',
 ].map((recipe, index) => [recipe, index]));
 
 interface GithubReleaseRef {
