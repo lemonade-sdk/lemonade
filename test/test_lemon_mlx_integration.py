@@ -89,6 +89,20 @@ def test_lemon_mlx_static_integration_contract():
     assert '"type", "backend_error"' in mlx_server
     assert "The CPU implementation is retained for development" in mlx_server
 
+    # P3 stream hygiene: preserve/dedupe engine tool_calls (no second parser).
+    assert 'tool_calls' in mlx_server
+    assert 'has_tool_calls' in mlx_server
+    assert 'tool_calls_once' in mlx_server
+    assert 'last_non_null_finish_reason' in mlx_server
+    assert 'saw_engine_terminal_finish' in mlx_server
+    # Must not hardcode synthetic trailer finish_reason "stop" without tracking.
+    assert 'finish_reason", "stop"' not in mlx_server or 'last_non_null_finish_reason' in mlx_server
+    # Blocking→stream fallback must emit structured tool_calls.
+    assert 'delta", {{"tool_calls"' in mlx_server or '"tool_calls", message["tool_calls"]' in mlx_server
+    # No free-text tool parser inventing tool_calls from content.
+    assert 'ToolCallProcessor' not in mlx_server
+    assert 'parse_tool' not in mlx_server.lower() or 'prepare_request' in mlx_server
+
 
 def test_lemon_mlx_models_are_modern_and_sized():
     models = json.loads(_read("src/cpp/resources/server_models.json"))

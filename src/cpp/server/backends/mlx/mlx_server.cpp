@@ -821,6 +821,9 @@ bool choice_has_role_only(const json& choice) {
 
 std::vector<json> transform_chat_stream_chunk(const json& chunk,
                                               ReasoningStreamNormalizer& normalizer) {
+    // Reasoning-only transform. Never invent tool_calls from free text.
+    // Preserve engine-emitted delta.tool_calls exactly once (do not clone onto
+    // every content/reasoning split piece). See tools-plan-lemonade Workstream A.
     if (!chunk.contains("choices") || !chunk["choices"].is_array()) {
         return {chunk};
     }
@@ -832,15 +835,33 @@ std::vector<json> transform_chat_stream_chunk(const json& chunk,
     for (const auto& choice : chunk["choices"]) {
         if (!choice.is_object() || !choice.contains("delta") || !choice["delta"].is_object() ||
             !choice["delta"].contains("content") || !choice["delta"]["content"].is_string()) {
+            // Pure tool_calls / finish_reason / role-only / etc. — pass through.
             passthrough["choices"].push_back(choice);
             continue;
         }
 
         json base_choice = choice;
+        // Detach tool_calls before splitting content so they are not duplicated
+        // onto every reasoning/content piece.
+        json tool_calls_once = json();
+        const bool has_tool_calls =
+            base_choice["delta"].contains("tool_calls") &&
+            !base_choice["delta"]["tool_calls"].is_null() &&
+            !(base_choice["delta"]["tool_calls"].is_array() &&
+              base_choice["delta"]["tool_calls"].empty());
+        if (has_tool_calls) {
+            tool_calls_once = base_choice["delta"]["tool_calls"];
+            base_choice["delta"].erase("tool_calls");
+        }
+
         const auto pieces = normalizer.consume(choice["delta"]["content"].get<std::string>());
         base_choice["delta"].erase("content");
 
         if (pieces.empty()) {
+            // Content buffered by normalizer; reattach tool_calls once if present.
+            if (has_tool_calls) {
+                base_choice["delta"]["tool_calls"] = tool_calls_once;
+            }
             if (!base_choice["delta"].empty() || choice_has_role_only(base_choice) ||
                 (base_choice.contains("finish_reason") && !base_choice["finish_reason"].is_null())) {
                 passthrough["choices"].push_back(base_choice);
@@ -848,6 +869,7 @@ std::vector<json> transform_chat_stream_chunk(const json& chunk,
             continue;
         }
 
+        // Emit content / reasoning_content pieces without tool_calls.
         for (const auto& piece : pieces) {
             json split_chunk = chunk;
             // Usage/timing metadata belongs to the backend's original event.
@@ -856,8 +878,34 @@ std::vector<json> transform_chat_stream_chunk(const json& chunk,
             split_chunk.erase("timings");
             json split_choice = base_choice;
             split_choice["delta"][piece.first] = piece.second;
+            // Intermediate content pieces should not carry a terminal finish_reason.
+            if (split_choice.contains("finish_reason") &&
+                !split_choice["finish_reason"].is_null()) {
+                split_choice["finish_reason"] = nullptr;
+            }
             split_chunk["choices"] = json::array({split_choice});
             chunks.push_back(split_chunk);
+        }
+
+        // Emit tool_calls exactly once after content pieces (if any).
+        if (has_tool_calls) {
+            json tools_choice = json{
+                {"index", base_choice.value("index", 0)},
+                {"delta", {{"tool_calls", tool_calls_once}}},
+                {"finish_reason", nullptr},
+            };
+            if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+                tools_choice["finish_reason"] = choice["finish_reason"];
+            }
+            passthrough["choices"].push_back(std::move(tools_choice));
+        } else if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+            // Preserve finish_reason that arrived with content-only delta.
+            json fr_choice = json{
+                {"index", base_choice.value("index", 0)},
+                {"delta", json::object()},
+                {"finish_reason", choice["finish_reason"]},
+            };
+            passthrough["choices"].push_back(std::move(fr_choice));
         }
     }
 
@@ -1072,7 +1120,19 @@ std::vector<json> stream_chunks_from_blocking_response(
         if (chat_response && choice.contains("message") && choice["message"].is_object()) {
             const auto& message = choice["message"];
             const std::string reasoning = message.value("reasoning_content", std::string());
-            const std::string content = message.value("content", std::string());
+            // content may be null when only tool_calls are present.
+            std::string content;
+            if (message.contains("content") && message["content"].is_string()) {
+                content = message["content"].get<std::string>();
+            }
+            const bool has_tool_calls =
+                message.contains("tool_calls") && message["tool_calls"].is_array() &&
+                !message["tool_calls"].empty();
+            std::string finish_reason = choice.value("finish_reason", std::string("stop"));
+            if (has_tool_calls && (finish_reason.empty() || finish_reason == "stop")) {
+                // Prefer OpenAI tool_calls finish when structured calls are present.
+                finish_reason = "tool_calls";
+            }
 
             json role_chunk = {
                 {"id", id}, {"object", "chat.completion.chunk"}, {"created", created}, {"model", model},
@@ -1094,6 +1154,32 @@ std::vector<json> stream_chunks_from_blocking_response(
                 };
                 chunks.push_back(std::move(content_chunk));
             }
+            // Preserve structured tool_calls (do not invent from free text).
+            if (has_tool_calls) {
+                json tools_chunk = {
+                    {"id", id},
+                    {"object", "chat.completion.chunk"},
+                    {"created", created},
+                    {"model", model},
+                    {"choices",
+                     json::array({{{"index", index},
+                                   {"delta", {{"tool_calls", message["tool_calls"]}}},
+                                   {"finish_reason", nullptr}}})}
+                };
+                chunks.push_back(std::move(tools_chunk));
+            }
+            // Terminal finish_reason for this choice (used by send_final_done tracker).
+            json finish_chunk = {
+                {"id", id},
+                {"object", "chat.completion.chunk"},
+                {"created", created},
+                {"model", model},
+                {"choices",
+                 json::array({{{"index", index},
+                               {"delta", json::object()},
+                               {"finish_reason", finish_reason}}})}
+            };
+            chunks.push_back(std::move(finish_chunk));
         } else if (!chat_response && choice.contains("text") && choice["text"].is_string()) {
             json chunk = {
                 {"id", id}, {"object", "text_completion.chunk"}, {"created", created}, {"model", model},
@@ -1430,11 +1516,36 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
         request_stop_sequences(prepared_request));
     SmallQwenRepetitionStopper repetition_stopper(is_small_qwen_model(stream_model_ref));
     json last_chunk = json::object();
+    // Track last non-null finish_reason from engine/transformed chunks so the
+    // synthetic trailer does not clobber "tool_calls" with "stop".
+    std::string last_non_null_finish_reason;
+    bool saw_engine_terminal_finish = false;
 
-    const auto write_chunk = [this, &sink, &saw_first_token, &first_token_at, &estimated_output_tokens, &client_aborted](const json& chunk) -> bool {
+    const auto note_finish_reasons = [&](const json& chunk) {
+        if (!chunk.contains("choices") || !chunk["choices"].is_array()) {
+            return;
+        }
+        for (const auto& choice : chunk["choices"]) {
+            if (!choice.is_object() || !choice.contains("finish_reason") ||
+                choice["finish_reason"].is_null()) {
+                continue;
+            }
+            if (choice["finish_reason"].is_string()) {
+                const auto fr = choice["finish_reason"].get<std::string>();
+                if (!fr.empty()) {
+                    last_non_null_finish_reason = fr;
+                    saw_engine_terminal_finish = true;
+                }
+            }
+        }
+    };
+
+    const auto write_chunk = [this, &sink, &saw_first_token, &first_token_at, &estimated_output_tokens,
+                              &client_aborted, &note_finish_reasons](const json& chunk) -> bool {
         if (client_aborted) {
             return false;
         }
+        note_finish_reasons(chunk);
         const int streamed_tokens = estimate_streamed_tokens(chunk);
         if (streamed_tokens > 0) {
             estimated_output_tokens += streamed_tokens;
@@ -1469,12 +1580,19 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             return false;
         }
 
-        json final_chunk = last_chunk.is_object() ? last_chunk : json::object();
-        final_chunk.erase("usage");
-        final_chunk.erase("timings");
-        final_chunk["choices"] = json::array({{{"delta", json::object()}, {"index", 0}, {"finish_reason", "stop"}}});
-        if (!write_chunk(final_chunk)) {
-            return false;
+        // Prefer engine-provided finish_reason (e.g. "tool_calls") over a hardcoded
+        // "stop". Skip synthesizing a terminal choice when the engine already sent one.
+        const std::string finish =
+            !last_non_null_finish_reason.empty() ? last_non_null_finish_reason : "stop";
+        if (!saw_engine_terminal_finish) {
+            json final_chunk = last_chunk.is_object() ? last_chunk : json::object();
+            final_chunk.erase("usage");
+            final_chunk.erase("timings");
+            final_chunk["choices"] = json::array(
+                {{{"delta", json::object()}, {"index", 0}, {"finish_reason", finish}}});
+            if (!write_chunk(final_chunk)) {
+                return false;
+            }
         }
 
         const char* done_marker = "data: [DONE]\n\n";
