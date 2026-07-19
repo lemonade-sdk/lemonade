@@ -517,6 +517,12 @@ export function useInspectStore() {
   return state;
 }
 
+// Helper to extract thinking blocks (leading <think>...</think> only)
+function extractThinking(rawContent: string): string | undefined {
+  const thinkMatch = /^\s*<think>([\s\S]*?)<\/think>/.exec(rawContent);
+  return thinkMatch ? thinkMatch[1].trim() : undefined;
+}
+
 // OTEL attribute parser helper
 function parseOtelSpan(span: OtelSpan): Trace | null {
   if (!span || !span.traceId) return null;
@@ -553,13 +559,22 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
   // Search for message array in attributes (support OpenInference & OTel GenAI)
   let i = 0;
   while (true) {
-    const role = attrs[`llm.input_messages.${i}.message.role`] || attrs[`gen_ai.input.messages.${i}.role`] || attrs[`llm.input_messages.${i}.role`];
-    const content = attrs[`llm.input_messages.${i}.message.content`] || attrs[`gen_ai.input.messages.${i}.content`] || attrs[`llm.input_messages.${i}.content`];
+    const roleRaw = attrs[`llm.input_messages.${i}.message.role`] || attrs[`gen_ai.input.messages.${i}.role`] || attrs[`llm.input_messages.${i}.role`];
+    const contentRaw = attrs[`llm.input_messages.${i}.message.content`] || attrs[`gen_ai.input.messages.${i}.content`] || attrs[`llm.input_messages.${i}.content`];
 
-    if (role === undefined && content === undefined) {
+    if (roleRaw === undefined && contentRaw === undefined) {
       break;
     }
-    messages.push({ role: (role === 'system' || role === 'assistant' ? role : 'user'), content: String(content || '') });
+
+    const role = (roleRaw === 'system' || roleRaw === 'assistant') ? roleRaw : 'user';
+    const content = String(contentRaw || '');
+    let thinking: string | undefined;
+
+    if (role === 'assistant') {
+      thinking = extractThinking(content);
+    }
+
+    messages.push({ role, content, thinking });
     i++;
   }
 
@@ -631,15 +646,8 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
 
   // Extract thinking/reasoning if present (like <think> blocks)
   if (kind === 'LLM' && output && typeof output === 'string') {
-    const thinkMatch = /<think>([\s\S]*?)<\/think>([\s\S]*)/.exec(output);
-    if (thinkMatch) {
-      // Create assistant message with thinking
-      const thinking = thinkMatch[1].trim();
-      const content = thinkMatch[2].trim();
-      messages.push({ role: 'assistant', content, thinking });
-    } else {
-      messages.push({ role: 'assistant', content: output });
-    }
+    const thinking = extractThinking(output);
+    messages.push({ role: 'assistant', content: output, thinking });
   } else if (kind === 'LLM' && output) {
     messages.push({ role: 'assistant', content: String(output) });
   }
