@@ -344,7 +344,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG 89c932f313c6437c38f2982869beacc89c2f2246  # v0.26.0
+        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -621,6 +621,8 @@ include_directories(
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
+    src/cpp/server/jobs/job_ops.cpp
+    src/cpp/server/jobs/job_manager.cpp
     src/cpp/server/router.cpp
     src/cpp/server/global_vram_monitor.cpp
     src/cpp/server/eviction_engine.cpp
@@ -658,6 +660,7 @@ set(SOURCES_CORE
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
+    src/cpp/server/mcp_client.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
@@ -771,9 +774,10 @@ if(WIN32)
             /NXCOMPAT         # Data Execution Prevention (DEP)
             /GUARD:CF         # Control Flow Guard
         )
-        # Embed manifest file
+        # Embed manifest file. /MANIFESTINPUT's path must be quoted; unquoted,
+        # a path containing a space breaks the linker with LNK1181.
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
         )
     endif()
 endif()
@@ -820,6 +824,33 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
     add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
+endif()
+
+set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
+if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    find_package(Threads REQUIRED)
+
+    add_executable(test_mcp_client_config
+        ${MCP_CLIENT_CONFIG_TEST_SOURCE}
+        src/cpp/server/mcp_client.cpp
+    )
+    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_mcp_client_config PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_mcp_client_config PRIVATE httplib::httplib)
+    endif()
+
+    if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
+        file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
+        file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py" LEMONADE_TEST_MCP_STDIO_SERVER_PATH)
+        target_compile_definitions(test_mcp_client_config PRIVATE
+            "LEMONADE_TEST_PYTHON=\"${LEMONADE_TEST_PYTHON_PATH}\""
+            "LEMONADE_TEST_MCP_STDIO_SERVER=\"${LEMONADE_TEST_MCP_STDIO_SERVER_PATH}\"")
+    endif()
+
+    add_test(NAME mcp_client_config COMMAND test_mcp_client_config)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -1932,6 +1963,33 @@ if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
     add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
 endif()
 
+# Job engine pure core: the `when`/`branch` expression evaluator + reference
+# resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
+# so these link only nlohmann/json.
+set(_JOB_EXPR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_expr.cpp")
+if(EXISTS "${_JOB_EXPR_TEST_SRC}")
+    add_executable(test_job_expr test/cpp/test_job_expr.cpp)
+    target_include_directories(test_job_expr PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_test(NAME JobExprTest COMMAND test_job_expr)
+endif()
+
+set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
+if(EXISTS "${_JOB_GRAPH_TEST_SRC}")
+    add_executable(test_job_graph test/cpp/test_job_graph.cpp)
+    target_include_directories(test_job_graph PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_graph PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_test(NAME JobGraphTest COMMAND test_job_graph)
+endif()
+
 # Backend install atomicity (staging + verified atomic swap).
 # Header-only unit under test, so no extra source files are required.
 set(_INSTALL_ATOMICITY_TEST_SRC
@@ -2298,4 +2356,11 @@ if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
     add_test(NAME CloudDiscoveryPolicyTest COMMAND test_cloud_discovery_policy)
+endif()
+
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
 endif()

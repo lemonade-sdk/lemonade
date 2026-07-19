@@ -58,8 +58,8 @@ def test_lemon_mlx_static_integration_contract():
     assert "return default_backend_ops();" in mlx_server
     assert "ROCM_HOME" in mlx_server
     assert "ROCM_PATH" in mlx_server
-    assert "HIP_VISIBLE_DEVICES" in mlx_server
-    assert '{"LD_LIBRARY_PATH", executable_dir.string()}' in mlx_server
+    assert 'join_paths(lib_paths, std::getenv("LD_LIBRARY_PATH"))' in mlx_server
+    assert '{"MLX_DISABLE_COMPILE", "1"}' in mlx_server
     assert "mlx-engine-" in mlx_server
     assert "max_completion_tokens" in mlx_server
     assert "reasoning_content" in mlx_server
@@ -84,6 +84,7 @@ def test_lemon_mlx_static_integration_contract():
     assert "repetition_penalty" in mlx_server
     assert "emit_blocking_response_fallback" in mlx_server
     assert 'request["stream"] = true' in mlx_server
+    assert "utils::HttpSecurityPolicy::TrustedLoopback" in mlx_server
     assert "stream_error_message" in mlx_server
     assert '"type", "backend_error"' in mlx_server
     assert "The CPU implementation is retained for development" in mlx_server

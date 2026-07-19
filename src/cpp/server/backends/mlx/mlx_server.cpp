@@ -1617,7 +1617,8 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             timeout_seconds,
             [&](int status_code) {
                 backend_response_error = status_code != 200;
-            }
+            },
+            utils::HttpSecurityPolicy::TrustedLoopback
         );
 
         if (!locally_finished && !client_aborted &&

@@ -179,9 +179,9 @@
     "cuda": "v0.1.1"
   },
   "trellis": {
-    "vulkan": "v0.1.5",
-    "rocm-stable": "v0.1.5",
-    "cuda": "v0.1.5"
+    "vulkan": "v0.4.3",
+    "rocm-stable": "v0.4.3",
+    "cuda": "v0.4.3"
   },
   "openmoss": {
     "vulkan": "v0.1.3",

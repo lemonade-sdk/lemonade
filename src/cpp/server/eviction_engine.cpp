@@ -58,6 +58,10 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
     {
         std::lock_guard<std::mutex> lock(router_->load_mutex_);
 
+        // An exclusive job session owns model residency; auto-eviction and
+        // downsizing would yank models out from under its next step.
+        if (router_->exclusive_active_) return;
+
         auto now = std::chrono::steady_clock::now();
         double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
         bool pressure_evict = (current_vram_pct >= threshold);
@@ -153,6 +157,7 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
         WrappedServer* s = nullptr;
         {
             std::lock_guard<std::mutex> lk(router_->load_mutex_);
+            if (router_->exclusive_active_) break;
             s = router_->find_server_by_model_name(name);
             if (!s || !s->try_begin_downsize()) {
                 continue;  // gone, busy, or no longer idle since phase 1
