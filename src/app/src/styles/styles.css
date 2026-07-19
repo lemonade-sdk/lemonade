@@ -14922,3 +14922,21 @@ button.detail-presets__explanation-step {
   .global-settings-card__head > span { text-align: left; }
   .global-model-settings__footer > div { display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* Lemonade chat defaults: the icon carries the Tiny/Quality definition via
+   its native hover title while keeping the model name itself uncluttered. */
+.composer__model-default-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.composer__model-option-row .composer__model-default-icon {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}

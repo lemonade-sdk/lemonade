@@ -11,7 +11,6 @@ import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   canSelectInComposer,
-  canUseChatCompletions,
   capabilityBadge,
   capabilityFromLoaded,
   capabilityFromModelInfo,
@@ -30,7 +29,7 @@ import {
 } from '../modelCapabilities';
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
-import { activeDownloadForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
+import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
@@ -52,6 +51,18 @@ import {
   presetMcpDisplayText,
 } from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
+import {
+  LEMONADE_DEFAULT_CHAT_MODELS,
+  lemonadeDefaultModel,
+  lemonadeDefaultModelInfo,
+  loadLastReadyModelName,
+  loadPreferredDefaultModelName,
+  modelInfoName,
+  modelIsDownloaded,
+  resolveLastReadyChatModel,
+  saveLastReadyModelName,
+  savePreferredDefaultModelName,
+} from '../features/chatDefaultModels';
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
@@ -320,6 +331,12 @@ interface ChatViewProps {
   onModelSelect: (model: string) => void;
   onRefresh: () => void | Promise<void>;
   accountSession: AccountSession;
+}
+
+interface ModelPreparationState {
+  modelName: string;
+  phase: 'waiting' | 'downloading' | 'loading';
+  percent?: number;
 }
 
 const MCP_ENABLED_KEY = 'mcp_enabled';
@@ -678,8 +695,12 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh, accountSession }) => {
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onRefresh, accountSession }) => {
   const storageScope = accountSession.storageScope;
+  const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
+  const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName(storageScope));
+  const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName(storageScope));
+  const [modelPreparation, setModelPreparation] = useState<ModelPreparationState | null>(null);
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference(storageScope));
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference(storageScope), storageScope));
   const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference(storageScope), storageScope));
@@ -823,10 +844,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }
   }, [railExpanded]);
 
-  const currentLoadedModel = useMemo(
-    () => loadedModels.find(m => m.model_name === currentModel) || null,
-    [loadedModels, currentModel],
-  );
   const customModelInfos = useMemo(
     () => loadCustomModels(storageScope).map(customModelToModelInfo),
     [storageScope],
@@ -835,15 +852,41 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     () => {
       const seen = new Set<string>();
       const infos: ModelInfo[] = [];
-      [...customModelInfos, ...api.allModels].forEach(info => {
-        const name = String((info as any).model_name || info.name || info.id || '').toLowerCase();
+      const defaultInfos = LEMONADE_DEFAULT_CHAT_MODELS.map(lemonadeDefaultModelInfo);
+      [...customModelInfos, ...api.allModels, ...defaultInfos].forEach(info => {
+        const rawName = String((info as any).model_name || info.name || info.id || '').trim();
+        const name = rawName.toLowerCase();
         if (!name || seen.has(name)) return;
+        const configuredDefault = lemonadeDefaultModel(rawName);
+        const syntheticDefaultInfo = configuredDefault ? lemonadeDefaultModelInfo(configuredDefault) : null;
+        const normalizedInfo = syntheticDefaultInfo ? {
+          ...syntheticDefaultInfo,
+          ...info,
+          labels: Array.from(new Set([
+            ...(syntheticDefaultInfo.labels || []),
+            ...(info.labels || []),
+          ])),
+        } : info;
         seen.add(name);
-        infos.push(info);
+        infos.push(normalizedInfo);
       });
       return infos;
     },
     [customModelInfos, loadedModels],
+  );
+  const lastReadyModelInfo = useMemo(
+    () => resolveLastReadyChatModel(knownModelInfos, lastReadyModelName),
+    [knownModelInfos, lastReadyModelName],
+  );
+  // A selected/loaded model always wins. With no active runtime, reuse the last
+  // locally-ready chat model before falling back to the user's Lemonade default.
+  const currentModel = fallbackModelOverride
+    || selectedModel
+    || modelInfoName(lastReadyModelInfo)
+    || preferredDefaultModelName;
+  const currentLoadedModel = useMemo(
+    () => loadedModels.find(m => m.model_name.toLowerCase() === currentModel.toLowerCase()) || null,
+    [loadedModels, currentModel],
   );
   const currentCustomModelInfo = useMemo(
     () => findModelInfoByName(customModelInfos, currentModel) || null,
@@ -875,6 +918,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  const currentDefaultModel = lemonadeDefaultModel(currentModel);
+
+  useEffect(() => {
+    if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
+    saveLastReadyModelName(storageScope, currentLoadedModel.model_name);
+    setLastReadyModelName(currentLoadedModel.model_name);
+  }, [currentCapability, currentLoadedModel, storageScope]);
+
   const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
   const isAceStepAudio = currentCapability === 'audio-generation'
     && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
@@ -1108,6 +1159,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     audioInput: boolean;
     info?: ModelInfo;
     detail: string;
+    defaultTier?: 'tiny' | 'quality';
+    defaultLabel?: string;
+    defaultIcon?: 'minimize-2' | 'gem';
+    deferredUntilSend?: boolean;
   };
 
   const modelPickerOptions = useMemo<ModelPickerOption[]>(() => {
@@ -1117,8 +1172,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       const key = option.name.toLowerCase();
       if (!option.name || seen.has(key)) return;
       if (!['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(option.capability)) return;
+      const configuredDefault = lemonadeDefaultModel(option.name);
       seen.add(key);
-      options.push(option);
+      options.push(configuredDefault ? {
+        ...option,
+        defaultTier: configuredDefault.tier,
+        defaultLabel: configuredDefault.label,
+        defaultIcon: configuredDefault.icon,
+      } : option);
     };
 
     selectableModels.forEach(model => addOption({
@@ -1132,21 +1193,32 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     knownModelInfos.forEach(info => {
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
-      const downloaded = Boolean((info as any).downloaded);
-      if (!downloaded || activeDownloadForModel(downloadItems, name)) return;
+      if (!modelIsDownloaded(info) || activeDownloadForModel(downloadItems, name)) return;
+      const configuredDefault = lemonadeDefaultModel(name);
       addOption({
         name,
         capability,
         loaded: false,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
-        detail: 'Downloaded · click to load',
+        detail: configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load',
+        deferredUntilSend: Boolean(configuredDefault),
       });
     });
 
+    LEMONADE_DEFAULT_CHAT_MODELS.forEach(model => addOption({
+      name: model.name,
+      capability: 'chat',
+      loaded: false,
+      audioInput: false,
+      info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
+      detail: model.description,
+      deferredUntilSend: true,
+    }));
+
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${modelModeLabel(option.capability, option.audioInput)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeLabel(option.capability, option.audioInput)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
@@ -1303,11 +1375,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [presetPickerOpen]);
 
   useEffect(() => {
-    const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
-    if (currentStillUsable || loadedModels.length === 0) return;
+    const selectedStillUsable = selectedModel && loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m));
+    const selectedDefault = lemonadeDefaultModel(selectedModel);
+    if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [currentModel, loadedModels, onModelSelect]);
+  }, [loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -1355,6 +1428,133 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       load: () => api.loadModel(modelName, recipeOptions, target),
     });
   }, [globalModelSettings, knownModelInfos, loadedModels, storageScope]);
+
+  const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
+    let sawDownload = false;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < 60 * 60 * 1000) {
+      await downloadStore.refresh();
+      const matching = downloadsForModel(downloadStore.snapshot(), modelName);
+      const active = activeDownloadForModel(matching, modelName);
+      if (active) {
+        sawDownload = true;
+        if (active.status === 'paused') {
+          throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
+        }
+        setModelPreparation({
+          modelName,
+          phase: 'waiting',
+          percent: Number.isFinite(active.percent) ? active.percent : undefined,
+        });
+        await new Promise(resolve => window.setTimeout(resolve, 750));
+        continue;
+      }
+
+      const terminal = [...matching]
+        .filter(isDownloadTerminal)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      // A terminal row that predates this send is history, not a reason to make
+      // the fallback permanently un-retryable. Only interpret terminal state
+      // after this wait loop actually observed the active download.
+      if (!sawDownload) return false;
+      if (terminal?.status === 'completed') return true;
+      if (terminal?.status === 'error') {
+        throw new Error(terminal.error || `Download failed for ${modelName}.`);
+      }
+      if (terminal?.status === 'cancelled') {
+        throw new Error(`Download for ${modelName} was cancelled.`);
+      }
+
+      const freshModels = await api.models(true).catch(() => ({ data: [] as ModelInfo[] }));
+      const freshInfo = findModelInfoByName(freshModels.data, modelName);
+      if (modelIsDownloaded(freshInfo)) return true;
+      throw new Error(`Download for ${modelName} disappeared before it became ready.`);
+    }
+
+    throw new Error(`Download for ${modelName} did not finish.`);
+  }, []);
+
+  const ensureChatModelReady = useCallback(async (
+    modelName: string,
+    initialInfo: ModelInfo | null,
+  ): Promise<ModelSnapshot> => {
+    const loadedFrom = (models: LoadedModel[]) => models.find(
+      model => model.model_name.toLowerCase() === modelName.toLowerCase(),
+    ) || null;
+
+    let health = await api.health();
+    let loaded = loadedFrom(health.all_models_loaded || []);
+    if (loaded) {
+      saveLastReadyModelName(storageScope, loaded.model_name);
+      setLastReadyModelName(loaded.model_name);
+      return snapshotFromLoaded(loaded) || snapshotFromModelInfo(initialInfo) || snapshotFromName(modelName, [loaded])!;
+    }
+
+    let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
+    let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
+    const existingFinished = await waitForExistingModelDownload(modelName);
+    if (existingFinished) {
+      freshModels = await api.models(true).catch(() => freshModels);
+      info = findModelInfoByName(freshModels.data, modelName) || info;
+    }
+
+    if (!modelIsDownloaded(info)) {
+      let pullError: Error | null = null;
+      let pullCompleted = false;
+      downloadStore.markLocal(modelName, 'downloading', 'model');
+      setModelPreparation({ modelName, phase: 'downloading', percent: 0 });
+
+      await api.pullModel(modelName, {
+        onProgress: data => {
+          const item = downloadStore.upsertFromPull(modelName, data as Record<string, unknown>, 'model');
+          setModelPreparation({
+            modelName,
+            phase: 'downloading',
+            percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
+          });
+        },
+        onComplete: data => {
+          pullCompleted = true;
+          downloadStore.upsertFromPull(modelName, {
+            ...(data as Record<string, unknown>),
+            status: 'completed',
+            complete: true,
+            percent: 100,
+          }, 'model');
+        },
+        onError: error => {
+          pullError = error;
+          downloadStore.upsertFromPull(modelName, {
+            status: 'error',
+            error: friendlyErrorMessage(error),
+          }, 'model');
+        },
+      });
+
+      if (pullError) throw pullError;
+      freshModels = await api.models(true).catch(() => freshModels);
+      info = findModelInfoByName(freshModels.data, modelName) || info;
+      if (!pullCompleted && !modelIsDownloaded(info)) {
+        throw new Error(`Lemonade could not finish downloading ${modelName}.`);
+      }
+    }
+
+    setModelPreparation({ modelName, phase: 'loading', percent: 100 });
+    await loadModelWithPolicy(modelName, info || initialInfo);
+    await Promise.resolve(onRefresh());
+    health = await api.health();
+    loaded = loadedFrom(health.all_models_loaded || []);
+    if (!loaded) throw new Error(`${modelName} was downloaded but did not become ready for chat.`);
+
+    saveLastReadyModelName(storageScope, loaded.model_name);
+    setLastReadyModelName(loaded.model_name);
+    setFallbackModelOverride(null);
+    onModelSelect(loaded.model_name);
+    return snapshotFromLoaded(loaded)
+      || snapshotFromModelInfo(info || initialInfo)
+      || snapshotFromName(modelName, [loaded])!;
+  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, storageScope, waitForExistingModelDownload]);
 
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
@@ -1447,7 +1647,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   // Derived: is the CURRENT conversation streaming?
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
-  const isBusy = isStreaming || capabilityBusy || isLiveRecording;
+  const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -2248,41 +2448,85 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
-    if (!canSubmitContent || isBusy) return;
-    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+    if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
 
     let convoId = activeId;
-    const modelSnapshot = currentModelSnapshot;
+    const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
+    const userMessage: Message = {
+      role: 'user',
+      content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
+      images: hasImages ? [...pendingImages] : undefined,
+      audioName: audioFiles[0]?.name,
+      model: initialSnapshot,
+    };
 
-    // Create a new conversation if none is active
     if (!convoId) {
       const newConvo: Conversation = {
         id: generateId(),
         title: titleFromInput(text, hasImages, audioFiles),
-        model: modelSnapshot,
-        messages: [],
+        model: initialSnapshot,
+        messages: [userMessage],
         updatedAt: Date.now(),
         schemaVersion: STORAGE_VERSION,
       };
       convoId = newConvo.id;
       setConversations(prev => [newConvo, ...prev]);
       setActiveId(convoId);
+    } else {
+      updateConversation(convoId, conversation => ({
+        ...conversation,
+        messages: [...conversation.messages, userMessage],
+        model: initialSnapshot,
+        title: conversation.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : conversation.title,
+        updatedAt: Date.now(),
+      }));
     }
-
-    const userMessage: Message = {
-      role: 'user',
-      content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
-      images: hasImages ? [...pendingImages] : undefined,
-      audioName: audioFiles[0]?.name,
-      model: modelSnapshot,
-    };
 
     setInputValue('');
     setPendingImages([]);
     setPendingAudioFiles([]);
+    void speakWithPinnedTts(text, 'user');
 
-    await startAssistantResponse(convoId, modelSnapshot, userMessage, currentMessages, audioFiles, true);
+    if (!api.isConnected) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError('Lemonade Server is not connected. Reconnect the server, then retry this message.'),
+        model: initialSnapshot,
+        isError: true,
+      });
+      return;
+    }
+
+    try {
+      const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo);
+      updateConversation(convoId, conversation => ({
+        ...conversation,
+        model: preparedSnapshot,
+        messages: conversation.messages.map((message, index) => (
+          index === conversation.messages.length - 1 && message.role === 'user'
+            ? { ...message, model: preparedSnapshot }
+            : message
+        )),
+        updatedAt: Date.now(),
+      }));
+      setModelPreparation(null);
+      await startAssistantResponse(
+        convoId,
+        preparedSnapshot,
+        { ...userMessage, model: preparedSnapshot },
+        currentMessages,
+        audioFiles,
+        false,
+      );
+    } catch (error) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError(friendlyErrorMessage(error)),
+        model: initialSnapshot,
+        isError: true,
+      });
+    } finally {
+      setModelPreparation(null);
+    }
   };
 
   const handleRetryAssistant = useCallback(async (messageIndex: number) => {
@@ -2488,11 +2732,27 @@ ${finalText}`
 
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
+      setFallbackModelOverride(null);
       onModelSelect(option.name);
       setModelPickerOpen(false);
       setModelPickerQuery('');
       return;
     }
+
+    if (option.deferredUntilSend) {
+      const configuredDefault = lemonadeDefaultModel(option.name);
+      setFallbackModelOverride(option.name);
+      if (configuredDefault) {
+        const preferred = savePreferredDefaultModelName(storageScope, configuredDefault.name);
+        setPreferredDefaultModelName(preferred);
+      }
+      onModelSelect(option.name);
+      setModelPickerError(null);
+      setModelPickerOpen(false);
+      setModelPickerQuery('');
+      return;
+    }
+
     if (!api.isConnected || modelPickerLoading) return;
     if (activeDownloadForModel(downloadStore.snapshot(), option.name)) {
       setModelPickerError(`${option.name} is still downloading. Wait for the download to finish before loading it.`);
@@ -2503,6 +2763,7 @@ ${finalText}`
     try {
       await loadModelWithPolicy(option.name, option.info || null);
       await Promise.resolve(onRefresh());
+      setFallbackModelOverride(null);
       onModelSelect(option.name);
       setModelPickerOpen(false);
       setModelPickerQuery('');
@@ -2511,7 +2772,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
+  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh, storageScope]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -2519,7 +2780,7 @@ ${finalText}`
     void handleSendRef.current(text);
   }, []);
 
-  const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
+  const hasMessages = messages.length > 0 || isStreaming || capabilityBusy || modelPreparation !== null;
   const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
   const canAttach = acceptsImageAttachments || acceptsAudioAttachments;
   const imageAttachmentLimitReached = acceptsImageAttachments
@@ -2570,7 +2831,11 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
-  const composerHint = supportsChatAudioInput && modeSupportsChatCompletions
+  const composerHint = modelPreparation
+    ? (modelPreparation.phase === 'loading'
+      ? `Loading ${modelPreparation.modelName} for chat…`
+      : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`)
+    : supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
@@ -2825,7 +3090,24 @@ ${finalText}`
                 </article>
               )}
 
-              {capabilityBusy && !isStreaming && (
+              {modelPreparation && !isStreaming && (
+                <article className="message message--assistant" data-model-preparation={modelPreparation.phase}>
+                  <div className="message__avatar"><Icon name="download" size={16} /></div>
+                  <div className="message__body">
+                    <div className="message__author-row">
+                      <div className="message__author">Lemonade</div>
+                    </div>
+                    <div className="message__content message__content--pending">
+                      <span className="streaming-cursor" aria-hidden="true" />
+                      {modelPreparation.phase === 'loading'
+                        ? `Loading ${modelPreparation.modelName} for chat…`
+                        : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
+                    </div>
+                  </div>
+                </article>
+              )}
+
+              {capabilityBusy && !isStreaming && !modelPreparation && (
                 <article className="message message--assistant">
                   <div className="message__avatar"><CapabilityIcon capability={currentCapability} size={16} /></div>
                   <div className="message__body">
@@ -2878,7 +3160,12 @@ ${finalText}`
                 aria-expanded={modelPickerOpen}
               >
                 <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
-                <span className="composer__model-button-name">{currentModel || 'Choose model'}</span>
+                {currentDefaultModel && (
+                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
+                    <Icon name={currentDefaultModel.icon} size={13} />
+                  </span>
+                )}
+                <span className="composer__model-button-name">{currentModel}</span>
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}
@@ -2891,7 +3178,7 @@ ${finalText}`
                     <input
                       autoFocus
                       value={modelPickerQuery}
-                      placeholder="Search downloaded models…"
+                      placeholder="Search ready or Lemonade default models…"
                       onChange={e => setModelPickerQuery(e.target.value)}
                     />
                   </label>
@@ -2910,6 +3197,11 @@ ${finalText}`
                           aria-selected={option.name === currentModel}
                         >
                           <ModelModeIcons capability={option.capability} audioInput={option.audioInput} size={15} />
+                          {option.defaultIcon && option.defaultLabel && (
+                            <span className="composer__model-default-icon" title={option.defaultLabel} aria-label={option.defaultLabel}>
+                              <Icon name={option.defaultIcon} size={14} />
+                            </span>
+                          )}
                           <span className="composer__model-option-text">
                             <strong>{option.name}</strong>
                             <span>{modelModeLabel(option.capability, option.audioInput)} · {option.detail}</span>
@@ -3453,7 +3745,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
       <p className="hero__subtitle">
         {loadedModels.length > 0
           ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
-          : 'Connect to a server and load a chat, omni, image, audio, TTS, or 3D model to begin.'}
+          : 'Ask anything. Lemonade will reuse your last ready chat model or download the selected default automatically.'}
       </p>
 
       <div className="chips" role="list">
