@@ -168,24 +168,134 @@
       "measurement_runs": 3
     },
     {
-      "name": "image-sd-turbo-quick",
+      "name": "image-text1",
       "category": "imagegen",
-      "prompt": "A cartoon penguin wearing sunglasses, surfing on a lemon.",
-      "size": "256x256",
+      "prompt": "text that reads \"Lemonade Local AI Server\"",
+      "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
       "warmup_runs": 0,
-      "measurement_runs": 3
+      "measurement_runs": 1
     },
     {
-      "name": "image-photoreal-outdoor",
+      "name": "image-text1",
       "category": "imagegen",
-      "prompt": "Photorealistic sunrise over a mountain lake with light mist and pine trees, loon swimming in the foreground. Natural colors.",
+      "prompt": "fancy calligraphy text that reads \"Lemonade Local AI Server\"",
       "size": "512x512",
-      "seed": 123,
+      "seed": 42,
       "response_format": "b64_json",
       "warmup_runs": 0,
-      "measurement_runs": 3
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-text2",
+      "category": "imagegen",
+      "prompt": "fancy calligraphy text that reads \"Lemonade Local AI Server\", extruded 3d",
+      "size": "512x512",
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-text3",
+      "category": "imagegen",
+      "prompt": "text in a serif font that reads \"Lemonade Local AI Server\". Arrange the text around the perimeter of a circle",
+      "size": "512x512",
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-text4",
+      "category": "imagegen",
+      "prompt": "Make a picture of gold colored, letter shaped balloons on line one spelling out the phrase \"Lemonade Local AI Server\". Below them, alternating metallic red and green balloons reading \"Refreshingly local intelligence\"",
+      "size": "512x512",
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-text5",
+      "category": "imagegen",
+      "prompt": "Make a protest sign that reads \"Lemonade Local AI Server\" in crudely painted letters.",
+      "size": "512x512",
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-text6",
+      "category": "imagegen",
+      "prompt": "Draw red text that reads \"Lemonade AI Server\". Around that, put green text in block letters that reads \"make local AI the new default\" arranged around the perimeter of a circle. Finally draw blue text in crudely painted letters arranged in a square around the outer perimeter \"Refreshingly local intelligence: free to use, private by design, and built for flexibility.\"",
+      "size": "512x512",
+      "seed": 42,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-small-cartoon",
+      "category": "imagegen",
+      "prompt": "Two happy sea otters floating in the ocean, holding paws and drinking cocktails with little drink umbrellas. Watercolor painting style.",
+      "size": "256x256",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+	{
+      "name": "image-big-cartoon",
+      "category": "imagegen",
+      "prompt": "Two happy sea otters floating in the ocean, holding paws and drinking cocktails with little drink umbrellas. Watercolor painting style.",
+      "size": "1024x1024",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-small-no-style",
+      "category": "imagegen",
+      "prompt": "A night-time scene of two raccons sitting on a mountain top overlooking a valley. There are stars in the sky. Across the valley, a radio tower is seen on top of another mountain.",
+      "size": "256x256",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+	{
+      "name": "image-big-no-style",
+      "category": "imagegen",
+      "prompt": "A night-time scene of two raccons sitting on a mountain top overlooking a valley. There are stars in the sky. Across the valley, a radio tower is seen on top of another mountain.",
+      "size": "1024x1024",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+    {
+      "name": "image-small-photo",
+      "category": "imagegen",
+      "prompt": "Photorealistic, HD. Two red pandas wearing lab coats, working in a high tech workshop, with many sophisticated electronic devices visble. There are \"TOP SECRET\" and \"NO FERRETS ALLOWED\" signs in the background. On the workbench there is a small satellite which has solar panels, radio antennas, and a camera lens. The red pandas are probing the satellite with test instruments.",
+      "size": "256x256",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
+    },
+	{
+      "name": "image-big-photo",
+      "category": "imagegen",
+      "prompt": "Photorealistic, HD. Two red pandas wearing lab coats, working in a high tech workshop, with many sophisticated electronic devices visble. There are \"TOP SECRET\" and \"NO FERRETS ALLOWED\" signs in the background. On the workbench there is a small satellite which has solar panels, radio antennas, and a camera lens. The red pandas are probing the satellite with test instruments.",
+      "size": "1024x1024",
+      "seed": 2046020449,
+      "response_format": "b64_json",
+      "warmup_runs": 0,
+      "measurement_runs": 1
     }
   ]
 }
