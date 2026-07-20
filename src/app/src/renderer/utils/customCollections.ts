@@ -1,8 +1,9 @@
 import type { ModelInfo, ModelsData } from './modelData';
 import { USER_MODEL_PREFIX } from './modelData';
 import { isChatPlannerCandidate } from './modelLabels';
-import { COLLECTION_OMNI_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
+import { COLLECTION_OMNI_MODEL_RECIPE, COLLECTION_ROUTER_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
 import toolDefinitions from './toolDefinitions.json';
+import { ruleNodeToMatchExpr, matchExprToRuleNode } from './routerTree';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
 
@@ -193,6 +194,201 @@ export const modelEntryToCustomCollection = (
     components,
     systemPrompt,
   };
+};
+
+// ---------------------------------------------------------------------------
+// collection.router types + builder
+// ---------------------------------------------------------------------------
+
+// L2/L3 classifier declared in the routing.classifiers array.
+export interface RouterClassifier {
+  id: string;
+  type: 'classifier' | 'semantic_similarity' | 'llm';
+  model: string;
+  prompt?: string;
+  labels?: string[];
+  defaultLabel?: string;
+  onError?: 'match_true' | 'match_false';
+  referencePhrases?: Record<string, string[]>;
+}
+
+export interface RouterRule {
+  id: string;
+  routeTo: string;
+  conditionTree: import('./routerTree').RuleNode | null;
+  outputs?: Record<string, unknown>;
+}
+
+export interface RouterCollectionDraft {
+  id?: string;
+  name: string;
+  createdAt?: string;
+  candidates: string[];        // routing.candidates - the LLMs that answer requests
+  defaultModel: string;        // routing.default_model - must be in candidates
+  // Fixed evaluation order: rules first, then the LLM router, then default_model.
+  // Either stage may be disabled; at least one must be enabled.
+  rulesEnabled: boolean;
+  llmEnabled: boolean;
+  // LLM router stage (routing.router)
+  routerModel?: string;        // routing.router.model - the small classifier LLM (not a candidate)
+  routerPrompt?: string;       // routing.router.prompt
+  // Rules stage (routing.classifiers + routing.rules)
+  classifiers?: RouterClassifier[];
+  rules?: RouterRule[];
+}
+
+export interface RouterCollectionPullRequest {
+  version: '1';
+  model_name: string;
+  recipe: typeof COLLECTION_ROUTER_MODEL_RECIPE;
+  components: string[];
+  routing: Record<string, unknown>;
+}
+
+export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): RouterCollectionPullRequest => {
+  const modelName = makeCollectionId(draft.id ?? draft.name);
+
+  const rulesActive = draft.rulesEnabled && (draft.rules?.length ?? 0) > 0;
+  const llmActive = draft.llmEnabled && !!draft.routerModel;
+
+  // components = union of candidates + router model + classifier models
+  const componentSet = new Set(draft.candidates);
+  if (llmActive && draft.routerModel) {
+    componentSet.add(draft.routerModel);
+  }
+  if (rulesActive) {
+    for (const c of draft.classifiers ?? []) {
+      if (c.model) componentSet.add(c.model);
+    }
+  }
+  const components = Array.from(componentSet);
+
+  if (components.length === 0) {
+    throw new Error('Router collection requires at least one candidate model.');
+  }
+  if (!draft.defaultModel || !draft.candidates.includes(draft.defaultModel)) {
+    throw new Error('Default model must be one of the selected candidates.');
+  }
+  if (!rulesActive && !llmActive) {
+    throw new Error('Enable rules, an LLM router, or both.');
+  }
+
+  const routing: Record<string, unknown> = {
+    candidates: draft.candidates,
+    default_model: draft.defaultModel,
+  };
+
+  // Rules stage first — evaluated before the LLM router fallback.
+  if (rulesActive) {
+    // Emit classifiers[] if any are declared
+    if (draft.classifiers?.length) {
+      routing.classifiers = draft.classifiers.map((c) => {
+        const base: Record<string, unknown> = { id: c.id, type: c.type, model: c.model };
+        if (c.type === 'llm') {
+          base.prompt = c.prompt ?? '';
+        } else if (c.type === 'classifier') {
+          if (c.labels?.length) base.labels = c.labels;
+          if (c.defaultLabel) base.default_label = c.defaultLabel;
+          base.on_error = c.onError ?? 'match_false';
+        } else {
+          // semantic_similarity: reference_phrases is { concept: string[] }
+          base.reference_phrases = c.referencePhrases ?? {};
+        }
+        return base;
+      });
+    }
+
+    routing.rules = (draft.rules ?? []).map((r) => {
+      const match: Record<string, unknown> = r.conditionTree
+        ? (ruleNodeToMatchExpr(r.conditionTree) ?? {})
+        : {};
+      const emitted: Record<string, unknown> = { id: r.id, match, route_to: r.routeTo };
+      if (r.outputs && Object.keys(r.outputs).length > 0) emitted.outputs = r.outputs;
+      return emitted;
+    });
+  }
+
+  // LLM router stage second.
+  if (llmActive) {
+    if (!draft.routerPrompt?.trim()) {
+      throw new Error('LLM router requires a routing prompt.');
+    }
+    routing.router = { type: 'llm', model: draft.routerModel, prompt: draft.routerPrompt.trim() };
+  }
+
+  return { version: '1', model_name: modelName, recipe: COLLECTION_ROUTER_MODEL_RECIPE, components, routing };
+};
+
+// Parse a server-side routing block back into a RouterCollectionDraft for the
+// edit panel. Inverts buildRouterCollectionPullRequest for the flat/one-level
+// shapes the UI emits. Nested composites (any inside all, etc.) are not
+// supported by the panel and are not attempted here.
+export const routingToRouterCollectionDraft = (
+  collectionId: string,
+  routing: Record<string, unknown>,
+  _components: string[],
+): RouterCollectionDraft => {
+  const name = collectionId.replace(/^user\./, '');
+  const candidates = Array.isArray(routing.candidates)
+    ? (routing.candidates as string[])
+    : [];
+  const defaultModel = typeof routing.default_model === 'string'
+    ? routing.default_model
+    : '';
+
+  // The LLM router (routing.router) and rules can coexist; reconstruct both.
+  const routerObj = (routing.router && typeof routing.router === 'object')
+    ? (routing.router as Record<string, unknown>)
+    : null;
+
+  const rawClassifiers = Array.isArray(routing.classifiers) ? routing.classifiers : [];
+  const classifiers: RouterClassifier[] = (rawClassifiers as Record<string, unknown>[]).map((c) => ({
+    id: typeof c.id === 'string' ? c.id : '',
+    type: c.type === 'semantic_similarity' ? ('semantic_similarity' as const)
+        : c.type === 'llm' ? ('llm' as const)
+        : ('classifier' as const),
+    model: typeof c.model === 'string' ? c.model : '',
+    prompt: typeof c.prompt === 'string' ? c.prompt : undefined,
+    labels: Array.isArray(c.labels) ? (c.labels as string[]) : undefined,
+    defaultLabel: typeof c.default_label === 'string' ? c.default_label : undefined,
+    onError: c.on_error === 'match_true' ? ('match_true' as const) : ('match_false' as const),
+    referencePhrases: (c.reference_phrases && typeof c.reference_phrases === 'object' && !Array.isArray(c.reference_phrases))
+        ? (c.reference_phrases as Record<string, string[]>)
+        : undefined,
+  }));
+
+  const rawRules = Array.isArray(routing.rules) ? routing.rules : [];
+  const rules: RouterRule[] = (rawRules as Record<string, unknown>[]).map((r) => {
+    const rawMatch = (r.match && typeof r.match === 'object' ? r.match : {}) as Record<string, unknown>;
+    return {
+      id: typeof r.id === 'string' ? r.id : '',
+      routeTo: typeof r.route_to === 'string' ? r.route_to : '',
+      conditionTree: matchExprToRuleNode(rawMatch),
+      outputs: r.outputs && typeof r.outputs === 'object' ? r.outputs as Record<string, unknown> : undefined,
+    };
+  });
+
+  // Per-rule, the panel decides whether to show the simple form or the graph
+  // canvas (see isFlatMatch), so parsing never needs a global mode.
+  return {
+    id: collectionId, name, candidates, defaultModel,
+    rulesEnabled: rules.length > 0,
+    llmEnabled: routerObj !== null,
+    routerModel: routerObj && typeof routerObj.model === 'string' ? routerObj.model : '',
+    routerPrompt: routerObj && typeof routerObj.prompt === 'string' ? routerObj.prompt : '',
+    classifiers, rules,
+  };
+};
+
+export const getRouterCandidateOptions = (modelsData: ModelsData) => {
+  return Object.entries(modelsData)
+    .filter(([, info]) => !isCollectionRecipe(info?.recipe) && isChatPlannerCandidate(info))
+    .map(([id, info]) => ({ id, info }))
+    .sort((a, b) => {
+      const downloadedDiff = Number(b.info.downloaded === true) - Number(a.info.downloaded === true);
+      if (downloadedDiff !== 0) return downloadedDiff;
+      return (a.info.model_name ?? a.id).localeCompare(b.info.model_name ?? b.id);
+    });
 };
 
 export const buildCustomCollectionPullRequest = (draft: CustomCollectionDraft): CustomCollectionPullRequest => {
