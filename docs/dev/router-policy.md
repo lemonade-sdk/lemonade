@@ -79,13 +79,14 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
+| `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
 "min_score": 0.5, "max_score": 1.0 }` (omitting both bounds defaults to
 `min_score: 0.5`).
 
-Both model-backed conditions reference an entry defined in `routing.classifiers`,
-and each entry's `model` must be one of `components`:
+Each model-backed condition references an entry defined in `routing.classifiers`,
+and every entry's `model` must be one of `components`:
 
 ```json
 "routing": {
@@ -104,11 +105,20 @@ and each entry's `model` must be one of `components`:
       "model": "Phishing-Email-Detection-ONNX",
       "labels": ["LABEL_0", "LABEL_1", "LABEL_2", "LABEL_3"],
       "default_label": "LABEL_1"
+    },
+    {
+      "id": "intent",
+      "type": "llm",
+      "model": "Qwen3-1.7B-GGUF",
+      "prompt": "Choose 'urgent' for time-sensitive or account-security requests, otherwise 'normal'.",
+      "labels": ["urgent", "normal"],
+      "default_label": "normal"
     }
   ],
   "rules": [
     { "id": "coding-to-big",  "match": { "classifier": "topic",    "label": "coding",  "min_score": 0.6 }, "route_to": "Big-GGUF" },
-    { "id": "phishing-local", "match": { "classifier": "phishing", "label": "LABEL_1", "min_score": 0.5 }, "route_to": "Small-GGUF" }
+    { "id": "phishing-local", "match": { "classifier": "phishing", "label": "LABEL_1", "min_score": 0.5 }, "route_to": "Small-GGUF" },
+    { "id": "urgent-to-big",  "match": { "classifier": "intent",   "label": "urgent",  "min_score": 0.5 }, "route_to": "Big-GGUF" }
   ]
 }
 ```
@@ -118,6 +128,15 @@ and each entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
+- `llm` shows the request to an LLM and asks it to choose one of `labels`; the
+  chosen label scores `1.0`. The engine wraps your `prompt` with the request
+  context and the label set, so the prompt just needs to say when to pick each
+  label. A malformed reply fails open to `default_model`.
+
+> The [`routing.router`](#llm-as-router-routingrouter) block is shorthand for a
+> single `llm` classifier whose labels are the candidate models — use it to route
+> purely by LLM; use a `type: "llm"` classifier here when the LLM's choice is one
+> signal among other rules.
 
 ## Registering and invoking
 
