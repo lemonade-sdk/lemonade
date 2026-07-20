@@ -6,6 +6,7 @@ import {
   DecisionResult,
   RoutingPolicyDoc,
   downloadTraceFile,
+  findMatchedRuleIndex,
   renderDecisionTree,
 } from './utils/decisionTree';
 
@@ -40,7 +41,7 @@ function parseMetadataText(text: string): { metadata: Record<string, string>; er
   return { metadata, error: null };
 }
 
-const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) => {
+const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, showSuccess, showWarning }) => {
   const [prompt, setPrompt] = useState('');
   const [policyJson, setPolicyJson] = useState<RoutingPolicyDoc | null>(null);
   const [policyFilename, setPolicyFilename] = useState<string | null>(null);
@@ -127,6 +128,17 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
     setHasImages(false);
   };
 
+  const handleViewDecisionTree = () => {
+    if (!decision || !policyJson) return;
+    if (!decision.default_used && findMatchedRuleIndex(policyJson, decision) === -1) {
+      showWarning(
+        `Matched rule "${decision.matched_rule}" was not found in the loaded policy — the decision tree can't be shown.`
+      );
+      return;
+    }
+    setShowTreeModal(true);
+  };
+
   const handleValidate = async () => {
     if (!policyJson) return;
     setIsValidating(true);
@@ -150,7 +162,13 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
         setDecision(null);
         return;
       }
-      setDecision(data.decision as DecisionResult);
+      const newDecision = data.decision as DecisionResult;
+      setDecision(newDecision);
+      showSuccess(
+        newDecision.default_used
+          ? `Routing policy validated — routed to "${newDecision.route_to}" via the default fallback.`
+          : `Routing policy validated — routed to "${newDecision.route_to}" via rule "${newDecision.matched_rule}".`
+      );
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
       setDecision(null);
@@ -295,7 +313,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
           </div>
 
           <div className="form-section">
-            <button className="settings-reset-button" onClick={() => setShowTreeModal(true)}>
+            <button className="settings-reset-button" onClick={handleViewDecisionTree}>
               View decision tree
             </button>
           </div>

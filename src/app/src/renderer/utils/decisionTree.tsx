@@ -103,6 +103,17 @@ const RED = 'var(--toast-error-text)';
 const GRAY = 'var(--border-6)';
 
 /**
+ * Index of the matched rule within `policy.routing.rules` (or `rules.length`
+ * for the trailing Default node). Returns -1 when `decision.matched_rule`
+ * names a rule id that isn't present in `policy` — e.g. the policy was
+ * swapped/edited client-side after the decision was returned.
+ */
+export const findMatchedRuleIndex = (policy: RoutingPolicyDoc, decision: DecisionResult): number => {
+  const rules = policy.routing?.rules ?? [];
+  return decision.default_used ? rules.length : rules.findIndex((r) => r.id === decision.matched_rule);
+};
+
+/**
  * Hand-rolled SVG decision-tree: one node per top-level rule (in policy
  * order) plus a trailing Default node. Since routing is first-match-wins,
  * knowing which rule matched (or that the default was used) is enough to
@@ -112,9 +123,7 @@ const GRAY = 'var(--border-6)';
 export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionResult): JSX.Element => {
   const rules = policy.routing?.rules ?? [];
   const defaultModel = policy.routing?.default_model ?? '(none)';
-  const matchedIndex = decision.default_used
-    ? rules.length
-    : rules.findIndex((r) => r.id === decision.matched_rule);
+  const matchedIndex = findMatchedRuleIndex(policy, decision);
 
   const rowHeight = RULE_BOX_HEIGHT + ROW_GAP;
   const svgWidth = MARGIN + RULE_BOX_WIDTH + CANDIDATE_GAP + CANDIDATE_BOX_WIDTH + MARGIN;
@@ -136,8 +145,17 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
     const nodeOpacity = isUnreached ? 0.35 : 1;
     const nodeStroke = isWinner ? RED : GRAY;
 
+    const fullMatchExpr = summarizeMatchExpr(rule.match);
+    const ruleStatusLabel = isWinner
+      ? 'matched'
+      : isUnreached
+      ? 'not evaluated — an earlier rule already matched'
+      : 'evaluated — did not match';
+    const ruleLabel = `Rule "${rule.id}": routes to "${rule.route_to}" when ${fullMatchExpr} (${ruleStatusLabel})`;
+
     nodes.push(
-      <g key={`rule-${rule.id}-${i}`} opacity={nodeOpacity}>
+      <g key={`rule-${rule.id}-${i}`} opacity={nodeOpacity} aria-label={ruleLabel}>
+        <title>{ruleLabel}</title>
         <rect
           x={MARGIN} y={y} width={RULE_BOX_WIDTH} height={RULE_BOX_HEIGHT} rx={6}
           fill="var(--bg-secondary)" stroke={nodeStroke} strokeWidth={isWinner ? 2 : 1.5}
@@ -146,7 +164,7 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
           {truncate(rule.id, 34)}
         </text>
         <text x={MARGIN + 10} y={y + 37} fontSize={10} fill="var(--text-secondary)">
-          {truncate(summarizeMatchExpr(rule.match), 42)}
+          {truncate(fullMatchExpr, 42)}
         </text>
       </g>
     );
@@ -156,9 +174,11 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
     const matchOccurred = matchedIndex === -1 ? false : isWinner;
     const matchColor = matchOccurred ? RED : GRAY;
     const matchOpacity = isUnreached ? 0.35 : 1;
+    const candidateLabel = `Routes to "${rule.route_to}"`;
 
     edges.push(
-      <g key={`match-edge-${rule.id}-${i}`} opacity={matchOpacity}>
+      <g key={`match-edge-${rule.id}-${i}`} opacity={matchOpacity} aria-label={candidateLabel}>
+        <title>{candidateLabel}</title>
         <line
           x1={MARGIN + RULE_BOX_WIDTH} y1={y + RULE_BOX_HEIGHT / 2}
           x2={candX} y2={candY + CANDIDATE_BOX_HEIGHT / 2}
@@ -199,8 +219,10 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
 
   const defaultY = MARGIN + rules.length * rowHeight;
   const defaultIsWinner = matchedIndex === rules.length;
+  const defaultLabel = `Default fallback: routes to "${defaultModel}"${defaultIsWinner ? ' (used — no rule matched)' : ''}`;
   nodes.push(
-    <g key="default-node">
+    <g key="default-node" aria-label={defaultLabel}>
+      <title>{defaultLabel}</title>
       <rect
         x={MARGIN} y={defaultY} width={RULE_BOX_WIDTH} height={RULE_BOX_HEIGHT} rx={6}
         fill="var(--bg-secondary)" stroke={defaultIsWinner ? RED : GRAY}
@@ -215,6 +237,13 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
     </g>
   );
 
+  const rulesCount = rules.length;
+  const decisionSummary = decision.default_used
+    ? `Routing decision tree: ${rulesCount} rule${rulesCount === 1 ? '' : 's'} evaluated, none matched; fell through to the default model "${defaultModel}".`
+    : matchedIndex === -1
+    ? `Routing decision tree: matched rule "${decision.matched_rule}" was not found among the ${rulesCount} rule${rulesCount === 1 ? '' : 's'} in this policy.`
+    : `Routing decision tree: rule "${decision.matched_rule}" matched and routed to "${decision.route_to}".`;
+
   return (
     <svg
       className="decision-tree-svg"
@@ -222,7 +251,10 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
       width={svgWidth}
       height={svgHeight}
       xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label={decisionSummary}
     >
+      <title>{decisionSummary}</title>
       <defs>
         <marker id="prompt-debugger-arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--border-6)" />
