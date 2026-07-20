@@ -34,6 +34,8 @@ int main() {
     // below it is wired and tested.
     expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx942"),
            "vllm:rocm gfx942 is NOT advertised installable yet (asset pending; infra staged)");
+    expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx950"),
+           "vllm:rocm gfx950 is NOT advertised installable yet (asset pending; infra staged)");
 
     expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx1100"),
            "vllm:rocm still supports gfx1100 via gfx110X wildcard");
