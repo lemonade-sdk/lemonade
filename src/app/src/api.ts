@@ -228,6 +228,15 @@ export interface LoadedModel {
   recipe_options?: Record<string, unknown>;
 }
 
+export interface EffectiveLoadCommand {
+  model_name: string;
+  recipe: string;
+  backend: string;
+  options: Record<string, unknown>;
+  args: string[];
+  ctx_size_auto_resolved?: boolean;
+}
+
 export interface ModelInfo {
   id: string;
   name?: string;
@@ -1298,6 +1307,14 @@ class LemonadeAPI {
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
     return result;
+  }
+
+  async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
+    const target = modelName.trim().toLowerCase();
+    const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
+    return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {

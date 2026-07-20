@@ -104,6 +104,9 @@ public:
 
     RecipeOptions get_model_recipe_options(const std::string& model_name) const;
 
+    RecipeOptions resolve_effective_recipe_options(const ModelInfo& model_info,
+                                                   const RecipeOptions& options) const;
+
     ModelType get_model_type(const std::string& model_name = "") const;
 
     std::string get_backend_address() const;

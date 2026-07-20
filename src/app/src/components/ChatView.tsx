@@ -6,6 +6,7 @@ import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 
 const Model3DResult = lazy(() => import('./Model3DResult'));
+import EffectiveSettingsModal from './EffectiveSettingsModal';
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -752,6 +753,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [presetPickerQuery, setPresetPickerQuery] = useState('');
   const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
   const [presetPickerError, setPresetPickerError] = useState<string | null>(null);
+  const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -3289,6 +3291,17 @@ ${finalText}`
               )}
             </div>
           )}
+          {currentPreset && currentModel && currentCapability !== 'image' && (
+            <button
+              type="button"
+              className="composer__tools-toggle composer__effective-settings"
+              onClick={() => setEffectiveSettingsOpen(true)}
+              title="Effective settings"
+              aria-label="Effective settings"
+            >
+              <Icon name="sliders-horizontal" size={13} />
+            </button>
+          )}
           <button
             className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {
@@ -3313,6 +3326,25 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
+        {currentModel && currentPreset && (
+          <EffectiveSettingsModal
+            open={effectiveSettingsOpen}
+            onClose={() => setEffectiveSettingsOpen(false)}
+            modelName={currentModel}
+            modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
+            preset={currentPreset}
+            recipe={currentRecipe}
+            isModelLoaded={!!currentLoadedModel}
+            onReload={async () => {
+              await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
+              await Promise.resolve(onRefresh());
+            }}
+            onLoad={async () => {
+              await api.loadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
+              await Promise.resolve(onRefresh());
+            }}
+          />
+        )}
         {streamingToolStatus && (
           <div className="composer__tool-status">
             <span className="composer__tool-status-dot" />

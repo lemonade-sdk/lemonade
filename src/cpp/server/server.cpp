@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include <optional>
+#include "lemon/auto_tune.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
@@ -1119,6 +1120,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);
+    });
+
+    register_post("load/command", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_load_command(req, res);
     });
 
     register_post("unload", [this](const httplib::Request& req, httplib::Response& res) {
@@ -5138,6 +5143,57 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             }}};
             res.set_content(error.dump(), "application/json");
         }
+    }
+}
+
+void Server::handle_load_command(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    std::string model_name;
+    try {
+        model_name = request_json.value("model_name", "");
+        if (model_name.empty()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", "model_name is required"}}.dump(), "application/json");
+            return;
+        }
+
+        if (!model_manager_->model_exists(model_name)) {
+            res.status = 404;
+            res.set_content(create_model_error(model_name, "Model not found").dump(), "application/json");
+            return;
+        }
+
+        auto info = model_manager_->get_model_info(model_name);
+        RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        RecipeOptions effective = router_->resolve_effective_recipe_options(info, options);
+
+        bool ctx_size_auto_resolved = false;
+        int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        if (auto_ctx > 0) {
+            effective.set_option("ctx_size", auto_ctx);
+            ctx_size_auto_resolved = true;
+        }
+
+        json backend_json = effective.get_option(info.recipe + "_backend");
+
+        nlohmann::json response = {
+            {"model_name", model_name},
+            {"recipe", info.recipe},
+            {"backend", backend_json.is_string() ? backend_json.get<std::string>() : ""},
+            {"options", effective.to_json()},
+            {"args", RecipeOptions::to_cli_options(effective.to_json())},
+            {"ctx_size_auto_resolved", ctx_size_auto_resolved}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_load_command: " << e.what() << std::endl;
+        res.status = 500;
+        auto error_response = model_name.empty()
+            ? nlohmann::json{{"error", e.what()}}
+            : create_model_error(model_name, e.what());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 
