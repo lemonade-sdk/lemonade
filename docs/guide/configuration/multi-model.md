@@ -29,7 +29,12 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
     - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
     - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
-- **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
+- **CPU/GPU:** No inherent limits beyond available RAM for most backends. Multiple models can coexist
+  on CPU or GPU.
+- **AMD GPU Exclusivity:** `vte` has no VRAM/device-sharing awareness of its own, so it cannot safely
+  coexist with another model resident on the same AMD GPU. Loading `vte` evicts any other AMD-GPU model
+  first, and loading another AMD-GPU model evicts `vte` in turn. This is scoped to AMD/ROCm devices only:
+  it does not evict or get evicted by a model on a separate NVIDIA GPU.
 
 ## Eviction Policy
 

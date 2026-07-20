@@ -266,6 +266,15 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
+DeviceType LlamaCppServer::effective_device(const RecipeOptions& options) const {
+    std::string resolved = resolve_llamacpp_backend(options.get_option("llamacpp_backend"));
+    return (resolved == "cpu" || resolved == "system") ? DEVICE_CPU : DEVICE_GPU;
+}
+
+bool LlamaCppServer::effective_is_amd_gpu(const RecipeOptions& options) const {
+    return is_llamacpp_rocm_backend(resolve_llamacpp_backend(options.get_option("llamacpp_backend")));
+}
+
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -285,10 +294,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
 
-    bool use_gpu = (llamacpp_backend != "cpu");
-
-    // Update device type based on the actual backend selected.
-    device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
+    device_type_ = effective_device(options);
+    bool use_gpu = (device_type_ & DEVICE_GPU) != 0;
 
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);

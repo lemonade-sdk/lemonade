@@ -52,7 +52,7 @@ inline const BackendDescriptor descriptor = {
 }}}  // namespace lemon::backends::myrecipe
 ```
 
-`SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
+`SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `ExclusiveGpu` (evicts all AMD-GPU servers first, and is evicted by any later AMD-GPU load in turn — scoped to AMD/ROCm devices only, so it never touches an unrelated NVIDIA/CUDA model on a separate GPU), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
 
 ## The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
@@ -151,6 +151,7 @@ Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-com
 |------|------|
 | Device depends on the chosen backend variant (whisper npu vs cpu) | override `WrappedServer::effective_device(opts)` |
 | Eviction rule depends on the variant | override `WrappedServer::effective_slot_policy(opts)` |
+| Backend's resolved GPU variant is AMD/ROCm (needed for `ExclusiveGpu` scoping) | override `WrappedServer::effective_is_amd_gpu(opts)` |
 | Availability decided at runtime (cloud creds) | override `WrappedServer::availability()` |
 | Conditional / grouped checkpoints (sd-cpp flux, whisper npu_cache) | validate in `load()`; list only unconditional files in `required_checkpoints` |
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |

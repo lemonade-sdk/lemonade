@@ -42,6 +42,26 @@
           "trellis-cuda-linux-x64.tar.gz": "sha256:4d3bcc732e88cfa0e89448bd46a501a5d352ce1ca08a2839bb5194663f7c1404",
           "trellis-cuda-windows-x64.zip": "sha256:d1e1cce20892c2f22c185d6f22b042d41f87424adf0a40eda9d1194e87899c98"
         }
+      },
+      "kyuubyN/VTE": {
+        "0.3.2": {
+          "vte-server-0.3.2-windows-x64.zip": "sha256:bff4bf3b04fa504de8778e42e71889aadb4e2cf8c4f4ab3f92a0897ffc6fc2c0"
+        },
+        "0.3.3": {
+          "vte-server-0.3.3-windows-x64.zip": "sha256:de8a88b508eb584881bc2d6d1353e8ab372045e9ff860dacad6d3a96f7edc013"
+        },
+        "0.3.4": {
+          "vte-server-0.3.4-windows-x64.zip": "sha256:f3d6de4beae1f8a14838886fcecf3286c9ce0ba6a8dc5ee92401307ab6a58065"
+        },
+        "0.3.5": {
+          "vte-server-0.3.5-windows-x64.zip": "sha256:112c6a823555c62416f92018d2bbac35f76cbd06d878f1c4467f7d52f3247d3d"
+        },
+        "0.3.6": {
+          "vte-server-0.3.6-windows-x64.zip": "sha256:ac2b9544e54fdc24bdc19540218a35a9002886501d0458430ba86a8cd05bbff1"
+        },
+        "0.3.7": {
+          "vte-server-0.3.7-windows-x64.zip": "sha256:21a8f053b36e9576ed95ce01b29d68ec2476cf6b3e5aa050015ba7e2f89e137d"
+        }
       }
     }
   },
@@ -140,6 +160,9 @@
     "rocm_arch_overrides": {
       "gfx942": "vllm0.19.1-rocm7.13.0"
     }
+  },
+  "vte": {
+    "rocm-stable": "0.3.7"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

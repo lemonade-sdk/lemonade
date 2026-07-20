@@ -5,6 +5,15 @@ Defines which features each WrappedServer (inference backend) supports,
 organized by modality (matching test files).
 
 Tests use the skip_if_unsupported decorator to skip tests for unsupported features.
+
+Note on VTE multi_model:
+VTE has multi_model disabled because its memory model uses fixed, persistent
+HIP activation buffers and AOT-compiled kernels for RDNA3 native execution. Running
+multiple VTE models concurrently can lead to HIP driver memory allocation conflicts or
+OOM within VTE's custom SlabAllocator, even when free VRAM check is disabled. This is
+enforced, not just documented: VTE's descriptor uses SlotPolicy::ExclusiveGpu (see
+backend_descriptor.h/router.cpp), so the router evicts any other GPU model before
+loading VTE and evicts VTE when a later GPU model loads.
 """
 
 from functools import wraps
@@ -129,6 +138,40 @@ CAPABILITIES = {
             "test_models": {
                 "llm": "llama3.2-1b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
+            },
+        },
+        "vte": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": False,
+                "completions_async": False,
+                "responses_api": False,
+                "responses_api_streaming": False,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": False,
+                "tool_calls_streaming": False,
+                "multi_model": False,
+                "stop_parameter": False,
+                "echo_parameter": False,
+                # False: test_014_generation_parameters requires identical
+                # params (temperature 0.7, unseeded) to produce byte-identical
+                # output across two calls. vte's sampler draws from
+                # np.random.choice with no fixed seed, same as every other
+                # backend in this catalog (all declare this False too) --
+                # true reproducibility would need a seed parameter neither
+                # the OpenAI API surface nor vte-server currently exposes.
+                "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen2.5-1.5B-Instruct-VTE",
             },
         },
     },

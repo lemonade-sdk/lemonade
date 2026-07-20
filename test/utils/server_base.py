@@ -436,6 +436,30 @@ class ServerTestBase(unittest.TestCase):
             )
         print("Server is reachable on port %d" % PORT)
 
+        # Logs which physical GPU/NPU the runner actually detected, so a CI run's
+        # log is self-documenting evidence of what hardware executed it (a
+        # generic runner label like [Windows, rocm, lemon-prod] alone doesn't
+        # say which card). Best-effort: never fails the run over a logging step.
+        try:
+            info = requests.get(
+                f"http://localhost:{PORT}/api/v1/system-info", timeout=10
+            ).json()
+            devices = info.get("devices", {})
+            # amd_gpu/nvidia_gpu are lists of devices; amd_npu is a single object
+            # (at most one NPU). Normalize to a list so both shapes iterate the same way.
+            for kind in ("amd_gpu", "nvidia_gpu", "amd_npu"):
+                raw = devices.get(kind) or []
+                entries = raw if isinstance(raw, list) else [raw]
+                for device in entries:
+                    if isinstance(device, dict) and device.get("available") and device.get("name"):
+                        family = device.get("family", "")
+                        print(
+                            f"Detected {kind}: {device['name']}"
+                            + (f" (family: {family})" if family else "")
+                        )
+        except Exception as e:
+            print(f"Warning: Failed to log detected hardware: {e}")
+
         # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
         # blow the per-request inference timeout inside the first test.
         ensure_rocm_runtime()

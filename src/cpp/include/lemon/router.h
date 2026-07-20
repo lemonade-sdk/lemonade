@@ -16,6 +16,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "runtime_config.h"
+#include "gpu_exclusivity_policy.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
 // indefinite blocking if a backend is stuck.
@@ -204,6 +205,7 @@ private:
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
     WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
+    std::vector<WrappedServer*> compute_gpu_eviction_targets_locked(const IncomingLoadGpuInfo& incoming) const;
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
     // Eviction-engine entry point: physically unload a model previously marked
