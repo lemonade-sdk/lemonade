@@ -106,10 +106,11 @@ interface EffectiveSettingsModalProps {
   fallbackCtxSize?: number;
   isModelLoaded: boolean;
   onReload: () => Promise<void>;
+  onLoad: () => Promise<void>;
 }
 
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
-  open, onClose, modelName, modelInfo, preset, recipe, fallbackCtxSize, isModelLoaded, onReload,
+  open, onClose, modelName, modelInfo, preset, recipe, fallbackCtxSize, isModelLoaded, onReload, onLoad,
 }) => {
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
@@ -205,7 +206,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           await onReload();
         } catch (reloadErr) {
           restorePreviousOverride();
-          try { await onReload(); } catch { /* keep the original failure */ }
+          try { await onLoad(); } catch { /* keep the original failure */ }
           throw reloadErr;
         }
         setNotice('Applied and reloaded with the new arguments.');
@@ -219,7 +220,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       await loadEffective();
       setBusy(false);
     }
-  }, [argsField, modelName, recipe, draft, isModelLoaded, onReload, loadEffective]);
+  }, [argsField, modelName, recipe, draft, isModelLoaded, onReload, onLoad, loadEffective]);
 
   const resetOverride = useCallback(async () => {
     setBusy(true);

@@ -3047,6 +3047,10 @@ ${finalText}`
               await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
               await Promise.resolve(onRefresh());
             }}
+            onLoad={async () => {
+              await api.loadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
+              await Promise.resolve(onRefresh());
+            }}
           />
         )}
         {streamingToolStatus && (
