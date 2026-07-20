@@ -16,6 +16,15 @@ interface PromptDebuggerPanelProps {
   showWarning: (message: string) => void;
 }
 
+/** A decision bundled with the exact policy/prompt that produced it, so the
+ * decision tree and trace export never drift from the request they describe
+ * even if the user edits the policy/prompt again before the response lands. */
+interface ValidationResult {
+  decision: DecisionResult;
+  policy: RoutingPolicyDoc;
+  prompt: string;
+}
+
 /**
  * Parses a `key: value` per-line textarea into a metadata object.
  * Splits on the first colon only, so values may contain colons; blank lines
@@ -53,13 +62,17 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [decision, setDecision] = useState<DecisionResult | null>(null);
+  const [result, setResult] = useState<ValidationResult | null>(null);
   const [showTreeModal, setShowTreeModal] = useState(false);
 
   const policyInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const imageThumbnailUrlRef = useRef<string | null>(null);
   imageThumbnailUrlRef.current = imageThumbnailUrl;
+  // Bumped on every submit (and whenever the policy is swapped/cleared) so a
+  // response that arrives after being superseded is dropped instead of
+  // resurrecting a stale result.
+  const latestRequestIdRef = useRef(0);
 
   useEffect(() => {
     // Revoke the local preview object URL on unmount so it doesn't leak.
@@ -96,7 +109,8 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         setPolicyJson(json);
         setPolicyFilename(file.name);
         setValidationError(null);
-        setDecision(null);
+        latestRequestIdRef.current++;
+        setResult(null);
       } catch {
         showError(`"${file.name}" is not valid JSON.`);
       }
@@ -107,7 +121,8 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   const clearPolicy = () => {
     setPolicyJson(null);
     setPolicyFilename(null);
-    setDecision(null);
+    latestRequestIdRef.current++;
+    setResult(null);
     setValidationError(null);
   };
 
@@ -129,10 +144,10 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   };
 
   const handleViewDecisionTree = () => {
-    if (!decision || !policyJson) return;
-    if (!decision.default_used && findMatchedRuleIndex(policyJson, decision) === -1) {
+    if (!result) return;
+    if (!result.decision.default_used && findMatchedRuleIndex(result.policy, result.decision) === -1) {
       showWarning(
-        `Matched rule "${decision.matched_rule}" was not found in the loaded policy — the decision tree can't be shown.`
+        `Matched rule "${result.decision.matched_rule}" was not found in the loaded policy — the decision tree can't be shown.`
       );
       return;
     }
@@ -141,6 +156,9 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
 
   const handleValidate = async () => {
     if (!policyJson) return;
+    const requestId = ++latestRequestIdRef.current;
+    const submittedPrompt = prompt;
+    const submittedPolicy = policyJson;
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -149,31 +167,33 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          policy: policyJson,
-          prompt,
+          policy: submittedPolicy,
+          prompt: submittedPrompt,
           has_images: hasImages,
           has_tools: hasTools,
           ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
         }),
       });
       const data = await response.json();
+      if (requestId !== latestRequestIdRef.current) return;
       if (!response.ok) {
         setValidationError(data?.error ?? `HTTP ${response.status}`);
-        setDecision(null);
+        setResult(null);
         return;
       }
       const newDecision = data.decision as DecisionResult;
-      setDecision(newDecision);
+      setResult({ decision: newDecision, policy: submittedPolicy, prompt: submittedPrompt });
       showSuccess(
         newDecision.default_used
           ? `Routing policy validated — routed to "${newDecision.route_to}" via the default fallback.`
           : `Routing policy validated — routed to "${newDecision.route_to}" via rule "${newDecision.matched_rule}".`
       );
     } catch (error) {
+      if (requestId !== latestRequestIdRef.current) return;
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
-      setDecision(null);
+      setResult(null);
     } finally {
-      setIsValidating(false);
+      if (requestId === latestRequestIdRef.current) setIsValidating(false);
     }
   };
 
@@ -304,12 +324,12 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         <div className="prompt-debugger-error">{validationError}</div>
       )}
 
-      {decision && (
+      {result && (
         <div className="prompt-debugger-results">
           <div className="prompt-debugger-summary">
-            {decision.default_used
-              ? <>Routed to <b>{decision.route_to}</b> (default fallback — no rule matched)</>
-              : <>Routed to <b>{decision.route_to}</b> via rule "{decision.matched_rule}"</>}
+            {result.decision.default_used
+              ? <>Routed to <b>{result.decision.route_to}</b> (default fallback — no rule matched)</>
+              : <>Routed to <b>{result.decision.route_to}</b> via rule "{result.decision.matched_rule}"</>}
           </div>
 
           <div className="form-section">
@@ -321,9 +341,9 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
           <div className="form-section">
             <label className="form-label">Trace</label>
             <pre className="trace-log">
-              {decision.trace.length === 0
+              {result.decision.trace.length === 0
                 ? '(no trace entries)'
-                : decision.trace
+                : result.decision.trace
                     .map((entry, i) => {
                       const scorePart = entry.score !== undefined ? ` score=${entry.score.toFixed(2)}` : '';
                       return `${i + 1}. ${entry.condition}:${scorePart} result=${entry.result}`;
@@ -335,7 +355,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
           <div className="form-section">
             <button
               className="settings-reset-button"
-              onClick={() => downloadTraceFile(decision, prompt)}
+              onClick={() => downloadTraceFile(result.decision, result.prompt)}
             >
               Download trace (.txt)
             </button>
@@ -343,7 +363,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         </div>
       )}
 
-      {showTreeModal && decision && policyJson && (
+      {showTreeModal && result && (
         <div className="settings-overlay" onMouseDown={() => setShowTreeModal(false)}>
           <div className="settings-modal decision-tree-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="settings-header">
@@ -356,7 +376,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
             </div>
             <div className="settings-content">
               <div className="decision-tree-scroll">
-                {renderDecisionTree(policyJson, decision)}
+                {renderDecisionTree(result.policy, result.decision)}
               </div>
             </div>
           </div>

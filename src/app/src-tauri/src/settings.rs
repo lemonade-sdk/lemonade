@@ -52,7 +52,7 @@ fn default_left_panel_view() -> String {
 }
 
 fn is_valid_left_panel_view(v: &str) -> bool {
-    matches!(v, "models" | "marketplace" | "backends" | "settings")
+    matches!(v, "models" | "marketplace" | "backends" | "settings" | "prompt-debugger")
 }
 
 fn default_tts() -> TtsSettings {
@@ -510,6 +510,15 @@ mod tests {
         });
         let sanitized = sanitize_app_settings(&incoming);
         assert_eq!(sanitized.layout.left_panel_view, "models", "fell back to default");
+    }
+
+    #[test]
+    fn left_panel_view_accepts_prompt_debugger() {
+        let incoming = json!({
+            "layout": { "leftPanelView": "prompt-debugger" }
+        });
+        let sanitized = sanitize_app_settings(&incoming);
+        assert_eq!(sanitized.layout.left_panel_view, "prompt-debugger", "accepted prompt-debugger");
     }
 
     #[test]

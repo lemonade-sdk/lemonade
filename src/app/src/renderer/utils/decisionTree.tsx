@@ -51,6 +51,30 @@ export const summarizeMatchExpr = (expr: unknown): string => {
     return `not(${summarizeMatchExpr(obj.not)})`;
   }
 
+  // Classifier-band leaves (`{classifier, label?, min_score?, max_score?}`) carry
+  // several fields that jointly determine the match — falling through to the
+  // generic single-key rendering below would show only `classifier: <id>` and
+  // silently drop the label/threshold that actually decide whether it matches.
+  if (typeof obj.classifier === 'string') {
+    const parts = [`classifier: ${obj.classifier}`];
+    if (typeof obj.label === 'string') {
+      parts.push(`label: ${obj.label}`);
+    }
+    const hasMin = typeof obj.min_score === 'number';
+    const hasMax = typeof obj.max_score === 'number';
+    if (hasMin && hasMax) {
+      parts.push(`score: [${obj.min_score}, ${obj.max_score}]`);
+    } else if (hasMin) {
+      parts.push(`score ≥ ${obj.min_score}`);
+    } else if (hasMax) {
+      parts.push(`score ≤ ${obj.max_score}`);
+    } else {
+      // Frozen v1 default when neither bound is given — see routing_policy.cpp.
+      parts.push('score ≥ 0.5 (default)');
+    }
+    return parts.join(', ');
+  }
+
   const [key, value] = Object.entries(obj)[0] ?? [undefined, undefined];
   if (key === undefined) return '(empty)';
   if (value === undefined) return key;
