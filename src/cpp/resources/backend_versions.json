@@ -131,9 +131,9 @@
     "npu": "v0.9.45"
   },
   "lemon-mlx": {
-    "metal": "b1049-stable",
-    "rocm-stable": "b1049-stable",
-    "cpu": "b1049-stable"
+    "metal": "b1050-stable",
+    "rocm-stable": "b1050-stable",
+    "cpu": "b1050-stable"
   },
   "kokoro": {
     "cpu": "b17",

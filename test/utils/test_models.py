@@ -178,6 +178,9 @@ SAMPLE_TOOL = {
     "type": "function",
     "function": {
         "name": "calculator_calculate",
+        # description required for reliable tool emission on small Qwen MLX
+        # models (template tool branch); omiting it yields free-text refuse.
+        "description": "Evaluate a mathematical expression",
         "parameters": {
             "properties": {"expression": {"title": "Expression", "type": "string"}},
             "required": ["expression"],

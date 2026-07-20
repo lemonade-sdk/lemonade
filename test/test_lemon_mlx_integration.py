@@ -32,6 +32,11 @@ def test_lemon_mlx_static_integration_contract():
         versions["lemon-mlx"][backend]
         for backend in ("metal", "rocm-stable", "cpu")
     )
+    # Policy A: tools caps require a tools-capable engine pin (engine #62 → b1050-stable+).
+    assert all(
+        versions["lemon-mlx"][backend] == "b1050-stable"
+        for backend in ("metal", "rocm-stable", "cpu")
+    )
 
     defaults = json.loads(_read("src/cpp/resources/defaults.json"))
     assert defaults["lemon-mlx"]["backend"] == "auto"
@@ -89,11 +94,26 @@ def test_lemon_mlx_static_integration_contract():
     assert '"type", "backend_error"' in mlx_server
     assert "The CPU implementation is retained for development" in mlx_server
 
+    # P3 stream hygiene: preserve/dedupe engine tool_calls (no second parser).
+    assert 'tool_calls' in mlx_server
+    assert 'has_tool_calls' in mlx_server
+    assert 'tool_calls_once' in mlx_server
+    assert 'last_non_null_finish_reason' in mlx_server
+    assert 'saw_engine_terminal_finish' in mlx_server
+    # Must not hardcode synthetic trailer finish_reason "stop" without tracking.
+    assert 'finish_reason", "stop"' not in mlx_server or 'last_non_null_finish_reason' in mlx_server
+    # Blocking→stream fallback must emit structured tool_calls.
+    assert 'delta", {{"tool_calls"' in mlx_server or '"tool_calls", message["tool_calls"]' in mlx_server
+    # No free-text tool parser inventing tool_calls from content.
+    assert 'ToolCallProcessor' not in mlx_server
+    assert 'parse_tool' not in mlx_server.lower() or 'prepare_request' in mlx_server
+
 
 def test_lemon_mlx_models_are_modern_and_sized():
     models = json.loads(_read("src/cpp/resources/server_models.json"))
     expected = {
         "Qwen3.5-0.8B-MLX": "mlx-community/Qwen3.5-0.8B-4bit",
+        "Qwen3.5-4B-MLX": "mlx-community/Qwen3.5-4B-4bit",
         "Qwen3.6-35B-A3B-MLX": "mlx-community/Qwen3.6-35B-A3B-4bit",
         "Qwen3.6-27B-MLX": "mlx-community/Qwen3.6-27B-4bit",
     }
@@ -113,14 +133,47 @@ def test_lemon_mlx_models_are_modern_and_sized():
         assert model["suggested"] is True
         assert isinstance(model["size"], (int, float)) and model["size"] > 0
 
+    # P4 honesty: only the 4B gate model is labeled tool-calling for MLX.
+    assert "tool-calling" in lemon_mlx_models["Qwen3.5-4B-MLX"].get("labels", [])
+    for plumbing in ("Qwen3.5-0.8B-MLX", "Qwen3.6-27B-MLX", "Qwen3.6-35B-A3B-MLX"):
+        assert "tool-calling" not in lemon_mlx_models[plumbing].get("labels", [])
+
+
+def test_lemon_mlx_tool_capabilities_p4():
+    """P4: capability catalog advertises tools for lemon-mlx."""
+    import importlib.util
+
+    caps_path = ROOT / "test" / "utils" / "capabilities.py"
+    spec = importlib.util.spec_from_file_location("capabilities", caps_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    llm = mod.CAPABILITIES["llm"]["lemon-mlx"]
+    assert llm["supports"]["tool_calls"] is True
+    assert llm["supports"]["tool_calls_streaming"] is True
+    assert llm["test_models"]["llm"] == "Qwen3.5-0.8B-MLX"
+
 
 def test_lemon_mlx_capabilities_match_supported_runtime_paths():
-    capabilities = _read("test/utils/capabilities.py")
-    assert '"lemon-mlx": {' in capabilities
-    assert '"backends": ["metal", "rocm"]' in capabilities
-    assert '"backends": ["metal", "rocm", "cpu"]' not in capabilities
-    assert '"chat_completions_streaming": True' in capabilities
-    assert '"completions_streaming": False' in capabilities
-    assert '"tool_calls": False' in capabilities
-    assert '"tool_calls_streaming": False' in capabilities
-    assert '"llm": "Qwen3.5-0.8B-MLX"' in capabilities
+    """Lemon-mlx-scoped runtime capability contract (not file-wide substring).
+
+    File-wide searches for '"tool_calls": False/True' match other backends
+    (llamacpp/flm False; ryzenai True) and do not uniquely prove lemon-mlx.
+    """
+    import importlib.util
+
+    caps_path = ROOT / "test" / "utils" / "capabilities.py"
+    spec = importlib.util.spec_from_file_location("capabilities", caps_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    llm = mod.CAPABILITIES["llm"]["lemon-mlx"]
+    assert set(llm["backends"]) >= {"metal", "rocm"}
+    assert "cpu" in llm["backends"]
+    assert llm["supports"]["chat_completions_streaming"] is True
+    assert llm["supports"]["completions_streaming"] is False
+    # P4: tools path wired (engine parse/emit + P3 stream hygiene).
+    assert llm["supports"]["tool_calls"] is True
+    assert llm["supports"]["tool_calls_streaming"] is True
+    # CI plumbing model (small); product tool-calling label remains on 4B only.
+    assert llm["test_models"]["llm"] == "Qwen3.5-0.8B-MLX"
+

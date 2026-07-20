@@ -57,6 +57,7 @@ _config = {
     "modality": None,
     "offline": False,
     "additional_server_args": [],
+    "lemon_mlx_args": None,
 }
 
 
@@ -101,6 +102,12 @@ def parse_args(additional_args=None, modality=None):
         type=str,
         help="Backend for the wrapped server (vulkan, rocm, cpu, hybrid, npu, etc.)",
     )
+    parser.add_argument(
+        "--lemon-mlx-args",
+        type=str,
+        default=None,
+        help="Extra lemon-mlx engine args (e.g. '--no-think'); mapped to lemon-mlx.args",
+    )
 
     # Use parse_known_args to ignore unittest arguments
     args, unknown = parser.parse_known_args()
@@ -112,7 +119,8 @@ def parse_args(additional_args=None, modality=None):
     _config["modality"] = modality
     _config["offline"] = args.offline
     _config["additional_server_args"] = additional_args or []
-
+    if getattr(args, "lemon_mlx_args", None):
+        _config["lemon_mlx_args"] = args.lemon_mlx_args
     # Set current config for capability checks
     if args.wrapped_server:
         set_current_config(args.wrapped_server, args.backend, modality)
@@ -275,6 +283,15 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
     )
 
 
+def _merge_backend_config(config, recipe, **fields):
+    """Merge nested recipe options without replacing sibling keys."""
+    bucket = config.setdefault(recipe, {})
+    for key, value in fields.items():
+        if value is not None:
+            bucket[key] = value
+    return bucket
+
+
 def _build_runtime_config(additional_server_args=None):
     """
     Translate CLI args (--wrapped-server, --backend, additional_server_args)
@@ -289,23 +306,29 @@ def _build_runtime_config(additional_server_args=None):
     wrapped_server = _config.get("wrapped_server")
     backend = _config.get("backend")
 
-    # Map --wrapped-server + --backend to the correct recipe option key
+    # Map --wrapped-server + --backend to the correct recipe option key.
+    # Always merge into nested objects so sibling keys (e.g. args) survive.
     if wrapped_server == "llamacpp" and backend:
-        config["llamacpp"] = {"backend": backend}
+        _merge_backend_config(config, "llamacpp", backend=backend)
     elif wrapped_server == "sd-cpp" and backend:
-        config["sdcpp"] = {"backend": backend}
+        _merge_backend_config(config, "sdcpp", backend=backend)
     elif wrapped_server == "whispercpp" and backend:
-        config["whispercpp"] = {"backend": backend}
+        _merge_backend_config(config, "whispercpp", backend=backend)
     elif wrapped_server == "lemon-mlx" and backend:
-        config["lemon-mlx"] = {"backend": backend}
+        _merge_backend_config(config, "lemon-mlx", backend=backend)
     elif wrapped_server == "thinksound" and backend:
-        config["thinksound"] = {"backend": backend}
+        _merge_backend_config(config, "thinksound", backend=backend)
     elif wrapped_server == "acestep" and backend:
-        config["acestep"] = {"backend": backend}
+        _merge_backend_config(config, "acestep", backend=backend)
     elif wrapped_server == "trellis" and backend:
-        config["trellis"] = {"backend": backend}
+        _merge_backend_config(config, "trellis", backend=backend)
     elif wrapped_server == "openmoss" and backend:
-        config["openmoss"] = {"backend": backend}
+        _merge_backend_config(config, "openmoss", backend=backend)
+
+    # CLI --lemon-mlx-args (test/CI only; never product defaults).
+    lemon_mlx_args = _config.get("lemon_mlx_args")
+    if lemon_mlx_args:
+        _merge_backend_config(config, "lemon-mlx", args=lemon_mlx_args)
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -319,16 +342,19 @@ def _build_runtime_config(additional_server_args=None):
             config["max_loaded_models"] = int(additional[i + 1])
             i += 2
         elif arg == "--llamacpp" and i + 1 < len(additional):
-            config["llamacpp"] = {"backend": additional[i + 1]}
+            _merge_backend_config(config, "llamacpp", backend=additional[i + 1])
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
-            config["sdcpp"] = {"backend": additional[i + 1]}
+            _merge_backend_config(config, "sdcpp", backend=additional[i + 1])
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
-            config["whispercpp"] = {"backend": additional[i + 1]}
+            _merge_backend_config(config, "whispercpp", backend=additional[i + 1])
             i += 2
         elif arg == "--lemon-mlx" and i + 1 < len(additional):
-            config["lemon-mlx"] = {"backend": additional[i + 1]}
+            _merge_backend_config(config, "lemon-mlx", backend=additional[i + 1])
+            i += 2
+        elif arg == "--lemon-mlx-args" and i + 1 < len(additional):
+            _merge_backend_config(config, "lemon-mlx", args=additional[i + 1])
             i += 2
         elif arg == "--ctx-size" and i + 1 < len(additional):
             config["ctx_size"] = int(additional[i + 1])
@@ -339,8 +365,14 @@ def _build_runtime_config(additional_server_args=None):
         else:
             i += 1
 
-    return config
+    # lemon-mlx tools tests (012/013) need process --no-think for reliable 0.8B
+    # emission under tight token budgets. Test/CI policy only — not product defaults.
+    if wrapped_server == "lemon-mlx":
+        mlx = config.setdefault("lemon-mlx", {})
+        if not mlx.get("args"):
+            mlx["args"] = "--no-think"
 
+    return config
 
 # Recipes whose "rocm" backend resolves to the rocm-stable channel and therefore
 # trigger a TheRock runtime download on a cold cache (see will_install_therock in
@@ -453,15 +485,26 @@ class ServerTestBase(unittest.TestCase):
             try:
                 set_server_config(runtime_config)
             except Exception as e:
+                # lemon-mlx tools path depends on args (e.g. --no-think). Soft
+                # warnings produce false greens / opaque flakes — hard-fail.
+                if _config.get("wrapped_server") == "lemon-mlx":
+                    raise RuntimeError(
+                        "Failed to apply lemon-mlx runtime config via /internal/set: %s"
+                        % e
+                    ) from e
                 print(f"Warning: Failed to apply runtime config: {e}")
 
-        # Unload all models for clean state
+        # Unload all models for clean state (required so lemon-mlx.args take
+        # effect on the next engine process spawn).
         print("Unloading all models for clean state...")
         try:
             unload_all_models()
         except Exception as e:
+            if _config.get("wrapped_server") == "lemon-mlx":
+                raise RuntimeError(
+                    "Failed to unload models after lemon-mlx runtime config: %s" % e
+                ) from e
             print(f"Warning: Failed to unload models: {e}")
-
     @classmethod
     def tearDownClass(cls):
         """No server lifecycle management needed."""
