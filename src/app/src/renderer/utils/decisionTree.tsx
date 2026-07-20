@@ -83,11 +83,29 @@ export const summarizeMatchExpr = (expr: unknown): string => {
   return `${key}: ${value}`;
 };
 
+/** The request inputs that determined a decision — carried alongside the
+ * decision itself so the trace export can reproduce exactly what was sent,
+ * not just the prompt. */
+export interface TraceRequestInputs {
+  prompt: string;
+  hasImages: boolean;
+  hasTools: boolean;
+  metadata: Record<string, string>;
+}
+
 /** Plain-text trace export for the "Download trace" button. */
-export const formatTraceAsText = (decision: DecisionResult, prompt: string): string => {
+export const formatTraceAsText = (decision: DecisionResult, request: TraceRequestInputs): string => {
   const lines: string[] = [];
   lines.push('Lemonade Prompt Debugger — Trace Export');
-  lines.push(`Prompt: ${prompt.replace(/\r?\n/g, '\\n')}`);
+  lines.push(`Prompt: ${request.prompt.replace(/\r?\n/g, '\\n')}`);
+  lines.push(`has_images: ${request.hasImages}`);
+  lines.push(`has_tools: ${request.hasTools}`);
+  const metadataEntries = Object.entries(request.metadata);
+  lines.push(
+    metadataEntries.length === 0
+      ? 'metadata: (none)'
+      : `metadata: ${metadataEntries.map(([key, value]) => `${key}=${value}`).join(', ')}`
+  );
   lines.push(`route_to: ${decision.route_to}`);
   lines.push(`matched_rule: ${decision.matched_rule || '(none)'}`);
   lines.push(`default_used: ${decision.default_used}`);
@@ -101,8 +119,8 @@ export const formatTraceAsText = (decision: DecisionResult, prompt: string): str
 };
 
 /** Trigger a browser download of the trace as a plain-text file. */
-export const downloadTraceFile = (decision: DecisionResult, prompt: string): void => {
-  const text = formatTraceAsText(decision, prompt);
+export const downloadTraceFile = (decision: DecisionResult, request: TraceRequestInputs): void => {
+  const text = formatTraceAsText(decision, request);
   const blob = new Blob([text], { type: 'text/plain' });
   const url = window.URL.createObjectURL(blob);
   const safeRule = (decision.matched_rule || 'default').replace(/[^a-zA-Z0-9_-]+/g, '-');

@@ -67,6 +67,16 @@ defineTest('mergeWithDefaultSettings rejects invalid theme', () => {
   assert.equal(settings.layout.theme, 'dark');
 });
 
+defineTest('mergeWithDefaultSettings preserves prompt-debugger leftPanelView', () => {
+  const settings = mergeWithDefaultSettings({
+    layout: {
+      leftPanelView: 'prompt-debugger',
+    },
+  });
+
+  assert.equal(settings.layout.leftPanelView, 'prompt-debugger');
+});
+
 let failures = 0;
 
 for (const { name, fn } of tests) {

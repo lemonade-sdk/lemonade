@@ -5,6 +5,7 @@ import { adjustTextareaHeight } from './utils/textareaUtils';
 import {
   DecisionResult,
   RoutingPolicyDoc,
+  TraceRequestInputs,
   downloadTraceFile,
   findMatchedRuleIndex,
   renderDecisionTree,
@@ -16,13 +17,13 @@ interface PromptDebuggerPanelProps {
   showWarning: (message: string) => void;
 }
 
-/** A decision bundled with the exact policy/prompt that produced it, so the
+/** A decision bundled with the exact request inputs that produced it, so the
  * decision tree and trace export never drift from the request they describe
- * even if the user edits the policy/prompt again before the response lands. */
-interface ValidationResult {
+ * even if the user edits the prompt/policy/flags/metadata again before the
+ * response lands. */
+interface ValidationResult extends TraceRequestInputs {
   decision: DecisionResult;
   policy: RoutingPolicyDoc;
-  prompt: string;
 }
 
 /**
@@ -159,6 +160,8 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
     const requestId = ++latestRequestIdRef.current;
     const submittedPrompt = prompt;
     const submittedPolicy = policyJson;
+    const submittedHasImages = hasImages;
+    const submittedHasTools = hasTools;
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -169,8 +172,8 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         body: JSON.stringify({
           policy: submittedPolicy,
           prompt: submittedPrompt,
-          has_images: hasImages,
-          has_tools: hasTools,
+          has_images: submittedHasImages,
+          has_tools: submittedHasTools,
           ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
         }),
       });
@@ -182,7 +185,14 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         return;
       }
       const newDecision = data.decision as DecisionResult;
-      setResult({ decision: newDecision, policy: submittedPolicy, prompt: submittedPrompt });
+      setResult({
+        decision: newDecision,
+        policy: submittedPolicy,
+        prompt: submittedPrompt,
+        hasImages: submittedHasImages,
+        hasTools: submittedHasTools,
+        metadata,
+      });
       showSuccess(
         newDecision.default_used
           ? `Routing policy validated — routed to "${newDecision.route_to}" via the default fallback.`
@@ -193,8 +203,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
       setResult(null);
     } finally {
-      if (requestId === latestRequestIdRef.current) setIsValidating(false);
-    }
+      setIsValidating(false);
   };
 
   return (
@@ -355,7 +364,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
           <div className="form-section">
             <button
               className="settings-reset-button"
-              onClick={() => downloadTraceFile(result.decision, result.prompt)}
+              onClick={() => downloadTraceFile(result.decision, result)}
             >
               Download trace (.txt)
             </button>
