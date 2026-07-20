@@ -23,12 +23,14 @@
 #include "lemon/logging_config.h"
 #include "lemon/thinking_controls.h"
 #include "lemon/prometheus_metrics.h"
+#include "lemon/smart_thinking.h"
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
 #include <cstdint>
+#include <ctime>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
@@ -327,6 +329,63 @@ nlohmann::json get_model_storage_stats(const std::string& model_storage_path) {
         {"total_bytes", static_cast<uint64_t>(total_bytes)},
         {"free_bytes", static_cast<uint64_t>(free_bytes)}
     };
+}
+
+
+void write_single_final_chat_sse(const json& request,
+                                 const json& response,
+                                 httplib::DataSink& sink) {
+    const std::string model =
+        request.value("model", response.value("model", std::string{}));
+    const std::string id =
+        response.value("id", std::string("chatcmpl-smart-thinking"));
+    const long created =
+        response.value("created", static_cast<long>(std::time(nullptr)));
+
+    auto send = [&](const json& delta, const json& finish_reason) {
+        json chunk = {
+            {"id", id},
+            {"object", "chat.completion.chunk"},
+            {"created", created},
+            {"model", model},
+            {"choices", json::array({{{"index", 0},
+                                       {"delta", delta},
+                                       {"finish_reason", finish_reason}}})}
+        };
+        const std::string frame = "data: " + chunk.dump() + "\n\n";
+        sink.write(frame.c_str(), frame.size());
+    };
+
+    send(json{{"role", "assistant"}}, nullptr);
+    const std::string text =
+        SmartThinkingOrchestrator::extract_visible_assistant_text(response);
+    constexpr std::size_t kMaxFrameTextBytes = 16000;
+    for (std::size_t offset = 0; offset < text.size();) {
+        std::size_t length =
+            std::min(kMaxFrameTextBytes, text.size() - offset);
+        if (offset + length < text.size()) {
+            while (length > 0 &&
+                   (static_cast<unsigned char>(text[offset + length]) & 0xC0) == 0x80) {
+                --length;
+            }
+            if (length == 0) {
+                length = std::min(kMaxFrameTextBytes, text.size() - offset);
+            }
+        }
+        send(json{{"content", text.substr(offset, length)}}, nullptr);
+        offset += length;
+    }
+
+    json finish_reason = "stop";
+    if (response.contains("choices") && response["choices"].is_array() &&
+        !response["choices"].empty() &&
+        response["choices"][0].contains("finish_reason")) {
+        finish_reason = response["choices"][0]["finish_reason"];
+    }
+    send(json::object(), finish_reason);
+    const std::string done = "data: [DONE]\n\n";
+    sink.write(done.c_str(), done.size());
+    sink.done();
 }
 
 } // namespace
@@ -2810,6 +2869,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
+        json smart_thinking_error;
+        if (!SmartThinkingConfig::from_request(
+                request_json, &smart_thinking_error).has_value()) {
+            set_error_response(smart_thinking_error, res, 400);
+            return;
+        }
+
         bool request_modified = false;
         std::optional<RouterDispatchResult> route_dispatch;
 
@@ -2928,8 +2994,54 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     res,
                     route_dispatch,
                     request_body,
-                    [this](const std::string& body, httplib::DataSink& sink) {
-                        router_->chat_completion_stream(body, sink);
+                    [this, request_json](const std::string& routed_body,
+                                         httplib::DataSink& sink) {
+                        json routed_request = request_json;
+                        try {
+                            if (!routed_body.empty()) {
+                                routed_request = json::parse(routed_body);
+                            }
+                        } catch (const json::exception&) {
+                            // Keep the already parsed request if route metadata
+                            // could not be decoded.
+                        }
+
+                        json config_error;
+                        auto config = SmartThinkingConfig::from_request(
+                            routed_request, &config_error);
+                        if (!config.has_value()) {
+                            const std::string frame =
+                                "data: " + config_error.dump() + "\n\n";
+                            sink.write(frame.c_str(), frame.size());
+                            const std::string done = "data: [DONE]\n\n";
+                            sink.write(done.c_str(), done.size());
+                            sink.done();
+                            return;
+                        }
+
+                        if (config->enabled_for_request(routed_request)) {
+                            json one_shot_request = routed_request;
+                            one_shot_request["stream"] = false;
+                            json response =
+                                router_->chat_completion(one_shot_request);
+                            if (response.contains("error")) {
+                                const std::string frame =
+                                    "data: " + response.dump() + "\n\n";
+                                sink.write(frame.c_str(), frame.size());
+                                const std::string done = "data: [DONE]\n\n";
+                                sink.write(done.c_str(), done.size());
+                                sink.done();
+                            } else {
+                                write_single_final_chat_sse(
+                                    one_shot_request, response, sink);
+                            }
+                            return;
+                        }
+
+                        const json native_request =
+                            config->native_passthrough_request(routed_request);
+                        router_->chat_completion_stream(
+                            native_request.dump(), sink);
                     });
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;

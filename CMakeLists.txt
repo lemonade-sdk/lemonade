@@ -620,6 +620,7 @@ include_directories(
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
+    src/cpp/server/smart_thinking.cpp
     src/cpp/server/jobs/job_ops.cpp
     src/cpp/server/jobs/job_manager.cpp
     src/cpp/server/router.cpp
