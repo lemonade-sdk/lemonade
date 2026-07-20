@@ -6,6 +6,7 @@ import McpPanel from './McpPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
+import { WorkspacePaneHeader } from './WorkspacePanels';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -417,13 +418,11 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
       />
 
       <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
-        <header className="workspace-pane__header">
-          <div>
-            <h2 id="connect-pane-title">{section.label}</h2>
-            <p>{section.description}</p>
-          </div>
-          <span className="workspace-pane__header-icon" aria-hidden="true"><Icon name={section.icon} size={18} /></span>
-        </header>
+        <WorkspacePaneHeader
+          title={section.label}
+          subtitle={section.description}
+          titleId="connect-pane-title"
+        />
 
         <div className="connect__layout workspace-pane__scroll">
         {activeSection === 'server' && (

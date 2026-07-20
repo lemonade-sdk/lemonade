@@ -19,6 +19,7 @@ import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
+import { backendColor, backendCompactLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -37,49 +38,7 @@ function listFmtSize(gb: number): string {
   return '< 1 MB';
 }
 
-export function listRecipeBadgeText(recipe: string): string {
-  const n = String(recipe || '').toLowerCase();
-  switch (n) {
-    case 'llamacpp': return 'llama.cpp';
-    case 'vllm': return 'vLLM';
-    case 'flm': return 'FLM';
-    case 'ryzenai-llm': return 'RyzenAI';
-    case 'sd-cpp': return 'SD.cpp';
-    case 'whispercpp': return 'Whisper';
-    case 'moonshine': return 'Moonshine';
-    case 'kokoro': return 'Kokoro';
-    case 'acestep': return 'ACE-Step';
-    case 'thinksound': return 'ThinkSound';
-    case 'openmoss': return 'OpenMOSS';
-    case 'trellis': return 'TRELLIS.2';
-    case 'collection.omni': return 'Omni';
-    case 'collection.router': return 'Router';
-    case 'collection': return 'Collection';
-    default: return recipe || 'Backend';
-  }
-}
-
-function listRecipeColor(recipe: string): string {
-  const n = String(recipe || '').toLowerCase();
-  switch (n) {
-    case 'llamacpp': return '#facc15';
-    case 'vllm': return '#60a5fa';
-    case 'flm': return '#34d399';
-    case 'ryzenai-llm': return '#f97316';
-    case 'sd-cpp': return '#c084fc';
-    case 'whispercpp': return '#38bdf8';
-    case 'moonshine': return '#22d3ee';
-    case 'kokoro': return '#f472b6';
-    case 'acestep': return '#fb7185';
-    case 'thinksound': return '#f59e0b';
-    case 'openmoss': return '#ec4899';
-    case 'trellis': return '#818cf8';
-    case 'collection.omni': return '#a78bfa';
-    case 'collection.router': return '#22d3ee';
-    case 'collection': return '#94a3b8';
-    default: return 'var(--text-tertiary)';
-  }
-}
+export const listRecipeBadgeText = backendCompactLabel;
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
@@ -887,7 +846,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               {recipe && (
                 <span
                   className="model-list-item__backend"
-                  style={{ '--list-backend-color': listRecipeColor(recipe) } as React.CSSProperties}
+                  style={{ '--list-backend-color': backendColor(recipe) } as React.CSSProperties}
                   aria-hidden="true"
                 >
                   {listRecipeBadgeText(recipe)}

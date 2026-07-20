@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import api, { LogEntry, LogStreamHandle } from '../api';
 import { Icon } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
@@ -430,12 +431,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
       </aside>
 
       <div className="workspace-pane logs-main">
-        <header className="workspace-pane__header logs-main__header">
-          <div>
-            <h2>Live stream</h2>
-            <p>{filteredLogs.length} of {logs.length} entries shown</p>
-          </div>
-          <div className="logs-main__search">
+        <WorkspacePaneHeader
+          className="logs-main__header"
+          title="Live stream"
+          subtitle={`${filteredLogs.length} of ${logs.length} entries shown`}
+          actions={<div className="logs-main__search">
             <Icon name="search" size={14} aria-hidden="true" />
             <input
               type="text"
@@ -445,8 +445,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
               onChange={e => setSearchQuery(e.target.value)}
               aria-label="Filter logs"
             />
-          </div>
-        </header>
+          </div>}
+        />
 
       {/* ── Log output (virtualized) ────────────────────── */}
       <div

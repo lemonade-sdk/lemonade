@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { type Trace, inspectStore } from '../../inspectStore';
 import { Icon } from '../Icon';
 import WorkspaceRailHeader from '../WorkspaceRailHeader';
+import { WorkspaceActionButton } from '../WorkspacePanels';
 
 interface TraceListProps {
   traces: Trace[];
@@ -196,7 +197,7 @@ export default function TraceList({
       >
         {filteredTraces.length === 0 ? (
           <div className="inspect-empty-state">
-            <span className="inspect-empty-state__glyph" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="inspect-empty-state__glyph">
               <Icon name="search-check" size={32} />
             </span>
             <p>No captured requests yet</p>
@@ -273,27 +274,30 @@ export default function TraceList({
       </div>
 
       <div className="inspect-rail__footer">
-        <button
-          type="button"
-          className="inspect-footer-btn primary-simulate"
+        <WorkspaceActionButton
+          appearance="primary"
+          size="small"
+          icon="compose"
           onClick={handleOpenCreateModal}
         >
-          + Create
-        </button>
-        <button
-          type="button"
-          className="inspect-footer-btn outline"
+          Create
+        </WorkspaceActionButton>
+        <WorkspaceActionButton
+          appearance="danger"
+          size="small"
+          icon="trash"
           onClick={() => inspectStore.clearSession()}
         >
           Clear
-        </button>
-        <button
-          type="button"
-          className="inspect-footer-btn outline"
+        </WorkspaceActionButton>
+        <WorkspaceActionButton
+          appearance="secondary"
+          size="small"
+          icon="copy"
           onClick={handleExportSession}
         >
           Export
-        </button>
+        </WorkspaceActionButton>
       </div>
     </div>
   );

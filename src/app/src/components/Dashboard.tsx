@@ -4,6 +4,7 @@ import { LoadedModel } from '../api';
 import { useDashboardData, HISTORY_LEN, SessionCounters } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
 import { Icon } from './Icon';
+import { WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -60,7 +61,14 @@ function typeIcon(type: string): string {
   }
 }
 
-const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
+const SLOT_COLORS = [
+  'var(--chart-series-1)',
+  'var(--chart-series-2)',
+  'var(--chart-series-3)',
+  'var(--chart-series-4)',
+  'var(--chart-series-5)',
+  'var(--chart-series-6)',
+];
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
@@ -224,12 +232,12 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   return (
     <section className="dash2 dashboard-workspace" data-view="dashboard">
       <div className="workspace-pane dashboard-main">
-        <header className="workspace-pane__header dashboard-header">
-          <div>
-            <h1>Overview</h1>
-            <p>Throughput, capacity and resource utilization for this server session.</p>
-          </div>
-          <div className="dashboard-header__actions">
+        <WorkspacePaneHeader
+          className="dashboard-header"
+          headingLevel={1}
+          title="Overview"
+          subtitle="Throughput, capacity and resource utilization for this server session."
+          actions={<div className="dashboard-header__actions">
             <div className="dashboard-header__server" data-connected={!!health}>
               <span className="dash2-bar__dot" data-connected={!!health} />
               <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
@@ -242,8 +250,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
               <span>{paused ? 'Resume' : 'Pause'}</span>
             </button>
-          </div>
-        </header>
+          </div>}
+        />
 
       {lastError && <div className="dash2-err">Warning: {lastError}</div>}
 
@@ -287,8 +295,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           <SmoothChart
             data={aggChartData}
             series={[
-              { key: 'genTps', color: '#e8c66b', name: 'Generation TPS' },
-              { key: 'ppTps', color: '#7baed4', name: 'Prompt Processing' },
+              { key: 'genTps', color: 'var(--chart-series-1)', name: 'Generation TPS' },
+              { key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' },
             ]}
             height={120}
             unit=" tok/s"
@@ -384,15 +392,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
-                color="#b07df0" subtitle={pct(sysStats!.npu_percent)} />}
+                color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
               <RingGauge label="KV Cache" value={overallCacheUtil}
                 color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
             </div>
             <SmoothChart
               data={sysChartData}
               series={[
-                { key: 'cpu', color: '#7fb38a', name: 'CPU %' },
-                ...(hasGpu ? [{ key: 'gpu', color: '#e8c66b', name: 'GPU %' }] : []),
+                { key: 'cpu', color: 'var(--chart-series-3)', name: 'CPU %' },
+                ...(hasGpu ? [{ key: 'gpu', color: 'var(--chart-series-1)', name: 'GPU %' }] : []),
               ]}
               height={56}
               unit="%"
@@ -423,7 +431,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               <div className="dash2-mt-auto">
                 <SmoothChart
                   data={cacheChartData}
-                  series={[{ key: 'cache', color: '#d9a35b', name: 'KV Cache %' }]}
+                  series={[{ key: 'cache', color: 'var(--chart-cache)', name: 'KV Cache %' }]}
                   height={56}
                   unit="%"
                 />

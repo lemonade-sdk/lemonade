@@ -158,6 +158,42 @@ export const WorkspaceActionGroup: React.FC<WorkspaceActionGroupProps> = ({ chil
   </div>
 );
 
+interface WorkspacePaneHeaderProps {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  headingLevel?: 1 | 2;
+  titleId?: string;
+  icon?: IconName;
+  actions?: React.ReactNode;
+  className?: string;
+}
+
+export const WorkspacePaneHeader: React.FC<WorkspacePaneHeaderProps> = ({
+  title,
+  subtitle,
+  headingLevel = 2,
+  titleId,
+  icon,
+  actions,
+  className = '',
+}) => {
+  const Heading = headingLevel === 1 ? 'h1' : 'h2';
+  return (
+    <header className={`workspace-pane__header${className ? ` ${className}` : ''}`}>
+      <div className="workspace-pane__heading">
+        <Heading id={titleId}>{title}</Heading>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {(actions || icon) && (
+        <div className="workspace-pane__header-actions">
+          {actions}
+          {icon && <span className="workspace-pane__header-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>}
+        </div>
+      )}
+    </header>
+  );
+};
+
 interface WorkspaceListPanelProps {
   title: string;
   subtitle?: React.ReactNode;

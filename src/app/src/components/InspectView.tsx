@@ -13,6 +13,7 @@ import ImproveTab from './inspect/ImproveTab';
 import CreateModal from './inspect/CreateModal';
 import CurlModal from './inspect/CurlModal';
 import { type AccountSession } from '../features/accounts/accountStore';
+import { WorkspaceDetailEmpty } from './WorkspacePanels';
 
 interface InspectViewProps {
   accountSession: AccountSession;
@@ -154,13 +155,11 @@ export default function InspectView({ accountSession, embedded = false }: Inspec
 
       <div className="inspect-detail">
         {!selectedTrace ? (
-          <div className="inspect-detail-empty">
-            <span className="inspect-detail-empty__icon">
-              <Icon name="scan-eye" size={48} />
-            </span>
-            <h4>Select a trace run to inspect details</h4>
-            <p>Select any recorded inference from the left panel to review its timeline waterfall, prompts, metrics and optimization suggestions.</p>
-          </div>
+          <WorkspaceDetailEmpty
+            icon="scan-eye"
+            title="Select a request"
+            description="Choose a captured request to review its timeline, prompts, metrics, and optimization suggestions."
+          />
         ) : (
           <>
             <div className="inspect-detail__header">

@@ -14,6 +14,7 @@ import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView, { type MonitorSection } from './components/MonitorView';
 import { Icon } from './components/Icon';
+import { WorkspaceActionButton } from './components/WorkspacePanels';
 import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
 type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect' | 'inspect';
@@ -39,19 +40,19 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '2rem', color: '#e8c66b', fontFamily: 'var(--font-mono, monospace)' }}>
-          <h2 style={{ color: '#ff6b6b', margin: '0 0 1rem' }}>
+        <div className="view-error">
+          <h2>
             Something went wrong in "{this.props.view}"
           </h2>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: '13px' }}>
+          <pre>
             {this.state.error.message}
           </pre>
-          <button
+          <WorkspaceActionButton
+            appearance="primary"
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#e8c66b', color: '#16140f', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
           >
             Try again
-          </button>
+          </WorkspaceActionButton>
         </div>
       );
     }
@@ -539,7 +540,7 @@ const App: React.FC = () => {
       <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
 
       <main id="main-content" tabIndex={-1} className="view-container">
-        <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'chat'}>
           <ViewErrorBoundary view="chat">
             <ChatView
               key={`${accountSession.storageScope}:${accountResetNonce}`}
@@ -551,7 +552,7 @@ const App: React.FC = () => {
             />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'models' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'models'}>
           <ViewErrorBoundary view="models">
             <ModelManager
               onModelSelect={handleModelSelect}
@@ -560,17 +561,17 @@ const App: React.FC = () => {
             />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'presets' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'presets'}>
           <ViewErrorBoundary view="presets">
             <PresetManager key={accountSession.storageScope} loadedModels={loadedModels} />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'backends'}>
           <ViewErrorBoundary view="backends">
             <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: isMonitorView(view) ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={!isMonitorView(view)}>
           <ViewErrorBoundary view="monitor">
             <MonitorView
               accountSession={accountSession}
@@ -580,7 +581,7 @@ const App: React.FC = () => {
             />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'connect'}>
           <ViewErrorBoundary view="connect">
             <ConnectView
               status={status}

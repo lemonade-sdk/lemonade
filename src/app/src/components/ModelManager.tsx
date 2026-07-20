@@ -32,6 +32,7 @@ import {
   savePinnedModelNames,
   type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
+import { backendColor, backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -97,85 +98,21 @@ function modelLabels(m: ModelInfo | null | undefined): string[] {
   return labels.map(label => String(label).trim()).filter(Boolean);
 }
 
-function recipeBadgeText(recipe: string): string {
-  const normalized = String(recipe || '').toLowerCase();
-  switch (normalized) {
-    case 'llamacpp': return 'llama.cpp';
-    case 'vllm': return 'vLLM';
-    case 'flm': return 'FLM';
-    case 'ryzenai-llm': return 'RyzenAI';
-    case 'sd-cpp': return 'SD.cpp';
-    case 'whispercpp': return 'Whisper';
-    case 'moonshine': return 'Moonshine';
-    case 'kokoro': return 'Kokoro';
-    case 'acestep': return 'ACE-Step';
-    case 'thinksound': return 'ThinkSound';
-    case 'openmoss': return 'OpenMOSS';
-    case 'trellis': return 'TRELLIS';
-    case 'collection.omni': return 'Omni';
-    case 'collection.router': return 'Router';
-    case 'collection': return 'Collection';
-    default: return recipe || 'Backend';
-  }
-}
-
-function recipeColor(recipe: string): string {
-  const normalized = String(recipe || '').toLowerCase();
-  switch (normalized) {
-    case 'llamacpp': return '#facc15';
-    case 'vllm': return '#60a5fa';
-    case 'flm': return '#34d399';
-    case 'ryzenai-llm': return '#f97316';
-    case 'sd-cpp': return '#c084fc';
-    case 'whispercpp': return '#38bdf8';
-    case 'moonshine': return '#22d3ee';
-    case 'kokoro': return '#f472b6';
-    case 'acestep': return '#fb7185';
-    case 'thinksound': return '#2dd4bf';
-    case 'openmoss': return '#f9a8d4';
-    case 'trellis': return '#818cf8';
-    case 'collection.omni': return '#a78bfa';
-    case 'collection.router': return '#22d3ee';
-    case 'collection': return '#94a3b8';
-    default: return 'var(--text-tertiary)';
-  }
-}
-
 const BackendBadge: React.FC<{ recipe: string; running?: boolean }> = ({ recipe, running = false }) => {
-  const label = recipeLabel(recipe);
+  const label = backendLabel(recipe);
   return (
     <div
       className={`row__backend-badge${running ? ' row__backend-badge--running' : ''}`}
-      style={{ '--backend-color': recipeColor(recipe) } as React.CSSProperties}
+      style={{ '--backend-color': backendColor(recipe) } as React.CSSProperties}
       title={label}
       aria-label={label}
     >
-      <span>{recipeBadgeText(recipe)}</span>
+      <span>{backendCompactLabel(recipe)}</span>
     </div>
   );
 };
 
-function recipeLabel(recipe: string): string {
-  const normalized = String(recipe || '').toLowerCase();
-  switch (normalized) {
-    case 'llamacpp': return 'llama.cpp';
-    case 'vllm': return 'vLLM';
-    case 'flm': return 'FastFlowLM';
-    case 'ryzenai-llm': return 'RyzenAI';
-    case 'sd-cpp': return 'Stable Diffusion';
-    case 'whispercpp': return 'Whisper';
-    case 'moonshine': return 'Moonshine';
-    case 'kokoro': return 'Kokoro TTS';
-    case 'acestep': return 'ACE-Step';
-    case 'thinksound': return 'ThinkSound';
-    case 'openmoss': return 'OpenMOSS TTS';
-    case 'trellis': return 'TRELLIS.2';
-    case 'collection.omni': return 'Omni Collection';
-    case 'collection.router': return 'Router';
-    case 'collection': return 'Collection';
-    default: return recipe || 'Unknown';
-  }
-}
+const recipeLabel = backendLabel;
 
 function modelType(m: ModelInfo): string {
   const cap = capabilityFromModelInfo(m);

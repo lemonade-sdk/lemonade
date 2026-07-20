@@ -14,6 +14,7 @@ import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -929,20 +930,19 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       />
 
       <div className="backends__main workspace-pane">
-      <header className="workspace-pane__header backends__pane-header">
-        <div>
-          <h2>Compatibility matrix</h2>
-          <p>Runtime availability by device and model capability.</p>
-        </div>
-        {updatesAvailable > 0 && (
+      <WorkspacePaneHeader
+        className="backends__pane-header"
+        title="Compatibility matrix"
+        subtitle="Runtime availability by device and model capability."
+        actions={updatesAvailable > 0 ? (
           <div className="backends__header-update" data-backends-banner>
             <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
             <button className="btn btn--primary" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
               {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
             </button>
           </div>
-        )}
-      </header>
+        ) : undefined}
+      />
 
       <div className="backends__head">
 
