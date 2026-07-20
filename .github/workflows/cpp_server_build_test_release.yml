@@ -178,6 +178,19 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
+      - name: Run MCP client unit test on Windows
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Exercise the Windows-only process, quoting, environment-block, and
+          # pipe/handle paths that Linux and macOS cannot cover.
+          cmake --build build --config Release --target test_mcp_client_config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
         uses: actions/upload-artifact@v7
@@ -275,6 +288,7 @@ jobs:
           set -e
           cmake --preset default
           cmake --build --preset default --target test_directory_watcher
+          cmake --build --preset default --target test_process_manager
           cmake --build --preset default --target test_latest_version_fallback
           cmake --build --preset default --target test_routing_policy_contract
           cmake --build --preset default --target test_routing_policy_evaluator
@@ -287,8 +301,12 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_mcp_client_config
+          cmake --build --preset default --target test_job_expr
+          cmake --build --preset default --target test_job_graph
+          cmake --build --preset default --target test_origin_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -582,7 +600,6 @@ jobs:
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Run C++ unit tests
-        if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         run: |
           cmake --build --preset default --target test_directory_watcher
@@ -598,8 +615,12 @@ jobs:
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
           cmake --build --preset default --target test_network_utils
+          cmake --build --preset default --target test_mcp_client_config
+          cmake --build --preset default --target test_job_expr
+          cmake --build --preset default --target test_job_graph
+          cmake --build --preset default --target test_origin_utils
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -716,6 +737,12 @@ jobs:
           echo "Running WebSocket idle test (31s regression)..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
+          echo "Running job engine tests..."
+          .venv/bin/python test/server_jobs.py --lemond-binary ./build/lemond
+          echo "Job engine tests PASSED!"
 
       - name: Run web-app path traversal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -1147,6 +1174,11 @@ jobs:
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
+          - name: classify-onnxruntime
+            script: server_classify.py
+            extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
           - name: stable-diffusion
@@ -2077,6 +2109,9 @@ jobs:
           echo "Running WebSocket idle test..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
+          echo "Running WebSocket auth tests..."
+          .venv/bin/python test/server_websocket_auth.py
+          echo "WebSocket auth tests PASSED!"
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
@@ -2113,6 +2148,13 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+
+      - name: Test jobs
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
+          .venv/bin/python test/server_jobs.py --lemond-binary lemond
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
@@ -2205,6 +2247,9 @@ jobs:
             echo "Running WebSocket idle test..."
             $VENV_PYTHON test/test_websocket_idle.py
             echo "WebSocket idle test PASSED!"
+            echo "Running WebSocket auth tests..."
+            $VENV_PYTHON test/server_websocket_auth.py
+            echo "WebSocket auth tests PASSED!"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
             echo "Running Ollama API tests..."
             $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"

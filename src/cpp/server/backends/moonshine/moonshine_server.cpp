@@ -288,7 +288,11 @@ json MoonshineServer::forward_multipart_audio_data(const std::string& audio_data
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "MoonshineServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
-    auto res = utils::HttpClient::post_multipart(url, fields, 0);
+    auto res = utils::HttpClient::post_multipart(
+        url,
+        fields,
+        0,
+        utils::HttpSecurityPolicy::TrustedLoopback);
 
     LOG(DEBUG, "MoonshineServer") << "Response status: " << res.status_code << std::endl;
 

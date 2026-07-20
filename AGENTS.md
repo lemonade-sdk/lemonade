@@ -48,7 +48,9 @@ All core endpoints are registered under **4 path prefixes**:
 - `/v0/` — Legacy short
 - `/v1/` — OpenAI SDK / LiteLLM compatibility
 
-**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`
+**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
+
+**Job engine** (`POST jobs`, `GET jobs`, `GET/DELETE jobs/{id}`, `POST jobs/{id}/{pause,interrupt,resume}`): server-side sequences of ops (`system_info`, `system_stats`, `models`, `sleep`, `load`, `unload`, `chat`) with data passing, forward-only branching, and a pause/interrupt/resume lifecycle persisted across restart. Exclusive ops hold a Router slot so normal traffic queues. See `docs/dev/job-system.md` and `docs/dev/job-expression-language.md`.
 
 **Ollama-compatible endpoints** (under `/api/` without version prefix): `chat`, `generate`, `tags`, `show`, `delete`, `pull`, `embed`, `embeddings`, `ps`, `version`
 

@@ -369,12 +369,111 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
 }
 
+bool Router::begin_exclusive(std::atomic<bool>* cancel) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    exclusive_active_ = true;
+    exclusive_owner_ = std::this_thread::get_id();
+    while (true) {
+        if (cancel && cancel->load()) {
+            exclusive_active_ = false;
+            exclusive_owner_ = std::thread::id{};
+            exclusive_cv_.notify_all();
+            load_cv_.notify_all();
+            return false;
+        }
+        if (is_loading_) {
+            load_cv_.wait_for(lock, std::chrono::milliseconds(25));
+            continue;
+        }
+        bool busy = false;
+        for (const auto& server : loaded_servers_) {
+            if (server->is_busy()) {
+                busy = true;
+                break;
+            }
+        }
+        if (!busy) break;
+        lock.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        lock.lock();
+    }
+    exclusive_cv_.notify_all();
+    load_cv_.notify_all();
+    return true;
+}
+
+void Router::end_exclusive() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    exclusive_active_ = false;
+    exclusive_owner_ = std::thread::id{};
+    exclusive_cv_.notify_all();
+    load_cv_.notify_all();
+}
+
+void Router::wait_for_slot_clearance(std::unique_lock<std::mutex>& lock) {
+    exclusive_cv_.wait(lock, [&] {
+        return !exclusive_active_ || exclusive_owner_ == std::this_thread::get_id();
+    });
+}
+
+std::map<std::string, bool> Router::snapshot_loaded_models() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::map<std::string, bool> models;
+    for (const auto& server : loaded_servers_)
+        if (server->is_backend_alive()) models[server->get_model_name()] = server->is_pinned();
+    return models;
+}
+
+std::map<std::string, json> Router::unload_job_models(const std::map<std::string, int>& owned_live,
+                                                      const std::map<std::string, bool>& snapshot_pins) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
+    std::map<std::string, int> resolved_owned;
+    for (const auto& kv : owned_live) resolved_owned[resolve_model_name(kv.first)] = kv.second;
+    std::map<std::string, json> captured;
+    std::vector<WrappedServer*> victims;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive()) continue;
+        const std::string name = server->get_model_name();
+        auto pin_it = snapshot_pins.find(name);
+        if (pin_it != snapshot_pins.end()) {
+            if (server->is_pinned() != pin_it->second) server->set_pinned(pin_it->second);
+            continue;
+        }
+        auto own_it = resolved_owned.find(name);
+        if (own_it == resolved_owned.end()) continue;
+        if (server->get_process_id() != own_it->second) continue;
+        captured[name] = {{"options", server->get_recipe_options().to_json()},
+                          {"pinned", server->is_pinned()}};
+        victims.push_back(server.get());
+    }
+    for (auto* victim : victims) {
+        if (victim->is_pinned()) victim->set_pinned(false);
+        LOG(INFO, "Router") << "Reconcile-unload of job-loaded model: "
+                            << victim->get_model_name() << std::endl;
+        evict_server(victim);
+    }
+    return captured;
+}
+
+int Router::loaded_model_pid(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = find_server_by_model_name(resolve_model_name(model_name));
+    return server && server->is_backend_alive() ? server->get_process_id() : -1;
+}
+
+std::string Router::canonical_model_name(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return resolve_model_name(model_name);
+}
+
 void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        RecipeOptions options,
                        bool do_not_upgrade,
                        bool allow_reload_on_option_change,
-                       std::optional<bool> pinned) {
+                       std::optional<bool> pinned,
+                       std::atomic<bool>* cancel_flag) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     const std::string backend_option = model_info.recipe + "_backend";
 
@@ -393,13 +492,11 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    // Wait if another thread is currently loading
-    while (is_loading_) {
-    LOG(INFO, "Router") << "Another load is in progress, waiting..." << std::endl;
-        load_cv_.wait(lock);
-    }
+    load_cv_.wait(lock, [&] {
+        return !is_loading_
+               && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
+    });
 
-    // Mark that we're now loading (prevents concurrent loads)
     is_loading_ = true;
 
     LOG(DEBUG, "Router") << "Loading model: " << canonical_model_name
@@ -433,8 +530,11 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            if (allow_reload_on_option_change &&
-                existing->get_recipe_options().to_json() != effective_options.to_json()) {
+            json existing_opts = existing->get_recipe_options().to_json();
+            json requested_opts = effective_options.to_json();
+            existing_opts.erase("pinned");
+            requested_opts.erase("pinned");
+            if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
                 // Fall through to create and load with new options
@@ -550,6 +650,8 @@ void Router::load_model(const std::string& model_name,
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
 
+        new_server->set_load_cancel_flag(cancel_flag);
+
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
@@ -561,6 +663,8 @@ void Router::load_model(const std::string& model_name,
             load_success = false;
             LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         }
+
+        new_server->set_load_cancel_flag(nullptr);
 
         lock.lock();
 
@@ -590,6 +694,11 @@ void Router::load_model(const std::string& model_name,
             is_loading_ = false;
             load_cv_.notify_all();
 
+            if (cancel_flag && cancel_flag->load()) {
+                LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
+                throw std::runtime_error("load cancelled");
+            }
+
             if (is_file_not_found) {
                 LOG(ERROR, "Router") << "File not found error, NOT evicting other models" << std::endl;
                 throw std::runtime_error(error_message);
@@ -609,6 +718,7 @@ void Router::load_model(const std::string& model_name,
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
+            retry_server->set_load_cancel_flag(cancel_flag);
 
             lock.unlock();
 
@@ -623,12 +733,14 @@ void Router::load_model(const std::string& model_name,
 
                 retry_server->set_state(ModelState::READY);
                 const auto retry_duration_ms = retry_server->get_load_duration_ms();
+                retry_server->set_load_cancel_flag(nullptr);
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
                 LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
+                retry_server->set_load_cancel_flag(nullptr);
                 lock.lock();
                 is_loading_ = false;
                 load_cv_.notify_all();
@@ -652,7 +764,8 @@ void Router::load_model(const std::string& model_name,
 }
 
 void Router::unload_model(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
 
     if (model_name.empty()) {
         // Unload all models
@@ -676,6 +789,17 @@ void Router::evict_if_committed(const std::string& model_name) {
     WrappedServer* server = find_server_by_model_name(model_name);
     if (!server) {
         return;  // Already gone
+    }
+
+    // An exclusive session may have started (and re-pinned this model via the
+    // job snapshot reconcile) since the EVICTING mark was set. Neither state
+    // was known when the eviction was decided, so abandon it.
+    if (exclusive_active_ || server->is_pinned()) {
+        server->rescue_from_eviction();
+        LOG(INFO, "Router") << "Eviction of " << model_name << " cancelled ("
+                            << (server->is_pinned() ? "pinned" : "exclusive session active")
+                            << ")" << std::endl;
+        return;
     }
 
     // Atomically confirm the model is still idle and EVICTING. If a request
@@ -703,6 +827,20 @@ std::string Router::get_loaded_recipe() const {
 
     // Get the actual recipe from the server's recipe options
     return server->get_recipe_options().get_recipe();
+}
+
+std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* match = nullptr;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() || server->get_model_type() != type) {
+            continue;
+        }
+        if (match) return "";  // ambiguous: caller must name the model
+        match = server.get();
+    }
+    return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
 }
 
 json Router::get_all_loaded_models() const {
@@ -776,7 +914,8 @@ json Router::get_max_model_limits() const {
         {"reranking", max},
         {"transcription", max},
         {"image", max},
-        {"tts", max}
+        {"tts", max},
+        {"classification", max}
     };
 }
 
@@ -856,7 +995,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
@@ -955,7 +1095,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 json error = ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
@@ -1057,14 +1198,25 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 }
 
-json Router::chat_completion(const json& request) {
+json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+
+    struct RequestCancelScope {
+        WrappedServer* server = nullptr;
+        ~RequestCancelScope() {
+            if (server) server->set_request_cancel_flag(nullptr);
+        }
+    } cancel_scope;
 
     try {
         WrappedServer* active_server = nullptr;
         json response = execute_inference(request, [&](WrappedServer* server) {
             active_server = server;
+            if (cancel) {
+                server->set_request_cancel_flag(cancel);
+                cancel_scope.server = server;
+            }
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
@@ -1331,12 +1483,54 @@ json Router::reranking(const json& request) {
     }
 }
 
+json Router::classify(const json& request) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto classification_server = dynamic_cast<IClassificationServer*>(server);
+            if (!classification_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return classification_server->classify(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                // Label scores classify user content; keep them out of telemetry.
+                span->end_with_success(nlohmann::json::object(), "");
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
 json Router::get_slots() {
     WrappedServer* server = nullptr;
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1375,7 +1569,8 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1414,7 +1609,8 @@ json Router::tokenize(const json& request_body) {
     ITokenizerServer* tokenizer_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -2108,12 +2304,14 @@ json Router::get_pinned_model_counts() const {
         {"reranking", count_pinned_servers_by_type(ModelType::RERANKING)},
         {"transcription", count_pinned_servers_by_type(ModelType::TRANSCRIPTION)},
         {"image", count_pinned_servers_by_type(ModelType::IMAGE)},
-        {"tts", count_pinned_servers_by_type(ModelType::TTS)}
+        {"tts", count_pinned_servers_by_type(ModelType::TTS)},
+        {"classification", count_pinned_servers_by_type(ModelType::CLASSIFICATION)}
     };
 }
 
 void Router::set_model_pinned(const std::string& model_name, bool pinned) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
     WrappedServer* server = find_server_by_model_name(model_name);
     if (!server) {
         throw std::runtime_error("Model not loaded: " + model_name);
