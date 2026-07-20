@@ -11,10 +11,8 @@ import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
 import PresetManager from './components/PresetManager';
 import BackendManager from './components/BackendManager';
-import Dashboard from './components/Dashboard';
-import LogViewer from './components/LogViewer';
 import DownloadManager from './components/DownloadManager';
-import InspectView from './components/InspectView';
+import MonitorView, { type MonitorSection } from './components/MonitorView';
 import { Icon } from './components/Icon';
 import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
 
@@ -63,6 +61,15 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
 const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect', 'inspect'];
 
+const isMonitorView = (value: View): value is 'dashboard' | 'inspect' | 'logs' =>
+  value === 'dashboard' || value === 'inspect' || value === 'logs';
+
+const monitorSectionFromView = (value: View): MonitorSection =>
+  value === 'inspect' ? 'requests' : value === 'logs' ? 'logs' : 'overview';
+
+const viewFromMonitorSection = (section: MonitorSection): View =>
+  section === 'requests' ? 'inspect' : section === 'logs' ? 'logs' : 'dashboard';
+
 
 type HostNavigationPayload = string | URL | {
   url?: string;
@@ -85,7 +92,17 @@ declare global {
 
 function viewFromValue(raw: unknown): View | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
+  if (value === 'monitor' || value === 'monitor/overview') return 'dashboard';
+  if (value === 'monitor/requests') return 'inspect';
+  if (value === 'monitor/logs') return 'logs';
   return VALID_VIEWS.includes(value as View) ? value as View : null;
+}
+
+function hashForView(view: View): string {
+  if (view === 'dashboard') return '#/monitor/overview';
+  if (view === 'inspect') return '#/monitor/requests';
+  if (view === 'logs') return '#/monitor/logs';
+  return `#/${view}`;
 }
 
 function viewFromHashValue(hash: string): View | null {
@@ -175,10 +192,14 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const accountSessionRef = useRef(accountSession);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const utilityMenuRef = useRef<HTMLDivElement>(null);
+  const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const [activeDownloadCount, setActiveDownloadCount] = useState(
     () => downloadStore.snapshot().filter(isDownloadActive).length,
   );
   const activeDownloadCountRef = useRef(activeDownloadCount);
+  const lastMonitorViewRef = useRef<View>(isMonitorView(view) ? view : 'dashboard');
   useEffect(() => {
     accountSessionRef.current = accountSession;
     setPresetStorageScope(accountSession.storageScope);
@@ -214,9 +235,35 @@ const App: React.FC = () => {
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
   }, [theme]);
 
+  useEffect(() => {
+    if (isMonitorView(view)) lastMonitorViewRef.current = view;
+  }, [view]);
+
   const toggleTheme = useCallback(() => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
+
+  useEffect(() => {
+    if (!utilityMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!utilityMenuRef.current?.contains(event.target as Node)) setUtilityMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || (event.target as Element | null)?.closest('.account-menu__panel')) return;
+      setUtilityMenuOpen(false);
+      requestAnimationFrame(() => utilityMenuTriggerRef.current?.focus());
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [utilityMenuOpen]);
+
+  useEffect(() => {
+    setUtilityMenuOpen(false);
+  }, [view]);
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
     const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
@@ -266,7 +313,7 @@ const App: React.FC = () => {
     setViewState(v);
     try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
     // Update hash without triggering hashchange (we're already setting state)
-    const newHash = `#/${v}`;
+    const newHash = hashForView(v);
     if (window.location.hash !== newHash) {
       window.history.pushState(null, '', newHash);
     }
@@ -315,7 +362,7 @@ const App: React.FC = () => {
     window.addEventListener('hashchange', onHashChange);
     // Set initial hash if not already set
     if (!window.location.hash) {
-      window.history.replaceState(null, '', `#/${view}`);
+      window.history.replaceState(null, '', hashForView(view));
     }
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
@@ -414,15 +461,13 @@ const App: React.FC = () => {
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'dashboard', label: 'Dashboard',  icon: 'gauge'              },
-            { id: 'inspect',   label: 'Inspect',   icon: 'search-check'       },
-            { id: 'logs',      label: 'Logs',      icon: 'logs'               },
+            { id: 'dashboard', label: 'Monitor',   icon: 'gauge'              },
             { id: 'connect',   label: 'Connect',   icon: 'plug'               },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
             <button
               key={id}
-              className={view === id ? 'is-active' : ''}
-              onClick={() => setView(id)}
+              className={id === 'dashboard' ? (isMonitorView(view) ? 'is-active' : '') : (view === id ? 'is-active' : '')}
+              onClick={() => setView(id === 'dashboard' ? lastMonitorViewRef.current : id)}
               title={label}
               aria-label={label}
             >
@@ -433,24 +478,61 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right">
-          <AccountMenu
-            session={accountSession}
-            onSessionChange={handleAccountSessionChange}
-            onDataReset={handleAccountDataReset}
-          />
-          <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-          </button>
-          <button
-            className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
-            onClick={() => setDownloadManagerOpen(open => !open)}
-            aria-label="Open download manager"
-            aria-expanded={downloadManagerOpen}
-            title="Download manager"
-          >
-            <Icon name="download" size={16} />
-            {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
-          </button>
+          <div ref={utilityMenuRef} className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}>
+            <button
+              ref={utilityMenuTriggerRef}
+              type="button"
+              className="titlebar__utilities-toggle"
+              aria-label="App controls"
+              aria-expanded={utilityMenuOpen}
+              aria-controls="titlebar-utility-menu"
+              title="App controls"
+              onClick={() => setUtilityMenuOpen(open => !open)}
+            >
+              <Icon name="settings" size={17} aria-hidden="true" />
+            </button>
+            <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
+              <AccountMenu
+                session={accountSession}
+                onSessionChange={handleAccountSessionChange}
+                onDataReset={handleAccountDataReset}
+              />
+              <div
+                className="titlebar__utility-status"
+                role="status"
+                aria-label={`Server ${status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'offline'}`}
+              >
+                <span className={`titlebar__status-dot ${
+                  status === 'connected' ? 'titlebar__status-dot--connected' :
+                  status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
+                }`} aria-hidden="true" />
+                <span className="titlebar__utility-label">Server</span>
+                <span className="titlebar__utility-value">
+                  {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+                </span>
+              </div>
+              <button
+                className="titlebar__theme-toggle"
+                onClick={() => { toggleTheme(); setUtilityMenuOpen(false); }}
+                aria-label="Toggle theme"
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+                <span className="titlebar__utility-label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+              </button>
+              <button
+                className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
+                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); }}
+                aria-label="Open download manager"
+                aria-expanded={downloadManagerOpen}
+                title="Download manager"
+              >
+                <Icon name="download" size={16} />
+                <span className="titlebar__utility-label">Downloads</span>
+                {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -488,19 +570,14 @@ const App: React.FC = () => {
             <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
-          <ViewErrorBoundary view="dashboard">
-            <Dashboard isActive={view === 'dashboard'} />
-          </ViewErrorBoundary>
-        </div>
-        <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
-          <ViewErrorBoundary view="logs">
-            <LogViewer />
-          </ViewErrorBoundary>
-        </div>
-        <div style={{ display: view === 'inspect' ? 'contents' : 'none' }}>
-          <ViewErrorBoundary view="inspect">
-            <InspectView accountSession={accountSession} />
+        <div style={{ display: isMonitorView(view) ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="monitor">
+            <MonitorView
+              accountSession={accountSession}
+              activeSection={monitorSectionFromView(view)}
+              isActive={isMonitorView(view)}
+              onSectionChange={section => setView(viewFromMonitorSection(section))}
+            />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>

@@ -8,8 +8,11 @@ import {
   resetBackendTuning,
   saveBackendTuning,
 } from '../presetStore';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
+import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
+import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
@@ -165,6 +168,15 @@ const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
+type BackendViewFilter = 'all' | 'installed' | 'available' | 'updates' | 'experimental';
+
+const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
+  ['all', 'All backends', 'Complete compatibility matrix', 'layers'],
+  ['installed', 'Installed', 'Ready on this machine', 'check'],
+  ['available', 'Available', 'Ready to install', 'download'],
+  ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
+  ['experimental', 'Experimental', 'Preview integrations', 'flask-conical'],
+];
 
 function backendKey(recipe: string, backend: string): string {
   return `${recipe}:${backend}`;
@@ -398,6 +410,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
+  const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const mobileRail = useWorkspaceMobileRail();
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
@@ -697,6 +712,31 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return count;
   }, [sysInfo]);
 
+  const backendStateCounts = useMemo(() => {
+    const counts = { all: 0, installed: 0, available: 0, updates: 0, experimental: 0 };
+    if (!sysInfo?.recipes) return counts;
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      for (const backendInfo of Object.values(recipeInfo.backends)) {
+        if (backendInfo.state === 'unsupported') continue;
+        counts.all++;
+        if (backendInfo.state === 'installed') counts.installed++;
+        if (backendInfo.state === 'installable') counts.available++;
+        if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available') counts.updates++;
+        if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
+      }
+    }
+    return counts;
+  }, [sysInfo]);
+
+  const backendMatchesView = useCallback((entry: CellEntry) => {
+    if (viewFilter === 'all') return true;
+    if (viewFilter === 'installed') return entry.info.state === 'installed';
+    if (viewFilter === 'available') return entry.info.state === 'installable';
+    if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
+    const recipeInfo = sysInfo?.recipes?.[entry.recipe];
+    return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
+  }, [sysInfo, viewFilter]);
+
   /* ── Device detail row ────────────────────────────────── */
 
   const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
@@ -835,11 +875,34 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }
 
   return (
-    <section className={`backends${showTech ? ' show-tech' : ''}`} data-view="backends">
-      <div className="backends__main">
-      <div className="backends__head">
-        <div className="backends__title">
-          <h1>Backends</h1>
+    <section className={`backends backends--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}${showTech ? ' show-tech' : ''}`} data-view="backends">
+      {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
+      <aside
+        ref={mobileRail.panelRef}
+        id="backend-filters-panel"
+        className={`workspace-rail mobile-context-panel backends__rail${railCollapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
+        aria-label="Backend filters"
+        role={mobileRail.isOpen ? 'dialog' : undefined}
+        aria-modal={mobileRail.isOpen ? true : undefined}
+      >
+        <WorkspaceRailHeader
+          title="Filters"
+          sidebarLabel="backend filters"
+          purpose="filter"
+          collapsed={railCollapsed && !mobileRail.isOpen}
+          onToggle={() => setRailCollapsed(value => !value)}
+          onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
+        />
+        <nav className="workspace-filter-list" aria-label="Backend filters">
+          {BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => (
+            <button key={id} type="button" className={`workspace-filter-list__item${viewFilter === id ? ' is-active' : ''}`} aria-current={viewFilter === id ? 'true' : undefined} aria-label={label} title={`${label} — ${description}`} onClick={() => { setViewFilter(id); mobileRail.close(); }}>
+              <Icon className="workspace-filter-list__icon" name={icon} size={14} />
+              <span className="workspace-filter-list__label">{label}</span>
+              <span className="workspace-filter-list__count">{backendStateCounts[id]}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="workspace-rail__footer backends__rail-footer">
           <label className="backends__toggle">
             <input
               type="checkbox"
@@ -848,7 +911,40 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             />
             <span>Show technical details</span>
           </label>
+          {sysInfo && (
+            <div className="backends__runtime-meta">
+              <strong>Lemonade {lemonadeVersion(sysInfo)}</strong>
+              <small>{osVersion(sysInfo)}</small>
+            </div>
+          )}
         </div>
+      </aside>
+
+      <WorkspaceMobileMenuButton
+        menuLabel="Open backend filters"
+        panelId="backend-filters-panel"
+        expanded={mobileRail.isOpen}
+        onClick={mobileRail.toggle}
+        triggerRef={mobileRail.triggerRef}
+      />
+
+      <div className="backends__main workspace-pane">
+      <header className="workspace-pane__header backends__pane-header">
+        <div>
+          <h2>Compatibility matrix</h2>
+          <p>Runtime availability by device and model capability.</p>
+        </div>
+        {updatesAvailable > 0 && (
+          <div className="backends__header-update" data-backends-banner>
+            <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
+            <button className="btn btn--primary" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
+              {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
+            </button>
+          </div>
+        )}
+      </header>
+
+      <div className="backends__head">
 
         {error && (
           <div className="banner banner--error" data-backends-error>
@@ -858,32 +954,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           </div>
         )}
 
-        {updatesAvailable > 0 && (
-          <div className="banner banner--warn" data-backends-banner>
-            <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
-            <span className="banner__text" data-backends-banner-text>
-              {updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available
-            </span>
-            <button className="banner__action" data-backends-banner-action
-              onClick={handleUpdateAll}
-              disabled={installing !== null}>
-              {installing ? 'Updating…' : 'Update all'}
-            </button>
-          </div>
-        )}
-
-        {sysInfo && (
-          <div className="backends__summary">
-            <span className="backends__version">
-              Lemonade {lemonadeVersion(sysInfo)}
-            </span>
-            <span className="backends__os">{osVersion(sysInfo)}</span>
-          </div>
-        )}
       </div>
 
       {matrixRows.length === 0 && (
         <p className="sr-only" data-backends-matrix-empty>No backend/device data is available for this Lemonade server yet.</p>
+      )}
+
+      {backendStateCounts[viewFilter] === 0 && (
+        <div className="backends__filter-empty">
+          <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
+          <strong>No {viewFilter} backends</strong>
+          <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
+        </div>
       )}
 
       <div className="matrix" data-backends-matrix>
@@ -917,7 +999,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                     }
                     return (
                       <td key={cap}>
-                        {entries.map(renderBackendCell)}
+                        {entries.filter(backendMatchesView).map(renderBackendCell)}
                       </td>
                     );
                   })}

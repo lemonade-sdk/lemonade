@@ -35,10 +35,12 @@ import {
 } from '../presetStore';
 import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import AutoOptRail, { openAutoOptRun } from '../features/autoOpt/AutoOptRail';
+import AutoOptRail, { openAutoOptRun, type PresetLibraryFilter } from '../features/autoOpt/AutoOptRail';
 import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
 import { DEFAULT_TTS_VOICE, OPENMOSS_VOICE_PRESETS, TTS_VOICES } from '../features/audio/ttsSettings';
+import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 
 const CAPABILITIES: Capability[] = ['chat', 'omni', 'vision', 'code', 'tts'];
 const VISIBLE_STARTERS = STARTERS.filter(preset => preset.applies_to.some(capability => CAPABILITIES.includes(capability)));
@@ -153,6 +155,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [applyTarget, setApplyTarget] = useState('');
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
+  const [libraryFilter, setLibraryFilter] = useState<PresetLibraryFilter>('all');
+  const mobileRail = useWorkspaceMobileRail();
   const [highlightPresetId, setHighlightPresetId] = useState<string | null>(null);
   const slideoverRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -336,10 +340,13 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   }, [handleClone]);
 
   const scrollToStarters = useCallback(() => {
-    const target = startersRef.current;
-    if (!target) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    window.setTimeout(() => target.focus({ preventScroll: true }), 350);
+    setLibraryFilter('starters');
+    window.requestAnimationFrame(() => {
+      const target = startersRef.current;
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.setTimeout(() => target.focus({ preventScroll: true }), 350);
+    });
   }, []);
 
   const handleExport = useCallback((preset: Preset) => {
@@ -375,19 +382,34 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     });
   }, []);
 
-
   return (
     <>
       <section className={`recipes recipes--with-rail${autoRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="presets">
+        {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
         <AutoOptRail
           loadedModels={loadedModels}
           collapsed={autoRailCollapsed}
           onToggleCollapsed={() => setAutoRailCollapsed(v => !v)}
+          mobileOpen={mobileRail.isOpen}
+          onMobileClose={mobileRail.close}
+          railRef={mobileRail.panelRef}
+          libraryFilter={libraryFilter}
+          onLibraryFilterChange={value => { setLibraryFilter(value); mobileRail.close(); }}
+          userPresetCount={userPresets.length}
+          starterCount={VISIBLE_STARTERS.length + 1}
+          appliedCount={appliedModelNames.length}
+        />
+        <WorkspaceMobileMenuButton
+          menuLabel="Open preset filters"
+          panelId="preset-filters-panel"
+          expanded={mobileRail.isOpen}
+          onClick={mobileRail.toggle}
+          triggerRef={mobileRail.triggerRef}
         />
         <div className="recipes__main">
-        <div className="recipes__head">
+        <div className="recipes__head workspace-pane__header">
           <div className="recipes__title">
-            <h1>Presets</h1>
+            <h1>{libraryFilter === 'all' ? 'Preset library' : libraryFilter === 'mine' ? 'My presets' : libraryFilter === 'starters' ? 'Starter library' : 'Applied models'}</h1>
             <span className="recipes__title-sub" data-recipes-count>{VISIBLE_STARTERS.length + 1} starters · {userPresets.length} yours</span>
           </div>
           <div className="recipes__actions">
@@ -406,10 +428,11 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
         <div className="recipes__body">
           <p className="recipes__lede">
-            Presets describe how you want to use a model. Lemonade resolves the concrete runtime settings through Model Tuning for each model.
+            Presets capture intent. Lemonade resolves the concrete runtime settings through Model Tuning for each model.
           </p>
           {importError && <p className="preset-error" role="alert">⚠ {importError}</p>}
 
+          {(libraryFilter === 'all' || libraryFilter === 'mine') && (
           <div className="zone">
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
@@ -434,7 +457,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
               </div>
             )}
           </div>
+          )}
 
+          {(libraryFilter === 'all' || libraryFilter === 'starters') && (
           <div className="zone zone--starters" ref={startersRef} tabIndex={-1} data-starter-zone>
             <div className="zone__head">
               <span className="zone__dot zone__dot--ready" />
@@ -451,8 +476,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
               </div>
             </div>
           </div>
+          )}
 
-          {appliedModelNames.length > 0 && (
+          {(libraryFilter === 'all' || libraryFilter === 'applied') && appliedModelNames.length > 0 && (
             <div className="zone">
               <div className="zone__head">
                 <span className="zone__dot zone__dot--running" />
@@ -482,6 +508,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {libraryFilter === 'applied' && appliedModelNames.length === 0 && (
+            <div className="empty-state--inset" data-empty="applied">
+              <p className="preset-empty-title">No presets are staged.</p>
+              <p className="preset-empty-copy">Open a preset and apply it to a model to see it here.</p>
+              <div className="preset-empty-actions"><button className="btn btn--ghost" onClick={() => setLibraryFilter('all')}>Browse library</button></div>
             </div>
           )}
 

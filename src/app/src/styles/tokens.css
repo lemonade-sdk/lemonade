@@ -123,7 +123,12 @@
   /* ---------- Layout constants ---------- */
   --titlebar-height:    52px;
   --rail-collapsed:     56px;
-  --rail-expanded:      280px;
+  --rail-expanded:      248px;
+  --workspace-rail:     248px;
+  --workspace-list:     304px;
+  --workspace-header:   72px;
+  --rail-toolbar:       48px;
+  --control-height:     36px;
   --composer-min:       96px;
   --max-content-width:  860px;
   --slide-over-width:   420px;

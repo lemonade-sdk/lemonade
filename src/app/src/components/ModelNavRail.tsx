@@ -22,6 +22,7 @@ import React, { useMemo, useState } from 'react';
 import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
+import WorkspaceRailHeader from './WorkspaceRailHeader';
 import {
   listModelName,
   listRecipeBadgeText,
@@ -101,6 +102,11 @@ export interface ModelNavRailProps {
   storageInfo?: StorageInfo | null;
   /** id used by the responsive nav toggle's aria-controls. */
   id?: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+  railRef: React.Ref<HTMLElement>;
 }
 
 /* ── Component ───────────────────────────────────────────────── */
@@ -123,6 +129,11 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onToggleProvider,
   storageInfo,
   id = 'model-nav-rail',
+  collapsed,
+  onToggleCollapsed,
+  mobileOpen,
+  onMobileClose,
+  railRef,
 }) => {
   const [providersOpen, setProvidersOpen] = useState(true);
   const [categoriesOpen, setCategoriesOpen] = useState(true);
@@ -202,22 +213,38 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   }, [storageInfo, allModels, loadedNames, favoriteNames]);
 
   return (
-    <nav className="model-nav-rail" id={id} aria-label="Model filters">
+    <nav
+      ref={railRef}
+      className={`model-nav-rail workspace-rail mobile-context-panel${collapsed && !mobileOpen ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}
+      id={id}
+      aria-label="Model filters"
+      role={mobileOpen ? 'dialog' : undefined}
+      aria-modal={mobileOpen ? true : undefined}
+    >
+      <WorkspaceRailHeader
+        title="Filters"
+        sidebarLabel="model filters"
+        purpose="filter"
+        collapsed={collapsed && !mobileOpen}
+        onToggle={onToggleCollapsed}
+        onMobileClose={mobileOpen ? onMobileClose : undefined}
+      />
+      <div className="model-nav-rail__scroll">
       {/* 1. Primary nav */}
-      <ul className="model-nav-rail__primary" role="list">
+      <ul className="model-nav-rail__primary workspace-filter-list" role="list">
         {PRIMARY_ITEMS.map(item => {
           const active = primaryFilter === item.key;
           return (
             <li key={item.key}>
               <button
                 type="button"
-                className={`model-nav-rail__nav-item${active ? ' model-nav-rail__nav-item--active' : ''}`}
+                className={`workspace-filter-list__item model-nav-rail__nav-item${active ? ' is-active model-nav-rail__nav-item--active' : ''}`}
                 aria-current={active ? 'true' : undefined}
                 onClick={() => onPrimaryFilterChange(item.key)}
               >
-                <Icon name={item.iconName} size={15} aria-hidden="true" className="model-nav-rail__nav-icon" />
-                <span className="model-nav-rail__nav-label">{item.label}</span>
-                <span className="model-nav-rail__nav-count" aria-hidden="true">{primaryCounts[item.key]}</span>
+                <Icon name={item.iconName} size={14} aria-hidden="true" className="workspace-filter-list__icon model-nav-rail__nav-icon" />
+                <span className="workspace-filter-list__label model-nav-rail__nav-label">{item.label}</span>
+                <span className="workspace-filter-list__count model-nav-rail__nav-count" aria-hidden="true">{primaryCounts[item.key]}</span>
                 <span className="sr-only">{`, ${primaryCounts[item.key]} models`}</span>
               </button>
             </li>
@@ -387,6 +414,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         >
           <span className="model-nav-rail__storage-fill" style={{ width: `${storage.pct}%` }} aria-hidden="true" />
         </div>
+      </div>
       </div>
     </nav>
   );

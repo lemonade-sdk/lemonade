@@ -16,11 +16,13 @@ import { type AccountSession } from '../features/accounts/accountStore';
 
 interface InspectViewProps {
   accountSession: AccountSession;
+  embedded?: boolean;
 }
 
-export default function InspectView({ accountSession }: InspectViewProps) {
+export default function InspectView({ accountSession, embedded = false }: InspectViewProps) {
   const { traces, selectedTraceId, capturing, captureReady, searchQuery, filterKind, toast } = useInspectStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'replay' | 'improve'>('overview');
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   // Shared Replay params state for ReplayTab and CurlModal preview sync
   const [replaySystemPrompt, setReplaySystemPrompt] = useState('');
@@ -133,7 +135,7 @@ export default function InspectView({ accountSession }: InspectViewProps) {
   }, [traces, filterKind, searchQuery]);
 
   return (
-    <div className="inspect-layout">
+    <div className={`inspect-layout${embedded ? ' inspect-layout--embedded' : ''}${!embedded && railCollapsed ? ' workspace--rail-collapsed' : ''}`}>
       <TraceList
         traces={traces}
         filteredTraces={filteredTraces}
@@ -145,6 +147,9 @@ export default function InspectView({ accountSession }: InspectViewProps) {
         handleOpenCreateModal={() => setCreateModalOpen(true)}
         handleExportSession={handleExportSession}
         formatTokens={formatTokens}
+        collapsed={!embedded && railCollapsed}
+        onToggleCollapsed={() => setRailCollapsed(value => !value)}
+        embedded={embedded}
       />
 
       <div className="inspect-detail">

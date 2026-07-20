@@ -13,6 +13,8 @@ import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter,
 import type { PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
+import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import RouterEditorPanel from './RouterEditorPanel';
@@ -1333,7 +1335,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
   const [backendFilter, setBackendFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [navRailOpen, setNavRailOpen] = useState(false);
+  const mobileRail = useWorkspaceMobileRail();
+  const [navRailCollapsed, setNavRailCollapsed] = useState(false);
   const [modelListWidth, setModelListWidth] = useState(loadModelListWidth);
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -2925,7 +2928,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handlePrimaryFilterChange = (next: PrimaryFilter) => {
     setPrimaryFilter(next);
-    setNavRailOpen(false);
+    mobileRail.close();
     if (next === 'my-models') {
       if (!selectedDetailIsCustom) openCustomForm('model');
       else closeCustomForm();
@@ -3620,20 +3623,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   );
   return (
     <div
-      className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${navRailOpen ? ' manager--nav-open' : ''}`}
+      className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${mobileRail.isOpen ? ' manager--nav-open' : ''}${navRailCollapsed ? ' workspace--rail-collapsed' : ''}`}
       style={modelDetailLayoutStyle}
     >
-      {/* Responsive: toggle the left nav rail on narrow viewports */}
-      <button
-        type="button"
-        className="manager__nav-toggle"
-        aria-expanded={navRailOpen}
-        aria-controls="model-nav-rail"
-        onClick={() => setNavRailOpen(v => !v)}
-      >
-        <Icon name="sliders-horizontal" size={15} aria-hidden="true" />
-        <span>Filters</span>
-      </button>
+      {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
+      <WorkspaceMobileMenuButton
+        menuLabel="Open model filters"
+        panelId="model-nav-rail"
+        expanded={mobileRail.isOpen}
+        onClick={mobileRail.toggle}
+        triggerRef={mobileRail.triggerRef}
+      />
 
       {/* Left rail: navigation / filter dimensions */}
       <ModelNavRail
@@ -3644,15 +3644,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         primaryFilter={primaryFilter}
         onPrimaryFilterChange={handlePrimaryFilterChange}
         categoryFilter={filterTab}
-        onCategoryFilterChange={(f) => { setFilterTab(f); setNavRailOpen(false); }}
+        onCategoryFilterChange={(f) => { setFilterTab(f); mobileRail.close(); }}
         backendFilter={backendFilter}
-        onBackendFilterChange={setBackendFilter}
+        onBackendFilterChange={(backend) => { setBackendFilter(backend); mobileRail.close(); }}
         tagFilter={tagFilter}
-        onTagFilterChange={(t) => { setTagFilter(t); setNavRailOpen(false); }}
+        onTagFilterChange={(t) => { setTagFilter(t); mobileRail.close(); }}
         providerEnabled={providerEnabled}
         providerCounts={providerCounts}
         onToggleProvider={toggleProvider}
         storageInfo={storageInfo}
+        collapsed={navRailCollapsed}
+        onToggleCollapsed={() => setNavRailCollapsed(value => !value)}
+        mobileOpen={mobileRail.isOpen}
+        onMobileClose={mobileRail.close}
+        railRef={mobileRail.panelRef}
       />
 
       {/* Middle panel: searchable/filterable model list */}

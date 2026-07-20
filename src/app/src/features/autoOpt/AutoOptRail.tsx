@@ -4,12 +4,16 @@ import { autoOptStore, AutoOptState } from './autoOptStore';
 import { AutoOptRunRecord, isAutoOptRunActive } from './autoOptTypes';
 import AutoOptWizard from './AutoOptWizard';
 import AutoOptRunDetail from './AutoOptRunDetail';
+import { Icon } from '../../components/Icon';
+import WorkspaceRailHeader from '../../components/WorkspaceRailHeader';
 
 export const AUTOOPT_OPEN_RUN_EVENT = 'lemonade:autoopt-open-run';
 
 export function openAutoOptRun(runId: string): void {
   window.dispatchEvent(new CustomEvent(AUTOOPT_OPEN_RUN_EVENT, { detail: { id: runId } }));
 }
+
+export type PresetLibraryFilter = 'all' | 'mine' | 'starters' | 'applied';
 
 function runDate(run: AutoOptRunRecord): string {
   const raw = run.finished_at || run.created_at;
@@ -53,7 +57,15 @@ const AutoOptRail: React.FC<{
   loadedModels: LoadedModel[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
-}> = ({ loadedModels, collapsed, onToggleCollapsed }) => {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+  railRef: React.Ref<HTMLElement>;
+  libraryFilter: PresetLibraryFilter;
+  onLibraryFilterChange: (filter: PresetLibraryFilter) => void;
+  userPresetCount: number;
+  starterCount: number;
+  appliedCount: number;
+}> = ({ loadedModels, collapsed, onToggleCollapsed, mobileOpen, onMobileClose, railRef, libraryFilter, onLibraryFilterChange, userPresetCount, starterCount, appliedCount }) => {
   const [state, setState] = useState<AutoOptState>(() => autoOptStore.snapshot());
   const [selectedRunId, setSelectedRunId] = useState('');
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -112,24 +124,49 @@ const AutoOptRail: React.FC<{
 
   return (
     <>
-      <aside className={`context-rail context-rail--autoopt${collapsed ? ' is-collapsed' : ''}`} aria-label="AutoOpt runs">
-        <div className="context-rail__head">
-          <button type="button" className="context-rail__toggle" onClick={onToggleCollapsed} aria-label="Toggle AutoOpt rail">☰</button>
-          <div className="context-rail__title-wrap">
-            <span className="context-rail__eyebrow">Auto Optimizer</span>
-            <strong className="context-rail__title">Runs</strong>
-          </div>
-        </div>
+      <aside
+        ref={railRef}
+        id="preset-filters-panel"
+        className={`workspace-rail mobile-context-panel context-rail context-rail--autoopt${collapsed && !mobileOpen ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}
+        aria-label="Preset filters"
+        role={mobileOpen ? 'dialog' : undefined}
+        aria-modal={mobileOpen ? true : undefined}
+      >
+        <WorkspaceRailHeader
+          title="Filters"
+          sidebarLabel="preset filters"
+          purpose="filter"
+          collapsed={collapsed && !mobileOpen}
+          onToggle={onToggleCollapsed}
+          onMobileClose={mobileOpen ? onMobileClose : undefined}
+        />
         <div className="context-rail__body">
-          <p className="context-rail__hint">Benchmark a model on this machine, try the winning configuration, or save it as model/backend tuning. Presets remain intent-only; model tuning overrides backend args.</p>
+          <nav className="workspace-filter-list preset-library-nav" aria-label="Preset filters">
+            {([
+              ['all', 'Library', 'All available presets', 'library', userPresetCount + starterCount],
+              ['mine', 'My presets', 'Created and imported', 'user-round-cog', userPresetCount],
+              ['starters', 'Starter library', 'Bundled foundations', 'gem', starterCount],
+              ['applied', 'Applied models', 'Staged model intent', 'hard-drive', appliedCount],
+            ] as const).map(([id, label, description, icon, count]) => (
+              <button key={id} type="button" className={`workspace-filter-list__item${libraryFilter === id ? ' is-active' : ''}`} aria-current={libraryFilter === id ? 'true' : undefined} aria-label={label} title={`${label} — ${description}`} onClick={() => onLibraryFilterChange(id)}>
+                <Icon className="workspace-filter-list__icon" name={icon} size={14} />
+                <span className="workspace-filter-list__label">{label}</span>
+                <span className="workspace-filter-list__count">{count}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="context-rail__section-head">
+            <span>Auto optimizer</span>
+            <small>{state.runs.length}</small>
+          </div>
+          <p className="context-rail__hint">Benchmark a loaded model and save the winning runtime configuration as model tuning.</p>
           <button
             type="button"
             className="btn btn--primary btn--small"
-            style={{ width: '100%', marginBottom: '0.75rem' }}
             onClick={() => setWizardOpen(true)}
             data-autoopt-run-optimizer
           >
-            ▶ Run optimizer
+            <Icon name="play" size={13} /> Run optimizer
           </button>
           <p className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-autoopt-announcement>{announcement}</p>
           {state.lastError && (

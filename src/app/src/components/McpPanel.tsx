@@ -253,8 +253,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
   };
 
   return (
-    <section className="connect__section connect__section--mcp" aria-labelledby="mcp-section-title" data-mcp-panel>
-      <h2 id="mcp-section-title">MCP Gateway</h2>
+    <section className="connect__section connect__section--mcp" aria-label="MCP Gateway" data-mcp-panel>
       <p className="connect__hint">
         Lemonade works in both directions: its built-in tools are exposed as a Streamable HTTP MCP server,
         while the Chat UI can host external stdio MCP servers. External commands run on the same machine as lemond.

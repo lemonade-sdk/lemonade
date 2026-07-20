@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { type Trace, inspectStore } from '../../inspectStore';
 import { Icon } from '../Icon';
+import WorkspaceRailHeader from '../WorkspaceRailHeader';
 
 interface TraceListProps {
   traces: Trace[];
@@ -13,6 +14,9 @@ interface TraceListProps {
   handleOpenCreateModal: () => void;
   handleExportSession: () => void;
   formatTokens: (num: number) => string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  embedded?: boolean;
 }
 
 export function getRelativeTimeAgo(startTimeMs: number): string {
@@ -36,7 +40,10 @@ export default function TraceList({
   filterKind,
   handleOpenCreateModal,
   handleExportSession,
-  formatTokens
+  formatTokens,
+  collapsed,
+  onToggleCollapsed,
+  embedded = false,
 }: TraceListProps) {
   const listboxRef = useRef<HTMLDivElement>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(selectedTraceId);
@@ -116,21 +123,30 @@ export default function TraceList({
   };
 
   return (
-    <div className="inspect-rail">
-      <div className="inspect-rail__header">
-        <div className="inspect-rail__title-row">
-          <h3>Session Inspector</h3>
-          <span className={`capture-badge ${getBadgeClass()}`}>
-            <span className="capture-badge__dot"></span>
-            {getBadgeLabel()}
-          </span>
-        </div>
-        <span className="inspect-rail__subtitle">Local history — persisted in browser storage, never on server</span>
-
+    <div className={`inspect-rail ${embedded ? 'monitor-subpanel' : 'workspace-rail'}${collapsed ? ' is-collapsed' : ''}`}>
+      {embedded ? (
+        <header className="monitor-subpanel__header">
+          <h2>Request history</h2>
+          <p>{filteredTraces.length} of {traces.length} captured</p>
+        </header>
+      ) : (
+        <WorkspaceRailHeader
+          title="Requests"
+          sidebarLabel="request history"
+          purpose="history"
+          collapsed={collapsed}
+          onToggle={onToggleCollapsed}
+        />
+      )}
+      <div className="inspect-rail__controls">
         <div className="inspect-rail__capture-group-row">
           <div className="inspect-rail__capture-label-group">
             <span className="inspect-rail__capture-label">Auto-capture inferences</span>
             <span className="inspect-rail__capture-sublabel">Enables OTel on demand — no server-side storage</span>
+            <span className={`capture-badge ${getBadgeClass()}`}>
+              <span className="capture-badge__dot"></span>
+              {getBadgeLabel()}
+            </span>
           </div>
           <button
             type="button"

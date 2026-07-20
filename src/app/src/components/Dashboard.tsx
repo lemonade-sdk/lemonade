@@ -222,26 +222,28 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className="dash2" data-view="dashboard">
-      {/* ═══ Top bar ═══ */}
-      <header className="dash2-bar">
-        <div className="dash2-bar__left">
-          <span className="dash2-bar__dot" data-connected={!!health} />
-          <span className="dash2-bar__title">
-            {health ? `Lemonade ${health.version}` : 'Disconnected'}
-          </span>
-          {health && <span className="dash2-bar__uptime">{elapsed(counters.sessionStart)}</span>}
-        </div>
-        <div className="dash2-bar__right">
-          <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
-            onClick={() => setPaused(p => !p)}
-            title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
-            aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
-            data-dashboard-poll-toggle>
-            <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
-          </button>
-        </div>
-      </header>
+    <section className="dash2 dashboard-workspace" data-view="dashboard">
+      <div className="workspace-pane dashboard-main">
+        <header className="workspace-pane__header dashboard-header">
+          <div>
+            <h1>Overview</h1>
+            <p>Throughput, capacity and resource utilization for this server session.</p>
+          </div>
+          <div className="dashboard-header__actions">
+            <div className="dashboard-header__server" data-connected={!!health}>
+              <span className="dash2-bar__dot" data-connected={!!health} />
+              <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
+            </div>
+            <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
+              onClick={() => setPaused(p => !p)}
+              title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+              aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+              data-dashboard-poll-toggle>
+              <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
+              <span>{paused ? 'Resume' : 'Pause'}</span>
+            </button>
+          </div>
+        </header>
 
       {lastError && <div className="dash2-err">Warning: {lastError}</div>}
 
@@ -505,6 +507,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           </div>
         </div>
         )}
+      </div>
       </div>
     </section>
   );

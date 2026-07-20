@@ -29,8 +29,23 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 
 /** Navigate to a view by its titlebar nav label text. */
 async function navigateToView(page: Page, label: string): Promise<void> {
-  await page.locator('.titlebar__nav').getByText(label).click();
+  await page.locator('.titlebar__nav').getByRole('button', { name: label, exact: true }).click();
   await page.waitForTimeout(300);
+}
+
+async function navigateToMonitorSection(page: Page, label: 'Overview' | 'Requests' | 'Logs'): Promise<void> {
+  await navigateToView(page, 'Monitor');
+  await page.waitForSelector('[data-view="monitor"]');
+  if (label !== 'Overview') {
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
+    await page.waitForTimeout(300);
+  }
+}
+
+async function navigateToConnectSection(page: Page, label: string): Promise<void> {
+  await navigateToView(page, 'Connect');
+  await page.waitForSelector('.connect');
+  await page.locator('.connect .workspace-nav').getByText(new RegExp(`^${label}$`, 'i')).click();
 }
 
 /** Open the custom-model editor through the Models heading action. */
@@ -147,10 +162,10 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A05 — Dashboard view passes WCAG 2.1 AA', async ({ page }) => {
+  test('A05 — Monitor overview passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Dash');
+    await navigateToMonitorSection(page, 'Overview');
     await page.waitForTimeout(500); // allow async dashboard data fetch to settle
 
     const results = await new AxeBuilder({ page })
@@ -272,7 +287,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Presets', 'Backends', 'Dash', 'Logs', 'Connect'];
+    const knownNavLabels = ['Chat', 'Models', 'Presets', 'Backends', 'Monitor', 'Connect'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {
@@ -337,11 +352,11 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
-    await page.waitForSelector('.chat__mobile-rail-trigger');
+    await page.waitForSelector('.chat__main .workspace-mobile-menu-button');
   });
 
   test('A17 — opening bottom sheet moves focus inside it (useFocusTrap activates)', async ({ page }) => {
-    await page.locator('.chat__mobile-rail-trigger').click();
+    await page.locator('.chat__main .workspace-mobile-menu-button').click();
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
     const activeIsInSheet = await page.evaluate(() => {
@@ -352,7 +367,7 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   });
 
   test('A18 — Tab from last focusable inside bottom sheet wraps back to first (never escapes)', async ({ page }) => {
-    await page.locator('.chat__mobile-rail-trigger').click();
+    await page.locator('.chat__main .workspace-mobile-menu-button').click();
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
     // Count focusable descendants (matching useFocusTrap's FOCUSABLE selector,
@@ -376,7 +391,7 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   });
 
   test('A19 — pressing Escape closes the bottom sheet', async ({ page }) => {
-    await page.locator('.chat__mobile-rail-trigger').click();
+    await page.locator('.chat__main .workspace-mobile-menu-button').click();
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
     await page.keyboard.press('Escape');
@@ -385,7 +400,7 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
   });
 
   test('A20 — focus returns to trigger button after bottom sheet closes via Escape', async ({ page }) => {
-    await page.locator('.chat__mobile-rail-trigger').click();
+    await page.locator('.chat__main .workspace-mobile-menu-button').click();
     await page.locator('.bottom-sheet--open').waitFor({ state: 'visible', timeout: 5000 });
 
     await page.keyboard.press('Escape');
@@ -394,7 +409,7 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
     const activeClass = await page.evaluate(
       () => (document.activeElement as HTMLElement | null)?.className ?? '',
     );
-    expect(activeClass).toContain('chat__mobile-rail-trigger');
+    expect(activeClass).toContain('workspace-mobile-menu-button');
   });
 });
 
@@ -1645,8 +1660,7 @@ test.describe('Accessibility — Omni picker combobox semantics (#2347)', () => 
 test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
   test('A75 — Cloud provider form fields have programmatic labels (no placeholder-only)', async ({ page }) => {
     await page.goto('/');
-    await navigateToView(page, 'Connect');
-    await page.waitForSelector('.connect');
+    await navigateToConnectSection(page, 'Cloud providers');
 
     await expect(page.getByLabel('Provider name')).toBeVisible();
     await expect(page.getByLabel('Base URL')).toBeVisible();
@@ -1655,8 +1669,7 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
 
   test('A76 — Marketplace search has accessible name', async ({ page }) => {
     await page.goto('/');
-    await navigateToView(page, 'Connect');
-    await page.waitForSelector('.connect');
+    await navigateToConnectSection(page, 'App directory');
 
     const searchInput = page.locator('.connect__marketplace-search');
     const ariaLabel = await searchInput.getAttribute('aria-label');
@@ -1670,7 +1683,7 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
 test.describe('Accessibility — icon-button accessible names (#2353)', () => {
   test('A77 — LogViewer search input has an accessible name (not placeholder-only)', async ({ page }) => {
     await page.goto('/');
-    await navigateToView(page, 'Logs');
+    await navigateToMonitorSection(page, 'Logs');
     await page.waitForSelector('.logs-view');
 
     const searchInput = page.locator('.logs-search');
@@ -1681,7 +1694,7 @@ test.describe('Accessibility — icon-button accessible names (#2353)', () => {
 
   test('A78 — LogViewer Clear button has an aria-label with full action name', async ({ page }) => {
     await page.goto('/');
-    await navigateToView(page, 'Logs');
+    await navigateToMonitorSection(page, 'Logs');
     await page.waitForSelector('.logs-view');
 
     const clearBtn = page.locator('.logs-btn').filter({ hasNotText: 'Reconnect' }).first();
@@ -1753,7 +1766,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
     void callIndex; // suppress unused warning
   }
@@ -1761,10 +1774,10 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A80 — MCP panel is present in ConnectView with correct heading', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
 
-    const heading = page.locator('#mcp-section-title');
+    const heading = page.locator('#connect-pane-title');
     await expect(heading).toBeVisible();
     await expect(heading).toHaveText('MCP Gateway');
   });
@@ -1772,7 +1785,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A81 — MCP endpoint URL input contains /mcp path and is read-only', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]');
 
     const input = page.locator('#mcp-endpoint-display');
@@ -1785,7 +1798,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A82 — Copy button has a qualifying aria-label mentioning clipboard', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]');
 
     const copyBtn = page.locator('.mcp-panel__copy-btn');
@@ -1799,7 +1812,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A83 — copy-confirmation live region is always present in DOM (not conditionally mounted)', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]');
 
     const liveRegion = page.locator('[data-mcp-copy-live]');
@@ -1812,7 +1825,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A84 — health/status indicator has role="status" and aria-live="polite"', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]');
 
     const statusEl = page.locator('[data-mcp-status]');
@@ -1850,7 +1863,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   test('A87 — Refresh button has aria-label and is a <button>', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]');
 
     const refreshBtn = page.locator('[data-mcp-panel] button[aria-label="Refresh MCP tools list"]');
@@ -1887,7 +1900,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     // Wait for MCP panel and give tools list time to populate
     await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
     await page.waitForTimeout(500);
@@ -1948,7 +1961,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
 
     // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
@@ -2008,7 +2021,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToConnectSection(page, 'MCP gateway');
     await page.waitForSelector('[data-mcp-panel]', { timeout: 5000 });
     // Allow async flow to settle
     await page.waitForTimeout(600);
@@ -3262,8 +3275,8 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     const rail = page.locator('.model-nav-rail');
     await expect(rail).toBeVisible();
-    // The rail must own its own scroll area …
-    const overflowY = await rail.evaluate(el => getComputedStyle(el).overflowY);
+    const railScroll = page.locator('.model-nav-rail__scroll');
+    const overflowY = await railScroll.evaluate(el => getComputedStyle(el).overflowY);
     expect(overflowY).toBe('auto');
     // … and must not exceed the viewport height (no clipping past the screen).
     const box = await rail.boundingBox();

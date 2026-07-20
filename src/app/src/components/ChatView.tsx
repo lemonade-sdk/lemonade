@@ -4,6 +4,8 @@ import { copyTextToClipboard } from '../clipboard';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
+import WorkspaceRailHeader from './WorkspaceRailHeader';
 
 const Model3DResult = lazy(() => import('./Model3DResult'));
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
@@ -2609,17 +2611,14 @@ ${finalText}`
         style={showInlineLogs ? chatLayoutStyle : undefined}
       >
       {/* Conversation rail */}
-      <aside className="rail">
-        <div className="rail__head">
-          <button
-            className="rail__toggle"
-            onClick={handleRailToggle}
-            aria-label="Toggle conversations"
-          >
-            <Icon name="menu" size={16} />
-          </button>
-          <span className="rail__title">Conversations</span>
-        </div>
+      <aside className={`rail workspace-rail${railExpanded ? '' : ' is-collapsed'}`}>
+        <WorkspaceRailHeader
+          title="History"
+          sidebarLabel="conversation"
+          purpose="history"
+          collapsed={!railExpanded}
+          onToggle={handleRailToggle}
+        />
 
         <div className="rail__new-wrap">
           <button className="rail__new" onClick={handleNewChat} aria-label="New chat">
@@ -2688,13 +2687,21 @@ ${finalText}`
       )}
       <div
         ref={bottomSheetRef}
+        id="conversation-history-panel"
         className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
-        role="dialog"
+        role={mobileSheetOpen ? 'dialog' : undefined}
         aria-label="Conversations"
-        aria-modal="true"
+        aria-modal={mobileSheetOpen ? true : undefined}
+        aria-hidden={!mobileSheetOpen}
       >
         <div className="bottom-sheet__handle" ref={sheetHandleRef} aria-hidden="true">
           <div className="bottom-sheet__handle-pill" />
+        </div>
+        <div className="bottom-sheet__header">
+          <strong>Conversations</strong>
+          <button type="button" onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel">
+            <Icon name="x" size={17} />
+          </button>
         </div>
         <button className="bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
           <Icon name="plus" size={14} />
@@ -2746,17 +2753,13 @@ ${finalText}`
 
       {/* Main pane */}
       <div className="chat__main" ref={threadRef}>
-        {/* Mobile-only conversations trigger */}
-        <button
-          className="chat__mobile-rail-trigger"
-          ref={sheetTriggerRef}
-          onClick={() => setMobileSheetOpen(true)}
-          aria-label="Open conversations"
-          title="Conversations"
-        >
-          <Icon name="menu" size={16} />
-          <span>Conversations</span>
-        </button>
+        <WorkspaceMobileMenuButton
+          menuLabel="Open conversation history"
+          panelId="conversation-history-panel"
+          expanded={mobileSheetOpen}
+          onClick={() => { if (mobileSheetOpen) closeMobileSheet(); else setMobileSheetOpen(true); }}
+          triggerRef={sheetTriggerRef}
+        />
         <div className="chat__inner">
           {!hasMessages ? (
             <EmptyState

@@ -3,6 +3,9 @@ import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErr
 import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
 import { Icon, IconName } from './Icon';
 import McpPanel from './McpPanel';
+import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
+import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -21,6 +24,22 @@ type MarketplaceApp = {
   pinned?: boolean;
   links?: { app?: string; guide?: string; video?: string };
 };
+
+type ConnectSectionId = 'server' | 'storage' | 'cloud' | 'mcp' | 'apps' | 'support';
+
+const CONNECT_SECTIONS: Array<{
+  id: ConnectSectionId;
+  label: string;
+  description: string;
+  icon: IconName;
+}> = [
+  { id: 'server', label: 'Server', description: 'Endpoint and authentication', icon: 'plug' },
+  { id: 'storage', label: 'Model storage', description: 'Cache and custom directories', icon: 'hard-drive' },
+  { id: 'cloud', label: 'Cloud providers', description: 'OpenAI-compatible services', icon: 'cloud' },
+  { id: 'mcp', label: 'MCP Gateway', description: 'Tools and external servers', icon: 'tools' },
+  { id: 'apps', label: 'App directory', description: 'Compatible clients and tools', icon: 'layers' },
+  { id: 'support', label: 'Help & support', description: 'Docs, releases and community', icon: 'book-open' },
+];
 
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 
@@ -41,6 +60,9 @@ const CLOUD_QUICK_FILL = [
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
 const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSession, onLocalDataReset, onSessionChange }) => {
+  const [activeSection, setActiveSection] = useState<ConnectSectionId>('server');
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const mobileRail = useWorkspaceMobileRail();
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
   const [canPersistApiKey, setCanPersistApiKey] = useState(api.canPersistApiKey);
@@ -330,30 +352,82 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  return (
-    <div className="connect">
-      <header className="connect__hero">
-        <div>
-          <p className="connect__eyebrow">Server, cloud, directories, apps</p>
-          <h1>Connect</h1>
-          <p className="connect__hero-copy">Configure the Lemonade server connection, cloud providers, custom model directories and compatible app integrations from one view.</p>
-        </div>
-        <div className="connect__status" aria-live="polite">
-          <span className={`connect__status-dot ${
-            status === 'connected' ? 'connect__status-dot--connected' :
-            status === 'connecting' ? 'connect__status-dot--connecting' : ''
-          }`} />
-          <span>
-            {status === 'connected' ? `Connected to ${api.baseUrl}` :
-             status === 'connecting' ? `Connecting to ${host || api.baseUrl}...` :
-             'Disconnected'}
-          </span>
-        </div>
-      </header>
+  const section = CONNECT_SECTIONS.find(item => item.id === activeSection) || CONNECT_SECTIONS[0];
 
-      <div className="connect__layout">
+  return (
+    <div className={`connect connect--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`}>
+      {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
+      <aside
+        ref={mobileRail.panelRef}
+        id="connect-settings-panel"
+        className={`workspace-rail mobile-context-panel connect__rail${railCollapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
+        aria-label="Connection settings"
+        role={mobileRail.isOpen ? 'dialog' : undefined}
+        aria-modal={mobileRail.isOpen ? true : undefined}
+      >
+        <WorkspaceRailHeader
+          title="Settings"
+          sidebarLabel="connection settings"
+          icon="settings"
+          purpose="navigation"
+          collapsed={railCollapsed && !mobileRail.isOpen}
+          onToggle={() => setRailCollapsed(value => !value)}
+          onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
+        />
+        <nav className="workspace-nav" aria-label="Connect sections">
+          {CONNECT_SECTIONS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={activeSection === item.id ? 'is-active' : ''}
+              aria-current={activeSection === item.id ? 'page' : undefined}
+              aria-label={item.label}
+              title={item.label}
+              onClick={() => { setActiveSection(item.id); mobileRail.close(); }}
+            >
+              <span className="workspace-nav__icon"><Icon name={item.icon} size={15} /></span>
+              <span className="workspace-nav__copy">
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </span>
+              <Icon name="chevron-right" size={13} className="workspace-nav__chevron" />
+            </button>
+          ))}
+        </nav>
+        <div className="workspace-rail__footer">
+          <div className="workspace-status" data-status={status} aria-live="polite">
+            <span className={`connect__status-dot ${
+              status === 'connected' ? 'connect__status-dot--connected' :
+              status === 'connecting' ? 'connect__status-dot--connecting' : ''
+            }`} />
+            <span>
+              <strong>{status === 'connected' ? 'Server online' : status === 'connecting' ? 'Connecting' : 'Server offline'}</strong>
+              <small>{status === 'connected' ? api.baseUrl : host || api.baseUrl}</small>
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <WorkspaceMobileMenuButton
+        menuLabel="Open connection settings"
+        panelId="connect-settings-panel"
+        expanded={mobileRail.isOpen}
+        onClick={mobileRail.toggle}
+        triggerRef={mobileRail.triggerRef}
+      />
+
+      <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
+        <header className="workspace-pane__header">
+          <div>
+            <h2 id="connect-pane-title">{section.label}</h2>
+            <p>{section.description}</p>
+          </div>
+          <span className="workspace-pane__header-icon" aria-hidden="true"><Icon name={section.icon} size={18} /></span>
+        </header>
+
+        <div className="connect__layout workspace-pane__scroll">
+        {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
-          <h2>Server</h2>
           <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>
             <div className="form-field">
               <label className="form-field__label" htmlFor="host-input">Server URL</label>
@@ -404,10 +478,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             </div>
           </form>
         </section>
+        )}
 
-
+        {activeSection === 'support' && (
         <section className="connect__section connect__section--help">
-          <h2>Help</h2>
           <p className="connect__hint">Quick access to project support, documentation, and community channels.</p>
           <div className="connect__help-grid" aria-label="Help links">
             {HELP_LINKS.map(link => (
@@ -421,7 +495,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             ))}
           </div>
         </section>
+        )}
 
+        {activeSection === 'storage' && (
         <section className="connect__section connect__section--directories">
           <h2>Custom model directories</h2>
           <p className="connect__hint">Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.</p>
@@ -441,10 +517,11 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
           {directoryNotice && <div className="connect__notice">{directoryNotice}</div>}
           {directoryError && <div className="connect__error">{directoryError}</div>}
         </section>
+        )}
 
+        {activeSection === 'cloud' && (
         <section className="connect__section connect__section--cloud">
           <div className="connect__section-head">
-            <h2>Cloud providers</h2>
             <button className="btn btn--ghost" type="button" onClick={() => { void loadCloudProviders(); }} disabled={status !== 'connected' || cloudBusy || cloudLoading}>{cloudLoading ? 'Refreshing...' : 'Refresh'}</button>
           </div>
           <p className="connect__hint">Register OpenAI-compatible providers on the connected Lemonade server. Runtime keys can be replaced or cleared without editing files.</p>
@@ -499,9 +576,13 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             })}
           </div>
         </section>
+        )}
 
-        <McpPanel connectionStatus={status} isActive={isActive} />
+        <div hidden={activeSection !== 'mcp'}>
+          <McpPanel connectionStatus={status} isActive={isActive && activeSection === 'mcp'} />
+        </div>
 
+        {activeSection === 'apps' && (
         <section className="connect__section connect__section--marketplace">
           <div className="connect__section-head">
             <h2>Marketplace</h2>
@@ -530,7 +611,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             </div>
           )}
         </section>
+        )}
       </div>
+      </section>
     </div>
   );
 };
