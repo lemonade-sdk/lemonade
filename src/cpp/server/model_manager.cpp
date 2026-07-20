@@ -117,6 +117,45 @@ static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 
+// The deployment ModelType a model actually serves, honoring backend capability.
+// get_model_type_from_labels() gives chat-indicator labels (reasoning / vision /
+// tools / chat-transcription) priority — correct for LLM backends, but wrong for
+// a backend that cannot chat: its descriptor declares a definitive non-LLM
+// deployment (onnxruntime -> classification, sd-cpp -> image, whispercpp ->
+// transcription), and a stray chat-indicator label must not promote it to LLM
+// and slip past classifier-capability validation or send run_classifier down the
+// unsupported chat_completion path at runtime.
+static ModelType get_deployment_model_type(const std::string& recipe,
+                                           const std::vector<std::string>& labels) {
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+        for (const auto& label : desc->default_labels) {
+            ModelType backend_type = get_model_type_from_labels({label});
+            if (backend_type != ModelType::LLM) {
+                return backend_type;
+            }
+        }
+    }
+    ModelType type = get_model_type_from_labels(labels);
+
+    // Reaching here means the backend declares no definitive non-LLM deployment,
+    // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none
+    // of which implement IClassificationServer (only onnxruntime does, and it
+    // returned CLASSIFICATION above via its default label). So a `classification`
+    // label here is spurious: typing it CLASSIFICATION would send run_classifier
+    // to Router::classify() and hit an unsupported-capability error. Drop the
+    // claim so the model stays an LLM, usable as an LLM-as-classifier via chat.
+    if (type == ModelType::CLASSIFICATION) {
+        std::vector<std::string> non_classification;
+        for (const auto& label : labels) {
+            if (label != "classification" && label != "classifier") {
+                non_classification.push_back(label);
+            }
+        }
+        return get_model_type_from_labels(non_classification);
+    }
+    return type;
+}
+
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -1134,7 +1173,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.labels.push_back("vision");
         }
 
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
 
         discovered[model_name] = info;
     }
@@ -1746,7 +1785,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -1806,7 +1845,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_model_type_from_labels(info.labels);
+        info.type = get_deployment_model_type(info.recipe, info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -1932,6 +1971,13 @@ void ModelManager::build_cache() {
         auto it = public_model_aliases_.find(name);
         return it != public_model_aliases_.end() ? it->second : name;
     };
+    // Direct lookup into the map already being built, same rationale as
+    // resolve_component above: models_cache_ is populated and the lock is
+    // still held, so this avoids re-entering get_model_info()'s own locking.
+    policy_options.get_model_type = [this](const std::string& name) -> std::optional<ModelType> {
+        auto it = models_cache_.find(name);
+        return it != models_cache_.end() ? std::optional<ModelType>(it->second.type) : std::nullopt;
+    };
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
@@ -2014,7 +2060,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Populate type and device fields (multi-model support)
-    info.type = get_model_type_from_labels(info.labels);
+    info.type = get_deployment_model_type(info.recipe, info.labels);
     info.device = device_type_for_recipe(info.recipe);
 
     resolve_all_model_paths(info);
@@ -2543,6 +2589,26 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
                          });
 }
 
+// The label set a user or inline model definition normalizes to. Kept in one
+// place so model registration (register_user_model) and collection.router
+// capability validation (validate_collection_request) derive the same type for
+// the same definition: explicit labels + legacy capability flags + the backend
+// descriptor's default labels (e.g. sd-cpp -> "image", whispercpp -> "transcription").
+static std::set<std::string> normalized_definition_labels(const json& model_data) {
+    std::set<std::string> labels = {"custom"};
+    std::vector<std::string> extra = model_data.value("labels", std::vector<std::string>{});
+    labels.insert(extra.begin(), extra.end());
+    if (model_data.value("reasoning", false)) labels.insert("reasoning");
+    if (model_data.value("vision", false)) labels.insert("vision");
+    if (model_data.value("embedding", false)) labels.insert("embeddings");
+    if (model_data.value("reranking", false)) labels.insert("reranking");
+    if (const auto* desc =
+            lemon::backends::descriptor_for(model_data.value("recipe", std::string()))) {
+        for (const auto& label : desc->default_labels) labels.insert(label);
+    }
+    return labels;
+}
+
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
@@ -2559,35 +2625,11 @@ void ModelManager::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
-    std::set<std::string> labels = {"custom"};
-    std::vector<std::string> extra_labels = model_data.value("labels", std::vector<std::string>{});
-    labels.insert(extra_labels.begin(), extra_labels.end());
-
-    // legacy label format
-    if (model_data.value("reasoning", false)) {
-        labels.insert("reasoning");
-    }
-    if (model_data.value("vision", false)) {
-        labels.insert("vision");
-    }
-    if (model_data.value("embedding", false)) {
-        labels.insert("embeddings");
-    }
-    if (model_data.value("reranking", false)) {
-        labels.insert("reranking");
-    }
+    std::set<std::string> labels = normalized_definition_labels(model_data);
 
     // `recipe` already copied into `model_entry` by the USER_DEFINED_MODEL_PROPS
-    // loop above; this local is just for the label inference below.
+    // loop above; this local is just for the collection handling below.
     std::string recipe = model_data.value("recipe", "");
-
-    // Inject the backend's default labels for models that omit them (e.g. sd-cpp
-    // -> image, whispercpp/moonshine -> transcription).
-    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        for (const auto& label : desc->default_labels) {
-            labels.insert(label);
-        }
-    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
@@ -4544,6 +4586,32 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 // names stable so parser component-role validation can still
                 // compare them against the authored components array.
                 return name;
+            }
+        };
+        options.get_model_type = [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+            try {
+                return get_model_info(name).type;
+            } catch (...) {
+                // Not registered yet - the name may match an inline `models[]`
+                // definition in this same request; derive its type from that
+                // definition's declared labels (absent labels default to LLM,
+                // same as everywhere else). Only nullopt if no definition
+                // exists at all - that's the "truly unknown" case.
+                const json* def = find_inline_def(bare_component_name(name));
+                if (!def) {
+                    return std::nullopt;
+                }
+                // Derive the type exactly as register_user_model() +
+                // get_deployment_model_type() would once this inline definition
+                // is registered — explicit labels, legacy capability flags, and
+                // the backend's default labels, with the backend's deployment
+                // capability winning over chat-indicator labels — so validation
+                // and runtime cannot disagree (e.g. a label-less sd-cpp model is
+                // IMAGE, and onnxruntime + reasoning:true is CLASSIFICATION, not LLM).
+                std::set<std::string> label_set = normalized_definition_labels(*def);
+                return get_deployment_model_type(
+                    def->value("recipe", std::string()),
+                    std::vector<std::string>(label_set.begin(), label_set.end()));
             }
         };
         try {

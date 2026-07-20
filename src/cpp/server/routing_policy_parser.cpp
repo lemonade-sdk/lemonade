@@ -413,6 +413,38 @@ json parse_classifier_configs(const json& routing,
             const std::string original = optional_string(classifier, "model", path);
             std::string resolved_model = resolve_component(original, options, path + ".model");
             require_declared(resolved_model, original, declared, options, path + ".model");
+
+            // Fail at parse time, not at first request: a "classifier" model
+            // must be able to answer /v1/classify (ModelType::CLASSIFICATION)
+            // or serve as an LLM-as-classifier via chat_completion
+            // (ModelType::LLM); a "semantic_similarity" model must be able to
+            // embed (ModelType::EMBEDDING). Skipped when get_model_type isn't
+            // configured (pure parser tests, and callers that don't have a
+            // model registry to check against).
+            if (options.get_model_type) {
+                const std::optional<ModelType> resolved_type = options.get_model_type(resolved_model);
+                if (!resolved_type) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has an unresolvable type; "
+                        "cannot validate it as a '" + type + "'");
+                }
+                const ModelType model_type = *resolved_type;
+                if (type == "classifier" &&
+                    model_type != ModelType::LLM && model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve as a classifier (needs an LLM or "
+                        "classification model)");
+                }
+                if (type == "semantic_similarity" && model_type != ModelType::EMBEDDING) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) +
+                        "', which cannot serve semantic_similarity (needs an embedding model)");
+                }
+            }
+
             item["model"] = std::move(resolved_model);
         }
 
