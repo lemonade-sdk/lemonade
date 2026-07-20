@@ -83,8 +83,57 @@ const std::string& HttpError::response_body() const {
     return response_body_;
 }
 
-LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key)
-    : host_(host), port_(port), api_key_(api_key) {}
+void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl) {
+    std::string remaining = input_host;
+    bool has_scheme = false;
+
+    if (remaining.rfind("https://", 0) == 0) {
+        out_is_ssl = true;
+        remaining = remaining.substr(8);
+        has_scheme = true;
+    } else if (remaining.rfind("http://", 0) == 0) {
+        out_is_ssl = false;
+        remaining = remaining.substr(7);
+        has_scheme = true;
+    }
+
+    // Strip path if present (anything starting with '/')
+    size_t path_pos = remaining.find('/');
+    if (path_pos != std::string::npos) {
+        remaining = remaining.substr(0, path_pos);
+    }
+
+    // Parse port
+    size_t close_bracket = remaining.find(']');
+    size_t colon_pos = std::string::npos;
+    if (remaining.rfind("[", 0) == 0 && close_bracket != std::string::npos) {
+        size_t post_bracket_colon = remaining.find(':', close_bracket);
+        if (post_bracket_colon != std::string::npos) {
+            colon_pos = post_bracket_colon;
+        }
+    } else {
+        colon_pos = remaining.rfind(':');
+    }
+
+    if (colon_pos != std::string::npos) {
+        out_clean_host = remaining.substr(0, colon_pos);
+        std::string port_str = remaining.substr(colon_pos + 1);
+        try {
+            out_port = std::stoi(port_str);
+        } catch (...) {
+        }
+    } else {
+        out_clean_host = remaining;
+        if (has_scheme) {
+            out_port = out_is_ssl ? 443 : 80;
+        }
+    }
+}
+
+LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl)
+    : api_key_(api_key), port_(port), is_ssl_(is_ssl) {
+    parse_target_url(host, host_, port_, is_ssl_);
+}
 
 LemonadeClient::~LemonadeClient() {}
 
@@ -96,9 +145,16 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
 }
 
 // Helper to create and configure httplib::Client (timeouts in milliseconds)
-static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
+static httplib::Client make_client(const std::string& host, int port, const std::string& api_key, bool is_ssl,
                                     time_t connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, time_t read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
-    httplib::Client cli(host, port);
+#ifndef CPPHTTPLIB_MBEDTLS_SUPPORT
+    if (is_ssl) {
+        throw std::runtime_error("HTTPS support is not compiled in this client.");
+    }
+#endif
+    std::string scheme = is_ssl ? "https" : "http";
+    std::string url = scheme + "://" + host + ":" + std::to_string(port);
+    httplib::Client cli(url);
     cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
     cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);
 
@@ -155,7 +211,7 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
                                           const std::string& body, const std::string& content_type,
                                           time_t connection_timeout_ms, time_t read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, is_ssl_, connection_timeout_ms, read_timeout_ms);
 
     httplib::Result res;
 
@@ -243,7 +299,7 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
                                    time_t connection_timeout_ms, time_t read_timeout_ms,
                                    std::function<bool()> should_abort) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, is_ssl_, connection_timeout_ms, read_timeout_ms);
 
     if (method == "POST") {
         auto res = handle_sse_stream(cli, path, body, content_type, callback, should_abort);
