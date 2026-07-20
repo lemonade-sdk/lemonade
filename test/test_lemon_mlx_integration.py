@@ -32,6 +32,11 @@ def test_lemon_mlx_static_integration_contract():
         versions["lemon-mlx"][backend]
         for backend in ("metal", "rocm-stable", "cpu")
     )
+    # Policy A: tools caps require a tools-capable engine pin (engine #62 → b1050-stable+).
+    assert all(
+        versions["lemon-mlx"][backend] == "b1050-stable"
+        for backend in ("metal", "rocm-stable", "cpu")
+    )
 
     defaults = json.loads(_read("src/cpp/resources/defaults.json"))
     assert defaults["lemon-mlx"]["backend"] == "auto"
@@ -130,7 +135,8 @@ def test_lemon_mlx_models_are_modern_and_sized():
 
     # P4 honesty: only the 4B gate model is labeled tool-calling for MLX.
     assert "tool-calling" in lemon_mlx_models["Qwen3.5-4B-MLX"].get("labels", [])
-    assert "tool-calling" not in lemon_mlx_models["Qwen3.5-0.8B-MLX"].get("labels", [])
+    for plumbing in ("Qwen3.5-0.8B-MLX", "Qwen3.6-27B-MLX", "Qwen3.6-35B-A3B-MLX"):
+        assert "tool-calling" not in lemon_mlx_models[plumbing].get("labels", [])
 
 
 def test_lemon_mlx_tool_capabilities_p4():
