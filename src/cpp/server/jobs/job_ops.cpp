@@ -75,6 +75,36 @@ OpRegistry build_op_registry(OpProviders providers) {
         return providers.chat_op(params, cancel);
     }, true});
 
+    reg.register_op("image_generations", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.image_generations_op) throw JobError(501, "image_generations op not available");
+        return providers.image_generations_op(params, cancel);
+    }, true});
+
+    reg.register_op("image_edits", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.image_edits_op) throw JobError(501, "image_edits op not available");
+        return providers.image_edits_op(params, cancel);
+    }, true});
+
+    reg.register_op("image_variations", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.image_variations_op) throw JobError(501, "image_variations op not available");
+        return providers.image_variations_op(params, cancel);
+    }, true});
+
+    reg.register_op("audio_speech", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.audio_speech_op) throw JobError(501, "audio_speech op not available");
+        return providers.audio_speech_op(params, cancel);
+    }, true});
+
+    reg.register_op("audio_generations", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.audio_generations_op) throw JobError(501, "audio_generations op not available");
+        return providers.audio_generations_op(params, cancel);
+    }, true});
+
+    reg.register_op("model_3d_generations", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+        if (!providers.model_3d_generations_op) throw JobError(501, "model_3d_generations op not available");
+        return providers.model_3d_generations_op(params, cancel);
+    }, true});
+
     reg.begin_exclusive = providers.begin_exclusive;
     reg.end_exclusive = providers.end_exclusive;
     reg.reconcile_unload = providers.reconcile_unload;
