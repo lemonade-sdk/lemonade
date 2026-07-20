@@ -203,18 +203,22 @@ class RouterTests(ServerTestBase):
         return header, decision, resp.json()
 
     def _delete_collection(self, collection):
-        """Remove a registered router collection. `/delete` is a POST endpoint
-        keyed on `model_name`; assert it actually deleted so a stale router
-        isn't left behind on persistent runners (esp. before a cloud provider
-        it references is uninstalled)."""
+        """Remove a registered router collection so a stale router isn't left on
+        persistent runners (esp. before a cloud provider it references is
+        uninstalled). `/delete` is a POST endpoint keyed on `model_name`.
+
+        Runs in `finally`, which also fires when a test fails *before*
+        registration; a 404 then just means "nothing to clean up", so accept it —
+        asserting only 200 would let the cleanup mask the real failure. Any other
+        status is a genuine cleanup problem worth surfacing."""
         resp = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": collection},
             timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(
+        self.assertIn(
             resp.status_code,
-            200,
+            (200, 404),
             f"cleanup delete failed: {resp.status_code} {resp.text}",
         )
 

@@ -107,18 +107,29 @@ and every entry's `model` must be one of `components`:
       "default_label": "LABEL_1"
     },
     {
-      "id": "intent",
+      "id": "risk",
       "type": "llm",
       "model": "Qwen3-1.7B-GGUF",
-      "prompt": "Choose 'urgent' for time-sensitive or account-security requests, otherwise 'normal'.",
-      "labels": ["urgent", "normal"],
-      "default_label": "normal"
+      "prompt": "Classify the request's risk for tool execution. Reply with exactly one label: SAFE or RISKY.",
+      "labels": ["SAFE", "RISKY"],
+      "default_label": "SAFE",
+      "on_error": "match_false"
     }
   ],
   "rules": [
     { "id": "coding-to-big",  "match": { "classifier": "topic",    "label": "coding",  "min_score": 0.6 }, "route_to": "Big-GGUF" },
     { "id": "phishing-local", "match": { "classifier": "phishing", "label": "LABEL_1", "min_score": 0.5 }, "route_to": "Small-GGUF" },
-    { "id": "urgent-to-big",  "match": { "classifier": "intent",   "label": "urgent",  "min_score": 0.5 }, "route_to": "Big-GGUF" }
+    {
+      "id": "risky-tool-calls-stay-local",
+      "match": {
+        "all": [
+          { "classifier": "risk", "label": "RISKY", "min_score": 0.5 },
+          { "has_tools": true }
+        ]
+      },
+      "route_to": "Small-GGUF",
+      "outputs": { "reason": "llm-judged-risky" }
+    }
   ]
 }
 ```
@@ -128,15 +139,18 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
-- `llm` shows the request to an LLM and asks it to choose one of `labels`; the
-  chosen label scores `1.0`. The engine wraps your `prompt` with the request
-  context and the label set, so the prompt just needs to say when to pick each
-  label. A malformed reply fails open to `default_model`.
+- `llm` shows the request to an LLM and asks it to choose one of `labels` (the
+  chosen label scores `1.0`). Because it produces a plain label, it's a
+  **composable signal** — combine it with any other condition, as in
+  `risky-tool-calls-stay-local` above. The engine wraps your `prompt` with the
+  request context and the label set, so the prompt just needs to say when to pick
+  each label; a malformed reply fails open to `default_model`.
 
-> The [`routing.router`](#llm-as-router-routingrouter) block is shorthand for a
-> single `llm` classifier whose labels are the candidate models — use it to route
-> purely by LLM; use a `type: "llm"` classifier here when the LLM's choice is one
-> signal among other rules.
+> A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
+> block are the two LLM forms. `routing.router` picks the final candidate itself
+> and replaces rules entirely (it's shorthand for a single `llm` classifier whose
+> labels are the candidate models); a `type: "llm"` classifier only produces a
+> label that rules combine with any other condition.
 
 ## Registering and invoking
 
