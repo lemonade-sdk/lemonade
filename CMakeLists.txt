@@ -2368,6 +2368,16 @@ if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
 endif()
 
+# llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
+# published, so the shared Windows/Linux support row must not advertise Windows
+# or nightly installs for gfx950.
+set(_LLAMACPP_GFX950_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_gfx950_gating.cpp")
+if(EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
+    add_executable(test_llamacpp_gfx950_gating test/cpp/test_llamacpp_gfx950_gating.cpp)
+    target_link_libraries(test_llamacpp_gfx950_gating PRIVATE lemonade-server-core)
+    add_test(NAME LlamacppGfx950GatingTest COMMAND test_llamacpp_gfx950_gating)
+endif()
+
 set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
 if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
