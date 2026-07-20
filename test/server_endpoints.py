@@ -43,7 +43,6 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
-    SECOND_TEST_MODEL_EVICTION,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -3228,43 +3227,100 @@ class EndpointTests(ServerTestBase):
             self._cleanup_router_collection(canonical_name)
 
     def test_021zj_router_llm_l0a_live(self):
-        """L0a live path (#2405): a routing.router (type llm) collection routes a
-        real request end to end through Router::chat_completion — exercising the
-        chat adapter, reasoning suppression, structured-reply parsing, and model
-        loading against a real backend, not FakeClassifierServices.
-
-        Note: under the default max_loaded_models=1 the router LLM and the
-        selected candidate share the single generation slot, so consecutive
-        requests reload both models. Slot semantics for classifier models are
-        deliberately out of scope here and tracked in #2725."""
-        # The router must emit strict JSON; use the more capable model as the
-        # router and the tiny model as the candidate for CI reliability.
-        router_model = SECOND_TEST_MODEL_EVICTION
+        """L0a live path (#2405), deterministic: the router component is a mock
+        cloud model (via _start_mock_cloud_provider) that returns a fixed valid
+        {model, rationale} reply, while the candidate is the real local
+        ENDPOINT_TEST_MODEL. This exercises the complete production path —
+        collection.router -> LlmClassifier -> ClassifierServices::chat ->
+        Router::chat_completion -> CloudServer -> strict structured-reply
+        parser -> rule evaluation and trace -> real candidate auto-load ->
+        candidate completion — without depending on a small local LLM obeying
+        a formatting prompt on every platform. Exhaustive parser behavior is
+        covered by the C++ RoutingPolicyLlmRouterTest suite; this test
+        validates wiring and backend integration, and asserts the live
+        adapter constraints on the captured router request."""
+        provider = "routercloud"
+        upstream_id = "mock/l0a-router"
+        router_model = f"{provider}.{upstream_id}"
         candidate_model = ENDPOINT_TEST_MODEL
-        pull_model_with_retry(router_model)
         pull_model_with_retry(candidate_model)
+
+        fixed_rationale = "The configured candidate handles this request."
+        captured = {}
+
+        def chat_response(req):
+            captured["request"] = req
+            return {
+                "id": "cmpl-l0a-router",
+                "object": "chat.completion",
+                "created": 1,
+                "model": req.get("model", upstream_id),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "model": candidate_model,
+                                    "rationale": fixed_rationale,
+                                }
+                            ),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response
+        )
 
         suffix = uuid.uuid4().hex[:8]
         canonical_name = f"user.RouterL0a-{suffix}"
         public_name = canonical_name[5:]
         try:
+            # Register + authenticate the mock provider so the router model is
+            # discoverable (same flow as the cloud endpoint tests).
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            self.assertEqual(resp.json()["models_discovered"], 1)
+
             requests.post(
                 f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
             )
 
-            # routing.router desugars to an llm classifier over the candidate.
-            # The router model is a component but NOT a candidate, so the live
-            # flow exercises both the router invocation and the dispatch.
             routing = {
                 "candidates": [candidate_model],
                 "default_model": candidate_model,
                 "router": {
                     "type": "llm",
                     "model": router_model,
-                    "prompt": (
-                        "You are a model router. Always choose "
-                        f"{candidate_model} for every request."
-                    ),
+                    "prompt": "You are a model router. Pick the best model "
+                    "for the user's request.",
                 },
             }
             pull_response = self._pull_router_collection(
@@ -3275,24 +3331,25 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(pull_response.status_code, 200, pull_response.text)
             self.assertEqual(pull_response.json()["status"], "success")
 
-            chat_response = requests.post(
+            user_text = "Explain gradient descent."
+            chat_response_http = requests.post(
                 f"{self.base_url}/chat/completions",
                 json={
                     "model": public_name,
-                    "messages": [
-                        {"role": "user", "content": "Explain gradient descent."}
-                    ],
+                    "messages": [{"role": "user", "content": user_text}],
                     "max_tokens": 16,
                     "route_trace": True,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            self.assertEqual(chat_response.status_code, 200, chat_response.text)
-            body = chat_response.json()
+            self.assertEqual(
+                chat_response_http.status_code, 200, chat_response_http.text
+            )
+            body = chat_response_http.json()
             self.assertNotIn("error", body, body)
 
-            # The engine-selected candidate produced the completion, and the
-            # response model is the candidate, not the router alias.
+            # The engine routed to the candidate the mock router selected, and
+            # the completion was produced by the real local candidate.
             route = body.get("x_lemonade_route")
             self.assertIsInstance(route, dict)
             self.assertEqual(route.get("route_to"), candidate_model)
@@ -3302,10 +3359,9 @@ class EndpointTests(ServerTestBase):
                 "response model must be the routed candidate",
             )
 
-            # The trace came from the live llm router: the winning entry names
-            # the chosen candidate as its label and carries a non-empty
-            # rationale — the structured {model, rationale} contract, produced
-            # by a real model through the constrained chat adapter.
+            # The trace carries the structured choice: the winning
+            # classifier:__router entry names the candidate as its label and
+            # records the mock's exact rationale.
             trace = route.get("trace")
             self.assertIsInstance(trace, list)
             router_entry = next(
@@ -3321,29 +3377,34 @@ class EndpointTests(ServerTestBase):
                 router_entry, f"no winning __router trace entry: {trace}"
             )
             self.assertEqual(router_entry.get("label"), candidate_model)
-            rationale = router_entry.get("rationale")
-            self.assertIsInstance(
-                rationale, str, "llm router must record a rationale in the trace"
+            self.assertEqual(router_entry.get("rationale"), fixed_rationale)
+
+            # Live adapter constraints, asserted on the request the mock
+            # provider actually received from Router::chat_completion.
+            router_request = captured.get("request")
+            self.assertIsNotNone(
+                router_request, "mock provider never received the router call"
             )
+            self.assertFalse(router_request["stream"])
+            self.assertEqual(router_request["temperature"], 0.0)
+            self.assertLessEqual(router_request["max_tokens"], 256)
             self.assertTrue(
-                rationale.strip(),
-                "llm router rationale must be a non-empty string",
+                router_request["messages"][-1]["content"].startswith("/no_think\n")
             )
+            # The user message after the /no_think prefix is the structured
+            # routing-context payload.
+            payload = json.loads(
+                router_request["messages"][-1]["content"][len("/no_think\n") :]
+            )
+            self.assertEqual(payload.get("text"), user_text)
+            self.assertIn("has_tools", payload)
+            self.assertIn("has_images", payload)
             print(
-                "[OK] L0a live: structured choice routed through "
-                "Router::chat_completion with label + rationale in the trace"
+                "[OK] L0a live (deterministic): structured choice routed "
+                "through Router::chat_completion -> CloudServer with label + "
+                "rationale in the trace and constrained adapter request"
             )
         finally:
-            for body in (
-                {"model_name": router_model},
-                {"model_name": candidate_model},
-            ):
-                try:
-                    requests.post(
-                        f"{self.base_url}/unload", json=body, timeout=TIMEOUT_DEFAULT
-                    )
-                except Exception:
-                    pass
             try:
                 requests.post(
                     f"{self.base_url}/delete",
@@ -3352,6 +3413,23 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": candidate_model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/uninstall",
+                    json={"backend": "cloud", "provider": provider},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            stop_provider()
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
