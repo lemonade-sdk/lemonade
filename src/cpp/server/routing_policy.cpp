@@ -20,6 +20,16 @@ Score failed_score() {
     return score;
 }
 
+// Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
+// chat reply before matching it against candidate names.
+std::string trim_copy(const std::string& s) {
+    const char* ws = " \t\r\n";
+    const auto begin = s.find_first_not_of(ws);
+    if (begin == std::string::npos) return std::string();
+    const auto end = s.find_last_not_of(ws);
+    return s.substr(begin, end - begin + 1);
+}
+
 // Cosine similarity of two equal-length, non-zero vectors. Returns nullopt when
 // the vectors are empty, mismatched in length, or either has zero magnitude —
 // all of which the caller treats as a classifier failure (Score::ok=false).
@@ -148,7 +158,20 @@ public:
         }
 
         if (ctx.want_trace) {
-            ctx.trace.push_back(TraceEntry{"classifier:" + classifier_->id(), traced_score, result});
+            TraceEntry entry{"classifier:" + classifier_->id(), traced_score, result};
+            if (label_.has_value()) {
+                entry.label = *label_;
+            }
+            // The rationale explains the labels the classifier actually scored
+            // (for the llm router: the single selected candidate). A band that
+            // tests a different label must not carry it — otherwise the trace
+            // attaches the winner's rationale to rejected candidates.
+            const bool rationale_applies =
+                !label_.has_value() || score.labels.count(*label_) > 0;
+            if (score.ok && !score.rationale.empty() && rationale_applies) {
+                entry.rationale = score.rationale;
+            }
+            ctx.trace.push_back(std::move(entry));
         }
         return result;
     }
@@ -233,6 +256,161 @@ public:
 
 private:
     std::string model_;
+};
+
+// The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
+// prompt plus a fixed response-contract suffix (listing the candidates), and
+// requires a structured reply: a single JSON object
+//   {"model": "<exact candidate name>", "rationale": "<one short sentence>"}
+// The chosen candidate becomes the label (score 1.0) and the model's stated
+// rationale is recorded in Score::rationale for the trace. Malformed JSON, a
+// missing/unknown "model", or any extra prose yields an empty Score (ok=true,
+// no labels): no identity rule fires and the engine fails open to
+// default_model. A backend failure yields Score{ok=false} so the owning
+// condition applies on_error.
+class LlmClassifier final : public Classifier {
+public:
+    LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
+                  OnError on_error, std::vector<std::string> labels,
+                  std::optional<std::string> default_label)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
+                     std::move(default_label)),
+          model_(std::move(model)), prompt_(std::move(prompt)) {
+        if (model_.empty()) {
+            throw std::invalid_argument("llm classifier requires model");
+        }
+        if (prompt_.empty()) {
+            throw std::invalid_argument("llm classifier requires prompt");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument("llm classifier requires at least one label (candidate)");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.chat) {
+            return failed_score();
+        }
+        std::string reply;
+        try {
+            reply = ctx.services.chat(model_, effective_prompt(),
+                                      build_context_payload(ctx.request));
+        } catch (...) {
+            return failed_score();
+        }
+
+        Score score;
+        score.ok = true;
+
+        const json parsed = parse_structured_reply(reply);
+        if (!parsed.is_object() || parsed.size() != 2 ||
+            !parsed.contains("model") || !parsed["model"].is_string() ||
+            !parsed.contains("rationale") || !parsed["rationale"].is_string()) {
+            // The backend only guarantees a JSON object. Lemonade owns the
+            // portable protocol contract: exactly `model` and `rationale`, no
+            // missing fields and no backend/model-invented extras. Invalid
+            // replies fail open to default_model.
+            return score;
+        }
+        const std::string rationale = trim_copy(parsed["rationale"].get<std::string>());
+        if (rationale.empty()) {
+            return score;
+        }
+        const std::string chosen = parsed["model"].get<std::string>();
+        const std::string* label = match_label(chosen);
+        if (label == nullptr) {
+            // Unknown choice => same fail-open path.
+            return score;
+        }
+        score.labels[*label] = 1.0;
+        score.rationale = rationale;
+        return score;
+    }
+
+private:
+    // The user message handed to the router LLM: a structured JSON view of the
+    // routing context, so the router can see everything a deterministic rule
+    // could — not just the latest text. An image-only request is visible as
+    // has_images=true with empty text; a tool-bearing request as
+    // has_tools=true; length via chars; caller routing hints via metadata.
+    //
+    // History policy (explicit, per the frozen v1 RouteContext contract):
+    // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a
+    // single turn so earlier assistant/system turns can't skew routing;
+    // supplying more history to the router requires extending that contract
+    // for all classifiers, which is out of scope for this classifier.
+    static std::string build_context_payload(const RouteContext& request) {
+        json metadata = json::object();
+        for (const auto& [key, value] : request.metadata) {
+            metadata[key] = value;
+        }
+        const json payload = {
+            {"text", request.input},
+            {"has_tools", request.params.has_tools},
+            {"has_images", request.params.has_images},
+            {"chars", request.params.chars},
+            {"metadata", std::move(metadata)},
+        };
+        return payload.dump();
+    }
+
+    // The author's prompt describes routing intent; the response contract —
+    // input format, candidate vocabulary, and the required JSON shape — is
+    // appended here so every llm router speaks the same protocol regardless
+    // of authoring.
+    std::string effective_prompt() const {
+        std::string suffix =
+            "The user message is a JSON object describing the request to "
+            "route: {\"text\": latest user turn only, \"has_tools\": whether "
+            "the request carries tools, \"has_images\": whether it carries "
+            "images, \"chars\": byte length of text, \"metadata\": caller "
+            "routing hints}. You must choose exactly one of these models: ";
+        for (std::size_t i = 0; i < labels().size(); ++i) {
+            if (i > 0) suffix += ", ";
+            suffix += labels()[i];
+        }
+        suffix +=
+            ". Respond with ONLY a JSON object of the form "
+            "{\"model\": \"<one of the listed names>\", "
+            "\"rationale\": \"<one short sentence>\"} and no other text.";
+        return prompt_ + "\n\n" + suffix;
+    }
+
+    // Parse the model's reply into the structured-choice object. Strict: the
+    // trimmed reply must be a JSON object. One leading/trailing ``` fence pair
+    // is tolerated and stripped (instruction-tuned models often add it), but
+    // the closing fence must END the reply — trailing prose after it violates
+    // the "no other text" contract and rejects.
+    static json parse_structured_reply(const std::string& reply) {
+        std::string text = trim_copy(reply);
+        if (text.rfind("```", 0) == 0) {
+            const auto first_newline = text.find('\n');
+            const auto last_fence = text.rfind("```");
+            if (first_newline == std::string::npos || last_fence <= first_newline) {
+                return json(nullptr);  // opening fence without a closing fence
+            }
+            if (!trim_copy(text.substr(last_fence + 3)).empty()) {
+                return json(nullptr);  // text after the closing fence
+            }
+            text = trim_copy(text.substr(first_newline + 1, last_fence - first_newline - 1));
+        }
+        json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
+        return parsed.is_discarded() ? json(nullptr) : parsed;
+    }
+
+    // Which candidate did the model name? Exact match only, against the
+    // structured "model" field. A substring fallback was rejected in review:
+    // it can turn contradictory or negated answers into a valid route and
+    // weakens the required invalid-choice fallback.
+    const std::string* match_label(const std::string& chosen) const {
+        for (const auto& label : labels()) {
+            if (chosen == label) return &label;
+        }
+        return nullptr;
+    }
+
+    std::string model_;
+    std::string prompt_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -933,8 +1111,15 @@ ClassifierPtr make_classifier(const json& config) {
             std::move(labels), std::move(default_label));
     }
 
-    if (type == "llm" ||
-        type == "pii_detection" || type == "prompt_safety" ||
+    if (type == "llm") {
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<LlmClassifier>(
+            id, type, config.value("model", ""), config.value("prompt", ""),
+            on_error, std::move(labels), std::move(default_label));
+    }
+
+    if (type == "pii_detection" || type == "prompt_safety" ||
         type == "language_detection" || type == "domain_classification" ||
         type == "complexity" || type == "sentiment") {
         throw std::invalid_argument("classifier type not implemented yet: " + type);

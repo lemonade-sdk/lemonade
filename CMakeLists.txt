@@ -343,7 +343,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG 89c932f313c6437c38f2982869beacc89c2f2246  # v0.26.0
+        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -638,6 +638,7 @@ set(SOURCES_CORE
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_classifier_services.cpp
     src/cpp/server/routing_classifier_services_router.cpp
+    src/cpp/server/thinking_controls.cpp
     src/cpp/server/routing_policy.cpp
     src/cpp/server/routing_policy_parser.cpp
     src/cpp/server/routing_policy_store.cpp
@@ -2097,6 +2098,28 @@ if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
     add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
 endif()
 
+# LLM router classifier + routing.router desugaring (issue #2405): the L0a
+# on-ramp. Unit + parser + end-to-end tests against FakeClassifierServices.
+set(_ROUTING_LLM_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_llm_router.cpp"
+)
+if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
+    add_executable(test_routing_policy_llm_router
+        test/cpp/test_routing_policy_llm_router.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_llm_router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_llm_router PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyLlmRouterTest COMMAND test_routing_policy_llm_router)
+endif()
+
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
 # max_chars/has_*/metadata conditions and their leaf-factory map.
 set(_ROUTING_DETERMINISTIC_TEST_SRC
@@ -2167,6 +2190,7 @@ if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
     include(CTest)
     add_test(NAME RoutingPolicyParserTest COMMAND test_routing_policy_parser)
 endif()
+
 
 # Routing policy store (issue #2383): directory-backed policy loading and
 # DirectoryWatcher-triggered shared_ptr snapshot swaps.
@@ -2260,6 +2284,7 @@ if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
     add_executable(test_routing_classifier_services
         test/cpp/test_routing_classifier_services.cpp
         src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
         src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_classifier_services PRIVATE
@@ -2344,6 +2369,16 @@ if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
 endif()
 
+# llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
+# published, so the shared Windows/Linux support row must not advertise Windows
+# or nightly installs for gfx950.
+set(_LLAMACPP_GFX950_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_gfx950_gating.cpp")
+if(EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
+    add_executable(test_llamacpp_gfx950_gating test/cpp/test_llamacpp_gfx950_gating.cpp)
+    target_link_libraries(test_llamacpp_gfx950_gating PRIVATE lemonade-server-core)
+    add_test(NAME LlamacppGfx950GatingTest COMMAND test_llamacpp_gfx950_gating)
+endif()
+
 set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
 if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
@@ -2356,4 +2391,11 @@ if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
     add_test(NAME CloudDiscoveryPolicyTest COMMAND test_cloud_discovery_policy)
+endif()
+
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
 endif()
