@@ -206,5 +206,8 @@
     "rocm-stable": "v0.3.0",
     "cuda": "v0.3.0"
   },
+  "ryzenai-sd": {
+    "npu": "local"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

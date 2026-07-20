@@ -2567,5 +2567,89 @@
         ],
         "size": 81.0,
         "min_resident_gb": 16.0
+    },
+    "SD-Turbo-NPU": {
+        "checkpoint": "amd/stable-diffusion-turbo-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 2.45,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 0.0,
+            "width": 512,
+            "height": 512
+        }
+    },
+    "SDXL-Turbo-NPU": {
+        "checkpoint": "amd/stable-diffusion-sdxl-turbo-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD-1.5-NPU": {
+        "checkpoint": "amd/stable-diffusion-1.5-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 512,
+            "height": 512
+        }
+    },
+    "SDXL-Base-NPU": {
+        "checkpoint": "amd/stable-diffusion-sdxl-base-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD3-Medium-NPU": {
+        "checkpoint": "amd/stable-diffusion-3-medium-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 4.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD3.5-Medium-NPU": {
+        "checkpoint": "amd/stable-diffusion-3.5-medium-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 4.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Segmind-Vega-NPU": {
+        "checkpoint": "amd/stable-diffusion-segmind-vega-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 1024,
+            "height": 1024
+        }
     }
 }

@@ -159,6 +159,7 @@ set(LEMON_BACKENDS
     "moonshine|moonshine"
     "kokoro|kokoro"
     "sd-cpp|sdcpp"
+    "sd-npu|sdnpu"
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"

@@ -187,6 +187,7 @@ CAPABILITIES = {
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
+                "image_edits": True,
             },
             "test_models": {
                 "image": "SD-Turbo",
@@ -200,6 +201,17 @@ CAPABILITIES = {
             },
             "test_models": {
                 "image": "Anima-Turbo",
+            },
+        },
+        "sd-npu": {
+            "backends": ["npu"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+                "image_edits": True,
+            },
+            "test_models": {
+                "image": "SD-Turbo-NPU",
             },
         },
     },

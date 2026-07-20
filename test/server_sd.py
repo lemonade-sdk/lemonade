@@ -703,6 +703,6 @@ if __name__ == "__main__":
     run_server_tests(
         StableDiffusionTests,
         "STABLE DIFFUSION TESTS",
-        wrapped_server="sd-cpp",
+        default_wrapped_server="sd-cpp",
         modality="stable_diffusion",
     )
