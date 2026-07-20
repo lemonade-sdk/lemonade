@@ -1083,7 +1083,15 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           description="The final fallback, used when no rule matched and the LLM router is off or abstains."
         >
           <ModelSelect
-            options={draft.candidates.map(id => ({ id, label: displayName(id) }))}
+            options={draft.candidates.map(id => {
+              const opt = candidateOptions.find(o => o.id === id);
+              return {
+                id,
+                label: opt?.info.model_name ?? getModelDisplayName(id),
+                sublabel: opt?.info.downloaded === true ? 'local' : 'will download',
+                downloaded: opt?.info.downloaded === true,
+              } satisfies ModelOption;
+            })}
             value={draft.defaultModel}
             onChange={id => patch({ defaultModel: id })}
             placeholder={draft.candidates.length === 0 ? 'Select candidates first' : 'Select default model…'}
