@@ -77,6 +77,10 @@ type HostNavigateUnsubscribe = void | (() => void);
 type LemonadeHostApi = {
   onNavigate?: (callback: (payload: HostNavigationPayload) => void) => HostNavigateUnsubscribe;
   signalReady?: () => void;
+  minimizeWindow?: () => void;
+  maximizeWindow?: () => void;
+  closeWindow?: () => void;
+  isWebApp?: boolean;
 };
 
 declare global {
@@ -175,6 +179,17 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const accountSessionRef = useRef(accountSession);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    import('./tauriShim').then(({ tauriReady }) => {
+      tauriReady.then(() => {
+        if (window.api && window.api.isWebApp !== true) {
+          setIsDesktop(true);
+        }
+      });
+    });
+  }, []);
   const [activeDownloadCount, setActiveDownloadCount] = useState(
     () => downloadStore.snapshot().filter(isDownloadActive).length,
   );
@@ -379,9 +394,9 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className="titlebar">
-        <div className="titlebar__brand">
-          <svg className="titlebar__lemon" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <header className="titlebar" data-tauri-drag-region>
+        <div className="titlebar__brand" data-tauri-drag-region>
+          <svg className="titlebar__lemon" data-tauri-drag-region="false" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M7.036 2.492L2 5.01c.826 2.337 3.525 3.525 6.043 2.518l6.044-2.518C13.26 2.663 9.85 1.177 7.036 2.492Z" fill="url(#ll0)"/>
             <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll1)"/>
             <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll2)"/>
@@ -397,7 +412,7 @@ const App: React.FC = () => {
               </radialGradient>
             </defs>
           </svg>
-          <span>lemonade</span>
+          <span data-tauri-drag-region>lemonade</span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
@@ -408,7 +423,7 @@ const App: React.FC = () => {
           />
         </div>
 
-        <nav className="titlebar__nav" aria-label="Primary">
+        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
           {([
             { id: 'chat',      label: 'Chat',      icon: 'chat'               },
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
@@ -432,17 +447,20 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="titlebar__right">
-          <AccountMenu
-            session={accountSession}
-            onSessionChange={handleAccountSessionChange}
-            onDataReset={handleAccountDataReset}
-          />
-          <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+        <div className="titlebar__right" data-tauri-drag-region>
+          <div data-tauri-drag-region="false">
+            <AccountMenu
+              session={accountSession}
+              onSessionChange={handleAccountSessionChange}
+              onDataReset={handleAccountDataReset}
+            />
+          </div>
+          <button className="titlebar__theme-toggle" data-tauri-drag-region="false" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
           </button>
           <button
             className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
+            data-tauri-drag-region="false"
             onClick={() => setDownloadManagerOpen(open => !open)}
             aria-label="Open download manager"
             aria-expanded={downloadManagerOpen}
@@ -451,6 +469,37 @@ const App: React.FC = () => {
             <Icon name="download" size={16} />
             {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
           </button>
+          {isDesktop && (
+            <>
+              <button
+                className="titlebar__window-btn"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.minimizeWindow?.()}
+                aria-label="Minimize"
+                title="Minimize"
+              >
+                <Icon name="minimize-2" size={14} />
+              </button>
+              <button
+                className="titlebar__window-btn"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.maximizeWindow?.()}
+                aria-label="Maximize"
+                title="Maximize"
+              >
+                <Icon name="maximize-2" size={14} />
+              </button>
+              <button
+                className="titlebar__window-btn titlebar__window-btn--close"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.closeWindow?.()}
+                aria-label="Close"
+                title="Close"
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </>
+          )}
         </div>
       </header>
 

@@ -190,6 +190,30 @@ input, textarea {
 [data-theme="light"] .titlebar__theme-toggle { background: var(--surface-titlebar); }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
+.titlebar__window-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+.titlebar__window-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.titlebar__window-btn--close:hover {
+  background: #e81123 !important;
+  color: #ffffff !important;
+}
+
 .titlebar__status-dot {
   width: 8px;
   height: 8px;
