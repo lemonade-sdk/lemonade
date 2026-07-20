@@ -792,11 +792,30 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
 
     json request_body;
     request_body["model"] = model;
+    if (!(scenario.imgconfig.contains("prompt") && scenario.imgconfig["prompt"].is_string())) {
+        std::cerr << "    Image generation scenario missing 'prompt' field." << std::endl;
+        return result;
+    }
     request_body["prompt"] = scenario.imgconfig.value("prompt", "");
-    request_body["size"] = scenario.imgconfig.value("size", "256x256");
-    request_body["steps"] = scenario.imgconfig.value("steps", 4);
-    request_body["cfg_scale"] = scenario.imgconfig.value("cfg_scale", 1.0);
-    request_body["seed"] = scenario.imgconfig.value("seed", 42);
+    // Request base64-encoded JSON response if we want to capture the image data. This makes
+    // the response log file easily readable.
+    if (capture_response)
+        request_body["response_format"] = "b64_json";
+    // Optional fields, if unspecified let the model use its defaults.
+    // default values won't actaully be used, they're just here to satisfy the type system
+    if (scenario.imgconfig.contains("size") && scenario.imgconfig["size"].is_string()) {
+        request_body["size"] = scenario.imgconfig.value("size", "256x256");
+    }
+    if (scenario.imgconfig.contains("steps") && scenario.imgconfig["steps"].is_number_integer()) {
+        request_body["steps"] = scenario.imgconfig.value("steps", 1);
+    }
+    if (scenario.imgconfig.contains("cfg_scale") && scenario.imgconfig["cfg_scale"].is_number()) {
+        request_body["cfg_scale"] = scenario.imgconfig.value("cfg_scale", 1.0);
+    }
+    if (scenario.imgconfig.contains("seed") && scenario.imgconfig["seed"].is_number_integer()) {
+        request_body["seed"] = scenario.imgconfig.value("seed", 42);
+    } else
+        request_body["seed"] = 42;  // default seed for reproducibility
 
     std::string body = request_body.dump();
 
