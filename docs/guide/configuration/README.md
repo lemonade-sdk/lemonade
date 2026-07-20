@@ -251,6 +251,7 @@ API keys for these providers are **not** stored in `config.json` — they live i
 | `hide_inputs` | bool | false | Redact prompt message content from spans. |
 | `hide_outputs` | bool | false | Redact generated assistant message content from spans. |
 | `hide_thinking` | bool | false | Redact reasoning/thought content from spans. |
+| `trust_incoming_trace_context` | bool | false | Honor a caller-supplied W3C `traceparent` header so inference spans join the caller's distributed trace instead of starting a fresh root. Opt-in because span parentage then depends on client-supplied input. |
 | `max_queue_capacity` | int | 1000 | The maximum capacity of the in-memory telemetry queue buffer. Oldest spans are dropped when full. Must be `> 0`. |
 | `otlp` | object | (nested object) | Sub-block grouping OTLP transport details (see below). |
 

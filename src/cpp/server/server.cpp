@@ -795,6 +795,12 @@ namespace {
 // are invalid. On success, out_trace_id/out_parent_id receive the lowercase
 // hex ids and the function returns true; otherwise returns false.
 bool parse_traceparent(const std::string& header, std::string& out_trace_id, std::string& out_parent_id) {
+    // A version-00 traceparent is exactly 55 chars. Reject anything shorter and
+    // cap the length so a header packed with dashes can't drive an unbounded
+    // split loop; the upper bound leaves room for higher versions that may
+    // append trailing fields (handled below).
+    if (header.size() < 55 || header.size() > 128) return false;
+
     auto is_hex = [](const std::string& s) {
         return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) {
             return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
@@ -820,13 +826,16 @@ bool parse_traceparent(const std::string& header, std::string& out_trace_id, std
         start = dash + 1;
     }
 
-    if (parts.size() != 4) return false;
+    if (parts.size() < 4) return false;
     const std::string& version = parts[0];
     const std::string& trace_id = parts[1];
     const std::string& parent_id = parts[2];
     const std::string& flags = parts[3];
 
     if (version.size() != 2 || !is_hex(version) || version == "ff") return false;
+    // Version 00 carries exactly four fields; per W3C forward-compatibility a
+    // higher version may append trailing fields, which we parse then ignore.
+    if (version == "00" && parts.size() != 4) return false;
     if (trace_id.size() != 32 || !is_hex(trace_id) || is_all_zero(trace_id)) return false;
     if (parent_id.size() != 16 || !is_hex(parent_id) || is_all_zero(parent_id)) return false;
     if (flags.size() != 2 || !is_hex(flags)) return false;
